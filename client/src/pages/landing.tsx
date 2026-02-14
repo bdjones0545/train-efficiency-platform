@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -8,11 +9,38 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, CalendarClock, DollarSign, LogIn } from "lucide-react";
+import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 export default function LandingPage() {
   const [coachModalOpen, setCoachModalOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { toast } = useToast();
+
+  const handleCoachLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const res = await apiRequest("POST", "/api/coach/login", { email, password });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "Welcome back!", description: "Redirecting to your dashboard..." });
+        window.location.href = data.redirect || "/coach";
+      }
+    } catch (err: any) {
+      setError("Invalid email or password");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -162,43 +190,77 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      <Dialog open={coachModalOpen} onOpenChange={setCoachModalOpen}>
+      <Dialog open={coachModalOpen} onOpenChange={(open) => {
+        setCoachModalOpen(open);
+        if (!open) {
+          setEmail("");
+          setPassword("");
+          setError("");
+          setShowPassword(false);
+        }
+      }}>
         <DialogContent className="sm:max-w-md" data-testid="modal-coach-login">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserCog className="h-5 w-5 text-primary" />
-              Coach Portal
+              Coach Sign In
             </DialogTitle>
             <DialogDescription>
               Sign in to access your coaching dashboard and manage your sessions.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-3">
-              {[
-                { icon: UserCog, label: "Edit your profile and specialties" },
-                { icon: CalendarClock, label: "Manage your weekly availability" },
-                { icon: Calendar, label: "View and manage client bookings" },
-                { icon: DollarSign, label: "Redeem completed sessions" },
-              ].map(({ icon: Icon, label }) => (
-                <div key={label} className="flex items-center gap-3 text-sm">
-                  <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                    <Icon className="h-4 w-4 text-primary" />
-                  </div>
-                  <span data-testid={`text-coach-feature-${label.slice(0, 10).replace(/\s/g, '-').toLowerCase()}`}>{label}</span>
-                </div>
-              ))}
+          <form onSubmit={handleCoachLogin} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <label htmlFor="coach-email" className="text-sm font-medium">Email</label>
+              <Input
+                id="coach-email"
+                type="email"
+                placeholder="you@efficiencystrengthtraining.com"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                required
+                data-testid="input-coach-email"
+              />
             </div>
-            <a href="/api/login?returnTo=/coach" className="block">
-              <Button className="w-full" size="lg" data-testid="button-coach-login-submit">
-                <LogIn className="h-4 w-4 mr-2" />
-                Sign In
-              </Button>
-            </a>
-            <p className="text-xs text-center text-muted-foreground">
-              Contact an administrator if you need coach access.
-            </p>
-          </div>
+            <div className="space-y-2">
+              <label htmlFor="coach-password" className="text-sm font-medium">Password</label>
+              <div className="relative">
+                <Input
+                  id="coach-password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                  required
+                  className="pr-10"
+                  data-testid="input-coach-password"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="absolute right-0 top-0"
+                  onClick={() => setShowPassword(!showPassword)}
+                  data-testid="button-toggle-password"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+            {error && (
+              <p className="text-sm text-destructive" data-testid="text-login-error">{error}</p>
+            )}
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              disabled={isLoading || !email || !password}
+              data-testid="button-coach-login-submit"
+            >
+              <LogIn className="h-4 w-4 mr-2" />
+              {isLoading ? "Signing in..." : "Sign In"}
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

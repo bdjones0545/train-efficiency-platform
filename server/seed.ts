@@ -2,6 +2,7 @@ import { db } from "./db";
 import { users } from "@shared/models/auth";
 import { userProfiles, coachProfiles, services, availabilityBlocks } from "@shared/schema";
 import { sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 export async function seedDatabase() {
   try {
@@ -62,6 +63,50 @@ export async function seedDatabase() {
       timezone: "America/Chicago",
       isActive: true,
     }).onConflictDoNothing().returning();
+
+    const [bryanUser] = await db.insert(users).values({
+      id: "coach-bryan",
+      email: "bryan.jones@efficiencystrengthtraining.com",
+      firstName: "Bryan",
+      lastName: "Jones",
+      profileImageUrl: null,
+    }).onConflictDoNothing().returning();
+
+    const [hunterUser] = await db.insert(users).values({
+      id: "coach-hunter",
+      email: "hunter.thaxton@efficiencystrengthtraining.com",
+      firstName: "Hunter",
+      lastName: "Thaxton",
+      profileImageUrl: null,
+    }).onConflictDoNothing().returning();
+
+    if (bryanUser) {
+      await db.insert(userProfiles).values({ userId: "coach-bryan", role: "COACH" }).onConflictDoNothing();
+      const bryanHash = await bcrypt.hash("21595!Jonsey", 10);
+      await db.insert(coachProfiles).values({
+        userId: "coach-bryan",
+        email: "bryan.jones@efficiencystrengthtraining.com",
+        passwordHash: bryanHash,
+        bio: "Head strength & conditioning coach specializing in athletic performance development.",
+        specialties: ["Strength & Conditioning", "Sports Performance"],
+        timezone: "America/New_York",
+        isActive: true,
+      }).onConflictDoNothing();
+    }
+
+    if (hunterUser) {
+      await db.insert(userProfiles).values({ userId: "coach-hunter", role: "COACH" }).onConflictDoNothing();
+      const hunterHash = await bcrypt.hash("est!2026", 10);
+      await db.insert(coachProfiles).values({
+        userId: "coach-hunter",
+        email: "hunter.thaxton@efficiencystrengthtraining.com",
+        passwordHash: hunterHash,
+        bio: "Strength & conditioning coach focused on developing well-rounded athletes.",
+        specialties: ["Strength & Conditioning", "Athletic Development"],
+        timezone: "America/New_York",
+        isActive: true,
+      }).onConflictDoNothing();
+    }
 
     await db.insert(services).values([
       {

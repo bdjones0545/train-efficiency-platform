@@ -7,7 +7,7 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Frontend: React + TypeScript + Tailwind CSS + Shadcn UI (Vite)
 - Backend: Express.js (TypeScript)
 - Database: PostgreSQL with Drizzle ORM
-- Auth: Replit Auth (OpenID Connect)
+- Auth: Replit Auth (OpenID Connect) + Coach email/password login
 - Router: Wouter (client-side)
 
 ## Architecture
@@ -31,6 +31,7 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Admin dashboard with user management, services, bookings, CSV export
 
 ## API Routes
+- POST /api/coach/login - Coach email/password login (public)
 - GET /api/coaches - List active coaches (public)
 - GET /api/coaches/:id - Single coach detail (public)
 - GET /api/coaches/:id/slots - Available time slots (public, requires serviceId + weekStart query params)
@@ -60,7 +61,17 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Logo integrated in landing page (nav, hero, footer) and sidebar
 - Font: Inter
 
+## Coach Credentials
+- coach_profiles table has coach_email and password_hash columns for email/password login
+- Coach login modal on landing page (POST /api/coach/login)
+- After login, coaches are redirected to /coach dashboard
+- Passwords hashed with bcryptjs
+- Public API endpoints strip passwordHash from responses
+
 ## Recent Changes
+- Added coach email/password login system with sign-in modal on landing page
+- Added Bryan Jones and Hunter Thaxton as coaches with credentials
+- Coach profile editing (bio, specialties, photo, timezone)
 - Updated all copy and branding to focus on sports performance & strength & conditioning
 - Theme redesign matching EST logo (green/black/white palette, dark mode default)
 - Initial MVP build with full booking system

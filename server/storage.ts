@@ -31,6 +31,7 @@ export interface IStorage {
   getCoachProfiles(): Promise<(CoachProfile & { user: User })[]>;
   getCoachProfile(id: string): Promise<(CoachProfile & { user: User }) | undefined>;
   getCoachProfileByUserId(userId: string): Promise<CoachProfile | undefined>;
+  getCoachProfileByEmail(email: string): Promise<CoachProfile | undefined>;
   createCoachProfile(profile: InsertCoachProfile): Promise<CoachProfile>;
   updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
 
@@ -102,6 +103,11 @@ export class DatabaseStorage implements IStorage {
 
   async getCoachProfileByUserId(userId: string): Promise<CoachProfile | undefined> {
     const [result] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, userId));
+    return result || undefined;
+  }
+
+  async getCoachProfileByEmail(email: string): Promise<CoachProfile | undefined> {
+    const [result] = await db.select().from(coachProfiles).where(eq(coachProfiles.email, email.toLowerCase()));
     return result || undefined;
   }
 

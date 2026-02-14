@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
+import bcrypt from "bcryptjs";
 
 async function getUserRole(userId: string): Promise<string> {
   const profile = await storage.getUserProfile(userId);
@@ -86,6 +87,45 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  app.post("/api/coach/login", async (req: any, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const coachProfile = await storage.getCoachProfileByEmail(email.toLowerCase());
+      if (!coachProfile || !coachProfile.passwordHash) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const valid = await bcrypt.compare(password, coachProfile.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const userId = coachProfile.userId;
+      req.login(
+        {
+          claims: { sub: userId },
+          access_token: null,
+          refresh_token: null,
+          expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+        },
+        (err: any) => {
+          if (err) {
+            console.error("Session creation error:", err);
+            return res.status(500).json({ message: "Failed to create session" });
+          }
+          res.json({ success: true, redirect: "/coach" });
+        }
+      );
+    } catch (error) {
+      console.error("Coach login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
   app.get("/api/profile", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -109,7 +149,8 @@ export async function registerRoutes(
   app.get("/api/coaches", async (_req, res) => {
     try {
       const coaches = await storage.getCoachProfiles();
-      res.json(coaches);
+      const safe = coaches.map(({ passwordHash, email, ...rest }) => rest);
+      res.json(safe);
     } catch (error) {
       console.error("Error fetching coaches:", error);
       res.status(500).json({ message: "Failed to fetch coaches" });
@@ -120,7 +161,8 @@ export async function registerRoutes(
     try {
       const coach = await storage.getCoachProfile(req.params.id);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
-      res.json(coach);
+      const { passwordHash, email, ...safe } = coach;
+      res.json(safe);
     } catch (error) {
       console.error("Error fetching coach:", error);
       res.status(500).json({ message: "Failed to fetch coach" });
@@ -274,7 +316,8 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const coachProfile = await storage.getCoachProfileByUserId(userId);
       if (!coachProfile) return res.status(404).json({ message: "Coach profile not found" });
-      res.json(coachProfile);
+      const { passwordHash: _ph, ...safeProfile } = coachProfile;
+      res.json(safeProfile);
     } catch (error) {
       console.error("Error fetching coach profile:", error);
       res.status(500).json({ message: "Failed to fetch coach profile" });

@@ -19,6 +19,8 @@ export const userProfiles = pgTable("user_profiles", {
 export const coachProfiles = pgTable("coach_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id).unique(),
+  email: varchar("coach_email").unique(),
+  passwordHash: text("password_hash"),
   bio: text("bio").default(""),
   specialties: text("specialties").array().default(sql`'{}'::text[]`),
   photoUrl: text("photo_url"),
