@@ -19,6 +19,9 @@ export default function LandingPage() {
               <Button variant="ghost" size="sm" data-testid="link-features">Features</Button>
             </a>
             <a href="/api/login">
+              <Button variant="outline" size="sm" data-testid="button-coach-login">Coach Login</Button>
+            </a>
+            <a href="/api/login">
               <Button data-testid="button-login">Get Started</Button>
             </a>
           </div>
