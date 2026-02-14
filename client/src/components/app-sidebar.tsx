@@ -22,6 +22,7 @@ import {
   DollarSign,
   Shield,
   LogOut,
+  UserCog,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -44,6 +45,7 @@ export function AppSidebar() {
 
   const coachItems = [
     { title: "Dashboard", url: "/coach", icon: LayoutDashboard },
+    { title: "My Profile", url: "/coach/profile", icon: UserCog },
     { title: "Availability", url: "/coach/availability", icon: CalendarClock },
     { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign },
   ];

@@ -269,6 +269,44 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/profile", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
+      if (!coachProfile) return res.status(404).json({ message: "Coach profile not found" });
+      res.json(coachProfile);
+    } catch (error) {
+      console.error("Error fetching coach profile:", error);
+      res.status(500).json({ message: "Failed to fetch coach profile" });
+    }
+  });
+
+  app.patch("/api/coach/profile", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
+      if (!coachProfile) return res.status(404).json({ message: "Coach profile not found" });
+
+      const { bio, specialties, photoUrl, timezone } = req.body;
+      const updateData: Record<string, any> = {};
+      if (bio !== undefined) updateData.bio = bio;
+      if (specialties !== undefined) {
+        if (!Array.isArray(specialties)) {
+          return res.status(400).json({ message: "Specialties must be an array" });
+        }
+        updateData.specialties = specialties;
+      }
+      if (photoUrl !== undefined) updateData.photoUrl = photoUrl;
+      if (timezone !== undefined) updateData.timezone = timezone;
+
+      const updated = await storage.updateCoachProfile(coachProfile.id, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating coach profile:", error);
+      res.status(500).json({ message: "Failed to update coach profile" });
+    }
+  });
+
   app.get("/api/coach/bookings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
