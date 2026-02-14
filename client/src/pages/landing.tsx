@@ -192,7 +192,7 @@ export default function LandingPage() {
             <a href="/api/login?returnTo=/coach" className="block">
               <Button className="w-full" size="lg" data-testid="button-coach-login-submit">
                 <LogIn className="h-4 w-4 mr-2" />
-                Sign In as Coach
+                Sign In
               </Button>
             </a>
             <p className="text-xs text-center text-muted-foreground">
