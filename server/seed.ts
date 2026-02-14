@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { users } from "@shared/models/auth";
-import { userProfiles, coachProfiles, services, availabilityBlocks } from "@shared/schema";
+import { userProfiles, coachProfiles, services } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
@@ -14,22 +14,6 @@ export async function seedDatabase() {
 
     console.log("Seeding database...");
 
-    const [coach1User] = await db.insert(users).values({
-      id: "seed-coach-1",
-      email: "sarah.chen@efficiency-st.com",
-      firstName: "Sarah",
-      lastName: "Chen",
-      profileImageUrl: null,
-    }).onConflictDoNothing().returning();
-
-    const [coach2User] = await db.insert(users).values({
-      id: "seed-coach-2",
-      email: "marcus.williams@efficiency-st.com",
-      firstName: "Marcus",
-      lastName: "Williams",
-      profileImageUrl: null,
-    }).onConflictDoNothing().returning();
-
     const [adminUser] = await db.insert(users).values({
       id: "seed-admin-1",
       email: "admin@efficiency-st.com",
@@ -38,31 +22,9 @@ export async function seedDatabase() {
       profileImageUrl: null,
     }).onConflictDoNothing().returning();
 
-    if (coach1User) {
-      await db.insert(userProfiles).values({ userId: "seed-coach-1", role: "COACH" }).onConflictDoNothing();
-    }
-    if (coach2User) {
-      await db.insert(userProfiles).values({ userId: "seed-coach-2", role: "COACH" }).onConflictDoNothing();
-    }
     if (adminUser) {
       await db.insert(userProfiles).values({ userId: "seed-admin-1", role: "ADMIN" }).onConflictDoNothing();
     }
-
-    const [cp1] = await db.insert(coachProfiles).values({
-      userId: "seed-coach-1",
-      bio: "NSCA-certified strength & conditioning coach with 8 years of experience. Specializing in sports performance, Olympic lifting, and power development. I build programs that translate to on-field results through progressive overload and sport-specific training.",
-      specialties: ["Sports Performance", "Olympic Lifting", "Power Development", "Speed & Agility"],
-      timezone: "America/New_York",
-      isActive: true,
-    }).onConflictDoNothing().returning();
-
-    const [cp2] = await db.insert(coachProfiles).values({
-      userId: "seed-coach-2",
-      bio: "Former collegiate athlete turned S&C coach. 6 years experience developing athletes across multiple sports. My approach combines explosive strength development with mobility and injury prevention to keep athletes performing at their peak.",
-      specialties: ["Athletic Development", "Mobility", "Injury Prevention", "Conditioning"],
-      timezone: "America/Chicago",
-      isActive: true,
-    }).onConflictDoNothing().returning();
 
     const [bryanUser] = await db.insert(users).values({
       id: "coach-bryan",
@@ -131,30 +93,6 @@ export async function seedDatabase() {
         active: true,
       },
     ]);
-
-    if (cp1) {
-      await db.insert(availabilityBlocks).values([
-        { coachId: cp1.id, dayOfWeek: 0, startTime: "06:00", endTime: "12:00" },
-        { coachId: cp1.id, dayOfWeek: 0, startTime: "14:00", endTime: "19:00" },
-        { coachId: cp1.id, dayOfWeek: 1, startTime: "06:00", endTime: "12:00" },
-        { coachId: cp1.id, dayOfWeek: 2, startTime: "06:00", endTime: "12:00" },
-        { coachId: cp1.id, dayOfWeek: 2, startTime: "14:00", endTime: "19:00" },
-        { coachId: cp1.id, dayOfWeek: 3, startTime: "06:00", endTime: "12:00" },
-        { coachId: cp1.id, dayOfWeek: 4, startTime: "06:00", endTime: "12:00" },
-        { coachId: cp1.id, dayOfWeek: 4, startTime: "14:00", endTime: "18:00" },
-      ]);
-    }
-
-    if (cp2) {
-      await db.insert(availabilityBlocks).values([
-        { coachId: cp2.id, dayOfWeek: 0, startTime: "08:00", endTime: "16:00" },
-        { coachId: cp2.id, dayOfWeek: 1, startTime: "08:00", endTime: "16:00" },
-        { coachId: cp2.id, dayOfWeek: 2, startTime: "08:00", endTime: "16:00" },
-        { coachId: cp2.id, dayOfWeek: 3, startTime: "08:00", endTime: "16:00" },
-        { coachId: cp2.id, dayOfWeek: 4, startTime: "08:00", endTime: "14:00" },
-        { coachId: cp2.id, dayOfWeek: 5, startTime: "09:00", endTime: "13:00" },
-      ]);
-    }
 
     console.log("Database seeded successfully!");
   } catch (error) {
