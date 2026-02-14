@@ -86,10 +86,17 @@ export async function seedDatabase() {
         active: true,
       },
       {
-        name: "Athlete Assessment (90 min)",
-        description: "Comprehensive initial assessment including movement screening, sport-specific evaluation, and program design consultation.",
-        durationMin: 90,
-        priceCents: 12000,
+        name: "Semi-Private Session (60 min)",
+        description: "Semi-private strength & conditioning session for 2-6 athletes. A great option for training partners, teammates, or small groups looking for expert coaching at a lower per-person cost.",
+        durationMin: 60,
+        priceCents: 5000,
+        active: true,
+      },
+      {
+        name: "Team Training",
+        description: "Team-based strength & conditioning session designed for athletic teams. Includes sport-specific programming, group warm-ups, and competitive drills.",
+        durationMin: 60,
+        priceCents: 0,
         active: true,
       },
     ]);
