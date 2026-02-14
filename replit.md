@@ -29,6 +29,8 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Availability manager (recurring weekly blocks)
 - Redemption system for completed sessions
 - Admin dashboard with user management, services, bookings, CSV export
+- Semi-private group sessions (2-6 participants) with join/leave functionality
+- Open Sessions page for clients to browse and join available group sessions
 
 ## API Routes
 - POST /api/coach/login - Coach email/password login (public)
@@ -49,6 +51,10 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - GET /api/admin/users - All users (ADMIN)
 - POST /api/admin/set-role - Set user role (ADMIN)
 - POST /api/admin/services - Create service (ADMIN)
+- GET /api/sessions/open - List open semi-private sessions (public)
+- GET /api/bookings/:id/participants - Get session participants (public)
+- POST /api/bookings/:id/join - Join a semi-private session (auth required)
+- DELETE /api/bookings/:id/leave - Leave a semi-private session (auth required)
 - GET /api/admin/bookings - All bookings (ADMIN)
 - GET /api/admin/redemptions - All redemptions (ADMIN)
 
@@ -71,6 +77,12 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Semi-private group sessions: booking_participants table, maxParticipants column on bookings
+  - Coaches schedule semi-private sessions with group description (auto-detects from service name)
+  - Open Sessions page (/sessions) for clients to browse and join group sessions
+  - Join/leave API endpoints with capacity enforcement (max 6)
+  - Participant display on coach dashboard and booking cards
+- Services updated: 1:1 60min ($70), 1:1 30min ($40), Semi-Private ($35), Team Training (by quote)
 - Coach-initiated session scheduling: coaches can add sessions from dashboard with client name, service, date/time
   - POST /api/coach/bookings - Coach creates booking (supports clientId or clientFirstName/clientLastName)
   - GET /api/coach/clients/search - Search existing clients by name/email

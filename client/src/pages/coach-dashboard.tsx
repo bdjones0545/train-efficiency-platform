@@ -6,10 +6,34 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Calendar, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, Users } from "lucide-react";
 import { format, parseISO, isToday, isFuture } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
-import type { BookingWithDetails } from "@/lib/types";
+import type { BookingWithDetails, ParticipantWithUser } from "@/lib/types";
+
+function GroupParticipants({ bookingId, max }: { bookingId: string; max: number }) {
+  const { data: participants } = useQuery<ParticipantWithUser[]>({
+    queryKey: ["/api/bookings", bookingId, "participants"],
+  });
+  const count = participants?.length || 0;
+  return (
+    <div className="space-y-1" data-testid={`group-participants-${bookingId}`}>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Users className="h-3 w-3" />
+        <span>{count}/{max} athletes</span>
+      </div>
+      {participants && participants.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {participants.map((p) => (
+            <Badge key={p.id} variant="secondary" className="text-xs">
+              {p.user.firstName} {p.user.lastName}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const statusColors: Record<string, string> = {
   PENDING: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
@@ -86,10 +110,18 @@ export default function CoachDashboardPage() {
             <Clock className="h-3.5 w-3.5" />
             {format(parseISO(booking.startAt as unknown as string), "h:mm a")} — {format(parseISO(booking.endAt as unknown as string), "h:mm a")}
           </div>
-          {booking.client && (
+          {booking.client && !booking.maxParticipants && (
             <p className="text-sm text-muted-foreground">
               Client: {booking.client.firstName} {booking.client.lastName}
             </p>
+          )}
+          {booking.maxParticipants && (
+            <div className="space-y-1">
+              {booking.groupDescription && (
+                <p className="text-sm text-muted-foreground">{booking.groupDescription}</p>
+              )}
+              <GroupParticipants bookingId={booking.id} max={booking.maxParticipants} />
+            </div>
           )}
         </div>
         {showActions && booking.status === "CONFIRMED" && (

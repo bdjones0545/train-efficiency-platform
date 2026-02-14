@@ -29,6 +29,7 @@ export function AddSessionDialog() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [notes, setNotes] = useState("");
+  const [groupDescription, setGroupDescription] = useState("");
   const [showSearch, setShowSearch] = useState(false);
 
   const { data: services } = useQuery<Service[]>({ queryKey: ["/api/services"] });
@@ -65,6 +66,9 @@ export function AddSessionDialog() {
     },
   });
 
+  const selectedServiceObj = services?.find(s => s.id === serviceId);
+  const isSemiPrivate = selectedServiceObj?.name.toLowerCase().includes("semi-private") || false;
+
   const resetForm = () => {
     setSelectedDate(undefined);
     setServiceId("");
@@ -74,6 +78,7 @@ export function AddSessionDialog() {
     setSelectedClientId(null);
     setSearchQuery("");
     setNotes("");
+    setGroupDescription("");
     setShowSearch(false);
   };
 
@@ -82,8 +87,12 @@ export function AddSessionDialog() {
       toast({ title: "Missing Fields", description: "Please fill in date, time, and service.", variant: "destructive" });
       return;
     }
-    if (!selectedClientId && (!clientFirstName.trim() || !clientLastName.trim())) {
+    if (!isSemiPrivate && !selectedClientId && (!clientFirstName.trim() || !clientLastName.trim())) {
       toast({ title: "Missing Client", description: "Please enter or select a client.", variant: "destructive" });
+      return;
+    }
+    if (isSemiPrivate && !groupDescription.trim()) {
+      toast({ title: "Missing Group Info", description: "Please describe the group training in this session.", variant: "destructive" });
       return;
     }
 
@@ -92,9 +101,13 @@ export function AddSessionDialog() {
     startAt.setHours(hours, minutes, 0, 0);
 
     const body: any = { serviceId, startAt: startAt.toISOString(), notes };
+    if (isSemiPrivate) {
+      body.maxParticipants = 6;
+      body.groupDescription = groupDescription.trim();
+    }
     if (selectedClientId) {
       body.clientId = selectedClientId;
-    } else {
+    } else if (clientFirstName.trim() && clientLastName.trim()) {
       body.clientFirstName = clientFirstName.trim();
       body.clientLastName = clientLastName.trim();
     }
@@ -136,82 +149,6 @@ export function AddSessionDialog() {
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="space-y-2">
-            <Label>Client</Label>
-            {selectedClientId ? (
-              <div className="flex items-center gap-2">
-                <div className="flex-1 text-sm border rounded-md p-2">
-                  {clientFirstName} {clientLastName}
-                </div>
-                <Button size="sm" variant="outline" onClick={clearSelectedClient} data-testid="button-clear-client">
-                  <XCircle className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <Input
-                      placeholder="First name"
-                      value={clientFirstName}
-                      onChange={(e) => setClientFirstName(e.target.value)}
-                      data-testid="input-client-first-name"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <Input
-                      placeholder="Last name"
-                      value={clientLastName}
-                      onChange={(e) => setClientLastName(e.target.value)}
-                      data-testid="input-client-last-name"
-                    />
-                  </div>
-                </div>
-                <div className="relative">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowSearch(!showSearch)}
-                    className="w-full"
-                    data-testid="button-search-clients"
-                  >
-                    <Search className="h-3.5 w-3.5 mr-1" />
-                    Search Existing Clients
-                  </Button>
-                  {showSearch && (
-                    <div className="mt-2 space-y-2">
-                      <Input
-                        placeholder="Type to search..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        autoFocus
-                        data-testid="input-search-clients"
-                      />
-                      {searchResults && searchResults.length > 0 && (
-                        <div className="border rounded-md max-h-32 overflow-y-auto">
-                          {searchResults.map((client) => (
-                            <button
-                              key={client.id}
-                              className="w-full text-left px-3 py-2 text-sm hover-elevate"
-                              onClick={() => selectClient(client)}
-                              data-testid={`button-select-client-${client.id}`}
-                            >
-                              {client.firstName} {client.lastName}
-                              {client.email && <span className="text-muted-foreground ml-1">({client.email})</span>}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {searchQuery.length >= 2 && searchResults && searchResults.length === 0 && (
-                        <p className="text-xs text-muted-foreground">No clients found. Enter a name above to create a new client.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
             <Label>Service</Label>
             <Select value={serviceId} onValueChange={setServiceId}>
               <SelectTrigger data-testid="select-service">
@@ -226,6 +163,98 @@ export function AddSessionDialog() {
               </SelectContent>
             </Select>
           </div>
+
+          {isSemiPrivate && (
+            <div className="space-y-2">
+              <Label>Group Description</Label>
+              <Textarea
+                placeholder="Describe the group training, e.g. 'High school football speed training' or 'Basketball agility group'"
+                value={groupDescription}
+                onChange={(e) => setGroupDescription(e.target.value)}
+                className="resize-none"
+                data-testid="input-group-description"
+              />
+              <p className="text-xs text-muted-foreground">This will be shown to athletes who can register for this session (max 6 participants).</p>
+            </div>
+          )}
+
+          {!isSemiPrivate && (
+            <div className="space-y-2">
+              <Label>Client</Label>
+              {selectedClientId ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 text-sm border rounded-md p-2">
+                    {clientFirstName} {clientLastName}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={clearSelectedClient} data-testid="button-clear-client">
+                    <XCircle className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="First name"
+                        value={clientFirstName}
+                        onChange={(e) => setClientFirstName(e.target.value)}
+                        data-testid="input-client-first-name"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Input
+                        placeholder="Last name"
+                        value={clientLastName}
+                        onChange={(e) => setClientLastName(e.target.value)}
+                        data-testid="input-client-last-name"
+                      />
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowSearch(!showSearch)}
+                      className="w-full"
+                      data-testid="button-search-clients"
+                    >
+                      <Search className="h-3.5 w-3.5 mr-1" />
+                      Search Existing Clients
+                    </Button>
+                    {showSearch && (
+                      <div className="mt-2 space-y-2">
+                        <Input
+                          placeholder="Type to search..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          autoFocus
+                          data-testid="input-search-clients"
+                        />
+                        {searchResults && searchResults.length > 0 && (
+                          <div className="border rounded-md max-h-32 overflow-y-auto">
+                            {searchResults.map((client) => (
+                              <button
+                                key={client.id}
+                                className="w-full text-left px-3 py-2 text-sm hover-elevate"
+                                onClick={() => selectClient(client)}
+                                data-testid={`button-select-client-${client.id}`}
+                              >
+                                {client.firstName} {client.lastName}
+                                {client.email && <span className="text-muted-foreground ml-1">({client.email})</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {searchQuery.length >= 2 && searchResults && searchResults.length === 0 && (
+                          <p className="text-xs text-muted-foreground">No clients found. Enter a name above to create a new client.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Date</Label>

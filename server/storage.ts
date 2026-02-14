@@ -5,6 +5,7 @@ import {
   services,
   availabilityBlocks,
   bookings,
+  bookingParticipants,
   redemptions,
   type UserProfile,
   type InsertUserProfile,
@@ -16,6 +17,8 @@ import {
   type InsertAvailabilityBlock,
   type Booking,
   type InsertBooking,
+  type BookingParticipant,
+  type InsertBookingParticipant,
   type Redemption,
   type InsertRedemption,
 } from "@shared/schema";
@@ -52,6 +55,11 @@ export interface IStorage {
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
+
+  getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]>;
+  addBookingParticipant(participant: InsertBookingParticipant): Promise<BookingParticipant>;
+  removeBookingParticipant(bookingId: string, userId: string): Promise<void>;
+  getOpenSemiPrivateSessions(): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]>;
 
   getCoachRedemptions(coachId: string): Promise<Redemption[]>;
   getAllRedemptions(): Promise<Redemption[]>;
@@ -249,6 +257,60 @@ export class DatabaseStorage implements IStorage {
       return result.filter(b => b.id !== excludeId);
     }
     return result;
+  }
+
+  async getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]> {
+    const result = await db
+      .select()
+      .from(bookingParticipants)
+      .innerJoin(users, eq(bookingParticipants.userId, users.id))
+      .where(eq(bookingParticipants.bookingId, bookingId));
+    return result.map(r => ({ ...r.booking_participants, user: r.users }));
+  }
+
+  async addBookingParticipant(participant: InsertBookingParticipant): Promise<BookingParticipant> {
+    const [created] = await db.insert(bookingParticipants).values(participant).returning();
+    return created;
+  }
+
+  async removeBookingParticipant(bookingId: string, userId: string): Promise<void> {
+    await db.delete(bookingParticipants).where(
+      and(eq(bookingParticipants.bookingId, bookingId), eq(bookingParticipants.userId, userId))
+    );
+  }
+
+  async getOpenSemiPrivateSessions(): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]> {
+    const result = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+      .leftJoin(users, eq(coachProfiles.userId, users.id))
+      .where(
+        and(
+          sql`${bookings.maxParticipants} IS NOT NULL`,
+          or(eq(bookings.status, "CONFIRMED"), eq(bookings.status, "PENDING")),
+          gte(bookings.startAt, new Date())
+        )
+      )
+      .orderBy(bookings.startAt);
+
+    const enriched = await Promise.all(
+      result.map(async (r) => {
+        const participants = await db
+          .select()
+          .from(bookingParticipants)
+          .where(eq(bookingParticipants.bookingId, r.bookings.id));
+        return {
+          ...r.bookings,
+          service: r.services || undefined,
+          coach: r.coach_profiles ? { ...r.coach_profiles, user: r.users! } : undefined,
+          participantCount: participants.length,
+        };
+      })
+    );
+
+    return enriched.filter(b => b.participantCount < (b.maxParticipants || 0));
   }
 
   async getCoachRedemptions(coachId: string): Promise<Redemption[]> {

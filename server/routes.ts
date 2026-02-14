@@ -381,23 +381,32 @@ export async function registerRoutes(
       const coachId = await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
-      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes } = req.body;
+      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription } = req.body;
 
       if (!serviceId || !startAt) {
         return res.status(400).json({ message: "serviceId and startAt are required" });
       }
 
-      if (!clientId && (!clientFirstName || !clientLastName)) {
-        return res.status(400).json({ message: "Provide clientId or clientFirstName and clientLastName" });
-      }
-
       const service = await storage.getService(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
 
+      const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
+
+      if (!isSemiPrivate && !clientId && (!clientFirstName || !clientLastName)) {
+        return res.status(400).json({ message: "Provide clientId or clientFirstName and clientLastName" });
+      }
+
       let resolvedClientId = clientId;
-      if (!resolvedClientId) {
+      if (!resolvedClientId && !isSemiPrivate) {
         const user = await storage.findOrCreateUserByName(clientFirstName, clientLastName);
         resolvedClientId = user.id;
+      } else if (!resolvedClientId && isSemiPrivate) {
+        if (clientFirstName && clientLastName) {
+          const user = await storage.findOrCreateUserByName(clientFirstName, clientLastName);
+          resolvedClientId = user.id;
+        } else {
+          resolvedClientId = userId;
+        }
       }
 
       const start = new Date(startAt);
@@ -416,6 +425,8 @@ export async function registerRoutes(
         endAt: end,
         status: "CONFIRMED",
         notes: notes || "",
+        maxParticipants: isSemiPrivate ? (maxParticipants || 6) : null,
+        groupDescription: groupDescription || "",
       });
 
       res.json(booking);
@@ -537,6 +548,77 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error creating redemption:", error);
       res.status(500).json({ message: "Failed to create redemption" });
+    }
+  });
+
+  app.get("/api/sessions/open", async (_req, res) => {
+    try {
+      const sessions = await storage.getOpenSemiPrivateSessions();
+      const safe = sessions.map(s => {
+        const { coach, ...rest } = s;
+        if (coach) {
+          const { passwordHash, email, ...safeCoach } = coach;
+          return { ...rest, coach: safeCoach };
+        }
+        return rest;
+      });
+      res.json(safe);
+    } catch (error) {
+      console.error("Error fetching open sessions:", error);
+      res.status(500).json({ message: "Failed to fetch open sessions" });
+    }
+  });
+
+  app.get("/api/bookings/:id/participants", async (req, res) => {
+    try {
+      const participants = await storage.getBookingParticipants(req.params.id);
+      res.json(participants);
+    } catch (error) {
+      console.error("Error fetching participants:", error);
+      res.status(500).json({ message: "Failed to fetch participants" });
+    }
+  });
+
+  app.post("/api/bookings/:id/join", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const bookingId = req.params.id;
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ message: "Session not found" });
+      if (!booking.maxParticipants) return res.status(400).json({ message: "This is not a group session" });
+      if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
+        return res.status(400).json({ message: "This session is no longer available" });
+      }
+
+      const participants = await storage.getBookingParticipants(bookingId);
+      if (participants.length >= booking.maxParticipants) {
+        return res.status(409).json({ message: "This session is full" });
+      }
+
+      const alreadyJoined = participants.some(p => p.userId === userId);
+      if (alreadyJoined) {
+        return res.status(409).json({ message: "You have already joined this session" });
+      }
+
+      const participant = await storage.addBookingParticipant({ bookingId, userId });
+      res.json(participant);
+    } catch (error) {
+      console.error("Error joining session:", error);
+      res.status(500).json({ message: "Failed to join session" });
+    }
+  });
+
+  app.delete("/api/bookings/:id/leave", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const bookingId = req.params.id;
+
+      await storage.removeBookingParticipant(bookingId, userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error leaving session:", error);
+      res.status(500).json({ message: "Failed to leave session" });
     }
   });
 

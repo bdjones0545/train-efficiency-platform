@@ -18,6 +18,7 @@ import AvailabilityManagerPage from "@/pages/availability-manager";
 import RedemptionsPage from "@/pages/redemptions";
 import CoachProfilePage from "@/pages/coach-profile";
 import AdminDashboardPage from "@/pages/admin-dashboard";
+import OpenSessionsPage from "@/pages/open-sessions";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function AuthenticatedLayout() {
@@ -41,6 +42,7 @@ function AuthenticatedLayout() {
                 <Route path="/" component={CoachesPage} />
                 <Route path="/coaches" component={CoachesPage} />
                 <Route path="/coaches/:id" component={CoachSchedulePage} />
+                <Route path="/sessions" component={OpenSessionsPage} />
                 <Route path="/bookings" component={MyBookingsPage} />
                 <Route path="/coach" component={CoachDashboardPage} />
                 <Route path="/coach/profile" component={CoachProfilePage} />

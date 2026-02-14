@@ -7,10 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Calendar, Clock, X } from "lucide-react";
+import { Calendar, Clock, X, Users } from "lucide-react";
 import { format, parseISO, isPast } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
-import type { BookingWithDetails } from "@/lib/types";
+import type { BookingWithDetails, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
 
 const statusColors: Record<string, string> = {
@@ -69,6 +69,12 @@ export default function MyBookingsPage() {
             <Badge className={`text-xs ${statusColors[booking.status] || ""}`}>
               {booking.status}
             </Badge>
+            {booking.maxParticipants && (
+              <Badge variant="secondary" className="text-xs">
+                <Users className="h-3 w-3 mr-1" />
+                Group
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Calendar className="h-3.5 w-3.5" />
@@ -83,6 +89,9 @@ export default function MyBookingsPage() {
             <p className="text-sm text-muted-foreground">
               Coach: {booking.coach.user.firstName} {booking.coach.user.lastName}
             </p>
+          )}
+          {booking.maxParticipants && booking.groupDescription && (
+            <p className="text-sm text-muted-foreground">{booking.groupDescription}</p>
           )}
         </div>
         {showCancel && booking.status === "CONFIRMED" && (

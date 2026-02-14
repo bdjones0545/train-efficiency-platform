@@ -57,8 +57,19 @@ export const bookings = pgTable("bookings", {
   endAt: timestamp("end_at").notNull(),
   status: bookingStatusEnum("status").notNull().default("CONFIRMED"),
   notes: text("notes").default(""),
+  maxParticipants: integer("max_participants"),
+  groupDescription: text("group_description").default(""),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const bookingParticipants = pgTable("booking_participants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull().references(() => bookings.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  joinedAt: timestamp("joined_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("booking_participants_booking_user_unique").on(table.bookingId, table.userId),
+]);
 
 export const redemptions = pgTable("redemptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -83,10 +94,16 @@ export const availabilityBlocksRelations = relations(availabilityBlocks, ({ one 
   coach: one(coachProfiles, { fields: [availabilityBlocks.coachId], references: [coachProfiles.id] }),
 }));
 
-export const bookingsRelations = relations(bookings, ({ one }) => ({
+export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   client: one(users, { fields: [bookings.clientId], references: [users.id] }),
   coach: one(coachProfiles, { fields: [bookings.coachId], references: [coachProfiles.id] }),
   service: one(services, { fields: [bookings.serviceId], references: [services.id] }),
+  participants: many(bookingParticipants),
+}));
+
+export const bookingParticipantsRelations = relations(bookingParticipants, ({ one }) => ({
+  booking: one(bookings, { fields: [bookingParticipants.bookingId], references: [bookings.id] }),
+  user: one(users, { fields: [bookingParticipants.userId], references: [users.id] }),
 }));
 
 export const redemptionsRelations = relations(redemptions, ({ one }) => ({
@@ -99,6 +116,7 @@ export const insertCoachProfileSchema = createInsertSchema(coachProfiles).omit({
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true });
 export const insertAvailabilityBlockSchema = createInsertSchema(availabilityBlocks).omit({ id: true });
 export const insertBookingSchema = createInsertSchema(bookings).omit({ id: true, createdAt: true });
+export const insertBookingParticipantSchema = createInsertSchema(bookingParticipants).omit({ id: true, joinedAt: true });
 export const insertRedemptionSchema = createInsertSchema(redemptions).omit({ id: true, redeemedAt: true });
 
 export type UserProfile = typeof userProfiles.$inferSelect;
@@ -111,5 +129,7 @@ export type AvailabilityBlock = typeof availabilityBlocks.$inferSelect;
 export type InsertAvailabilityBlock = z.infer<typeof insertAvailabilityBlockSchema>;
 export type Booking = typeof bookings.$inferSelect;
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
+export type BookingParticipant = typeof bookingParticipants.$inferSelect;
+export type InsertBookingParticipant = z.infer<typeof insertBookingParticipantSchema>;
 export type Redemption = typeof redemptions.$inferSelect;
 export type InsertRedemption = z.infer<typeof insertRedemptionSchema>;

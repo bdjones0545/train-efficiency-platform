@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import {
   Users,
+  UsersRound,
   Calendar,
   CalendarClock,
   LayoutDashboard,
@@ -40,6 +41,7 @@ export function AppSidebar() {
 
   const clientItems = [
     { title: "Coaches", url: "/coaches", icon: Users },
+    { title: "Group Sessions", url: "/sessions", icon: UsersRound },
     { title: "My Bookings", url: "/bookings", icon: Calendar },
   ];
 
