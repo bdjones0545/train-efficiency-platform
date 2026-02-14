@@ -1,38 +1,265 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import {
+  users,
+  userProfiles,
+  coachProfiles,
+  services,
+  availabilityBlocks,
+  bookings,
+  redemptions,
+  type UserProfile,
+  type InsertUserProfile,
+  type CoachProfile,
+  type InsertCoachProfile,
+  type Service,
+  type InsertService,
+  type AvailabilityBlock,
+  type InsertAvailabilityBlock,
+  type Booking,
+  type InsertBooking,
+  type Redemption,
+  type InsertRedemption,
+} from "@shared/schema";
+import type { User } from "@shared/models/auth";
+import { db } from "./db";
+import { eq, and, gte, lte, or, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getUserProfile(userId: string): Promise<UserProfile | undefined>;
+  upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+  getAllUsersWithProfiles(): Promise<(User & { profile?: UserProfile })[]>;
+
+  getCoachProfiles(): Promise<(CoachProfile & { user: User })[]>;
+  getCoachProfile(id: string): Promise<(CoachProfile & { user: User }) | undefined>;
+  getCoachProfileByUserId(userId: string): Promise<CoachProfile | undefined>;
+  createCoachProfile(profile: InsertCoachProfile): Promise<CoachProfile>;
+  updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
+
+  getServices(): Promise<Service[]>;
+  getService(id: string): Promise<Service | undefined>;
+  createService(service: InsertService): Promise<Service>;
+  updateService(id: string, data: Partial<Service>): Promise<Service | undefined>;
+
+  getAvailabilityBlocks(coachId: string): Promise<AvailabilityBlock[]>;
+  createAvailabilityBlock(block: InsertAvailabilityBlock): Promise<AvailabilityBlock>;
+  deleteAvailabilityBlock(id: string): Promise<void>;
+
+  getBookings(clientId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
+  getCoachBookings(coachId: string): Promise<(Booking & { service?: Service; client?: User })[]>;
+  getCoachCompletedBookings(coachId: string): Promise<(Booking & { service?: Service; client?: User })[]>;
+  getAllBookings(): Promise<(Booking & { service?: Service; client?: User })[]>;
+  getBooking(id: string): Promise<Booking | undefined>;
+  createBooking(booking: InsertBooking): Promise<Booking>;
+  updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
+  getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
+
+  getCoachRedemptions(coachId: string): Promise<Redemption[]>;
+  getAllRedemptions(): Promise<Redemption[]>;
+  createRedemption(redemption: InsertRedemption): Promise<Redemption>;
+  getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getUserProfile(userId: string): Promise<UserProfile | undefined> {
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
+    return profile || undefined;
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
+    const [existing] = await db.select().from(userProfiles).where(eq(userProfiles.userId, profile.userId));
+    if (existing) {
+      const [updated] = await db.update(userProfiles).set({ role: profile.role }).where(eq(userProfiles.userId, profile.userId)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(userProfiles).values(profile).returning();
+    return created;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async getAllUsersWithProfiles(): Promise<(User & { profile?: UserProfile })[]> {
+    const allUsers = await db.select().from(users);
+    const allProfiles = await db.select().from(userProfiles);
+    const profileMap = new Map(allProfiles.map(p => [p.userId, p]));
+    return allUsers.map(u => ({ ...u, profile: profileMap.get(u.id) }));
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async getCoachProfiles(): Promise<(CoachProfile & { user: User })[]> {
+    const result = await db
+      .select()
+      .from(coachProfiles)
+      .innerJoin(users, eq(coachProfiles.userId, users.id))
+      .where(eq(coachProfiles.isActive, true));
+    return result.map(r => ({ ...r.coach_profiles, user: r.users }));
+  }
+
+  async getCoachProfile(id: string): Promise<(CoachProfile & { user: User }) | undefined> {
+    const [result] = await db
+      .select()
+      .from(coachProfiles)
+      .innerJoin(users, eq(coachProfiles.userId, users.id))
+      .where(eq(coachProfiles.id, id));
+    if (!result) return undefined;
+    return { ...result.coach_profiles, user: result.users };
+  }
+
+  async getCoachProfileByUserId(userId: string): Promise<CoachProfile | undefined> {
+    const [result] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, userId));
+    return result || undefined;
+  }
+
+  async createCoachProfile(profile: InsertCoachProfile): Promise<CoachProfile> {
+    const [created] = await db.insert(coachProfiles).values(profile).returning();
+    return created;
+  }
+
+  async updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined> {
+    const [updated] = await db.update(coachProfiles).set(data).where(eq(coachProfiles.id, id)).returning();
+    return updated;
+  }
+
+  async getServices(): Promise<Service[]> {
+    return db.select().from(services);
+  }
+
+  async getService(id: string): Promise<Service | undefined> {
+    const [result] = await db.select().from(services).where(eq(services.id, id));
+    return result || undefined;
+  }
+
+  async createService(service: InsertService): Promise<Service> {
+    const [created] = await db.insert(services).values(service).returning();
+    return created;
+  }
+
+  async updateService(id: string, data: Partial<Service>): Promise<Service | undefined> {
+    const [updated] = await db.update(services).set(data).where(eq(services.id, id)).returning();
+    return updated;
+  }
+
+  async getAvailabilityBlocks(coachId: string): Promise<AvailabilityBlock[]> {
+    return db.select().from(availabilityBlocks).where(eq(availabilityBlocks.coachId, coachId));
+  }
+
+  async createAvailabilityBlock(block: InsertAvailabilityBlock): Promise<AvailabilityBlock> {
+    const [created] = await db.insert(availabilityBlocks).values(block).returning();
+    return created;
+  }
+
+  async deleteAvailabilityBlock(id: string): Promise<void> {
+    await db.delete(availabilityBlocks).where(eq(availabilityBlocks.id, id));
+  }
+
+  async getBookings(clientId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]> {
+    const result = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+      .leftJoin(users, eq(coachProfiles.userId, users.id))
+      .where(eq(bookings.clientId, clientId))
+      .orderBy(desc(bookings.startAt));
+    return result.map(r => ({
+      ...r.bookings,
+      service: r.services || undefined,
+      coach: r.coach_profiles ? { ...r.coach_profiles, user: r.users! } : undefined,
+    }));
+  }
+
+  async getCoachBookings(coachId: string): Promise<(Booking & { service?: Service; client?: User })[]> {
+    const result = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(users, eq(bookings.clientId, users.id))
+      .where(eq(bookings.coachId, coachId))
+      .orderBy(desc(bookings.startAt));
+    return result.map(r => ({
+      ...r.bookings,
+      service: r.services || undefined,
+      client: r.users || undefined,
+    }));
+  }
+
+  async getCoachCompletedBookings(coachId: string): Promise<(Booking & { service?: Service; client?: User })[]> {
+    const result = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(users, eq(bookings.clientId, users.id))
+      .where(and(eq(bookings.coachId, coachId), eq(bookings.status, "COMPLETED")))
+      .orderBy(desc(bookings.startAt));
+    return result.map(r => ({
+      ...r.bookings,
+      service: r.services || undefined,
+      client: r.users || undefined,
+    }));
+  }
+
+  async getAllBookings(): Promise<(Booking & { service?: Service; client?: User })[]> {
+    const result = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(users, eq(bookings.clientId, users.id))
+      .orderBy(desc(bookings.startAt));
+    return result.map(r => ({
+      ...r.bookings,
+      service: r.services || undefined,
+      client: r.users || undefined,
+    }));
+  }
+
+  async getBooking(id: string): Promise<Booking | undefined> {
+    const [result] = await db.select().from(bookings).where(eq(bookings.id, id));
+    return result || undefined;
+  }
+
+  async createBooking(booking: InsertBooking): Promise<Booking> {
+    const [created] = await db.insert(bookings).values(booking).returning();
+    return created;
+  }
+
+  async updateBookingStatus(id: string, status: string): Promise<Booking | undefined> {
+    const [updated] = await db
+      .update(bookings)
+      .set({ status: status as any })
+      .where(eq(bookings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]> {
+    const conditions = [
+      eq(bookings.coachId, coachId),
+      or(
+        eq(bookings.status, "CONFIRMED"),
+        eq(bookings.status, "PENDING")
+      ),
+      lte(bookings.startAt, endAt),
+      gte(bookings.endAt, startAt),
+    ];
+    const result = await db.select().from(bookings).where(and(...conditions));
+    if (excludeId) {
+      return result.filter(b => b.id !== excludeId);
+    }
+    return result;
+  }
+
+  async getCoachRedemptions(coachId: string): Promise<Redemption[]> {
+    return db.select().from(redemptions).where(eq(redemptions.coachId, coachId)).orderBy(desc(redemptions.redeemedAt));
+  }
+
+  async getAllRedemptions(): Promise<Redemption[]> {
+    return db.select().from(redemptions).orderBy(desc(redemptions.redeemedAt));
+  }
+
+  async createRedemption(redemption: InsertRedemption): Promise<Redemption> {
+    const [created] = await db.insert(redemptions).values(redemption).returning();
+    return created;
+  }
+
+  async getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined> {
+    const [result] = await db.select().from(redemptions).where(eq(redemptions.bookingId, bookingId));
+    return result || undefined;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
