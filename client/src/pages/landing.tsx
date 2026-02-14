@@ -11,7 +11,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <img src={logoImg} alt="EST Logo" className="h-8 rounded-md" data-testid="img-nav-logo" />
             <span className="font-semibold text-lg tracking-tight" data-testid="text-brand-name">
-              Efficiency ST
+              Efficiency Strength Training
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -39,7 +39,7 @@ export default function LandingPage() {
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed max-w-lg">
               Book sessions with expert strength & conditioning coaches, manage your training schedule,
-              and take your athletic performance to the next level with Efficiency ST.
+              and take your athletic performance to the next level with Efficiency Strength Training.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <a href="/api/login">

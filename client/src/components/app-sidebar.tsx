@@ -58,7 +58,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <div className="flex items-center gap-2 px-2 py-3">
             <img src={logoImg} alt="EST" className="h-8 rounded-md" data-testid="img-sidebar-logo" />
-            <span className="font-semibold text-sm tracking-tight">Efficiency ST</span>
+            <span className="font-semibold text-sm tracking-tight">Efficiency Strength Training</span>
           </div>
         </SidebarGroup>
 
