@@ -15,16 +15,15 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import {
-  Dumbbell,
   Users,
   Calendar,
   CalendarClock,
   LayoutDashboard,
-  Clock,
   DollarSign,
   Shield,
   LogOut,
 } from "lucide-react";
+import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
 
 export function AppSidebar() {
@@ -58,9 +57,7 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <div className="flex items-center gap-2 px-2 py-3">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <Dumbbell className="h-4 w-4 text-primary-foreground" />
-            </div>
+            <img src={logoImg} alt="EST" className="h-8 rounded-md" data-testid="img-sidebar-logo" />
             <span className="font-semibold text-sm tracking-tight">Efficiency ST</span>
           </div>
         </SidebarGroup>

@@ -15,7 +15,7 @@ const statusColors: Record<string, string> = {
   PENDING: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
   CONFIRMED: "bg-green-500/15 text-green-700 dark:text-green-400",
   CANCELLED: "bg-red-500/15 text-red-700 dark:text-red-400",
-  COMPLETED: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  COMPLETED: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   NO_SHOW: "bg-gray-500/15 text-gray-700 dark:text-gray-400",
 };
 
