@@ -1,0 +1,99 @@
+You are a senior full-stack engineer building a production-ready web app called “Efficiency Strength Training Scheduler” for Efficiency Strength Training LLC.
+
+Goal
+Create a scheduling platform where:
+1) Clients can view each coach’s availability and book sessions.
+2) Coaches can manage availability and approve/cancel bookings.
+3) Coaches can “redeem” completed sessions and trigger billing via a payment provider (Stripe first).
+4) Admin can manage coaches, services, prices, and reporting.
+
+Tech Requirements (use these defaults unless a better choice is necessary)
+- Frontend: Next.js (App Router) + TypeScript + Tailwind
+- Backend: Next.js server actions / route handlers OR Express if needed
+- Database: PostgreSQL (use Prisma ORM)
+- Auth: NextAuth (email magic link + Google optional)
+- Payments: Stripe (Checkout + webhooks + Connect optional later)
+- Calendar logic: store availability blocks + booked events; support timezone handling
+- Deploy-ready: include .env.example, migrations, seed script, README
+
+Core Roles & Permissions
+- Client: browse coaches, book sessions, manage their bookings
+- Coach: set availability, view schedule, manage sessions, redeem sessions
+- Admin: full access to manage coaches/services/pricing/users/reporting
+
+Data Model (minimum)
+- User: id, name, email, role (CLIENT/COACH/ADMIN)
+- CoachProfile: userId, bio, specialties, photoUrl, timezone, isActive
+- Service: id, name (e.g. “1:1 Training 60”), durationMin, priceCents, active
+- AvailabilityBlock: id, coachId, dayOfWeek, startTime, endTime, effectiveFrom, effectiveTo, timezone
+- Booking: id, clientId, coachId, serviceId, startAt, endAt, status (PENDING/CONFIRMED/CANCELLED/COMPLETED/NO_SHOW), notes
+- PaymentIntent/Order: id, bookingId, stripeCheckoutSessionId, amountCents, status (UNPAID/PAID/REFUNDED)
+- Redemption: id, bookingId, coachId, redeemedAt, payoutStatus (PENDING/SENT/FAILED), stripeTransferId (nullable)
+
+Booking Rules
+- Prevent double-booking by enforcing unique overlap constraints per coach.
+- Only allow bookings that fit within availability blocks.
+- Default cancellation window: 12 hours (configurable).
+- Client pays at booking (Stripe Checkout). Booking becomes CONFIRMED only after webhook confirms payment.
+
+Coach Redeem Flow
+- Coach marks a session COMPLETED and clicks “Redeem”.
+- Redemption creates a record.
+- MVP payout: just record redemption and mark payoutStatus = PENDING.
+- If implementing Stripe payouts now: use Stripe Connect (Express accounts) and create Transfers to coach’s connected account. If too complex for MVP, leave as “admin payout” and export a report.
+
+Pages / UI
+Public
+- Landing: explains how to book
+- Coaches list: cards with coach bio + specialties + “View Schedule”
+Client
+- Coach schedule page: calendar view (week) + available timeslots
+- Booking checkout: service selection + confirm time + pay
+- My bookings: upcoming/past, cancel/reschedule (if within policy)
+Coach
+- Coach dashboard: today’s sessions, upcoming sessions
+- Availability manager: set weekly recurring blocks + blackout dates
+- Redeem sessions page: list of completed sessions with redeem status
+Admin
+- Admin dashboard: manage coaches, services, pricing, view bookings, export redemptions CSV
+
+API / Server Actions
+Implement:
+- GET /api/coaches (public)
+- GET /api/coaches/:id/availability (public)
+- POST /api/bookings (client)
+- POST /api/stripe/checkout (client)
+- POST /api/stripe/webhook (server) -> confirm payment & set booking CONFIRMED
+- PATCH /api/bookings/:id/status (coach/admin)
+- POST /api/redemptions (coach)
+- GET /api/admin/reports/redemptions (admin)
+
+Time & Slots
+- Use a slot generation utility:
+  - Inputs: coach availability blocks, date range, service duration, buffer (optional)
+  - Output: available slots excluding existing bookings
+- Timezones: store startAt/endAt in UTC; display in coach/client timezone.
+
+Quality Requirements
+- Validation: Zod schemas on inputs
+- Error handling: clear UI states + toast notifications
+- Security: server-side role checks for every mutation
+- Testing: at least basic unit tests for slot generation + overlap prevention
+- Seed: create 2 coaches, 2 services, and an admin user in seed script
+
+Deliverables
+1) Working app with auth, database, booking, payment confirmation via webhook, coach dashboard, redemption records.
+2) Clear README with:
+   - Setup steps
+   - Stripe webhook config instructions
+   - Env vars
+   - How to run migrations & seed
+3) A short “Next Steps” section for future improvements:
+   - Google Calendar sync
+   - SMS/email reminders (Twilio/Resend)
+   - Packages/memberships (prepaid session bundles)
+   - Full Stripe Connect payouts
+
+Before coding
+- Show a brief architecture outline + DB schema plan.
+- Then implement incrementally: auth -> models/migrations -> coach list/schedule -> booking -> Stripe -> coach tools -> admin reporting.
