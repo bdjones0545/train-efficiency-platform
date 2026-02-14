@@ -31,15 +31,15 @@ export default function LandingPage() {
           <div className="space-y-6">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-primary/10 text-primary text-sm font-medium">
               <Zap className="h-3.5 w-3.5" />
-              Train Smarter, Not Harder
+              Elevate Your Game
             </div>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight">
-              Your Personal Training,{" "}
+              Sports Performance,{" "}
               <span className="text-primary">Simplified</span>
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed max-w-lg">
-              Book sessions with expert coaches, manage your training schedule, and achieve your
-              fitness goals with Efficiency Strength Training's streamlined scheduling platform.
+              Book sessions with expert strength & conditioning coaches, manage your training schedule,
+              and take your athletic performance to the next level with Efficiency ST.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <a href="/api/login">
@@ -85,7 +85,7 @@ export default function LandingPage() {
           <div className="text-center mb-12 space-y-3">
             <h2 className="text-3xl font-bold">Everything You Need</h2>
             <p className="text-muted-foreground max-w-md mx-auto">
-              A complete platform for strength training scheduling, from booking to billing.
+              A complete platform for sports performance and strength & conditioning scheduling.
             </p>
           </div>
 
@@ -99,12 +99,12 @@ export default function LandingPage() {
               {
                 icon: Users,
                 title: "Expert Coaches",
-                description: "Choose from certified coaches specializing in strength, mobility, and performance.",
+                description: "Work with experienced strength & conditioning coaches focused on athletic development.",
               },
               {
                 icon: Zap,
-                title: "Flexible Services",
-                description: "From 1-on-1 sessions to group training, find the format that fits your goals.",
+                title: "Tailored Programs",
+                description: "From speed and agility to max-effort lifting, find the session format that fits your sport.",
               },
               {
                 icon: Clock,
@@ -119,7 +119,7 @@ export default function LandingPage() {
               {
                 icon: TrendingUp,
                 title: "Track Progress",
-                description: "View your session history and stay on top of your training journey.",
+                description: "View your session history and stay on top of your performance journey.",
               },
             ].map(({ icon: Icon, title, description }) => (
               <Card key={title} className="p-6 space-y-3 hover-elevate">

@@ -205,7 +205,7 @@ export default function AdminDashboardPage() {
                     <Textarea
                       value={newServiceDesc}
                       onChange={(e) => setNewServiceDesc(e.target.value)}
-                      placeholder="One-on-one strength training session"
+                      placeholder="One-on-one strength & conditioning session"
                       data-testid="input-service-desc"
                     />
                   </div>

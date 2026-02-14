@@ -49,38 +49,38 @@ export async function seedDatabase() {
 
     const [cp1] = await db.insert(coachProfiles).values({
       userId: "seed-coach-1",
-      bio: "NSCA-certified strength coach with 8 years of experience. Specializing in powerlifting, Olympic lifting, and athletic performance. I believe in building a strong foundation through progressive overload and proper form.",
-      specialties: ["Powerlifting", "Olympic Lifting", "Athletic Performance"],
+      bio: "NSCA-certified strength & conditioning coach with 8 years of experience. Specializing in sports performance, Olympic lifting, and power development. I build programs that translate to on-field results through progressive overload and sport-specific training.",
+      specialties: ["Sports Performance", "Olympic Lifting", "Power Development", "Speed & Agility"],
       timezone: "America/New_York",
       isActive: true,
     }).onConflictDoNothing().returning();
 
     const [cp2] = await db.insert(coachProfiles).values({
       userId: "seed-coach-2",
-      bio: "Former collegiate athlete turned strength coach. 6 years experience in functional training and mobility work. My approach combines traditional strength training with mobility and injury prevention strategies.",
-      specialties: ["Functional Training", "Mobility", "Injury Prevention", "General Fitness"],
+      bio: "Former collegiate athlete turned S&C coach. 6 years experience developing athletes across multiple sports. My approach combines explosive strength development with mobility and injury prevention to keep athletes performing at their peak.",
+      specialties: ["Athletic Development", "Mobility", "Injury Prevention", "Conditioning"],
       timezone: "America/Chicago",
       isActive: true,
     }).onConflictDoNothing().returning();
 
     await db.insert(services).values([
       {
-        name: "1:1 Training (60 min)",
-        description: "One-on-one personalized strength training session with your coach. Includes warm-up, main lifts, accessory work, and cool-down.",
+        name: "1:1 S&C Session (60 min)",
+        description: "One-on-one strength & conditioning session with your coach. Includes warm-up, main lifts, sport-specific accessory work, and cool-down.",
         durationMin: 60,
         priceCents: 7500,
         active: true,
       },
       {
-        name: "1:1 Training (30 min)",
-        description: "A focused half-hour session ideal for technique work or supplementary training.",
+        name: "1:1 S&C Session (30 min)",
+        description: "A focused half-hour session ideal for technique work, speed drills, or supplementary conditioning.",
         durationMin: 30,
         priceCents: 4500,
         active: true,
       },
       {
-        name: "Assessment Session (90 min)",
-        description: "Comprehensive initial assessment including movement screening, goal setting, and program design consultation.",
+        name: "Athlete Assessment (90 min)",
+        description: "Comprehensive initial assessment including movement screening, sport-specific evaluation, and program design consultation.",
         durationMin: 90,
         priceCents: 12000,
         active: true,

@@ -1,7 +1,7 @@
 # Efficiency Strength Training Scheduler
 
 ## Overview
-A scheduling platform for Efficiency Strength Training LLC where clients can browse coaches and book training sessions, coaches can manage availability and redeem completed sessions, and admins can manage the entire system.
+A scheduling platform for Efficiency Strength Training LLC focused on sports performance and strength & conditioning. Clients can browse S&C coaches and book training sessions, coaches can manage availability and redeem completed sessions, and admins can manage the entire system.
 
 ## Tech Stack
 - Frontend: React + TypeScript + Tailwind CSS + Shadcn UI (Vite)
@@ -55,7 +55,14 @@ A scheduling platform for Efficiency Strength Training LLC where clients can bro
 - Run `npm run db:push` to push schema changes
 - Seed data creates 2 coaches, 3 services, and availability blocks
 
+## Theme
+- Dark mode default, vibrant green primary matching EST logo
+- Logo integrated in landing page (nav, hero, footer) and sidebar
+- Font: Inter
+
 ## Recent Changes
+- Updated all copy and branding to focus on sports performance & strength & conditioning
+- Theme redesign matching EST logo (green/black/white palette, dark mode default)
 - Initial MVP build with full booking system
 - Replit Auth integration
-- Seed data for coaches and services
+- Seed data for S&C coaches and services
