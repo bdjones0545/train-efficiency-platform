@@ -1,9 +1,19 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, CalendarClock, DollarSign, LogIn } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 export default function LandingPage() {
+  const [coachModalOpen, setCoachModalOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-background">
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
@@ -18,9 +28,14 @@ export default function LandingPage() {
             <a href="#features">
               <Button variant="ghost" size="sm" data-testid="link-features">Features</Button>
             </a>
-            <a href="/api/login">
-              <Button variant="outline" size="sm" data-testid="button-coach-login">Coach Login</Button>
-            </a>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCoachModalOpen(true)}
+              data-testid="button-coach-login"
+            >
+              Coach Login
+            </Button>
             <a href="/api/login">
               <Button data-testid="button-login">Get Started</Button>
             </a>
@@ -146,6 +161,46 @@ export default function LandingPage() {
           <p>&copy; {new Date().getFullYear()} All rights reserved.</p>
         </div>
       </footer>
+
+      <Dialog open={coachModalOpen} onOpenChange={setCoachModalOpen}>
+        <DialogContent className="sm:max-w-md" data-testid="modal-coach-login">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="h-5 w-5 text-primary" />
+              Coach Portal
+            </DialogTitle>
+            <DialogDescription>
+              Sign in to access your coaching dashboard and manage your sessions.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-3">
+              {[
+                { icon: UserCog, label: "Edit your profile and specialties" },
+                { icon: CalendarClock, label: "Manage your weekly availability" },
+                { icon: Calendar, label: "View and manage client bookings" },
+                { icon: DollarSign, label: "Redeem completed sessions" },
+              ].map(({ icon: Icon, label }) => (
+                <div key={label} className="flex items-center gap-3 text-sm">
+                  <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                    <Icon className="h-4 w-4 text-primary" />
+                  </div>
+                  <span data-testid={`text-coach-feature-${label.slice(0, 10).replace(/\s/g, '-').toLowerCase()}`}>{label}</span>
+                </div>
+              ))}
+            </div>
+            <a href="/api/login?returnTo=/coach" className="block">
+              <Button className="w-full" size="lg" data-testid="button-coach-login-submit">
+                <LogIn className="h-4 w-4 mr-2" />
+                Sign In as Coach
+              </Button>
+            </a>
+            <p className="text-xs text-center text-muted-foreground">
+              Contact an administrator if you need coach access.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
