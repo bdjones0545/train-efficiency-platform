@@ -9,7 +9,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Calendar, Clock, X } from "lucide-react";
 import { format, parseISO, isPast } from "date-fns";
+import { AddSessionDialog } from "@/components/add-session-dialog";
 import type { BookingWithDetails } from "@/lib/types";
+import type { UserProfile } from "@shared/schema";
 
 const statusColors: Record<string, string> = {
   PENDING: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
@@ -24,6 +26,12 @@ export default function MyBookingsPage() {
   const { data: bookings, isLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/bookings"],
   });
+
+  const { data: profile } = useQuery<UserProfile>({
+    queryKey: ["/api/profile"],
+  });
+
+  const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
 
   const cancelMutation = useMutation({
     mutationFn: async (bookingId: string) => {
@@ -104,9 +112,12 @@ export default function MyBookingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-serif font-bold" data-testid="text-bookings-title">My Bookings</h1>
-        <p className="text-muted-foreground mt-1">Manage your training sessions</p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-serif font-bold" data-testid="text-bookings-title">My Bookings</h1>
+          <p className="text-muted-foreground mt-1">Manage your training sessions</p>
+        </div>
+        {isCoach && <AddSessionDialog />}
       </div>
 
       <Tabs defaultValue="upcoming">
