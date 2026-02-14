@@ -363,6 +363,68 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/clients/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const q = req.query.q as string;
+      if (!q || q.trim().length < 1) return res.json([]);
+      const results = await storage.searchUsers(q);
+      res.json(results.map(({ id, firstName, lastName, email }) => ({ id, firstName, lastName, email })));
+    } catch (error) {
+      console.error("Error searching clients:", error);
+      res.status(500).json({ message: "Failed to search clients" });
+    }
+  });
+
+  app.post("/api/coach/bookings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const coachId = await getCoachId(userId);
+      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+
+      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes } = req.body;
+
+      if (!serviceId || !startAt) {
+        return res.status(400).json({ message: "serviceId and startAt are required" });
+      }
+
+      if (!clientId && (!clientFirstName || !clientLastName)) {
+        return res.status(400).json({ message: "Provide clientId or clientFirstName and clientLastName" });
+      }
+
+      const service = await storage.getService(serviceId);
+      if (!service) return res.status(404).json({ message: "Service not found" });
+
+      let resolvedClientId = clientId;
+      if (!resolvedClientId) {
+        const user = await storage.findOrCreateUserByName(clientFirstName, clientLastName);
+        resolvedClientId = user.id;
+      }
+
+      const start = new Date(startAt);
+      const end = addMinutes(start, service.durationMin);
+
+      const overlapping = await storage.getOverlappingBookings(coachId, start, end);
+      if (overlapping.length > 0) {
+        return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+      }
+
+      const booking = await storage.createBooking({
+        clientId: resolvedClientId,
+        coachId,
+        serviceId,
+        startAt: start,
+        endAt: end,
+        status: "CONFIRMED",
+        notes: notes || "",
+      });
+
+      res.json(booking);
+    } catch (error) {
+      console.error("Error creating coach booking:", error);
+      res.status(500).json({ message: "Failed to create session" });
+    }
+  });
+
   app.get("/api/coach/bookings/completed", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

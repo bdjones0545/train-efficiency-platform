@@ -21,7 +21,7 @@ import {
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
-import { eq, and, gte, lte, or, desc, sql } from "drizzle-orm";
+import { eq, and, gte, lte, or, desc, sql, ilike } from "drizzle-orm";
 
 export interface IStorage {
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
@@ -57,6 +57,8 @@ export interface IStorage {
   getAllRedemptions(): Promise<Redemption[]>;
   createRedemption(redemption: InsertRedemption): Promise<Redemption>;
   getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined>;
+  findOrCreateUserByName(firstName: string, lastName: string): Promise<User>;
+  searchUsers(query: string): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -265,6 +267,31 @@ export class DatabaseStorage implements IStorage {
   async getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined> {
     const [result] = await db.select().from(redemptions).where(eq(redemptions.bookingId, bookingId));
     return result || undefined;
+  }
+
+  async findOrCreateUserByName(firstName: string, lastName: string): Promise<User> {
+    const existing = await db
+      .select()
+      .from(users)
+      .where(and(ilike(users.firstName, firstName.trim()), ilike(users.lastName, lastName.trim())));
+    if (existing.length > 0) return existing[0];
+
+    const id = `walk-in-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [created] = await db
+      .insert(users)
+      .values({ id, firstName: firstName.trim(), lastName: lastName.trim(), email: null, profileImageUrl: null })
+      .returning();
+    await db.insert(userProfiles).values({ userId: id, role: "CLIENT" as any });
+    return created;
+  }
+
+  async searchUsers(query: string): Promise<User[]> {
+    const q = `%${query.trim()}%`;
+    return db
+      .select()
+      .from(users)
+      .where(or(ilike(users.firstName, q), ilike(users.lastName, q), ilike(users.email, q)))
+      .limit(20);
   }
 }
 

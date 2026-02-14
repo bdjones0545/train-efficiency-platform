@@ -40,6 +40,8 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - GET /api/bookings - Client's bookings (auth required)
 - PATCH /api/bookings/:id/status - Update booking status (auth required)
 - GET /api/coach/bookings - Coach's bookings (COACH/ADMIN)
+- POST /api/coach/bookings - Coach creates booking (COACH/ADMIN)
+- GET /api/coach/clients/search - Search existing clients (COACH/ADMIN)
 - GET /api/coach/bookings/completed - Completed bookings (COACH/ADMIN)
 - GET/POST/DELETE /api/coach/availability - Manage availability blocks (COACH/ADMIN)
 - GET /api/coach/redemptions - Coach's redemptions (COACH/ADMIN)
@@ -69,6 +71,10 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Coach-initiated session scheduling: coaches can add sessions from dashboard with client name, service, date/time
+  - POST /api/coach/bookings - Coach creates booking (supports clientId or clientFirstName/clientLastName)
+  - GET /api/coach/clients/search - Search existing clients by name/email
+  - Walk-in clients auto-created in users table when not found
 - Added coach email/password login system with sign-in modal on landing page
 - Added Bryan Jones and Hunter Thaxton as coaches with credentials
 - Coach profile editing (bio, specialties, photo, timezone)
