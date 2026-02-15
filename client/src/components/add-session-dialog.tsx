@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,13 +17,19 @@ import type { Service } from "@shared/schema";
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
 
-export function AddSessionDialog() {
+type AddSessionDialogProps = {
+  initialDate?: Date;
+  initialTime?: string;
+  triggerButton?: React.ReactNode;
+};
+
+export function AddSessionDialog({ initialDate, initialTime, triggerButton }: AddSessionDialogProps = {}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(initialDate);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [serviceId, setServiceId] = useState("");
-  const [startTime, setStartTime] = useState("09:00");
+  const [startTime, setStartTime] = useState(initialTime || "09:00");
   const [clientFirstName, setClientFirstName] = useState("");
   const [clientLastName, setClientLastName] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -31,6 +37,14 @@ export function AddSessionDialog() {
   const [notes, setNotes] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+
+  useEffect(() => {
+    if (initialDate) setSelectedDate(initialDate);
+  }, [initialDate]);
+
+  useEffect(() => {
+    if (initialTime) setStartTime(initialTime);
+  }, [initialTime]);
 
   const { data: services } = useQuery<Service[]>({ queryKey: ["/api/services"] });
 
@@ -71,9 +85,9 @@ export function AddSessionDialog() {
   const isSemiPrivate = selectedServiceObj?.name.toLowerCase().includes("semi-private") || false;
 
   const resetForm = () => {
-    setSelectedDate(undefined);
+    setSelectedDate(initialDate);
     setServiceId("");
-    setStartTime("09:00");
+    setStartTime(initialTime || "09:00");
     setClientFirstName("");
     setClientLastName("");
     setSelectedClientId(null);
@@ -139,10 +153,12 @@ export function AddSessionDialog() {
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
       <DialogTrigger asChild>
-        <Button data-testid="button-add-session">
-          <Plus className="h-4 w-4 mr-1" />
-          Add Session
-        </Button>
+        {triggerButton || (
+          <Button data-testid="button-add-session">
+            <Plus className="h-4 w-4 mr-1" />
+            Add Session
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>

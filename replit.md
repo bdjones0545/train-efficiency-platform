@@ -77,6 +77,11 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Daily calendar view on coach dashboard: vertical timeline (5 AM–10 PM), availability shading, booking blocks with inline status actions (complete/no-show/cancel) and redemption buttons
+  - Date navigation with prev/next day buttons and date picker
+  - Click empty time slots to prefill AddSessionDialog with selected date/time
+  - Day stats cards (total, confirmed, pending, completed)
+  - AddSessionDialog enhanced with initialDate/initialTime/triggerButton props
 - Semi-private group sessions: booking_participants table, maxParticipants column on bookings
   - Coaches schedule semi-private sessions with group description (auto-detects from service name)
   - Open Sessions page (/sessions) for clients to browse and join group sessions
