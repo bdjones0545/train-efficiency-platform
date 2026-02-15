@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Calendar, Clock, Trash2, Users, UserPlus, UserMinus } from "lucide-react";
+import { Calendar, Clock, Mail, Trash2, Users, UserPlus, UserMinus } from "lucide-react";
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
@@ -281,6 +281,25 @@ export default function OpenSessionsPage() {
             />
           ))}
         </div>
+      )}
+
+      {!isCoach && (
+        <Card className="p-6 text-center space-y-3" data-testid="card-group-inquiry">
+          <Users className="h-7 w-7 mx-auto text-primary" />
+          <h3 className="font-semibold">Want to Start a Group Session?</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Gather your teammates, training partners, or friends and train together at a lower per-person cost. Reach out to get started.
+          </p>
+          <Button
+            asChild
+            data-testid="button-inquire-group"
+          >
+            <a href="mailto:Bryan.jones@efficiencystrengthtraining.com?subject=Group%20Training%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20starting%20a%20group%20training%20session.%20Please%20let%20me%20know%20about%20availability%20and%20pricing.">
+              <Mail className="h-4 w-4 mr-2" />
+              Inquire About Group Training
+            </a>
+          </Button>
+        </Card>
       )}
     </div>
   );
