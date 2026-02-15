@@ -29,6 +29,7 @@ export type TimeSlot = {
   start: string;
   end: string;
   available: boolean;
+  location?: string;
 };
 
 export type DaySlots = {

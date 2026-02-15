@@ -27,7 +27,7 @@ export default function CoachSchedulePage() {
   const { user, isAuthenticated } = useAuth();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [selectedService, setSelectedService] = useState<string>("");
-  const [selectedSlot, setSelectedSlot] = useState<{ date: string; start: string; end: string } | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ date: string; start: string; end: string; location?: string } | null>(null);
   const [groupDescription, setGroupDescription] = useState("");
   const [participantNames, setParticipantNames] = useState<string[]>([""]);
 
@@ -61,7 +61,7 @@ export default function CoachSchedulePage() {
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { coachId: string; serviceId: string; startAt: string; endAt: string; groupDescription?: string; participantNames?: string[] }) => {
+    mutationFn: async (data: { coachId: string; serviceId: string; startAt: string; endAt: string; location?: string; groupDescription?: string; participantNames?: string[] }) => {
       const res = await apiRequest("POST", "/api/bookings", data);
       return res.json();
     },
@@ -100,6 +100,7 @@ export default function CoachSchedulePage() {
       serviceId: selectedService,
       startAt: selectedSlot.start,
       endAt: selectedSlot.end,
+      location: selectedSlot.location || "",
       ...(isSemiPrivate ? {
         groupDescription,
         participantNames: filledNames.length > 0 ? filledNames : undefined,
@@ -262,7 +263,7 @@ export default function CoachSchedulePage() {
                                 setSelectedSlot(
                                   isSelected
                                     ? null
-                                    : { date: day.date, start: slot.start, end: slot.end }
+                                    : { date: day.date, start: slot.start, end: slot.end, location: slot.location }
                                 )
                               }
                               className={`w-full py-1.5 px-2 text-xs rounded-md border transition-colors ${
@@ -271,8 +272,17 @@ export default function CoachSchedulePage() {
                                   : "hover-elevate border-border"
                               }`}
                               data-testid={`slot-${day.date}-${slot.start}`}
+                              title={slot.location || undefined}
                             >
-                              {format(parseISO(slot.start), "h:mm a")}
+                              <span>{format(parseISO(slot.start), "h:mm a")}</span>
+                              {slot.location && (
+                                <span className={`flex items-center justify-center gap-0.5 mt-0.5 ${
+                                  isSelected ? "text-primary-foreground/80" : "text-muted-foreground"
+                                }`}>
+                                  <MapPin className="h-2.5 w-2.5 shrink-0" />
+                                  <span className="truncate">{slot.location.split("(")[0].trim()}</span>
+                                </span>
+                              )}
                             </button>
                           );
                         })
@@ -303,6 +313,12 @@ export default function CoachSchedulePage() {
                 <p className="text-sm text-muted-foreground">
                   with {coach.user?.firstName} {coach.user?.lastName}
                 </p>
+                {selectedSlot.location && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {selectedSlot.location}
+                  </div>
+                )}
                 <p className="text-sm font-medium">
                   {selectedServiceData?.name} — {selectedServiceData?.name?.toLowerCase().includes("team training") ? "Quoted Price" : (selectedServiceData?.priceCents || 0) === 0 ? "FREE" : `$${((selectedServiceData?.priceCents || 0) / 100).toFixed(2)}`}
                 </p>

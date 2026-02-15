@@ -45,7 +45,7 @@ function generateTimeSlots(
     const dayBlocks = availBlocks.filter(b => b.dayOfWeek === dayOfWeek);
     const dayStr = format(zonedCurrent, "yyyy-MM-dd");
     const dayLabel = format(zonedCurrent, "EEE");
-    const slots: { start: string; end: string; available: boolean }[] = [];
+    const slots: { start: string; end: string; available: boolean; location?: string }[] = [];
 
     for (const block of dayBlocks) {
       const [startH, startM] = block.startTime.split(":").map(Number);
@@ -74,6 +74,7 @@ function generateTimeSlots(
           start: startISO,
           end: endISO,
           available: !hasOverlap,
+          location: block.location || "",
         });
 
         slotStart = addMinutes(slotStart, 30);
@@ -783,6 +784,7 @@ export async function registerRoutes(
         dayOfWeek,
         startTime,
         endTime,
+        location: req.body.location || "",
       });
       res.json(block);
     } catch (error) {

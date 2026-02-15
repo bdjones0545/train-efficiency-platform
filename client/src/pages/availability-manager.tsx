@@ -8,10 +8,23 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { getAuthHeaders } from "@/lib/authToken";
-import { Plus, Trash2, Clock, ArrowLeftRight } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Plus, Trash2, Clock, MapPin, ArrowLeftRight } from "lucide-react";
 import { useState } from "react";
 import type { AvailabilityBlock } from "@shared/schema";
 import type { CoachWithUser } from "@/lib/types";
+
+const PRESET_LOCATIONS = [
+  "Bluffton High School",
+  "Oscar Frazier Park (Bluffton, SC)",
+  "PickUp USA Fitness (Bluffton, SC)",
+  "Sweet Grass Fitness (Beaufort, SC)",
+  "Coursen Tate Park (Beaufort, SC)",
+  "Robert Smalls International Academy (Burton, SC)",
+  "Humidity Fitness (Beaufort, SC)",
+  "Dataw Island Community Center (St. Helena, SC)",
+  "Spring Island Sports Complex (Okatie, SC)",
+];
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const TIMES: string[] = [];
@@ -44,6 +57,8 @@ export default function AvailabilityManagerPage() {
   const [newDay, setNewDay] = useState("0");
   const [newStart, setNewStart] = useState("09:00");
   const [newEnd, setNewEnd] = useState("17:00");
+  const [newLocation, setNewLocation] = useState("");
+  const [customLocation, setCustomLocation] = useState("");
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
 
   const { data: coaches } = useQuery<CoachWithUser[]>({
@@ -110,15 +125,19 @@ export default function AvailabilityManagerPage() {
       toast({ title: "Invalid Time", description: "End time must be after start time.", variant: "destructive" });
       return;
     }
-    const payload: { dayOfWeek: number; startTime: string; endTime: string; coachId?: string } = {
+    const resolvedLocation = newLocation === "__other__" ? customLocation : newLocation;
+    const payload: { dayOfWeek: number; startTime: string; endTime: string; coachId?: string; location?: string } = {
       dayOfWeek: parseInt(newDay),
       startTime: newStart,
       endTime: newEnd,
+      location: resolvedLocation || "",
     };
     if (activeCoachId) {
       payload.coachId = activeCoachId;
     }
     addMutation.mutate(payload);
+    setNewLocation("");
+    setCustomLocation("");
   };
 
   const groupedBlocks = DAYS.map((day, i) => ({
@@ -219,6 +238,32 @@ export default function AvailabilityManagerPage() {
               </SelectContent>
             </Select>
           </div>
+          <div className="w-full sm:w-56">
+            <label className="text-sm text-muted-foreground mb-1 block">Location</label>
+            <Select value={newLocation} onValueChange={(val) => { setNewLocation(val); if (val !== "__other__") setCustomLocation(""); }}>
+              <SelectTrigger data-testid="select-location">
+                <SelectValue placeholder="Select location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No location</SelectItem>
+                {PRESET_LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                ))}
+                <SelectItem value="__other__">Other (custom)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {newLocation === "__other__" && (
+            <div className="w-full sm:w-56">
+              <label className="text-sm text-muted-foreground mb-1 block">Custom Location</label>
+              <Input
+                placeholder="Enter location..."
+                value={customLocation}
+                onChange={(e) => setCustomLocation(e.target.value)}
+                data-testid="input-custom-location"
+              />
+            </div>
+          )}
           <Button onClick={handleAdd} disabled={addMutation.isPending} data-testid="button-add-availability">
             <Plus className="h-4 w-4 mr-1" />
             Add
@@ -240,9 +285,17 @@ export default function AvailabilityManagerPage() {
                     className="flex items-center justify-between gap-3 py-2 px-3 rounded-md bg-muted/50"
                     data-testid={`block-${block.id}`}
                   >
-                    <div className="flex items-center gap-2 text-sm">
-                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{formatTime(block.startTime)} — {formatTime(block.endTime)}</span>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{formatTime(block.startTime)} — {formatTime(block.endTime)}</span>
+                      </div>
+                      {block.location && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground pl-5">
+                          <MapPin className="h-3 w-3" />
+                          <span>{block.location}</span>
+                        </div>
+                      )}
                     </div>
                     <Button
                       variant="ghost"

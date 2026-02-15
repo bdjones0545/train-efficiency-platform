@@ -47,6 +47,7 @@ export const availabilityBlocks = pgTable("availability_blocks", {
   effectiveFrom: timestamp("effective_from"),
   effectiveTo: timestamp("effective_to"),
   timezone: varchar("timezone").default("America/New_York"),
+  location: text("location").default(""),
 });
 
 export const bookings = pgTable("bookings", {
