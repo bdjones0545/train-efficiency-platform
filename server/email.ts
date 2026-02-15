@@ -115,6 +115,35 @@ export async function sendBookingConfirmationToClient(
   await sendEmail(clientEmail, subject, html);
 }
 
+export async function sendCashoutRequestEmail(
+  ownerEmail: string,
+  coachName: string,
+  amountCents: number,
+  cashoutId: string
+) {
+  const subject = `Cash Out Request — ${coachName}`;
+  const amountStr = `$${(amountCents / 100).toFixed(2)}`;
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">Cash Out Request</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi Bryan,</p>
+        <p style="font-size: 16px; line-height: 1.6;"><strong>${coachName}</strong> has requested a cash out of their redeemed sessions.</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 18px; margin: 4px 0; font-weight: bold;">Amount: ${amountStr}</p>
+          <p style="font-size: 14px; margin: 4px 0; color: #888;">Cashout ID: ${cashoutId}</p>
+        </div>
+        <p style="font-size: 16px; line-height: 1.6;">Please process this payout at your earliest convenience. You can manage cashout requests from the admin dashboard.</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(ownerEmail, subject, html);
+}
+
 export async function sendBookingNotificationToCoach(
   coachEmail: string,
   coachFirstName: string,

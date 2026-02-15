@@ -6,7 +6,14 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
-import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach } from "./email";
+import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail } from "./email";
+
+const OWNER_USER_ID = "42755213";
+
+async function isOwner(coachId: string): Promise<boolean> {
+  const profile = await storage.getCoachProfile(coachId);
+  return profile?.userId === OWNER_USER_ID;
+}
 
 async function getUserRole(userId: string): Promise<string> {
   const profile = await storage.getUserProfile(userId);
@@ -836,9 +843,8 @@ export async function registerRoutes(
       const fullAmountCents = service?.priceCents || 0;
 
       const bookingCoachId = booking.coachId;
-      const coachProfile = await storage.getCoachProfile(bookingCoachId);
-      const isBryanJones = coachProfile?.user?.firstName === "Bryan" && coachProfile?.user?.lastName === "Jones";
-      const payoutRate = isBryanJones ? 1.0 : 0.5;
+      const ownerCoach = await isOwner(bookingCoachId);
+      const payoutRate = ownerCoach ? 1.0 : 0.5;
       const amountCents = Math.round(fullAmountCents * payoutRate);
 
       const redemption = await storage.createRedemption({
@@ -852,6 +858,56 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error creating redemption:", error);
       res.status(500).json({ message: "Failed to create redemption" });
+    }
+  });
+
+  app.get("/api/coach/cashouts", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const coachId = await getCoachId(userId);
+      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+      const cashoutsList = await storage.getCoachCashouts(coachId);
+      res.json(cashoutsList);
+    } catch (error) {
+      console.error("Error fetching cashouts:", error);
+      res.status(500).json({ message: "Failed to fetch cashouts" });
+    }
+  });
+
+  app.post("/api/cashouts", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const coachId = await getCoachId(userId);
+      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+
+      const coachProfile = await storage.getCoachProfile(coachId);
+      if (!coachProfile) return res.status(404).json({ message: "Coach profile not found" });
+
+      if (coachProfile.userId === OWNER_USER_ID) return res.status(403).json({ message: "Owner does not need to cash out" });
+
+      const redemptionsList = await storage.getCoachRedemptions(coachId);
+      const pendingAmount = redemptionsList
+        .filter((r) => r.payoutStatus === "PENDING")
+        .reduce((sum, r) => sum + r.amountCents, 0);
+
+      if (pendingAmount <= 0) return res.status(400).json({ message: "No pending balance to cash out" });
+
+      const cashout = await storage.createCashout({
+        coachId,
+        amountCents: pendingAmount,
+        status: "REQUESTED",
+      });
+
+      await storage.markRedemptionsSent(coachId);
+
+      const coachName = `${coachProfile.user?.firstName} ${coachProfile.user?.lastName}`;
+      const bryanEmail = "bryan.jones@efficiencystrengthtraining.com";
+      sendCashoutRequestEmail(bryanEmail, coachName, pendingAmount, cashout.id).catch(console.error);
+
+      res.json(cashout);
+    } catch (error) {
+      console.error("Error creating cashout:", error);
+      res.status(500).json({ message: "Failed to create cashout request" });
     }
   });
 

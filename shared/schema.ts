@@ -92,6 +92,17 @@ export const athleticBookings = pgTable("athletic_bookings", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const cashoutStatusEnum = pgEnum("cashout_status", ["REQUESTED", "PAID", "DENIED"]);
+
+export const cashouts = pgTable("cashouts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coachId: varchar("coach_id").notNull().references(() => coachProfiles.id),
+  amountCents: integer("amount_cents").notNull(),
+  status: cashoutStatusEnum("status").notNull().default("REQUESTED"),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  processedAt: timestamp("processed_at"),
+});
+
 export const insertAthleticBookingSchema = createInsertSchema(athleticBookings).omit({ id: true, createdAt: true });
 export type AthleticBooking = typeof athleticBookings.$inferSelect;
 export type InsertAthleticBooking = z.infer<typeof insertAthleticBookingSchema>;
@@ -127,6 +138,10 @@ export const redemptionsRelations = relations(redemptions, ({ one }) => ({
   coach: one(coachProfiles, { fields: [redemptions.coachId], references: [coachProfiles.id] }),
 }));
 
+export const cashoutsRelations = relations(cashouts, ({ one }) => ({
+  coach: one(coachProfiles, { fields: [cashouts.coachId], references: [coachProfiles.id] }),
+}));
+
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true });
 export const insertCoachProfileSchema = createInsertSchema(coachProfiles).omit({ id: true });
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true });
@@ -134,6 +149,7 @@ export const insertAvailabilityBlockSchema = createInsertSchema(availabilityBloc
 export const insertBookingSchema = createInsertSchema(bookings).omit({ id: true, createdAt: true });
 export const insertBookingParticipantSchema = createInsertSchema(bookingParticipants).omit({ id: true, joinedAt: true });
 export const insertRedemptionSchema = createInsertSchema(redemptions).omit({ id: true, redeemedAt: true });
+export const insertCashoutSchema = createInsertSchema(cashouts).omit({ id: true, requestedAt: true, processedAt: true });
 
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
@@ -149,3 +165,5 @@ export type BookingParticipant = typeof bookingParticipants.$inferSelect;
 export type InsertBookingParticipant = z.infer<typeof insertBookingParticipantSchema>;
 export type Redemption = typeof redemptions.$inferSelect;
 export type InsertRedemption = z.infer<typeof insertRedemptionSchema>;
+export type Cashout = typeof cashouts.$inferSelect;
+export type InsertCashout = z.infer<typeof insertCashoutSchema>;

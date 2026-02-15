@@ -1,5 +1,5 @@
 import type { User } from "@shared/models/auth";
-import type { CoachProfile, Service, AvailabilityBlock, Booking, BookingParticipant, Redemption, UserProfile } from "@shared/schema";
+import type { CoachProfile, Service, AvailabilityBlock, Booking, BookingParticipant, Redemption, UserProfile, Cashout } from "@shared/schema";
 
 export type CoachWithUser = CoachProfile & {
   user: User;
@@ -24,6 +24,8 @@ export type OpenSession = Booking & {
 export type RedemptionWithDetails = Redemption & {
   booking?: BookingWithDetails;
 };
+
+export type CashoutWithDetails = Cashout & {};
 
 export type TimeSlot = {
   start: string;

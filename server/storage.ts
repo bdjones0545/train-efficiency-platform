@@ -8,6 +8,7 @@ import {
   bookingParticipants,
   redemptions,
   athleticBookings,
+  cashouts,
   type UserProfile,
   type InsertUserProfile,
   type CoachProfile,
@@ -24,6 +25,8 @@ import {
   type InsertRedemption,
   type AthleticBooking,
   type InsertAthleticBooking,
+  type Cashout,
+  type InsertCashout,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -80,6 +83,12 @@ export interface IStorage {
   createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking>;
   deleteAthleticBooking(id: string): Promise<void>;
   countAthleticBookingsForSlot(date: string, timeSlot: string): Promise<number>;
+
+  getCoachCashouts(coachId: string): Promise<Cashout[]>;
+  getAllCashouts(): Promise<Cashout[]>;
+  createCashout(cashout: InsertCashout): Promise<Cashout>;
+  updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
+  markRedemptionsSent(coachId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -447,6 +456,27 @@ export class DatabaseStorage implements IStorage {
       .from(athleticBookings)
       .where(and(eq(athleticBookings.date, date), eq(athleticBookings.timeSlot, timeSlot)));
     return result.length;
+  }
+  async getCoachCashouts(coachId: string): Promise<Cashout[]> {
+    return db.select().from(cashouts).where(eq(cashouts.coachId, coachId)).orderBy(desc(cashouts.requestedAt));
+  }
+
+  async getAllCashouts(): Promise<Cashout[]> {
+    return db.select().from(cashouts).orderBy(desc(cashouts.requestedAt));
+  }
+
+  async createCashout(cashout: InsertCashout): Promise<Cashout> {
+    const [created] = await db.insert(cashouts).values(cashout).returning();
+    return created;
+  }
+
+  async updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined> {
+    const [updated] = await db.update(cashouts).set({ status: status as any, processedAt: new Date() }).where(eq(cashouts.id, id)).returning();
+    return updated;
+  }
+
+  async markRedemptionsSent(coachId: string): Promise<void> {
+    await db.update(redemptions).set({ payoutStatus: "SENT" }).where(and(eq(redemptions.coachId, coachId), eq(redemptions.payoutStatus, "PENDING")));
   }
 }
 
