@@ -6,6 +6,7 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
+import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach } from "./email";
 
 async function getUserRole(userId: string): Promise<string> {
   const profile = await storage.getUserProfile(userId);
@@ -149,6 +150,9 @@ export async function registerRoutes(
       await dbRef.insert(userProfiles).values({ userId: user.id, role: "CLIENT" as any });
 
       const token = await createAuthToken(user.id);
+
+      sendWelcomeEmail(email.toLowerCase().trim(), firstName.trim()).catch(() => {});
+
       res.json({ success: true, redirect: "/", token });
     } catch (error) {
       console.error("Client register error:", error);
@@ -374,6 +378,36 @@ export async function registerRoutes(
         }
       }
 
+      (async () => {
+        try {
+          const clientUser = await storage.getUser(userId);
+          const coachProfile = await storage.getCoachProfile(coachId);
+          if (clientUser?.email) {
+            sendBookingConfirmationToClient(
+              clientUser.email,
+              clientUser.firstName || "there",
+              coachProfile?.user ? `${coachProfile.user.firstName} ${coachProfile.user.lastName}` : "your coach",
+              service.name,
+              start,
+              end,
+              req.body.location || undefined
+            ).catch(() => {});
+          }
+          const coachEmail = coachProfile?.email || coachProfile?.user?.email;
+          if (coachEmail) {
+            sendBookingNotificationToCoach(
+              coachEmail,
+              coachProfile?.user?.firstName || "Coach",
+              clientUser ? `${clientUser.firstName} ${clientUser.lastName}` : "A client",
+              service.name,
+              start,
+              end,
+              req.body.location || undefined
+            ).catch(() => {});
+          }
+        } catch (e) { console.error("Booking email error:", e); }
+      })();
+
       res.json(booking);
     } catch (error) {
       console.error("Error creating booking:", error);
@@ -563,6 +597,36 @@ export async function registerRoutes(
         maxParticipants: isSemiPrivate ? (maxParticipants || 6) : null,
         groupDescription: groupDescription || "",
       });
+
+      (async () => {
+        try {
+          const clientUser = await storage.getUser(resolvedClientId);
+          const coachProfile = await storage.getCoachProfile(coachId);
+          if (clientUser?.email) {
+            sendBookingConfirmationToClient(
+              clientUser.email,
+              clientUser.firstName || "there",
+              coachProfile?.user ? `${coachProfile.user.firstName} ${coachProfile.user.lastName}` : "your coach",
+              service.name,
+              start,
+              end,
+              req.body.location || undefined
+            ).catch(() => {});
+          }
+          const coachEmail = coachProfile?.email || coachProfile?.user?.email;
+          if (coachEmail) {
+            sendBookingNotificationToCoach(
+              coachEmail,
+              coachProfile?.user?.firstName || "Coach",
+              clientUser ? `${clientUser.firstName} ${clientUser.lastName}` : "A client",
+              service.name,
+              start,
+              end,
+              req.body.location || undefined
+            ).catch(() => {});
+          }
+        } catch (e) { console.error("Coach booking email error:", e); }
+      })();
 
       res.json(booking);
     } catch (error) {
