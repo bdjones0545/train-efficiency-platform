@@ -86,6 +86,7 @@ export const athleticBookings = pgTable("athletic_bookings", {
   date: varchar("date").notNull(),
   timeSlot: varchar("time_slot").notNull(),
   teamName: varchar("team_name").notNull(),
+  trainingType: varchar("training_type").notNull().default("strength"),
   bookedBy: varchar("booked_by"),
   createdAt: timestamp("created_at").defaultNow(),
 });

@@ -970,7 +970,7 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten().fieldErrors });
       }
-      const { date, timeSlot, teamName, bookedBy } = parsed.data;
+      const { date, timeSlot, teamName, trainingType, bookedBy } = parsed.data;
       const validSlots = ["16:00", "17:00", "18:00", "19:00"];
       if (!validSlots.includes(timeSlot)) {
         return res.status(400).json({ message: "Invalid time slot. Must be between 4 PM and 8 PM." });
@@ -979,7 +979,7 @@ export async function registerRoutes(
       if (count >= 2) {
         return res.status(409).json({ message: "This time slot is full (max 2 teams per hour)" });
       }
-      const booking = await storage.createAthleticBooking({ date, timeSlot, teamName, bookedBy: bookedBy || null });
+      const booking = await storage.createAthleticBooking({ date, timeSlot, teamName, trainingType: trainingType || "strength", bookedBy: bookedBy || null });
       res.json(booking);
     } catch (error) {
       console.error("Error creating athletic booking:", error);

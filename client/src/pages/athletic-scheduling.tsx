@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Clock, Users, Trophy, ArrowLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Users, Trophy, ArrowLeft, Zap, Dumbbell } from "lucide-react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -46,6 +46,7 @@ export default function AthleticSchedulingPage() {
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<typeof TIME_SLOTS[0] | null>(null);
   const [teamName, setTeamName] = useState("");
+  const [trainingType, setTrainingType] = useState<"speed" | "strength">("strength");
   const { toast } = useToast();
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
@@ -60,7 +61,7 @@ export default function AthleticSchedulingPage() {
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { date: string; timeSlot: string; teamName: string }) => {
+    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string }) => {
       const res = await apiRequest("POST", "/api/athletic/bookings", data);
       return res.json();
     },
@@ -68,6 +69,7 @@ export default function AthleticSchedulingPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
       setScheduleDialogOpen(false);
       setTeamName("");
+      setTrainingType("strength");
       setSelectedSlot(null);
       toast({ title: "Scheduled!", description: "Your team has been booked for this time slot." });
     },
@@ -85,6 +87,7 @@ export default function AthleticSchedulingPage() {
     if (slotBookings.length >= MAX_TEAMS_PER_SLOT) return;
     setSelectedSlot(slot);
     setTeamName("");
+    setTrainingType("strength");
     setScheduleDialogOpen(true);
   };
 
@@ -95,6 +98,7 @@ export default function AthleticSchedulingPage() {
       date: dateStr,
       timeSlot: selectedSlot.id,
       teamName: teamName.trim(),
+      trainingType,
     });
   };
 
@@ -249,6 +253,13 @@ export default function AthleticSchedulingPage() {
                           <span className="text-sm font-semibold truncate" data-testid={`text-team-name-${booking.id}`}>
                             {booking.teamName}
                           </span>
+                          <Badge variant="secondary" className="flex-shrink-0" data-testid={`badge-training-type-${booking.id}`}>
+                            {booking.trainingType === "speed" ? (
+                              <><Zap className="h-3 w-3 mr-1" />Speed</>
+                            ) : (
+                              <><Dumbbell className="h-3 w-3 mr-1" />Strength</>
+                            )}
+                          </Badge>
                         </div>
                       </div>
                     ))}
@@ -307,6 +318,7 @@ export default function AthleticSchedulingPage() {
         setScheduleDialogOpen(open);
         if (!open) {
           setTeamName("");
+          setTrainingType("strength");
           setSelectedSlot(null);
         }
       }}>
@@ -338,6 +350,43 @@ export default function AthleticSchedulingPage() {
                 autoFocus
                 data-testid="input-team-name"
               />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Training Type
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTrainingType("speed")}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
+                    trainingType === "speed"
+                      ? "border-primary bg-primary/10"
+                      : "border-muted hover-elevate"
+                  }`}
+                  data-testid="button-training-speed"
+                >
+                  <Zap className={`h-6 w-6 ${trainingType === "speed" ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className={`text-sm font-medium ${trainingType === "speed" ? "text-primary" : "text-muted-foreground"}`}>
+                    Speed
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrainingType("strength")}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
+                    trainingType === "strength"
+                      ? "border-primary bg-primary/10"
+                      : "border-muted hover-elevate"
+                  }`}
+                  data-testid="button-training-strength"
+                >
+                  <Dumbbell className={`h-6 w-6 ${trainingType === "strength" ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className={`text-sm font-medium ${trainingType === "strength" ? "text-primary" : "text-muted-foreground"}`}>
+                    Strength
+                  </span>
+                </button>
+              </div>
             </div>
             <Button
               type="submit"
