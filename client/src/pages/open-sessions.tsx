@@ -4,12 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Calendar, Clock, Mail, Trash2, Users, UserPlus, UserMinus } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Calendar, Clock, Mail, Trash2, Users, UserPlus, UserMinus, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
@@ -19,6 +22,8 @@ import { AddSessionDialog } from "@/components/add-session-dialog";
 function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: OpenSession; userId?: string; isAuthenticated: boolean; isOwner: boolean }) {
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showJoinDialog, setShowJoinDialog] = useState(false);
+  const [joinParticipantNames, setJoinParticipantNames] = useState<string[]>([""]);
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -45,8 +50,8 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
   const hasJoined = !!(userId && participants?.some((p) => p.userId === userId));
 
   const joinMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/bookings/${session.id}/join`);
+    mutationFn: async (data?: { participantNames?: string[] }) => {
+      const res = await apiRequest("POST", `/api/bookings/${session.id}/join`, data || {});
       return res.json();
     },
     onSuccess: () => {
@@ -54,6 +59,8 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings", session.id, "participants"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      setShowJoinDialog(false);
+      setJoinParticipantNames([""]);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -80,6 +87,8 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
     },
   });
 
+  const spotsRemaining = (session.maxParticipants || 6) - (session.participantCount || 0);
+
   const handleAction = () => {
     if (!isAuthenticated) {
       window.location.href = "/";
@@ -88,8 +97,29 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
     if (hasJoined) {
       leaveMutation.mutate();
     } else {
-      joinMutation.mutate();
+      setShowJoinDialog(true);
     }
+  };
+
+  const handleJoinConfirm = () => {
+    const filledNames = joinParticipantNames.filter(n => n.trim());
+    joinMutation.mutate(filledNames.length > 0 ? { participantNames: filledNames } : undefined);
+  };
+
+  const addJoinParticipant = () => {
+    if (joinParticipantNames.length < spotsRemaining) {
+      setJoinParticipantNames([...joinParticipantNames, ""]);
+    }
+  };
+
+  const removeJoinParticipant = (index: number) => {
+    setJoinParticipantNames(joinParticipantNames.filter((_, i) => i !== index));
+  };
+
+  const updateJoinParticipant = (index: number, value: string) => {
+    const updated = [...joinParticipantNames];
+    updated[index] = value;
+    setJoinParticipantNames(updated);
   };
 
   const isPending = joinMutation.isPending || leaveMutation.isPending;
@@ -174,9 +204,9 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
           ) : !participants || participants.length === 0 ? (
             <p className="text-xs text-muted-foreground">No athletes registered yet</p>
           ) : (
-            participants.map((p) => (
-              <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.userId}`}>
-                {p.user.firstName} {p.user.lastName}
+            participants.map((p: any) => (
+              <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.id}`}>
+                {p.participantName || `${p.user.firstName} ${p.user.lastName}`}
               </Badge>
             ))
           )}
@@ -226,6 +256,71 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showJoinDialog} onOpenChange={setShowJoinDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Join Group Session</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Add the names of athletes you're registering for this session. You can register multiple participants (e.g., your kids).
+            </p>
+            <div className="space-y-2">
+              <Label data-testid="label-join-participants">Participant Names</Label>
+              {joinParticipantNames.map((name, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    placeholder={`Participant ${index + 1} name`}
+                    value={name}
+                    onChange={(e) => updateJoinParticipant(index, e.target.value)}
+                    data-testid={`input-join-participant-${index}`}
+                  />
+                  {joinParticipantNames.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeJoinParticipant(index)}
+                      data-testid={`button-remove-join-participant-${index}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {joinParticipantNames.length < spotsRemaining && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addJoinParticipant}
+                  data-testid="button-add-join-participant"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Add Another Participant
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {spotsRemaining} spot{spotsRemaining !== 1 ? "s" : ""} remaining
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowJoinDialog(false)} data-testid="button-cancel-join">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleJoinConfirm}
+              disabled={joinMutation.isPending}
+              data-testid="button-confirm-join"
+            >
+              <UserPlus className="h-4 w-4 mr-1" />
+              {joinMutation.isPending ? "Joining..." : "Join Session"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

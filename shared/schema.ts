@@ -66,10 +66,9 @@ export const bookingParticipants = pgTable("booking_participants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   bookingId: varchar("booking_id").notNull().references(() => bookings.id),
   userId: varchar("user_id").notNull().references(() => users.id),
+  participantName: varchar("participant_name"),
   joinedAt: timestamp("joined_at").defaultNow(),
-}, (table) => [
-  uniqueIndex("booking_participants_booking_user_unique").on(table.bookingId, table.userId),
-]);
+});
 
 export const redemptions = pgTable("redemptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

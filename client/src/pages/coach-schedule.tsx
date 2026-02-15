@@ -12,7 +12,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { ChevronLeft, ChevronRight, Clock, MapPin, ArrowLeft, Users } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ChevronLeft, ChevronRight, Clock, MapPin, ArrowLeft, Users, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { format, addDays, startOfWeek, isSameDay, parseISO } from "date-fns";
 import type { CoachWithUser, DaySlots } from "@/lib/types";
@@ -27,6 +28,7 @@ export default function CoachSchedulePage() {
   const [selectedService, setSelectedService] = useState<string>("");
   const [selectedSlot, setSelectedSlot] = useState<{ date: string; start: string; end: string } | null>(null);
   const [groupDescription, setGroupDescription] = useState("");
+  const [participantNames, setParticipantNames] = useState<string[]>([""]);
 
   const { data: coach, isLoading: coachLoading } = useQuery<CoachWithUser>({
     queryKey: ["/api/coaches", params.id],
@@ -53,7 +55,7 @@ export default function CoachSchedulePage() {
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { coachId: string; serviceId: string; startAt: string; endAt: string; groupDescription?: string }) => {
+    mutationFn: async (data: { coachId: string; serviceId: string; startAt: string; endAt: string; groupDescription?: string; participantNames?: string[] }) => {
       const res = await apiRequest("POST", "/api/bookings", data);
       return res.json();
     },
@@ -64,6 +66,7 @@ export default function CoachSchedulePage() {
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
       setSelectedSlot(null);
       setGroupDescription("");
+      setParticipantNames([""]);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -84,13 +87,33 @@ export default function CoachSchedulePage() {
       return;
     }
     if (!selectedSlot || !selectedService) return;
+    const filledNames = participantNames.filter(n => n.trim());
     bookMutation.mutate({
       coachId: params.id!,
       serviceId: selectedService,
       startAt: selectedSlot.start,
       endAt: selectedSlot.end,
-      ...(isSemiPrivate ? { groupDescription: groupDescription } : {}),
+      ...(isSemiPrivate ? {
+        groupDescription,
+        participantNames: filledNames.length > 0 ? filledNames : undefined,
+      } : {}),
     });
+  };
+
+  const addParticipantField = () => {
+    if (participantNames.length < 6) {
+      setParticipantNames([...participantNames, ""]);
+    }
+  };
+
+  const removeParticipantField = (index: number) => {
+    setParticipantNames(participantNames.filter((_, i) => i !== index));
+  };
+
+  const updateParticipantName = (index: number, value: string) => {
+    const updated = [...participantNames];
+    updated[index] = value;
+    setParticipantNames(updated);
   };
 
   const today = new Date();
@@ -282,22 +305,67 @@ export default function CoachSchedulePage() {
               </Button>
             </div>
             {isSemiPrivate && (
-              <div className="space-y-2">
-                <Label htmlFor="group-description" data-testid="label-group-description">
-                  What is this session for?
-                </Label>
-                <Textarea
-                  id="group-description"
-                  placeholder="e.g., Speed & agility work for soccer team, Pre-season strength training..."
-                  value={groupDescription}
-                  onChange={(e) => setGroupDescription(e.target.value)}
-                  className="resize-none"
-                  rows={2}
-                  data-testid="input-group-description"
-                />
-                <p className="text-xs text-muted-foreground">
-                  This description will be visible to other clients who can join your session.
-                </p>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="group-description" data-testid="label-group-description">
+                    What is this session for?
+                  </Label>
+                  <Textarea
+                    id="group-description"
+                    placeholder="e.g., Speed & agility work for soccer team, Pre-season strength training..."
+                    value={groupDescription}
+                    onChange={(e) => setGroupDescription(e.target.value)}
+                    className="resize-none"
+                    rows={2}
+                    data-testid="input-group-description"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This description will be visible to other clients who can join your session.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label data-testid="label-participants">
+                    Participant Names
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Add the names of athletes attending this session (e.g., your kids or team members).
+                  </p>
+                  <div className="space-y-2">
+                    {participantNames.map((name, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Input
+                          placeholder={`Participant ${index + 1} name`}
+                          value={name}
+                          onChange={(e) => updateParticipantName(index, e.target.value)}
+                          data-testid={`input-participant-name-${index}`}
+                        />
+                        {participantNames.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeParticipantField(index)}
+                            data-testid={`button-remove-participant-${index}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {participantNames.length < 6 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addParticipantField}
+                      data-testid="button-add-participant"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add Another Participant
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </div>

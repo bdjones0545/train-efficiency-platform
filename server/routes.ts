@@ -340,10 +340,28 @@ export async function registerRoutes(
       });
 
       if (isSemiPrivate) {
-        await storage.addBookingParticipant({
-          bookingId: booking.id,
-          userId,
-        });
+        const participantNames: string[] = req.body.participantNames || [];
+        const filledNames = participantNames.filter((n: string) => n.trim());
+        const count = filledNames.length > 0 ? filledNames.length : 1;
+
+        if (count > 6) {
+          return res.status(400).json({ message: "Maximum 6 participants per session" });
+        }
+
+        if (filledNames.length > 0) {
+          for (const name of filledNames) {
+            await storage.addBookingParticipant({
+              bookingId: booking.id,
+              userId,
+              participantName: name.trim(),
+            });
+          }
+        } else {
+          await storage.addBookingParticipant({
+            bookingId: booking.id,
+            userId,
+          });
+        }
       }
 
       res.json(booking);
@@ -776,13 +794,32 @@ export async function registerRoutes(
         return res.status(409).json({ message: "This session is full" });
       }
 
-      const alreadyJoined = participants.some(p => p.userId === userId);
-      if (alreadyJoined) {
+      const alreadyJoined = participants.some(p => p.userId === userId && !p.participantName);
+      const participantNames: string[] = req.body.participantNames || [];
+
+      const namesToAdd = participantNames.length > 0
+        ? participantNames.filter(n => n.trim())
+        : [null];
+
+      const totalAfterJoin = participants.length + namesToAdd.length;
+      if (totalAfterJoin > booking.maxParticipants) {
+        return res.status(409).json({ message: `Only ${booking.maxParticipants - participants.length} spots remaining` });
+      }
+
+      if (participantNames.length === 0 && alreadyJoined) {
         return res.status(409).json({ message: "You have already joined this session" });
       }
 
-      const participant = await storage.addBookingParticipant({ bookingId, userId });
-      res.json(participant);
+      const added = [];
+      for (const name of namesToAdd) {
+        const p = await storage.addBookingParticipant({
+          bookingId,
+          userId,
+          ...(name ? { participantName: name.trim() } : {}),
+        });
+        added.push(p);
+      }
+      res.json(added.length === 1 ? added[0] : added);
     } catch (error) {
       console.error("Error joining session:", error);
       res.status(500).json({ message: "Failed to join session" });
