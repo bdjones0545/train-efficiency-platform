@@ -5,6 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
+import { handleAssistantMessage } from "./scheduling-assistant";
 
 async function getUserRole(userId: string): Promise<string> {
   const profile = await storage.getUserProfile(userId);
@@ -947,6 +948,54 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching all redemptions:", error);
       res.status(500).json({ message: "Failed to fetch redemptions" });
+    }
+  });
+
+  app.post("/api/chat", async (req: any, res) => {
+    try {
+      const { messages } = req.body;
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ message: "Messages array required" });
+      }
+
+      const userId = req.user?.claims?.sub || null;
+      let userRole = "CLIENT";
+      let userName: string | null = null;
+
+      if (userId) {
+        userRole = await getUserRole(userId);
+        const profile = await storage.getUserProfile(userId);
+        if (profile) {
+          userName = `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || null;
+        }
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      let clientDisconnected = false;
+      req.on("close", () => { clientDisconnected = true; });
+
+      const generator = handleAssistantMessage(messages, userId, userRole, userName);
+      for await (const chunk of generator) {
+        if (clientDisconnected) break;
+        res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      }
+      if (!clientDisconnected) {
+        res.write("data: [DONE]\n\n");
+      }
+      res.end();
+    } catch (error: any) {
+      console.error("Chat error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Chat error: " + (error.message || "Unknown error") });
+      } else {
+        res.write(`data: ${JSON.stringify({ error: error.message || "Unknown error" })}\n\n`);
+        res.end();
+      }
     }
   });
 

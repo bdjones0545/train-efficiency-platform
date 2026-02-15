@@ -21,6 +21,7 @@ import AdminDashboardPage from "@/pages/admin-dashboard";
 import OpenSessionsPage from "@/pages/open-sessions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChatWidget } from "@/components/chat-widget";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 function AuthenticatedLayout() {
@@ -127,6 +128,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <AppContent />
+          <ChatWidget />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

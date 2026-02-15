@@ -101,6 +101,13 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - Team Training shows "Quoted Price" instead of $0.00
   - Free Intro Session limited to one per user (enforced backend + hidden from dropdown after use)
   - GET /api/free-session-status - Check if user has used free session (auth required)
+- AI Scheduling Assistant chatbot (floating widget, bottom-right)
+  - POST /api/chat - Streaming SSE endpoint for chat messages
+  - OpenAI function calling with tools: list_coaches, list_services, get_available_slots, book_session, get_my_bookings, cancel_booking, get_coach_schedule, set_availability, get_availability, delete_availability, coach_create_session
+  - Role-aware system prompt (CLIENT vs COACH/ADMIN)
+  - Streams responses via Server-Sent Events
+  - Chat widget component at client/src/components/chat-widget.tsx
+  - Backend logic in server/scheduling-assistant.ts
 - Coach-initiated session scheduling: coaches can add sessions from dashboard with client name, service, date/time
   - POST /api/coach/bookings - Coach creates booking (supports clientId or clientFirstName/clientLastName)
   - GET /api/coach/clients/search - Search existing clients by name/email
