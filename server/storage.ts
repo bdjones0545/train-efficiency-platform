@@ -67,6 +67,7 @@ export interface IStorage {
   getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined>;
   findOrCreateUserByName(firstName: string, lastName: string): Promise<User>;
   searchUsers(query: string): Promise<User[]>;
+  getUserByEmail(email: string): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -354,6 +355,11 @@ export class DatabaseStorage implements IStorage {
       .from(users)
       .where(or(ilike(users.firstName, q), ilike(users.lastName, q), ilike(users.email, q)))
       .limit(20);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
+    return user || undefined;
   }
 }
 

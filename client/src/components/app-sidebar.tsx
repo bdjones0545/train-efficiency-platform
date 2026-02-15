@@ -31,7 +31,7 @@ import type { UserProfile } from "@shared/schema";
 
 export function AppSidebar() {
   const [location] = useLocation();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const { isMobile, setOpenMobile } = useSidebar();
 
   const { data: profile } = useQuery<UserProfile>({
@@ -146,11 +146,9 @@ export function AppSidebar() {
               <p className="text-xs font-medium truncate">{user.firstName} {user.lastName}</p>
               <p className="text-xs text-muted-foreground truncate">{user.email}</p>
             </div>
-            <a href="/api/logout">
-              <Button size="icon" variant="ghost" data-testid="button-logout">
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </a>
+            <Button size="icon" variant="ghost" data-testid="button-logout" onClick={() => logout()}>
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
         )}
       </SidebarFooter>

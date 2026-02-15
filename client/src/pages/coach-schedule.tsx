@@ -63,7 +63,7 @@ export default function CoachSchedulePage() {
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
         toast({ title: "Please log in", description: "You need to be logged in to book.", variant: "destructive" });
-        setTimeout(() => { window.location.href = "/api/login"; }, 500);
+        setTimeout(() => { window.location.href = "/"; }, 500);
         return;
       }
       toast({ title: "Booking Failed", description: error.message, variant: "destructive" });
@@ -72,7 +72,7 @@ export default function CoachSchedulePage() {
 
   const handleBook = () => {
     if (!isAuthenticated) {
-      window.location.href = "/api/login";
+      window.location.href = "/";
       return;
     }
     if (!selectedSlot || !selectedService) return;

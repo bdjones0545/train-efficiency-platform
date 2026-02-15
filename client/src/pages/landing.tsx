@@ -9,19 +9,32 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff } from "lucide-react";
+import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 export default function LandingPage() {
   const [coachModalOpen, setCoachModalOpen] = useState(false);
+  const [clientModalOpen, setClientModalOpen] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const { toast } = useToast();
+
+  const resetClientForm = () => {
+    setEmail("");
+    setPassword("");
+    setFirstName("");
+    setLastName("");
+    setError("");
+    setShowPassword(false);
+  };
 
   const handleCoachLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +53,45 @@ export default function LandingPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleClientAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const endpoint = isSignUp ? "/api/client/register" : "/api/client/login";
+      const body = isSignUp
+        ? { email, password, firstName, lastName }
+        : { email, password };
+
+      const res = await apiRequest("POST", endpoint, body);
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: isSignUp ? "Account created!" : "Welcome back!", description: "Redirecting..." });
+        window.location.href = data.redirect || "/";
+      }
+    } catch (err: any) {
+      try {
+        const msg = await err?.message;
+        if (msg) {
+          setError(msg);
+        } else {
+          setError(isSignUp ? "Registration failed. Try a different email." : "Invalid email or password.");
+        }
+      } catch {
+        setError(isSignUp ? "Registration failed. Try a different email." : "Invalid email or password.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openClientModal = (signUp: boolean) => {
+    setIsSignUp(signUp);
+    resetClientForm();
+    setClientModalOpen(true);
   };
 
   return (
@@ -64,9 +116,22 @@ export default function LandingPage() {
             >
               Coach Login
             </Button>
-            <a href="/api/login">
-              <Button data-testid="button-login">Get Started</Button>
-            </a>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openClientModal(false)}
+              data-testid="button-login"
+            >
+              <LogIn className="h-4 w-4 mr-1" />
+              Log In
+            </Button>
+            <Button
+              onClick={() => openClientModal(true)}
+              data-testid="button-get-started"
+            >
+              <UserPlus className="h-4 w-4 mr-1" />
+              Sign Up
+            </Button>
           </div>
         </div>
       </nav>
@@ -88,12 +153,10 @@ export default function LandingPage() {
               and take your athletic performance to the next level with Efficiency Strength Training.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <a href="/api/login">
-                <Button size="lg" data-testid="button-hero-cta">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Book a Session
-                </Button>
-              </a>
+              <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-hero-cta">
+                <Calendar className="h-4 w-4 mr-2" />
+                Book a Session
+              </Button>
               <a href="/sessions">
                 <Button variant="outline" size="lg" data-testid="button-view-sessions">
                   <Users className="h-4 w-4 mr-2" />
@@ -261,6 +324,129 @@ export default function LandingPage() {
               <LogIn className="h-4 w-4 mr-2" />
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={clientModalOpen} onOpenChange={(open) => {
+        setClientModalOpen(open);
+        if (!open) resetClientForm();
+      }}>
+        <DialogContent className="sm:max-w-md" data-testid="modal-client-auth">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {isSignUp ? <UserPlus className="h-5 w-5 text-primary" /> : <LogIn className="h-5 w-5 text-primary" />}
+              {isSignUp ? "Create Account" : "Welcome Back"}
+            </DialogTitle>
+            <DialogDescription>
+              {isSignUp
+                ? "Sign up to book sessions and manage your training schedule."
+                : "Log in to your account to view and manage your bookings."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleClientAuth} className="space-y-4 pt-2">
+            {isSignUp && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label htmlFor="client-first" className="text-sm font-medium">First Name</label>
+                  <Input
+                    id="client-first"
+                    placeholder="First name"
+                    value={firstName}
+                    onChange={(e) => { setFirstName(e.target.value); setError(""); }}
+                    required
+                    data-testid="input-client-first-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="client-last" className="text-sm font-medium">Last Name</label>
+                  <Input
+                    id="client-last"
+                    placeholder="Last name"
+                    value={lastName}
+                    onChange={(e) => { setLastName(e.target.value); setError(""); }}
+                    required
+                    data-testid="input-client-last-name"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <label htmlFor="client-email" className="text-sm font-medium">Email</label>
+              <Input
+                id="client-email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                required
+                data-testid="input-client-email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="client-password" className="text-sm font-medium">Password</label>
+              <div className="relative">
+                <Input
+                  id="client-password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder={isSignUp ? "Create a password (6+ characters)" : "Enter your password"}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                  required
+                  minLength={6}
+                  className="pr-10"
+                  data-testid="input-client-password"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="absolute right-0 top-0"
+                  onClick={() => setShowPassword(!showPassword)}
+                  data-testid="button-toggle-client-password"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+            {error && (
+              <p className="text-sm text-destructive" data-testid="text-client-auth-error">{error}</p>
+            )}
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              disabled={isLoading || !email || !password || (isSignUp && (!firstName || !lastName))}
+              data-testid="button-client-auth-submit"
+            >
+              {isSignUp ? <UserPlus className="h-4 w-4 mr-2" /> : <LogIn className="h-4 w-4 mr-2" />}
+              {isLoading ? (isSignUp ? "Creating account..." : "Signing in...") : (isSignUp ? "Create Account" : "Log In")}
+            </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              {isSignUp ? (
+                <>Already have an account?{" "}
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={() => { setIsSignUp(false); setError(""); }}
+                    data-testid="button-switch-to-login"
+                  >
+                    Log in
+                  </button>
+                </>
+              ) : (
+                <>Don't have an account?{" "}
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={() => { setIsSignUp(true); setError(""); }}
+                    data-testid="button-switch-to-signup"
+                  >
+                    Sign up
+                  </button>
+                </>
+              )}
+            </p>
           </form>
         </DialogContent>
       </Dialog>

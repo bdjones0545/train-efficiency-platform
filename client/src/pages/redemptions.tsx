@@ -40,7 +40,7 @@ export default function RedemptionsPage() {
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
         toast({ title: "Unauthorized", description: "Logging in again...", variant: "destructive" });
-        setTimeout(() => { window.location.href = "/api/login"; }, 500);
+        setTimeout(() => { window.location.href = "/"; }, 500);
         return;
       }
       toast({ title: "Error", description: error.message, variant: "destructive" });

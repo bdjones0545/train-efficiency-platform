@@ -83,7 +83,7 @@ function OpenSessionsPublicPage() {
             <a href="/">
               <Button variant="ghost" size="sm" data-testid="link-home">Home</Button>
             </a>
-            <a href="/api/login?returnTo=/sessions">
+            <a href="/">
               <Button data-testid="button-register">Sign Up / Log In</Button>
             </a>
           </div>

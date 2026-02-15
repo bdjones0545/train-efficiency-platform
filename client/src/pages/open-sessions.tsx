@@ -37,7 +37,7 @@ function SessionCard({ session, userId, isAuthenticated }: { session: OpenSessio
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
         toast({ title: "Please log in", description: "You need to be logged in to join.", variant: "destructive" });
-        setTimeout(() => { window.location.href = "/api/login?returnTo=/sessions"; }, 500);
+        setTimeout(() => { window.location.href = "/"; }, 500);
         return;
       }
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -61,7 +61,7 @@ function SessionCard({ session, userId, isAuthenticated }: { session: OpenSessio
 
   const handleAction = () => {
     if (!isAuthenticated) {
-      window.location.href = "/api/login?returnTo=/sessions";
+      window.location.href = "/";
       return;
     }
     if (hasJoined) {

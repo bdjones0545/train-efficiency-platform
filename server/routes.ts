@@ -126,6 +126,102 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/client/register", async (req: any, res) => {
+    try {
+      const { email, password, firstName, lastName } = req.body;
+      if (!email || !password || !firstName || !lastName) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const existing = await storage.getUserByEmail(email.toLowerCase());
+      if (existing) {
+        return res.status(409).json({ message: "An account with this email already exists" });
+      }
+
+      const hash = await bcrypt.hash(password, 10);
+
+      const { db: dbRef } = await import("./db");
+      const { users } = await import("@shared/models/auth");
+      const [created] = await dbRef.insert(users).values({
+        email: email.toLowerCase().trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        passwordHash: hash,
+      }).returning();
+      const user = created;
+      const { userProfiles } = await import("@shared/schema");
+      await dbRef.insert(userProfiles).values({ userId: user.id, role: "CLIENT" as any });
+
+      req.login(
+        {
+          claims: { sub: user.id },
+          access_token: null,
+          refresh_token: null,
+          expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+        },
+        (err: any) => {
+          if (err) {
+            console.error("Session creation error:", err);
+            return res.status(500).json({ message: "Failed to create session" });
+          }
+          res.json({ success: true, redirect: "/" });
+        }
+      );
+    } catch (error) {
+      console.error("Client register error:", error);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  app.post("/api/client/login", async (req: any, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const user = await storage.getUserByEmail(email.toLowerCase());
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      req.login(
+        {
+          claims: { sub: user.id },
+          access_token: null,
+          refresh_token: null,
+          expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+        },
+        (err: any) => {
+          if (err) {
+            console.error("Session creation error:", err);
+            return res.status(500).json({ message: "Failed to create session" });
+          }
+          res.json({ success: true, redirect: "/" });
+        }
+      );
+    } catch (error) {
+      console.error("Client login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post("/api/client/logout", (req: any, res) => {
+    req.logout(() => {
+      req.session?.destroy(() => {
+        res.json({ success: true });
+      });
+    });
+  });
+
   app.get("/api/profile", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
