@@ -11,9 +11,18 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Plus, CalendarIcon, Search, XCircle } from "lucide-react";
+import { Plus, CalendarIcon, Search, XCircle, MapPin } from "lucide-react";
 import { format } from "date-fns";
 import type { Service } from "@shared/schema";
+
+const PRESET_LOCATIONS = [
+  "Bluffton High School",
+  "Oscar Frazier Park (Bluffton, SC)",
+  "PickUp USA Fitness (Bluffton, SC)",
+  "Sweet Grass Fitness (Beaufort, SC)",
+  "Coursen Tate Park (Beaufort, SC)",
+  "Robert Smalls International Academy (Burton, SC)",
+];
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
 
@@ -36,6 +45,8 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [notes, setNotes] = useState("");
+  const [location, setLocation] = useState("");
+  const [customLocation, setCustomLocation] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [showSearch, setShowSearch] = useState(false);
 
@@ -94,6 +105,8 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setSelectedClientId(null);
     setSearchQuery("");
     setNotes("");
+    setLocation("");
+    setCustomLocation("");
     setGroupDescription("");
     setShowSearch(false);
   };
@@ -116,7 +129,8 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     const startAt = new Date(selectedDate);
     startAt.setHours(hours, minutes, 0, 0);
 
-    const body: any = { serviceId, startAt: startAt.toISOString(), notes };
+    const resolvedLocation = location === "__custom__" ? customLocation.trim() : location;
+    const body: any = { serviceId, startAt: startAt.toISOString(), notes, location: resolvedLocation };
     if (coachId) {
       body.coachId = coachId;
     }
@@ -317,6 +331,34 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                 })}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Location</Label>
+            <Select value={location} onValueChange={(v) => { setLocation(v); if (v !== "__custom__") setCustomLocation(""); }}>
+              <SelectTrigger data-testid="select-location">
+                <MapPin className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
+                <SelectValue placeholder="Select a location" />
+              </SelectTrigger>
+              <SelectContent>
+                {PRESET_LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc} data-testid={`option-location-${loc.replace(/\s+/g, '-').toLowerCase()}`}>
+                    {loc}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__" data-testid="option-location-custom">
+                  Other (enter manually)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {location === "__custom__" && (
+              <Input
+                placeholder="Enter location..."
+                value={customLocation}
+                onChange={(e) => setCustomLocation(e.target.value)}
+                data-testid="input-custom-location"
+              />
+            )}
           </div>
 
           <div className="space-y-2">

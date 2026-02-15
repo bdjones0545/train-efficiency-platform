@@ -335,6 +335,7 @@ export async function registerRoutes(
         endAt: end,
         status: "CONFIRMED",
         notes: req.body.notes || "",
+        location: req.body.location || "",
         maxParticipants: isSemiPrivate ? 6 : null,
         groupDescription: isSemiPrivate ? (req.body.groupDescription || "") : "",
       });
@@ -530,6 +531,7 @@ export async function registerRoutes(
         endAt: end,
         status: "CONFIRMED",
         notes: notes || "",
+        location: req.body.location || "",
         maxParticipants: isSemiPrivate ? (maxParticipants || 6) : null,
         groupDescription: groupDescription || "",
       });
@@ -556,6 +558,7 @@ export async function registerRoutes(
 
       const updateData: any = {};
       if (notes !== undefined) updateData.notes = notes;
+      if (req.body.location !== undefined) updateData.location = req.body.location;
       if (groupDescription !== undefined) updateData.groupDescription = groupDescription;
 
       if (serviceId && serviceId !== existing.serviceId) {

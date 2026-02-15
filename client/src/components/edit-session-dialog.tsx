@@ -13,9 +13,18 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { CalendarIcon, Search, Trash2, XCircle } from "lucide-react";
+import { CalendarIcon, Search, Trash2, XCircle, MapPin } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { Service } from "@shared/schema";
+
+const PRESET_LOCATIONS = [
+  "Bluffton High School",
+  "Oscar Frazier Park (Bluffton, SC)",
+  "PickUp USA Fitness (Bluffton, SC)",
+  "Sweet Grass Fitness (Beaufort, SC)",
+  "Coursen Tate Park (Beaufort, SC)",
+  "Robert Smalls International Academy (Burton, SC)",
+];
 import type { BookingWithDetails } from "@/lib/types";
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
@@ -44,6 +53,11 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [showSearch, setShowSearch] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  const initLocation = booking.location || "";
+  const isPreset = PRESET_LOCATIONS.includes(initLocation);
+  const [location, setLocation] = useState(isPreset ? initLocation : (initLocation ? "__custom__" : ""));
+  const [customLocation, setCustomLocation] = useState(isPreset ? "" : initLocation);
+
   useEffect(() => {
     if (open) {
       const dt = parseISO(booking.startAt as unknown as string);
@@ -55,6 +69,10 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setSelectedClientId(booking.clientId);
       setNotes(booking.notes || "");
       setGroupDescription(booking.groupDescription || "");
+      const loc = booking.location || "";
+      const preset = PRESET_LOCATIONS.includes(loc);
+      setLocation(preset ? loc : (loc ? "__custom__" : ""));
+      setCustomLocation(preset ? "" : loc);
       setSearchQuery("");
       setShowSearch(false);
     }
@@ -134,10 +152,12 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
     const startAt = new Date(selectedDate);
     startAt.setHours(hours, minutes, 0, 0);
 
+    const resolvedLocation = location === "__custom__" ? customLocation.trim() : location;
     const body: any = {
       serviceId,
       startAt: startAt.toISOString(),
       notes,
+      location: resolvedLocation,
       groupDescription: isSemiPrivate ? groupDescription : "",
     };
 
@@ -333,6 +353,34 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
                 })}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Location</Label>
+            <Select value={location} onValueChange={(v) => { setLocation(v); if (v !== "__custom__") setCustomLocation(""); }}>
+              <SelectTrigger data-testid="edit-select-location">
+                <MapPin className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
+                <SelectValue placeholder="Select a location" />
+              </SelectTrigger>
+              <SelectContent>
+                {PRESET_LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc}>
+                    {loc}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__">
+                  Other (enter manually)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {location === "__custom__" && (
+              <Input
+                placeholder="Enter location..."
+                value={customLocation}
+                onChange={(e) => setCustomLocation(e.target.value)}
+                data-testid="edit-input-custom-location"
+              />
+            )}
           </div>
 
           <div className="space-y-2">

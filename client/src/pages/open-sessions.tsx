@@ -12,7 +12,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Calendar, Clock, Mail, Trash2, Users, UserPlus, UserMinus, Plus, X } from "lucide-react";
+import { Calendar, Clock, Mail, MapPin, Trash2, Users, UserPlus, UserMinus, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
@@ -189,6 +189,13 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
             <span className="text-sm text-muted-foreground">
               Coach {session.coach.user.firstName} {session.coach.user.lastName}
             </span>
+          </div>
+        )}
+
+        {session.location && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid={`text-session-location-${session.id}`}>
+            <MapPin className="h-3.5 w-3.5" />
+            {session.location}
           </div>
         )}
 

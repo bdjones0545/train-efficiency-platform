@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Calendar, Clock, X, Users } from "lucide-react";
+import { Calendar, Clock, X, Users, MapPin } from "lucide-react";
 import { format, parseISO, isPast } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 import type { BookingWithDetails, ParticipantWithUser } from "@/lib/types";
@@ -89,6 +89,12 @@ export default function MyBookingsPage() {
             <p className="text-sm text-muted-foreground">
               Coach: {booking.coach.user.firstName} {booking.coach.user.lastName}
             </p>
+          )}
+          {booking.location && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid={`text-location-${booking.id}`}>
+              <MapPin className="h-3.5 w-3.5" />
+              {booking.location}
+            </div>
           )}
           {booking.maxParticipants && booking.groupDescription && (
             <p className="text-sm text-muted-foreground">{booking.groupDescription}</p>

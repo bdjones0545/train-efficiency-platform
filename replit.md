@@ -77,6 +77,12 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Location field for session scheduling: coaches select from preset locations or enter custom
+  - Preset locations: Bluffton High School, Oscar Frazier Park, PickUp USA Fitness, Sweet Grass Fitness, Coursen Tate Park, Robert Smalls International Academy
+  - Custom "Other" option with manual text input
+  - Location displayed on coach dashboard calendar, My Bookings page, and Open Sessions page
+  - Location editable in Edit Session dialog
+  - location column added to bookings table
 - Coach toggle feature: coaches can switch between viewing/editing any coach's schedule and availability
   - Coach selector dropdown on dashboard and availability manager pages (visible when multiple coaches exist)
   - Backend endpoints accept optional coachId param: GET /api/coach/bookings, GET/POST /api/coach/availability, POST /api/coach/bookings, GET /api/coach/redemptions

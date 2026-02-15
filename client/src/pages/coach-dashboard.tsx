@@ -22,6 +22,7 @@ import {
   Plus,
   DollarSign,
   ArrowLeftRight,
+  MapPin,
 } from "lucide-react";
 import {
   format,
@@ -141,6 +142,12 @@ function BookingBlock({
           {booking.client && !booking.maxParticipants && (
             <div className="text-[11px] opacity-80 truncate">
               {booking.client.firstName} {booking.client.lastName}
+            </div>
+          )}
+          {booking.location && (
+            <div className="text-[10px] opacity-70 truncate flex items-center gap-0.5" data-testid={`text-location-${booking.id}`}>
+              <MapPin className="h-2.5 w-2.5 shrink-0" />
+              {booking.location}
             </div>
           )}
           <BookingParticipantInfo booking={booking} />
