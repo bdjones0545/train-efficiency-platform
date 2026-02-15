@@ -133,11 +133,11 @@ export default function WalletPage() {
           <Wallet className="h-6 w-6 text-primary" />
           <h2 className="text-lg font-semibold">Account Balance</h2>
         </div>
-        <p className="text-4xl font-bold text-primary" data-testid="text-wallet-balance">
-          ${(balance / 100).toFixed(2)}
+        <p className={`text-4xl font-bold ${balance < 0 ? "text-red-600 dark:text-red-400" : "text-primary"}`} data-testid="text-wallet-balance">
+          {balance < 0 ? `-$${(Math.abs(balance) / 100).toFixed(2)}` : `$${(balance / 100).toFixed(2)}`}
         </p>
         <p className="text-sm text-muted-foreground mt-1">
-          Available for session payments
+          {balance < 0 ? "You have an outstanding balance. Please add funds to cover it." : "Available for session payments"}
         </p>
       </Card>
 
