@@ -8,57 +8,30 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Calendar, Clock, Users, UserPlus } from "lucide-react";
+import { Calendar, Clock, Users, UserPlus, UserMinus } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 
-function ParticipantsList({ bookingId }: { bookingId: string }) {
-  const { data: participants, isLoading } = useQuery<ParticipantWithUser[]>({
-    queryKey: ["/api/bookings", bookingId, "participants"],
-  });
-
-  if (isLoading) return <Skeleton className="h-4 w-32" />;
-  if (!participants || participants.length === 0) {
-    return <p className="text-xs text-muted-foreground">No athletes registered yet</p>;
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1.5" data-testid={`participants-list-${bookingId}`}>
-      {participants.map((p) => (
-        <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.userId}`}>
-          {p.user.firstName} {p.user.lastName}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-export default function OpenSessionsPage() {
+function SessionCard({ session, userId, isAuthenticated }: { session: OpenSession; userId?: string; isAuthenticated: boolean }) {
   const { toast } = useToast();
-  const { user, isAuthenticated } = useAuth();
 
-  const { data: profile } = useQuery<UserProfile>({
-    queryKey: ["/api/profile"],
-    enabled: isAuthenticated,
+  const { data: participants, isLoading: participantsLoading } = useQuery<ParticipantWithUser[]>({
+    queryKey: ["/api/bookings", session.id, "participants"],
   });
 
-  const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
-
-  const { data: sessions, isLoading } = useQuery<OpenSession[]>({
-    queryKey: ["/api/sessions/open"],
-  });
+  const hasJoined = !!(userId && participants?.some((p) => p.userId === userId));
 
   const joinMutation = useMutation({
-    mutationFn: async (bookingId: string) => {
-      const res = await apiRequest("POST", `/api/bookings/${bookingId}/join`);
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/bookings/${session.id}/join`);
       return res.json();
     },
-    onSuccess: (_data, bookingId) => {
+    onSuccess: () => {
       toast({ title: "Registered", description: "You've been added to this session." });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bookings", bookingId, "participants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session.id, "participants"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
     },
     onError: (error: Error) => {
@@ -71,13 +44,150 @@ export default function OpenSessionsPage() {
     },
   });
 
-  const handleJoin = (bookingId: string) => {
+  const leaveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/bookings/${session.id}/leave`);
+    },
+    onSuccess: () => {
+      toast({ title: "Unregistered", description: "You've been removed from this session." });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session.id, "participants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleAction = () => {
     if (!isAuthenticated) {
       window.location.href = "/api/login?returnTo=/sessions";
       return;
     }
-    joinMutation.mutate(bookingId);
+    if (hasJoined) {
+      leaveMutation.mutate();
+    } else {
+      joinMutation.mutate();
+    }
   };
+
+  const isPending = joinMutation.isPending || leaveMutation.isPending;
+
+  return (
+    <Card className="p-5" data-testid={`card-open-session-${session.id}`}>
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-sm">{session.service?.name || "Group Session"}</h3>
+            <Badge variant="secondary" className="mt-1 text-xs">
+              <Users className="h-3 w-3 mr-1" />
+              {session.participantCount}/{session.maxParticipants} spots filled
+            </Badge>
+          </div>
+          {hasJoined ? (
+            <Badge className="bg-primary/15 text-primary text-xs" data-testid={`badge-joined-${session.id}`}>
+              Registered
+            </Badge>
+          ) : (
+            <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 text-xs">
+              Open
+            </Badge>
+          )}
+        </div>
+
+        {session.groupDescription && (
+          <p className="text-sm leading-relaxed" data-testid={`text-group-desc-${session.id}`}>
+            {session.groupDescription}
+          </p>
+        )}
+
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar className="h-3.5 w-3.5" />
+            {format(parseISO(session.startAt as unknown as string), "EEEE, MMM d, yyyy")}
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
+            {format(parseISO(session.startAt as unknown as string), "h:mm a")} —{" "}
+            {format(parseISO(session.endAt as unknown as string), "h:mm a")}
+          </div>
+        </div>
+
+        {session.coach?.user && (
+          <div className="flex items-center gap-2">
+            <Avatar className="h-6 w-6">
+              <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                {(session.coach.user.firstName?.[0] || "").toUpperCase()}
+                {(session.coach.user.lastName?.[0] || "").toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <span className="text-sm text-muted-foreground">
+              Coach {session.coach.user.firstName} {session.coach.user.lastName}
+            </span>
+          </div>
+        )}
+
+        {session.service && (
+          <p className="text-sm font-medium text-primary" data-testid={`text-session-price-${session.id}`}>
+            ${(session.service.priceCents / 100).toFixed(2)} per person
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-1.5" data-testid={`participants-list-${session.id}`}>
+          {participantsLoading ? (
+            <Skeleton className="h-4 w-32" />
+          ) : !participants || participants.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No athletes registered yet</p>
+          ) : (
+            participants.map((p) => (
+              <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.userId}`}>
+                {p.user.firstName} {p.user.lastName}
+              </Badge>
+            ))
+          )}
+        </div>
+
+        {hasJoined ? (
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleAction}
+            disabled={isPending}
+            data-testid={`button-leave-session-${session.id}`}
+          >
+            <UserMinus className="h-4 w-4 mr-1" />
+            {isPending ? "Unregistering..." : "Unregister"}
+          </Button>
+        ) : (
+          <Button
+            className="w-full"
+            onClick={handleAction}
+            disabled={isPending}
+            data-testid={`button-join-session-${session.id}`}
+          >
+            <UserPlus className="h-4 w-4 mr-1" />
+            {!isAuthenticated ? "Sign Up to Join" : isPending ? "Joining..." : "Join Session"}
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+export default function OpenSessionsPage() {
+  const { user, isAuthenticated } = useAuth();
+
+  const { data: profile } = useQuery<UserProfile>({
+    queryKey: ["/api/profile"],
+    enabled: isAuthenticated,
+  });
+
+  const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
+
+  const { data: sessions, isLoading } = useQuery<OpenSession[]>({
+    queryKey: ["/api/sessions/open"],
+  });
 
   if (isLoading) {
     return (
@@ -107,73 +217,12 @@ export default function OpenSessionsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sessions.map((session) => (
-            <Card key={session.id} className="p-5" data-testid={`card-open-session-${session.id}`}>
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="font-semibold text-sm">{session.service?.name || "Group Session"}</h3>
-                    <Badge variant="secondary" className="mt-1 text-xs">
-                      <Users className="h-3 w-3 mr-1" />
-                      {session.participantCount}/{session.maxParticipants} spots filled
-                    </Badge>
-                  </div>
-                  <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 text-xs">
-                    Open
-                  </Badge>
-                </div>
-
-                {session.groupDescription && (
-                  <p className="text-sm leading-relaxed" data-testid={`text-group-desc-${session.id}`}>
-                    {session.groupDescription}
-                  </p>
-                )}
-
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Calendar className="h-3.5 w-3.5" />
-                    {format(parseISO(session.startAt as unknown as string), "EEEE, MMM d, yyyy")}
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
-                    {format(parseISO(session.startAt as unknown as string), "h:mm a")} —{" "}
-                    {format(parseISO(session.endAt as unknown as string), "h:mm a")}
-                  </div>
-                </div>
-
-                {session.coach?.user && (
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
-                      <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                        {(session.coach.user.firstName?.[0] || "").toUpperCase()}
-                        {(session.coach.user.lastName?.[0] || "").toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="text-sm text-muted-foreground">
-                      Coach {session.coach.user.firstName} {session.coach.user.lastName}
-                    </span>
-                  </div>
-                )}
-
-                {session.service && (
-                  <p className="text-sm font-medium text-primary" data-testid={`text-session-price-${session.id}`}>
-                    ${(session.service.priceCents / 100).toFixed(2)} per person
-                  </p>
-                )}
-
-                <ParticipantsList bookingId={session.id} />
-
-                <Button
-                  className="w-full"
-                  onClick={() => handleJoin(session.id)}
-                  disabled={joinMutation.isPending}
-                  data-testid={`button-join-session-${session.id}`}
-                >
-                  <UserPlus className="h-4 w-4 mr-1" />
-                  {!isAuthenticated ? "Sign Up to Join" : joinMutation.isPending ? "Joining..." : "Join Session"}
-                </Button>
-              </div>
-            </Card>
+            <SessionCard
+              key={session.id}
+              session={session}
+              userId={user?.id}
+              isAuthenticated={isAuthenticated}
+            />
           ))}
         </div>
       )}
