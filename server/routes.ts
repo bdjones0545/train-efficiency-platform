@@ -497,6 +497,81 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/coach/bookings/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const coachId = await getCoachId(userId);
+      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+
+      const bookingId = req.params.id;
+      const existing = await storage.getBooking(bookingId);
+      if (!existing) return res.status(404).json({ message: "Booking not found" });
+      if (existing.coachId !== coachId) return res.status(403).json({ message: "Not your booking" });
+
+      const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName } = req.body;
+
+      const updateData: any = {};
+      if (notes !== undefined) updateData.notes = notes;
+      if (groupDescription !== undefined) updateData.groupDescription = groupDescription;
+
+      if (serviceId && serviceId !== existing.serviceId) {
+        const service = await storage.getService(serviceId);
+        if (!service) return res.status(404).json({ message: "Service not found" });
+        updateData.serviceId = serviceId;
+
+        const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
+        updateData.maxParticipants = isSemiPrivate ? 6 : null;
+
+        if (startAt) {
+          const start = new Date(startAt);
+          const end = addMinutes(start, service.durationMin);
+          updateData.startAt = start;
+          updateData.endAt = end;
+        } else {
+          const start = existing.startAt;
+          const end = addMinutes(start, service.durationMin);
+          updateData.endAt = end;
+        }
+      } else if (startAt) {
+        const service = await storage.getService(existing.serviceId);
+        if (!service) return res.status(404).json({ message: "Service not found" });
+        const start = new Date(startAt);
+        const end = addMinutes(start, service.durationMin);
+        updateData.startAt = start;
+        updateData.endAt = end;
+      }
+
+      if (clientId) {
+        updateData.clientId = clientId;
+      } else if (clientFirstName && clientLastName) {
+        const user = await storage.findOrCreateUserByName(clientFirstName.trim(), clientLastName.trim());
+        updateData.clientId = user.id;
+      }
+
+      const finalServiceId = updateData.serviceId || existing.serviceId;
+      const finalService = await storage.getService(finalServiceId);
+      const finalIsSemiPrivate = finalService?.name.toLowerCase().includes("semi-private") || false;
+      if (!finalIsSemiPrivate && !updateData.clientId && existing.clientId === userId) {
+        return res.status(400).json({ message: "A client is required for non-group sessions. Please select or enter a client." });
+      }
+
+      if (updateData.startAt || updateData.endAt) {
+        const checkStart = updateData.startAt || existing.startAt;
+        const checkEnd = updateData.endAt || existing.endAt;
+        const overlapping = await storage.getOverlappingBookings(coachId, checkStart, checkEnd, bookingId);
+        if (overlapping.length > 0) {
+          return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+        }
+      }
+
+      const updated = await storage.updateBooking(bookingId, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating booking:", error);
+      res.status(500).json({ message: "Failed to update session" });
+    }
+  });
+
   app.get("/api/coach/bookings/completed", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

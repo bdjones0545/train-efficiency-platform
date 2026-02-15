@@ -54,6 +54,7 @@ export interface IStorage {
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
+  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string }): Promise<Booking | undefined>;
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
 
   getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]>;
@@ -238,6 +239,28 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(bookings)
       .set({ status: status as any })
+      .where(eq(bookings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string }): Promise<Booking | undefined> {
+    const setData: any = {};
+    if (data.serviceId !== undefined) setData.serviceId = data.serviceId;
+    if (data.startAt !== undefined) setData.startAt = data.startAt;
+    if (data.endAt !== undefined) setData.endAt = data.endAt;
+    if (data.notes !== undefined) setData.notes = data.notes;
+    if (data.groupDescription !== undefined) setData.groupDescription = data.groupDescription;
+    if (data.maxParticipants !== undefined) setData.maxParticipants = data.maxParticipants;
+    if (data.clientId !== undefined) setData.clientId = data.clientId;
+
+    if (Object.keys(setData).length === 0) {
+      return this.getBooking(id);
+    }
+
+    const [updated] = await db
+      .update(bookings)
+      .set(setData)
       .where(eq(bookings.id, id))
       .returning();
     return updated;

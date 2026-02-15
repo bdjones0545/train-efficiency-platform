@@ -29,6 +29,7 @@ import {
   getDay,
 } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
+import { EditSessionDialog } from "@/components/edit-session-dialog";
 import type { BookingWithDetails, ParticipantWithUser, RedemptionWithDetails } from "@/lib/types";
 import type { AvailabilityBlock } from "@shared/schema";
 
@@ -88,6 +89,7 @@ function BookingBlock({
   redeemedIds,
   onStatusChange,
   onRedeem,
+  onEdit,
   statusPending,
   redeemPending,
 }: {
@@ -95,6 +97,7 @@ function BookingBlock({
   redeemedIds: Set<string>;
   onStatusChange: (id: string, status: string) => void;
   onRedeem: (id: string) => void;
+  onEdit: (booking: BookingWithDetails) => void;
   statusPending: boolean;
   redeemPending: boolean;
 }) {
@@ -114,8 +117,9 @@ function BookingBlock({
 
   return (
     <div
-      className={`absolute left-16 right-2 rounded-md border px-3 py-1.5 overflow-hidden ${colorClass}`}
+      className={`absolute left-16 right-2 rounded-md border px-3 py-1.5 overflow-hidden cursor-pointer ${colorClass}`}
       style={{ top: `${top}px`, height: `${height}px`, minHeight: "36px", zIndex: 10 }}
+      onClick={() => onEdit(booking)}
       data-testid={`calendar-booking-${booking.id}`}
     >
       <div className="flex items-start justify-between gap-1 h-full">
@@ -205,6 +209,7 @@ export default function CoachDashboardPage() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [slotTime, setSlotTime] = useState("09:00");
   const addSessionRef = useRef<HTMLButtonElement>(null);
+  const [editBooking, setEditBooking] = useState<BookingWithDetails | null>(null);
 
   const { data: bookings, isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/coach/bookings"],
@@ -435,6 +440,7 @@ export default function CoachDashboardPage() {
               redeemedIds={redeemedIds}
               onStatusChange={(id, status) => updateStatusMutation.mutate({ bookingId: id, status })}
               onRedeem={(id) => redeemMutation.mutate(id)}
+              onEdit={(b) => setEditBooking(b)}
               statusPending={updateStatusMutation.isPending}
               redeemPending={redeemMutation.isPending}
             />
@@ -448,6 +454,14 @@ export default function CoachDashboardPage() {
             No sessions scheduled for {format(selectedDate, "EEEE, MMMM d")}. Click a time slot or use "Add Session" to schedule one.
           </p>
         </div>
+      )}
+
+      {editBooking && (
+        <EditSessionDialog
+          booking={editBooking}
+          open={!!editBooking}
+          onOpenChange={(open) => { if (!open) setEditBooking(null); }}
+        />
       )}
     </div>
   );
