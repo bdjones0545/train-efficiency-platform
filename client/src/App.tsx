@@ -19,7 +19,9 @@ import RedemptionsPage from "@/pages/redemptions";
 import CoachProfilePage from "@/pages/coach-profile";
 import AdminDashboardPage from "@/pages/admin-dashboard";
 import OpenSessionsPage from "@/pages/open-sessions";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 function AuthenticatedLayout() {
   const style = {
@@ -59,6 +61,43 @@ function AuthenticatedLayout() {
   );
 }
 
+function PublicLayout() {
+  return (
+    <Switch>
+      <Route path="/sessions" component={OpenSessionsPublicPage} />
+      <Route><LandingPage /></Route>
+    </Switch>
+  );
+}
+
+function OpenSessionsPublicPage() {
+  return (
+    <div className="min-h-screen bg-background">
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4 flex-wrap">
+          <a href="/" className="flex items-center gap-2" data-testid="link-nav-home">
+            <img src={logoImg} alt="EST Logo" className="h-8 rounded-md" data-testid="img-public-nav-logo" />
+            <span className="font-semibold text-lg tracking-tight" data-testid="text-public-brand-name">Efficiency Strength Training</span>
+          </a>
+          <div className="flex items-center gap-3">
+            <a href="/">
+              <Button variant="ghost" size="sm" data-testid="link-home">Home</Button>
+            </a>
+            <a href="/api/login?returnTo=/sessions">
+              <Button data-testid="button-register">Sign Up / Log In</Button>
+            </a>
+          </div>
+        </div>
+      </nav>
+      <main className="pt-24 pb-12 px-6">
+        <div className="max-w-5xl mx-auto">
+          <OpenSessionsPage />
+        </div>
+      </main>
+    </div>
+  );
+}
+
 function AppContent() {
   const { user, isLoading } = useAuth();
 
@@ -75,7 +114,7 @@ function AppContent() {
   }
 
   if (!user) {
-    return <LandingPage />;
+    return <PublicLayout />;
   }
 
   return <AuthenticatedLayout />;

@@ -94,9 +94,10 @@ export default function LandingPage() {
                   Book a Session
                 </Button>
               </a>
-              <a href="#features">
-                <Button variant="outline" size="lg" data-testid="button-learn-more">
-                  Learn More
+              <a href="/sessions">
+                <Button variant="outline" size="lg" data-testid="button-view-sessions">
+                  <Users className="h-4 w-4 mr-2" />
+                  View Group Sessions
                 </Button>
               </a>
             </div>

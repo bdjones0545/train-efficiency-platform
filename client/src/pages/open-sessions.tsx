@@ -11,6 +11,8 @@ import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Calendar, Clock, Users, UserPlus } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
+import type { UserProfile } from "@shared/schema";
+import { AddSessionDialog } from "@/components/add-session-dialog";
 
 function ParticipantsList({ bookingId }: { bookingId: string }) {
   const { data: participants, isLoading } = useQuery<ParticipantWithUser[]>({
@@ -37,6 +39,13 @@ export default function OpenSessionsPage() {
   const { toast } = useToast();
   const { user, isAuthenticated } = useAuth();
 
+  const { data: profile } = useQuery<UserProfile>({
+    queryKey: ["/api/profile"],
+    enabled: isAuthenticated,
+  });
+
+  const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
+
   const { data: sessions, isLoading } = useQuery<OpenSession[]>({
     queryKey: ["/api/sessions/open"],
   });
@@ -55,7 +64,7 @@ export default function OpenSessionsPage() {
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
         toast({ title: "Please log in", description: "You need to be logged in to join.", variant: "destructive" });
-        setTimeout(() => { window.location.href = "/api/login"; }, 500);
+        setTimeout(() => { window.location.href = "/api/login?returnTo=/sessions"; }, 500);
         return;
       }
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -64,7 +73,7 @@ export default function OpenSessionsPage() {
 
   const handleJoin = (bookingId: string) => {
     if (!isAuthenticated) {
-      window.location.href = "/api/login";
+      window.location.href = "/api/login?returnTo=/sessions";
       return;
     }
     joinMutation.mutate(bookingId);
@@ -81,9 +90,12 @@ export default function OpenSessionsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-serif font-bold" data-testid="text-open-sessions-title">Open Group Sessions</h1>
-        <p className="text-muted-foreground mt-1">Browse and join semi-private training sessions with other athletes</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-serif font-bold" data-testid="text-open-sessions-title">Open Group Sessions</h1>
+          <p className="text-muted-foreground mt-1">Browse and join semi-private training sessions with other athletes</p>
+        </div>
+        {isCoach && <AddSessionDialog />}
       </div>
 
       {!sessions || sessions.length === 0 ? (
@@ -158,7 +170,7 @@ export default function OpenSessionsPage() {
                   data-testid={`button-join-session-${session.id}`}
                 >
                   <UserPlus className="h-4 w-4 mr-1" />
-                  {joinMutation.isPending ? "Joining..." : "Join Session"}
+                  {!isAuthenticated ? "Sign Up to Join" : joinMutation.isPending ? "Joining..." : "Join Session"}
                 </Button>
               </div>
             </Card>

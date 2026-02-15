@@ -54,6 +54,7 @@ export function AddSessionDialog() {
       toast({ title: "Session Scheduled", description: "The session has been added to your bookings." });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
       resetForm();
       setOpen(false);
     },
