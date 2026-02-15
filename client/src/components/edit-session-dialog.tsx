@@ -24,6 +24,9 @@ const PRESET_LOCATIONS = [
   "Sweet Grass Fitness (Beaufort, SC)",
   "Coursen Tate Park (Beaufort, SC)",
   "Robert Smalls International Academy (Burton, SC)",
+  "Humidity Fitness (Beaufort, SC)",
+  "Dataw Island Community Center (St. Helena, SC)",
+  "Spring Island Sports Complex (Okatie, SC)",
 ];
 import type { BookingWithDetails } from "@/lib/types";
 
