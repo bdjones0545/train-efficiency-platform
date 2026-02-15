@@ -278,6 +278,7 @@ export default function CoachDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings/completed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {

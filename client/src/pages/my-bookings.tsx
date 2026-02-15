@@ -41,6 +41,8 @@ export default function MyBookingsPage() {
     onSuccess: () => {
       toast({ title: "Booking Cancelled" });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {

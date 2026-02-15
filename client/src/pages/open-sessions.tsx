@@ -33,6 +33,7 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
       toast({ title: "Session Deleted", description: "The group session has been removed." });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
