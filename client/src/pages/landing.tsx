@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus } from "lucide-react";
+import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
@@ -112,6 +112,12 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <a href="#features">
               <Button variant="ghost" size="sm" data-testid="link-features">Features</Button>
+            </a>
+            <a href="/athletic">
+              <Button variant="ghost" size="sm" data-testid="link-blhs-athletic">
+                <Trophy className="h-4 w-4 mr-1" />
+                BLHS Athletic
+              </Button>
             </a>
             <Button
               variant="outline"

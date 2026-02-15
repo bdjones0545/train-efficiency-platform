@@ -77,6 +77,13 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- BLHS Athletic Scheduling page (/athletic): public scheduling page for Bluffton High School athletic teams
+  - Daily calendar view (4 PM – 8 PM) with coach-dashboard-style timeline
+  - Max 2 teams per 1-hour time slot, enforced on backend
+  - Dialog prompt asks "What team are you scheduling?" on slot click
+  - Public API: GET /api/athletic/bookings?date=, POST /api/athletic/bookings, DELETE /api/athletic/bookings/:id
+  - athletic_bookings table: id, date, time_slot, team_name, booked_by, created_at
+  - "BLHS Athletic" tab added to landing page navigation
 - Location field for session scheduling: coaches select from preset locations or enter custom
   - Preset locations: Bluffton High School, Oscar Frazier Park, PickUp USA Fitness, Sweet Grass Fitness, Coursen Tate Park, Robert Smalls International Academy
   - Custom "Other" option with manual text input

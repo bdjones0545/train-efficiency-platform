@@ -951,6 +951,52 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/athletic/bookings", async (req, res) => {
+    try {
+      const date = req.query.date as string;
+      if (!date) return res.status(400).json({ message: "date query param required" });
+      const list = await storage.getAthleticBookings(date);
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching athletic bookings:", error);
+      res.status(500).json({ message: "Failed to fetch athletic bookings" });
+    }
+  });
+
+  app.post("/api/athletic/bookings", async (req: any, res) => {
+    try {
+      const { insertAthleticBookingSchema } = await import("@shared/schema");
+      const parsed = insertAthleticBookingSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten().fieldErrors });
+      }
+      const { date, timeSlot, teamName, bookedBy } = parsed.data;
+      const validSlots = ["16:00", "17:00", "18:00", "19:00"];
+      if (!validSlots.includes(timeSlot)) {
+        return res.status(400).json({ message: "Invalid time slot. Must be between 4 PM and 8 PM." });
+      }
+      const count = await storage.countAthleticBookingsForSlot(date, timeSlot);
+      if (count >= 2) {
+        return res.status(409).json({ message: "This time slot is full (max 2 teams per hour)" });
+      }
+      const booking = await storage.createAthleticBooking({ date, timeSlot, teamName, bookedBy: bookedBy || null });
+      res.json(booking);
+    } catch (error) {
+      console.error("Error creating athletic booking:", error);
+      res.status(500).json({ message: "Failed to create athletic booking" });
+    }
+  });
+
+  app.delete("/api/athletic/bookings/:id", async (req, res) => {
+    try {
+      await storage.deleteAthleticBooking(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting athletic booking:", error);
+      res.status(500).json({ message: "Failed to delete athletic booking" });
+    }
+  });
+
   app.post("/api/chat", async (req: any, res) => {
     try {
       const { messages } = req.body;

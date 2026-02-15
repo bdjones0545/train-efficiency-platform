@@ -19,6 +19,7 @@ import RedemptionsPage from "@/pages/redemptions";
 import CoachProfilePage from "@/pages/coach-profile";
 import AdminDashboardPage from "@/pages/admin-dashboard";
 import OpenSessionsPage from "@/pages/open-sessions";
+import AthleticSchedulingPage from "@/pages/athletic-scheduling";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatWidget } from "@/components/chat-widget";
@@ -46,6 +47,7 @@ function AuthenticatedLayout() {
                 <Route path="/coaches" component={CoachesPage} />
                 <Route path="/coaches/:id" component={CoachSchedulePage} />
                 <Route path="/sessions" component={OpenSessionsPage} />
+                <Route path="/athletic" component={AthleticSchedulingPage} />
                 <Route path="/bookings" component={MyBookingsPage} />
                 <Route path="/coach" component={CoachDashboardPage} />
                 <Route path="/coach/profile" component={CoachProfilePage} />
@@ -66,6 +68,7 @@ function PublicLayout() {
   return (
     <Switch>
       <Route path="/sessions" component={OpenSessionsPublicPage} />
+      <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route><LandingPage /></Route>
     </Switch>
   );
