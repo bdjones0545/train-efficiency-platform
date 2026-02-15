@@ -6,11 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { ChevronLeft, ChevronRight, Clock, MapPin, ArrowLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, MapPin, ArrowLeft, Users } from "lucide-react";
 import { useState } from "react";
 import { format, addDays, startOfWeek, isSameDay, parseISO } from "date-fns";
 import type { CoachWithUser, DaySlots } from "@/lib/types";
@@ -24,6 +26,7 @@ export default function CoachSchedulePage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [selectedService, setSelectedService] = useState<string>("");
   const [selectedSlot, setSelectedSlot] = useState<{ date: string; start: string; end: string } | null>(null);
+  const [groupDescription, setGroupDescription] = useState("");
 
   const { data: coach, isLoading: coachLoading } = useQuery<CoachWithUser>({
     queryKey: ["/api/coaches", params.id],
@@ -50,7 +53,7 @@ export default function CoachSchedulePage() {
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { coachId: string; serviceId: string; startAt: string; endAt: string }) => {
+    mutationFn: async (data: { coachId: string; serviceId: string; startAt: string; endAt: string; groupDescription?: string }) => {
       const res = await apiRequest("POST", "/api/bookings", data);
       return res.json();
     },
@@ -58,7 +61,9 @@ export default function CoachSchedulePage() {
       toast({ title: "Session Booked", description: "Your session has been confirmed." });
       queryClient.invalidateQueries({ queryKey: ["/api/coaches", params.id, "slots"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
       setSelectedSlot(null);
+      setGroupDescription("");
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -69,6 +74,9 @@ export default function CoachSchedulePage() {
       toast({ title: "Booking Failed", description: error.message, variant: "destructive" });
     },
   });
+
+  const selectedServiceData = services?.find(s => s.id === selectedService);
+  const isSemiPrivate = selectedServiceData?.name?.toLowerCase().includes("semi-private") ?? false;
 
   const handleBook = () => {
     if (!isAuthenticated) {
@@ -81,6 +89,7 @@ export default function CoachSchedulePage() {
       serviceId: selectedService,
       startAt: selectedSlot.start,
       endAt: selectedSlot.end,
+      ...(isSemiPrivate ? { groupDescription: groupDescription } : {}),
     });
   };
 
@@ -245,25 +254,52 @@ export default function CoachSchedulePage() {
 
       {selectedSlot && (
         <Card className="p-6 border-primary/30">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h3 className="font-semibold">Confirm Booking</h3>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="h-3.5 w-3.5" />
-                {format(parseISO(selectedSlot.start), "EEEE, MMM d 'at' h:mm a")} —{" "}
-                {format(parseISO(selectedSlot.end), "h:mm a")}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h3 className="font-semibold">Confirm Booking</h3>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5" />
+                  {format(parseISO(selectedSlot.start), "EEEE, MMM d 'at' h:mm a")} —{" "}
+                  {format(parseISO(selectedSlot.end), "h:mm a")}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  with {coach.user?.firstName} {coach.user?.lastName}
+                </p>
+                {isSemiPrivate && (
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Users className="h-3.5 w-3.5" />
+                    Group session (up to 6 participants)
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-muted-foreground">
-                with {coach.user?.firstName} {coach.user?.lastName}
-              </p>
+              <Button
+                onClick={handleBook}
+                disabled={bookMutation.isPending}
+                data-testid="button-confirm-booking"
+              >
+                {bookMutation.isPending ? "Booking..." : "Confirm Booking"}
+              </Button>
             </div>
-            <Button
-              onClick={handleBook}
-              disabled={bookMutation.isPending}
-              data-testid="button-confirm-booking"
-            >
-              {bookMutation.isPending ? "Booking..." : "Confirm Booking"}
-            </Button>
+            {isSemiPrivate && (
+              <div className="space-y-2">
+                <Label htmlFor="group-description" data-testid="label-group-description">
+                  What is this session for?
+                </Label>
+                <Textarea
+                  id="group-description"
+                  placeholder="e.g., Speed & agility work for soccer team, Pre-season strength training..."
+                  value={groupDescription}
+                  onChange={(e) => setGroupDescription(e.target.value)}
+                  className="resize-none"
+                  rows={2}
+                  data-testid="input-group-description"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This description will be visible to other clients who can join your session.
+                </p>
+              </div>
+            )}
           </div>
         </Card>
       )}

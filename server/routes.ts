@@ -325,6 +325,8 @@ export async function registerRoutes(
         return res.status(409).json({ message: "This time slot is no longer available" });
       }
 
+      const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
+
       const booking = await storage.createBooking({
         clientId: userId,
         coachId,
@@ -333,7 +335,16 @@ export async function registerRoutes(
         endAt: end,
         status: "CONFIRMED",
         notes: req.body.notes || "",
+        maxParticipants: isSemiPrivate ? 6 : null,
+        groupDescription: isSemiPrivate ? (req.body.groupDescription || "") : "",
       });
+
+      if (isSemiPrivate) {
+        await storage.addBookingParticipant({
+          bookingId: booking.id,
+          userId,
+        });
+      }
 
       res.json(booking);
     } catch (error) {
