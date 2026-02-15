@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Clock, MapPin, ArrowLeft, Users, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { format, addDays, startOfWeek, isSameDay, parseISO } from "date-fns";
@@ -275,12 +276,14 @@ export default function CoachSchedulePage() {
         </Card>
       )}
 
-      {selectedSlot && (
-        <Card className="p-6 border-primary/30">
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <h3 className="font-semibold">Confirm Booking</h3>
+      <Dialog open={!!selectedSlot} onOpenChange={(open) => { if (!open) { setSelectedSlot(null); setGroupDescription(""); setParticipantNames([""]); } }}>
+        <DialogContent className="sm:max-w-md" data-testid="dialog-confirm-booking">
+          <DialogHeader>
+            <DialogTitle>Confirm Booking</DialogTitle>
+          </DialogHeader>
+          {selectedSlot && (
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-3.5 w-3.5" />
                   {format(parseISO(selectedSlot.start), "EEEE, MMM d 'at' h:mm a")} —{" "}
@@ -289,6 +292,9 @@ export default function CoachSchedulePage() {
                 <p className="text-sm text-muted-foreground">
                   with {coach.user?.firstName} {coach.user?.lastName}
                 </p>
+                <p className="text-sm font-medium">
+                  {selectedServiceData?.name} — ${((selectedServiceData?.priceCents || 0) / 100).toFixed(2)}
+                </p>
                 {isSemiPrivate && (
                   <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Users className="h-3.5 w-3.5" />
@@ -296,7 +302,74 @@ export default function CoachSchedulePage() {
                   </div>
                 )}
               </div>
+
+              {isSemiPrivate && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="group-description" data-testid="label-group-description">
+                      What is this session for?
+                    </Label>
+                    <Textarea
+                      id="group-description"
+                      placeholder="e.g., Speed & agility work for soccer team, Pre-season strength training..."
+                      value={groupDescription}
+                      onChange={(e) => setGroupDescription(e.target.value)}
+                      className="resize-none"
+                      rows={2}
+                      data-testid="input-group-description"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      This description will be visible to other clients who can join your session.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label data-testid="label-participants">
+                      Participant Names
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Add the names of athletes attending this session (e.g., your kids or team members).
+                    </p>
+                    <div className="space-y-2">
+                      {participantNames.map((name, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Input
+                            placeholder={`Participant ${index + 1} name`}
+                            value={name}
+                            onChange={(e) => updateParticipantName(index, e.target.value)}
+                            data-testid={`input-participant-name-${index}`}
+                          />
+                          {participantNames.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeParticipantField(index)}
+                              data-testid={`button-remove-participant-${index}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {participantNames.length < 6 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addParticipantField}
+                        data-testid="button-add-participant"
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Add Another Participant
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <Button
+                className="w-full"
                 onClick={handleBook}
                 disabled={bookMutation.isPending}
                 data-testid="button-confirm-booking"
@@ -304,73 +377,9 @@ export default function CoachSchedulePage() {
                 {bookMutation.isPending ? "Booking..." : "Confirm Booking"}
               </Button>
             </div>
-            {isSemiPrivate && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="group-description" data-testid="label-group-description">
-                    What is this session for?
-                  </Label>
-                  <Textarea
-                    id="group-description"
-                    placeholder="e.g., Speed & agility work for soccer team, Pre-season strength training..."
-                    value={groupDescription}
-                    onChange={(e) => setGroupDescription(e.target.value)}
-                    className="resize-none"
-                    rows={2}
-                    data-testid="input-group-description"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    This description will be visible to other clients who can join your session.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label data-testid="label-participants">
-                    Participant Names
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Add the names of athletes attending this session (e.g., your kids or team members).
-                  </p>
-                  <div className="space-y-2">
-                    {participantNames.map((name, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <Input
-                          placeholder={`Participant ${index + 1} name`}
-                          value={name}
-                          onChange={(e) => updateParticipantName(index, e.target.value)}
-                          data-testid={`input-participant-name-${index}`}
-                        />
-                        {participantNames.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeParticipantField(index)}
-                            data-testid={`button-remove-participant-${index}`}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  {participantNames.length < 6 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={addParticipantField}
-                      data-testid="button-add-participant"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add Another Participant
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-      )}
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
