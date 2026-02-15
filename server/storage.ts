@@ -24,7 +24,7 @@ import {
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
-import { eq, and, gte, lte, or, desc, sql, ilike } from "drizzle-orm";
+import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike } from "drizzle-orm";
 
 export interface IStorage {
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
@@ -280,8 +280,8 @@ export class DatabaseStorage implements IStorage {
         eq(bookings.status, "CONFIRMED"),
         eq(bookings.status, "PENDING")
       ),
-      lte(bookings.startAt, endAt),
-      gte(bookings.endAt, startAt),
+      lt(bookings.startAt, endAt),
+      gt(bookings.endAt, startAt),
     ];
     const result = await db.select().from(bookings).where(and(...conditions));
     if (excludeId) {
