@@ -248,7 +248,7 @@ export default function AdminDashboardPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary" className="text-xs">{s.durationMin} min</Badge>
-                    <Badge variant="secondary" className="text-xs">${(s.priceCents / 100).toFixed(2)}</Badge>
+                    <Badge variant="secondary" className="text-xs">{s.name.toLowerCase().includes("team training") ? "Quoted Price" : s.priceCents === 0 ? "FREE" : `$${(s.priceCents / 100).toFixed(2)}`}</Badge>
                     <Badge className={s.active ? "bg-green-500/15 text-green-700 dark:text-green-400 text-xs" : "bg-red-500/15 text-red-700 dark:text-red-400 text-xs"}>
                       {s.active ? "Active" : "Inactive"}
                     </Badge>

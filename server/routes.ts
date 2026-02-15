@@ -325,6 +325,14 @@ export async function registerRoutes(
         return res.status(409).json({ message: "This time slot is no longer available" });
       }
 
+      const isFreeIntro = service.name.toLowerCase().includes("free intro");
+      if (isFreeIntro) {
+        const alreadyUsed = await storage.hasUsedFreeSession(userId);
+        if (alreadyUsed) {
+          return res.status(400).json({ message: "You have already used your free intro session" });
+        }
+      }
+
       const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
 
       const booking = await storage.createBooking({
@@ -380,6 +388,17 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching bookings:", error);
       res.status(500).json({ message: "Failed to fetch bookings" });
+    }
+  });
+
+  app.get("/api/free-session-status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const used = await storage.hasUsedFreeSession(userId);
+      res.json({ hasUsedFreeSession: used });
+    } catch (error) {
+      console.error("Error checking free session status:", error);
+      res.status(500).json({ message: "Failed to check free session status" });
     }
   });
 
@@ -512,6 +531,14 @@ export async function registerRoutes(
           resolvedClientId = user.id;
         } else {
           resolvedClientId = userId;
+        }
+      }
+
+      const isFreeIntro = service.name.toLowerCase().includes("free intro");
+      if (isFreeIntro) {
+        const alreadyUsed = await storage.hasUsedFreeSession(resolvedClientId);
+        if (alreadyUsed) {
+          return res.status(400).json({ message: "This client has already used their free intro session" });
         }
       }
 

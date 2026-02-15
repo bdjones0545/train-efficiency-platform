@@ -201,7 +201,7 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
 
         {session.service && (
           <p className="text-sm font-medium text-primary" data-testid={`text-session-price-${session.id}`}>
-            ${(session.service.priceCents / 100).toFixed(2)} per person
+            {session.service.name.toLowerCase().includes("team training") ? "Quoted Price" : session.service.priceCents === 0 ? "FREE" : `$${(session.service.priceCents / 100).toFixed(2)} per person`}
           </p>
         )}
 

@@ -70,6 +70,7 @@ export interface IStorage {
   findOrCreateUserByName(firstName: string, lastName: string): Promise<User>;
   searchUsers(query: string): Promise<User[]>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  hasUsedFreeSession(userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -390,6 +391,27 @@ export class DatabaseStorage implements IStorage {
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
     return user || undefined;
+  }
+
+  async hasUsedFreeSession(userId: string): Promise<boolean> {
+    const freeServices = await db
+      .select({ id: services.id })
+      .from(services)
+      .where(ilike(services.name, '%free intro%'));
+    if (freeServices.length === 0) return false;
+    const freeServiceIds = freeServices.map(s => s.id);
+    const existing = await db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.clientId, userId),
+          sql`${bookings.serviceId} = ANY(${freeServiceIds})`,
+          sql`${bookings.status} != 'CANCELLED'`
+        )
+      )
+      .limit(1);
+    return existing.length > 0;
   }
 }
 

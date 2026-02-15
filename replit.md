@@ -97,7 +97,10 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - Open Sessions page (/sessions) for clients to browse and join group sessions
   - Join/leave API endpoints with capacity enforcement (max 6)
   - Participant display on coach dashboard and booking cards
-- Services updated: 1:1 60min ($70), 1:1 30min ($40), Semi-Private ($35), Team Training (by quote)
+- Services updated: 1:1 60min ($70), 1:1 30min ($40), Semi-Private ($35), Team Training (by quote), Free Intro Session (30 min, one per user)
+  - Team Training shows "Quoted Price" instead of $0.00
+  - Free Intro Session limited to one per user (enforced backend + hidden from dropdown after use)
+  - GET /api/free-session-status - Check if user has used free session (auth required)
 - Coach-initiated session scheduling: coaches can add sessions from dashboard with client name, service, date/time
   - POST /api/coach/bookings - Coach creates booking (supports clientId or clientFirstName/clientLastName)
   - GET /api/coach/clients/search - Search existing clients by name/email

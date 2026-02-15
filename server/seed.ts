@@ -99,6 +99,13 @@ export async function seedDatabase() {
         priceCents: 0,
         active: true,
       },
+      {
+        name: "Free Intro Session (30 min)",
+        description: "A complimentary introductory session for new clients. One free session per person — experience our coaching style and facility before committing.",
+        durationMin: 30,
+        priceCents: 0,
+        active: true,
+      },
     ]);
 
     console.log("Database seeded successfully!");

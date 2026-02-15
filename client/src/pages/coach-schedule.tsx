@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Clock, MapPin, ArrowLeft, Users, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { format, addDays, startOfWeek, isSameDay, parseISO } from "date-fns";
@@ -37,6 +37,11 @@ export default function CoachSchedulePage() {
 
   const { data: services } = useQuery<Service[]>({
     queryKey: ["/api/services"],
+  });
+
+  const { data: freeSessionStatus } = useQuery<{ hasUsedFreeSession: boolean }>({
+    queryKey: ["/api/free-session-status"],
+    enabled: isAuthenticated,
   });
 
   const weekEnd = addDays(weekStart, 6);
@@ -65,6 +70,7 @@ export default function CoachSchedulePage() {
       queryClient.invalidateQueries({ queryKey: ["/api/coaches", params.id, "slots"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/free-session-status"] });
       setSelectedSlot(null);
       setGroupDescription("");
       setParticipantNames([""]);
@@ -184,9 +190,13 @@ export default function CoachSchedulePage() {
               <SelectValue placeholder="Select a service" />
             </SelectTrigger>
             <SelectContent>
-              {services?.filter(s => s.active).map((service) => (
+              {services?.filter(s => {
+                if (!s.active) return false;
+                if (s.name.toLowerCase().includes("free intro") && freeSessionStatus?.hasUsedFreeSession) return false;
+                return true;
+              }).map((service) => (
                 <SelectItem key={service.id} value={service.id}>
-                  {service.name} ({service.durationMin}min) — ${(service.priceCents / 100).toFixed(2)}
+                  {service.name} ({service.durationMin}min) — {service.name.toLowerCase().includes("team training") ? "Quoted Price" : service.priceCents === 0 ? "FREE" : `$${(service.priceCents / 100).toFixed(2)}`}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -280,6 +290,7 @@ export default function CoachSchedulePage() {
         <DialogContent className="sm:max-w-md" data-testid="dialog-confirm-booking">
           <DialogHeader>
             <DialogTitle>Confirm Booking</DialogTitle>
+            <DialogDescription>Review your session details and confirm</DialogDescription>
           </DialogHeader>
           {selectedSlot && (
             <div className="space-y-4 pt-2">
@@ -293,7 +304,7 @@ export default function CoachSchedulePage() {
                   with {coach.user?.firstName} {coach.user?.lastName}
                 </p>
                 <p className="text-sm font-medium">
-                  {selectedServiceData?.name} — ${((selectedServiceData?.priceCents || 0) / 100).toFixed(2)}
+                  {selectedServiceData?.name} — {selectedServiceData?.name?.toLowerCase().includes("team training") ? "Quoted Price" : (selectedServiceData?.priceCents || 0) === 0 ? "FREE" : `$${((selectedServiceData?.priceCents || 0) / 100).toFixed(2)}`}
                 </p>
                 {isSemiPrivate && (
                   <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
