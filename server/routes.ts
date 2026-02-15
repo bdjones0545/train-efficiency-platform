@@ -868,7 +868,7 @@ export async function registerRoutes(
         }
 
         if (perPersonCents > 0) {
-          for (const [, entry] of chargeableMap) {
+          for (const entry of Array.from(chargeableMap.values())) {
             const totalForUser = perPersonCents * entry.count;
             await storage.debitWallet(
               entry.userId,
@@ -1135,9 +1135,9 @@ export async function registerRoutes(
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const cashoutsList = await storage.getAllCashouts();
-      const coaches = await storage.getCoaches();
-      const enriched = cashoutsList.map(c => {
-        const coach = coaches.find(cp => cp.id === c.coachId);
+      const coaches = await storage.getCoachProfiles();
+      const enriched = cashoutsList.map((c: any) => {
+        const coach = coaches.find((cp: any) => cp.id === c.coachId);
         return {
           ...c,
           coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
