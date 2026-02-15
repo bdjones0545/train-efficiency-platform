@@ -109,10 +109,7 @@ export async function setupAuth(app: Express) {
       (req.session as any).returnTo = returnTo;
     }
     ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      prompt: "login consent",
-      scope: ["openid", "email", "profile", "offline_access"],
-    })(req, res, next);
+    passport.authenticate(`replitauth:${req.hostname}`)(req, res, next);
   });
 
   app.get("/api/callback", (req, res, next) => {
