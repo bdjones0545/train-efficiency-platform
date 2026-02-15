@@ -1077,6 +1077,40 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
+    try {
+      const cashoutsList = await storage.getAllCashouts();
+      const coaches = await storage.getCoaches();
+      const enriched = cashoutsList.map(c => {
+        const coach = coaches.find(cp => cp.id === c.coachId);
+        return {
+          ...c,
+          coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
+        };
+      });
+      res.json(enriched);
+    } catch (error) {
+      console.error("Error fetching all cashouts:", error);
+      res.status(500).json({ message: "Failed to fetch cashouts" });
+    }
+  });
+
+  app.patch("/api/admin/cashouts/:id/status", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      if (!["PAID", "DENIED"].includes(status)) {
+        return res.status(400).json({ message: "Status must be PAID or DENIED" });
+      }
+      const updated = await storage.updateCashoutStatus(id, status);
+      if (!updated) return res.status(404).json({ message: "Cashout not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating cashout status:", error);
+      res.status(500).json({ message: "Failed to update cashout status" });
+    }
+  });
+
   app.get("/api/athletic/bookings", async (req, res) => {
     try {
       const date = req.query.date as string;

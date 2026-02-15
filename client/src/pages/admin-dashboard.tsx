@@ -11,12 +11,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Users, Calendar, DollarSign, Plus, Download, Settings } from "lucide-react";
+import { Users, Calendar, DollarSign, Plus, Download, Settings, Banknote, CheckCircle, XCircle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { useState } from "react";
 import type { CoachWithUser, BookingWithDetails, RedemptionWithDetails } from "@/lib/types";
-import type { Service, UserProfile } from "@shared/schema";
+import type { Service, UserProfile, Cashout } from "@shared/schema";
 import type { User } from "@shared/models/auth";
+
+type CashoutWithCoach = Cashout & { coachName: string };
 
 export default function AdminDashboardPage() {
   const { toast } = useToast();
@@ -26,6 +28,7 @@ export default function AdminDashboardPage() {
   const { data: allBookings } = useQuery<BookingWithDetails[]>({ queryKey: ["/api/admin/bookings"] });
   const { data: allRedemptions } = useQuery<RedemptionWithDetails[]>({ queryKey: ["/api/admin/redemptions"] });
   const { data: allUsers } = useQuery<(User & { profile?: UserProfile })[]>({ queryKey: ["/api/admin/users"] });
+  const { data: allCashouts } = useQuery<CashoutWithCoach[]>({ queryKey: ["/api/admin/cashouts"] });
 
   const [newServiceName, setNewServiceName] = useState("");
   const [newServiceDesc, setNewServiceDesc] = useState("");
@@ -64,6 +67,25 @@ export default function AdminDashboardPage() {
       toast({ title: "Role Updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", description: "Logging in again...", variant: "destructive" });
+        setTimeout(() => { window.location.href = "/"; }, 500);
+        return;
+      }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateCashoutMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/admin/cashouts/${id}/status`, { status });
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      toast({ title: variables.status === "PAID" ? "Marked as Paid" : "Cashout Denied" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cashouts"] });
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -142,6 +164,7 @@ export default function AdminDashboardPage() {
           <TabsTrigger value="services" data-testid="tab-services">Services</TabsTrigger>
           <TabsTrigger value="bookings" data-testid="tab-bookings">Bookings</TabsTrigger>
           <TabsTrigger value="redemptions" data-testid="tab-redemptions">Redemptions</TabsTrigger>
+          <TabsTrigger value="cashouts" data-testid="tab-cashouts">Cashouts</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-4">
@@ -315,10 +338,71 @@ export default function AdminDashboardPage() {
             </div>
           </Card>
         </TabsContent>
+
+        <TabsContent value="cashouts" className="mt-4">
+          <Card className="p-4">
+            <div className="space-y-3">
+              {allCashouts?.map((c) => (
+                <div key={c.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b last:border-0" data-testid={`card-cashout-${c.id}`}>
+                  <div className="space-y-0.5">
+                    <p className="font-medium text-sm" data-testid={`text-cashout-coach-${c.id}`}>{c.coachName}</p>
+                    <p className="text-lg font-bold" data-testid={`text-cashout-amount-${c.id}`}>${(c.amountCents / 100).toFixed(2)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Requested {c.requestedAt && format(parseISO(c.requestedAt as unknown as string), "MMM d, yyyy h:mm a")}
+                    </p>
+                    {c.processedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Processed {format(parseISO(c.processedAt as unknown as string), "MMM d, yyyy h:mm a")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {c.status === "REQUESTED" ? (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => updateCashoutMutation.mutate({ id: c.id, status: "PAID" })}
+                          disabled={updateCashoutMutation.isPending}
+                          data-testid={`button-pay-cashout-${c.id}`}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Mark Paid
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updateCashoutMutation.mutate({ id: c.id, status: "DENIED" })}
+                          disabled={updateCashoutMutation.isPending}
+                          data-testid={`button-deny-cashout-${c.id}`}
+                        >
+                          <XCircle className="h-4 w-4 mr-1" />
+                          Deny
+                        </Button>
+                      </>
+                    ) : (
+                      <Badge className={`text-xs ${cashoutColors[c.status] || ""}`}>
+                        {c.status}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {(!allCashouts || allCashouts.length === 0) && (
+                <p className="text-sm text-muted-foreground text-center py-4">No cashout requests yet</p>
+              )}
+            </div>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
 }
+
+const cashoutColors: Record<string, string> = {
+  PAID: "bg-green-500/15 text-green-700 dark:text-green-400",
+  DENIED: "bg-red-500/15 text-red-700 dark:text-red-400",
+  REQUESTED: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+};
 
 const payoutColors: Record<string, string> = {
   PENDING: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",

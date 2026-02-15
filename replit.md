@@ -57,6 +57,8 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - DELETE /api/bookings/:id/leave - Leave a semi-private session (auth required)
 - GET /api/admin/bookings - All bookings (ADMIN)
 - GET /api/admin/redemptions - All redemptions (ADMIN)
+- GET /api/admin/cashouts - All cashout requests with coach names (ADMIN)
+- PATCH /api/admin/cashouts/:id/status - Update cashout status to PAID or DENIED (ADMIN)
 
 ## Database
 - PostgreSQL with Drizzle ORM
