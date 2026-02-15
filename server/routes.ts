@@ -645,7 +645,7 @@ export async function registerRoutes(
       const bookingId = req.params.id;
       const existing = await storage.getBooking(bookingId);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
-      if (existing.coachId !== coachId) return res.status(403).json({ message: "Not your booking" });
+      const bookingCoachId = existing.coachId;
 
       const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName } = req.body;
 
@@ -698,7 +698,7 @@ export async function registerRoutes(
       if (updateData.startAt || updateData.endAt) {
         const checkStart = updateData.startAt || existing.startAt;
         const checkEnd = updateData.endAt || existing.endAt;
-        const overlapping = await storage.getOverlappingBookings(coachId, checkStart, checkEnd, bookingId);
+        const overlapping = await storage.getOverlappingBookings(bookingCoachId, checkStart, checkEnd, bookingId);
         if (overlapping.length > 0) {
           return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
         }
@@ -721,7 +721,6 @@ export async function registerRoutes(
       const bookingId = req.params.id;
       const existing = await storage.getBooking(bookingId);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
-      if (existing.coachId !== coachId) return res.status(403).json({ message: "Not your booking" });
 
       const deleted = await storage.deleteBooking(bookingId);
       if (!deleted) return res.status(500).json({ message: "Failed to delete session" });
@@ -828,7 +827,6 @@ export async function registerRoutes(
 
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
-      if (booking.coachId !== coachId) return res.status(403).json({ message: "Not your booking" });
       if (booking.status !== "COMPLETED") return res.status(400).json({ message: "Booking must be completed" });
 
       const existing = await storage.getRedemptionByBookingId(bookingId);
