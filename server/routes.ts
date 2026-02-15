@@ -222,6 +222,7 @@ export async function registerRoutes(
               console.error("Session save error:", saveErr);
               return res.status(500).json({ message: "Failed to save session" });
             }
+            console.log("Login session saved, sid:", req.sessionID, "cookie:", JSON.stringify(req.session.cookie));
             res.json({ success: true, redirect: "/" });
           });
         }
