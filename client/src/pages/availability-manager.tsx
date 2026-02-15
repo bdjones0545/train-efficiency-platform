@@ -2,13 +2,16 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Plus, Trash2, Clock } from "lucide-react";
+import { getAuthHeaders } from "@/lib/authToken";
+import { Plus, Trash2, Clock, ArrowLeftRight } from "lucide-react";
 import { useState } from "react";
 import type { AvailabilityBlock } from "@shared/schema";
+import type { CoachWithUser } from "@/lib/types";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const TIMES: string[] = [];
@@ -26,18 +29,47 @@ function formatTime(t: string) {
   return `${h12}:${m} ${ampm}`;
 }
 
+function fetchWithAuth(url: string) {
+  return fetch(url, {
+    credentials: "include",
+    headers: { ...getAuthHeaders(), "Cache-Control": "no-cache" },
+  }).then((res) => {
+    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+    return res.json();
+  });
+}
+
 export default function AvailabilityManagerPage() {
   const { toast } = useToast();
   const [newDay, setNewDay] = useState("0");
   const [newStart, setNewStart] = useState("09:00");
   const [newEnd, setNewEnd] = useState("17:00");
+  const [selectedCoachId, setSelectedCoachId] = useState<string>("");
+
+  const { data: coaches } = useQuery<CoachWithUser[]>({
+    queryKey: ["/api/coaches"],
+  });
+
+  const { data: myCoachProfile } = useQuery<{ id: string }>({
+    queryKey: ["/api/coach/profile"],
+    queryFn: () => fetchWithAuth("/api/coach/profile"),
+  });
+
+  const activeCoachId = selectedCoachId || myCoachProfile?.id || "";
+
+  const selectedCoach = coaches?.find((c) => c.id === activeCoachId);
+  const selectedCoachName = selectedCoach
+    ? `${selectedCoach.user?.firstName || ""} ${selectedCoach.user?.lastName || ""}`.trim()
+    : "";
 
   const { data: blocks, isLoading } = useQuery<AvailabilityBlock[]>({
-    queryKey: ["/api/coach/availability"],
+    queryKey: ["/api/coach/availability", activeCoachId],
+    queryFn: () => fetchWithAuth(activeCoachId ? `/api/coach/availability?coachId=${activeCoachId}` : "/api/coach/availability"),
+    enabled: !!activeCoachId,
   });
 
   const addMutation = useMutation({
-    mutationFn: async (data: { dayOfWeek: number; startTime: string; endTime: string }) => {
+    mutationFn: async (data: { dayOfWeek: number; startTime: string; endTime: string; coachId?: string }) => {
       const res = await apiRequest("POST", "/api/coach/availability", data);
       return res.json();
     },
@@ -78,11 +110,15 @@ export default function AvailabilityManagerPage() {
       toast({ title: "Invalid Time", description: "End time must be after start time.", variant: "destructive" });
       return;
     }
-    addMutation.mutate({
+    const payload: { dayOfWeek: number; startTime: string; endTime: string; coachId?: string } = {
       dayOfWeek: parseInt(newDay),
       startTime: newStart,
       endTime: newEnd,
-    });
+    };
+    if (activeCoachId) {
+      payload.coachId = activeCoachId;
+    }
+    addMutation.mutate(payload);
   };
 
   const groupedBlocks = DAYS.map((day, i) => ({
@@ -104,8 +140,42 @@ export default function AvailabilityManagerPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-serif font-bold" data-testid="text-availability-title">Availability</h1>
-        <p className="text-muted-foreground mt-1">Set your weekly recurring availability</p>
+        <p className="text-muted-foreground mt-1">
+          {selectedCoachId && selectedCoachId !== myCoachProfile?.id
+            ? `Managing availability for ${selectedCoachName}`
+            : "Set your weekly recurring availability"}
+        </p>
       </div>
+
+      {coaches && coaches.length > 1 && (
+        <Card className="p-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <ArrowLeftRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium text-muted-foreground shrink-0">Manage Coach:</span>
+            <Select
+              value={activeCoachId}
+              onValueChange={(val) => setSelectedCoachId(val)}
+            >
+              <SelectTrigger className="w-full sm:w-64" data-testid="select-coach-availability">
+                <SelectValue placeholder="Select a coach" />
+              </SelectTrigger>
+              <SelectContent>
+                {coaches.filter(c => c.isActive).map((coach) => (
+                  <SelectItem key={coach.id} value={coach.id} data-testid={`option-avail-coach-${coach.id}`}>
+                    {coach.user?.firstName} {coach.user?.lastName}
+                    {coach.id === myCoachProfile?.id ? " (You)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedCoachId && selectedCoachId !== myCoachProfile?.id && (
+              <Badge variant="secondary" className="text-xs">
+                Editing {selectedCoachName}
+              </Badge>
+            )}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-6">
         <h2 className="font-semibold mb-4">Add Availability Block</h2>

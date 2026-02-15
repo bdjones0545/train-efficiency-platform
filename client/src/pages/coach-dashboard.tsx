@@ -6,9 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarWidget } from "@/components/ui/calendar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
+import { getAuthHeaders } from "@/lib/authToken";
 import {
   Calendar,
   CheckCircle,
@@ -19,6 +21,7 @@ import {
   ChevronRight,
   Plus,
   DollarSign,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   format,
@@ -30,7 +33,7 @@ import {
 } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 import { EditSessionDialog } from "@/components/edit-session-dialog";
-import type { BookingWithDetails, ParticipantWithUser, RedemptionWithDetails } from "@/lib/types";
+import type { BookingWithDetails, ParticipantWithUser, RedemptionWithDetails, CoachWithUser } from "@/lib/types";
 import type { AvailabilityBlock } from "@shared/schema";
 
 const START_HOUR = 5;
@@ -203,6 +206,16 @@ function BookingBlock({
   );
 }
 
+function fetchWithAuth(url: string) {
+  return fetch(url, {
+    credentials: "include",
+    headers: { ...getAuthHeaders(), "Cache-Control": "no-cache" },
+  }).then((res) => {
+    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+    return res.json();
+  });
+}
+
 export default function CoachDashboardPage() {
   const { toast } = useToast();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -210,17 +223,40 @@ export default function CoachDashboardPage() {
   const [slotTime, setSlotTime] = useState("09:00");
   const addSessionRef = useRef<HTMLButtonElement>(null);
   const [editBooking, setEditBooking] = useState<BookingWithDetails | null>(null);
+  const [selectedCoachId, setSelectedCoachId] = useState<string>("");
+
+  const { data: coaches } = useQuery<CoachWithUser[]>({
+    queryKey: ["/api/coaches"],
+  });
+
+  const { data: myCoachProfile } = useQuery<{ id: string }>({
+    queryKey: ["/api/coach/profile"],
+    queryFn: () => fetchWithAuth("/api/coach/profile"),
+  });
+
+  const activeCoachId = selectedCoachId || myCoachProfile?.id || "";
+
+  const selectedCoach = coaches?.find((c) => c.id === activeCoachId);
+  const selectedCoachName = selectedCoach
+    ? `${selectedCoach.user?.firstName || ""} ${selectedCoach.user?.lastName || ""}`.trim()
+    : "My Schedule";
 
   const { data: bookings, isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
-    queryKey: ["/api/coach/bookings"],
+    queryKey: ["/api/coach/bookings", activeCoachId],
+    queryFn: () => fetchWithAuth(activeCoachId ? `/api/coach/bookings?coachId=${activeCoachId}` : "/api/coach/bookings"),
+    enabled: !!activeCoachId,
   });
 
   const { data: availability } = useQuery<AvailabilityBlock[]>({
-    queryKey: ["/api/coach/availability"],
+    queryKey: ["/api/coach/availability", activeCoachId],
+    queryFn: () => fetchWithAuth(activeCoachId ? `/api/coach/availability?coachId=${activeCoachId}` : "/api/coach/availability"),
+    enabled: !!activeCoachId,
   });
 
   const { data: redemptions } = useQuery<RedemptionWithDetails[]>({
-    queryKey: ["/api/coach/redemptions"],
+    queryKey: ["/api/coach/redemptions", activeCoachId],
+    queryFn: () => fetchWithAuth(activeCoachId ? `/api/coach/redemptions?coachId=${activeCoachId}` : "/api/coach/redemptions"),
+    enabled: !!activeCoachId,
   });
 
   const redeemedIds = new Set(redemptions?.map((r) => r.bookingId) || []);
@@ -286,10 +322,13 @@ export default function CoachDashboardPage() {
     setTimeout(() => addSessionRef.current?.click(), 0);
   }, []);
 
-  if (bookingsLoading) {
+  const isInitialLoading = (!myCoachProfile && !coaches) || (bookingsLoading && !bookings);
+
+  if (isInitialLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-10 w-full" />
         <Skeleton className="h-[600px] w-full" />
       </div>
     );
@@ -312,6 +351,7 @@ export default function CoachDashboardPage() {
         <AddSessionDialog
           initialDate={selectedDate}
           initialTime={slotTime}
+          coachId={activeCoachId}
           triggerButton={
             <Button ref={addSessionRef} data-testid="button-add-session">
               <Plus className="h-4 w-4 mr-1" />
@@ -320,6 +360,36 @@ export default function CoachDashboardPage() {
           }
         />
       </div>
+
+      {coaches && coaches.length > 1 && (
+        <Card className="p-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <ArrowLeftRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium text-muted-foreground shrink-0">View Coach:</span>
+            <Select
+              value={activeCoachId}
+              onValueChange={(val) => setSelectedCoachId(val)}
+            >
+              <SelectTrigger className="w-full sm:w-64" data-testid="select-coach-toggle">
+                <SelectValue placeholder="Select a coach" />
+              </SelectTrigger>
+              <SelectContent>
+                {coaches.filter(c => c.isActive).map((coach) => (
+                  <SelectItem key={coach.id} value={coach.id} data-testid={`option-coach-${coach.id}`}>
+                    {coach.user?.firstName} {coach.user?.lastName}
+                    {coach.id === myCoachProfile?.id ? " (You)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedCoachId && selectedCoachId !== myCoachProfile?.id && (
+              <Badge variant="secondary" className="text-xs">
+                Viewing {selectedCoachName}
+              </Badge>
+            )}
+          </div>
+        </Card>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <Button

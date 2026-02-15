@@ -77,6 +77,10 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Coach toggle feature: coaches can switch between viewing/editing any coach's schedule and availability
+  - Coach selector dropdown on dashboard and availability manager pages (visible when multiple coaches exist)
+  - Backend endpoints accept optional coachId param: GET /api/coach/bookings, GET/POST /api/coach/availability, POST /api/coach/bookings, GET /api/coach/redemptions
+  - AddSessionDialog accepts coachId prop to create sessions for selected coach
 - Daily calendar view on coach dashboard: vertical timeline (5 AM–10 PM), availability shading, booking blocks with inline status actions (complete/no-show/cancel) and redemption buttons
   - Date navigation with prev/next day buttons and date picker
   - Click empty time slots to prefill AddSessionDialog with selected date/time

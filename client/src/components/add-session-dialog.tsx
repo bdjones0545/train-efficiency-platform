@@ -21,9 +21,10 @@ type AddSessionDialogProps = {
   initialDate?: Date;
   initialTime?: string;
   triggerButton?: React.ReactNode;
+  coachId?: string;
 };
 
-export function AddSessionDialog({ initialDate, initialTime, triggerButton }: AddSessionDialogProps = {}) {
+export function AddSessionDialog({ initialDate, initialTime, triggerButton, coachId }: AddSessionDialogProps = {}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(initialDate);
@@ -116,6 +117,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton }: Ad
     startAt.setHours(hours, minutes, 0, 0);
 
     const body: any = { serviceId, startAt: startAt.toISOString(), notes };
+    if (coachId) {
+      body.coachId = coachId;
+    }
     if (isSemiPrivate) {
       body.maxParticipants = 6;
       body.groupDescription = groupDescription.trim();

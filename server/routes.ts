@@ -456,7 +456,8 @@ export async function registerRoutes(
   app.get("/api/coach/bookings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const coachId = await getCoachId(userId);
+      const targetCoachId = req.query.coachId as string | undefined;
+      const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
       const bookingsList = await storage.getCoachBookings(coachId);
       res.json(bookingsList);
@@ -481,7 +482,8 @@ export async function registerRoutes(
   app.post("/api/coach/bookings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const coachId = await getCoachId(userId);
+      const targetCoachId = req.body.coachId as string | undefined;
+      const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
       const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription } = req.body;
@@ -650,7 +652,8 @@ export async function registerRoutes(
   app.get("/api/coach/availability", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const coachId = await getCoachId(userId);
+      const targetCoachId = req.query.coachId as string | undefined;
+      const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
       const blocks = await storage.getAvailabilityBlocks(coachId);
       res.json(blocks);
@@ -663,7 +666,8 @@ export async function registerRoutes(
   app.post("/api/coach/availability", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const coachId = await getCoachId(userId);
+      const targetCoachId = req.body.coachId as string | undefined;
+      const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
       const { dayOfWeek, startTime, endTime } = req.body;
@@ -705,7 +709,8 @@ export async function registerRoutes(
   app.get("/api/coach/redemptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const coachId = await getCoachId(userId);
+      const targetCoachId = req.query.coachId as string | undefined;
+      const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
       const redemptionsList = await storage.getCoachRedemptions(coachId);
       res.json(redemptionsList);
