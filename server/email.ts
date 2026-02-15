@@ -5,6 +5,13 @@ import { format } from 'date-fns';
 let connectionSettings: any;
 
 async function getCredentials() {
+  if (process.env.SENDGRID_API_KEY) {
+    return {
+      apiKey: process.env.SENDGRID_API_KEY,
+      email: 'bryan.jones@efficiencystrengthtraining.com',
+    };
+  }
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY
