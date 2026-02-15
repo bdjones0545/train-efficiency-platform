@@ -841,31 +841,90 @@ export async function registerRoutes(
       if (existing) return res.status(409).json({ message: "Already redeemed" });
 
       const service = await storage.getService(booking.serviceId);
-      const fullAmountCents = service?.priceCents || 0;
+      const perPersonCents = service?.priceCents || 0;
+      const isSemiPrivate = booking.maxParticipants !== null && booking.maxParticipants > 1;
 
-      if (fullAmountCents > 0) {
-        const clientBalance = await storage.getUserBalance(booking.clientId);
-        if (clientBalance < fullAmountCents) {
-          const client = await storage.getUser(booking.clientId);
-          const clientName = client ? `${client.firstName || ""} ${client.lastName || ""}`.trim() : "Client";
-          return res.status(400).json({
-            message: `${clientName} has insufficient balance ($${(clientBalance / 100).toFixed(2)}) for this session ($${(fullAmountCents / 100).toFixed(2)}). They need to add funds first.`
-          });
+      let totalCollectedCents = 0;
+      const insufficientFunds: string[] = [];
+
+      if (isSemiPrivate) {
+        const participants = await storage.getBookingParticipants(bookingId);
+
+        const chargeableMap = new Map<string, { userId: string; name: string; count: number }>();
+        let walkInCount = 0;
+
+        for (const p of participants) {
+          const isWalkIn = p.userId.startsWith("walk-in-");
+          if (isWalkIn) {
+            walkInCount++;
+          } else {
+            const existing = chargeableMap.get(p.userId);
+            if (existing) {
+              existing.count++;
+            } else {
+              const name = p.user ? `${p.user.firstName || ""} ${p.user.lastName || ""}`.trim() : "Participant";
+              chargeableMap.set(p.userId, { userId: p.userId, name, count: 1 });
+            }
+          }
         }
 
-        await storage.debitWallet(
-          booking.clientId,
-          fullAmountCents,
-          `Session: ${service?.name || "Training"} - Redeemed`,
-          "redemption",
-          bookingId
-        );
+        if (perPersonCents > 0) {
+          for (const [, entry] of chargeableMap) {
+            const totalForUser = perPersonCents * entry.count;
+            const balance = await storage.getUserBalance(entry.userId);
+            if (balance < totalForUser) {
+              insufficientFunds.push(`${entry.name} (needs $${(totalForUser / 100).toFixed(2)}, has $${(balance / 100).toFixed(2)})`);
+            }
+          }
+
+          if (insufficientFunds.length > 0) {
+            return res.status(400).json({
+              message: `Insufficient balance for: ${insufficientFunds.join(", ")}. Session costs $${(perPersonCents / 100).toFixed(2)} per person. They need to add funds first.`
+            });
+          }
+
+          for (const [, entry] of chargeableMap) {
+            const totalForUser = perPersonCents * entry.count;
+            await storage.debitWallet(
+              entry.userId,
+              totalForUser,
+              `Semi-Private Session: ${service?.name || "Training"} (${entry.count} spot${entry.count > 1 ? "s" : ""}) - Redeemed`,
+              "redemption",
+              bookingId
+            );
+            totalCollectedCents += totalForUser;
+          }
+        }
+
+        if (walkInCount > 0) {
+          totalCollectedCents += walkInCount * perPersonCents;
+        }
+      } else {
+        if (perPersonCents > 0) {
+          const clientBalance = await storage.getUserBalance(booking.clientId);
+          if (clientBalance < perPersonCents) {
+            const client = await storage.getUser(booking.clientId);
+            const clientName = client ? `${client.firstName || ""} ${client.lastName || ""}`.trim() : "Client";
+            return res.status(400).json({
+              message: `${clientName} has insufficient balance ($${(clientBalance / 100).toFixed(2)}) for this session ($${(perPersonCents / 100).toFixed(2)}). They need to add funds first.`
+            });
+          }
+
+          await storage.debitWallet(
+            booking.clientId,
+            perPersonCents,
+            `Session: ${service?.name || "Training"} - Redeemed`,
+            "redemption",
+            bookingId
+          );
+          totalCollectedCents = perPersonCents;
+        }
       }
 
       const bookingCoachId = booking.coachId;
       const ownerCoach = await isOwner(bookingCoachId);
       const payoutRate = ownerCoach ? 1.0 : 0.5;
-      const amountCents = Math.round(fullAmountCents * payoutRate);
+      const amountCents = Math.round(totalCollectedCents * payoutRate);
 
       const redemption = await storage.createRedemption({
         bookingId,
