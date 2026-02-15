@@ -572,6 +572,26 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/coach/bookings/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const coachId = await getCoachId(userId);
+      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+
+      const bookingId = req.params.id;
+      const existing = await storage.getBooking(bookingId);
+      if (!existing) return res.status(404).json({ message: "Booking not found" });
+      if (existing.coachId !== coachId) return res.status(403).json({ message: "Not your booking" });
+
+      const deleted = await storage.deleteBooking(bookingId);
+      if (!deleted) return res.status(500).json({ message: "Failed to delete session" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting booking:", error);
+      res.status(500).json({ message: "Failed to delete session" });
+    }
+  });
+
   app.get("/api/coach/bookings/completed", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

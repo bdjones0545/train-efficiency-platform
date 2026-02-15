@@ -55,6 +55,7 @@ export interface IStorage {
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
   updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string }): Promise<Booking | undefined>;
+  deleteBooking(id: string): Promise<boolean>;
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
 
   getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]>;
@@ -264,6 +265,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(bookings.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteBooking(id: string): Promise<boolean> {
+    await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, id));
+    const result = await db.delete(bookings).where(eq(bookings.id, id)).returning();
+    return result.length > 0;
   }
 
   async getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]> {

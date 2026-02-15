@@ -12,7 +12,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { CalendarIcon, Search, XCircle } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { CalendarIcon, Search, Trash2, XCircle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { Service } from "@shared/schema";
 import type { BookingWithDetails } from "@/lib/types";
@@ -41,6 +42,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [notes, setNotes] = useState(booking.notes || "");
   const [groupDescription, setGroupDescription] = useState(booking.groupDescription || "");
   const [showSearch, setShowSearch] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -81,6 +83,26 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
     },
     onSuccess: () => {
       toast({ title: "Session Updated", description: "The session has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", description: "Please log in again.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/coach/bookings/${booking.id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Session Deleted", description: "The session has been removed." });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
@@ -324,16 +346,47 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
             />
           </div>
 
-          <Button
-            className="w-full"
-            onClick={handleSubmit}
-            disabled={updateMutation.isPending}
-            data-testid="button-save-session"
-          >
-            {updateMutation.isPending ? "Saving..." : "Save Changes"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="destructive"
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={deleteMutation.isPending || updateMutation.isPending}
+              data-testid="button-delete-session"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleSubmit}
+              disabled={updateMutation.isPending || deleteMutation.isPending}
+              data-testid="button-save-session"
+            >
+              {updateMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Session</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this session? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMutation.mutate()}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
