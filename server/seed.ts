@@ -58,7 +58,7 @@ export async function seedDatabase() {
 
     if (hunterUser) {
       await db.insert(userProfiles).values({ userId: "coach-hunter", role: "COACH" }).onConflictDoNothing();
-      const hunterHash = await bcrypt.hash("est!2026", 10);
+      const hunterHash = await bcrypt.hash("Driveronpar3", 10);
       await db.insert(coachProfiles).values({
         userId: "coach-hunter",
         email: "hunter.thaxton@efficiencystrengthtraining.com",
