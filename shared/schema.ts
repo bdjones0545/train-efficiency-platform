@@ -57,6 +57,7 @@ export const bookings = pgTable("bookings", {
   endAt: timestamp("end_at").notNull(),
   status: bookingStatusEnum("status").notNull().default("CONFIRMED"),
   notes: text("notes").default(""),
+  location: text("location").default(""),
   maxParticipants: integer("max_participants"),
   groupDescription: text("group_description").default(""),
   createdAt: timestamp("created_at").defaultNow(),
