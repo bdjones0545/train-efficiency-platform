@@ -10,6 +10,7 @@ import { Calendar as CalendarWidget } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Plus, CalendarIcon, Search, XCircle, MapPin } from "lucide-react";
 import { format } from "date-fns";
@@ -67,7 +68,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     queryKey: ["/api/coach/clients/search", searchQuery],
     queryFn: async () => {
       if (searchQuery.length < 2) return [];
-      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(searchQuery)}`, { credentials: "include" });
+      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(searchQuery)}`, { credentials: "include", headers: { ...getAuthHeaders() } });
       if (!res.ok) return [];
       return res.json();
     },
