@@ -149,8 +149,8 @@ export function ChatWidget() {
       {isOpen && (
         <div
           data-testid="chat-widget-panel"
-          className="fixed left-4 right-4 sm:left-auto sm:w-[380px] z-[9999] flex flex-col h-[520px] max-h-[80vh] rounded-md border bg-background shadow-lg"
-          style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px))" }}
+          className="fixed left-4 right-4 sm:left-auto sm:w-[380px] z-[9999] flex flex-col h-[520px] max-h-[80vh] rounded-md border bg-background shadow-[0_4px_24px_rgba(0,0,0,0.25)]"
+          style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px))" }}
         >
           <div className="flex items-center justify-between gap-2 p-3 border-b bg-primary rounded-t-md">
             <div className="flex items-center gap-2">
@@ -245,19 +245,18 @@ export function ChatWidget() {
         </div>
       )}
 
-      <Button
-        size="icon"
-        className="fixed right-4 z-[9999] h-12 w-12 rounded-full shadow-lg"
-        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
+      <button
+        className="fixed right-5 z-[9999] flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-primary text-primary-foreground shadow-[0_4px_20px_rgba(0,0,0,0.3)] hover:scale-105 active:scale-95 transition-transform"
+        style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
         onClick={() => setIsOpen(prev => !prev)}
         data-testid="button-toggle-chat"
       >
         {isOpen ? (
-          <X className="h-5 w-5" />
+          <X className="h-6 w-6 sm:h-7 sm:w-7" />
         ) : (
-          <MessageCircle className="h-5 w-5" />
+          <MessageCircle className="h-6 w-6 sm:h-7 sm:w-7" />
         )}
-      </Button>
+      </button>
     </>
   );
 }
