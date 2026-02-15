@@ -7,6 +7,7 @@ import {
   bookings,
   bookingParticipants,
   redemptions,
+  athleticBookings,
   type UserProfile,
   type InsertUserProfile,
   type CoachProfile,
@@ -21,6 +22,8 @@ import {
   type InsertBookingParticipant,
   type Redemption,
   type InsertRedemption,
+  type AthleticBooking,
+  type InsertAthleticBooking,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -71,6 +74,11 @@ export interface IStorage {
   searchUsers(query: string): Promise<User[]>;
   getUserByEmail(email: string): Promise<User | undefined>;
   hasUsedFreeSession(userId: string): Promise<boolean>;
+
+  getAthleticBookings(date: string): Promise<AthleticBooking[]>;
+  createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking>;
+  deleteAthleticBooking(id: string): Promise<void>;
+  countAthleticBookingsForSlot(date: string, timeSlot: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -412,6 +420,27 @@ export class DatabaseStorage implements IStorage {
       )
       .limit(1);
     return existing.length > 0;
+  }
+
+  async getAthleticBookings(date: string): Promise<AthleticBooking[]> {
+    return db.select().from(athleticBookings).where(eq(athleticBookings.date, date));
+  }
+
+  async createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking> {
+    const [created] = await db.insert(athleticBookings).values(booking).returning();
+    return created;
+  }
+
+  async deleteAthleticBooking(id: string): Promise<void> {
+    await db.delete(athleticBookings).where(eq(athleticBookings.id, id));
+  }
+
+  async countAthleticBookingsForSlot(date: string, timeSlot: string): Promise<number> {
+    const result = await db
+      .select()
+      .from(athleticBookings)
+      .where(and(eq(athleticBookings.date, date), eq(athleticBookings.timeSlot, timeSlot)));
+    return result.length;
   }
 }
 

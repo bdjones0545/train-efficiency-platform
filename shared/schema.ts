@@ -81,6 +81,19 @@ export const redemptions = pgTable("redemptions", {
   amountCents: integer("amount_cents").notNull().default(0),
 });
 
+export const athleticBookings = pgTable("athletic_bookings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  date: varchar("date").notNull(),
+  timeSlot: varchar("time_slot").notNull(),
+  teamName: varchar("team_name").notNull(),
+  bookedBy: varchar("booked_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAthleticBookingSchema = createInsertSchema(athleticBookings).omit({ id: true, createdAt: true });
+export type AthleticBooking = typeof athleticBookings.$inferSelect;
+export type InsertAthleticBooking = z.infer<typeof insertAthleticBookingSchema>;
+
 export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
   user: one(users, { fields: [userProfiles.userId], references: [users.id] }),
 }));
