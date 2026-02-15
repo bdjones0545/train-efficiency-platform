@@ -149,7 +149,8 @@ export function ChatWidget() {
       {isOpen && (
         <div
           data-testid="chat-widget-panel"
-          className="fixed bottom-20 right-4 z-50 flex flex-col w-[380px] h-[520px] rounded-md border bg-background shadow-lg"
+          className="fixed right-4 z-[9999] flex flex-col w-[380px] h-[520px] max-h-[80vh] rounded-md border bg-background shadow-lg"
+          style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px))" }}
         >
           <div className="flex items-center justify-between gap-2 p-3 border-b bg-primary rounded-t-md">
             <div className="flex items-center gap-2">
@@ -246,7 +247,8 @@ export function ChatWidget() {
 
       <Button
         size="icon"
-        className="fixed bottom-4 right-4 z-50 h-12 w-12 rounded-full shadow-lg"
+        className="fixed right-4 z-[9999] h-12 w-12 rounded-full shadow-lg"
+        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
         onClick={() => setIsOpen(prev => !prev)}
         data-testid="button-toggle-chat"
       >
