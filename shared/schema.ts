@@ -92,6 +92,20 @@ export const athleticBookings = pgTable("athletic_bookings", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const walletTxTypeEnum = pgEnum("wallet_tx_type", ["CREDIT", "DEBIT"]);
+
+export const walletTransactions = pgTable("wallet_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  type: walletTxTypeEnum("type").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  description: text("description").default(""),
+  sourceType: varchar("source_type"),
+  sourceId: varchar("source_id"),
+  stripeSessionId: varchar("stripe_session_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const cashoutStatusEnum = pgEnum("cashout_status", ["REQUESTED", "PAID", "DENIED"]);
 
 export const cashouts = pgTable("cashouts", {
@@ -142,6 +156,10 @@ export const cashoutsRelations = relations(cashouts, ({ one }) => ({
   coach: one(coachProfiles, { fields: [cashouts.coachId], references: [coachProfiles.id] }),
 }));
 
+export const walletTransactionsRelations = relations(walletTransactions, ({ one }) => ({
+  user: one(users, { fields: [walletTransactions.userId], references: [users.id] }),
+}));
+
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true });
 export const insertCoachProfileSchema = createInsertSchema(coachProfiles).omit({ id: true });
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true });
@@ -150,6 +168,7 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({ id: true,
 export const insertBookingParticipantSchema = createInsertSchema(bookingParticipants).omit({ id: true, joinedAt: true });
 export const insertRedemptionSchema = createInsertSchema(redemptions).omit({ id: true, redeemedAt: true });
 export const insertCashoutSchema = createInsertSchema(cashouts).omit({ id: true, requestedAt: true, processedAt: true });
+export const insertWalletTransactionSchema = createInsertSchema(walletTransactions).omit({ id: true, createdAt: true });
 
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
@@ -167,3 +186,5 @@ export type Redemption = typeof redemptions.$inferSelect;
 export type InsertRedemption = z.infer<typeof insertRedemptionSchema>;
 export type Cashout = typeof cashouts.$inferSelect;
 export type InsertCashout = z.infer<typeof insertCashoutSchema>;
+export type WalletTransaction = typeof walletTransactions.$inferSelect;
+export type InsertWalletTransaction = z.infer<typeof insertWalletTransactionSchema>;

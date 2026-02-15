@@ -9,6 +9,7 @@ import {
   redemptions,
   athleticBookings,
   cashouts,
+  walletTransactions,
   type UserProfile,
   type InsertUserProfile,
   type CoachProfile,
@@ -27,6 +28,8 @@ import {
   type InsertAthleticBooking,
   type Cashout,
   type InsertCashout,
+  type WalletTransaction,
+  type InsertWalletTransaction,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -89,6 +92,13 @@ export interface IStorage {
   createCashout(cashout: InsertCashout): Promise<Cashout>;
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
+
+  getUserBalance(userId: string): Promise<number>;
+  creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string): Promise<WalletTransaction>;
+  debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
+  getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
+  updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
+  getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -477,6 +487,58 @@ export class DatabaseStorage implements IStorage {
 
   async markRedemptionsSent(coachId: string): Promise<void> {
     await db.update(redemptions).set({ payoutStatus: "SENT" }).where(and(eq(redemptions.coachId, coachId), eq(redemptions.payoutStatus, "PENDING")));
+  }
+
+  async getUserBalance(userId: string): Promise<number> {
+    const [user] = await db.select({ balanceCents: users.balanceCents }).from(users).where(eq(users.id, userId));
+    return user?.balanceCents || 0;
+  }
+
+  async creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string): Promise<WalletTransaction> {
+    const [tx] = await db.insert(walletTransactions).values({
+      userId,
+      type: "CREDIT" as const,
+      amountCents,
+      description,
+      sourceType: "stripe",
+      stripeSessionId: stripeSessionId || null,
+    }).returning();
+
+    await db.update(users).set({
+      balanceCents: sql`${users.balanceCents} + ${amountCents}`,
+    }).where(eq(users.id, userId));
+
+    return tx;
+  }
+
+  async debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction> {
+    const [tx] = await db.insert(walletTransactions).values({
+      userId,
+      type: "DEBIT" as const,
+      amountCents,
+      description,
+      sourceType: sourceType || "redemption",
+      sourceId: sourceId || null,
+    }).returning();
+
+    await db.update(users).set({
+      balanceCents: sql`${users.balanceCents} - ${amountCents}`,
+    }).where(eq(users.id, userId));
+
+    return tx;
+  }
+
+  async getWalletTransactions(userId: string): Promise<WalletTransaction[]> {
+    return db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt));
+  }
+
+  async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {
+    await db.update(users).set({ stripeCustomerId }).where(eq(users.id, userId));
+  }
+
+  async getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined> {
+    const [tx] = await db.select().from(walletTransactions).where(eq(walletTransactions.stripeSessionId, stripeSessionId));
+    return tx || undefined;
   }
 }
 

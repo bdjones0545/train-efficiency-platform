@@ -7,6 +7,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
 import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail } from "./email";
+import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 
 const OWNER_USER_ID = "42755213";
 
@@ -842,6 +843,25 @@ export async function registerRoutes(
       const service = await storage.getService(booking.serviceId);
       const fullAmountCents = service?.priceCents || 0;
 
+      if (fullAmountCents > 0) {
+        const clientBalance = await storage.getUserBalance(booking.clientId);
+        if (clientBalance < fullAmountCents) {
+          const client = await storage.getUser(booking.clientId);
+          const clientName = client ? `${client.firstName || ""} ${client.lastName || ""}`.trim() : "Client";
+          return res.status(400).json({
+            message: `${clientName} has insufficient balance ($${(clientBalance / 100).toFixed(2)}) for this session ($${(fullAmountCents / 100).toFixed(2)}). They need to add funds first.`
+          });
+        }
+
+        await storage.debitWallet(
+          booking.clientId,
+          fullAmountCents,
+          `Session: ${service?.name || "Training"} - Redeemed`,
+          "redemption",
+          bookingId
+        );
+      }
+
       const bookingCoachId = booking.coachId;
       const ownerCoach = await isOwner(bookingCoachId);
       const payoutRate = ownerCoach ? 1.0 : 0.5;
@@ -1154,6 +1174,121 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting athletic booking:", error);
       res.status(500).json({ message: "Failed to delete athletic booking" });
+    }
+  });
+
+  app.get("/api/wallet", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const balance = await storage.getUserBalance(userId);
+      const transactions = await storage.getWalletTransactions(userId);
+      res.json({ balanceCents: balance, transactions });
+    } catch (error) {
+      console.error("Error fetching wallet:", error);
+      res.status(500).json({ message: "Failed to fetch wallet" });
+    }
+  });
+
+  app.post("/api/wallet/checkout", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { amountCents } = req.body;
+
+      if (!amountCents || amountCents < 100) {
+        return res.status(400).json({ message: "Minimum deposit is $1.00" });
+      }
+      if (amountCents > 100000) {
+        return res.status(400).json({ message: "Maximum deposit is $1,000.00" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const stripe = await getUncachableStripeClient();
+
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email || undefined,
+          name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || undefined,
+          metadata: { userId },
+        });
+        customerId = customer.id;
+        await storage.updateUserStripeCustomerId(userId, customerId);
+      }
+
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ["card"],
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: "Add Funds to EST Account",
+              description: `Add $${(amountCents / 100).toFixed(2)} to your Efficiency Strength Training account balance`,
+            },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        }],
+        mode: "payment",
+        success_url: `${baseUrl}/wallet?success=true&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/wallet?canceled=true`,
+        metadata: {
+          userId,
+          amountCents: amountCents.toString(),
+          type: "wallet_deposit",
+        },
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("Error creating checkout session:", error);
+      res.status(500).json({ message: "Failed to create checkout session" });
+    }
+  });
+
+  app.get("/api/wallet/verify-session", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const sessionId = req.query.sessionId as string;
+      if (!sessionId) return res.status(400).json({ message: "sessionId required" });
+
+      const existing = await storage.getWalletTransactionByStripeSessionId(sessionId);
+      if (existing) {
+        return res.json({ credited: true, alreadyProcessed: true });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+      if (session.payment_status !== "paid") {
+        return res.json({ credited: false, status: session.payment_status });
+      }
+
+      const metaUserId = session.metadata?.userId;
+      const amountCents = parseInt(session.metadata?.amountCents || "0", 10);
+
+      if (metaUserId !== userId || amountCents <= 0) {
+        return res.status(400).json({ message: "Invalid session" });
+      }
+
+      await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId);
+      res.json({ credited: true, amountCents });
+    } catch (error) {
+      console.error("Error verifying checkout session:", error);
+      res.status(500).json({ message: "Failed to verify session" });
+    }
+  });
+
+  app.get("/api/stripe/publishable-key", async (_req, res) => {
+    try {
+      const key = await getStripePublishableKey();
+      res.json({ publishableKey: key });
+    } catch (error) {
+      console.error("Error getting publishable key:", error);
+      res.status(500).json({ message: "Failed to get Stripe key" });
     }
   });
 

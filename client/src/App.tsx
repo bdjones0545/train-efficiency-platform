@@ -21,6 +21,7 @@ import AdminDashboardPage from "@/pages/admin-dashboard";
 import OpenSessionsPage from "@/pages/open-sessions";
 import AthleticSchedulingPage from "@/pages/athletic-scheduling";
 import CoachAthleticPage from "@/pages/coach-athletic";
+import WalletPage from "@/pages/wallet";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatWidget } from "@/components/chat-widget";
@@ -50,6 +51,7 @@ function AuthenticatedLayout() {
                 <Route path="/sessions" component={OpenSessionsPage} />
                 <Route path="/athletic" component={AthleticSchedulingPage} />
                 <Route path="/bookings" component={MyBookingsPage} />
+                <Route path="/wallet" component={WalletPage} />
                 <Route path="/coach" component={CoachDashboardPage} />
                 <Route path="/coach/profile" component={CoachProfilePage} />
                 <Route path="/coach/availability" component={AvailabilityManagerPage} />

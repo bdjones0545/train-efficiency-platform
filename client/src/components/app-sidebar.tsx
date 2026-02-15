@@ -26,6 +26,7 @@ import {
   LogOut,
   UserCog,
   Trophy,
+  Wallet,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -52,6 +53,7 @@ export function AppSidebar() {
     { title: "Coaches", url: "/coaches", icon: Users },
     { title: "Group Sessions", url: "/sessions", icon: UsersRound },
     { title: "My Bookings", url: "/bookings", icon: Calendar },
+    { title: "My Wallet", url: "/wallet", icon: Wallet },
   ];
 
   const coachItems = [
