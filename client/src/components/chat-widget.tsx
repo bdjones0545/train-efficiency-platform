@@ -149,7 +149,7 @@ export function ChatWidget() {
       {isOpen && (
         <div
           data-testid="chat-widget-panel"
-          className="fixed right-4 z-[9999] flex flex-col w-[380px] h-[520px] max-h-[80vh] rounded-md border bg-background shadow-lg"
+          className="fixed left-4 right-4 sm:left-auto sm:w-[380px] z-[9999] flex flex-col h-[520px] max-h-[80vh] rounded-md border bg-background shadow-lg"
           style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px))" }}
         >
           <div className="flex items-center justify-between gap-2 p-3 border-b bg-primary rounded-t-md">
