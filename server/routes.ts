@@ -833,11 +833,17 @@ export async function registerRoutes(
       if (existing) return res.status(409).json({ message: "Already redeemed" });
 
       const service = await storage.getService(booking.serviceId);
-      const amountCents = service?.priceCents || 0;
+      const fullAmountCents = service?.priceCents || 0;
+
+      const bookingCoachId = booking.coachId;
+      const coachProfile = await storage.getCoachProfile(bookingCoachId);
+      const isBryanJones = coachProfile?.user?.firstName === "Bryan" && coachProfile?.user?.lastName === "Jones";
+      const payoutRate = isBryanJones ? 1.0 : 0.5;
+      const amountCents = Math.round(fullAmountCents * payoutRate);
 
       const redemption = await storage.createRedemption({
         bookingId,
-        coachId,
+        coachId: bookingCoachId,
         amountCents,
         payoutStatus: "PENDING",
       });
