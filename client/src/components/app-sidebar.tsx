@@ -25,6 +25,7 @@ import {
   Shield,
   LogOut,
   UserCog,
+  Trophy,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -58,6 +59,7 @@ export function AppSidebar() {
     { title: "My Profile", url: "/coach/profile", icon: UserCog },
     { title: "Availability", url: "/coach/availability", icon: CalendarClock },
     { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign },
+    { title: "BLHS Athletic", url: "/coach/athletic", icon: Trophy },
   ];
 
   const adminItems = [

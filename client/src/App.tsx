@@ -20,6 +20,7 @@ import CoachProfilePage from "@/pages/coach-profile";
 import AdminDashboardPage from "@/pages/admin-dashboard";
 import OpenSessionsPage from "@/pages/open-sessions";
 import AthleticSchedulingPage from "@/pages/athletic-scheduling";
+import CoachAthleticPage from "@/pages/coach-athletic";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatWidget } from "@/components/chat-widget";
@@ -53,6 +54,7 @@ function AuthenticatedLayout() {
                 <Route path="/coach/profile" component={CoachProfilePage} />
                 <Route path="/coach/availability" component={AvailabilityManagerPage} />
                 <Route path="/coach/redemptions" component={RedemptionsPage} />
+                <Route path="/coach/athletic" component={CoachAthleticPage} />
                 <Route path="/admin" component={AdminDashboardPage} />
                 <Route component={NotFound} />
               </Switch>
