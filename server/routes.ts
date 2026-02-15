@@ -1007,12 +1007,19 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub || null;
       let userRole = "CLIENT";
       let userName: string | null = null;
+      let coachId: string | null = null;
 
       if (userId) {
         userRole = await getUserRole(userId);
-        const profile = await storage.getUserProfile(userId);
-        if (profile) {
-          userName = `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || null;
+        const user = await storage.getUser(userId);
+        if (user) {
+          userName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || null;
+        }
+        if (userRole === "COACH" || userRole === "ADMIN") {
+          const coachProfile = await storage.getCoachProfileByUserId(userId);
+          if (coachProfile) {
+            coachId = coachProfile.id;
+          }
         }
       }
 
@@ -1025,7 +1032,7 @@ export async function registerRoutes(
       let clientDisconnected = false;
       req.on("close", () => { clientDisconnected = true; });
 
-      const generator = handleAssistantMessage(messages, userId, userRole, userName);
+      const generator = handleAssistantMessage(messages, userId, userRole, userName, coachId);
       for await (const chunk of generator) {
         if (clientDisconnected) break;
         res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);

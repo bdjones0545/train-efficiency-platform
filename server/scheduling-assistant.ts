@@ -430,7 +430,7 @@ async function executeTool(
   }
 }
 
-function getSystemPrompt(userRole: string, userName: string | null): string {
+function getSystemPrompt(userRole: string, userName: string | null, coachId: string | null): string {
   const today = format(new Date(), "EEEE, MMMM d, yyyy");
   let prompt = `You are the Efficiency Strength Training scheduling assistant. Today is ${today}.
 You help users find available training sessions, book appointments, and manage their schedules.
@@ -453,11 +453,21 @@ When helping users:
   }
 
   if (userRole === "COACH" || userRole === "ADMIN") {
-    prompt += `\n\nThis user is a ${userRole}. They have access to coach features:
-- Viewing and managing any coach's schedule
-- Setting and modifying availability blocks
-- Creating sessions for clients (including walk-in clients by name)
-- They can use coach-specific tools like set_availability, get_coach_schedule, coach_create_session, etc.`;
+    prompt += `\n\nThis user is a ${userRole}.`;
+    if (coachId) {
+      prompt += ` Their coach ID is "${coachId}". When they ask to manage "my" schedule, availability, sessions, etc., use this coach ID automatically — do NOT ask them for their coach ID.`;
+    }
+    prompt += `
+
+As a coach/admin, they can do ALL of the following directly through this chat — act on their requests immediately without unnecessary confirmation:
+- View their own schedule for any day: use get_coach_schedule with their coach ID
+- Set their availability: use set_availability. When they say things like "open up Monday 9 to 5" or "I'm available Tuesday 2pm-6pm", just do it. Use 24-hour format internally (e.g. "9 AM to 5 PM" = startTime "09:00", endTime "17:00"). Days: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
+- View their current availability blocks: use get_availability
+- Remove availability blocks: use delete_availability
+- Create sessions for clients: use coach_create_session (can specify client by name for walk-ins)
+- View and manage any coach's schedule (not just their own)
+
+Be proactive and efficient. If the coach says "open me up Monday through Friday 9-5", create 5 availability blocks (one for each day) without asking for confirmation for each one. Just do it and report what was done.`;
   } else {
     prompt += `\n\nThis user is a CLIENT. They can:
 - Browse coaches and services
@@ -473,9 +483,10 @@ export function handleAssistantMessage(
   messages: { role: string; content: string }[],
   userId: string | null,
   userRole: string,
-  userName: string | null
+  userName: string | null,
+  coachId: string | null = null
 ): AsyncGenerator<string> {
-  const systemPrompt = getSystemPrompt(userRole, userName);
+  const systemPrompt = getSystemPrompt(userRole, userName, coachId);
 
   const chatMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
