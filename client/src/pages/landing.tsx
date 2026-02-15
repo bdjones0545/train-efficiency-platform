@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy } from "lucide-react";
+import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy, Menu, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
@@ -26,6 +26,7 @@ export default function LandingPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
 
   const resetClientForm = () => {
@@ -102,14 +103,14 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background">
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4 flex-wrap">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <img src={logoImg} alt="EST Logo" className="h-8 rounded-md" data-testid="img-nav-logo" />
             <span className="font-semibold text-lg tracking-tight" data-testid="text-brand-name">
               Efficiency Strength Training
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-3">
             <a href="#features">
               <Button variant="ghost" size="sm" data-testid="link-features">Features</Button>
             </a>
@@ -144,7 +145,56 @@ export default function LandingPage() {
               Sign Up
             </Button>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            data-testid="button-mobile-menu"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
         </div>
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t bg-background/95 backdrop-blur-md px-6 py-4 flex flex-col gap-2" data-testid="mobile-menu">
+            <a href="#features" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-features-mobile">Features</Button>
+            </a>
+            <a href="/athletic" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-blhs-athletic-mobile">
+                <Trophy className="h-4 w-4 mr-1" />
+                BLHS Athletic
+              </Button>
+            </a>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => { setCoachModalOpen(true); setMobileMenuOpen(false); }}
+              data-testid="button-coach-login-mobile"
+            >
+              Coach Login
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => { openClientModal(false); setMobileMenuOpen(false); }}
+              data-testid="button-login-mobile"
+            >
+              <LogIn className="h-4 w-4 mr-1" />
+              Log In
+            </Button>
+            <Button
+              className="w-full justify-start"
+              onClick={() => { openClientModal(true); setMobileMenuOpen(false); }}
+              data-testid="button-get-started-mobile"
+            >
+              <UserPlus className="h-4 w-4 mr-1" />
+              Sign Up
+            </Button>
+          </div>
+        )}
       </nav>
 
       <section className="relative pt-32 pb-20 px-6 overflow-hidden">
