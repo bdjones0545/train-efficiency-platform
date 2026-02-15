@@ -13,7 +13,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { CalendarIcon, Search, Trash2, XCircle, MapPin } from "lucide-react";
+import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { format, parseISO } from "date-fns";
 import type { Service } from "@shared/schema";
 
@@ -115,6 +116,31 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
         return;
       }
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const { data: redemptions } = useQuery<{ bookingId: string }[]>({
+    queryKey: ["/api/coach/redemptions"],
+    enabled: open,
+  });
+  const isRedeemed = redemptions?.some((r) => r.bookingId === booking.id) ?? false;
+
+  const redeemMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/redemptions", { bookingId: booking.id });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Session Redeemed", description: "Payout is pending." });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/redemptions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings/completed"] });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Redemption Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -396,6 +422,26 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
               data-testid="edit-input-notes"
             />
           </div>
+
+          {booking.status === "COMPLETED" && (
+            <div className="border-t pt-3">
+              {isRedeemed ? (
+                <Badge variant="secondary" className="w-full justify-center py-1.5 no-default-hover-elevate no-default-active-elevate">
+                  Session Redeemed
+                </Badge>
+              ) : (
+                <Button
+                  className="w-full"
+                  onClick={() => redeemMutation.mutate()}
+                  disabled={redeemMutation.isPending}
+                  data-testid="button-redeem-session"
+                >
+                  <DollarSign className="h-4 w-4 mr-2" />
+                  {redeemMutation.isPending ? "Redeeming..." : "Redeem Session"}
+                </Button>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-2">
             <Button

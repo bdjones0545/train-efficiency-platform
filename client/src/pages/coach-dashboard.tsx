@@ -153,7 +153,7 @@ function BookingBlock({
           <BookingParticipantInfo booking={booking} />
         </div>
 
-        {height >= 50 && (
+        {height >= 30 && (
           <div className="flex flex-col gap-0.5 shrink-0">
             {isActive && (
               <>
