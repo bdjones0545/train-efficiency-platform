@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken } from "./replit_integrations/auth";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 
 async function getUserRole(userId: string): Promise<string> {
@@ -30,27 +31,31 @@ function generateTimeSlots(
   existingBookings: any[],
   startDate: Date,
   endDate: Date,
-  durationMin: number
+  durationMin: number,
+  timezone: string = "America/New_York"
 ) {
   const days = [];
   let current = new Date(startDate);
 
   while (current <= endDate) {
-    const dayOfWeek = (current.getDay() + 6) % 7;
+    const zonedCurrent = toZonedTime(current, timezone);
+    const dayOfWeek = (zonedCurrent.getDay() + 6) % 7;
     const dayBlocks = availBlocks.filter(b => b.dayOfWeek === dayOfWeek);
-    const dayStr = format(current, "yyyy-MM-dd");
-    const dayLabel = format(current, "EEE");
+    const dayStr = format(zonedCurrent, "yyyy-MM-dd");
+    const dayLabel = format(zonedCurrent, "EEE");
     const slots: { start: string; end: string; available: boolean }[] = [];
 
     for (const block of dayBlocks) {
       const [startH, startM] = block.startTime.split(":").map(Number);
       const [endH, endM] = block.endTime.split(":").map(Number);
 
-      let slotStart = new Date(current);
-      slotStart.setHours(startH, startM, 0, 0);
+      const localSlotStart = new Date(zonedCurrent);
+      localSlotStart.setHours(startH, startM, 0, 0);
+      let slotStart = fromZonedTime(localSlotStart, timezone);
 
-      const blockEnd = new Date(current);
-      blockEnd.setHours(endH, endM, 0, 0);
+      const localBlockEnd = new Date(zonedCurrent);
+      localBlockEnd.setHours(endH, endM, 0, 0);
+      const blockEnd = fromZonedTime(localBlockEnd, timezone);
 
       while (addMinutes(slotStart, durationMin) <= blockEnd) {
         const slotEnd = addMinutes(slotStart, durationMin);
@@ -244,6 +249,9 @@ export async function registerRoutes(
       const weekStart = weekStartStr ? parseISO(weekStartStr) : startOfWeek(new Date(), { weekStartsOn: 1 });
       const weekEnd = addDays(weekStart, 6);
 
+      const coach = await storage.getCoachProfile(coachId);
+      const coachTimezone = coach?.timezone || "America/New_York";
+
       const blocks = await storage.getAvailabilityBlocks(coachId);
       const existingBookings = await storage.getOverlappingBookings(
         coachId,
@@ -251,7 +259,7 @@ export async function registerRoutes(
         addDays(weekEnd, 1)
       );
 
-      const slots = generateTimeSlots(blocks, existingBookings, weekStart, weekEnd, service.durationMin);
+      const slots = generateTimeSlots(blocks, existingBookings, weekStart, weekEnd, service.durationMin, coachTimezone);
       res.json(slots);
     } catch (error) {
       console.error("Error generating slots:", error);
@@ -292,10 +300,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Booking duration does not match service duration" });
       }
 
+      const coachTimezone = coach.timezone || "America/New_York";
       const blocks = await storage.getAvailabilityBlocks(coachId);
-      const bookingDayOfWeek = (start.getDay() + 6) % 7;
-      const bookingStartTime = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
-      const bookingEndTime = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+      const zonedStart = toZonedTime(start, coachTimezone);
+      const zonedEnd = toZonedTime(end, coachTimezone);
+      const bookingDayOfWeek = (zonedStart.getDay() + 6) % 7;
+      const bookingStartTime = `${String(zonedStart.getHours()).padStart(2, "0")}:${String(zonedStart.getMinutes()).padStart(2, "0")}`;
+      const bookingEndTime = `${String(zonedEnd.getHours()).padStart(2, "0")}:${String(zonedEnd.getMinutes()).padStart(2, "0")}`;
 
       const fitsAvailability = blocks.some(block => {
         return block.dayOfWeek === bookingDayOfWeek &&
