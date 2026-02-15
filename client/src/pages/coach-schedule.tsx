@@ -116,7 +116,7 @@ export default function CoachSchedulePage() {
     setParticipantNames(updated);
   };
 
-  const today = new Date();
+  const now = new Date();
 
   if (coachLoading) {
     return (
@@ -222,11 +222,14 @@ export default function CoachSchedulePage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-3">
               {slots?.map((day) => {
                 const dayDate = parseISO(day.date);
-                const isPast = dayDate < today && !isSameDay(dayDate, today);
+                const futureSlots = day.slots.filter((slot) => {
+                  const slotTime = new Date(slot.start);
+                  return slot.available && slotTime > now;
+                });
                 return (
                   <div key={day.date} className="space-y-2">
                     <div className={`text-center py-1.5 rounded-md text-sm font-medium ${
-                      isSameDay(dayDate, today)
+                      isSameDay(dayDate, now)
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted"
                     }`}>
@@ -234,17 +237,16 @@ export default function CoachSchedulePage() {
                       <div>{format(dayDate, "d")}</div>
                     </div>
                     <div className="space-y-1 max-h-60 overflow-y-auto">
-                      {day.slots.length === 0 ? (
+                      {futureSlots.length === 0 ? (
                         <p className="text-xs text-muted-foreground text-center py-2">No slots</p>
                       ) : (
-                        day.slots.map((slot) => {
+                        futureSlots.map((slot) => {
                           const isSelected =
                             selectedSlot?.start === slot.start &&
                             selectedSlot?.date === day.date;
                           return (
                             <button
                               key={slot.start}
-                              disabled={!slot.available || isPast}
                               onClick={() =>
                                 setSelectedSlot(
                                   isSelected
@@ -255,9 +257,7 @@ export default function CoachSchedulePage() {
                               className={`w-full py-1.5 px-2 text-xs rounded-md border transition-colors ${
                                 isSelected
                                   ? "bg-primary text-primary-foreground border-primary"
-                                  : slot.available && !isPast
-                                  ? "hover-elevate border-border"
-                                  : "opacity-40 cursor-not-allowed border-transparent bg-muted"
+                                  : "hover-elevate border-border"
                               }`}
                               data-testid={`slot-${day.date}-${slot.start}`}
                             >
