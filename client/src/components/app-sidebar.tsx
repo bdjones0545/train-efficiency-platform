@@ -53,7 +53,7 @@ export function AppSidebar() {
     { title: "Coaches", url: "/coaches", icon: Users },
     { title: "Group Sessions", url: "/sessions", icon: UsersRound },
     { title: "My Bookings", url: "/bookings", icon: Calendar },
-    { title: "My Wallet", url: "/wallet", icon: Wallet },
+    ...(role === "CLIENT" ? [{ title: "My Wallet", url: "/wallet", icon: Wallet }] : []),
   ];
 
   const coachItems = [
