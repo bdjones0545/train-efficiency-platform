@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken } from "./replit_integrations/auth";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import bcrypt from "bcryptjs";
 
@@ -105,27 +105,8 @@ export async function registerRoutes(
       }
 
       const userId = coachProfile.userId;
-      req.login(
-        {
-          claims: { sub: userId },
-          access_token: null,
-          refresh_token: null,
-          expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
-        },
-        (err: any) => {
-          if (err) {
-            console.error("Session creation error:", err);
-            return res.status(500).json({ message: "Failed to create session" });
-          }
-          req.session.save((saveErr: any) => {
-            if (saveErr) {
-              console.error("Session save error:", saveErr);
-              return res.status(500).json({ message: "Failed to save session" });
-            }
-            res.json({ success: true, redirect: "/coach" });
-          });
-        }
-      );
+      const token = await createAuthToken(userId);
+      res.json({ success: true, redirect: "/coach", token });
     } catch (error) {
       console.error("Coach login error:", error);
       res.status(500).json({ message: "Login failed" });
@@ -161,27 +142,8 @@ export async function registerRoutes(
       const { userProfiles } = await import("@shared/schema");
       await dbRef.insert(userProfiles).values({ userId: user.id, role: "CLIENT" as any });
 
-      req.login(
-        {
-          claims: { sub: user.id },
-          access_token: null,
-          refresh_token: null,
-          expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
-        },
-        (err: any) => {
-          if (err) {
-            console.error("Session creation error:", err);
-            return res.status(500).json({ message: "Failed to create session" });
-          }
-          req.session.save((saveErr: any) => {
-            if (saveErr) {
-              console.error("Session save error:", saveErr);
-              return res.status(500).json({ message: "Failed to save session" });
-            }
-            res.json({ success: true, redirect: "/" });
-          });
-        }
-      );
+      const token = await createAuthToken(user.id);
+      res.json({ success: true, redirect: "/", token });
     } catch (error) {
       console.error("Client register error:", error);
       res.status(500).json({ message: "Registration failed" });
@@ -205,35 +167,19 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
-      req.login(
-        {
-          claims: { sub: user.id },
-          access_token: null,
-          refresh_token: null,
-          expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
-        },
-        (err: any) => {
-          if (err) {
-            console.error("Session creation error:", err);
-            return res.status(500).json({ message: "Failed to create session" });
-          }
-          req.session.save((saveErr: any) => {
-            if (saveErr) {
-              console.error("Session save error:", saveErr);
-              return res.status(500).json({ message: "Failed to save session" });
-            }
-            console.log("Login session saved, sid:", req.sessionID, "cookie:", JSON.stringify(req.session.cookie));
-            res.json({ success: true, redirect: "/" });
-          });
-        }
-      );
+      const token = await createAuthToken(user.id);
+      res.json({ success: true, redirect: "/", token });
     } catch (error) {
       console.error("Client login error:", error);
       res.status(500).json({ message: "Login failed" });
     }
   });
 
-  app.post("/api/client/logout", (req: any, res) => {
+  app.post("/api/client/logout", async (req: any, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      await deleteAuthToken(authHeader.slice(7));
+    }
     req.logout(() => {
       req.session?.destroy(() => {
         res.json({ success: true });

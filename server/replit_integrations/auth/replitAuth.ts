@@ -134,40 +134,63 @@ export async function setupAuth(app: Express) {
   });
 }
 
+import crypto from "crypto";
+import { db } from "../../db";
+import { sql } from "drizzle-orm";
+
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export async function createAuthToken(userId: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  await db.execute(sql`
+    INSERT INTO auth_tokens (token, user_id, expires_at)
+    VALUES (${token}, ${userId}, ${expiresAt})
+  `);
+  return token;
+}
+
+export async function deleteAuthToken(token: string): Promise<void> {
+  await db.execute(sql`DELETE FROM auth_tokens WHERE token = ${token}`);
+}
+
+async function getUserIdFromToken(token: string): Promise<string | null> {
+  const result = await db.execute(sql`
+    SELECT user_id FROM auth_tokens
+    WHERE token = ${token} AND expires_at > NOW()
+  `);
+  if (result.rows.length === 0) return null;
+  return (result.rows[0] as any).user_id;
+}
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    const userId = await getUserIdFromToken(token);
+    if (userId) {
+      (req as any).user = { claims: { sub: userId } };
+      return next();
+    }
+  }
+
   const user = req.user as any;
+  if (req.isAuthenticated() && user?.expires_at) {
+    const now = Math.floor(Date.now() / 1000);
+    if (now <= user.expires_at) {
+      return next();
+    }
 
-  console.log("isAuthenticated check:", {
-    isAuth: req.isAuthenticated(),
-    hasUser: !!user,
-    expiresAt: user?.expires_at,
-    sessionID: req.sessionID,
-    hasCookie: !!req.headers.cookie,
-    cookieHeader: req.headers.cookie?.substring(0, 80),
-  });
-
-  if (!req.isAuthenticated() || !user.expires_at) {
-    return res.status(401).json({ message: "Unauthorized" });
+    const refreshToken = user.refresh_token;
+    if (refreshToken) {
+      try {
+        const config = await getOidcConfig();
+        const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
+        updateUserSession(user, tokenResponse);
+        return next();
+      } catch (error) {}
+    }
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  if (now <= user.expires_at) {
-    return next();
-  }
-
-  const refreshToken = user.refresh_token;
-  if (!refreshToken) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
-
-  try {
-    const config = await getOidcConfig();
-    const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
-    updateUserSession(user, tokenResponse);
-    return next();
-  } catch (error) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+  return res.status(401).json({ message: "Unauthorized" });
 };

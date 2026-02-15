@@ -1,9 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
+import { getAuthHeaders, clearAuthToken } from "@/lib/authToken";
 
 async function fetchUser(): Promise<User | null> {
   const response = await fetch("/api/auth/user", {
     credentials: "include",
+    headers: getAuthHeaders(),
   });
 
   if (response.status === 401) {
@@ -18,7 +20,12 @@ async function fetchUser(): Promise<User | null> {
 }
 
 async function logout(): Promise<void> {
-  await fetch("/api/client/logout", { method: "POST", credentials: "include" });
+  await fetch("/api/client/logout", {
+    method: "POST",
+    credentials: "include",
+    headers: getAuthHeaders(),
+  });
+  clearAuthToken();
   window.location.href = "/";
 }
 
