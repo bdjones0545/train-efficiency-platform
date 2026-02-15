@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 export default function LandingPage() {
@@ -46,7 +46,8 @@ export default function LandingPage() {
       const data = await res.json();
       if (data.success) {
         toast({ title: "Welcome back!", description: "Redirecting to your dashboard..." });
-        window.location.href = data.redirect || "/coach";
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        window.location.href = "/coach";
       }
     } catch (err: any) {
       setError("Invalid email or password");
@@ -70,7 +71,8 @@ export default function LandingPage() {
       const data = await res.json();
       if (data.success) {
         toast({ title: isSignUp ? "Account created!" : "Welcome back!", description: "Redirecting..." });
-        window.location.href = data.redirect || "/";
+        setClientModalOpen(false);
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       }
     } catch (err: any) {
       try {
