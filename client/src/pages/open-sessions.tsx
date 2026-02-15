@@ -8,14 +8,35 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Calendar, Clock, Users, UserPlus, UserMinus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Calendar, Clock, Trash2, Users, UserPlus, UserMinus } from "lucide-react";
+import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 
-function SessionCard({ session, userId, isAuthenticated }: { session: OpenSession; userId?: string; isAuthenticated: boolean }) {
+function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: OpenSession; userId?: string; isAuthenticated: boolean; isOwner: boolean }) {
   const { toast } = useToast();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/coach/bookings/${session.id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Session Deleted", description: "The group session has been removed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", description: "Please log in again.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const { data: participants, isLoading: participantsLoading } = useQuery<ParticipantWithUser[]>({
     queryKey: ["/api/bookings", session.id, "participants"],
@@ -84,15 +105,28 @@ function SessionCard({ session, userId, isAuthenticated }: { session: OpenSessio
               {session.participantCount}/{session.maxParticipants} spots filled
             </Badge>
           </div>
-          {hasJoined ? (
-            <Badge className="bg-primary/15 text-primary text-xs" data-testid={`badge-joined-${session.id}`}>
-              Registered
-            </Badge>
-          ) : (
-            <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 text-xs">
-              Open
-            </Badge>
-          )}
+          <div className="flex items-center gap-1.5">
+            {isOwner && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={deleteMutation.isPending}
+                data-testid={`button-delete-session-${session.id}`}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+            {hasJoined ? (
+              <Badge className="bg-primary/15 text-primary text-xs" data-testid={`badge-joined-${session.id}`}>
+                Registered
+              </Badge>
+            ) : (
+              <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 text-xs">
+                Open
+              </Badge>
+            )}
+          </div>
         </div>
 
         {session.groupDescription && (
@@ -171,6 +205,27 @@ function SessionCard({ session, userId, isAuthenticated }: { session: OpenSessio
           </Button>
         )}
       </div>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Group Session</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this group session? All registered participants will be removed. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-session">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMutation.mutate()}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete-session"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
@@ -222,6 +277,7 @@ export default function OpenSessionsPage() {
               session={session}
               userId={user?.id}
               isAuthenticated={isAuthenticated}
+              isOwner={isCoach && session.coach?.userId === user?.id}
             />
           ))}
         </div>
