@@ -117,7 +117,13 @@ export async function registerRoutes(
             console.error("Session creation error:", err);
             return res.status(500).json({ message: "Failed to create session" });
           }
-          res.json({ success: true, redirect: "/coach" });
+          req.session.save((saveErr: any) => {
+            if (saveErr) {
+              console.error("Session save error:", saveErr);
+              return res.status(500).json({ message: "Failed to save session" });
+            }
+            res.json({ success: true, redirect: "/coach" });
+          });
         }
       );
     } catch (error) {
@@ -167,7 +173,13 @@ export async function registerRoutes(
             console.error("Session creation error:", err);
             return res.status(500).json({ message: "Failed to create session" });
           }
-          res.json({ success: true, redirect: "/" });
+          req.session.save((saveErr: any) => {
+            if (saveErr) {
+              console.error("Session save error:", saveErr);
+              return res.status(500).json({ message: "Failed to save session" });
+            }
+            res.json({ success: true, redirect: "/" });
+          });
         }
       );
     } catch (error) {
@@ -205,7 +217,13 @@ export async function registerRoutes(
             console.error("Session creation error:", err);
             return res.status(500).json({ message: "Failed to create session" });
           }
-          res.json({ success: true, redirect: "/" });
+          req.session.save((saveErr: any) => {
+            if (saveErr) {
+              console.error("Session save error:", saveErr);
+              return res.status(500).json({ message: "Failed to save session" });
+            }
+            res.json({ success: true, redirect: "/" });
+          });
         }
       );
     } catch (error) {
