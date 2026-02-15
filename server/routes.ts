@@ -309,9 +309,11 @@ export async function registerRoutes(
       const bookingEndTime = `${String(zonedEnd.getHours()).padStart(2, "0")}:${String(zonedEnd.getMinutes()).padStart(2, "0")}`;
 
       const fitsAvailability = blocks.some(block => {
+        const blockStart = block.startTime.substring(0, 5);
+        const blockEnd = block.endTime.substring(0, 5);
         return block.dayOfWeek === bookingDayOfWeek &&
-               block.startTime <= bookingStartTime &&
-               block.endTime >= bookingEndTime;
+               blockStart <= bookingStartTime &&
+               blockEnd >= bookingEndTime;
       });
 
       if (!fitsAvailability) {
