@@ -607,6 +607,31 @@ export async function registerRoutes(
         groupDescription: groupDescription || "",
       });
 
+      if (isSemiPrivate) {
+        const participantNames: string[] = req.body.participantNames || [];
+        const filledNames = participantNames.filter((n: string) => n.trim());
+        const count = filledNames.length > 0 ? filledNames.length : 1;
+
+        if (count > 6) {
+          return res.status(400).json({ message: "Maximum 6 participants per session" });
+        }
+
+        if (filledNames.length > 0) {
+          for (const name of filledNames) {
+            await storage.addBookingParticipant({
+              bookingId: booking.id,
+              userId: resolvedClientId,
+              participantName: name.trim(),
+            });
+          }
+        } else {
+          await storage.addBookingParticipant({
+            bookingId: booking.id,
+            userId: resolvedClientId,
+          });
+        }
+      }
+
       (async () => {
         try {
           const clientUser = await storage.getUser(resolvedClientId);

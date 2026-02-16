@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Plus, CalendarIcon, Search, XCircle, MapPin } from "lucide-react";
+import { Plus, CalendarIcon, Search, XCircle, MapPin, UserPlus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import type { Service } from "@shared/schema";
 
@@ -52,6 +52,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [location, setLocation] = useState("");
   const [customLocation, setCustomLocation] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
+  const [participantNames, setParticipantNames] = useState<string[]>([""]);
   const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
@@ -112,6 +113,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setLocation("");
     setCustomLocation("");
     setGroupDescription("");
+    setParticipantNames([""]);
     setShowSearch(false);
   };
 
@@ -141,6 +143,10 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     if (isSemiPrivate) {
       body.maxParticipants = 6;
       body.groupDescription = groupDescription.trim();
+      const filledNames = participantNames.filter(n => n.trim());
+      if (filledNames.length > 0) {
+        body.participantNames = filledNames.map(n => n.trim());
+      }
     }
     if (selectedClientId) {
       body.clientId = selectedClientId;
@@ -204,16 +210,63 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
           </div>
 
           {isSemiPrivate && (
-            <div className="space-y-2">
-              <Label>Group Description</Label>
-              <Textarea
-                placeholder="Describe the group training, e.g. 'High school football speed training' or 'Basketball agility group'"
-                value={groupDescription}
-                onChange={(e) => setGroupDescription(e.target.value)}
-                className="resize-none"
-                data-testid="input-group-description"
-              />
-              <p className="text-xs text-muted-foreground">This will be shown to athletes who can register for this session (max 6 participants).</p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Group Description</Label>
+                <Textarea
+                  placeholder="Describe the group training, e.g. 'High school football speed training' or 'Basketball agility group'"
+                  value={groupDescription}
+                  onChange={(e) => setGroupDescription(e.target.value)}
+                  className="resize-none"
+                  data-testid="input-group-description"
+                />
+                <p className="text-xs text-muted-foreground">This will be shown to athletes who can register for this session (max 6 participants).</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Participants</Label>
+                <div className="space-y-2">
+                  {participantNames.map((name, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Input
+                        placeholder={`Participant ${index + 1} name`}
+                        value={name}
+                        onChange={(e) => {
+                          const updated = [...participantNames];
+                          updated[index] = e.target.value;
+                          setParticipantNames(updated);
+                        }}
+                        data-testid={`input-participant-name-${index}`}
+                      />
+                      {participantNames.length > 1 && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            const updated = participantNames.filter((_, i) => i !== index);
+                            setParticipantNames(updated);
+                          }}
+                          data-testid={`button-remove-participant-${index}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {participantNames.length < 6 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setParticipantNames([...participantNames, ""])}
+                    className="w-full"
+                    data-testid="button-add-participant"
+                  >
+                    <UserPlus className="h-3.5 w-3.5 mr-1" />
+                    Add Participant
+                  </Button>
+                )}
+                <p className="text-xs text-muted-foreground">Add the names of people attending this session. Others can also join later from the Open Sessions page.</p>
+              </div>
             </div>
           )}
 
