@@ -101,6 +101,14 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - Click empty time slots to prefill AddSessionDialog with selected date/time
   - Day stats cards (total, confirmed, pending, completed)
   - AddSessionDialog enhanced with initialDate/initialTime/triggerButton props
+- Enhanced semi-private participant management in AddSessionDialog
+  - Coaches can search and select existing users to add to group sessions (linked by userId)
+  - Coaches can also type walk-in names for unregistered participants
+  - Each participant shown with "User" or "Walk-in" badge, removable
+  - Participant count displayed (X/6), max 6 enforced in UI and backend
+  - Backend accepts `participants` array with {type, userId, displayName} objects
+  - Server-side deduplication prevents duplicate participants
+  - Legacy `participantNames` string array still supported for backward compatibility
 - Semi-private group sessions: booking_participants table, maxParticipants column on bookings
   - Coaches schedule semi-private sessions with group description (auto-detects from service name)
   - Open Sessions page (/sessions) for clients to browse and join group sessions

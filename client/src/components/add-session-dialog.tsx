@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
+import { Badge } from "@/components/ui/badge";
 import { Plus, CalendarIcon, Search, XCircle, MapPin, UserPlus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import type { Service } from "@shared/schema";
@@ -29,6 +30,12 @@ const PRESET_LOCATIONS = [
 ];
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
+
+type ParticipantEntry = {
+  type: "user" | "walkin";
+  userId?: string;
+  displayName: string;
+};
 
 type AddSessionDialogProps = {
   initialDate?: Date;
@@ -52,7 +59,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [location, setLocation] = useState("");
   const [customLocation, setCustomLocation] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
-  const [participantNames, setParticipantNames] = useState<string[]>([""]);
+  const [participants, setParticipants] = useState<ParticipantEntry[]>([]);
+  const [participantSearchQuery, setParticipantSearchQuery] = useState("");
+  const [walkinName, setWalkinName] = useState("");
   const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
@@ -74,6 +83,17 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
       return res.json();
     },
     enabled: searchQuery.length >= 2,
+  });
+
+  const { data: participantSearchResults } = useQuery<ClientSearchResult[]>({
+    queryKey: ["/api/coach/clients/search", participantSearchQuery],
+    queryFn: async () => {
+      if (participantSearchQuery.length < 2) return [];
+      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(participantSearchQuery)}`, { credentials: "include", headers: { ...getAuthHeaders() } });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: participantSearchQuery.length >= 2,
   });
 
   const createMutation = useMutation({
@@ -113,7 +133,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setLocation("");
     setCustomLocation("");
     setGroupDescription("");
-    setParticipantNames([""]);
+    setParticipants([]);
+    setParticipantSearchQuery("");
+    setWalkinName("");
     setShowSearch(false);
   };
 
@@ -143,9 +165,12 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     if (isSemiPrivate) {
       body.maxParticipants = 6;
       body.groupDescription = groupDescription.trim();
-      const filledNames = participantNames.filter(n => n.trim());
-      if (filledNames.length > 0) {
-        body.participantNames = filledNames.map(n => n.trim());
+      if (participants.length > 0) {
+        body.participants = participants.map(p => ({
+          type: p.type,
+          userId: p.userId,
+          displayName: p.displayName,
+        }));
       }
     }
     if (selectedClientId) {
@@ -223,49 +248,96 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                 <p className="text-xs text-muted-foreground">This will be shown to athletes who can register for this session (max 6 participants).</p>
               </div>
               <div className="space-y-2">
-                <Label>Participants</Label>
-                <div className="space-y-2">
-                  {participantNames.map((name, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <Input
-                        placeholder={`Participant ${index + 1} name`}
-                        value={name}
-                        onChange={(e) => {
-                          const updated = [...participantNames];
-                          updated[index] = e.target.value;
-                          setParticipantNames(updated);
-                        }}
-                        data-testid={`input-participant-name-${index}`}
-                      />
-                      {participantNames.length > 1 && (
+                <Label>Participants ({participants.length}/6)</Label>
+                {participants.length > 0 && (
+                  <div className="space-y-1.5">
+                    {participants.map((p, index) => (
+                      <div key={index} className="flex items-center gap-2 border rounded-md px-3 py-1.5" data-testid={`participant-entry-${index}`}>
+                        <Badge variant={p.type === "user" ? "default" : "secondary"} className="text-[10px] shrink-0">
+                          {p.type === "user" ? "User" : "Walk-in"}
+                        </Badge>
+                        <span className="text-sm flex-1 truncate">{p.displayName}</span>
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => {
-                            const updated = participantNames.filter((_, i) => i !== index);
-                            setParticipantNames(updated);
-                          }}
+                          onClick={() => setParticipants(participants.filter((_, i) => i !== index))}
                           data-testid={`button-remove-participant-${index}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                {participantNames.length < 6 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setParticipantNames([...participantNames, ""])}
-                    className="w-full"
-                    data-testid="button-add-participant"
-                  >
-                    <UserPlus className="h-3.5 w-3.5 mr-1" />
-                    Add Participant
-                  </Button>
+                      </div>
+                    ))}
+                  </div>
                 )}
-                <p className="text-xs text-muted-foreground">Add the names of people attending this session. Others can also join later from the Open Sessions page.</p>
+                {participants.length < 6 && (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search users to add..."
+                        value={participantSearchQuery}
+                        onChange={(e) => setParticipantSearchQuery(e.target.value)}
+                        className="pl-9"
+                        data-testid="input-participant-search"
+                      />
+                    </div>
+                    {participantSearchResults && participantSearchResults.length > 0 && participantSearchQuery.length >= 2 && (
+                      <div className="border rounded-md max-h-32 overflow-y-auto">
+                        {participantSearchResults
+                          .filter(u => !participants.some(p => p.userId === u.id))
+                          .map((user) => (
+                          <button
+                            key={user.id}
+                            className="w-full text-left px-3 py-2 text-sm hover-elevate flex items-center gap-2"
+                            onClick={() => {
+                              const name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+                              setParticipants([...participants, { type: "user", userId: user.id, displayName: name || user.email || "User" }]);
+                              setParticipantSearchQuery("");
+                            }}
+                            data-testid={`button-add-user-${user.id}`}
+                          >
+                            <UserPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <span>{user.firstName} {user.lastName}</span>
+                            {user.email && <span className="text-xs text-muted-foreground ml-auto">{user.email}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {participantSearchQuery.length >= 2 && participantSearchResults && participantSearchResults.filter(u => !participants.some(p => p.userId === u.id)).length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-1">No matching users found</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Or type a walk-in name..."
+                        value={walkinName}
+                        onChange={(e) => setWalkinName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && walkinName.trim() && participants.length < 6) {
+                            e.preventDefault();
+                            setParticipants([...participants, { type: "walkin", displayName: walkinName.trim() }]);
+                            setWalkinName("");
+                          }
+                        }}
+                        data-testid="input-walkin-name"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!walkinName.trim() || participants.length >= 6}
+                        onClick={() => {
+                          if (walkinName.trim()) {
+                            setParticipants([...participants, { type: "walkin", displayName: walkinName.trim() }]);
+                            setWalkinName("");
+                          }
+                        }}
+                        data-testid="button-add-walkin"
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">Search for existing users or type walk-in names. Others can also join later from the Open Sessions page.</p>
               </div>
             </div>
           )}
