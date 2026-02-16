@@ -391,6 +391,7 @@ export async function registerRoutes(
         try {
           const clientUser = await storage.getUser(userId);
           const coachProfile = await storage.getCoachProfile(coachId);
+          const tz = coachProfile?.timezone || coach?.timezone || "America/New_York";
           if (clientUser?.email) {
             sendBookingConfirmationToClient(
               clientUser.email,
@@ -399,7 +400,8 @@ export async function registerRoutes(
               service.name,
               start,
               end,
-              req.body.location || undefined
+              req.body.location || undefined,
+              tz
             ).catch(() => {});
           }
           const coachEmail = coachProfile?.email || coachProfile?.user?.email;
@@ -411,7 +413,8 @@ export async function registerRoutes(
               service.name,
               start,
               end,
-              req.body.location || undefined
+              req.body.location || undefined,
+              tz
             ).catch(() => {});
           }
         } catch (e) { console.error("Booking email error:", e); }
@@ -636,6 +639,7 @@ export async function registerRoutes(
         try {
           const clientUser = await storage.getUser(resolvedClientId);
           const coachProfile = await storage.getCoachProfile(coachId);
+          const tz = coachProfile?.timezone || "America/New_York";
           if (clientUser?.email) {
             sendBookingConfirmationToClient(
               clientUser.email,
@@ -644,7 +648,8 @@ export async function registerRoutes(
               service.name,
               start,
               end,
-              req.body.location || undefined
+              req.body.location || undefined,
+              tz
             ).catch(() => {});
           }
           const coachEmail = coachProfile?.email || coachProfile?.user?.email;
@@ -656,7 +661,8 @@ export async function registerRoutes(
               service.name,
               start,
               end,
-              req.body.location || undefined
+              req.body.location || undefined,
+              tz
             ).catch(() => {});
           }
         } catch (e) { console.error("Coach booking email error:", e); }

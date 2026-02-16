@@ -1,6 +1,7 @@
 // SendGrid email integration for EST notifications
 import sgMail from '@sendgrid/mail';
 import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 let connectionSettings: any;
 
@@ -92,11 +93,14 @@ export async function sendBookingConfirmationToClient(
   serviceName: string,
   startAt: Date,
   endAt: Date,
-  location?: string
+  location?: string,
+  timezone: string = "America/New_York"
 ) {
   const subject = `Session Confirmed — ${serviceName}`;
-  const dateStr = format(startAt, "EEEE, MMMM d, yyyy");
-  const timeStr = `${format(startAt, "h:mm a")} — ${format(endAt, "h:mm a")}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
   const locationLine = location ? `<p style="font-size: 15px; margin: 4px 0;"><strong>Location:</strong> ${location}</p>` : '';
 
   const html = `
@@ -158,11 +162,14 @@ export async function sendBookingNotificationToCoach(
   serviceName: string,
   startAt: Date,
   endAt: Date,
-  location?: string
+  location?: string,
+  timezone: string = "America/New_York"
 ) {
   const subject = `New Session Booked — ${clientName}`;
-  const dateStr = format(startAt, "EEEE, MMMM d, yyyy");
-  const timeStr = `${format(startAt, "h:mm a")} — ${format(endAt, "h:mm a")}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
   const locationLine = location ? `<p style="font-size: 15px; margin: 4px 0;"><strong>Location:</strong> ${location}</p>` : '';
 
   const html = `
