@@ -1162,7 +1162,7 @@ export async function registerRoutes(
         return res.status(409).json({ message: "This session is full" });
       }
 
-      const targetUserId = userId || req.user.claims.sub;
+      const targetUserId = userId || (participantName ? booking.clientId : req.user.claims.sub);
 
       const alreadyJoined = participants.some(p => p.userId === targetUserId && (!participantName || p.participantName === participantName?.trim()));
       if (alreadyJoined) {
@@ -1178,6 +1178,26 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error adding participant:", error);
       res.status(500).json({ message: "Failed to add participant" });
+    }
+  });
+
+  app.delete("/api/coach/bookings/:id/participants/:participantId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const bookingId = req.params.id;
+      const participantId = req.params.participantId;
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ message: "Session not found" });
+
+      const participants = await storage.getBookingParticipants(bookingId);
+      const target = participants.find(p => p.id === participantId);
+      if (!target) return res.status(404).json({ message: "Participant not found in this session" });
+
+      await storage.removeBookingParticipantById(participantId);
+      res.json({ message: "Participant removed" });
+    } catch (error) {
+      console.error("Error removing participant:", error);
+      res.status(500).json({ message: "Failed to remove participant" });
     }
   });
 

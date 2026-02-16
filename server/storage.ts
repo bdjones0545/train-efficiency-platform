@@ -74,6 +74,7 @@ export interface IStorage {
   getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]>;
   addBookingParticipant(participant: InsertBookingParticipant): Promise<BookingParticipant>;
   removeBookingParticipant(bookingId: string, userId: string): Promise<void>;
+  removeBookingParticipantById(participantId: string): Promise<void>;
   getOpenSemiPrivateSessions(): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]>;
 
   getCoachRedemptions(coachId: string): Promise<Redemption[]>;
@@ -388,6 +389,10 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookingParticipants).where(
       and(eq(bookingParticipants.bookingId, bookingId), eq(bookingParticipants.userId, userId))
     );
+  }
+
+  async removeBookingParticipantById(participantId: string): Promise<void> {
+    await db.delete(bookingParticipants).where(eq(bookingParticipants.id, participantId));
   }
 
   async getOpenSemiPrivateSessions(): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]> {

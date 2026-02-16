@@ -107,7 +107,7 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - User Balances tab: searchable list of all users with their wallet balance
   - API: GET /api/coach/transactions, GET /api/coach/user-balances (COACH/ADMIN)
   - "Transactions" link added to coach sidebar navigation
-- Enhanced semi-private participant management in AddSessionDialog
+- Enhanced semi-private participant management in AddSessionDialog and EditSessionDialog
   - Coaches can search and select existing users to add to group sessions (linked by userId)
   - Coaches can also type walk-in names for unregistered participants
   - Each participant shown with "User" or "Walk-in" badge, removable
@@ -115,6 +115,8 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - Backend accepts `participants` array with {type, userId, displayName} objects
   - Server-side deduplication prevents duplicate participants
   - Legacy `participantNames` string array still supported for backward compatibility
+  - EditSessionDialog shows current participants with add/remove functionality for semi-private sessions
+  - API: POST /api/coach/bookings/:id/add-participant, DELETE /api/coach/bookings/:id/participants/:participantId (COACH/ADMIN)
 - Semi-private group sessions: booking_participants table, maxParticipants column on bookings
   - Coaches schedule semi-private sessions with group description (auto-detects from service name)
   - Open Sessions page (/sessions) for clients to browse and join group sessions

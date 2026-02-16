@@ -13,10 +13,11 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign } from "lucide-react";
+import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign, UserPlus, Users, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, parseISO } from "date-fns";
 import type { Service } from "@shared/schema";
+import type { ParticipantWithUser } from "@/lib/types";
 
 const PRESET_LOCATIONS = [
   "Bluffton High School",
@@ -56,6 +57,9 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [groupDescription, setGroupDescription] = useState(booking.groupDescription || "");
   const [showSearch, setShowSearch] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [participantSearchQuery, setParticipantSearchQuery] = useState("");
+  const [showParticipantSearch, setShowParticipantSearch] = useState(false);
+  const [walkInName, setWalkInName] = useState("");
 
   const initLocation = booking.location || "";
   const isPreset = PRESET_LOCATIONS.includes(initLocation);
@@ -79,6 +83,9 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setCustomLocation(preset ? "" : loc);
       setSearchQuery("");
       setShowSearch(false);
+      setParticipantSearchQuery("");
+      setShowParticipantSearch(false);
+      setWalkInName("");
     }
   }, [open, booking]);
 
@@ -96,6 +103,57 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       return res.json();
     },
     enabled: searchQuery.length >= 2,
+  });
+
+  const { data: participantSearchResults } = useQuery<ClientSearchResult[]>({
+    queryKey: ["/api/coach/clients/search", participantSearchQuery],
+    queryFn: async () => {
+      if (participantSearchQuery.length < 2) return [];
+      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(participantSearchQuery)}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: participantSearchQuery.length >= 2,
+  });
+
+  const { data: participants } = useQuery<ParticipantWithUser[]>({
+    queryKey: ["/api/bookings", booking.id, "participants"],
+    enabled: open && !!booking.maxParticipants,
+  });
+
+  const addParticipantMutation = useMutation({
+    mutationFn: async (data: { userId?: string; participantName?: string }) => {
+      const res = await apiRequest("POST", `/api/coach/bookings/${booking.id}/add-participant`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Participant Added" });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", booking.id, "participants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      setParticipantSearchQuery("");
+      setShowParticipantSearch(false);
+      setWalkInName("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeParticipantMutation = useMutation({
+    mutationFn: async (participantId: string) => {
+      await apiRequest("DELETE", `/api/coach/bookings/${booking.id}/participants/${participantId}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Participant Removed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", booking.id, "participants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
   });
 
   const updateMutation = useMutation({
@@ -262,6 +320,132 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
                 className="resize-none"
                 data-testid="edit-input-group-description"
               />
+            </div>
+          )}
+
+          {isSemiPrivate && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <Label className="flex items-center gap-1.5">
+                  <Users className="h-4 w-4" />
+                  Participants ({participants?.length || 0}/{booking.maxParticipants || 6})
+                </Label>
+              </div>
+
+              {participants && participants.length > 0 && (
+                <div className="space-y-1">
+                  {participants.map((p) => {
+                    const isWalkIn = !!p.participantName;
+                    const displayName = isWalkIn
+                      ? p.participantName
+                      : `${p.user?.firstName || ""} ${p.user?.lastName || ""}`.trim() || p.userId;
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between gap-2 border rounded-md px-3 py-1.5"
+                        data-testid={`participant-row-${p.id}`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm truncate">{displayName}</span>
+                          <Badge variant="outline" className="text-[10px] shrink-0">
+                            {isWalkIn ? "Walk-in" : "User"}
+                          </Badge>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => removeParticipantMutation.mutate(p.id)}
+                          disabled={removeParticipantMutation.isPending}
+                          data-testid={`button-remove-participant-${p.id}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {(!participants || participants.length < (booking.maxParticipants || 6)) && (
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowParticipantSearch(!showParticipantSearch)}
+                    data-testid="button-toggle-add-participant"
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Add Participant
+                  </Button>
+
+                  {showParticipantSearch && (
+                    <div className="space-y-2 border rounded-md p-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Search existing users</Label>
+                        <Input
+                          placeholder="Search by name or email..."
+                          value={participantSearchQuery}
+                          onChange={(e) => setParticipantSearchQuery(e.target.value)}
+                          autoFocus
+                          data-testid="input-search-participant"
+                        />
+                        {participantSearchResults && participantSearchResults.length > 0 && (
+                          <div className="border rounded-md max-h-32 overflow-y-auto">
+                            {participantSearchResults.map((client) => {
+                              const alreadyAdded = participants?.some(p => p.userId === client.id && !p.participantName);
+                              return (
+                                <button
+                                  key={client.id}
+                                  className="w-full text-left px-3 py-2 text-sm hover-elevate disabled:opacity-50"
+                                  onClick={() => addParticipantMutation.mutate({ userId: client.id })}
+                                  disabled={alreadyAdded || addParticipantMutation.isPending}
+                                  data-testid={`button-add-user-participant-${client.id}`}
+                                >
+                                  {client.firstName} {client.lastName}
+                                  {client.email && <span className="text-muted-foreground ml-1">({client.email})</span>}
+                                  {alreadyAdded && <span className="text-muted-foreground ml-1"> - Already added</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {participantSearchQuery.length >= 2 && participantSearchResults && participantSearchResults.length === 0 && (
+                          <p className="text-xs text-muted-foreground">No users found.</p>
+                        )}
+                      </div>
+
+                      <div className="border-t pt-2 space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Or add a walk-in</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Walk-in name..."
+                            value={walkInName}
+                            onChange={(e) => setWalkInName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && walkInName.trim()) {
+                                addParticipantMutation.mutate({ participantName: walkInName.trim() });
+                              }
+                            }}
+                            data-testid="input-walkin-name"
+                          />
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              if (walkInName.trim()) {
+                                addParticipantMutation.mutate({ participantName: walkInName.trim() });
+                              }
+                            }}
+                            disabled={!walkInName.trim() || addParticipantMutation.isPending}
+                            data-testid="button-add-walkin"
+                          >
+                            Add
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
