@@ -1125,7 +1125,26 @@ export async function registerRoutes(
   app.get("/api/admin/redemptions", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const redemptionsList = await storage.getAllRedemptions();
-      res.json(redemptionsList);
+      const coaches = await storage.getCoachProfiles();
+      const allBookings = await storage.getAllBookings();
+      const services = await storage.getServices();
+      const enriched = redemptionsList.map((r: any) => {
+        const coach = coaches.find((cp: any) => cp.id === r.coachId);
+        const booking = allBookings.find((b: any) => b.id === r.bookingId);
+        const service = booking ? services.find((s: any) => s.id === booking.serviceId) : undefined;
+        let clientName = "Unknown";
+        if (booking?.client) {
+          clientName = `${booking.client.firstName} ${booking.client.lastName}`;
+        }
+        return {
+          ...r,
+          coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
+          coachUserId: coach?.userId || null,
+          serviceName: service?.name || "Session",
+          clientName,
+        };
+      });
+      res.json(enriched);
     } catch (error) {
       console.error("Error fetching all redemptions:", error);
       res.status(500).json({ message: "Failed to fetch redemptions" });
