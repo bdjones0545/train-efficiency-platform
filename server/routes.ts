@@ -887,7 +887,17 @@ export async function registerRoutes(
       if (existing) return res.status(409).json({ message: "Already redeemed" });
 
       const service = await storage.getService(booking.serviceId);
-      const perPersonCents = service?.priceCents || 0;
+      let perPersonCents = service?.priceCents || 0;
+
+      const isSpringIsland = booking.location?.toLowerCase().includes("spring island");
+      if (isSpringIsland && service) {
+        if (service.durationMin <= 30) {
+          perPersonCents = 6200;
+        } else {
+          perPersonCents = 9500;
+        }
+      }
+
       const isSemiPrivate = booking.maxParticipants !== null && booking.maxParticipants > 1;
 
       let totalCollectedCents = 0;
