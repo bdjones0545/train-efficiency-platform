@@ -96,6 +96,9 @@ export interface IStorage {
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
 
+  getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User })[]>;
+  getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
+
   getUserBalance(userId: string): Promise<number>;
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string): Promise<WalletTransaction>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
@@ -582,6 +585,23 @@ export class DatabaseStorage implements IStorage {
   async getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined> {
     const [tx] = await db.select().from(walletTransactions).where(eq(walletTransactions.stripeSessionId, stripeSessionId));
     return tx || undefined;
+  }
+
+  async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User })[]> {
+    const allTx = await db.select().from(walletTransactions).orderBy(desc(walletTransactions.createdAt));
+    const allUsers = await db.select().from(users);
+    const userMap = new Map(allUsers.map(u => [u.id, u]));
+    return allTx.map(tx => ({ ...tx, user: userMap.get(tx.userId) }));
+  }
+
+  async getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]> {
+    return db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      balanceCents: users.balanceCents,
+    }).from(users).orderBy(desc(users.balanceCents));
   }
 }
 

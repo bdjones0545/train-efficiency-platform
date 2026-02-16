@@ -1181,6 +1181,26 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+    try {
+      const transactions = await storage.getAllWalletTransactions();
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error fetching transactions:", error);
+      res.status(500).json({ message: "Failed to fetch transactions" });
+    }
+  });
+
+  app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+    try {
+      const balances = await storage.getAllUserBalances();
+      res.json(balances);
+    } catch (error) {
+      console.error("Error fetching user balances:", error);
+      res.status(500).json({ message: "Failed to fetch user balances" });
+    }
+  });
+
   app.get("/api/admin/users", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const allUsers = await storage.getAllUsersWithProfiles();

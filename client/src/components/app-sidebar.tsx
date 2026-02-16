@@ -61,6 +61,7 @@ export function AppSidebar() {
     { title: "My Profile", url: "/coach/profile", icon: UserCog },
     { title: "Availability", url: "/coach/availability", icon: CalendarClock },
     { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign },
+    { title: "Transactions", url: "/coach/transactions", icon: Wallet },
     { title: "Users", url: "/coach/users", icon: Users },
     { title: "BLHS Athletic", url: "/coach/athletic", icon: Trophy },
   ];

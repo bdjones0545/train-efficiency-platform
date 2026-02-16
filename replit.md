@@ -101,6 +101,12 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - Click empty time slots to prefill AddSessionDialog with selected date/time
   - Day stats cards (total, confirmed, pending, completed)
   - AddSessionDialog enhanced with initialDate/initialTime/triggerButton props
+- Coach Transactions page (/coach/transactions): view all wallet transactions and user balances
+  - Summary cards: total deposits, total payments, users with non-zero balance
+  - Transactions tab: searchable, filterable list of all wallet credits/debits with user info
+  - User Balances tab: searchable list of all users with their wallet balance
+  - API: GET /api/coach/transactions, GET /api/coach/user-balances (COACH/ADMIN)
+  - "Transactions" link added to coach sidebar navigation
 - Enhanced semi-private participant management in AddSessionDialog
   - Coaches can search and select existing users to add to group sessions (linked by userId)
   - Coaches can also type walk-in names for unregistered participants
