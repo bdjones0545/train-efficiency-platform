@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -14,8 +17,10 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
+import type { CoachWithUser } from "@/lib/types";
 
 export default function LandingPage() {
+  const { data: coaches } = useQuery<CoachWithUser[]>({ queryKey: ["/api/coaches"] });
   const [coachModalOpen, setCoachModalOpen] = useState(false);
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
@@ -304,6 +309,56 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {coaches && coaches.length > 0 && (
+        <section className="py-20 px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12 space-y-3">
+              <h2 className="text-3xl font-bold" data-testid="text-coaches-heading">Meet Our Coaches</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Train with experienced strength & conditioning professionals dedicated to your athletic development.
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
+              {coaches.map((coach) => (
+                <Card key={coach.id} className="p-6 space-y-4" data-testid={`card-landing-coach-${coach.id}`}>
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-16 w-16">
+                      <AvatarImage src={coach.photoUrl || coach.user?.profileImageUrl || undefined} data-testid={`img-coach-photo-${coach.id}`} />
+                      <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
+                        {(coach.user?.firstName?.[0] || "C").toUpperCase()}
+                        {(coach.user?.lastName?.[0] || "").toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h3 className="text-lg font-semibold" data-testid={`text-landing-coach-name-${coach.id}`}>
+                        {coach.user?.firstName} {coach.user?.lastName}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">Strength & Conditioning Coach</p>
+                    </div>
+                  </div>
+                  {coach.bio && (
+                    <p className="text-sm text-muted-foreground leading-relaxed">{coach.bio}</p>
+                  )}
+                  {coach.specialties && coach.specialties.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {coach.specialties.map((spec) => (
+                        <Badge key={spec} variant="secondary" className="text-xs">{spec}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+            <div className="text-center mt-8">
+              <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-coaches-cta">
+                <Calendar className="h-4 w-4 mr-2" />
+                Sign Up to Book a Session
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <footer className="py-8 px-6 border-t">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
