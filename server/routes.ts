@@ -1087,6 +1087,85 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/users", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+    try {
+      const allUsers = await storage.getAllUsersWithProfiles();
+      res.json(allUsers);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.patch("/api/coach/users/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.params.id;
+      const { firstName, lastName, email } = req.body;
+      const updated = await storage.updateUser(userId, { firstName, lastName, email });
+      if (!updated) return res.status(404).json({ message: "User not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/coach/users/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.params.id;
+      const deleted = await storage.deleteUser(userId);
+      if (!deleted) return res.status(404).json({ message: "User not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ message: "Failed to delete user" });
+    }
+  });
+
+  app.get("/api/coach/users/:id/bookings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.params.id;
+      const userBookings = await storage.getBookingsForUser(userId);
+      res.json(userBookings);
+    } catch (error) {
+      console.error("Error fetching user bookings:", error);
+      res.status(500).json({ message: "Failed to fetch bookings" });
+    }
+  });
+
+  app.post("/api/coach/bookings/:id/add-participant", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const bookingId = req.params.id;
+      const { userId, participantName } = req.body;
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ message: "Session not found" });
+      if (!booking.maxParticipants) return res.status(400).json({ message: "This is not a group session" });
+
+      const participants = await storage.getBookingParticipants(bookingId);
+      if (participants.length >= booking.maxParticipants) {
+        return res.status(409).json({ message: "This session is full" });
+      }
+
+      const targetUserId = userId || req.user.claims.sub;
+
+      const alreadyJoined = participants.some(p => p.userId === targetUserId && (!participantName || p.participantName === participantName?.trim()));
+      if (alreadyJoined) {
+        return res.status(409).json({ message: "This user is already a participant in this session" });
+      }
+
+      const p = await storage.addBookingParticipant({
+        bookingId,
+        userId: targetUserId,
+        ...(participantName ? { participantName: participantName.trim() } : {}),
+      });
+      res.json(p);
+    } catch (error) {
+      console.error("Error adding participant:", error);
+      res.status(500).json({ message: "Failed to add participant" });
+    }
+  });
+
   app.get("/api/admin/users", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const allUsers = await storage.getAllUsersWithProfiles();

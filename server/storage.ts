@@ -40,6 +40,9 @@ export interface IStorage {
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   getAllUsersWithProfiles(): Promise<(User & { profile?: UserProfile })[]>;
+  updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
+  getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
 
   getCoachProfiles(): Promise<(CoachProfile & { user: User })[]>;
   getCoachProfile(id: string): Promise<(CoachProfile & { user: User }) | undefined>;
@@ -127,6 +130,46 @@ export class DatabaseStorage implements IStorage {
     const allProfiles = await db.select().from(userProfiles);
     const profileMap = new Map(allProfiles.map(p => [p.userId, p]));
     return allUsers.map(u => ({ ...u, profile: profileMap.get(u.id) }));
+  }
+
+  async updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined> {
+    const setData: any = {};
+    if (data.firstName !== undefined) setData.firstName = data.firstName;
+    if (data.lastName !== undefined) setData.lastName = data.lastName;
+    if (data.email !== undefined) setData.email = data.email;
+    if (Object.keys(setData).length === 0) return this.getUser(id);
+    const [updated] = await db.update(users).set(setData).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    await db.delete(bookingParticipants).where(eq(bookingParticipants.userId, id));
+    await db.delete(walletTransactions).where(eq(walletTransactions.userId, id));
+    await db.delete(userProfiles).where(eq(userProfiles.userId, id));
+    const userBookings = await db.select({ id: bookings.id }).from(bookings).where(eq(bookings.clientId, id));
+    for (const b of userBookings) {
+      await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
+      await db.delete(redemptions).where(eq(redemptions.bookingId, b.id));
+    }
+    await db.delete(bookings).where(eq(bookings.clientId, id));
+    const result = await db.delete(users).where(eq(users.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]> {
+    const result = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+      .leftJoin(users, eq(coachProfiles.userId, users.id))
+      .where(eq(bookings.clientId, userId))
+      .orderBy(desc(bookings.startAt));
+    return result.map(r => ({
+      ...r.bookings,
+      service: r.services || undefined,
+      coach: r.coach_profiles ? { ...r.coach_profiles, user: r.users! } : undefined,
+    }));
   }
 
   async getCoachProfiles(): Promise<(CoachProfile & { user: User })[]> {
