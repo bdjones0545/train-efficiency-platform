@@ -155,6 +155,74 @@ export async function sendCashoutRequestEmail(
   await sendEmail(ownerEmail, subject, html);
 }
 
+export async function sendPaymentConfirmationEmail(
+  clientEmail: string,
+  clientFirstName: string,
+  amountCents: number,
+  description: string,
+  newBalanceCents: number
+) {
+  const subject = `Payment Confirmation — Efficiency Strength Training`;
+  const amountStr = `$${(amountCents / 100).toFixed(2)}`;
+  const balanceStr = newBalanceCents < 0
+    ? `-$${(Math.abs(newBalanceCents) / 100).toFixed(2)}`
+    : `$${(newBalanceCents / 100).toFixed(2)}`;
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">Payment Confirmation</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+        <p style="font-size: 16px; line-height: 1.6;">We've received your payment. Here are the details:</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 18px; margin: 4px 0; font-weight: bold;">Amount: ${amountStr}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Description:</strong> ${description}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Updated Wallet Balance:</strong> ${balanceStr}</p>
+        </div>
+        <p style="font-size: 16px; line-height: 1.6;">Thank you for your payment! You can view your full transaction history from your account.</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(clientEmail, subject, html);
+}
+
+export async function sendSessionChargeEmail(
+  clientEmail: string,
+  clientFirstName: string,
+  amountCents: number,
+  serviceName: string,
+  newBalanceCents: number
+) {
+  const subject = `Session Charged — ${serviceName}`;
+  const amountStr = `$${(amountCents / 100).toFixed(2)}`;
+  const balanceStr = newBalanceCents < 0
+    ? `-$${(Math.abs(newBalanceCents) / 100).toFixed(2)}`
+    : `$${(newBalanceCents / 100).toFixed(2)}`;
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">Session Charged</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+        <p style="font-size: 16px; line-height: 1.6;">Your completed session has been charged to your wallet:</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Session:</strong> ${serviceName}</p>
+          <p style="font-size: 18px; margin: 4px 0; font-weight: bold;">Amount Charged: ${amountStr}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Updated Wallet Balance:</strong> ${balanceStr}</p>
+        </div>
+        <p style="font-size: 16px; line-height: 1.6;">You can view your full transaction history from your account. If you have any questions, feel free to reach out.</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(clientEmail, subject, html);
+}
+
 export async function sendBookingNotificationToCoach(
   coachEmail: string,
   coachFirstName: string,

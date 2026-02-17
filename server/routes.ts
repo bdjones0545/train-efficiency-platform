@@ -6,7 +6,7 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
-import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail } from "./email";
+import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendSessionChargeEmail } from "./email";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 
 const OWNER_USER_ID = "42755213";
@@ -934,6 +934,12 @@ export async function registerRoutes(
               bookingId
             );
             totalCollectedCents += totalForUser;
+
+            const chargedUser = await storage.getUser(entry.userId);
+            if (chargedUser?.email) {
+              const newBal = await storage.getUserBalance(entry.userId);
+              sendSessionChargeEmail(chargedUser.email, chargedUser.firstName || "Client", totalForUser, service?.name || "Semi-Private Session", newBal).catch(() => {});
+            }
           }
         }
 
@@ -950,6 +956,12 @@ export async function registerRoutes(
             bookingId
           );
           totalCollectedCents = perPersonCents;
+
+          const chargedClient = await storage.getUser(booking.clientId);
+          if (chargedClient?.email) {
+            const newBal = await storage.getUserBalance(booking.clientId);
+            sendSessionChargeEmail(chargedClient.email, chargedClient.firstName || "Client", perPersonCents, service?.name || "Training Session", newBal).catch(() => {});
+          }
         }
       }
 
@@ -1229,6 +1241,12 @@ export async function registerRoutes(
 
       const description = `Manual payment (${method === "cash" ? "Cash" : "Venmo"})`;
       const tx = await storage.creditWallet(userId, amountCents, description);
+
+      if (user.email) {
+        const newBalance = await storage.getUserBalance(userId);
+        sendPaymentConfirmationEmail(user.email, user.firstName || "Client", amountCents, description, newBalance).catch(() => {});
+      }
+
       res.json(tx);
     } catch (error) {
       console.error("Error recording manual payment:", error);
