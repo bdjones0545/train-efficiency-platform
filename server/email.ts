@@ -250,6 +250,45 @@ export async function sendWeeklyReminderEmail(email: string, firstName: string) 
   await sendEmail(email, subject, html);
 }
 
+export async function sendGroupSessionJoinNotification(
+  coachEmail: string,
+  coachFirstName: string,
+  participantName: string,
+  serviceName: string,
+  startAt: Date,
+  endAt: Date,
+  location?: string,
+  timezone: string = "America/New_York"
+) {
+  const subject = `New Participant Joined — ${serviceName}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
+  const locationLine = location ? `<p style="font-size: 15px; margin: 4px 0;"><strong>Location:</strong> ${location}</p>` : '';
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">New Participant Joined</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${coachFirstName},</p>
+        <p style="font-size: 16px; line-height: 1.6;"><strong>${participantName}</strong> has joined your upcoming group session:</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Session:</strong> ${serviceName}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Date:</strong> ${dateStr}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Time:</strong> ${timeStr}</p>
+          ${locationLine}
+        </div>
+        <p style="font-size: 16px; line-height: 1.6;">You can view the full participant list from your coach dashboard.</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(coachEmail, subject, html);
+}
+
 export async function sendBookingNotificationToCoach(
   coachEmail: string,
   coachFirstName: string,

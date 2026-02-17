@@ -1143,6 +1143,31 @@ export async function registerRoutes(
         });
         added.push(p);
       }
+
+      try {
+        const coachProfile = await storage.getCoachProfile(booking.coachId);
+        const service = await storage.getService(booking.serviceId);
+        const joiningUser = await storage.getUser(userId);
+        if (coachProfile?.user?.email && joiningUser) {
+          const participantName = namesToAdd.filter(Boolean).length > 0
+            ? namesToAdd.filter(Boolean).join(", ")
+            : `${joiningUser.firstName || ""} ${joiningUser.lastName || ""}`.trim();
+          const { sendGroupSessionJoinNotification } = await import("./email");
+          sendGroupSessionJoinNotification(
+            coachProfile.user.email,
+            coachProfile.user.firstName || "Coach",
+            participantName || "A user",
+            service?.name || "Group Session",
+            booking.startAt,
+            booking.endAt,
+            booking.location || undefined,
+            coachProfile.timezone || "America/New_York"
+          ).catch(() => {});
+        }
+      } catch (emailErr) {
+        console.error("Error sending group join notification:", emailErr);
+      }
+
       res.json(added.length === 1 ? added[0] : added);
     } catch (error) {
       console.error("Error joining session:", error);
