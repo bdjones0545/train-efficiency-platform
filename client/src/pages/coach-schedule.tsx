@@ -15,7 +15,7 @@ import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Clock, MapPin, ArrowLeft, Users, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { format, addDays, startOfWeek, isSameDay, parseISO } from "date-fns";
 import type { CoachWithUser, DaySlots } from "@/lib/types";
 import type { Service } from "@shared/schema";
@@ -25,14 +25,37 @@ export default function CoachSchedulePage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user, isAuthenticated } = useAuth();
+  const [activeCoachId, setActiveCoachId] = useState<string>(params.id || "");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [selectedService, setSelectedService] = useState<string>("");
   const [selectedSlot, setSelectedSlot] = useState<{ date: string; start: string; end: string; location?: string } | null>(null);
   const [groupDescription, setGroupDescription] = useState("");
   const [participantNames, setParticipantNames] = useState<string[]>([""]);
 
+  const { data: allCoaches } = useQuery<CoachWithUser[]>({
+    queryKey: ["/api/coaches"],
+  });
+
+  useEffect(() => {
+    if (params.id && params.id !== activeCoachId) {
+      setActiveCoachId(params.id);
+    }
+  }, [params.id]);
+
+  const handleCoachSwitch = (coachId: string) => {
+    if (coachId === activeCoachId) return;
+    setActiveCoachId(coachId);
+    setSelectedSlot(null);
+    setSelectedService("");
+    setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+    setGroupDescription("");
+    setParticipantNames([""]);
+    navigate(`/coaches/${coachId}`, { replace: true });
+  };
+
   const { data: coach, isLoading: coachLoading } = useQuery<CoachWithUser>({
-    queryKey: ["/api/coaches", params.id],
+    queryKey: ["/api/coaches", activeCoachId],
+    enabled: !!activeCoachId,
   });
 
   const { data: services } = useQuery<Service[]>({
@@ -48,16 +71,16 @@ export default function CoachSchedulePage() {
 
   const weekStartStr = format(weekStart, "yyyy-MM-dd");
   const { data: slots, isLoading: slotsLoading } = useQuery<DaySlots[]>({
-    queryKey: ["/api/coaches", params.id, "slots", weekStartStr, selectedService],
+    queryKey: ["/api/coaches", activeCoachId, "slots", weekStartStr, selectedService],
     queryFn: async () => {
       const res = await fetch(
-        `/api/coaches/${params.id}/slots?serviceId=${selectedService}&weekStart=${weekStartStr}`,
+        `/api/coaches/${activeCoachId}/slots?serviceId=${selectedService}&weekStart=${weekStartStr}`,
         { credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to fetch slots");
       return res.json();
     },
-    enabled: !!selectedService,
+    enabled: !!selectedService && !!activeCoachId,
   });
 
   const bookMutation = useMutation({
@@ -67,7 +90,7 @@ export default function CoachSchedulePage() {
     },
     onSuccess: () => {
       toast({ title: "Session Booked", description: "Your session has been confirmed." });
-      queryClient.invalidateQueries({ queryKey: ["/api/coaches", params.id, "slots"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches", activeCoachId, "slots"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
       queryClient.invalidateQueries({ queryKey: ["/api/free-session-status"] });
@@ -93,10 +116,10 @@ export default function CoachSchedulePage() {
       window.location.href = "/";
       return;
     }
-    if (!selectedSlot || !selectedService) return;
+    if (!selectedSlot || !selectedService || !activeCoachId) return;
     const filledNames = participantNames.filter(n => n.trim());
     bookMutation.mutate({
-      coachId: params.id!,
+      coachId: activeCoachId,
       serviceId: selectedService,
       startAt: selectedSlot.start,
       endAt: selectedSlot.end,
@@ -152,6 +175,37 @@ export default function CoachSchedulePage() {
         <ArrowLeft className="h-4 w-4 mr-1" />
         Back to Coaches
       </Button>
+
+      {allCoaches && allCoaches.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1" data-testid="coach-toggle-list">
+          {allCoaches.map((c) => {
+            const isActive = c.id === activeCoachId;
+            return (
+              <button
+                key={c.id}
+                onClick={() => handleCoachSwitch(c.id)}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-md border text-left transition-colors shrink-0 ${
+                  isActive
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "hover-elevate border-border"
+                }`}
+                data-testid={`button-toggle-coach-${c.id}`}
+              >
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={c.photoUrl || c.user?.profileImageUrl || undefined} />
+                  <AvatarFallback className={`text-xs font-semibold ${isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"}`}>
+                    {(c.user?.firstName?.[0] || "C").toUpperCase()}
+                    {(c.user?.lastName?.[0] || "").toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span className={`text-sm font-medium ${isActive ? "" : ""}`}>
+                  {c.user?.firstName} {c.user?.lastName}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <Card className="p-6">
         <div className="flex flex-col sm:flex-row items-start gap-4">
