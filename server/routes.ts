@@ -889,8 +889,12 @@ export async function registerRoutes(
       const service = await storage.getService(booking.serviceId);
       let perPersonCents = service?.priceCents || 0;
 
+      const isTeamTraining = service?.name.toLowerCase().includes("team training") || false;
+      const isBlufftonHS = booking.location?.toLowerCase().includes("bluffton high") || false;
+      const isTeamContract = isTeamTraining && isBlufftonHS;
+
       const isSpringIsland = booking.location?.toLowerCase().includes("spring island");
-      if (isSpringIsland && service) {
+      if (isSpringIsland && service && !isTeamContract) {
         if (service.durationMin <= 30) {
           perPersonCents = 6200;
         } else {
@@ -901,66 +905,70 @@ export async function registerRoutes(
       const isSemiPrivate = booking.maxParticipants !== null && booking.maxParticipants > 1;
 
       let totalCollectedCents = 0;
+      let amountCents = 0;
 
-      if (isSemiPrivate) {
-        const participants = await storage.getBookingParticipants(bookingId);
+      if (isTeamContract) {
+        amountCents = 2000;
+      } else {
+        if (isSemiPrivate) {
+          const participants = await storage.getBookingParticipants(bookingId);
 
-        const chargeableMap = new Map<string, { userId: string; name: string; count: number }>();
-        let walkInCount = 0;
+          const chargeableMap = new Map<string, { userId: string; name: string; count: number }>();
+          let walkInCount = 0;
 
-        for (const p of participants) {
-          const isWalkIn = p.userId.startsWith("walk-in-");
-          if (isWalkIn) {
-            walkInCount++;
-          } else {
-            const existing = chargeableMap.get(p.userId);
-            if (existing) {
-              existing.count++;
+          for (const p of participants) {
+            const isWalkIn = p.userId.startsWith("walk-in-");
+            if (isWalkIn) {
+              walkInCount++;
             } else {
-              const name = p.user ? `${p.user.firstName || ""} ${p.user.lastName || ""}`.trim() : "Participant";
-              chargeableMap.set(p.userId, { userId: p.userId, name, count: 1 });
+              const existing = chargeableMap.get(p.userId);
+              if (existing) {
+                existing.count++;
+              } else {
+                const name = p.user ? `${p.user.firstName || ""} ${p.user.lastName || ""}`.trim() : "Participant";
+                chargeableMap.set(p.userId, { userId: p.userId, name, count: 1 });
+              }
             }
           }
-        }
 
-        if (perPersonCents > 0) {
-          for (const entry of Array.from(chargeableMap.values())) {
-            const totalForUser = perPersonCents * entry.count;
+          if (perPersonCents > 0) {
+            for (const entry of Array.from(chargeableMap.values())) {
+              const totalForUser = perPersonCents * entry.count;
+              await storage.debitWallet(
+                entry.userId,
+                totalForUser,
+                `Semi-Private Session: ${service?.name || "Training"} (${entry.count} spot${entry.count > 1 ? "s" : ""}) - Redeemed`,
+                "redemption",
+                bookingId
+              );
+              totalCollectedCents += totalForUser;
+            }
+          }
+
+          if (walkInCount > 0) {
+            totalCollectedCents += walkInCount * perPersonCents;
+          }
+        } else {
+          if (perPersonCents > 0) {
             await storage.debitWallet(
-              entry.userId,
-              totalForUser,
-              `Semi-Private Session: ${service?.name || "Training"} (${entry.count} spot${entry.count > 1 ? "s" : ""}) - Redeemed`,
+              booking.clientId,
+              perPersonCents,
+              `Session: ${service?.name || "Training"} - Redeemed`,
               "redemption",
               bookingId
             );
-            totalCollectedCents += totalForUser;
+            totalCollectedCents = perPersonCents;
           }
         }
 
-        if (walkInCount > 0) {
-          totalCollectedCents += walkInCount * perPersonCents;
-        }
-      } else {
-        if (perPersonCents > 0) {
-          await storage.debitWallet(
-            booking.clientId,
-            perPersonCents,
-            `Session: ${service?.name || "Training"} - Redeemed`,
-            "redemption",
-            bookingId
-          );
-          totalCollectedCents = perPersonCents;
-        }
+        const ownerCoach = await isOwner(booking.coachId);
+        const payoutRate = ownerCoach ? 1.0 : 0.5;
+        amountCents = Math.round(totalCollectedCents * payoutRate);
       }
-
-      const bookingCoachId = booking.coachId;
-      const ownerCoach = await isOwner(bookingCoachId);
-      const payoutRate = ownerCoach ? 1.0 : 0.5;
-      const amountCents = Math.round(totalCollectedCents * payoutRate);
 
       const redemption = await storage.createRedemption({
         bookingId,
-        coachId: bookingCoachId,
+        coachId: booking.coachId,
         amountCents,
         payoutStatus: "PENDING",
       });

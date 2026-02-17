@@ -120,6 +120,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
 
   const selectedServiceObj = services?.find(s => s.id === serviceId);
   const isSemiPrivate = selectedServiceObj?.name.toLowerCase().includes("semi-private") || false;
+  const isTeamTraining = selectedServiceObj?.name.toLowerCase().includes("team training") || false;
+  const resolvedLoc = location === "__custom__" ? customLocation.trim() : location;
+  const isTeamBHS = isTeamTraining && resolvedLoc.toLowerCase().includes("bluffton high");
 
   const resetForm = () => {
     setSelectedDate(initialDate);
@@ -144,7 +147,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
       toast({ title: "Missing Fields", description: "Please fill in date, time, and service.", variant: "destructive" });
       return;
     }
-    if (!isSemiPrivate && !selectedClientId && (!clientFirstName.trim() || !clientLastName.trim())) {
+    if (!isSemiPrivate && !isTeamBHS && !selectedClientId && (!clientFirstName.trim() || !clientLastName.trim())) {
       toast({ title: "Missing Client", description: "Please enter or select a client.", variant: "destructive" });
       return;
     }
@@ -157,12 +160,19 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     const startAt = new Date(selectedDate);
     startAt.setHours(hours, minutes, 0, 0);
 
-    const resolvedLocation = location === "__custom__" ? customLocation.trim() : location;
-    const body: any = { serviceId, startAt: startAt.toISOString(), notes, location: resolvedLocation };
+    const finalLocation = location === "__custom__" ? customLocation.trim() : location;
+    const body: any = { serviceId, startAt: startAt.toISOString(), notes, location: finalLocation };
     if (coachId) {
       body.coachId = coachId;
     }
-    if (isSemiPrivate) {
+    if (isTeamBHS) {
+      body.isTeamContract = true;
+      body.clientFirstName = "Bluffton HS";
+      body.clientLastName = "Team Training";
+      if (groupDescription.trim()) {
+        body.groupDescription = groupDescription.trim();
+      }
+    } else if (isSemiPrivate) {
       body.maxParticipants = 6;
       body.groupDescription = groupDescription.trim();
       if (participants.length > 0) {
@@ -173,9 +183,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
         }));
       }
     }
-    if (selectedClientId) {
+    if (!isTeamBHS && selectedClientId) {
       body.clientId = selectedClientId;
-    } else if (clientFirstName.trim() && clientLastName.trim()) {
+    } else if (!isTeamBHS && clientFirstName.trim() && clientLastName.trim()) {
       body.clientFirstName = clientFirstName.trim();
       body.clientLastName = clientLastName.trim();
     }
@@ -342,7 +352,26 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
             </div>
           )}
 
-          {!isSemiPrivate && (
+          {isTeamBHS && (
+            <div className="space-y-3">
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                <p className="text-sm font-medium">BHS Team Training Contract</p>
+                <p className="text-xs text-muted-foreground mt-1">$20 coach payout per session. No client charge.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Team / Notes (optional)</Label>
+                <Textarea
+                  placeholder="e.g. Varsity Football, JV Basketball..."
+                  value={groupDescription}
+                  onChange={(e) => setGroupDescription(e.target.value)}
+                  className="resize-none"
+                  data-testid="input-team-description"
+                />
+              </div>
+            </div>
+          )}
+
+          {!isSemiPrivate && !isTeamBHS && (
             <div className="space-y-2">
               <Label>Client</Label>
               {selectedClientId ? (

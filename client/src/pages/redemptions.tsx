@@ -376,7 +376,9 @@ export default function RedemptionsPage() {
                   )}
                   {booking.service && (
                     <p className="text-sm font-medium">
-                      {booking.service.name.toLowerCase().includes("team training") ? "Quoted Price" : booking.service.priceCents === 0 ? "FREE" : `$${(booking.service.priceCents / 100).toFixed(2)}`}
+                      {booking.service.name.toLowerCase().includes("team training") && booking.location?.toLowerCase().includes("bluffton high")
+                        ? "$20.00 Contract"
+                        : booking.service.name.toLowerCase().includes("team training") ? "Quoted Price" : booking.service.priceCents === 0 ? "FREE" : `$${(booking.service.priceCents / 100).toFixed(2)}`}
                     </p>
                   )}
                 </div>
