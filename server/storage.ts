@@ -104,6 +104,7 @@ export interface IStorage {
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string): Promise<WalletTransaction>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
+  updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
 }
@@ -538,6 +539,11 @@ export class DatabaseStorage implements IStorage {
 
   async markRedemptionsSent(coachId: string): Promise<void> {
     await db.update(redemptions).set({ payoutStatus: "SENT" }).where(and(eq(redemptions.coachId, coachId), eq(redemptions.payoutStatus, "PENDING")));
+  }
+
+  async updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined> {
+    const [updated] = await db.update(redemptions).set({ amountCents }).where(eq(redemptions.id, id)).returning();
+    return updated || undefined;
   }
 
   async getUserBalance(userId: string): Promise<number> {

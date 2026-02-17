@@ -1374,6 +1374,22 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/admin/redemptions/:id/amount", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { amountCents } = req.body;
+      if (typeof amountCents !== "number" || amountCents < 0) {
+        return res.status(400).json({ message: "Valid amountCents required" });
+      }
+      const updated = await storage.updateRedemptionAmount(id, amountCents);
+      if (!updated) return res.status(404).json({ message: "Redemption not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating redemption amount:", error);
+      res.status(500).json({ message: "Failed to update redemption" });
+    }
+  });
+
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const cashoutsList = await storage.getAllCashouts();
