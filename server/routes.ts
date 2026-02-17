@@ -1374,7 +1374,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/admin/redemptions/:id/amount", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+  app.patch("/api/admin/redemptions/:id/amount", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const { amountCents } = req.body;
