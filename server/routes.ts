@@ -948,6 +948,15 @@ export async function registerRoutes(
           if (walkInCount > 0) {
             totalCollectedCents += walkInCount * perPersonCents;
           }
+
+          const totalParticipantCount = chargeableMap.size + walkInCount;
+          if (totalParticipantCount === 1) {
+            amountCents = 3000;
+          } else {
+            const ownerCoach = await isOwner(booking.coachId);
+            const payoutRate = ownerCoach ? 1.0 : 0.5;
+            amountCents = Math.round(totalCollectedCents * payoutRate);
+          }
         } else {
           if (perPersonCents > 0) {
             await storage.debitWallet(
@@ -959,11 +968,11 @@ export async function registerRoutes(
             );
             totalCollectedCents = perPersonCents;
           }
-        }
 
-        const ownerCoach = await isOwner(booking.coachId);
-        const payoutRate = ownerCoach ? 1.0 : 0.5;
-        amountCents = Math.round(totalCollectedCents * payoutRate);
+          const ownerCoach = await isOwner(booking.coachId);
+          const payoutRate = ownerCoach ? 1.0 : 0.5;
+          amountCents = Math.round(totalCollectedCents * payoutRate);
+        }
       }
 
       const redemption = await storage.createRedemption({
