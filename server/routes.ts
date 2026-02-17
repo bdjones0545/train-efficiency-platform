@@ -1148,21 +1148,38 @@ export async function registerRoutes(
         const coachProfile = await storage.getCoachProfile(booking.coachId);
         const service = await storage.getService(booking.serviceId);
         const joiningUser = await storage.getUser(userId);
-        if (coachProfile?.user?.email && joiningUser) {
+        if (coachProfile && joiningUser) {
           const participantName = namesToAdd.filter(Boolean).length > 0
             ? namesToAdd.filter(Boolean).join(", ")
             : `${joiningUser.firstName || ""} ${joiningUser.lastName || ""}`.trim();
-          const { sendGroupSessionJoinNotification } = await import("./email");
-          sendGroupSessionJoinNotification(
-            coachProfile.user.email,
-            coachProfile.user.firstName || "Coach",
-            participantName || "A user",
-            service?.name || "Group Session",
-            booking.startAt,
-            booking.endAt,
-            booking.location || undefined,
-            coachProfile.timezone || "America/New_York"
-          ).catch(() => {});
+          const coachName = `${coachProfile.user?.firstName || ""} ${coachProfile.user?.lastName || ""}`.trim();
+          const tz = coachProfile.timezone || "America/New_York";
+          const sessionName = service?.name || "Group Session";
+          const { sendGroupSessionJoinNotification, sendGroupSessionJoinConfirmation } = await import("./email");
+          if (coachProfile.user?.email) {
+            sendGroupSessionJoinNotification(
+              coachProfile.user.email,
+              coachProfile.user.firstName || "Coach",
+              participantName || "A user",
+              sessionName,
+              booking.startAt,
+              booking.endAt,
+              booking.location || undefined,
+              tz
+            ).catch(() => {});
+          }
+          if (joiningUser.email) {
+            sendGroupSessionJoinConfirmation(
+              joiningUser.email,
+              joiningUser.firstName || "there",
+              coachName || "Your Coach",
+              sessionName,
+              booking.startAt,
+              booking.endAt,
+              booking.location || undefined,
+              tz
+            ).catch(() => {});
+          }
         }
       } catch (emailErr) {
         console.error("Error sending group join notification:", emailErr);

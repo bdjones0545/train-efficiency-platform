@@ -250,6 +250,46 @@ export async function sendWeeklyReminderEmail(email: string, firstName: string) 
   await sendEmail(email, subject, html);
 }
 
+export async function sendGroupSessionJoinConfirmation(
+  clientEmail: string,
+  clientFirstName: string,
+  coachName: string,
+  serviceName: string,
+  startAt: Date,
+  endAt: Date,
+  location?: string,
+  timezone: string = "America/New_York"
+) {
+  const subject = `You're In! — ${serviceName}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
+  const locationLine = location ? `<p style="font-size: 15px; margin: 4px 0;"><strong>Location:</strong> ${location}</p>` : '';
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">You're Registered!</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+        <p style="font-size: 16px; line-height: 1.6;">You've successfully joined a group training session! Here are the details:</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Session:</strong> ${serviceName}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Coach:</strong> ${coachName}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Date:</strong> ${dateStr}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Time:</strong> ${timeStr}</p>
+          ${locationLine}
+        </div>
+        <p style="font-size: 16px; line-height: 1.6;">We look forward to seeing you there! If you need to make changes, you can manage your bookings from your account.</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(clientEmail, subject, html);
+}
+
 export async function sendGroupSessionJoinNotification(
   coachEmail: string,
   coachFirstName: string,
