@@ -1211,6 +1211,31 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/coach/manual-payment", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { userId, amountCents, method } = req.body;
+      if (!userId || !amountCents || !method) {
+        return res.status(400).json({ message: "userId, amountCents, and method are required" });
+      }
+      if (amountCents <= 0) {
+        return res.status(400).json({ message: "Amount must be greater than zero" });
+      }
+      if (!["cash", "venmo"].includes(method)) {
+        return res.status(400).json({ message: "Method must be cash or venmo" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const description = `Manual payment (${method === "cash" ? "Cash" : "Venmo"})`;
+      const tx = await storage.creditWallet(userId, amountCents, description);
+      res.json(tx);
+    } catch (error) {
+      console.error("Error recording manual payment:", error);
+      res.status(500).json({ message: "Failed to record payment" });
+    }
+  });
+
   app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const transactions = await storage.getAllWalletTransactions();

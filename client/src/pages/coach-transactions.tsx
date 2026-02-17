@@ -1,13 +1,18 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, parseISO } from "date-fns";
 import type { User } from "@shared/models/auth";
 
@@ -33,9 +38,13 @@ interface UserBalance {
 }
 
 export default function CoachTransactionsPage() {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [balanceSearch, setBalanceSearch] = useState("");
   const [txFilter, setTxFilter] = useState<"all" | "CREDIT" | "DEBIT">("all");
+  const [paymentUser, setPaymentUser] = useState<UserBalance | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "venmo">("cash");
 
   const { data: transactions, isLoading: txLoading } = useQuery<TransactionWithUser[]>({
     queryKey: ["/api/coach/transactions"],
@@ -43,6 +52,31 @@ export default function CoachTransactionsPage() {
 
   const { data: userBalances, isLoading: balancesLoading } = useQuery<UserBalance[]>({
     queryKey: ["/api/coach/user-balances"],
+  });
+
+  const manualPaymentMutation = useMutation({
+    mutationFn: async () => {
+      if (!paymentUser) throw new Error("No user selected");
+      const cents = Math.round(parseFloat(paymentAmount) * 100);
+      if (isNaN(cents) || cents <= 0) throw new Error("Invalid amount");
+      const res = await apiRequest("POST", "/api/coach/manual-payment", {
+        userId: paymentUser.id,
+        amountCents: cents,
+        method: paymentMethod,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Payment Recorded", description: `$${parseFloat(paymentAmount).toFixed(2)} added to ${paymentUser?.firstName || "user"}'s wallet via ${paymentMethod === "cash" ? "Cash" : "Venmo"}.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/user-balances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/transactions"] });
+      setPaymentUser(null);
+      setPaymentAmount("");
+      setPaymentMethod("cash");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
   });
 
   const filteredTransactions = (transactions || []).filter(tx => {
@@ -265,20 +299,30 @@ export default function CoachTransactionsPage() {
                       )}
                     </div>
                   </div>
-                  <span
-                    className={`text-sm font-semibold shrink-0 ${
-                      user.balanceCents > 0
-                        ? "text-green-600 dark:text-green-400"
-                        : user.balanceCents < 0
-                        ? "text-red-600 dark:text-red-400"
-                        : "text-muted-foreground"
-                    }`}
-                    data-testid={`text-balance-${user.id}`}
-                  >
-                    {user.balanceCents < 0
-                      ? `-$${(Math.abs(user.balanceCents) / 100).toFixed(2)}`
-                      : `$${(user.balanceCents / 100).toFixed(2)}`}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`text-sm font-semibold ${
+                        user.balanceCents > 0
+                          ? "text-green-600 dark:text-green-400"
+                          : user.balanceCents < 0
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-muted-foreground"
+                      }`}
+                      data-testid={`text-balance-${user.id}`}
+                    >
+                      {user.balanceCents < 0
+                        ? `-$${(Math.abs(user.balanceCents) / 100).toFixed(2)}`
+                        : `$${(user.balanceCents / 100).toFixed(2)}`}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => { setPaymentUser(user); setPaymentAmount(""); setPaymentMethod("cash"); }}
+                      data-testid={`button-record-payment-${user.id}`}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
@@ -290,6 +334,55 @@ export default function CoachTransactionsPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!paymentUser} onOpenChange={(open) => { if (!open) setPaymentUser(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="text-sm">
+              Adding funds to <span className="font-semibold">{`${paymentUser?.firstName || ""} ${paymentUser?.lastName || ""}`.trim() || "User"}</span>'s wallet
+            </div>
+
+            <div className="space-y-2">
+              <Label>Payment Method</Label>
+              <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "cash" | "venmo")}>
+                <SelectTrigger data-testid="select-payment-method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="venmo">Venmo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Amount ($)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="0.00"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                data-testid="input-payment-amount"
+              />
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={() => manualPaymentMutation.mutate()}
+              disabled={manualPaymentMutation.isPending || !paymentAmount || parseFloat(paymentAmount) <= 0}
+              data-testid="button-confirm-payment"
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              {manualPaymentMutation.isPending ? "Recording..." : `Record ${paymentMethod === "cash" ? "Cash" : "Venmo"} Payment`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
