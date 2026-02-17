@@ -223,6 +223,33 @@ export async function sendSessionChargeEmail(
   await sendEmail(clientEmail, subject, html);
 }
 
+export async function sendWeeklyReminderEmail(email: string, firstName: string) {
+  const subject = "We miss you at EST! Time to schedule a session";
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">Time to Get Back in the Game!</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
+        <p style="font-size: 16px; line-height: 1.6;">It's been a while since your last visit to <strong>Efficiency Strength Training</strong>. Consistency is the key to reaching your performance goals!</p>
+        <p style="font-size: 16px; line-height: 1.6;">Here are a few ways to get back on track:</p>
+        <ul style="font-size: 15px; line-height: 1.8; padding-left: 20px;">
+          <li>Book a 1:1 session with one of our expert coaches</li>
+          <li>Join an open semi-private group session</li>
+          <li>Check out new available time slots that fit your schedule</li>
+        </ul>
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="https://efficiencystrengthtraining.com" style="display: inline-block; background: #16a34a; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;">Schedule a Session</a>
+        </div>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— The EST Team<br/>Bluffton / Hilton Head Island, SC</p>
+        <p style="font-size: 12px; color: #666; margin-top: 16px;">You're receiving this because you have an account with Efficiency Strength Training. Sign in to your account to manage your email preferences.</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(email, subject, html);
+}
+
 export async function sendBookingNotificationToCoach(
   coachEmail: string,
   coachFirstName: string,

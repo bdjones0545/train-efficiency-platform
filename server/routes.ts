@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
 import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail } from "./email";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
+import { startWeeklyReminderJob } from "./weekly-reminder";
 
 const OWNER_USER_ID = "42755213";
 
@@ -122,6 +123,7 @@ export async function registerRoutes(
 
       const userId = coachProfile.userId;
       const token = await createAuthToken(userId);
+      storage.updateLastSignIn(userId).catch(() => {});
       res.json({ success: true, redirect: "/coach", token });
     } catch (error) {
       console.error("Coach login error:", error);
@@ -183,6 +185,7 @@ export async function registerRoutes(
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         passwordHash: hash,
+        lastSignInAt: new Date(),
       }).returning();
       const user = created;
       const { userProfiles } = await import("@shared/schema");
@@ -217,6 +220,7 @@ export async function registerRoutes(
       }
 
       const token = await createAuthToken(user.id);
+      storage.updateLastSignIn(user.id).catch(() => {});
       res.json({ success: true, redirect: "/", token });
     } catch (error) {
       console.error("Client login error:", error);
@@ -1676,6 +1680,8 @@ export async function registerRoutes(
       }
     }
   });
+
+  startWeeklyReminderJob();
 
   return httpServer;
 }

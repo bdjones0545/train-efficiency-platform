@@ -79,6 +79,15 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Weekly inactivity reminder emails: automatic emails to users who haven't signed in for 7+ days
+  - last_sign_in_at and weekly_reminder_enabled columns added to users table
+  - lastSignInAt updated on every login (client login, coach login, Replit Auth)
+  - New registrations set lastSignInAt to registration time
+  - Existing users backfilled with lastSignInAt = createdAt
+  - Daily background job checks for inactive users and sends reminder emails via SendGrid
+  - Email template with EST branding encouraging users to schedule a session
+  - server/weekly-reminder.ts contains the job logic
+  - sendWeeklyReminderEmail function in server/email.ts
 - BLHS Athletic Scheduling page (/athletic): public scheduling page for Bluffton High School athletic teams
   - Daily calendar view (4 PM – 8 PM) with coach-dashboard-style timeline
   - Max 2 teams per 1-hour time slot, enforced on backend

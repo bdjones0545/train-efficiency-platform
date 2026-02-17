@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -24,6 +24,9 @@ export const users = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   balanceCents: integer("balance_cents").notNull().default(0),
   stripeCustomerId: varchar("stripe_customer_id"),
+  lastSignInAt: timestamp("last_sign_in_at"),
+  weeklyReminderEnabled: boolean("weekly_reminder_enabled").notNull().default(true),
+  lastReminderSentAt: timestamp("last_reminder_sent_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -107,6 +107,9 @@ export interface IStorage {
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
+  updateLastSignIn(userId: string): Promise<void>;
+  getInactiveUsersForReminder(sinceDays: number): Promise<User[]>;
+  markReminderSent(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -613,6 +616,29 @@ export class DatabaseStorage implements IStorage {
       email: users.email,
       balanceCents: users.balanceCents,
     }).from(users).orderBy(desc(users.balanceCents));
+  }
+
+  async updateLastSignIn(userId: string): Promise<void> {
+    await db.update(users).set({ lastSignInAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async getInactiveUsersForReminder(sinceDays: number): Promise<User[]> {
+    const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const reminderCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    return db.select().from(users).where(
+      and(
+        lte(users.lastSignInAt, cutoff),
+        eq(users.weeklyReminderEnabled, true),
+        or(
+          sql`${users.lastReminderSentAt} IS NULL`,
+          lte(users.lastReminderSentAt, reminderCutoff)
+        )
+      )
+    );
+  }
+
+  async markReminderSent(userId: string): Promise<void> {
+    await db.update(users).set({ lastReminderSentAt: new Date() }).where(eq(users.id, userId));
   }
 }
 
