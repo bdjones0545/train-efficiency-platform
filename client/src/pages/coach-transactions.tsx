@@ -10,11 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, startOfDay, startOfWeek, startOfMonth, startOfYear, isBefore } from "date-fns";
 import type { User } from "@shared/models/auth";
+
+type RevenuePeriod = "daily" | "weekly" | "monthly" | "yearly";
 
 interface TransactionWithUser {
   id: string;
@@ -45,6 +47,7 @@ export default function CoachTransactionsPage() {
   const [paymentUser, setPaymentUser] = useState<UserBalance | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "venmo">("cash");
+  const [revenuePeriod, setRevenuePeriod] = useState<RevenuePeriod>("monthly");
 
   const { data: transactions, isLoading: txLoading } = useQuery<TransactionWithUser[]>({
     queryKey: ["/api/coach/transactions"],
@@ -99,6 +102,32 @@ export default function CoachTransactionsPage() {
     return name.includes(term) || email.includes(term);
   });
 
+  const getPeriodStart = (period: RevenuePeriod): Date => {
+    const now = new Date();
+    switch (period) {
+      case "daily": return startOfDay(now);
+      case "weekly": return startOfWeek(now, { weekStartsOn: 0 });
+      case "monthly": return startOfMonth(now);
+      case "yearly": return startOfYear(now);
+    }
+  };
+
+  const periodStart = getPeriodStart(revenuePeriod);
+  const periodTransactions = (transactions || []).filter(t =>
+    t.createdAt && !isBefore(parseISO(t.createdAt), periodStart)
+  );
+
+  const periodCredits = periodTransactions.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
+  const periodDebits = periodTransactions.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
+  const periodNet = periodCredits - periodDebits;
+
+  const periodLabel = {
+    daily: "Today",
+    weekly: "This Week",
+    monthly: "This Month",
+    yearly: "This Year",
+  }[revenuePeriod];
+
   const totalCredits = (transactions || []).filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const totalDebits = (transactions || []).filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
   const usersWithBalance = (userBalances || []).filter(u => u.balanceCents !== 0).length;
@@ -124,11 +153,57 @@ export default function CoachTransactionsPage() {
         <p className="text-muted-foreground mt-1">View wallet deposits, payments, and user balances</p>
       </div>
 
+      <Card className="p-4 space-y-3">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <TrendingUp className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">Revenue</span>
+          </div>
+          <div className="flex gap-1 flex-wrap">
+            {(["daily", "weekly", "monthly", "yearly"] as RevenuePeriod[]).map((period) => (
+              <Button
+                key={period}
+                size="sm"
+                variant={revenuePeriod === period ? "default" : "outline"}
+                onClick={() => setRevenuePeriod(period)}
+                className={`toggle-elevate ${revenuePeriod === period ? "toggle-elevated" : ""}`}
+                data-testid={`button-revenue-${period}`}
+              >
+                {period === "daily" ? "Daily" : period === "weekly" ? "Weekly" : period === "monthly" ? "Monthly" : "Yearly"}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Deposits ({periodLabel})</p>
+            <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-period-deposits">
+              ${(periodCredits / 100).toFixed(2)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Payments ({periodLabel})</p>
+            <p className="text-xl font-bold text-red-600 dark:text-red-400" data-testid="text-period-payments">
+              ${(periodDebits / 100).toFixed(2)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Net Revenue ({periodLabel})</p>
+            <p className={`text-xl font-bold ${periodNet >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-period-net">
+              {periodNet < 0 ? "-" : ""}${(Math.abs(periodNet) / 100).toFixed(2)}
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground" data-testid="text-period-count">
+          {periodTransactions.length} transaction{periodTransactions.length !== 1 ? "s" : ""} in this period
+        </p>
+      </Card>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-1">
             <ArrowDownLeft className="h-4 w-4 text-green-600 dark:text-green-400" />
-            <span className="text-sm text-muted-foreground">Total Deposits</span>
+            <span className="text-sm text-muted-foreground">All-Time Deposits</span>
           </div>
           <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-total-deposits">
             ${(totalCredits / 100).toFixed(2)}
@@ -137,7 +212,7 @@ export default function CoachTransactionsPage() {
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-1">
             <ArrowUpRight className="h-4 w-4 text-red-600 dark:text-red-400" />
-            <span className="text-sm text-muted-foreground">Total Payments</span>
+            <span className="text-sm text-muted-foreground">All-Time Payments</span>
           </div>
           <p className="text-2xl font-bold text-red-600 dark:text-red-400" data-testid="text-total-payments">
             ${(totalDebits / 100).toFixed(2)}
