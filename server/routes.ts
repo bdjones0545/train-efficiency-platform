@@ -1443,12 +1443,11 @@ export async function registerRoutes(
         if (booking?.client) {
           clientName = `${booking.client.firstName} ${booking.client.lastName}`;
         }
-        const isOwnerRedemption = coach?.user?.email === OWNER_EMAIL;
         return {
           ...r,
           coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
           coachUserId: coach?.userId || null,
-          isOwnerRedemption,
+          coachEmail: coach?.user?.email || null,
           serviceName: service?.name || "Session",
           clientName,
         };

@@ -16,7 +16,7 @@ import type { Redemption, Cashout } from "@shared/schema";
 type AdminRedemption = Redemption & {
   coachName: string;
   coachUserId: string | null;
-  isOwnerRedemption?: boolean;
+  coachEmail: string | null;
   serviceName: string;
   clientName: string;
 };
@@ -68,12 +68,13 @@ function RedemptionOverview() {
     .filter((c) => c.status === "REQUESTED")
     .reduce((sum, c) => sum + c.amountCents, 0);
 
+  const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
   const coachMap = new Map<string, { name: string; coachUserId: string | null; isOwnerCoach: boolean; totalRedeemed: number; pendingPayout: number; paidOut: number }>();
 
   for (const r of redemptions) {
     const key = r.coachId;
     if (!coachMap.has(key)) {
-      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, isOwnerCoach: !!r.isOwnerRedemption, totalRedeemed: 0, pendingPayout: 0, paidOut: 0 });
+      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, isOwnerCoach: r.coachEmail === OWNER_EMAIL, totalRedeemed: 0, pendingPayout: 0, paidOut: 0 });
     }
     const entry = coachMap.get(key)!;
     entry.totalRedeemed += r.amountCents;
