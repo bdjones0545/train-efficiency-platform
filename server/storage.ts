@@ -97,7 +97,7 @@ export interface IStorage {
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
 
-  getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string })[]>;
+  getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
   getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
 
   getUserBalance(userId: string): Promise<number>;
@@ -601,7 +601,7 @@ export class DatabaseStorage implements IStorage {
     return tx || undefined;
   }
 
-  async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string })[]> {
+  async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]> {
     const allTx = await db.select().from(walletTransactions).orderBy(desc(walletTransactions.createdAt));
     const allUsers = await db.select().from(users);
     const userMap = new Map(allUsers.map(u => [u.id, u]));
@@ -609,9 +609,14 @@ export class DatabaseStorage implements IStorage {
     const redemptionByBookingId = new Map(allRedemptions.map(r => [r.bookingId, r]));
     const allCoaches = await db.select().from(coachProfiles);
     const coachMap = new Map(allCoaches.map(c => [c.id, c]));
+    const allBookings = await db.select().from(bookings);
+    const bookingMap = new Map(allBookings.map(b => [b.id, b]));
     return allTx.map(tx => {
       let redemptionCoachName: string | undefined;
+      let bookingLocation: string | undefined;
       if (tx.sourceType === "redemption" && tx.sourceId) {
+        const booking = bookingMap.get(tx.sourceId);
+        if (booking) bookingLocation = booking.location || undefined;
         const redemption = redemptionByBookingId.get(tx.sourceId);
         if (redemption) {
           const coach = coachMap.get(redemption.coachId);
@@ -621,7 +626,7 @@ export class DatabaseStorage implements IStorage {
           }
         }
       }
-      return { ...tx, user: userMap.get(tx.userId), redemptionCoachName };
+      return { ...tx, user: userMap.get(tx.userId), redemptionCoachName, bookingLocation };
     });
   }
 

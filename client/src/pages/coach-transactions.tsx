@@ -30,6 +30,7 @@ interface TransactionWithUser {
   createdAt: string;
   user?: User;
   redemptionCoachName?: string;
+  bookingLocation?: string;
 }
 
 interface UserBalance {
@@ -143,10 +144,13 @@ export default function CoachTransactionsPage() {
 
   const periodCredits = periodTransactions.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodDebits = periodTransactions.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
-  const periodCoachRedeemed = periodTransactions.filter(t =>
+  const hunterRedemptions = periodTransactions.filter(t =>
     t.type === "DEBIT" && t.sourceType === "redemption" && t.redemptionCoachName === "Hunter Thaxton"
-  ).reduce((sum, t) => sum + t.amountCents, 0);
-  const periodCoachPayouts = Math.round(periodCoachRedeemed * 0.5);
+  );
+  const periodCoachPayouts = hunterRedemptions.reduce((sum, t) => {
+    const isBluffton = t.bookingLocation?.toLowerCase().includes("bluffton high");
+    return sum + (isBluffton ? 2000 : Math.round(t.amountCents * 0.5));
+  }, 0);
   const periodNetIncome = periodCredits - periodCoachPayouts;
 
   const getPeriodLabel = (): string => {
