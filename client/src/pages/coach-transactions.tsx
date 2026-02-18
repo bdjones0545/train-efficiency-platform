@@ -18,8 +18,6 @@ import type { User } from "@shared/models/auth";
 
 type RevenuePeriod = "daily" | "weekly" | "monthly" | "yearly";
 
-const OWNER_USER_ID = "42755213";
-
 interface TransactionWithUser {
   id: string;
   userId: string;
@@ -32,6 +30,7 @@ interface TransactionWithUser {
   createdAt: string;
   user?: User;
   redemptionCoachUserId?: string;
+  isOwnerRedemption?: boolean;
 }
 
 interface UserBalance {
@@ -146,7 +145,7 @@ export default function CoachTransactionsPage() {
   const periodCredits = periodTransactions.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodDebits = periodTransactions.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodCoachPayouts = periodTransactions.filter(t =>
-    t.type === "DEBIT" && t.sourceType === "redemption" && t.redemptionCoachUserId !== OWNER_USER_ID
+    t.type === "DEBIT" && t.sourceType === "redemption" && !t.isOwnerRedemption
   ).reduce((sum, t) => sum + t.amountCents, 0);
   const periodNetIncome = periodCredits - periodCoachPayouts;
 

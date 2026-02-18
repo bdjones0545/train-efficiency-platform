@@ -10,11 +10,18 @@ import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificat
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
-const OWNER_USER_ID = "42755213";
+const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
 
 async function isOwner(coachId: string): Promise<boolean> {
   const profile = await storage.getCoachProfile(coachId);
-  return profile?.userId === OWNER_USER_ID;
+  if (!profile) return false;
+  const user = await storage.getUser(profile.userId);
+  return user?.email === OWNER_EMAIL;
+}
+
+async function getOwnerUserId(): Promise<string | null> {
+  const user = await storage.getUserByEmail(OWNER_EMAIL);
+  return user?.id || null;
 }
 
 async function getUserRole(userId: string): Promise<string> {
@@ -1045,7 +1052,8 @@ export async function registerRoutes(
       const coachProfile = await storage.getCoachProfile(coachId);
       if (!coachProfile) return res.status(404).json({ message: "Coach profile not found" });
 
-      if (coachProfile.userId === OWNER_USER_ID) return res.status(403).json({ message: "Owner does not need to cash out" });
+      const ownerUserId = await getOwnerUserId();
+      if (ownerUserId && coachProfile.userId === ownerUserId) return res.status(403).json({ message: "Owner does not need to cash out" });
 
       const redemptionsList = await storage.getCoachRedemptions(coachId);
       const pendingAmount = redemptionsList
@@ -1435,10 +1443,12 @@ export async function registerRoutes(
         if (booking?.client) {
           clientName = `${booking.client.firstName} ${booking.client.lastName}`;
         }
+        const isOwnerRedemption = coach?.user?.email === OWNER_EMAIL;
         return {
           ...r,
           coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
           coachUserId: coach?.userId || null,
+          isOwnerRedemption,
           serviceName: service?.name || "Session",
           clientName,
         };

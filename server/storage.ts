@@ -97,7 +97,7 @@ export interface IStorage {
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
 
-  getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachUserId?: string })[]>;
+  getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachUserId?: string; isOwnerRedemption?: boolean })[]>;
   getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
 
   getUserBalance(userId: string): Promise<number>;
@@ -601,7 +601,7 @@ export class DatabaseStorage implements IStorage {
     return tx || undefined;
   }
 
-  async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachUserId?: string })[]> {
+  async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachUserId?: string; isOwnerRedemption?: boolean })[]> {
     const allTx = await db.select().from(walletTransactions).orderBy(desc(walletTransactions.createdAt));
     const allUsers = await db.select().from(users);
     const userMap = new Map(allUsers.map(u => [u.id, u]));
@@ -609,16 +609,22 @@ export class DatabaseStorage implements IStorage {
     const redemptionByBookingId = new Map(allRedemptions.map(r => [r.bookingId, r]));
     const allCoaches = await db.select().from(coachProfiles);
     const coachMap = new Map(allCoaches.map(c => [c.id, c]));
+    const ownerEmail = "bryan.jones@efficiencystrengthtraining.com";
     return allTx.map(tx => {
       let redemptionCoachUserId: string | undefined;
+      let isOwnerRedemption = false;
       if (tx.sourceType === "redemption" && tx.sourceId) {
         const redemption = redemptionByBookingId.get(tx.sourceId);
         if (redemption) {
           const coach = coachMap.get(redemption.coachId);
-          if (coach) redemptionCoachUserId = coach.userId;
+          if (coach) {
+            redemptionCoachUserId = coach.userId;
+            const coachUser = userMap.get(coach.userId);
+            isOwnerRedemption = coachUser?.email === ownerEmail;
+          }
         }
       }
-      return { ...tx, user: userMap.get(tx.userId), redemptionCoachUserId };
+      return { ...tx, user: userMap.get(tx.userId), redemptionCoachUserId, isOwnerRedemption };
     });
   }
 

@@ -16,6 +16,7 @@ import type { Redemption, Cashout } from "@shared/schema";
 type AdminRedemption = Redemption & {
   coachName: string;
   coachUserId: string | null;
+  isOwnerRedemption?: boolean;
   serviceName: string;
   clientName: string;
 };
@@ -33,8 +34,6 @@ const cashoutStatusColors: Record<string, string> = {
   PAID: "bg-green-500/15 text-green-700 dark:text-green-400",
   DENIED: "bg-red-500/15 text-red-700 dark:text-red-400",
 };
-
-const OWNER_USER_ID = "42755213";
 
 function RedemptionOverview() {
   const { data: allRedemptions, isLoading: redemptionsLoading } = useQuery<AdminRedemption[]>({
@@ -69,12 +68,12 @@ function RedemptionOverview() {
     .filter((c) => c.status === "REQUESTED")
     .reduce((sum, c) => sum + c.amountCents, 0);
 
-  const coachMap = new Map<string, { name: string; coachUserId: string | null; totalRedeemed: number; pendingPayout: number; paidOut: number }>();
+  const coachMap = new Map<string, { name: string; coachUserId: string | null; isOwnerCoach: boolean; totalRedeemed: number; pendingPayout: number; paidOut: number }>();
 
   for (const r of redemptions) {
     const key = r.coachId;
     if (!coachMap.has(key)) {
-      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, totalRedeemed: 0, pendingPayout: 0, paidOut: 0 });
+      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, isOwnerCoach: !!r.isOwnerRedemption, totalRedeemed: 0, pendingPayout: 0, paidOut: 0 });
     }
     const entry = coachMap.get(key)!;
     entry.totalRedeemed += r.amountCents;
@@ -90,9 +89,8 @@ function RedemptionOverview() {
   }
 
   const coachSummaries = Array.from(coachMap.entries()).map(([coachId, data]) => {
-    const isOwnerCoach = data.coachUserId === OWNER_USER_ID;
-    const owedAmount = isOwnerCoach ? 0 : data.pendingPayout;
-    return { coachId, ...data, isOwnerCoach, owedAmount };
+    const owedAmount = data.isOwnerCoach ? 0 : data.pendingPayout;
+    return { coachId, ...data, owedAmount };
   });
 
   coachSummaries.sort((a, b) => b.totalRedeemed - a.totalRedeemed);
@@ -231,7 +229,7 @@ export default function RedemptionsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const isOwner = user?.id === OWNER_USER_ID;
+  const isOwner = user?.email === "bryan.jones@efficiencystrengthtraining.com";
 
   const { data: completedBookings, isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/coach/bookings/completed"],
