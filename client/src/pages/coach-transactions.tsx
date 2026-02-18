@@ -10,10 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus, TrendingUp } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format, parseISO, startOfDay, startOfWeek, startOfMonth, startOfYear, isBefore } from "date-fns";
+import { format, parseISO, startOfDay, startOfWeek, startOfMonth, startOfYear, endOfDay, endOfWeek, endOfMonth, endOfYear, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, addYears, subYears, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
 
 type RevenuePeriod = "daily" | "weekly" | "monthly" | "yearly";
@@ -48,6 +48,7 @@ export default function CoachTransactionsPage() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "venmo">("cash");
   const [revenuePeriod, setRevenuePeriod] = useState<RevenuePeriod>("monthly");
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   const { data: transactions, isLoading: txLoading } = useQuery<TransactionWithUser[]>({
     queryKey: ["/api/coach/transactions"],
@@ -102,31 +103,69 @@ export default function CoachTransactionsPage() {
     return name.includes(term) || email.includes(term);
   });
 
-  const getPeriodStart = (period: RevenuePeriod): Date => {
-    const now = new Date();
+  const getPeriodStart = (period: RevenuePeriod, date: Date): Date => {
     switch (period) {
-      case "daily": return startOfDay(now);
-      case "weekly": return startOfWeek(now, { weekStartsOn: 0 });
-      case "monthly": return startOfMonth(now);
-      case "yearly": return startOfYear(now);
+      case "daily": return startOfDay(date);
+      case "weekly": return startOfWeek(date, { weekStartsOn: 0 });
+      case "monthly": return startOfMonth(date);
+      case "yearly": return startOfYear(date);
     }
   };
 
-  const periodStart = getPeriodStart(revenuePeriod);
-  const periodTransactions = (transactions || []).filter(t =>
-    t.createdAt && !isBefore(parseISO(t.createdAt), periodStart)
-  );
+  const getPeriodEnd = (period: RevenuePeriod, date: Date): Date => {
+    switch (period) {
+      case "daily": return endOfDay(date);
+      case "weekly": return endOfWeek(date, { weekStartsOn: 0 });
+      case "monthly": return endOfMonth(date);
+      case "yearly": return endOfYear(date);
+    }
+  };
+
+  const navigatePeriod = (direction: "prev" | "next") => {
+    setSelectedDate(prev => {
+      const fn = direction === "prev"
+        ? { daily: subDays, weekly: subWeeks, monthly: subMonths, yearly: subYears }[revenuePeriod]
+        : { daily: addDays, weekly: addWeeks, monthly: addMonths, yearly: addYears }[revenuePeriod];
+      return fn(prev, 1);
+    });
+  };
+
+  const goToToday = () => setSelectedDate(new Date());
+
+  const periodStart = getPeriodStart(revenuePeriod, selectedDate);
+  const periodEnd = getPeriodEnd(revenuePeriod, selectedDate);
+  const periodTransactions = (transactions || []).filter(t => {
+    if (!t.createdAt) return false;
+    const d = parseISO(t.createdAt);
+    return !isAfter(periodStart, d) && !isAfter(d, periodEnd);
+  });
 
   const periodCredits = periodTransactions.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodDebits = periodTransactions.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodNet = periodCredits - periodDebits;
 
-  const periodLabel = {
-    daily: "Today",
-    weekly: "This Week",
-    monthly: "This Month",
-    yearly: "This Year",
-  }[revenuePeriod];
+  const getPeriodLabel = (): string => {
+    switch (revenuePeriod) {
+      case "daily":
+        return format(selectedDate, "MMM d, yyyy");
+      case "weekly": {
+        const ws = startOfWeek(selectedDate, { weekStartsOn: 0 });
+        const we = endOfWeek(selectedDate, { weekStartsOn: 0 });
+        return `${format(ws, "MMM d")} – ${format(we, "MMM d, yyyy")}`;
+      }
+      case "monthly":
+        return format(selectedDate, "MMMM yyyy");
+      case "yearly":
+        return format(selectedDate, "yyyy");
+    }
+  };
+
+  const periodLabel = getPeriodLabel();
+
+  const isCurrentPeriod = (): boolean => {
+    const now = new Date();
+    return getPeriodStart(revenuePeriod, now).getTime() === periodStart.getTime();
+  };
 
   const totalCredits = (transactions || []).filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const totalDebits = (transactions || []).filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
@@ -165,7 +204,7 @@ export default function CoachTransactionsPage() {
                 key={period}
                 size="sm"
                 variant={revenuePeriod === period ? "default" : "outline"}
-                onClick={() => setRevenuePeriod(period)}
+                onClick={() => { setRevenuePeriod(period); setSelectedDate(new Date()); }}
                 className={`toggle-elevate ${revenuePeriod === period ? "toggle-elevated" : ""}`}
                 data-testid={`button-revenue-${period}`}
               >
@@ -173,6 +212,65 @@ export default function CoachTransactionsPage() {
               </Button>
             ))}
           </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => navigatePeriod("prev")}
+              data-testid="button-period-prev"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-2">
+              {revenuePeriod === "daily" ? (
+                <Input
+                  type="date"
+                  value={format(selectedDate, "yyyy-MM-dd")}
+                  onChange={(e) => {
+                    const d = new Date(e.target.value + "T12:00:00");
+                    if (!isNaN(d.getTime())) setSelectedDate(d);
+                  }}
+                  className="w-auto"
+                  data-testid="input-date-picker"
+                />
+              ) : revenuePeriod === "monthly" ? (
+                <Input
+                  type="month"
+                  value={format(selectedDate, "yyyy-MM")}
+                  onChange={(e) => {
+                    const d = new Date(e.target.value + "-15T12:00:00");
+                    if (!isNaN(d.getTime())) setSelectedDate(d);
+                  }}
+                  className="w-auto"
+                  data-testid="input-month-picker"
+                />
+              ) : (
+                <span className="text-sm font-medium px-2 min-w-[120px] text-center" data-testid="text-period-label">
+                  {periodLabel}
+                </span>
+              )}
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => navigatePeriod("next")}
+              data-testid="button-period-next"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          {!isCurrentPeriod() && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={goToToday}
+              data-testid="button-go-to-today"
+            >
+              Today
+            </Button>
+          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
