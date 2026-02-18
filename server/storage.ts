@@ -97,7 +97,7 @@ export interface IStorage {
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
 
-  getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User })[]>;
+  getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachUserId?: string })[]>;
   getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
 
   getUserBalance(userId: string): Promise<number>;
@@ -601,11 +601,25 @@ export class DatabaseStorage implements IStorage {
     return tx || undefined;
   }
 
-  async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User })[]> {
+  async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachUserId?: string })[]> {
     const allTx = await db.select().from(walletTransactions).orderBy(desc(walletTransactions.createdAt));
     const allUsers = await db.select().from(users);
     const userMap = new Map(allUsers.map(u => [u.id, u]));
-    return allTx.map(tx => ({ ...tx, user: userMap.get(tx.userId) }));
+    const allRedemptions = await db.select().from(redemptions);
+    const redemptionByBookingId = new Map(allRedemptions.map(r => [r.bookingId, r]));
+    const allCoaches = await db.select().from(coachProfiles);
+    const coachMap = new Map(allCoaches.map(c => [c.id, c]));
+    return allTx.map(tx => {
+      let redemptionCoachUserId: string | undefined;
+      if (tx.sourceType === "redemption" && tx.sourceId) {
+        const redemption = redemptionByBookingId.get(tx.sourceId);
+        if (redemption) {
+          const coach = coachMap.get(redemption.coachId);
+          if (coach) redemptionCoachUserId = coach.userId;
+        }
+      }
+      return { ...tx, user: userMap.get(tx.userId), redemptionCoachUserId };
+    });
   }
 
   async getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]> {

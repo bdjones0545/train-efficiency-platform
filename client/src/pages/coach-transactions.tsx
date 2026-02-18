@@ -18,6 +18,8 @@ import type { User } from "@shared/models/auth";
 
 type RevenuePeriod = "daily" | "weekly" | "monthly" | "yearly";
 
+const OWNER_USER_ID = "42755213";
+
 interface TransactionWithUser {
   id: string;
   userId: string;
@@ -29,6 +31,7 @@ interface TransactionWithUser {
   stripeSessionId: string | null;
   createdAt: string;
   user?: User;
+  redemptionCoachUserId?: string;
 }
 
 interface UserBalance {
@@ -142,7 +145,10 @@ export default function CoachTransactionsPage() {
 
   const periodCredits = periodTransactions.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodDebits = periodTransactions.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
-  const periodNet = periodCredits - periodDebits;
+  const periodCoachPayouts = periodTransactions.filter(t =>
+    t.type === "DEBIT" && t.sourceType === "redemption" && t.redemptionCoachUserId !== OWNER_USER_ID
+  ).reduce((sum, t) => sum + t.amountCents, 0);
+  const periodNetIncome = periodCredits - periodCoachPayouts;
 
   const getPeriodLabel = (): string => {
     switch (revenuePeriod) {
@@ -272,23 +278,29 @@ export default function CoachTransactionsPage() {
             </Button>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div>
-            <p className="text-xs text-muted-foreground">Deposits ({periodLabel})</p>
+            <p className="text-xs text-muted-foreground">Revenue ({periodLabel})</p>
             <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-period-deposits">
               ${(periodCredits / 100).toFixed(2)}
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Payments ({periodLabel})</p>
-            <p className="text-xl font-bold text-red-600 dark:text-red-400" data-testid="text-period-payments">
-              ${(periodDebits / 100).toFixed(2)}
+            <p className="text-xs text-muted-foreground">Coach Payouts ({periodLabel})</p>
+            <p className="text-xl font-bold text-red-600 dark:text-red-400" data-testid="text-period-coach-payouts">
+              ${(periodCoachPayouts / 100).toFixed(2)}
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Net Revenue ({periodLabel})</p>
-            <p className={`text-xl font-bold ${periodNet >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-period-net">
-              {periodNet < 0 ? "-" : ""}${(Math.abs(periodNet) / 100).toFixed(2)}
+            <p className="text-xs text-muted-foreground">Net Income ({periodLabel})</p>
+            <p className={`text-xl font-bold ${periodNetIncome >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-period-net-income">
+              {periodNetIncome < 0 ? "-" : ""}${(Math.abs(periodNetIncome) / 100).toFixed(2)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">All Debits ({periodLabel})</p>
+            <p className="text-xl font-bold text-muted-foreground" data-testid="text-period-payments">
+              ${(periodDebits / 100).toFixed(2)}
             </p>
           </div>
         </div>
