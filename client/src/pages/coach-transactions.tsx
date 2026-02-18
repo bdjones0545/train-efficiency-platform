@@ -29,8 +29,7 @@ interface TransactionWithUser {
   stripeSessionId: string | null;
   createdAt: string;
   user?: User;
-  redemptionCoachUserId?: string;
-  isOwnerRedemption?: boolean;
+  redemptionCoachName?: string;
 }
 
 interface UserBalance {
@@ -145,7 +144,7 @@ export default function CoachTransactionsPage() {
   const periodCredits = periodTransactions.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodDebits = periodTransactions.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodCoachPayouts = periodTransactions.filter(t =>
-    t.type === "DEBIT" && t.sourceType === "redemption" && !t.isOwnerRedemption
+    t.type === "DEBIT" && t.sourceType === "redemption" && t.redemptionCoachName === "Hunter Thaxton"
   ).reduce((sum, t) => sum + t.amountCents, 0);
   const periodNetIncome = periodCredits - periodCoachPayouts;
 
