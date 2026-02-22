@@ -28,6 +28,7 @@ import {
   Trophy,
   Wallet,
   Briefcase,
+  FileText,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -65,6 +66,7 @@ export function AppSidebar() {
     { title: "Transactions", url: "/coach/transactions", icon: Wallet },
     { title: "Users", url: "/coach/users", icon: Users },
     { title: "BLHS Athletic", url: "/coach/athletic", icon: Trophy },
+    { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
   ];
 
   const adminItems = [

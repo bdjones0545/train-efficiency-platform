@@ -80,6 +80,15 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Team Quotes feature (/coach/team-quotes): generate team training quotes with Stripe invoicing
+  - team_quotes table: teamName, numberOfAthletes, costPerAthleteCents, trainingType (STRENGTH/SPEED), frequency, durationWeeks, coachEmail, totalCents, status, stripeInvoiceId/Url
+  - POST /api/coach/team-quotes - Create quote, generate Stripe invoice, email to coach (COACH/ADMIN)
+  - GET /api/coach/team-quotes - List quotes (coach sees own, admin sees all) (COACH/ADMIN)
+  - Form: team name, # athletes, cost/athlete, training type, frequency, duration, email
+  - Generates Stripe invoice (send_invoice collection method, 30 days due)
+  - Sends branded email with invoice link via SendGrid
+  - Quote history with status badges and invoice links
+  - "Team Quotes" link added to coach sidebar under Coach Tools
 - Payment method tracking on sessions and revenue analytics
   - paymentMethod column (WALLET, VENMO, CASH) added to bookings table
   - Payment method selector in Edit Session dialog

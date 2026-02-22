@@ -358,6 +358,49 @@ export async function sendGroupSessionJoinNotification(
   await sendEmail(coachEmail, subject, html);
 }
 
+export async function sendTeamQuoteEmail(
+  coachEmail: string,
+  teamName: string,
+  numberOfAthletes: number,
+  costPerAthleteCents: number,
+  trainingType: string,
+  frequency: string,
+  durationWeeks: number,
+  totalCents: number,
+  invoiceUrl: string
+) {
+  const subject = `Team Training Quote — ${teamName}`;
+  const costPerAthleteStr = `$${(costPerAthleteCents / 100).toFixed(2)}`;
+  const totalStr = `$${(totalCents / 100).toFixed(2)}`;
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">Team Training Quote</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hello,</p>
+        <p style="font-size: 16px; line-height: 1.6;">A team training quote has been generated for <strong>${teamName}</strong>. Here are the details:</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Team:</strong> ${teamName}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Athletes:</strong> ${numberOfAthletes}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Cost per Athlete:</strong> ${costPerAthleteStr}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Training Type:</strong> ${trainingType}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Frequency:</strong> ${frequency}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Program Duration:</strong> ${durationWeeks} weeks</p>
+          <p style="font-size: 18px; margin: 12px 0 4px; font-weight: bold;">Total: ${totalStr}</p>
+        </div>
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${invoiceUrl}" style="display: inline-block; background: #16a34a; color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 6px; font-size: 16px; font-weight: 600;">View & Pay Invoice</a>
+        </div>
+        <p style="font-size: 14px; color: #888;">This invoice was generated through Stripe. Click the button above to view or pay.</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(coachEmail, subject, html);
+}
+
 export async function sendBookingNotificationToCoach(
   coachEmail: string,
   coachFirstName: string,

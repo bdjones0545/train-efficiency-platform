@@ -6,7 +6,7 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail } from "./email";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
@@ -2143,6 +2143,123 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error removing client from coach:", error);
       res.status(500).json({ message: "Failed to remove client" });
+    }
+  });
+
+  app.post("/api/coach/team-quotes", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const role = await getUserRole(userId);
+      let createdByCoachId: string;
+
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
+      if (coachProfile) {
+        createdByCoachId = coachProfile.id;
+      } else if (role === "ADMIN") {
+        const coaches = await storage.getCoachProfiles();
+        if (coaches.length === 0) return res.status(400).json({ message: "No coaches available" });
+        createdByCoachId = coaches[0].id;
+      } else {
+        return res.status(403).json({ message: "Coach profile not found" });
+      }
+
+      const { teamName, numberOfAthletes, costPerAthleteCents, trainingType, frequency, durationWeeks, coachEmail } = req.body;
+
+      if (!teamName || !numberOfAthletes || !costPerAthleteCents || !trainingType || !frequency || !durationWeeks || !coachEmail) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+
+      if (numberOfAthletes < 1 || costPerAthleteCents < 1) {
+        return res.status(400).json({ message: "Athletes and cost must be positive" });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(coachEmail)) {
+        return res.status(400).json({ message: "Invalid email address" });
+      }
+
+      const totalCents = numberOfAthletes * costPerAthleteCents;
+
+      const stripe = await getUncachableStripeClient();
+
+      const customer = await stripe.customers.create({
+        email: coachEmail,
+        name: teamName,
+        metadata: { teamName, trainingType },
+      });
+
+      const invoice = await stripe.invoices.create({
+        customer: customer.id,
+        collection_method: "send_invoice",
+        days_until_due: 30,
+        metadata: { teamName, trainingType, frequency, durationWeeks: durationWeeks.toString(), numberOfAthletes: numberOfAthletes.toString() },
+      });
+
+      await stripe.invoiceItems.create({
+        customer: customer.id,
+        invoice: invoice.id,
+        amount: totalCents,
+        currency: "usd",
+        description: `Team Training — ${teamName} | ${numberOfAthletes} athletes × $${(costPerAthleteCents / 100).toFixed(2)} | ${trainingType} | ${frequency} for ${durationWeeks} weeks`,
+      });
+
+      const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
+      await stripe.invoices.sendInvoice(invoice.id);
+
+      const invoiceUrl = finalizedInvoice.hosted_invoice_url || "";
+
+      const quote = await storage.createTeamQuote({
+        teamName,
+        numberOfAthletes,
+        costPerAthleteCents,
+        trainingType,
+        frequency,
+        durationWeeks,
+        coachEmail,
+        totalCents,
+        status: "SENT",
+        stripeInvoiceId: invoice.id,
+        stripeInvoiceUrl: invoiceUrl,
+        createdByCoachId,
+      });
+
+      sendTeamQuoteEmail(
+        coachEmail,
+        teamName,
+        numberOfAthletes,
+        costPerAthleteCents,
+        trainingType,
+        frequency,
+        durationWeeks,
+        totalCents,
+        invoiceUrl
+      ).catch(err => console.error("Failed to send team quote email:", err));
+
+      res.json(quote);
+    } catch (error: any) {
+      console.error("Error creating team quote:", error);
+      res.status(500).json({ message: "Failed to create team quote: " + (error.message || "Unknown error") });
+    }
+  });
+
+  app.get("/api/coach/team-quotes", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const role = await getUserRole(userId);
+      
+      if (role === "ADMIN") {
+        const quotes = await storage.getAllTeamQuotes();
+        return res.json(quotes);
+      }
+
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
+      if (!coachProfile) return res.status(403).json({ message: "Coach profile not found" });
+
+      const quotes = await storage.getTeamQuotes(coachProfile.id);
+      res.json(quotes);
+    } catch (error) {
+      console.error("Error fetching team quotes:", error);
+      res.status(500).json({ message: "Failed to fetch team quotes" });
     }
   });
 

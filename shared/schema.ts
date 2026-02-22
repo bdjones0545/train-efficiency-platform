@@ -120,9 +120,33 @@ export const cashouts = pgTable("cashouts", {
   processedAt: timestamp("processed_at"),
 });
 
+export const quoteStatusEnum = pgEnum("quote_status", ["DRAFT", "SENT", "PAID", "EXPIRED"]);
+export const trainingTypeEnum = pgEnum("training_type_enum", ["STRENGTH", "SPEED"]);
+
+export const teamQuotes = pgTable("team_quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teamName: varchar("team_name").notNull(),
+  numberOfAthletes: integer("number_of_athletes").notNull(),
+  costPerAthleteCents: integer("cost_per_athlete_cents").notNull(),
+  trainingType: trainingTypeEnum("training_type").notNull(),
+  frequency: varchar("frequency").notNull(),
+  durationWeeks: integer("duration_weeks").notNull(),
+  coachEmail: varchar("coach_email").notNull(),
+  totalCents: integer("total_cents").notNull(),
+  status: quoteStatusEnum("status").notNull().default("DRAFT"),
+  stripeInvoiceId: varchar("stripe_invoice_id"),
+  stripeInvoiceUrl: varchar("stripe_invoice_url"),
+  createdByCoachId: varchar("created_by_coach_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertAthleticBookingSchema = createInsertSchema(athleticBookings).omit({ id: true, createdAt: true });
 export type AthleticBooking = typeof athleticBookings.$inferSelect;
 export type InsertAthleticBooking = z.infer<typeof insertAthleticBookingSchema>;
+
+export const insertTeamQuoteSchema = createInsertSchema(teamQuotes).omit({ id: true, createdAt: true });
+export type TeamQuote = typeof teamQuotes.$inferSelect;
+export type InsertTeamQuote = z.infer<typeof insertTeamQuoteSchema>;
 
 export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
   user: one(users, { fields: [userProfiles.userId], references: [users.id] }),

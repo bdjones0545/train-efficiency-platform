@@ -30,6 +30,9 @@ import {
   type InsertCashout,
   type WalletTransaction,
   type InsertWalletTransaction,
+  teamQuotes,
+  type TeamQuote,
+  type InsertTeamQuote,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -112,6 +115,11 @@ export interface IStorage {
   updateLastSignIn(userId: string): Promise<void>;
   getInactiveUsersForReminder(sinceDays: number): Promise<User[]>;
   markReminderSent(userId: string): Promise<void>;
+
+  createTeamQuote(quote: InsertTeamQuote): Promise<TeamQuote>;
+  getTeamQuotes(coachId: string): Promise<TeamQuote[]>;
+  getAllTeamQuotes(): Promise<TeamQuote[]>;
+  updateTeamQuote(id: string, data: Partial<TeamQuote>): Promise<TeamQuote | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -692,6 +700,24 @@ export class DatabaseStorage implements IStorage {
 
   async markReminderSent(userId: string): Promise<void> {
     await db.update(users).set({ lastReminderSentAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async createTeamQuote(quote: InsertTeamQuote): Promise<TeamQuote> {
+    const [created] = await db.insert(teamQuotes).values(quote).returning();
+    return created;
+  }
+
+  async getTeamQuotes(coachId: string): Promise<TeamQuote[]> {
+    return db.select().from(teamQuotes).where(eq(teamQuotes.createdByCoachId, coachId)).orderBy(desc(teamQuotes.createdAt));
+  }
+
+  async getAllTeamQuotes(): Promise<TeamQuote[]> {
+    return db.select().from(teamQuotes).orderBy(desc(teamQuotes.createdAt));
+  }
+
+  async updateTeamQuote(id: string, data: Partial<TeamQuote>): Promise<TeamQuote | undefined> {
+    const [updated] = await db.update(teamQuotes).set(data).where(eq(teamQuotes.id, id)).returning();
+    return updated;
   }
 }
 
