@@ -1679,7 +1679,7 @@ export async function registerRoutes(
       const stripeUser = await storage.getUser(userId);
       if (stripeUser?.email) {
         const newBal = await storage.getUserBalance(userId);
-        sendPaymentConfirmationEmail(stripeUser.email, stripeUser.firstName || "Client", amountCents, "Stripe payment", newBal).catch(() => {});
+        sendPaymentConfirmationEmail(stripeUser.email, stripeUser.firstName || "Client", amountCents, `Wallet deposit — $${(amountCents / 100).toFixed(2)} via Stripe`, newBal).catch(() => {});
       }
 
       res.json({ credited: true, amountCents });
