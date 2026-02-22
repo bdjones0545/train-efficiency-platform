@@ -79,6 +79,15 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Business Plan page (/coach/business-plan): coach-specific business analytics
+  - New "Business Plan" sidebar section for COACH/ADMIN roles
+  - Coach selector to view any coach's business plan (admin only; coaches see their own)
+  - Client list with session history, consistency scoring, and last session indicator
+  - Revenue prediction algorithm using weighted 3-month session consistency per client
+  - Revenue history chart (last 6 months) with predicted next month bar
+  - Stats: total clients, total sessions, total revenue, predicted monthly revenue
+  - API: GET /api/coach/business-plan/:coachId (COACH own only, ADMIN any)
+  - Auth: coaches restricted to own profile; admins can view any coach
 - Weekly inactivity reminder emails: automatic emails to users who haven't signed in for 7+ days
   - last_sign_in_at and weekly_reminder_enabled columns added to users table
   - lastSignInAt updated on every login (client login, coach login, Replit Auth)

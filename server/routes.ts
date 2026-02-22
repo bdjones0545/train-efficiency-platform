@@ -1770,6 +1770,140 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/business-plan/:coachId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { coachId } = req.params;
+      const userId = req.user?.claims?.sub;
+      const role = await getUserRole(userId);
+      if (role === "COACH") {
+        const myProfile = await storage.getCoachProfileByUserId(userId);
+        if (!myProfile || myProfile.id !== coachId) {
+          return res.status(403).json({ message: "You can only view your own business plan" });
+        }
+      }
+      const coach = await storage.getCoachProfile(coachId);
+      if (!coach) return res.status(404).json({ message: "Coach not found" });
+
+      const allBookings = await storage.getCoachBookings(coachId);
+      const services = await storage.getServices();
+      const serviceMap = new Map(services.map(s => [s.id, s]));
+
+      const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number }[] }>();
+
+      for (const b of allBookings) {
+        if (!b.client) continue;
+        const clientId = b.clientId;
+        if (!clientMap.has(clientId)) {
+          clientMap.set(clientId, {
+            id: b.client.id,
+            firstName: b.client.firstName || "",
+            lastName: b.client.lastName || "",
+            email: b.client.email || null,
+            profileImageUrl: b.client.profileImageUrl || null,
+            sessions: [],
+          });
+        }
+        const service = serviceMap.get(b.serviceId);
+        clientMap.get(clientId)!.sessions.push({
+          date: b.startAt.toISOString(),
+          status: b.status,
+          serviceName: service?.name || "Unknown",
+          priceCents: service?.priceCents || 0,
+        });
+      }
+
+      const clients = Array.from(clientMap.values()).map(client => {
+        client.sessions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        return client;
+      });
+
+      const now = new Date();
+      const threeMonthsAgo = new Date(now);
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      const sixMonthsAgo = new Date(now);
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+      const recentBookings = allBookings.filter(b => 
+        (b.status === "COMPLETED" || b.status === "CONFIRMED") &&
+        new Date(b.startAt) >= threeMonthsAgo
+      );
+
+      const monthlyRevByMonth = new Map<string, number>();
+      for (const b of allBookings) {
+        if (b.status === "CANCELLED" || b.status === "NO_SHOW") continue;
+        const d = new Date(b.startAt);
+        if (d >= sixMonthsAgo) {
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          const service = serviceMap.get(b.serviceId);
+          monthlyRevByMonth.set(key, (monthlyRevByMonth.get(key) || 0) + (service?.priceCents || 0));
+        }
+      }
+
+      const sortedMonths = Array.from(monthlyRevByMonth.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+      const revenueHistory = sortedMonths.map(([month, cents]) => ({ month, revenueCents: cents }));
+
+      let predictedMonthlyRevenueCents = 0;
+
+      if (recentBookings.length > 0) {
+        const clientSessionsPerMonth = new Map<string, number[]>();
+        for (const b of recentBookings) {
+          if (!clientSessionsPerMonth.has(b.clientId)) {
+            clientSessionsPerMonth.set(b.clientId, [0, 0, 0]);
+          }
+          const monthsAgo = (now.getFullYear() - new Date(b.startAt).getFullYear()) * 12 + (now.getMonth() - new Date(b.startAt).getMonth());
+          const idx = Math.min(Math.max(0, monthsAgo), 2);
+          clientSessionsPerMonth.get(b.clientId)![idx]++;
+        }
+
+        let totalPredicted = 0;
+        for (const [clientId, monthCounts] of clientSessionsPerMonth) {
+          const weights = [0.5, 0.3, 0.2];
+          const weightedAvg = monthCounts[0] * weights[0] + monthCounts[1] * weights[1] + monthCounts[2] * weights[2];
+
+          const clientBookings = recentBookings.filter(b => b.clientId === clientId);
+          const avgPriceCents = clientBookings.reduce((sum, b) => {
+            const s = serviceMap.get(b.serviceId);
+            return sum + (s?.priceCents || 0);
+          }, 0) / clientBookings.length;
+
+          totalPredicted += weightedAvg * avgPriceCents;
+        }
+
+        predictedMonthlyRevenueCents = Math.round(totalPredicted);
+      }
+
+      const totalSessions = allBookings.length;
+      const completedSessions = allBookings.filter(b => b.status === "COMPLETED").length;
+      const totalRevenueCents = allBookings
+        .filter(b => b.status !== "CANCELLED" && b.status !== "NO_SHOW")
+        .reduce((sum, b) => {
+          const s = serviceMap.get(b.serviceId);
+          return sum + (s?.priceCents || 0);
+        }, 0);
+
+      res.json({
+        coach: {
+          id: coach.id,
+          name: `${coach.user?.firstName || ""} ${coach.user?.lastName || ""}`.trim(),
+          photoUrl: coach.photoUrl,
+          specialties: coach.specialties,
+        },
+        clients,
+        stats: {
+          totalClients: clients.length,
+          totalSessions,
+          completedSessions,
+          totalRevenueCents,
+          predictedMonthlyRevenueCents,
+        },
+        revenueHistory,
+      });
+    } catch (error: any) {
+      console.error("Business plan error:", error);
+      res.status(500).json({ message: "Failed to load business plan" });
+    }
+  });
+
   app.post("/api/chat", async (req: any, res) => {
     try {
       const { messages } = req.body;

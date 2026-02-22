@@ -27,6 +27,7 @@ import {
   UserCog,
   Trophy,
   Wallet,
+  Briefcase,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -97,6 +98,24 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {(role === "COACH" || role === "ADMIN") && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Business Plan</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location === "/coach/business-plan"}>
+                    <Link href="/coach/business-plan" onClick={handleNavClick} data-testid="nav-business-plan">
+                      <Briefcase className="h-4 w-4" />
+                      <span>Business Plan</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {(role === "COACH" || role === "ADMIN") && (
           <SidebarGroup>

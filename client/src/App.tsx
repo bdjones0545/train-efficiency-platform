@@ -23,6 +23,7 @@ import AthleticSchedulingPage from "@/pages/athletic-scheduling";
 import CoachAthleticPage from "@/pages/coach-athletic";
 import UserManagementPage from "@/pages/user-management";
 import CoachTransactionsPage from "@/pages/coach-transactions";
+import CoachBusinessPlanPage from "@/pages/coach-business-plan";
 import WalletPage from "@/pages/wallet";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,6 +61,7 @@ function AuthenticatedLayout() {
                 <Route path="/coach/redemptions" component={RedemptionsPage} />
                 <Route path="/coach/users" component={UserManagementPage} />
                 <Route path="/coach/transactions" component={CoachTransactionsPage} />
+                <Route path="/coach/business-plan" component={CoachBusinessPlanPage} />
                 <Route path="/coach/athletic" component={CoachAthleticPage} />
                 <Route path="/admin" component={AdminDashboardPage} />
                 <Route component={NotFound} />
