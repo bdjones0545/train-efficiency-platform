@@ -949,7 +949,7 @@ export async function registerRoutes(
       let amountCents = 0;
 
       if (isTeamContract) {
-        amountCents = 2000;
+        amountCents = (service?.durationMin || 60) <= 30 ? 1000 : 2000;
       } else {
         if (isSemiPrivate) {
           const participants = await storage.getBookingParticipants(bookingId);

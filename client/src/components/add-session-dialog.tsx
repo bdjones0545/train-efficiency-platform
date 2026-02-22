@@ -356,7 +356,11 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
             <div className="space-y-3">
               <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
                 <p className="text-sm font-medium">BHS Team Training Contract</p>
-                <p className="text-xs text-muted-foreground mt-1">$20 coach payout per session. No client charge.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedServiceObj?.durationMin && selectedServiceObj.durationMin <= 30
+                    ? "$10 coach payout per session. No client charge."
+                    : "$20 coach payout per session. No client charge."}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Team / Notes (optional)</Label>
