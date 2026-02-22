@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
 import type { CoachWithUser } from "@/lib/types";
@@ -56,6 +57,86 @@ type BusinessPlanData = {
   revenueHistory: RevenueMonth[];
 };
 
+type TimePeriod = "daily" | "weekly" | "monthly" | "yearly";
+
+function getWeekKey(date: Date): string {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function aggregateRevenue(
+  clients: BusinessPlanClient[],
+  period: TimePeriod
+): { label: string; revenueCents: number }[] {
+  const allSessions: { date: Date; priceCents: number }[] = [];
+  for (const c of clients) {
+    for (const s of c.sessions) {
+      if (s.status === "CANCELLED" || s.status === "NO_SHOW") continue;
+      allSessions.push({ date: new Date(s.date), priceCents: s.priceCents });
+    }
+  }
+  if (allSessions.length === 0) return [];
+
+  const buckets = new Map<string, number>();
+  const now = new Date();
+
+  let cutoff: Date;
+  let keyFn: (d: Date) => string;
+  let labelFn: (key: string) => string;
+
+  switch (period) {
+    case "daily": {
+      cutoff = new Date(now);
+      cutoff.setDate(cutoff.getDate() - 30);
+      keyFn = (d) => d.toISOString().slice(0, 10);
+      labelFn = (k) => {
+        const d = new Date(k + "T00:00:00");
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      };
+      break;
+    }
+    case "weekly": {
+      cutoff = new Date(now);
+      cutoff.setDate(cutoff.getDate() - 12 * 7);
+      keyFn = (d) => getWeekKey(d);
+      labelFn = (k) => {
+        const d = new Date(k + "T00:00:00");
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      };
+      break;
+    }
+    case "monthly": {
+      cutoff = new Date(now);
+      cutoff.setMonth(cutoff.getMonth() - 6);
+      keyFn = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      labelFn = (k) => {
+        const [y, m] = k.split("-");
+        return new Date(parseInt(y), parseInt(m) - 1).toLocaleString("default", { month: "short" });
+      };
+      break;
+    }
+    case "yearly": {
+      cutoff = new Date(0);
+      keyFn = (d) => String(d.getFullYear());
+      labelFn = (k) => k;
+      break;
+    }
+  }
+
+  for (const s of allSessions) {
+    if (s.date < cutoff) continue;
+    const key = keyFn(s.date);
+    buckets.set(key, (buckets.get(key) || 0) + s.priceCents);
+  }
+
+  const sorted = Array.from(buckets.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  return sorted.map(([key, cents]) => ({ label: labelFn(key), revenueCents: cents }));
+}
+
 function getConsistencyScore(sessions: ClientSession[]): { label: string; color: string; score: number } {
   const now = new Date();
   const threeMonthsAgo = new Date(now);
@@ -74,6 +155,7 @@ function getConsistencyScore(sessions: ClientSession[]): { label: string; color:
 
 export default function CoachBusinessPlanPage() {
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
+  const [revenuePeriod, setRevenuePeriod] = useState<TimePeriod>("monthly");
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -98,8 +180,9 @@ export default function CoachBusinessPlanPage() {
     enabled: !!activeCoachId,
   });
 
-  const maxRevenue = plan?.revenueHistory?.length
-    ? Math.max(...plan.revenueHistory.map((r) => r.revenueCents))
+  const chartData = plan ? aggregateRevenue(plan.clients, revenuePeriod) : [];
+  const maxRevenue = chartData.length > 0
+    ? Math.max(...chartData.map((r) => r.revenueCents))
     : 0;
 
   return (
@@ -187,48 +270,62 @@ export default function CoachBusinessPlanPage() {
             </Card>
           </div>
 
-          {plan.revenueHistory.length > 0 && (
-            <Card className="p-5 space-y-4" data-testid="card-revenue-chart">
+          <Card className="p-5 space-y-4" data-testid="card-revenue-chart">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-muted-foreground" />
-                <h2 className="font-semibold">Revenue History (Last 6 Months)</h2>
+                <h2 className="font-semibold">Revenue</h2>
               </div>
-              <div className="flex items-end gap-2 h-40">
-                {plan.revenueHistory.map((r) => {
+              <Tabs value={revenuePeriod} onValueChange={(v) => setRevenuePeriod(v as TimePeriod)}>
+                <TabsList className="h-8" data-testid="tabs-revenue-period">
+                  <TabsTrigger value="daily" className="text-xs px-3" data-testid="tab-daily">Daily</TabsTrigger>
+                  <TabsTrigger value="weekly" className="text-xs px-3" data-testid="tab-weekly">Weekly</TabsTrigger>
+                  <TabsTrigger value="monthly" className="text-xs px-3" data-testid="tab-monthly">Monthly</TabsTrigger>
+                  <TabsTrigger value="yearly" className="text-xs px-3" data-testid="tab-yearly">Yearly</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            {chartData.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center" data-testid="text-no-revenue">
+                No revenue data for this period.
+              </p>
+            ) : (
+              <div className="flex items-end gap-1 h-40 overflow-x-auto pb-1">
+                {chartData.map((r, i) => {
                   const height = maxRevenue > 0 ? (r.revenueCents / maxRevenue) * 100 : 0;
-                  const [year, month] = r.month.split("-");
-                  const monthLabel = new Date(parseInt(year), parseInt(month) - 1).toLocaleString("default", { month: "short" });
                   return (
-                    <div key={r.month} className="flex-1 flex flex-col items-center gap-1">
-                      <span className="text-xs font-medium text-muted-foreground">
+                    <div key={i} className="flex-1 min-w-[28px] flex flex-col items-center gap-1">
+                      <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
                         ${(r.revenueCents / 100).toFixed(0)}
                       </span>
                       <div
                         className="w-full bg-primary/80 rounded-t-md transition-all min-h-[4px]"
                         style={{ height: `${Math.max(height, 3)}%` }}
-                        data-testid={`bar-revenue-${r.month}`}
+                        data-testid={`bar-revenue-${i}`}
                       />
-                      <span className="text-xs text-muted-foreground">{monthLabel}</span>
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">{r.label}</span>
                     </div>
                   );
                 })}
 
-                <div className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs font-medium text-primary">
-                    ${(plan.stats.predictedMonthlyRevenueCents / 100).toFixed(0)}
-                  </span>
-                  <div
-                    className="w-full bg-primary/30 border-2 border-dashed border-primary rounded-t-md transition-all min-h-[4px]"
-                    style={{
-                      height: `${maxRevenue > 0 ? Math.max((plan.stats.predictedMonthlyRevenueCents / maxRevenue) * 100, 3) : 50}%`,
-                    }}
-                    data-testid="bar-predicted"
-                  />
-                  <span className="text-xs text-primary font-medium">Next</span>
-                </div>
+                {revenuePeriod === "monthly" && (
+                  <div className="flex-1 min-w-[28px] flex flex-col items-center gap-1">
+                    <span className="text-[10px] font-medium text-primary whitespace-nowrap">
+                      ${(plan.stats.predictedMonthlyRevenueCents / 100).toFixed(0)}
+                    </span>
+                    <div
+                      className="w-full bg-primary/30 border-2 border-dashed border-primary rounded-t-md transition-all min-h-[4px]"
+                      style={{
+                        height: `${maxRevenue > 0 ? Math.max((plan.stats.predictedMonthlyRevenueCents / maxRevenue) * 100, 3) : 50}%`,
+                      }}
+                      data-testid="bar-predicted"
+                    />
+                    <span className="text-[10px] text-primary font-medium">Next</span>
+                  </div>
+                )}
               </div>
-            </Card>
-          )}
+            )}
+          </Card>
 
           <Card className="p-5 space-y-4" data-testid="card-client-list">
             <div className="flex items-center justify-between">
