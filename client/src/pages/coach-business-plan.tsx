@@ -196,17 +196,23 @@ type RevenueView = "time" | "source";
 
 function getConsistencyScore(sessions: ClientSession[]): { label: string; color: string; score: number } {
   const now = new Date();
+  const oneWeekAgo = new Date(now);
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
   const threeMonthsAgo = new Date(now);
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
   const recentSessions = sessions.filter(
     (s) => new Date(s.date) >= threeMonthsAgo && (s.status === "COMPLETED" || s.status === "CONFIRMED")
   );
-
   const sessionsPerWeek = recentSessions.length / 13;
 
-  if (sessionsPerWeek >= 1) return { label: "Consistent", color: "text-green-500", score: sessionsPerWeek };
-  if (sessionsPerWeek > 0) return { label: "Inconsistent", color: "text-orange-400", score: sessionsPerWeek };
+  const hadSessionLastWeek = sessions.some(
+    (s) => new Date(s.date) >= oneWeekAgo && (s.status === "COMPLETED" || s.status === "CONFIRMED")
+  );
+
+  if (hadSessionLastWeek) return { label: "Consistent", color: "text-green-500", score: sessionsPerWeek };
+  if (recentSessions.length > 0) return { label: "Inconsistent", color: "text-orange-400", score: sessionsPerWeek };
   return { label: "Inactive", color: "text-muted-foreground", score: 0 };
 }
 
