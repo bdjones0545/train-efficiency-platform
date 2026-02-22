@@ -65,12 +65,10 @@ function getConsistencyScore(sessions: ClientSession[]): { label: string; color:
     (s) => new Date(s.date) >= threeMonthsAgo && (s.status === "COMPLETED" || s.status === "CONFIRMED")
   );
 
-  const sessionsPerMonth = recentSessions.length / 3;
+  const sessionsPerWeek = recentSessions.length / 13;
 
-  if (sessionsPerMonth >= 4) return { label: "Very Consistent", color: "text-green-500", score: sessionsPerMonth };
-  if (sessionsPerMonth >= 2) return { label: "Consistent", color: "text-emerald-400", score: sessionsPerMonth };
-  if (sessionsPerMonth >= 1) return { label: "Moderate", color: "text-yellow-500", score: sessionsPerMonth };
-  if (sessionsPerMonth > 0) return { label: "Infrequent", color: "text-orange-400", score: sessionsPerMonth };
+  if (sessionsPerWeek >= 2) return { label: "Consistent", color: "text-green-500", score: sessionsPerWeek };
+  if (sessionsPerWeek > 0) return { label: "Inconsistent", color: "text-orange-400", score: sessionsPerWeek };
   return { label: "Inactive", color: "text-muted-foreground", score: 0 };
 }
 
@@ -305,7 +303,7 @@ export default function CoachBusinessPlanPage() {
                         </div>
                       </div>
                       <div className="text-right hidden sm:block">
-                        <p className="text-sm font-medium">~{consistency.score.toFixed(1)}/mo</p>
+                        <p className="text-sm font-medium">~{consistency.score.toFixed(1)}/wk</p>
                         <p className="text-xs text-muted-foreground">avg sessions</p>
                       </div>
                     </div>
