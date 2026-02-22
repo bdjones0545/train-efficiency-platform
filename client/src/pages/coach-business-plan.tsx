@@ -6,7 +6,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
 import type { CoachWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
@@ -71,7 +72,8 @@ function getWeekKey(date: Date): string {
 
 function aggregateRevenue(
   clients: BusinessPlanClient[],
-  period: TimePeriod
+  period: TimePeriod,
+  offset: number = 0
 ): { label: string; revenueCents: number }[] {
   const allSessions: { date: Date; priceCents: number }[] = [];
   for (const c of clients) {
@@ -86,12 +88,15 @@ function aggregateRevenue(
   const now = new Date();
 
   let cutoff: Date;
+  let endDate: Date;
   let keyFn: (d: Date) => string;
   let labelFn: (key: string) => string;
 
   switch (period) {
     case "daily": {
-      cutoff = new Date(now);
+      endDate = new Date(now);
+      endDate.setDate(endDate.getDate() - offset * 30);
+      cutoff = new Date(endDate);
       cutoff.setDate(cutoff.getDate() - 30);
       keyFn = (d) => d.toISOString().slice(0, 10);
       labelFn = (k) => {
@@ -101,7 +106,9 @@ function aggregateRevenue(
       break;
     }
     case "weekly": {
-      cutoff = new Date(now);
+      endDate = new Date(now);
+      endDate.setDate(endDate.getDate() - offset * 12 * 7);
+      cutoff = new Date(endDate);
       cutoff.setDate(cutoff.getDate() - 12 * 7);
       keyFn = (d) => getWeekKey(d);
       labelFn = (k) => {
@@ -111,7 +118,9 @@ function aggregateRevenue(
       break;
     }
     case "monthly": {
-      cutoff = new Date(now);
+      endDate = new Date(now);
+      endDate.setMonth(endDate.getMonth() - offset * 6);
+      cutoff = new Date(endDate);
       cutoff.setMonth(cutoff.getMonth() - 6);
       keyFn = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       labelFn = (k) => {
@@ -121,7 +130,10 @@ function aggregateRevenue(
       break;
     }
     case "yearly": {
-      cutoff = new Date(0);
+      endDate = new Date(now);
+      endDate.setFullYear(endDate.getFullYear() - offset * 5);
+      cutoff = new Date(endDate);
+      cutoff.setFullYear(cutoff.getFullYear() - 5);
       keyFn = (d) => String(d.getFullYear());
       labelFn = (k) => k;
       break;
@@ -129,13 +141,50 @@ function aggregateRevenue(
   }
 
   for (const s of allSessions) {
-    if (s.date < cutoff) continue;
+    if (s.date < cutoff || s.date > endDate) continue;
     const key = keyFn(s.date);
     buckets.set(key, (buckets.get(key) || 0) + s.priceCents);
   }
 
   const sorted = Array.from(buckets.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   return sorted.map(([key, cents]) => ({ label: labelFn(key), revenueCents: cents }));
+}
+
+function getPeriodRangeLabel(period: TimePeriod, offset: number): string {
+  const now = new Date();
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const fmtMonth = (d: Date) => d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+  switch (period) {
+    case "daily": {
+      const end = new Date(now);
+      end.setDate(end.getDate() - offset * 30);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 30);
+      return `${fmt(start)} – ${fmt(end)}`;
+    }
+    case "weekly": {
+      const end = new Date(now);
+      end.setDate(end.getDate() - offset * 12 * 7);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 12 * 7);
+      return `${fmt(start)} – ${fmt(end)}`;
+    }
+    case "monthly": {
+      const end = new Date(now);
+      end.setMonth(end.getMonth() - offset * 6);
+      const start = new Date(end);
+      start.setMonth(start.getMonth() - 6);
+      return `${fmtMonth(start)} – ${fmtMonth(end)}`;
+    }
+    case "yearly": {
+      const end = new Date(now);
+      end.setFullYear(end.getFullYear() - offset * 5);
+      const start = new Date(end);
+      start.setFullYear(start.getFullYear() - 5);
+      return `${start.getFullYear()} – ${end.getFullYear()}`;
+    }
+  }
 }
 
 type RevenueView = "time" | "source";
@@ -194,6 +243,7 @@ export default function CoachBusinessPlanPage() {
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
   const [revenuePeriod, setRevenuePeriod] = useState<TimePeriod>("monthly");
   const [revenueView, setRevenueView] = useState<RevenueView>("time");
+  const [periodOffset, setPeriodOffset] = useState(0);
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -218,10 +268,11 @@ export default function CoachBusinessPlanPage() {
     enabled: !!activeCoachId,
   });
 
-  const chartData = plan ? aggregateRevenue(plan.clients, revenuePeriod) : [];
+  const chartData = plan ? aggregateRevenue(plan.clients, revenuePeriod, periodOffset) : [];
   const maxRevenue = chartData.length > 0
     ? Math.max(...chartData.map((r) => r.revenueCents))
     : 0;
+  const rangeLabel = getPeriodRangeLabel(revenuePeriod, periodOffset);
   const sourceData = plan ? aggregateByPaymentMethod(plan.clients) : [];
   const maxSourceRevenue = sourceData.length > 0
     ? Math.max(...sourceData.map((r) => r.revenueCents))
@@ -327,7 +378,7 @@ export default function CoachBusinessPlanPage() {
                   </TabsList>
                 </Tabs>
                 {revenueView === "time" && (
-                  <Tabs value={revenuePeriod} onValueChange={(v) => setRevenuePeriod(v as TimePeriod)}>
+                  <Tabs value={revenuePeriod} onValueChange={(v) => { setRevenuePeriod(v as TimePeriod); setPeriodOffset(0); }}>
                     <TabsList className="h-8" data-testid="tabs-revenue-period">
                       <TabsTrigger value="daily" className="text-xs px-3" data-testid="tab-daily">Daily</TabsTrigger>
                       <TabsTrigger value="weekly" className="text-xs px-3" data-testid="tab-weekly">Weekly</TabsTrigger>
@@ -338,6 +389,33 @@ export default function CoachBusinessPlanPage() {
                 )}
               </div>
             </div>
+
+            {revenueView === "time" && (
+              <div className="flex items-center justify-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setPeriodOffset((o) => o + 1)}
+                  data-testid="btn-period-prev"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground font-medium min-w-[180px] text-center" data-testid="text-period-range">
+                  {rangeLabel}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setPeriodOffset((o) => Math.max(0, o - 1))}
+                  disabled={periodOffset === 0}
+                  data-testid="btn-period-next"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
 
             {revenueView === "time" ? (
               <>
@@ -364,7 +442,7 @@ export default function CoachBusinessPlanPage() {
                       );
                     })}
 
-                    {revenuePeriod === "monthly" && (
+                    {revenuePeriod === "monthly" && periodOffset === 0 && (
                       <div className="flex-1 min-w-[28px] flex flex-col items-center gap-1">
                         <span className="text-[10px] font-medium text-primary whitespace-nowrap">
                           ${(plan.stats.predictedMonthlyRevenueCents / 100).toFixed(0)}
