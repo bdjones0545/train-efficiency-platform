@@ -1783,13 +1783,14 @@ export async function registerRoutes(
 
       const coachProfiles = await storage.getCoachProfiles();
       const coachUserIds = new Set(coachProfiles.map(cp => cp.userId));
+      const thisCoachUserId = coach.userId;
 
       const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number }[] }>();
 
       for (const b of allBookings) {
         if (!b.client) continue;
         const clientId = b.clientId;
-        if (coachUserIds.has(clientId)) continue;
+        if (clientId === thisCoachUserId) continue;
         if (!clientMap.has(clientId)) {
           clientMap.set(clientId, {
             id: b.client.id,
@@ -1886,10 +1887,10 @@ export async function registerRoutes(
         .reduce((sum, tx) => sum + tx.amountCents, 0);
 
       const venmoTotal = allBookings
-        .filter(b => b.paymentMethod === "VENMO" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && !coachUserIds.has(b.clientId))
+        .filter(b => b.paymentMethod === "VENMO" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && b.clientId !== thisCoachUserId)
         .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
       const cashTotal = allBookings
-        .filter(b => b.paymentMethod === "CASH" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && !coachUserIds.has(b.clientId))
+        .filter(b => b.paymentMethod === "CASH" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && b.clientId !== thisCoachUserId)
         .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
 
       res.json({
