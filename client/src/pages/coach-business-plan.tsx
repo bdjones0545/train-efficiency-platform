@@ -234,7 +234,7 @@ function getConsistencyScore(sessions: ClientSession[]): { label: string; color:
 
   const sessionsPerWeek = recentSessions.length / 13;
 
-  if (sessionsPerWeek >= 2) return { label: "Consistent", color: "text-green-500", score: sessionsPerWeek };
+  if (sessionsPerWeek >= 1) return { label: "Consistent", color: "text-green-500", score: sessionsPerWeek };
   if (sessionsPerWeek > 0) return { label: "Inconsistent", color: "text-orange-400", score: sessionsPerWeek };
   return { label: "Inactive", color: "text-muted-foreground", score: 0 };
 }
