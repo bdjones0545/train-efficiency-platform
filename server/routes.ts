@@ -1877,13 +1877,15 @@ export async function registerRoutes(
       const ownerCoach = await isOwner(coachId);
 
       function getBookingRevenue(bookingId: string, serviceId: string): number {
+        const service = serviceMap.get(serviceId);
+        const isFreeService = service && service.priceCents === 0;
+        if (isFreeService) return 0;
         const walletCharge = bookingChargeMap.get(bookingId);
         if (walletCharge !== undefined && walletCharge > 0) return walletCharge;
         const redemptionAmount = redemptionByBooking.get(bookingId);
         if (redemptionAmount !== undefined && redemptionAmount > 0) {
           return ownerCoach ? redemptionAmount : Math.round(redemptionAmount / 0.5);
         }
-        const service = serviceMap.get(serviceId);
         return service?.priceCents || 0;
       }
 
