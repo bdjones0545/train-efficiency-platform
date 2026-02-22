@@ -1861,6 +1861,32 @@ export async function registerRoutes(
       const coachUserIds = new Set(coachProfiles.map(cp => cp.userId));
       const thisCoachUserId = coach.userId;
 
+      const allWalletTx = await storage.getAllWalletTransactions();
+      const bookingChargeMap = new Map<string, number>();
+      for (const tx of allWalletTx) {
+        if (tx.type === "DEBIT" && tx.sourceType === "redemption" && tx.sourceId) {
+          bookingChargeMap.set(tx.sourceId, (bookingChargeMap.get(tx.sourceId) || 0) + tx.amountCents);
+        }
+      }
+
+      const coachRedemptions = await storage.getCoachRedemptions(coach.id);
+      const redemptionByBooking = new Map<string, number>();
+      for (const r of coachRedemptions) {
+        redemptionByBooking.set(r.bookingId, r.amountCents);
+      }
+      const ownerCoach = await isOwner(coachId);
+
+      function getBookingRevenue(bookingId: string, serviceId: string): number {
+        const walletCharge = bookingChargeMap.get(bookingId);
+        if (walletCharge !== undefined && walletCharge > 0) return walletCharge;
+        const redemptionAmount = redemptionByBooking.get(bookingId);
+        if (redemptionAmount !== undefined && redemptionAmount > 0) {
+          return ownerCoach ? redemptionAmount : Math.round(redemptionAmount / 0.5);
+        }
+        const service = serviceMap.get(serviceId);
+        return service?.priceCents || 0;
+      }
+
       const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number; paymentMethod: string | null }[] }>();
 
       for (const b of allBookings) {
@@ -1878,11 +1904,12 @@ export async function registerRoutes(
           });
         }
         const service = serviceMap.get(b.serviceId);
+        const actualRevenue = getBookingRevenue(b.id, b.serviceId);
         clientMap.get(clientId)!.sessions.push({
           date: b.startAt.toISOString(),
           status: b.status,
           serviceName: service?.name || "Unknown",
-          priceCents: service?.priceCents || 0,
+          priceCents: actualRevenue,
           paymentMethod: b.paymentMethod || null,
         });
       }
@@ -1909,11 +1936,12 @@ export async function registerRoutes(
             if (p.userId && !walkInUserIdMap.has(walkInKey)) {
               walkInUserIdMap.set(walkInKey, p.userId);
             }
+            const walkInRevenue = getBookingRevenue(b.id, b.serviceId);
             clientMap.get(walkInKey)!.sessions.push({
               date: b.startAt.toISOString(),
               status: b.status,
               serviceName: service?.name || "Unknown",
-              priceCents: service?.priceCents || 0,
+              priceCents: walkInRevenue,
               paymentMethod: b.paymentMethod || null,
             });
           } else if (p.userId && p.userId !== b.clientId && p.userId !== thisCoachUserId) {
@@ -1928,11 +1956,12 @@ export async function registerRoutes(
                 sessions: [],
               });
             }
+            const participantRevenue = getBookingRevenue(b.id, b.serviceId);
             clientMap.get(participantUserId)!.sessions.push({
               date: b.startAt.toISOString(),
               status: b.status,
               serviceName: service?.name || "Unknown",
-              priceCents: service?.priceCents || 0,
+              priceCents: participantRevenue,
               paymentMethod: b.paymentMethod || null,
             });
           }
@@ -1956,8 +1985,8 @@ export async function registerRoutes(
         const d = new Date(b.startAt);
         if (d >= sixMonthsAgo) {
           const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-          const service = serviceMap.get(b.serviceId);
-          monthlyRevByMonth.set(key, (monthlyRevByMonth.get(key) || 0) + (service?.priceCents || 0));
+          const rev = getBookingRevenue(b.id, b.serviceId);
+          monthlyRevByMonth.set(key, (monthlyRevByMonth.get(key) || 0) + rev);
         }
       }
 
@@ -2002,16 +2031,11 @@ export async function registerRoutes(
       }).length;
       const totalRevenueCents = allBookings
         .filter(b => b.status !== "CANCELLED" && b.status !== "NO_SHOW")
-        .reduce((sum, b) => {
-          const s = serviceMap.get(b.serviceId);
-          return sum + (s?.priceCents || 0);
-        }, 0);
+        .reduce((sum, b) => sum + getBookingRevenue(b.id, b.serviceId), 0);
 
-      const coachRedemptions = await storage.getCoachRedemptions(coach.id);
       const coachEarningsCents = coachRedemptions
         .reduce((sum, r) => sum + r.amountCents, 0);
 
-      const allWalletTx = await storage.getAllWalletTransactions();
       const clientIds = new Set(clients.map(c => c.id));
       const clientWalletCharges = allWalletTx
         .filter(tx => tx.type === "DEBIT" && tx.sourceType === "redemption" && clientIds.has(tx.userId))
@@ -2026,10 +2050,10 @@ export async function registerRoutes(
 
       const venmoTotal = allBookings
         .filter(b => b.paymentMethod === "VENMO" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && b.clientId !== thisCoachUserId)
-        .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
+        .reduce((sum, b) => sum + getBookingRevenue(b.id, b.serviceId), 0);
       const cashTotal = allBookings
         .filter(b => b.paymentMethod === "CASH" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && b.clientId !== thisCoachUserId)
-        .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
+        .reduce((sum, b) => sum + getBookingRevenue(b.id, b.serviceId), 0);
 
       const walletShareCount = new Map<string, number>();
       for (const c of clients) {
