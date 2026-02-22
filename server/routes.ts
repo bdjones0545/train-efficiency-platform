@@ -1495,7 +1495,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/coaches", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+  app.post("/api/admin/coaches", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { firstName, lastName, email, password, bio, specialties } = req.body;
       if (!firstName || !lastName || !email || !password) {
