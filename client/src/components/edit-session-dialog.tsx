@@ -57,6 +57,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [groupDescription, setGroupDescription] = useState(booking.groupDescription || "");
   const [showSearch, setShowSearch] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteMode, setDeleteMode] = useState<"single" | "all">("single");
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
   const [showParticipantSearch, setShowParticipantSearch] = useState(false);
   const [walkInName, setWalkInName] = useState("");
@@ -203,11 +204,17 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("DELETE", `/api/coach/bookings/${booking.id}`);
+    mutationFn: async (mode: "single" | "all") => {
+      const url = mode === "all" && booking.recurringGroupId
+        ? `/api/coach/bookings/${booking.id}?deleteGroup=true`
+        : `/api/coach/bookings/${booking.id}`;
+      const res = await apiRequest("DELETE", url);
+      return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Session Deleted", description: "The session has been removed." });
+    onSuccess: (data: any) => {
+      const count = data.deletedCount || 1;
+      const desc = count > 1 ? `${count} recurring sessions have been removed.` : "The session has been removed.";
+      toast({ title: "Session Deleted", description: desc });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
@@ -648,23 +655,44 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
         </div>
       </DialogContent>
 
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialog open={showDeleteConfirm} onOpenChange={(v) => { setShowDeleteConfirm(v); if (!v) setDeleteMode("single"); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Session</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this session? This action cannot be undone.
+              {booking.recurringGroupId
+                ? "This session is part of a recurring series. Would you like to delete just this session or all sessions in the series?"
+                : "Are you sure you want to delete this session? This action cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className={booking.recurringGroupId ? "flex-col sm:flex-col gap-2" : ""}>
             <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteMutation.mutate()}
-              className="bg-destructive text-destructive-foreground"
-              data-testid="button-confirm-delete"
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
+            {booking.recurringGroupId ? (
+              <>
+                <AlertDialogAction
+                  onClick={() => { setDeleteMode("single"); deleteMutation.mutate("single"); }}
+                  className="bg-destructive text-destructive-foreground"
+                  data-testid="button-delete-single"
+                >
+                  {deleteMutation.isPending && deleteMode === "single" ? "Deleting..." : "Delete This Session Only"}
+                </AlertDialogAction>
+                <AlertDialogAction
+                  onClick={() => { setDeleteMode("all"); deleteMutation.mutate("all"); }}
+                  className="bg-destructive text-destructive-foreground"
+                  data-testid="button-delete-all-recurring"
+                >
+                  {deleteMutation.isPending && deleteMode === "all" ? "Deleting..." : "Delete All Recurring Sessions"}
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction
+                onClick={() => deleteMutation.mutate("single")}
+                className="bg-destructive text-destructive-foreground"
+                data-testid="button-confirm-delete"
+              >
+                {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

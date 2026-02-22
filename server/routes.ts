@@ -751,6 +751,12 @@ export async function registerRoutes(
       const durationMs = sourceEnd.getTime() - sourceStart.getTime();
       const endDateObj = new Date(endDate + "T23:59:59");
 
+      const groupId = sourceBooking.recurringGroupId || `rg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      if (!sourceBooking.recurringGroupId) {
+        await storage.updateBooking(bookingId, { recurringGroupId: groupId } as any);
+      }
+
       const created: any[] = [];
       const skipped: string[] = [];
       let currentStart = new Date(sourceStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
@@ -765,8 +771,6 @@ export async function registerRoutes(
           continue;
         }
 
-        const isSemiPrivate = sourceBooking.maxParticipants !== null && sourceBooking.maxParticipants > 1;
-
         const booking = await storage.createBooking({
           clientId: sourceBooking.clientId,
           coachId: targetCoachId,
@@ -778,13 +782,14 @@ export async function registerRoutes(
           location: sourceBooking.location || "",
           maxParticipants: sourceBooking.maxParticipants,
           groupDescription: sourceBooking.groupDescription || "",
+          recurringGroupId: groupId,
         });
 
         created.push(booking);
         currentStart = new Date(currentStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
       }
 
-      res.json({ created: created.length, skipped: skipped.length, skippedDates: skipped });
+      res.json({ created: created.length, skipped: skipped.length, skippedDates: skipped, recurringGroupId: groupId });
     } catch (error) {
       console.error("Error cloning bookings:", error);
       res.status(500).json({ message: "Failed to clone sessions" });
@@ -874,12 +879,18 @@ export async function registerRoutes(
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
       const bookingId = req.params.id;
+      const deleteGroup = req.query.deleteGroup === "true";
       const existing = await storage.getBooking(bookingId);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
 
-      const deleted = await storage.deleteBooking(bookingId);
-      if (!deleted) return res.status(500).json({ message: "Failed to delete session" });
-      res.json({ success: true });
+      if (deleteGroup && existing.recurringGroupId) {
+        const count = await storage.deleteBookingsByRecurringGroup(existing.recurringGroupId);
+        res.json({ success: true, deletedCount: count });
+      } else {
+        const deleted = await storage.deleteBooking(bookingId);
+        if (!deleted) return res.status(500).json({ message: "Failed to delete session" });
+        res.json({ success: true, deletedCount: 1 });
+      }
     } catch (error) {
       console.error("Error deleting booking:", error);
       res.status(500).json({ message: "Failed to delete session" });

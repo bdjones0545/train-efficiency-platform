@@ -67,8 +67,9 @@ export interface IStorage {
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
-  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string }): Promise<Booking | undefined>;
+  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string }): Promise<Booking | undefined>;
   deleteBooking(id: string): Promise<boolean>;
+  deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted?: boolean): Promise<number>;
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
 
   getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]>;
@@ -330,7 +331,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string }): Promise<Booking | undefined> {
+  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string }): Promise<Booking | undefined> {
     const setData: any = {};
     if (data.serviceId !== undefined) setData.serviceId = data.serviceId;
     if (data.startAt !== undefined) setData.startAt = data.startAt;
@@ -339,6 +340,7 @@ export class DatabaseStorage implements IStorage {
     if (data.groupDescription !== undefined) setData.groupDescription = data.groupDescription;
     if (data.maxParticipants !== undefined) setData.maxParticipants = data.maxParticipants;
     if (data.clientId !== undefined) setData.clientId = data.clientId;
+    if (data.recurringGroupId !== undefined) setData.recurringGroupId = data.recurringGroupId;
 
     if (Object.keys(setData).length === 0) {
       return this.getBooking(id);
@@ -356,6 +358,23 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, id));
     const result = await db.delete(bookings).where(eq(bookings.id, id)).returning();
     return result.length > 0;
+  }
+
+  async deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted: boolean = true): Promise<number> {
+    const conditions: any[] = [eq(bookings.recurringGroupId, recurringGroupId)];
+    if (excludeCompleted) {
+      conditions.push(
+        and(
+          sql`${bookings.status} != 'COMPLETED'`
+        )
+      );
+    }
+    const toDelete = await db.select({ id: bookings.id }).from(bookings).where(and(...conditions));
+    for (const b of toDelete) {
+      await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
+    }
+    const result = await db.delete(bookings).where(and(...conditions)).returning();
+    return result.length;
   }
 
   async getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]> {
