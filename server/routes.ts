@@ -6,7 +6,7 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
-import { sendWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail } from "./email";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
@@ -1492,6 +1492,79 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error setting role:", error);
       res.status(500).json({ message: "Failed to set role" });
+    }
+  });
+
+  app.post("/api/admin/coaches", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { firstName, lastName, email, password, bio, specialties } = req.body;
+      if (!firstName || !lastName || !email || !password) {
+        return res.status(400).json({ message: "First name, last name, email, and password are required" });
+      }
+      if (typeof email !== "string" || !email.includes("@")) {
+        return res.status(400).json({ message: "Please provide a valid email address" });
+      }
+      if (typeof password !== "string" || password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
+      if (existingUser) {
+        const existingCoach = await storage.getCoachProfileByUserId(existingUser.id);
+        if (existingCoach) {
+          return res.status(400).json({ message: "A coach with this email already exists" });
+        }
+        const existingProfile = await storage.getUserProfile(existingUser.id);
+        if (existingProfile?.role === "ADMIN") {
+          return res.status(400).json({ message: "This user is an admin and cannot be added as a coach" });
+        }
+      }
+
+      const { db: dbRef } = await import("./db");
+      const { users: usersTable } = await import("@shared/models/auth");
+
+      let userId: string;
+      if (existingUser) {
+        userId = existingUser.id;
+      } else {
+        const [newUser] = await dbRef.insert(usersTable).values({
+          email: normalizedEmail,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          profileImageUrl: null,
+          lastSignInAt: new Date(),
+        }).returning();
+        userId = newUser.id;
+      }
+
+      await storage.upsertUserProfile({ userId, role: "COACH" });
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const parsedSpecialties = Array.isArray(specialties)
+        ? specialties.filter((s: any) => typeof s === "string" && s.trim())
+        : [];
+      const coachProfile = await storage.createCoachProfile({
+        userId,
+        email: normalizedEmail,
+        passwordHash,
+        bio: typeof bio === "string" ? bio.trim() : "",
+        specialties: parsedSpecialties,
+        timezone: "America/New_York",
+        isActive: true,
+      });
+
+      sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password).catch((err: any) => {
+        console.error("Failed to send coach welcome email:", err);
+      });
+
+      res.json({ success: true, coachProfile });
+    } catch (error: any) {
+      console.error("Error creating coach:", error);
+      if (error?.message?.includes("unique") || error?.code === "23505") {
+        return res.status(400).json({ message: "A coach with this email already exists" });
+      }
+      res.status(500).json({ message: "Failed to create coach" });
     }
   });
 

@@ -86,6 +86,35 @@ export async function sendWelcomeEmail(email: string, firstName: string) {
   await sendEmail(email, subject, html);
 }
 
+export async function sendCoachWelcomeEmail(email: string, firstName: string, password: string) {
+  const subject = 'Welcome to the EST Coaching Team!';
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">Welcome to EST, Coach ${firstName}!</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
+        <p style="font-size: 16px; line-height: 1.6;">You've been added as a coach on the <strong>Efficiency Strength Training</strong> scheduling platform. We're excited to have you on the team!</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Login Email:</strong> ${email}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Password:</strong> ${password}</p>
+        </div>
+        <p style="font-size: 16px; line-height: 1.6;">Here's what you can do as a coach:</p>
+        <ul style="font-size: 15px; line-height: 1.8; padding-left: 20px;">
+          <li>Manage your availability and schedule</li>
+          <li>View and manage client sessions</li>
+          <li>Track your business analytics</li>
+          <li>Redeem completed sessions</li>
+        </ul>
+        <p style="font-size: 16px; line-height: 1.6;">Log in using the Coach Sign In button on the homepage to get started. We recommend changing your password after your first login.</p>
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— The EST Team<br/>Bluffton / Hilton Head Island, SC</p>
+      </div>
+    </div>
+  `;
+  await sendEmail(email, subject, html);
+}
+
 export async function sendBookingConfirmationToClient(
   clientEmail: string,
   clientFirstName: string,

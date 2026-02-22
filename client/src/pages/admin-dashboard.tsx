@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Users, Calendar, DollarSign, Plus, Download, Settings, Banknote, CheckCircle, XCircle } from "lucide-react";
+import { Users, Calendar, DollarSign, Plus, Download, Settings, Banknote, CheckCircle, XCircle, UserPlus } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { useState } from "react";
 import type { CoachWithUser, BookingWithDetails, RedemptionWithDetails } from "@/lib/types";
@@ -35,6 +35,53 @@ export default function AdminDashboardPage() {
   const [newServiceDuration, setNewServiceDuration] = useState("60");
   const [newServicePrice, setNewServicePrice] = useState("50");
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+
+  const [coachDialogOpen, setCoachDialogOpen] = useState(false);
+  const [newCoachFirstName, setNewCoachFirstName] = useState("");
+  const [newCoachLastName, setNewCoachLastName] = useState("");
+  const [newCoachEmail, setNewCoachEmail] = useState("");
+  const [newCoachPassword, setNewCoachPassword] = useState("");
+  const [newCoachBio, setNewCoachBio] = useState("");
+  const [newCoachSpecialties, setNewCoachSpecialties] = useState("");
+
+  const createCoachMutation = useMutation({
+    mutationFn: async (data: { firstName: string; lastName: string; email: string; password: string; bio: string; specialties: string[] }) => {
+      const res = await apiRequest("POST", "/api/admin/coaches", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Coach Added", description: "Welcome email has been sent to the new coach." });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setCoachDialogOpen(false);
+      setNewCoachFirstName("");
+      setNewCoachLastName("");
+      setNewCoachEmail("");
+      setNewCoachPassword("");
+      setNewCoachBio("");
+      setNewCoachSpecialties("");
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", description: "Logging in again...", variant: "destructive" });
+        setTimeout(() => { window.location.href = "/"; }, 500);
+        return;
+      }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleCreateCoach = () => {
+    if (!newCoachFirstName || !newCoachLastName || !newCoachEmail || !newCoachPassword) return;
+    createCoachMutation.mutate({
+      firstName: newCoachFirstName,
+      lastName: newCoachLastName,
+      email: newCoachEmail,
+      password: newCoachPassword,
+      bio: newCoachBio,
+      specialties: newCoachSpecialties ? newCoachSpecialties.split(",").map(s => s.trim()).filter(Boolean) : [],
+    });
+  };
 
   const createServiceMutation = useMutation({
     mutationFn: async (data: { name: string; description: string; durationMin: number; priceCents: number }) => {
@@ -167,7 +214,85 @@ export default function AdminDashboardPage() {
           <TabsTrigger value="cashouts" data-testid="tab-cashouts">Cashouts</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="users" className="mt-4">
+        <TabsContent value="users" className="mt-4 space-y-4">
+          <div className="flex justify-end">
+            <Dialog open={coachDialogOpen} onOpenChange={setCoachDialogOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-add-coach">
+                  <UserPlus className="h-4 w-4 mr-1" />
+                  Add Coach
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Coach</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">First Name</label>
+                      <Input
+                        value={newCoachFirstName}
+                        onChange={(e) => setNewCoachFirstName(e.target.value)}
+                        placeholder="John"
+                        data-testid="input-coach-first-name"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">Last Name</label>
+                      <Input
+                        value={newCoachLastName}
+                        onChange={(e) => setNewCoachLastName(e.target.value)}
+                        placeholder="Smith"
+                        data-testid="input-coach-last-name"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground mb-1 block">Email</label>
+                    <Input
+                      type="email"
+                      value={newCoachEmail}
+                      onChange={(e) => setNewCoachEmail(e.target.value)}
+                      placeholder="coach@example.com"
+                      data-testid="input-coach-email"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground mb-1 block">Password</label>
+                    <Input
+                      type="text"
+                      value={newCoachPassword}
+                      onChange={(e) => setNewCoachPassword(e.target.value)}
+                      placeholder="Initial login password"
+                      data-testid="input-coach-password"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground mb-1 block">Bio</label>
+                    <Textarea
+                      value={newCoachBio}
+                      onChange={(e) => setNewCoachBio(e.target.value)}
+                      placeholder="Brief bio about the coach..."
+                      data-testid="input-coach-bio"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground mb-1 block">Specialties (comma-separated)</label>
+                    <Input
+                      value={newCoachSpecialties}
+                      onChange={(e) => setNewCoachSpecialties(e.target.value)}
+                      placeholder="Strength & Conditioning, Speed Training"
+                      data-testid="input-coach-specialties"
+                    />
+                  </div>
+                  <Button onClick={handleCreateCoach} disabled={createCoachMutation.isPending} className="w-full" data-testid="button-submit-coach">
+                    {createCoachMutation.isPending ? "Adding Coach..." : "Add Coach"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
           <Card className="p-4">
             <div className="space-y-3">
               {allUsers?.map((u) => (

@@ -51,6 +51,7 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - GET /api/admin/users - All users (ADMIN)
 - POST /api/admin/set-role - Set user role (ADMIN)
 - POST /api/admin/services - Create service (ADMIN)
+- POST /api/admin/coaches - Add new coach with credentials and welcome email (ADMIN)
 - GET /api/sessions/open - List open semi-private sessions (public)
 - GET /api/bookings/:id/participants - Get session participants (public)
 - POST /api/bookings/:id/join - Join a semi-private session (auth required)
