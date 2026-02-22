@@ -69,6 +69,7 @@ export interface IStorage {
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
   updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null }): Promise<Booking | undefined>;
   deleteBooking(id: string): Promise<boolean>;
+  deleteBookingsByClientAndCoach(clientId: string, coachId: string): Promise<number>;
   deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted?: boolean): Promise<number>;
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
 
@@ -359,6 +360,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, id));
     const result = await db.delete(bookings).where(eq(bookings.id, id)).returning();
     return result.length > 0;
+  }
+
+  async deleteBookingsByClientAndCoach(clientId: string, coachId: string): Promise<number> {
+    const toDelete = await db.select({ id: bookings.id }).from(bookings)
+      .where(and(eq(bookings.clientId, clientId), eq(bookings.coachId, coachId)));
+    for (const b of toDelete) {
+      await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
+    }
+    const result = await db.delete(bookings).where(and(eq(bookings.clientId, clientId), eq(bookings.coachId, coachId))).returning();
+    return result.length;
   }
 
   async deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted: boolean = true): Promise<number> {

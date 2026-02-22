@@ -284,23 +284,23 @@ export default function CoachBusinessPlanPage() {
     },
   });
 
-  const deleteUserMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/coach/users/${id}`, {
+  const removeClientMutation = useMutation({
+    mutationFn: async (clientId: string) => {
+      const res = await fetch(`/api/coach/business-plan/${activeCoachId}/clients/${clientId}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
-      if (!res.ok) throw new Error("Failed to delete client");
+      if (!res.ok) throw new Error("Failed to remove client");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/coach/business-plan", activeCoachId] });
       setDeleteClient(null);
       setSelectedClient(null);
-      toast({ title: "Client deleted" });
+      toast({ title: "Client removed from list" });
     },
     onError: () => {
-      toast({ title: "Failed to delete client", variant: "destructive" });
+      toast({ title: "Failed to remove client", variant: "destructive" });
     },
   });
 
@@ -721,7 +721,7 @@ export default function CoachBusinessPlanPage() {
                               <Pencil className="h-3 w-3 mr-1" /> Edit
                             </Button>
                             <Button size="sm" variant="outline" className="text-xs h-7 text-destructive hover:text-destructive" onClick={() => setDeleteClient(client)} data-testid={`btn-delete-detail-${client.id}`}>
-                              <Trash2 className="h-3 w-3 mr-1" /> Delete
+                              <Trash2 className="h-3 w-3 mr-1" /> Remove
                             </Button>
                           </div>
                         </div>
@@ -770,20 +770,20 @@ export default function CoachBusinessPlanPage() {
       <AlertDialog open={!!deleteClient} onOpenChange={(open) => !open && setDeleteClient(null)}>
         <AlertDialogContent data-testid="dialog-delete-client">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Client</AlertDialogTitle>
+            <AlertDialogTitle>Remove Client</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete {deleteClient?.firstName} {deleteClient?.lastName}? This will remove all their data and cannot be undone.
+              Are you sure you want to remove {deleteClient?.firstName} {deleteClient?.lastName} from this coach's client list? Their sessions with this coach will be deleted, but they will remain on the platform.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="btn-cancel-delete">Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteClient && deleteUserMutation.mutate(deleteClient.id)}
-              disabled={deleteUserMutation.isPending}
+              onClick={() => deleteClient && removeClientMutation.mutate(deleteClient.id)}
+              disabled={removeClientMutation.isPending}
               data-testid="btn-confirm-delete"
             >
-              {deleteUserMutation.isPending ? "Deleting..." : "Delete"}
+              {removeClientMutation.isPending ? "Removing..." : "Remove"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

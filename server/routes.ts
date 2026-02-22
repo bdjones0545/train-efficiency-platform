@@ -2077,6 +2077,17 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/coach/business-plan/:coachId/clients/:clientId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { coachId, clientId } = req.params;
+      const count = await storage.deleteBookingsByClientAndCoach(clientId, coachId);
+      res.json({ success: true, deletedBookings: count });
+    } catch (error) {
+      console.error("Error removing client from coach:", error);
+      res.status(500).json({ message: "Failed to remove client" });
+    }
+  });
+
   app.post("/api/chat", async (req: any, res) => {
     try {
       const { messages } = req.body;
