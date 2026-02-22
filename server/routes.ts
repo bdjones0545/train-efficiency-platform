@@ -2007,15 +2007,19 @@ export async function registerRoutes(
           return sum + (s?.priceCents || 0);
         }, 0);
 
+      const coachRedemptions = await storage.getCoachRedemptions(coach.id);
+      const coachEarningsCents = coachRedemptions
+        .reduce((sum, r) => sum + r.amountCents, 0);
+
       const allWalletTx = await storage.getAllWalletTransactions();
       const clientIds = new Set(clients.map(c => c.id));
-      const clientWalletCredits = allWalletTx
-        .filter(tx => tx.type === "CREDIT" && clientIds.has(tx.userId))
+      const clientWalletCharges = allWalletTx
+        .filter(tx => tx.type === "DEBIT" && tx.sourceType === "redemption" && clientIds.has(tx.userId))
         .reduce((sum, tx) => sum + tx.amountCents, 0);
 
       const perClientWallet = new Map<string, number>();
       for (const tx of allWalletTx) {
-        if (tx.type === "CREDIT" && clientIds.has(tx.userId)) {
+        if (tx.type === "DEBIT" && tx.sourceType === "redemption" && clientIds.has(tx.userId)) {
           perClientWallet.set(tx.userId, (perClientWallet.get(tx.userId) || 0) + tx.amountCents);
         }
       }
@@ -2070,11 +2074,12 @@ export async function registerRoutes(
           completedSessions,
           freeSessionsPerformed,
           totalRevenueCents,
+          coachEarningsCents,
           predictedMonthlyRevenueCents,
         },
         revenueHistory,
         actualRevenue: {
-          walletCents: clientWalletCredits,
+          walletCents: clientWalletCharges,
           venmoCents: venmoTotal,
           cashCents: cashTotal,
         },

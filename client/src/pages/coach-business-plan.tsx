@@ -404,9 +404,10 @@ export default function CoachBusinessPlanPage() {
             <Card className="p-4 space-y-1" data-testid="stat-total-revenue">
               <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
                 <DollarSign className="h-4 w-4" />
-                Total Revenue
+                Revenue Generated
               </div>
               <p className="text-2xl font-bold">${(plan.stats.totalRevenueCents / 100).toFixed(0)}</p>
+              <p className="text-xs text-muted-foreground">Coach earnings: ${((plan.stats.coachEarningsCents || 0) / 100).toFixed(0)}</p>
             </Card>
             <Card className="p-4 space-y-1 border-primary/30 bg-primary/5" data-testid="stat-predicted-revenue">
               <div className="flex items-center gap-2 text-primary text-xs font-medium">
