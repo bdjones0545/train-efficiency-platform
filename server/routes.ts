@@ -1785,7 +1785,7 @@ export async function registerRoutes(
       const coachUserIds = new Set(coachProfiles.map(cp => cp.userId));
       const thisCoachUserId = coach.userId;
 
-      const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number }[] }>();
+      const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number; paymentMethod: string | null }[] }>();
 
       for (const b of allBookings) {
         if (!b.client) continue;
@@ -1809,6 +1809,53 @@ export async function registerRoutes(
           priceCents: service?.priceCents || 0,
           paymentMethod: b.paymentMethod || null,
         });
+      }
+
+      for (const b of allBookings) {
+        const participants = await storage.getBookingParticipants(b.id);
+        const service = serviceMap.get(b.serviceId);
+        for (const p of participants) {
+          if (p.participantName) {
+            const walkInKey = `walkin_${p.participantName.toLowerCase().trim()}`;
+            if (!clientMap.has(walkInKey)) {
+              const nameParts = p.participantName.trim().split(/\s+/);
+              clientMap.set(walkInKey, {
+                id: walkInKey,
+                firstName: nameParts[0] || "",
+                lastName: nameParts.slice(1).join(" ") || "",
+                email: null,
+                profileImageUrl: null,
+                sessions: [],
+              });
+            }
+            clientMap.get(walkInKey)!.sessions.push({
+              date: b.startAt.toISOString(),
+              status: b.status,
+              serviceName: service?.name || "Unknown",
+              priceCents: service?.priceCents || 0,
+              paymentMethod: b.paymentMethod || null,
+            });
+          } else if (p.userId && p.userId !== b.clientId && p.userId !== thisCoachUserId) {
+            const participantUserId = p.userId;
+            if (!clientMap.has(participantUserId)) {
+              clientMap.set(participantUserId, {
+                id: participantUserId,
+                firstName: p.user.firstName || "",
+                lastName: p.user.lastName || "",
+                email: p.user.email || null,
+                profileImageUrl: p.user.profileImageUrl || null,
+                sessions: [],
+              });
+            }
+            clientMap.get(participantUserId)!.sessions.push({
+              date: b.startAt.toISOString(),
+              status: b.status,
+              serviceName: service?.name || "Unknown",
+              priceCents: service?.priceCents || 0,
+              paymentMethod: b.paymentMethod || null,
+            });
+          }
+        }
       }
 
       const clients = Array.from(clientMap.values()).map(client => {
