@@ -1002,6 +1002,7 @@ export async function registerRoutes(
       const service = await storage.getService(booking.serviceId);
       let perPersonCents = service?.priceCents || 0;
 
+      const isFreeIntro = service?.name.toLowerCase().includes("free intro") || false;
       const isTeamTraining = service?.name.toLowerCase().includes("team training") || false;
       const isBlufftonHS = booking.location?.toLowerCase().includes("bluffton high") || false;
       const isTeamContract = isTeamTraining && isBlufftonHS;
@@ -1020,7 +1021,9 @@ export async function registerRoutes(
       let totalCollectedCents = 0;
       let amountCents = 0;
 
-      if (isTeamContract) {
+      if (isFreeIntro) {
+        amountCents = 2000;
+      } else if (isTeamContract) {
         amountCents = (service?.durationMin || 60) <= 30 ? 1000 : 2000;
       } else {
         if (isSemiPrivate) {
