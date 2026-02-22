@@ -1900,7 +1900,14 @@ export async function registerRoutes(
         );
         if (recentClientSessions.length === 0) continue;
 
-        const sessionsPerMonth = recentClientSessions.length / 3;
+        const earliestSession = recentClientSessions.reduce((earliest: Date, s: { date: string }) => {
+          const d = new Date(s.date);
+          return d < earliest ? d : earliest;
+        }, now);
+        const msActive = now.getTime() - earliestSession.getTime();
+        const monthsActive = Math.max(msActive / (30.44 * 24 * 60 * 60 * 1000), 1);
+        const activeMonths = Math.min(monthsActive, 3);
+        const sessionsPerMonth = recentClientSessions.length / activeMonths;
         const avgPriceCents = recentClientSessions.reduce((sum: number, s: { priceCents: number }) => sum + s.priceCents, 0) / recentClientSessions.length;
         totalPredicted += sessionsPerMonth * avgPriceCents;
       }
