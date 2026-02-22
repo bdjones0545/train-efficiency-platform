@@ -1081,6 +1081,28 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/payout-redemptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+    try {
+      const allRedemptions = await storage.getAllRedemptions();
+      const coaches = await storage.getCoachProfiles();
+      const result = allRedemptions.map((r: any) => {
+        const coach = coaches.find((cp: any) => cp.id === r.coachId);
+        return {
+          id: r.id,
+          coachId: r.coachId,
+          coachEmail: coach?.user?.email || null,
+          amountCents: r.amountCents,
+          redeemedAt: r.redeemedAt,
+          payoutStatus: r.payoutStatus,
+        };
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching payout redemptions:", error);
+      res.status(500).json({ message: "Failed to fetch payout redemptions" });
+    }
+  });
+
   app.get("/api/sessions/open", async (_req, res) => {
     try {
       const sessions = await storage.getOpenSemiPrivateSessions();

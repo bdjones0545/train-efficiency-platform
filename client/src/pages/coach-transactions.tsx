@@ -60,6 +60,10 @@ export default function CoachTransactionsPage() {
     queryKey: ["/api/coach/user-balances"],
   });
 
+  const { data: payoutRedemptions } = useQuery<{ id: string; coachId: string; coachEmail: string | null; amountCents: number; redeemedAt: string | null; payoutStatus: string }[]>({
+    queryKey: ["/api/coach/payout-redemptions"],
+  });
+
   const manualPaymentMutation = useMutation({
     mutationFn: async () => {
       if (!paymentUser) throw new Error("No user selected");
@@ -144,13 +148,14 @@ export default function CoachTransactionsPage() {
 
   const periodCredits = periodTransactions.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + t.amountCents, 0);
   const periodDebits = periodTransactions.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + t.amountCents, 0);
-  const hunterRedemptions = periodTransactions.filter(t =>
-    t.type === "DEBIT" && t.sourceType === "redemption" && t.redemptionCoachName === "Hunter Thaxton"
-  );
-  const periodCoachPayouts = hunterRedemptions.reduce((sum, t) => {
-    const isBluffton = t.bookingLocation?.toLowerCase().includes("bluffton high");
-    return sum + (isBluffton ? 2000 : Math.round(t.amountCents * 0.5));
-  }, 0);
+  const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
+  const periodRedemptions = (payoutRedemptions || []).filter(r => {
+    if (!r.redeemedAt) return false;
+    if (r.coachEmail === OWNER_EMAIL) return false;
+    const d = parseISO(r.redeemedAt);
+    return !isAfter(periodStart, d) && !isAfter(d, periodEnd);
+  });
+  const periodCoachPayouts = periodRedemptions.reduce((sum, r) => sum + r.amountCents, 0);
   const periodNetIncome = periodCredits - periodCoachPayouts;
 
   const getPeriodLabel = (): string => {
