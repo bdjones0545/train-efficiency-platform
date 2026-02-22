@@ -249,23 +249,43 @@ export default function CoachSchedulePage() {
       </Card>
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div className="w-full sm:w-64">
+        <div className="w-full sm:w-80">
           <Select value={selectedService} onValueChange={setSelectedService}>
             <SelectTrigger data-testid="select-service">
               <SelectValue placeholder="Select a service" />
             </SelectTrigger>
             <SelectContent>
-              {services?.filter(s => {
-                if (!s.active) return false;
-                if (s.name.toLowerCase().includes("free intro") && freeSessionStatus?.hasUsedFreeSession) return false;
-                return true;
-              }).map((service) => (
-                <SelectItem key={service.id} value={service.id}>
-                  {service.name} ({service.durationMin}min) — {service.name.toLowerCase().includes("team training") ? "Quoted Price" : service.priceCents === 0 ? "FREE" : `$${(service.priceCents / 100).toFixed(2)}`}
-                </SelectItem>
-              ))}
+              {services
+                ?.filter(s => s.active)
+                .sort((a, b) => {
+                  const aFree = a.name.toLowerCase().includes("free intro");
+                  const bFree = b.name.toLowerCase().includes("free intro");
+                  if (aFree && !bFree) return -1;
+                  if (!aFree && bFree) return 1;
+                  return 0;
+                })
+                .map((service) => {
+                  const isFreeIntro = service.name.toLowerCase().includes("free intro");
+                  const freeUsed = isFreeIntro && freeSessionStatus?.hasUsedFreeSession;
+                  return (
+                    <SelectItem
+                      key={service.id}
+                      value={service.id}
+                      disabled={!!freeUsed}
+                      data-testid={`option-service-${service.id}`}
+                    >
+                      {service.name} ({service.durationMin}min) — {service.name.toLowerCase().includes("team training") ? "Quoted Price" : service.priceCents === 0 ? "FREE" : `$${(service.priceCents / 100).toFixed(2)}`}
+                      {freeUsed ? " (Already used)" : ""}
+                    </SelectItem>
+                  );
+                })}
             </SelectContent>
           </Select>
+          {!freeSessionStatus?.hasUsedFreeSession && (
+            <p className="text-xs text-muted-foreground mt-1.5" data-testid="text-free-session-hint">
+              Every new client gets one free intro session!
+            </p>
+          )}
         </div>
       </div>
 

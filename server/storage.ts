@@ -33,7 +33,7 @@ import {
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
-import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike } from "drizzle-orm";
+import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike, inArray, ne } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -525,8 +525,8 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(bookings.clientId, userId),
-          sql`${bookings.serviceId} = ANY(${freeServiceIds})`,
-          sql`${bookings.status} != 'CANCELLED'`
+          inArray(bookings.serviceId, freeServiceIds),
+          ne(bookings.status, 'CANCELLED')
         )
       )
       .limit(1);
