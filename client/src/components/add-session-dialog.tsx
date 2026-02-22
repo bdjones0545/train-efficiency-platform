@@ -13,8 +13,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
-import { Plus, CalendarIcon, Search, XCircle, MapPin, UserPlus, Trash2 } from "lucide-react";
-import { format } from "date-fns";
+import { Plus, CalendarIcon, Search, XCircle, MapPin, UserPlus, Trash2, Copy } from "lucide-react";
+import { format, addDays } from "date-fns";
 import type { Service } from "@shared/schema";
 
 const PRESET_LOCATIONS = [
@@ -63,6 +63,10 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
   const [walkinName, setWalkinName] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [showRepeatStep, setShowRepeatStep] = useState(false);
+  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
+  const [repeatInterval, setRepeatInterval] = useState<string>("7");
+  const [repeatEndDate, setRepeatEndDate] = useState<string>("");
 
   useEffect(() => {
     if (initialDate) setSelectedDate(initialDate);
@@ -101,19 +105,49 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
       const res = await apiRequest("POST", "/api/coach/bookings", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       toast({ title: "Session Scheduled", description: "The session has been added to your bookings." });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
-      resetForm();
-      setOpen(false);
+      setCreatedBookingId(data.id);
+      const defaultEnd = selectedDate ? format(addDays(selectedDate, 56), "yyyy-MM-dd") : "";
+      setRepeatEndDate(defaultEnd);
+      setShowRepeatStep(true);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
         toast({ title: "Unauthorized", description: "Please log in again.", variant: "destructive" });
         return;
       }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const cloneMutation = useMutation({
+    mutationFn: async () => {
+      if (!createdBookingId || !repeatEndDate) throw new Error("Missing data");
+      const res = await apiRequest("POST", "/api/coach/bookings/clone", {
+        bookingId: createdBookingId,
+        intervalDays: parseInt(repeatInterval),
+        endDate: repeatEndDate,
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const msg = data.skipped > 0
+        ? `${data.created} session${data.created !== 1 ? "s" : ""} created, ${data.skipped} skipped (conflicts).`
+        : `${data.created} session${data.created !== 1 ? "s" : ""} created!`;
+      toast({ title: "Sessions Cloned", description: msg });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      resetForm();
+      setShowRepeatStep(false);
+      setCreatedBookingId(null);
+      setOpen(false);
+    },
+    onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -140,6 +174,10 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setParticipantSearchQuery("");
     setWalkinName("");
     setShowSearch(false);
+    setShowRepeatStep(false);
+    setCreatedBookingId(null);
+    setRepeatInterval("7");
+    setRepeatEndDate("");
   };
 
   const handleSubmit = () => {
@@ -224,6 +262,72 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
         )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        {showRepeatStep ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Repeat This Session?</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                <p className="text-sm font-medium">Session created successfully!</p>
+                <p className="text-xs text-muted-foreground mt-1">Would you like to repeat this session on future dates?</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Repeat Every</Label>
+                <Select value={repeatInterval} onValueChange={setRepeatInterval}>
+                  <SelectTrigger data-testid="select-repeat-interval">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">Every week</SelectItem>
+                    <SelectItem value="14">Every 2 weeks</SelectItem>
+                    <SelectItem value="1">Every day</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>End Date</Label>
+                <Input
+                  type="date"
+                  value={repeatEndDate}
+                  onChange={(e) => setRepeatEndDate(e.target.value)}
+                  data-testid="input-repeat-end-date"
+                />
+              </div>
+
+              {repeatEndDate && selectedDate && (
+                <p className="text-xs text-muted-foreground">
+                  This will create sessions {repeatInterval === "1" ? "daily" : repeatInterval === "7" ? "weekly" : "every 2 weeks"} from{" "}
+                  {format(addDays(selectedDate, parseInt(repeatInterval)), "MMM d, yyyy")} through {format(new Date(repeatEndDate + "T12:00:00"), "MMM d, yyyy")}.
+                  Conflicting time slots will be skipped.
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => { resetForm(); setOpen(false); }}
+                  data-testid="button-skip-repeat"
+                >
+                  No Thanks
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => cloneMutation.mutate()}
+                  disabled={!repeatEndDate || cloneMutation.isPending}
+                  data-testid="button-clone-sessions"
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  {cloneMutation.isPending ? "Creating..." : "Clone Sessions"}
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : (
+        <>
         <DialogHeader>
           <DialogTitle>Schedule a Session</DialogTitle>
         </DialogHeader>
@@ -543,6 +647,8 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
             {createMutation.isPending ? "Scheduling..." : "Schedule Session"}
           </Button>
         </div>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );

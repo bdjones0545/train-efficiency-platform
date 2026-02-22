@@ -731,6 +731,66 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/coach/bookings/clone", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { bookingId, intervalDays, endDate } = req.body;
+      if (!bookingId || !intervalDays || !endDate) {
+        return res.status(400).json({ message: "bookingId, intervalDays, and endDate are required" });
+      }
+
+      const sourceBooking = await storage.getBooking(bookingId);
+      if (!sourceBooking) return res.status(404).json({ message: "Source booking not found" });
+
+      const targetCoachId = sourceBooking.coachId;
+      const service = await storage.getService(sourceBooking.serviceId);
+      if (!service) return res.status(404).json({ message: "Service not found" });
+
+      const sourceStart = new Date(sourceBooking.startAt);
+      const sourceEnd = new Date(sourceBooking.endAt);
+      const durationMs = sourceEnd.getTime() - sourceStart.getTime();
+      const endDateObj = new Date(endDate + "T23:59:59");
+
+      const created: any[] = [];
+      const skipped: string[] = [];
+      let currentStart = new Date(sourceStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+
+      while (currentStart <= endDateObj) {
+        const currentEnd = new Date(currentStart.getTime() + durationMs);
+
+        const overlapping = await storage.getOverlappingBookings(targetCoachId, currentStart, currentEnd);
+        if (overlapping.length > 0) {
+          skipped.push(currentStart.toISOString());
+          currentStart = new Date(currentStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+          continue;
+        }
+
+        const isSemiPrivate = sourceBooking.maxParticipants !== null && sourceBooking.maxParticipants > 1;
+
+        const booking = await storage.createBooking({
+          clientId: sourceBooking.clientId,
+          coachId: targetCoachId,
+          serviceId: sourceBooking.serviceId,
+          startAt: currentStart,
+          endAt: currentEnd,
+          status: "CONFIRMED",
+          notes: sourceBooking.notes || "",
+          location: sourceBooking.location || "",
+          maxParticipants: sourceBooking.maxParticipants,
+          groupDescription: sourceBooking.groupDescription || "",
+        });
+
+        created.push(booking);
+        currentStart = new Date(currentStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+      }
+
+      res.json({ created: created.length, skipped: skipped.length, skippedDates: skipped });
+    } catch (error) {
+      console.error("Error cloning bookings:", error);
+      res.status(500).json({ message: "Failed to clone sessions" });
+    }
+  });
+
   app.patch("/api/coach/bookings/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
