@@ -1869,11 +1869,6 @@ export async function registerRoutes(
       const sixMonthsAgo = new Date(now);
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-      const recentBookings = allBookings.filter(b => 
-        (b.status === "COMPLETED" || b.status === "CONFIRMED") &&
-        new Date(b.startAt) >= threeMonthsAgo
-      );
-
       const monthlyRevByMonth = new Map<string, number>();
       for (const b of allBookings) {
         if (b.status === "CANCELLED" || b.status === "NO_SHOW") continue;
@@ -1890,33 +1885,26 @@ export async function registerRoutes(
 
       let predictedMonthlyRevenueCents = 0;
 
-      if (recentBookings.length > 0) {
-        const clientSessionsPerMonth = new Map<string, number[]>();
-        for (const b of recentBookings) {
-          if (!clientSessionsPerMonth.has(b.clientId)) {
-            clientSessionsPerMonth.set(b.clientId, [0, 0, 0]);
-          }
-          const monthsAgo = (now.getFullYear() - new Date(b.startAt).getFullYear()) * 12 + (now.getMonth() - new Date(b.startAt).getMonth());
-          const idx = Math.min(Math.max(0, monthsAgo), 2);
-          clientSessionsPerMonth.get(b.clientId)![idx]++;
-        }
+      const oneWeekAgo = new Date(now);
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-        let totalPredicted = 0;
-        for (const [clientId, monthCounts] of Array.from(clientSessionsPerMonth.entries())) {
-          const weights = [0.5, 0.3, 0.2];
-          const weightedAvg = monthCounts[0] * weights[0] + monthCounts[1] * weights[1] + monthCounts[2] * weights[2];
+      let totalPredicted = 0;
+      for (const client of Array.from(clientMap.values())) {
+        const hadSessionLastWeek = client.sessions.some(
+          (s: { date: string; status: string }) => new Date(s.date) >= oneWeekAgo && (s.status === "COMPLETED" || s.status === "CONFIRMED")
+        );
+        if (!hadSessionLastWeek) continue;
 
-          const clientBookings = recentBookings.filter(b => b.clientId === clientId);
-          const avgPriceCents = clientBookings.reduce((sum, b) => {
-            const s = serviceMap.get(b.serviceId);
-            return sum + (s?.priceCents || 0);
-          }, 0) / clientBookings.length;
+        const recentClientSessions = client.sessions.filter(
+          (s: { date: string; status: string }) => new Date(s.date) >= threeMonthsAgo && (s.status === "COMPLETED" || s.status === "CONFIRMED")
+        );
+        if (recentClientSessions.length === 0) continue;
 
-          totalPredicted += weightedAvg * avgPriceCents;
-        }
-
-        predictedMonthlyRevenueCents = Math.round(totalPredicted);
+        const sessionsPerMonth = recentClientSessions.length / 3;
+        const avgPriceCents = recentClientSessions.reduce((sum: number, s: { priceCents: number }) => sum + s.priceCents, 0) / recentClientSessions.length;
+        totalPredicted += sessionsPerMonth * avgPriceCents;
       }
+      predictedMonthlyRevenueCents = Math.round(totalPredicted);
 
       const totalSessions = allBookings.length;
       const completedSessions = allBookings.filter(b => b.status === "COMPLETED").length;
