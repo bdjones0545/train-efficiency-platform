@@ -34,6 +34,11 @@ type BusinessPlanClient = {
   email: string | null;
   profileImageUrl: string | null;
   sessions: ClientSession[];
+  actualRevenue?: {
+    walletCents: number;
+    venmoCents: number;
+    cashCents: number;
+  };
 };
 
 type RevenueMonth = {
@@ -541,28 +546,54 @@ export default function CoachBusinessPlanPage() {
                             {consistency.label}
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                          <span>{completedCount} session{completedCount !== 1 ? "s" : ""}</span>
-                          <span>${(totalSpent / 100).toFixed(0)} total</span>
-                          {daysSinceLastSession !== null && (
-                            <span className="flex items-center gap-0.5">
-                              {daysSinceLastSession <= 14 ? (
-                                <ArrowUpRight className="h-3 w-3 text-green-500" />
-                              ) : (
-                                <ArrowDownRight className="h-3 w-3 text-orange-400" />
-                              )}
-                              {daysSinceLastSession === 0
-                                ? "Today"
-                                : daysSinceLastSession === 1
-                                  ? "Yesterday"
-                                  : `${daysSinceLastSession}d ago`}
-                            </span>
-                          )}
-                        </div>
+                        {revenueView === "source" && client.actualRevenue ? (
+                          <div className="flex items-center gap-3 text-xs mt-0.5 flex-wrap">
+                            {client.actualRevenue.walletCents > 0 && (
+                              <span className="text-blue-400">Wallet: ${(client.actualRevenue.walletCents / 100).toFixed(0)}</span>
+                            )}
+                            {client.actualRevenue.venmoCents > 0 && (
+                              <span className="text-purple-400">Venmo: ${(client.actualRevenue.venmoCents / 100).toFixed(0)}</span>
+                            )}
+                            {client.actualRevenue.cashCents > 0 && (
+                              <span className="text-green-400">Cash: ${(client.actualRevenue.cashCents / 100).toFixed(0)}</span>
+                            )}
+                            {client.actualRevenue.walletCents === 0 && client.actualRevenue.venmoCents === 0 && client.actualRevenue.cashCents === 0 && (
+                              <span className="text-muted-foreground">No payments recorded</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                            <span>{completedCount} session{completedCount !== 1 ? "s" : ""}</span>
+                            <span>${(totalSpent / 100).toFixed(0)} total</span>
+                            {daysSinceLastSession !== null && (
+                              <span className="flex items-center gap-0.5">
+                                {daysSinceLastSession <= 14 ? (
+                                  <ArrowUpRight className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <ArrowDownRight className="h-3 w-3 text-orange-400" />
+                                )}
+                                {daysSinceLastSession === 0
+                                  ? "Today"
+                                  : daysSinceLastSession === 1
+                                    ? "Yesterday"
+                                    : `${daysSinceLastSession}d ago`}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="text-right hidden sm:block">
-                        <p className="text-sm font-medium">~{consistency.score.toFixed(1)}/wk</p>
-                        <p className="text-xs text-muted-foreground">avg sessions</p>
+                        {revenueView === "source" && client.actualRevenue ? (
+                          <>
+                            <p className="text-sm font-medium">${((client.actualRevenue.walletCents + client.actualRevenue.venmoCents + client.actualRevenue.cashCents) / 100).toFixed(0)}</p>
+                            <p className="text-xs text-muted-foreground">total paid</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-medium">~{consistency.score.toFixed(1)}/wk</p>
+                            <p className="text-xs text-muted-foreground">avg sessions</p>
+                          </>
+                        )}
                       </div>
                     </div>
                   );

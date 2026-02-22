@@ -1928,12 +1928,30 @@ export async function registerRoutes(
         .filter(tx => tx.type === "CREDIT" && clientIds.has(tx.userId))
         .reduce((sum, tx) => sum + tx.amountCents, 0);
 
+      const perClientWallet = new Map<string, number>();
+      for (const tx of allWalletTx) {
+        if (tx.type === "CREDIT" && clientIds.has(tx.userId)) {
+          perClientWallet.set(tx.userId, (perClientWallet.get(tx.userId) || 0) + tx.amountCents);
+        }
+      }
+
       const venmoTotal = allBookings
         .filter(b => b.paymentMethod === "VENMO" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && b.clientId !== thisCoachUserId)
         .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
       const cashTotal = allBookings
         .filter(b => b.paymentMethod === "CASH" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && b.clientId !== thisCoachUserId)
         .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
+
+      const clientsWithActual = clients.map(c => {
+        const walletCents = perClientWallet.get(c.id) || 0;
+        const venmoCents = c.sessions
+          .filter((s: any) => s.paymentMethod === "VENMO" && s.status !== "CANCELLED" && s.status !== "NO_SHOW")
+          .reduce((sum: number, s: any) => sum + s.priceCents, 0);
+        const cashCents = c.sessions
+          .filter((s: any) => s.paymentMethod === "CASH" && s.status !== "CANCELLED" && s.status !== "NO_SHOW")
+          .reduce((sum: number, s: any) => sum + s.priceCents, 0);
+        return { ...c, actualRevenue: { walletCents, venmoCents, cashCents } };
+      });
 
       res.json({
         coach: {
@@ -1942,7 +1960,7 @@ export async function registerRoutes(
           photoUrl: coach.photoUrl,
           specialties: coach.specialties,
         },
-        clients,
+        clients: clientsWithActual,
         stats: {
           totalClients: clients.length,
           totalSessions,
