@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, Pencil, Trash2, X } from "lucide-react";
+import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, Pencil, Trash2, X, Gift } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
 import type { CoachWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
@@ -64,6 +64,7 @@ type BusinessPlanData = {
     totalClients: number;
     totalSessions: number;
     completedSessions: number;
+    freeSessionsPerformed: number;
     totalRevenueCents: number;
     predictedMonthlyRevenueCents: number;
   };
@@ -366,8 +367,8 @@ export default function CoachBusinessPlanPage() {
 
       {isLoading && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {[...Array(5)].map((_, i) => (
               <Skeleton key={i} className="h-24 rounded-xl" />
             ))}
           </div>
@@ -377,7 +378,7 @@ export default function CoachBusinessPlanPage() {
 
       {plan && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <Card className="p-4 space-y-1" data-testid="stat-total-clients">
               <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
                 <Users className="h-4 w-4" />
@@ -391,6 +392,14 @@ export default function CoachBusinessPlanPage() {
                 Total Sessions
               </div>
               <p className="text-2xl font-bold">{plan.stats.totalSessions}</p>
+            </Card>
+            <Card className="p-4 space-y-1" data-testid="stat-free-sessions">
+              <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
+                <Gift className="h-4 w-4" />
+                Free Sessions
+              </div>
+              <p className="text-2xl font-bold">{plan.stats.freeSessionsPerformed}</p>
+              <p className="text-xs text-muted-foreground">${(plan.stats.freeSessionsPerformed * 20).toFixed(0)} earned</p>
             </Card>
             <Card className="p-4 space-y-1" data-testid="stat-total-revenue">
               <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">

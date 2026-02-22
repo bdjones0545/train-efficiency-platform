@@ -1996,6 +1996,10 @@ export async function registerRoutes(
 
       const totalSessions = allBookings.length;
       const completedSessions = allBookings.filter(b => b.status === "COMPLETED").length;
+      const freeSessionsPerformed = allBookings.filter(b => {
+        const s = serviceMap.get(b.serviceId);
+        return s?.name.toLowerCase().includes("free intro") && b.status === "COMPLETED";
+      }).length;
       const totalRevenueCents = allBookings
         .filter(b => b.status !== "CANCELLED" && b.status !== "NO_SHOW")
         .reduce((sum, b) => {
@@ -2064,6 +2068,7 @@ export async function registerRoutes(
           totalClients: clients.length,
           totalSessions,
           completedSessions,
+          freeSessionsPerformed,
           totalRevenueCents,
           predictedMonthlyRevenueCents,
         },
