@@ -1892,7 +1892,7 @@ export async function registerRoutes(
       for (const b of allBookings) {
         if (!b.client) continue;
         const clientId = b.clientId;
-        if (clientId === thisCoachUserId) continue;
+        if (coachUserIds.has(clientId)) continue;
         if (!clientMap.has(clientId)) {
           clientMap.set(clientId, {
             id: b.client.id,
@@ -1944,7 +1944,7 @@ export async function registerRoutes(
               priceCents: walkInRevenue,
               paymentMethod: b.paymentMethod || null,
             });
-          } else if (p.userId && p.userId !== b.clientId && p.userId !== thisCoachUserId) {
+          } else if (p.userId && p.userId !== b.clientId && !coachUserIds.has(p.userId)) {
             const participantUserId = p.userId;
             if (!clientMap.has(participantUserId)) {
               clientMap.set(participantUserId, {
