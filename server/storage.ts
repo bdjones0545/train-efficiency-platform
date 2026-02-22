@@ -120,6 +120,7 @@ export interface IStorage {
   getTeamQuotes(coachId: string): Promise<TeamQuote[]>;
   getAllTeamQuotes(): Promise<TeamQuote[]>;
   updateTeamQuote(id: string, data: Partial<TeamQuote>): Promise<TeamQuote | undefined>;
+  getTeamQuoteByStripeInvoiceId(stripeInvoiceId: string): Promise<TeamQuote | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -718,6 +719,11 @@ export class DatabaseStorage implements IStorage {
   async updateTeamQuote(id: string, data: Partial<TeamQuote>): Promise<TeamQuote | undefined> {
     const [updated] = await db.update(teamQuotes).set(data).where(eq(teamQuotes.id, id)).returning();
     return updated;
+  }
+
+  async getTeamQuoteByStripeInvoiceId(stripeInvoiceId: string): Promise<TeamQuote | undefined> {
+    const [quote] = await db.select().from(teamQuotes).where(eq(teamQuotes.stripeInvoiceId, stripeInvoiceId));
+    return quote || undefined;
   }
 }
 
