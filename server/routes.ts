@@ -1811,6 +1811,8 @@ export async function registerRoutes(
         });
       }
 
+      const walkInUserIdMap = new Map<string, string>();
+
       for (const b of allBookings) {
         const participants = await storage.getBookingParticipants(b.id);
         const service = serviceMap.get(b.serviceId);
@@ -1827,6 +1829,9 @@ export async function registerRoutes(
                 profileImageUrl: null,
                 sessions: [],
               });
+            }
+            if (p.userId && !walkInUserIdMap.has(walkInKey)) {
+              walkInUserIdMap.set(walkInKey, p.userId);
             }
             clientMap.get(walkInKey)!.sessions.push({
               date: b.startAt.toISOString(),
@@ -1943,7 +1948,8 @@ export async function registerRoutes(
         .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
 
       const clientsWithActual = clients.map(c => {
-        const walletCents = perClientWallet.get(c.id) || 0;
+        const lookupId = c.id.startsWith("walkin_") ? (walkInUserIdMap.get(c.id) || c.id) : c.id;
+        const walletCents = perClientWallet.get(lookupId) || 0;
         const venmoCents = c.sessions
           .filter((s: any) => s.paymentMethod === "VENMO" && s.status !== "CANCELLED" && s.status !== "NO_SHOW")
           .reduce((sum: number, s: any) => sum + s.priceCents, 0);
