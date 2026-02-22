@@ -46,7 +46,8 @@ export default function CoachSchedulePage() {
     if (coachId === activeCoachId) return;
     setActiveCoachId(coachId);
     setSelectedSlot(null);
-    setSelectedService("");
+    const freeIntro = services?.find(s => s.name.toLowerCase().includes("free intro"));
+    setSelectedService(freeIntro?.id || "");
     setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
     setGroupDescription("");
     setParticipantNames([""]);
@@ -66,6 +67,15 @@ export default function CoachSchedulePage() {
     queryKey: ["/api/free-session-status"],
     enabled: isAuthenticated,
   });
+
+  useEffect(() => {
+    if (services && services.length > 0 && !selectedService) {
+      const freeIntro = services.find(s => s.name.toLowerCase().includes("free intro"));
+      if (freeIntro) {
+        setSelectedService(freeIntro.id);
+      }
+    }
+  }, [services, activeCoachId]);
 
   const weekEnd = addDays(weekStart, 6);
 
