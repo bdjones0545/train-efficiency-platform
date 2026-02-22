@@ -57,6 +57,11 @@ type BusinessPlanData = {
     predictedMonthlyRevenueCents: number;
   };
   revenueHistory: RevenueMonth[];
+  actualRevenue: {
+    walletCents: number;
+    venmoCents: number;
+    cashCents: number;
+  };
 };
 
 type TimePeriod = "daily" | "weekly" | "monthly" | "yearly";
@@ -189,40 +194,6 @@ function getPeriodRangeLabel(period: TimePeriod, offset: number): string {
 
 type RevenueView = "time" | "source";
 
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  WALLET: "Wallet",
-  VENMO: "Venmo",
-  CASH: "Cash",
-};
-
-const PAYMENT_METHOD_COLORS: Record<string, string> = {
-  WALLET: "bg-blue-500",
-  VENMO: "bg-purple-500",
-  CASH: "bg-green-500",
-  UNSET: "bg-gray-500",
-};
-
-function aggregateByPaymentMethod(
-  clients: BusinessPlanClient[]
-): { label: string; revenueCents: number; colorClass: string }[] {
-  const totals = new Map<string, number>();
-  for (const c of clients) {
-    for (const s of c.sessions) {
-      if (s.status === "CANCELLED" || s.status === "NO_SHOW") continue;
-      const method = s.paymentMethod || "UNSET";
-      totals.set(method, (totals.get(method) || 0) + s.priceCents);
-    }
-  }
-  const order = ["WALLET", "VENMO", "CASH", "UNSET"];
-  return order
-    .filter((m) => totals.has(m))
-    .map((m) => ({
-      label: PAYMENT_METHOD_LABELS[m] || "Not Set",
-      revenueCents: totals.get(m)!,
-      colorClass: PAYMENT_METHOD_COLORS[m] || "bg-gray-500",
-    }));
-}
-
 function getConsistencyScore(sessions: ClientSession[]): { label: string; color: string; score: number } {
   const now = new Date();
   const threeMonthsAgo = new Date(now);
@@ -273,11 +244,15 @@ export default function CoachBusinessPlanPage() {
     ? Math.max(...chartData.map((r) => r.revenueCents))
     : 0;
   const rangeLabel = getPeriodRangeLabel(revenuePeriod, periodOffset);
-  const sourceData = plan ? aggregateByPaymentMethod(plan.clients) : [];
-  const maxSourceRevenue = sourceData.length > 0
-    ? Math.max(...sourceData.map((r) => r.revenueCents))
+  const actualData = plan ? [
+    ...(plan.actualRevenue.walletCents > 0 ? [{ label: "Wallet", revenueCents: plan.actualRevenue.walletCents, colorClass: "bg-blue-500" }] : []),
+    ...(plan.actualRevenue.venmoCents > 0 ? [{ label: "Venmo", revenueCents: plan.actualRevenue.venmoCents, colorClass: "bg-purple-500" }] : []),
+    ...(plan.actualRevenue.cashCents > 0 ? [{ label: "Cash", revenueCents: plan.actualRevenue.cashCents, colorClass: "bg-green-500" }] : []),
+  ] : [];
+  const maxActualRevenue = actualData.length > 0
+    ? Math.max(...actualData.map((r) => r.revenueCents))
     : 0;
-  const totalSourceRevenue = sourceData.reduce((sum, r) => sum + r.revenueCents, 0);
+  const totalActualRevenue = actualData.reduce((sum, r) => sum + r.revenueCents, 0);
 
   return (
     <div className="space-y-6">
@@ -374,7 +349,7 @@ export default function CoachBusinessPlanPage() {
                 <Tabs value={revenueView} onValueChange={(v) => setRevenueView(v as RevenueView)}>
                   <TabsList className="h-8" data-testid="tabs-revenue-view">
                     <TabsTrigger value="time" className="text-xs px-3" data-testid="tab-by-time">By Time</TabsTrigger>
-                    <TabsTrigger value="source" className="text-xs px-3" data-testid="tab-by-source">By Source</TabsTrigger>
+                    <TabsTrigger value="source" className="text-xs px-3" data-testid="tab-by-source">Actual</TabsTrigger>
                   </TabsList>
                 </Tabs>
                 {revenueView === "time" && (
@@ -462,16 +437,16 @@ export default function CoachBusinessPlanPage() {
               </>
             ) : (
               <>
-                {sourceData.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-8 text-center" data-testid="text-no-source-data">
+                {actualData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center" data-testid="text-no-actual-data">
                     No payment data available.
                   </p>
                 ) : (
                   <div className="space-y-4">
                     <div className="flex items-end gap-3 h-40 px-4">
-                      {sourceData.map((s, i) => {
-                        const height = maxSourceRevenue > 0 ? (s.revenueCents / maxSourceRevenue) * 100 : 0;
-                        const pct = totalSourceRevenue > 0 ? ((s.revenueCents / totalSourceRevenue) * 100).toFixed(0) : "0";
+                      {actualData.map((s, i) => {
+                        const height = maxActualRevenue > 0 ? (s.revenueCents / maxActualRevenue) * 100 : 0;
+                        const pct = totalActualRevenue > 0 ? ((s.revenueCents / totalActualRevenue) * 100).toFixed(0) : "0";
                         return (
                           <div key={i} className="flex-1 flex flex-col items-center gap-1">
                             <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
@@ -480,7 +455,7 @@ export default function CoachBusinessPlanPage() {
                             <div
                               className={`w-full ${s.colorClass} rounded-t-md transition-all min-h-[4px] opacity-80`}
                               style={{ height: `${Math.max(height, 3)}%` }}
-                              data-testid={`bar-source-${i}`}
+                              data-testid={`bar-actual-${i}`}
                             />
                             <span className="text-[10px] text-muted-foreground whitespace-nowrap">{s.label}</span>
                             <span className="text-[10px] text-muted-foreground">{pct}%</span>
@@ -489,12 +464,17 @@ export default function CoachBusinessPlanPage() {
                       })}
                     </div>
                     <div className="flex flex-wrap gap-3 justify-center pt-1">
-                      {sourceData.map((s, i) => (
-                        <div key={i} className="flex items-center gap-1.5" data-testid={`legend-source-${i}`}>
+                      {actualData.map((s, i) => (
+                        <div key={i} className="flex items-center gap-1.5" data-testid={`legend-actual-${i}`}>
                           <div className={`w-2.5 h-2.5 rounded-full ${s.colorClass}`} />
                           <span className="text-xs text-muted-foreground">{s.label}: ${(s.revenueCents / 100).toFixed(0)}</span>
                         </div>
                       ))}
+                    </div>
+                    <div className="text-center pt-1">
+                      <span className="text-sm font-semibold" data-testid="text-actual-total">
+                        Total: ${(totalActualRevenue / 100).toFixed(0)}
+                      </span>
                     </div>
                   </div>
                 )}

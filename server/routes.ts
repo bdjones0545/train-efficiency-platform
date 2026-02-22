@@ -1879,6 +1879,19 @@ export async function registerRoutes(
           return sum + (s?.priceCents || 0);
         }, 0);
 
+      const allWalletTx = await storage.getAllWalletTransactions();
+      const clientIds = new Set(clients.map(c => c.id));
+      const clientWalletCredits = allWalletTx
+        .filter(tx => tx.type === "CREDIT" && clientIds.has(tx.userId))
+        .reduce((sum, tx) => sum + tx.amountCents, 0);
+
+      const venmoTotal = allBookings
+        .filter(b => b.paymentMethod === "VENMO" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && !coachUserIds.has(b.clientId))
+        .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
+      const cashTotal = allBookings
+        .filter(b => b.paymentMethod === "CASH" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && !coachUserIds.has(b.clientId))
+        .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
+
       res.json({
         coach: {
           id: coach.id,
@@ -1895,6 +1908,11 @@ export async function registerRoutes(
           predictedMonthlyRevenueCents,
         },
         revenueHistory,
+        actualRevenue: {
+          walletCents: clientWalletCredits,
+          venmoCents: venmoTotal,
+          cashCents: cashTotal,
+        },
       });
     } catch (error: any) {
       console.error("Business plan error:", error);
