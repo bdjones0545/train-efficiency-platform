@@ -1856,7 +1856,7 @@ export async function registerRoutes(
         }
 
         let totalPredicted = 0;
-        for (const [clientId, monthCounts] of clientSessionsPerMonth) {
+        for (const [clientId, monthCounts] of Array.from(clientSessionsPerMonth.entries())) {
           const weights = [0.5, 0.3, 0.2];
           const weightedAvg = monthCounts[0] * weights[0] + monthCounts[1] * weights[1] + monthCounts[2] * weights[2];
 
