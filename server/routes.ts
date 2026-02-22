@@ -406,22 +406,10 @@ export async function registerRoutes(
       if (isSemiPrivate) {
         const participantNames: string[] = req.body.participantNames || [];
         const filledNames = participantNames.filter((n: string) => n.trim());
-        const clientCount = filledNames.length > 0 ? filledNames.length : 1;
-        const totalCount = clientCount + 1;
+        const count = filledNames.length > 0 ? filledNames.length : 1;
 
-        if (totalCount > 6) {
-          return res.status(400).json({ message: "Maximum 6 participants per session (including coach)" });
-        }
-
-        const coachProfile = await storage.getCoachProfile(coachId);
-        if (coachProfile?.userId) {
-          const coachUser = await storage.getUser(coachProfile.userId);
-          const coachDisplayName = coachUser ? `${coachUser.firstName || ""} ${coachUser.lastName || ""}`.trim() : "Coach";
-          await storage.addBookingParticipant({
-            bookingId: booking.id,
-            userId: coachProfile.userId,
-            participantName: coachDisplayName,
-          });
+        if (count > 6) {
+          return res.status(400).json({ message: "Maximum 6 participants per session" });
         }
 
         if (filledNames.length > 0) {
@@ -668,27 +656,13 @@ export async function registerRoutes(
         const participantNames: string[] = req.body.participantNames || [];
         const filledNames = participantNames.filter((n: string) => n.trim());
 
-        const coachProfile = await storage.getCoachProfile(coachId);
-        const coachUserId = coachProfile?.userId;
-        if (coachUserId) {
-          const coachUser = await storage.getUser(coachUserId);
-          const coachDisplayName = coachUser ? `${coachUser.firstName || ""} ${coachUser.lastName || ""}`.trim() : "Coach";
-          await storage.addBookingParticipant({
-            bookingId: booking.id,
-            userId: coachUserId,
-            participantName: coachDisplayName,
-          });
-        }
-
         if (participantsArr.length > 0) {
           const validParticipants = participantsArr.filter((p: any) => p.displayName?.trim());
-          const dedupedParticipants = validParticipants.filter(p => !(p.userId && p.userId === coachUserId));
-          if (dedupedParticipants.length + 1 > 6) {
-            return res.status(400).json({ message: "Maximum 6 participants per session (including coach)" });
+          if (validParticipants.length > 6) {
+            return res.status(400).json({ message: "Maximum 6 participants per session" });
           }
           const seen = new Set<string>();
-          if (coachUserId) seen.add(`user:${coachUserId}`);
-          for (const p of dedupedParticipants) {
+          for (const p of validParticipants) {
             const key = p.userId ? `user:${p.userId}` : `name:${p.displayName.trim().toLowerCase()}`;
             if (seen.has(key)) continue;
             seen.add(key);
@@ -699,8 +673,8 @@ export async function registerRoutes(
             });
           }
         } else if (filledNames.length > 0) {
-          if (filledNames.length + 1 > 6) {
-            return res.status(400).json({ message: "Maximum 6 participants per session (including coach)" });
+          if (filledNames.length > 6) {
+            return res.status(400).json({ message: "Maximum 6 participants per session" });
           }
           for (const name of filledNames) {
             await storage.addBookingParticipant({
