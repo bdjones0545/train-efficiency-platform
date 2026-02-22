@@ -113,7 +113,7 @@ export default function CoachBusinessPlanPage() {
         </div>
       </div>
 
-      {isAdmin && coaches && coaches.filter((c) => c.isActive).length > 1 && (
+      {coaches && coaches.filter((c) => c.isActive).length > 1 && (
         <Card className="p-4">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm font-medium text-muted-foreground">View coach:</span>

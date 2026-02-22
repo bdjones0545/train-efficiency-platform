@@ -1773,14 +1773,6 @@ export async function registerRoutes(
   app.get("/api/coach/business-plan/:coachId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { coachId } = req.params;
-      const userId = req.user?.claims?.sub;
-      const role = await getUserRole(userId);
-      if (role === "COACH") {
-        const myProfile = await storage.getCoachProfileByUserId(userId);
-        if (!myProfile || myProfile.id !== coachId) {
-          return res.status(403).json({ message: "You can only view your own business plan" });
-        }
-      }
       const coach = await storage.getCoachProfile(coachId);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
 
