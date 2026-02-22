@@ -1781,11 +1781,15 @@ export async function registerRoutes(
       const services = await storage.getServices();
       const serviceMap = new Map(services.map(s => [s.id, s]));
 
+      const coachProfiles = await storage.getCoachProfiles();
+      const coachUserIds = new Set(coachProfiles.map(cp => cp.userId));
+
       const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number }[] }>();
 
       for (const b of allBookings) {
         if (!b.client) continue;
         const clientId = b.clientId;
+        if (coachUserIds.has(clientId)) continue;
         if (!clientMap.has(clientId)) {
           clientMap.set(clientId, {
             id: b.client.id,
