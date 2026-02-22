@@ -399,7 +399,7 @@ export default function CoachBusinessPlanPage() {
                 Free Sessions
               </div>
               <p className="text-2xl font-bold">{plan.stats.freeSessionsPerformed}</p>
-              <p className="text-xs text-muted-foreground">${(plan.stats.freeSessionsPerformed * 20).toFixed(0)} earned</p>
+              <p className="text-xs text-muted-foreground">${((plan.stats.freeSessionsPerformed || 0) * 20).toFixed(0)} earned</p>
             </Card>
             <Card className="p-4 space-y-1" data-testid="stat-total-revenue">
               <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
