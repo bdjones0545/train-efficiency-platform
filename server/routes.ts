@@ -807,12 +807,13 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "Booking not found" });
       const bookingCoachId = existing.coachId;
 
-      const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName } = req.body;
+      const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName, paymentMethod } = req.body;
 
       const updateData: any = {};
       if (notes !== undefined) updateData.notes = notes;
       if (req.body.location !== undefined) updateData.location = req.body.location;
       if (groupDescription !== undefined) updateData.groupDescription = groupDescription;
+      if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
 
       if (serviceId && serviceId !== existing.serviceId) {
         const service = await storage.getService(serviceId);
@@ -1801,6 +1802,7 @@ export async function registerRoutes(
           status: b.status,
           serviceName: service?.name || "Unknown",
           priceCents: service?.priceCents || 0,
+          paymentMethod: b.paymentMethod || null,
         });
       }
 

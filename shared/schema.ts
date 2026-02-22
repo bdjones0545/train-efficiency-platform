@@ -10,6 +10,7 @@ import { users } from "./models/auth";
 export const roleEnum = pgEnum("user_role", ["CLIENT", "COACH", "ADMIN"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"]);
 export const payoutStatusEnum = pgEnum("payout_status", ["PENDING", "SENT", "FAILED"]);
+export const paymentMethodEnum = pgEnum("payment_method", ["WALLET", "VENMO", "CASH"]);
 
 export const userProfiles = pgTable("user_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -63,6 +64,7 @@ export const bookings = pgTable("bookings", {
   maxParticipants: integer("max_participants"),
   groupDescription: text("group_description").default(""),
   recurringGroupId: varchar("recurring_group_id"),
+  paymentMethod: paymentMethodEnum("payment_method"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

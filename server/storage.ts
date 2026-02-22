@@ -67,7 +67,7 @@ export interface IStorage {
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
-  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string }): Promise<Booking | undefined>;
+  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null }): Promise<Booking | undefined>;
   deleteBooking(id: string): Promise<boolean>;
   deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted?: boolean): Promise<number>;
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
@@ -331,7 +331,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string }): Promise<Booking | undefined> {
+  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null }): Promise<Booking | undefined> {
     const setData: any = {};
     if (data.serviceId !== undefined) setData.serviceId = data.serviceId;
     if (data.startAt !== undefined) setData.startAt = data.startAt;
@@ -341,6 +341,7 @@ export class DatabaseStorage implements IStorage {
     if (data.maxParticipants !== undefined) setData.maxParticipants = data.maxParticipants;
     if (data.clientId !== undefined) setData.clientId = data.clientId;
     if (data.recurringGroupId !== undefined) setData.recurringGroupId = data.recurringGroupId;
+    if (data.paymentMethod !== undefined) setData.paymentMethod = data.paymentMethod;
 
     if (Object.keys(setData).length === 0) {
       return this.getBooking(id);

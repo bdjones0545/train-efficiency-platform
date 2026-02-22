@@ -79,6 +79,13 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Payment method tracking on sessions and revenue analytics
+  - paymentMethod column (WALLET, VENMO, CASH) added to bookings table
+  - Payment method selector in Edit Session dialog
+  - "By Source" tab on Business Plan revenue chart showing revenue breakdown by payment method
+  - Color-coded bars (blue=Wallet, purple=Venmo, green=Cash, gray=Not Set) with percentages
+  - Backend: PATCH /api/coach/bookings/:id accepts paymentMethod field
+  - Business plan API includes paymentMethod in session data
 - Business Plan page (/coach/business-plan): coach-specific business analytics
   - New "Business Plan" sidebar section for COACH/ADMIN roles
   - Coach selector to view any coach's business plan (admin only; coaches see their own)

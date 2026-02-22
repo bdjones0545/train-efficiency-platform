@@ -61,6 +61,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
   const [showParticipantSearch, setShowParticipantSearch] = useState(false);
   const [walkInName, setWalkInName] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<string>(booking.paymentMethod || "");
 
   const initLocation = booking.location || "";
   const isPreset = PRESET_LOCATIONS.includes(initLocation);
@@ -87,6 +88,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setParticipantSearchQuery("");
       setShowParticipantSearch(false);
       setWalkInName("");
+      setPaymentMethod(booking.paymentMethod || "");
     }
   }, [open, booking]);
 
@@ -253,6 +255,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       notes,
       location: resolvedLocation,
       groupDescription: isSemiPrivate ? groupDescription : "",
+      paymentMethod: paymentMethod || null,
     };
 
     if (selectedClientId && selectedClientId !== booking.clientId) {
@@ -601,6 +604,20 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
                 data-testid="edit-input-custom-location"
               />
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Payment Method</Label>
+            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+              <SelectTrigger data-testid="edit-select-payment-method">
+                <SelectValue placeholder="Select payment method" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="WALLET" data-testid="edit-payment-wallet">Wallet</SelectItem>
+                <SelectItem value="VENMO" data-testid="edit-payment-venmo">Venmo</SelectItem>
+                <SelectItem value="CASH" data-testid="edit-payment-cash">Cash</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

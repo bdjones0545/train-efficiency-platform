@@ -23,6 +23,7 @@ type ClientSession = {
   status: string;
   serviceName: string;
   priceCents: number;
+  paymentMethod: string | null;
 };
 
 type BusinessPlanClient = {
@@ -137,6 +138,42 @@ function aggregateRevenue(
   return sorted.map(([key, cents]) => ({ label: labelFn(key), revenueCents: cents }));
 }
 
+type RevenueView = "time" | "source";
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  WALLET: "Wallet",
+  VENMO: "Venmo",
+  CASH: "Cash",
+};
+
+const PAYMENT_METHOD_COLORS: Record<string, string> = {
+  WALLET: "bg-blue-500",
+  VENMO: "bg-purple-500",
+  CASH: "bg-green-500",
+  UNSET: "bg-gray-500",
+};
+
+function aggregateByPaymentMethod(
+  clients: BusinessPlanClient[]
+): { label: string; revenueCents: number; colorClass: string }[] {
+  const totals = new Map<string, number>();
+  for (const c of clients) {
+    for (const s of c.sessions) {
+      if (s.status === "CANCELLED" || s.status === "NO_SHOW") continue;
+      const method = s.paymentMethod || "UNSET";
+      totals.set(method, (totals.get(method) || 0) + s.priceCents);
+    }
+  }
+  const order = ["WALLET", "VENMO", "CASH", "UNSET"];
+  return order
+    .filter((m) => totals.has(m))
+    .map((m) => ({
+      label: PAYMENT_METHOD_LABELS[m] || "Not Set",
+      revenueCents: totals.get(m)!,
+      colorClass: PAYMENT_METHOD_COLORS[m] || "bg-gray-500",
+    }));
+}
+
 function getConsistencyScore(sessions: ClientSession[]): { label: string; color: string; score: number } {
   const now = new Date();
   const threeMonthsAgo = new Date(now);
@@ -156,6 +193,7 @@ function getConsistencyScore(sessions: ClientSession[]): { label: string; color:
 export default function CoachBusinessPlanPage() {
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
   const [revenuePeriod, setRevenuePeriod] = useState<TimePeriod>("monthly");
+  const [revenueView, setRevenueView] = useState<RevenueView>("time");
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -184,6 +222,11 @@ export default function CoachBusinessPlanPage() {
   const maxRevenue = chartData.length > 0
     ? Math.max(...chartData.map((r) => r.revenueCents))
     : 0;
+  const sourceData = plan ? aggregateByPaymentMethod(plan.clients) : [];
+  const maxSourceRevenue = sourceData.length > 0
+    ? Math.max(...sourceData.map((r) => r.revenueCents))
+    : 0;
+  const totalSourceRevenue = sourceData.reduce((sum, r) => sum + r.revenueCents, 0);
 
   return (
     <div className="space-y-6">
@@ -276,54 +319,108 @@ export default function CoachBusinessPlanPage() {
                 <BarChart3 className="h-5 w-5 text-muted-foreground" />
                 <h2 className="font-semibold">Revenue</h2>
               </div>
-              <Tabs value={revenuePeriod} onValueChange={(v) => setRevenuePeriod(v as TimePeriod)}>
-                <TabsList className="h-8" data-testid="tabs-revenue-period">
-                  <TabsTrigger value="daily" className="text-xs px-3" data-testid="tab-daily">Daily</TabsTrigger>
-                  <TabsTrigger value="weekly" className="text-xs px-3" data-testid="tab-weekly">Weekly</TabsTrigger>
-                  <TabsTrigger value="monthly" className="text-xs px-3" data-testid="tab-monthly">Monthly</TabsTrigger>
-                  <TabsTrigger value="yearly" className="text-xs px-3" data-testid="tab-yearly">Yearly</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-            {chartData.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center" data-testid="text-no-revenue">
-                No revenue data for this period.
-              </p>
-            ) : (
-              <div className="flex items-end gap-1 h-40 overflow-x-auto pb-1">
-                {chartData.map((r, i) => {
-                  const height = maxRevenue > 0 ? (r.revenueCents / maxRevenue) * 100 : 0;
-                  return (
-                    <div key={i} className="flex-1 min-w-[28px] flex flex-col items-center gap-1">
-                      <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-                        ${(r.revenueCents / 100).toFixed(0)}
-                      </span>
-                      <div
-                        className="w-full bg-primary/80 rounded-t-md transition-all min-h-[4px]"
-                        style={{ height: `${Math.max(height, 3)}%` }}
-                        data-testid={`bar-revenue-${i}`}
-                      />
-                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">{r.label}</span>
-                    </div>
-                  );
-                })}
-
-                {revenuePeriod === "monthly" && (
-                  <div className="flex-1 min-w-[28px] flex flex-col items-center gap-1">
-                    <span className="text-[10px] font-medium text-primary whitespace-nowrap">
-                      ${(plan.stats.predictedMonthlyRevenueCents / 100).toFixed(0)}
-                    </span>
-                    <div
-                      className="w-full bg-primary/30 border-2 border-dashed border-primary rounded-t-md transition-all min-h-[4px]"
-                      style={{
-                        height: `${maxRevenue > 0 ? Math.max((plan.stats.predictedMonthlyRevenueCents / maxRevenue) * 100, 3) : 50}%`,
-                      }}
-                      data-testid="bar-predicted"
-                    />
-                    <span className="text-[10px] text-primary font-medium">Next</span>
-                  </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Tabs value={revenueView} onValueChange={(v) => setRevenueView(v as RevenueView)}>
+                  <TabsList className="h-8" data-testid="tabs-revenue-view">
+                    <TabsTrigger value="time" className="text-xs px-3" data-testid="tab-by-time">By Time</TabsTrigger>
+                    <TabsTrigger value="source" className="text-xs px-3" data-testid="tab-by-source">By Source</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                {revenueView === "time" && (
+                  <Tabs value={revenuePeriod} onValueChange={(v) => setRevenuePeriod(v as TimePeriod)}>
+                    <TabsList className="h-8" data-testid="tabs-revenue-period">
+                      <TabsTrigger value="daily" className="text-xs px-3" data-testid="tab-daily">Daily</TabsTrigger>
+                      <TabsTrigger value="weekly" className="text-xs px-3" data-testid="tab-weekly">Weekly</TabsTrigger>
+                      <TabsTrigger value="monthly" className="text-xs px-3" data-testid="tab-monthly">Monthly</TabsTrigger>
+                      <TabsTrigger value="yearly" className="text-xs px-3" data-testid="tab-yearly">Yearly</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                 )}
               </div>
+            </div>
+
+            {revenueView === "time" ? (
+              <>
+                {chartData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center" data-testid="text-no-revenue">
+                    No revenue data for this period.
+                  </p>
+                ) : (
+                  <div className="flex items-end gap-1 h-40 overflow-x-auto pb-1">
+                    {chartData.map((r, i) => {
+                      const height = maxRevenue > 0 ? (r.revenueCents / maxRevenue) * 100 : 0;
+                      return (
+                        <div key={i} className="flex-1 min-w-[28px] flex flex-col items-center gap-1">
+                          <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+                            ${(r.revenueCents / 100).toFixed(0)}
+                          </span>
+                          <div
+                            className="w-full bg-primary/80 rounded-t-md transition-all min-h-[4px]"
+                            style={{ height: `${Math.max(height, 3)}%` }}
+                            data-testid={`bar-revenue-${i}`}
+                          />
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">{r.label}</span>
+                        </div>
+                      );
+                    })}
+
+                    {revenuePeriod === "monthly" && (
+                      <div className="flex-1 min-w-[28px] flex flex-col items-center gap-1">
+                        <span className="text-[10px] font-medium text-primary whitespace-nowrap">
+                          ${(plan.stats.predictedMonthlyRevenueCents / 100).toFixed(0)}
+                        </span>
+                        <div
+                          className="w-full bg-primary/30 border-2 border-dashed border-primary rounded-t-md transition-all min-h-[4px]"
+                          style={{
+                            height: `${maxRevenue > 0 ? Math.max((plan.stats.predictedMonthlyRevenueCents / maxRevenue) * 100, 3) : 50}%`,
+                          }}
+                          data-testid="bar-predicted"
+                        />
+                        <span className="text-[10px] text-primary font-medium">Next</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {sourceData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center" data-testid="text-no-source-data">
+                    No payment data available.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-end gap-3 h-40 px-4">
+                      {sourceData.map((s, i) => {
+                        const height = maxSourceRevenue > 0 ? (s.revenueCents / maxSourceRevenue) * 100 : 0;
+                        const pct = totalSourceRevenue > 0 ? ((s.revenueCents / totalSourceRevenue) * 100).toFixed(0) : "0";
+                        return (
+                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+                              ${(s.revenueCents / 100).toFixed(0)}
+                            </span>
+                            <div
+                              className={`w-full ${s.colorClass} rounded-t-md transition-all min-h-[4px] opacity-80`}
+                              style={{ height: `${Math.max(height, 3)}%` }}
+                              data-testid={`bar-source-${i}`}
+                            />
+                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">{s.label}</span>
+                            <span className="text-[10px] text-muted-foreground">{pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap gap-3 justify-center pt-1">
+                      {sourceData.map((s, i) => (
+                        <div key={i} className="flex items-center gap-1.5" data-testid={`legend-source-${i}`}>
+                          <div className={`w-2.5 h-2.5 rounded-full ${s.colorClass}`} />
+                          <span className="text-xs text-muted-foreground">{s.label}: ${(s.revenueCents / 100).toFixed(0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </Card>
 
