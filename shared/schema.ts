@@ -62,6 +62,7 @@ export const bookings = pgTable("bookings", {
   location: text("location").default(""),
   maxParticipants: integer("max_participants"),
   groupDescription: text("group_description").default(""),
+  recurringGroupId: varchar("recurring_group_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
