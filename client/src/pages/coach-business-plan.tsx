@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -7,7 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, Pencil, Trash2, X } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
 import type { CoachWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
@@ -222,10 +228,17 @@ function getConsistencyScore(sessions: ClientSession[]): { label: string; color:
 }
 
 export default function CoachBusinessPlanPage() {
+  const { toast } = useToast();
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
   const [revenuePeriod, setRevenuePeriod] = useState<TimePeriod>("monthly");
   const [revenueView, setRevenueView] = useState<RevenueView>("time");
   const [periodOffset, setPeriodOffset] = useState(0);
+  const [selectedClient, setSelectedClient] = useState<BusinessPlanClient | null>(null);
+  const [editClient, setEditClient] = useState<BusinessPlanClient | null>(null);
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [deleteClient, setDeleteClient] = useState<BusinessPlanClient | null>(null);
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -249,6 +262,54 @@ export default function CoachBusinessPlanPage() {
     queryFn: () => fetchWithAuth(`/api/coach/business-plan/${activeCoachId}`),
     enabled: !!activeCoachId,
   });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { firstName: string; lastName: string; email: string | null } }) => {
+      const res = await fetch(`/api/coach/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update client");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/business-plan", activeCoachId] });
+      setEditClient(null);
+      setSelectedClient(null);
+      toast({ title: "Client updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update client", variant: "destructive" });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/coach/users/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to delete client");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/business-plan", activeCoachId] });
+      setDeleteClient(null);
+      setSelectedClient(null);
+      toast({ title: "Client deleted" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete client", variant: "destructive" });
+    },
+  });
+
+  const openEditDialog = (client: BusinessPlanClient) => {
+    setEditClient(client);
+    setEditFirstName(client.firstName);
+    setEditLastName(client.lastName);
+    setEditEmail(client.email || "");
+  };
 
   const chartData = plan ? aggregateRevenue(plan.clients, revenuePeriod, periodOffset) : [];
   const maxRevenue = chartData.length > 0
@@ -520,81 +581,151 @@ export default function CoachBusinessPlanPage() {
                   const daysSinceLastSession = lastDate
                     ? Math.floor((Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
                     : null;
+                  const isSelected = selectedClient?.id === client.id;
 
                   return (
-                    <div
-                      key={client.id}
-                      className="flex items-center gap-4 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
-                      data-testid={`client-row-${client.id}`}
-                    >
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={client.profileImageUrl || undefined} />
-                        <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                          {(client.firstName?.[0] || "?").toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm" data-testid={`text-client-name-${client.id}`}>
-                            {client.firstName} {client.lastName}
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${consistency.color}`}
-                            data-testid={`badge-consistency-${client.id}`}
-                          >
-                            {consistency.label}
-                          </Badge>
+                    <div key={client.id}>
+                      <div
+                        className={`flex items-center gap-4 p-3 rounded-lg border cursor-pointer transition-colors ${isSelected ? "bg-primary/10 border-primary/40" : "bg-card hover:bg-muted/50"}`}
+                        onClick={() => setSelectedClient(isSelected ? null : client)}
+                        data-testid={`client-row-${client.id}`}
+                      >
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={client.profileImageUrl || undefined} />
+                          <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                            {(client.firstName?.[0] || "?").toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm" data-testid={`text-client-name-${client.id}`}>
+                              {client.firstName} {client.lastName}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${consistency.color}`}
+                              data-testid={`badge-consistency-${client.id}`}
+                            >
+                              {consistency.label}
+                            </Badge>
+                          </div>
+                          {revenueView === "source" && client.actualRevenue ? (
+                            <div className="flex items-center gap-3 text-xs mt-0.5 flex-wrap">
+                              {client.actualRevenue.walletCents > 0 && (
+                                <span className="text-blue-400">Wallet: ${(client.actualRevenue.walletCents / 100).toFixed(0)}</span>
+                              )}
+                              {client.actualRevenue.venmoCents > 0 && (
+                                <span className="text-purple-400">Venmo: ${(client.actualRevenue.venmoCents / 100).toFixed(0)}</span>
+                              )}
+                              {client.actualRevenue.cashCents > 0 && (
+                                <span className="text-green-400">Cash: ${(client.actualRevenue.cashCents / 100).toFixed(0)}</span>
+                              )}
+                              {client.actualRevenue.walletCents === 0 && client.actualRevenue.venmoCents === 0 && client.actualRevenue.cashCents === 0 && (
+                                <span className="text-muted-foreground">No payments recorded</span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                              <span>{completedCount} session{completedCount !== 1 ? "s" : ""}</span>
+                              <span>${(totalSpent / 100).toFixed(0)} total</span>
+                              {daysSinceLastSession !== null && (
+                                <span className="flex items-center gap-0.5">
+                                  {daysSinceLastSession <= 14 ? (
+                                    <ArrowUpRight className="h-3 w-3 text-green-500" />
+                                  ) : (
+                                    <ArrowDownRight className="h-3 w-3 text-orange-400" />
+                                  )}
+                                  {daysSinceLastSession === 0
+                                    ? "Today"
+                                    : daysSinceLastSession === 1
+                                      ? "Yesterday"
+                                      : `${daysSinceLastSession}d ago`}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {revenueView === "source" && client.actualRevenue ? (
-                          <div className="flex items-center gap-3 text-xs mt-0.5 flex-wrap">
-                            {client.actualRevenue.walletCents > 0 && (
-                              <span className="text-blue-400">Wallet: ${(client.actualRevenue.walletCents / 100).toFixed(0)}</span>
-                            )}
-                            {client.actualRevenue.venmoCents > 0 && (
-                              <span className="text-purple-400">Venmo: ${(client.actualRevenue.venmoCents / 100).toFixed(0)}</span>
-                            )}
-                            {client.actualRevenue.cashCents > 0 && (
-                              <span className="text-green-400">Cash: ${(client.actualRevenue.cashCents / 100).toFixed(0)}</span>
-                            )}
-                            {client.actualRevenue.walletCents === 0 && client.actualRevenue.venmoCents === 0 && client.actualRevenue.cashCents === 0 && (
-                              <span className="text-muted-foreground">No payments recorded</span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                            <span>{completedCount} session{completedCount !== 1 ? "s" : ""}</span>
-                            <span>${(totalSpent / 100).toFixed(0)} total</span>
-                            {daysSinceLastSession !== null && (
-                              <span className="flex items-center gap-0.5">
-                                {daysSinceLastSession <= 14 ? (
-                                  <ArrowUpRight className="h-3 w-3 text-green-500" />
-                                ) : (
-                                  <ArrowDownRight className="h-3 w-3 text-orange-400" />
-                                )}
-                                {daysSinceLastSession === 0
-                                  ? "Today"
-                                  : daysSinceLastSession === 1
-                                    ? "Yesterday"
-                                    : `${daysSinceLastSession}d ago`}
-                              </span>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right hidden sm:block">
+                            {revenueView === "source" && client.actualRevenue ? (
+                              <>
+                                <p className="text-sm font-medium">${((client.actualRevenue.walletCents + client.actualRevenue.venmoCents + client.actualRevenue.cashCents) / 100).toFixed(0)}</p>
+                                <p className="text-xs text-muted-foreground">total paid</p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-sm font-medium">~{consistency.score.toFixed(1)}/wk</p>
+                                <p className="text-xs text-muted-foreground">avg sessions</p>
+                              </>
                             )}
                           </div>
-                        )}
+                          <div className="flex items-center gap-1 ml-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-primary"
+                              onClick={(e) => { e.stopPropagation(); openEditDialog(client); }}
+                              data-testid={`btn-edit-client-${client.id}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => { e.stopPropagation(); setDeleteClient(client); }}
+                              data-testid={`btn-delete-client-${client.id}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right hidden sm:block">
-                        {revenueView === "source" && client.actualRevenue ? (
-                          <>
-                            <p className="text-sm font-medium">${((client.actualRevenue.walletCents + client.actualRevenue.venmoCents + client.actualRevenue.cashCents) / 100).toFixed(0)}</p>
-                            <p className="text-xs text-muted-foreground">total paid</p>
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-sm font-medium">~{consistency.score.toFixed(1)}/wk</p>
-                            <p className="text-xs text-muted-foreground">avg sessions</p>
-                          </>
-                        )}
-                      </div>
+
+                      {isSelected && (
+                        <div className="mt-2 ml-14 p-3 rounded-lg border bg-muted/30 space-y-3" data-testid={`client-detail-${client.id}`}>
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-semibold">{client.firstName} {client.lastName} — Session History</h3>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedClient(null)} data-testid="btn-close-detail">
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          {client.email && (
+                            <p className="text-xs text-muted-foreground">{client.email}</p>
+                          )}
+                          {client.sessions.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No sessions recorded.</p>
+                          ) : (
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                              {[...client.sessions].reverse().map((s, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-xs p-2 rounded bg-card border">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-muted-foreground">{new Date(s.date).toLocaleDateString()}</span>
+                                    <span className="font-medium">{s.serviceName}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className={`text-[10px] ${s.status === "COMPLETED" ? "text-green-500" : s.status === "CANCELLED" ? "text-red-400" : s.status === "NO_SHOW" ? "text-orange-400" : "text-blue-400"}`}>
+                                      {s.status}
+                                    </Badge>
+                                    <span className="text-muted-foreground">${(s.priceCents / 100).toFixed(0)}</span>
+                                    {s.paymentMethod && (
+                                      <Badge variant="secondary" className="text-[10px]">{s.paymentMethod}</Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex gap-2 pt-1">
+                            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openEditDialog(client)} data-testid={`btn-edit-detail-${client.id}`}>
+                              <Pencil className="h-3 w-3 mr-1" /> Edit
+                            </Button>
+                            <Button size="sm" variant="outline" className="text-xs h-7 text-destructive hover:text-destructive" onClick={() => setDeleteClient(client)} data-testid={`btn-delete-detail-${client.id}`}>
+                              <Trash2 className="h-3 w-3 mr-1" /> Delete
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -603,6 +734,60 @@ export default function CoachBusinessPlanPage() {
           </Card>
         </>
       )}
+
+      <Dialog open={!!editClient} onOpenChange={(open) => !open && setEditClient(null)}>
+        <DialogContent data-testid="dialog-edit-client">
+          <DialogHeader>
+            <DialogTitle>Edit Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-first-name">First Name</Label>
+              <Input id="edit-first-name" value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} data-testid="input-edit-first-name" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-last-name">Last Name</Label>
+              <Input id="edit-last-name" value={editLastName} onChange={(e) => setEditLastName(e.target.value)} data-testid="input-edit-last-name" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input id="edit-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} data-testid="input-edit-email" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditClient(null)} data-testid="btn-cancel-edit">Cancel</Button>
+            <Button
+              onClick={() => editClient && updateUserMutation.mutate({ id: editClient.id, data: { firstName: editFirstName, lastName: editLastName, email: editEmail.trim() || null } })}
+              disabled={updateUserMutation.isPending || !editFirstName.trim()}
+              data-testid="btn-save-edit"
+            >
+              {updateUserMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteClient} onOpenChange={(open) => !open && setDeleteClient(null)}>
+        <AlertDialogContent data-testid="dialog-delete-client">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Client</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {deleteClient?.firstName} {deleteClient?.lastName}? This will remove all their data and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="btn-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteClient && deleteUserMutation.mutate(deleteClient.id)}
+              disabled={deleteUserMutation.isPending}
+              data-testid="btn-confirm-delete"
+            >
+              {deleteUserMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
