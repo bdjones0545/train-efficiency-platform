@@ -619,20 +619,16 @@ export default function CoachBusinessPlanPage() {
                               {consistency.label}
                             </Badge>
                           </div>
-                          {revenueView === "source" && client.actualRevenue ? (
+                          {revenueView === "source" && client.clientStats ? (
                             <div className="flex items-center gap-3 text-xs mt-0.5 flex-wrap">
-                              {client.actualRevenue.walletCents > 0 && (
-                                <span className="text-blue-400">Wallet: ${(client.actualRevenue.walletCents / 100).toFixed(0)}</span>
-                              )}
-                              {client.actualRevenue.venmoCents > 0 && (
-                                <span className="text-purple-400">Venmo: ${(client.actualRevenue.venmoCents / 100).toFixed(0)}</span>
-                              )}
-                              {client.actualRevenue.cashCents > 0 && (
-                                <span className="text-green-400">Cash: ${(client.actualRevenue.cashCents / 100).toFixed(0)}</span>
-                              )}
-                              {client.actualRevenue.walletCents === 0 && client.actualRevenue.venmoCents === 0 && client.actualRevenue.cashCents === 0 && (
-                                <span className="text-muted-foreground">No payments recorded</span>
-                              )}
+                              <span className="text-muted-foreground">
+                                {client.clientStats.totalSessions} session{client.clientStats.totalSessions !== 1 ? "s" : ""}
+                                {client.clientStats.scheduledCount > 0 && ` (${client.clientStats.scheduledCount} upcoming)`}
+                              </span>
+                              <span className="text-blue-400">Revenue: ${(client.clientStats.revenueCents / 100).toFixed(0)}</span>
+                              <span className={client.clientStats.walletBalanceCents >= 0 ? "text-green-400" : "text-red-400"}>
+                                Wallet: ${(client.clientStats.walletBalanceCents / 100).toFixed(2)}
+                              </span>
                             </div>
                           ) : (
                             <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
@@ -657,10 +653,10 @@ export default function CoachBusinessPlanPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="text-right hidden sm:block">
-                            {revenueView === "source" && client.actualRevenue ? (
+                            {revenueView === "source" && client.clientStats ? (
                               <>
-                                <p className="text-sm font-medium">${((client.actualRevenue.walletCents + client.actualRevenue.venmoCents + client.actualRevenue.cashCents) / 100).toFixed(0)}</p>
-                                <p className="text-xs text-muted-foreground">total paid</p>
+                                <p className="text-sm font-medium">${(client.clientStats.revenueCents / 100).toFixed(0)}</p>
+                                <p className="text-xs text-muted-foreground">revenue</p>
                               </>
                             ) : (
                               <>

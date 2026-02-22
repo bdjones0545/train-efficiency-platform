@@ -2070,18 +2070,37 @@ export async function registerRoutes(
         }
       }
 
+      const perClientWalletBalance = new Map<string, number>();
+      for (const tx of allWalletTx) {
+        if (clientIds.has(tx.userId)) {
+          const current = perClientWalletBalance.get(tx.userId) || 0;
+          if (tx.type === "CREDIT") {
+            perClientWalletBalance.set(tx.userId, current + tx.amountCents);
+          } else if (tx.type === "DEBIT") {
+            perClientWalletBalance.set(tx.userId, current - tx.amountCents);
+          }
+        }
+      }
+
       const clientsWithActual = clients.map(c => {
         const lookupId = c.id.startsWith("walkin_") ? (walkInUserIdMap.get(c.id) || c.id) : c.id;
-        const totalWallet = perClientWallet.get(lookupId) || 0;
+        const totalWalletCharged = perClientWallet.get(lookupId) || 0;
         const shareCount = walletShareCount.get(lookupId) || 1;
-        const walletCents = Math.round(totalWallet / shareCount);
+        const walletChargedCents = Math.round(totalWalletCharged / shareCount);
         const venmoCents = c.sessions
           .filter((s: any) => s.paymentMethod === "VENMO" && s.status !== "CANCELLED" && s.status !== "NO_SHOW")
           .reduce((sum: number, s: any) => sum + s.priceCents, 0);
         const cashCents = c.sessions
           .filter((s: any) => s.paymentMethod === "CASH" && s.status !== "CANCELLED" && s.status !== "NO_SHOW")
           .reduce((sum: number, s: any) => sum + s.priceCents, 0);
-        return { ...c, actualRevenue: { walletCents, venmoCents, cashCents } };
+        const completedCount = c.sessions.filter((s: any) => s.status === "COMPLETED").length;
+        const scheduledCount = c.sessions.filter((s: any) => s.status === "CONFIRMED").length;
+        const totalSessions = completedCount + scheduledCount;
+        const revenueCents = c.sessions
+          .filter((s: any) => s.status === "COMPLETED")
+          .reduce((sum: number, s: any) => sum + s.priceCents, 0);
+        const walletBalanceCents = perClientWalletBalance.get(lookupId) || 0;
+        return { ...c, actualRevenue: { walletCents: walletChargedCents, venmoCents, cashCents }, clientStats: { totalSessions, completedCount, scheduledCount, revenueCents, walletBalanceCents } };
       });
 
       res.json({
