@@ -1947,9 +1947,26 @@ export async function registerRoutes(
         .filter(b => b.paymentMethod === "CASH" && b.status !== "CANCELLED" && b.status !== "NO_SHOW" && b.clientId !== thisCoachUserId)
         .reduce((sum, b) => { const s = serviceMap.get(b.serviceId); return sum + (s?.priceCents || 0); }, 0);
 
+      const walletShareCount = new Map<string, number>();
+      for (const c of clients) {
+        if (c.id.startsWith("walkin_")) {
+          const parentId = walkInUserIdMap.get(c.id);
+          if (parentId) {
+            walletShareCount.set(parentId, (walletShareCount.get(parentId) || 0) + 1);
+          }
+        }
+      }
+      for (const c of clients) {
+        if (!c.id.startsWith("walkin_") && perClientWallet.has(c.id)) {
+          walletShareCount.set(c.id, (walletShareCount.get(c.id) || 0) + 1);
+        }
+      }
+
       const clientsWithActual = clients.map(c => {
         const lookupId = c.id.startsWith("walkin_") ? (walkInUserIdMap.get(c.id) || c.id) : c.id;
-        const walletCents = perClientWallet.get(lookupId) || 0;
+        const totalWallet = perClientWallet.get(lookupId) || 0;
+        const shareCount = walletShareCount.get(lookupId) || 1;
+        const walletCents = Math.round(totalWallet / shareCount);
         const venmoCents = c.sessions
           .filter((s: any) => s.paymentMethod === "VENMO" && s.status !== "CANCELLED" && s.status !== "NO_SHOW")
           .reduce((sum: number, s: any) => sum + s.priceCents, 0);
