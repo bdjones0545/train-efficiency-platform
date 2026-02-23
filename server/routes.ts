@@ -1029,7 +1029,8 @@ export async function registerRoutes(
         const contractQuotes = allQuotes.filter(q => q.programId === booking.teamQuoteProgramId);
         if (contractQuotes.length > 0) {
           const contract = contractQuotes[0];
-          const freqNum = parseInt(contract.frequency) || 1;
+          const freqMatch = contract.frequency.match(/(\d+)/);
+          const freqNum = freqMatch ? parseInt(freqMatch[1]) : 1;
           const sessionsPerMonth = freqNum * 4.33;
           const perSessionCents = Math.round(contract.totalCents / sessionsPerMonth);
           const ownerCoach = await isOwner(booking.coachId);
@@ -1891,7 +1892,36 @@ export async function registerRoutes(
       }
       const ownerCoach = await isOwner(coachId);
 
-      function getBookingRevenue(bookingId: string, serviceId: string): number {
+      const allTeamQuotes = await storage.getAllTeamQuotes();
+      const contractPerSessionMap = new Map<string, number>();
+      const programQuoteGroups = new Map<string, typeof allTeamQuotes>();
+      for (const q of allTeamQuotes) {
+        const key = q.programId || q.id;
+        if (!programQuoteGroups.has(key)) programQuoteGroups.set(key, []);
+        programQuoteGroups.get(key)!.push(q);
+      }
+      programQuoteGroups.forEach((quotes, programId) => {
+        const representative = quotes[0];
+        const freqMatch = representative.frequency.match(/(\d+)/);
+        const freqNum = freqMatch ? parseInt(freqMatch[1]) : 1;
+        const sessionsPerMonth = freqNum * 4.33;
+        const perSessionCents = Math.round(representative.totalCents / sessionsPerMonth);
+        contractPerSessionMap.set(programId, perSessionCents);
+      });
+
+      const bookingContractMap = new Map<string, string>();
+      for (const b of allBookings) {
+        if (b.teamQuoteProgramId) {
+          bookingContractMap.set(b.id, b.teamQuoteProgramId);
+        }
+      }
+
+      const getBookingRevenue = (bookingId: string, serviceId: string): number => {
+        const contractProgramId = bookingContractMap.get(bookingId);
+        if (contractProgramId) {
+          const perSession = contractPerSessionMap.get(contractProgramId);
+          if (perSession && perSession > 0) return perSession;
+        }
         const service = serviceMap.get(serviceId);
         const isFreeService = service && service.priceCents === 0;
         if (isFreeService) return 0;
@@ -1902,7 +1932,7 @@ export async function registerRoutes(
           return ownerCoach ? redemptionAmount : Math.round(redemptionAmount / 0.5);
         }
         return service?.priceCents || 0;
-      }
+      };
 
       const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number; paymentMethod: string | null }[] }>();
 
