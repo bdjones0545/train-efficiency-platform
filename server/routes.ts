@@ -6,7 +6,7 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail } from "./email";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
@@ -2276,6 +2276,44 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching team quotes:", error);
       res.status(500).json({ message: "Failed to fetch team quotes" });
+    }
+  });
+
+  app.post("/api/team-training-request", isAuthenticated, async (req: any, res) => {
+    try {
+      const { teamName, contactName, contactEmail, contactPhone, location, sport, numberOfAthletes, goals, preferredSchedule, additionalNotes } = req.body;
+
+      if (!teamName || !contactName || !contactEmail || !sport || !numberOfAthletes || !goals || !location) {
+        return res.status(400).json({ message: "Please fill in all required fields" });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(contactEmail)) {
+        return res.status(400).json({ message: "Invalid email address" });
+      }
+
+      const athleteCount = parseInt(numberOfAthletes);
+      if (!isFinite(athleteCount) || athleteCount < 1) {
+        return res.status(400).json({ message: "Number of athletes must be a positive number" });
+      }
+
+      await sendTeamTrainingRequestEmail({
+        teamName,
+        contactName,
+        contactEmail,
+        contactPhone: contactPhone || "",
+        location,
+        sport,
+        numberOfAthletes: athleteCount,
+        goals,
+        preferredSchedule: preferredSchedule || "",
+        additionalNotes: additionalNotes || "",
+      });
+
+      res.json({ success: true, message: "Your team training request has been submitted! We'll be in touch soon." });
+    } catch (error: any) {
+      console.error("Error sending team training request:", error);
+      res.status(500).json({ message: "Failed to submit request. Please try again." });
     }
   });
 

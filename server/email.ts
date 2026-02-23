@@ -413,6 +413,59 @@ export async function sendTeamQuoteEmail(
   await sendEmail(coachEmail, subject, html);
 }
 
+export async function sendTeamTrainingRequestEmail(
+  data: {
+    teamName: string;
+    contactName: string;
+    contactEmail: string;
+    contactPhone: string;
+    location: string;
+    sport: string;
+    numberOfAthletes: number;
+    goals: string;
+    preferredSchedule: string;
+    additionalNotes: string;
+  }
+) {
+  const subject = `New Team Training Request — ${data.teamName}`;
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
+      <div style="background: #16a34a; padding: 24px 32px;">
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">New Team Training Request</h1>
+      </div>
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">A new team training inquiry has been submitted:</p>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Team Name:</strong> ${data.teamName}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Sport:</strong> ${data.sport}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Number of Athletes:</strong> ${data.numberOfAthletes}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Location:</strong> ${data.location}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Preferred Schedule:</strong> ${data.preferredSchedule || 'Not specified'}</p>
+        </div>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 14px; color: #aaa; margin: 0 0 8px;">CONTACT INFO</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Name:</strong> ${data.contactName}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Email:</strong> ${data.contactEmail}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Phone:</strong> ${data.contactPhone || 'Not provided'}</p>
+        </div>
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 14px; color: #aaa; margin: 0 0 8px;">TRAINING GOALS</p>
+          <p style="font-size: 15px; margin: 4px 0; white-space: pre-wrap;">${data.goals}</p>
+        </div>
+        ${data.additionalNotes ? `
+        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
+          <p style="font-size: 14px; color: #aaa; margin: 0 0 8px;">ADDITIONAL NOTES</p>
+          <p style="font-size: 15px; margin: 4px 0; white-space: pre-wrap;">${data.additionalNotes}</p>
+        </div>
+        ` : ''}
+        <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
+      </div>
+    </div>
+  `;
+  await sendEmail('bryan.jones@efficiencystrengthtraining.com', subject, html);
+}
+
 export async function sendBookingNotificationToCoach(
   coachEmail: string,
   coachFirstName: string,

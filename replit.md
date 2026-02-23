@@ -80,6 +80,12 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
+- Client Team Training request page (/team-training): form for clients to request team training quotes
+  - Fields: team name, sport, number of athletes, location, goals, preferred schedule, contact info, additional notes
+  - POST /api/team-training-request - Sends branded email with all details to Bryan (auth required)
+  - "Team Training" link in client sidebar Browse section
+  - Contact name/email pre-filled from logged-in user
+  - Success screen shown after submission
 - Team Quotes feature (/coach/team-quotes): generate team training quotes with monthly Stripe invoicing
   - team_quotes table: teamName, numberOfAthletes, costPerAthleteCents, trainingType (STRENGTH/SPEED), frequency, durationWeeks (stores months), coachEmail, totalCents (monthly amount), status, stripeInvoiceId/Url, currentMonth, totalMonths
   - POST /api/coach/team-quotes - Create quote, generate first month's Stripe invoice, email to coach (COACH/ADMIN)

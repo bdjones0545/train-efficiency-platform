@@ -29,6 +29,7 @@ import {
   Wallet,
   Briefcase,
   FileText,
+  Dumbbell,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -54,6 +55,7 @@ export function AppSidebar() {
   const clientItems = [
     { title: "Coaches", url: "/coaches", icon: Users },
     { title: "Group Sessions", url: "/sessions", icon: UsersRound },
+    { title: "Team Training", url: "/team-training", icon: Dumbbell },
     { title: "My Bookings", url: "/bookings", icon: Calendar },
     ...(role === "CLIENT" ? [{ title: "My Wallet", url: "/wallet", icon: Wallet }] : []),
   ];
