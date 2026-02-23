@@ -2211,6 +2211,7 @@ export async function registerRoutes(
       const { teamName, numberOfAthletes, costPerAthleteCents, trainingType, frequency, durationMonths, coachEmail } = req.body;
 
       if (!teamName || !numberOfAthletes || !costPerAthleteCents || !trainingType || !frequency || !durationMonths || !coachEmail) {
+        console.log("Team quote missing fields:", { teamName: !!teamName, numberOfAthletes, costPerAthleteCents, trainingType: !!trainingType, frequency: !!frequency, durationMonths, coachEmail: !!coachEmail, body: req.body });
         return res.status(400).json({ message: "All fields are required" });
       }
 
