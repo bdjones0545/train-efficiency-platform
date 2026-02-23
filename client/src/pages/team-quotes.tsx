@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Users, DollarSign, Send, FileText, Dumbbell, Zap, ExternalLink, Calendar } from "lucide-react";
+import { Users, DollarSign, Send, FileText, Dumbbell, Zap, ExternalLink, Calendar, Trash2 } from "lucide-react";
 import type { TeamQuote } from "@shared/schema";
 
 const FREQUENCY_OPTIONS = [
@@ -72,6 +72,19 @@ export default function TeamQuotesPage() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to create quote", variant: "destructive" });
+    },
+  });
+
+  const deleteQuoteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/coach/team-quotes/${id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Quote deleted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/team-quotes"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to delete quote", variant: "destructive" });
     },
   });
 
@@ -358,6 +371,16 @@ export default function TeamQuotesPage() {
                             Invoice
                           </a>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteQuoteMutation.mutate(quote.id)}
+                          disabled={deleteQuoteMutation.isPending}
+                          data-testid={`button-delete-quote-${quote.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </div>
                   ))}

@@ -2329,6 +2329,17 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/coach/team-quotes/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const deleted = await storage.deleteTeamQuote(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "Quote not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting team quote:", error);
+      res.status(500).json({ message: "Failed to delete quote" });
+    }
+  });
+
   app.get("/api/coach/team-contracts", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

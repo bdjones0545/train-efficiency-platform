@@ -120,6 +120,7 @@ export interface IStorage {
   getTeamQuotes(coachId: string): Promise<TeamQuote[]>;
   getAllTeamQuotes(): Promise<TeamQuote[]>;
   updateTeamQuote(id: string, data: Partial<TeamQuote>): Promise<TeamQuote | undefined>;
+  deleteTeamQuote(id: string): Promise<boolean>;
   getTeamQuoteByStripeInvoiceId(stripeInvoiceId: string): Promise<TeamQuote | undefined>;
   getActiveTeamContracts(coachId?: string): Promise<TeamQuote[]>;
 }
@@ -721,6 +722,11 @@ export class DatabaseStorage implements IStorage {
   async updateTeamQuote(id: string, data: Partial<TeamQuote>): Promise<TeamQuote | undefined> {
     const [updated] = await db.update(teamQuotes).set(data).where(eq(teamQuotes.id, id)).returning();
     return updated;
+  }
+
+  async deleteTeamQuote(id: string): Promise<boolean> {
+    const result = await db.delete(teamQuotes).where(eq(teamQuotes.id, id)).returning();
+    return result.length > 0;
   }
 
   async getTeamQuoteByStripeInvoiceId(stripeInvoiceId: string): Promise<TeamQuote | undefined> {
