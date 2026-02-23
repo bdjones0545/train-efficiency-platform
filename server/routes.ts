@@ -2210,8 +2210,9 @@ export async function registerRoutes(
 
       const { teamName, numberOfAthletes, costPerAthleteCents, trainingType, frequency, durationMonths, coachEmail } = req.body;
 
-      if (!teamName || !numberOfAthletes || !costPerAthleteCents || !trainingType || !frequency || !durationMonths || !coachEmail) {
-        console.log("Team quote missing fields:", { teamName: !!teamName, numberOfAthletes, costPerAthleteCents, trainingType: !!trainingType, frequency: !!frequency, durationMonths, coachEmail: !!coachEmail, body: req.body });
+      if (teamName == null || numberOfAthletes == null || costPerAthleteCents == null || trainingType == null || frequency == null || durationMonths == null || coachEmail == null ||
+          teamName === "" || trainingType === "" || frequency === "" || coachEmail === "") {
+        console.log("Team quote missing fields:", JSON.stringify(req.body));
         return res.status(400).json({ message: "All fields are required" });
       }
 
