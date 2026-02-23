@@ -86,6 +86,12 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - "Team Training" link in client sidebar Browse section
   - Contact name/email pre-filled from logged-in user
   - Success screen shown after submission
+- Team contract-linked session scheduling
+  - teamQuoteProgramId column on bookings table links sessions to paid team contracts
+  - GET /api/coach/team-contracts - List active (paid) team programs (COACH/ADMIN)
+  - AddSessionDialog shows team contract selector when Team Training service is selected
+  - Selecting a paid contract auto-fills team name and shows estimated coach payout
+  - Redemption: sessions linked to a contract calculate per-session value (monthly total / sessions per month) and pay coach 50% (owner gets 100%)
 - Team Quotes feature (/coach/team-quotes): generate team training quotes with monthly Stripe invoicing
   - team_quotes table: teamName, numberOfAthletes, costPerAthleteCents, trainingType (STRENGTH/SPEED), frequency, durationWeeks (stores months), coachEmail, totalCents (monthly amount), status, stripeInvoiceId/Url, currentMonth, totalMonths
   - POST /api/coach/team-quotes - Create quote, generate first month's Stripe invoice, email to coach (COACH/ADMIN)

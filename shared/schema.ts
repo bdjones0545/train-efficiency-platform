@@ -65,6 +65,7 @@ export const bookings = pgTable("bookings", {
   groupDescription: text("group_description").default(""),
   recurringGroupId: varchar("recurring_group_id"),
   paymentMethod: paymentMethodEnum("payment_method"),
+  teamQuoteProgramId: varchar("team_quote_program_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -15,7 +15,7 @@ import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
 import { Plus, CalendarIcon, Search, XCircle, MapPin, UserPlus, Trash2, Copy } from "lucide-react";
 import { format, addDays } from "date-fns";
-import type { Service } from "@shared/schema";
+import type { Service, TeamQuote } from "@shared/schema";
 
 const PRESET_LOCATIONS = [
   "Bluffton High School",
@@ -67,6 +67,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
   const [repeatInterval, setRepeatInterval] = useState<string>("7");
   const [repeatEndDate, setRepeatEndDate] = useState<string>("");
+  const [teamQuoteProgramId, setTeamQuoteProgramId] = useState<string>("");
 
   useEffect(() => {
     if (initialDate) setSelectedDate(initialDate);
@@ -77,6 +78,15 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   }, [initialTime]);
 
   const { data: services } = useQuery<Service[]>({ queryKey: ["/api/services"] });
+
+  const { data: teamContracts } = useQuery<TeamQuote[]>({
+    queryKey: ["/api/coach/team-contracts"],
+    queryFn: async () => {
+      const res = await fetch("/api/coach/team-contracts", { credentials: "include", headers: { ...getAuthHeaders() } });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   const { data: searchResults } = useQuery<ClientSearchResult[]>({
     queryKey: ["/api/coach/clients/search", searchQuery],
@@ -178,6 +188,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setCreatedBookingId(null);
     setRepeatInterval("7");
     setRepeatEndDate("");
+    setTeamQuoteProgramId("");
   };
 
   const handleSubmit = () => {
@@ -185,7 +196,8 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
       toast({ title: "Missing Fields", description: "Please fill in date, time, and service.", variant: "destructive" });
       return;
     }
-    if (!isSemiPrivate && !isTeamBHS && !selectedClientId && (!clientFirstName.trim() || !clientLastName.trim())) {
+    const hasTeamContract = isTeamTraining && teamQuoteProgramId && teamQuoteProgramId !== "none";
+    if (!isSemiPrivate && !isTeamBHS && !hasTeamContract && !selectedClientId && (!clientFirstName.trim() || !clientLastName.trim())) {
       toast({ title: "Missing Client", description: "Please enter or select a client.", variant: "destructive" });
       return;
     }
@@ -203,7 +215,15 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     if (coachId) {
       body.coachId = coachId;
     }
-    if (isTeamBHS) {
+    if (isTeamTraining && teamQuoteProgramId && teamQuoteProgramId !== "none") {
+      body.teamQuoteProgramId = teamQuoteProgramId;
+      const contract = teamContracts?.find(c => (c.programId || c.id) === teamQuoteProgramId);
+      body.clientFirstName = contract?.teamName || "Team";
+      body.clientLastName = "Training";
+      if (groupDescription.trim()) {
+        body.groupDescription = groupDescription.trim();
+      }
+    } else if (isTeamBHS) {
       body.isTeamContract = true;
       body.clientFirstName = "Bluffton HS";
       body.clientLastName = "Team Training";
@@ -456,16 +476,56 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
             </div>
           )}
 
-          {isTeamBHS && (
+          {isTeamTraining && (
             <div className="space-y-3">
-              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
-                <p className="text-sm font-medium">BHS Team Training Contract</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {selectedServiceObj?.durationMin && selectedServiceObj.durationMin <= 30
-                    ? "$10 coach payout per session. No client charge."
-                    : "$20 coach payout per session. No client charge."}
-                </p>
-              </div>
+              {teamContracts && teamContracts.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Team Contract</Label>
+                  <Select value={teamQuoteProgramId} onValueChange={setTeamQuoteProgramId}>
+                    <SelectTrigger data-testid="select-team-contract">
+                      <SelectValue placeholder="Select a paid team contract" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No contract (manual)</SelectItem>
+                      {teamContracts.map((contract) => {
+                        const monthlyCost = (contract.totalCents / 100).toFixed(2);
+                        return (
+                          <SelectItem key={contract.programId || contract.id} value={contract.programId || contract.id} data-testid={`option-contract-${contract.programId || contract.id}`}>
+                            {contract.teamName} — ${monthlyCost}/mo ({contract.numberOfAthletes} athletes, {contract.frequency})
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {teamQuoteProgramId && teamQuoteProgramId !== "none" ? (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-sm font-medium">Paid Team Contract Session</p>
+                  {(() => {
+                    const contract = teamContracts?.find(c => (c.programId || c.id) === teamQuoteProgramId);
+                    if (!contract) return null;
+                    const freq = contract.frequency;
+                    const sessionsPerMonth = parseInt(freq) * 4.33;
+                    const perSessionCents = Math.round(contract.totalCents / sessionsPerMonth);
+                    const coachPayout = (perSessionCents * 0.5 / 100).toFixed(2);
+                    return (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        ~${coachPayout} coach payout per session (50% of ${(perSessionCents / 100).toFixed(2)}/session)
+                      </p>
+                    );
+                  })()}
+                </div>
+              ) : isTeamBHS ? (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-sm font-medium">BHS Team Training Contract</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {selectedServiceObj?.durationMin && selectedServiceObj.durationMin <= 30
+                      ? "$10 coach payout per session. No client charge."
+                      : "$20 coach payout per session. No client charge."}
+                  </p>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label>Team / Notes (optional)</Label>
                 <Textarea
@@ -479,7 +539,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
             </div>
           )}
 
-          {!isSemiPrivate && !isTeamBHS && (
+          {!isSemiPrivate && !isTeamBHS && !(isTeamTraining && teamQuoteProgramId && teamQuoteProgramId !== "none") && (
             <div className="space-y-2">
               <Label>Client</Label>
               {selectedClientId ? (

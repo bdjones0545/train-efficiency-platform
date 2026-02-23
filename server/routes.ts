@@ -649,6 +649,7 @@ export async function registerRoutes(
         location: req.body.location || "",
         maxParticipants: isSemiPrivate ? (maxParticipants || 6) : null,
         groupDescription: groupDescription || "",
+        teamQuoteProgramId: req.body.teamQuoteProgramId || null,
       });
 
       if (isSemiPrivate) {
@@ -1023,6 +1024,20 @@ export async function registerRoutes(
 
       if (isFreeIntro) {
         amountCents = 2000;
+      } else if (booking.teamQuoteProgramId) {
+        const allQuotes = await storage.getAllTeamQuotes();
+        const contractQuotes = allQuotes.filter(q => q.programId === booking.teamQuoteProgramId);
+        if (contractQuotes.length > 0) {
+          const contract = contractQuotes[0];
+          const freqNum = parseInt(contract.frequency) || 1;
+          const sessionsPerMonth = freqNum * 4.33;
+          const perSessionCents = Math.round(contract.totalCents / sessionsPerMonth);
+          const ownerCoach = await isOwner(booking.coachId);
+          const payoutRate = ownerCoach ? 1.0 : 0.5;
+          amountCents = Math.round(perSessionCents * payoutRate);
+        } else {
+          amountCents = (service?.durationMin || 60) <= 30 ? 1000 : 2000;
+        }
       } else if (isTeamContract) {
         amountCents = (service?.durationMin || 60) <= 30 ? 1000 : 2000;
       } else {
@@ -2276,6 +2291,27 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching team quotes:", error);
       res.status(500).json({ message: "Failed to fetch team quotes" });
+    }
+  });
+
+  app.get("/api/coach/team-contracts", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const role = await getUserRole(userId);
+
+      if (role === "ADMIN") {
+        const contracts = await storage.getActiveTeamContracts();
+        return res.json(contracts);
+      }
+
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
+      if (!coachProfile) return res.status(403).json({ message: "Coach profile not found" });
+
+      const contracts = await storage.getActiveTeamContracts(coachProfile.id);
+      res.json(contracts);
+    } catch (error) {
+      console.error("Error fetching team contracts:", error);
+      res.status(500).json({ message: "Failed to fetch team contracts" });
     }
   });
 

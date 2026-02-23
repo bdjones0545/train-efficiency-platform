@@ -70,7 +70,7 @@ export interface IStorage {
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
-  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null }): Promise<Booking | undefined>;
+  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null }): Promise<Booking | undefined>;
   deleteBooking(id: string): Promise<boolean>;
   deleteBookingsByClientAndCoach(clientId: string, coachId: string): Promise<number>;
   deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted?: boolean): Promise<number>;
@@ -121,6 +121,7 @@ export interface IStorage {
   getAllTeamQuotes(): Promise<TeamQuote[]>;
   updateTeamQuote(id: string, data: Partial<TeamQuote>): Promise<TeamQuote | undefined>;
   getTeamQuoteByStripeInvoiceId(stripeInvoiceId: string): Promise<TeamQuote | undefined>;
+  getActiveTeamContracts(coachId?: string): Promise<TeamQuote[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -341,7 +342,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null }): Promise<Booking | undefined> {
+  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null }): Promise<Booking | undefined> {
     const setData: any = {};
     if (data.serviceId !== undefined) setData.serviceId = data.serviceId;
     if (data.startAt !== undefined) setData.startAt = data.startAt;
@@ -352,6 +353,7 @@ export class DatabaseStorage implements IStorage {
     if (data.clientId !== undefined) setData.clientId = data.clientId;
     if (data.recurringGroupId !== undefined) setData.recurringGroupId = data.recurringGroupId;
     if (data.paymentMethod !== undefined) setData.paymentMethod = data.paymentMethod;
+    if (data.teamQuoteProgramId !== undefined) setData.teamQuoteProgramId = data.teamQuoteProgramId;
 
     if (Object.keys(setData).length === 0) {
       return this.getBooking(id);
@@ -724,6 +726,32 @@ export class DatabaseStorage implements IStorage {
   async getTeamQuoteByStripeInvoiceId(stripeInvoiceId: string): Promise<TeamQuote | undefined> {
     const [quote] = await db.select().from(teamQuotes).where(eq(teamQuotes.stripeInvoiceId, stripeInvoiceId));
     return quote || undefined;
+  }
+
+  async getActiveTeamContracts(coachId?: string): Promise<TeamQuote[]> {
+    const allQuotes = coachId
+      ? await db.select().from(teamQuotes).where(eq(teamQuotes.createdByCoachId, coachId)).orderBy(desc(teamQuotes.createdAt))
+      : await db.select().from(teamQuotes).orderBy(desc(teamQuotes.createdAt));
+
+    const programMap = new Map<string, { quotes: TeamQuote[]; hasPaid: boolean }>();
+    for (const q of allQuotes) {
+      const key = q.programId || q.id;
+      if (!programMap.has(key)) {
+        programMap.set(key, { quotes: [], hasPaid: false });
+      }
+      const entry = programMap.get(key)!;
+      entry.quotes.push(q);
+      if (q.status === "PAID") entry.hasPaid = true;
+    }
+
+    const activeContracts: TeamQuote[] = [];
+    programMap.forEach((entry) => {
+      if (entry.hasPaid) {
+        const representative = entry.quotes[0];
+        activeContracts.push(representative);
+      }
+    });
+    return activeContracts;
   }
 }
 
