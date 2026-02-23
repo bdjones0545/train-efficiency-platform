@@ -394,7 +394,7 @@ export async function sendTeamQuoteEmail(
         <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
           <p style="font-size: 15px; margin: 4px 0;"><strong>Team:</strong> ${teamName}</p>
           <p style="font-size: 15px; margin: 4px 0;"><strong>Athletes:</strong> ${numberOfAthletes}</p>
-          <p style="font-size: 15px; margin: 4px 0;"><strong>Cost per Athlete:</strong> ${costPerAthleteStr}/mo</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Cost per Athlete:</strong> ${costPerAthleteStr}/session</p>
           <p style="font-size: 15px; margin: 4px 0;"><strong>Training Type:</strong> ${trainingType}</p>
           <p style="font-size: 15px; margin: 4px 0;"><strong>Frequency:</strong> ${frequency}</p>
           <p style="font-size: 15px; margin: 4px 0;"><strong>Program Duration:</strong> ${durationMonths} months</p>

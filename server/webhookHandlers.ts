@@ -77,7 +77,7 @@ export class WebhookHandlers {
         invoice: invoice.id,
         amount: monthlyCents,
         currency: "usd",
-        description: `Team Training — ${paidQuote.teamName} | Month ${nextMonth} of ${paidQuote.totalMonths} | ${paidQuote.numberOfAthletes} athletes × $${(paidQuote.costPerAthleteCents / 100).toFixed(2)} | ${paidQuote.trainingType} | ${paidQuote.frequency}`,
+        description: `Team Training — ${paidQuote.teamName} | Month ${nextMonth} of ${paidQuote.totalMonths} | ${paidQuote.numberOfAthletes} athletes × $${(paidQuote.costPerAthleteCents / 100).toFixed(2)}/session | ${paidQuote.trainingType} | ${paidQuote.frequency}`,
       });
 
       const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);

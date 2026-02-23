@@ -77,7 +77,10 @@ export default function TeamQuotesPage() {
 
   const numAthletes = parseInt(numberOfAthletes) || 0;
   const costCents = Math.round((parseFloat(costPerAthlete) || 0) * 100);
-  const monthlyCents = numAthletes * costCents;
+  const freqMatch = frequency.match(/(\d+)/);
+  const sessionsPerWeek = freqMatch ? parseInt(freqMatch[1]) : 0;
+  const sessionsPerMonth = Math.round(sessionsPerWeek * 4.33);
+  const monthlyCents = numAthletes * costCents * sessionsPerMonth;
   const months = parseInt(durationMonths) || 0;
   const programTotalCents = monthlyCents * months;
   const monthlyDisplay = `$${(monthlyCents / 100).toFixed(2)}`;
@@ -151,7 +154,7 @@ export default function TeamQuotesPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="costPerAthlete">Cost per Athlete / Month ($)</Label>
+              <Label htmlFor="costPerAthlete">Cost per Athlete / Session ($)</Label>
               <Input
                 id="costPerAthlete"
                 type="number"
@@ -231,7 +234,7 @@ export default function TeamQuotesPage() {
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Quote Summary</p>
                   <p className="text-sm" data-testid="text-quote-calculation">
-                    {numAthletes} athletes x ${(costCents / 100).toFixed(2)}/mo per athlete
+                    {numAthletes} athletes × ${(costCents / 100).toFixed(2)}/session × {sessionsPerMonth} sessions/mo
                   </p>
                 </div>
                 <div className="text-right space-y-0.5">

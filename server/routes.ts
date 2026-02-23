@@ -2230,7 +2230,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Duration must be at least 1 month" });
       }
 
-      const monthlyCents = numberOfAthletes * costPerAthleteCents;
+      const freqMatch = frequency.match(/(\d+)/);
+      const sessionsPerWeek = freqMatch ? parseInt(freqMatch[1]) : 1;
+      const sessionsPerMonth = Math.round(sessionsPerWeek * 4.33);
+      const monthlyCents = numberOfAthletes * costPerAthleteCents * sessionsPerMonth;
 
       const stripe = await getUncachableStripeClient();
 
@@ -2259,7 +2262,7 @@ export async function registerRoutes(
         invoice: invoice.id,
         amount: monthlyCents,
         currency: "usd",
-        description: `Team Training — ${teamName} | Month 1 of ${totalMonths} | ${numberOfAthletes} athletes × $${(costPerAthleteCents / 100).toFixed(2)} | ${trainingType} | ${frequency}`,
+        description: `Team Training — ${teamName} | Month 1 of ${totalMonths} | ${numberOfAthletes} athletes × $${(costPerAthleteCents / 100).toFixed(2)}/session × ${sessionsPerMonth} sessions/mo | ${trainingType} | ${frequency}`,
       });
 
       const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
