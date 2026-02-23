@@ -80,14 +80,16 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Public API endpoints strip passwordHash from responses
 
 ## Recent Changes
-- Team Quotes feature (/coach/team-quotes): generate team training quotes with Stripe invoicing
-  - team_quotes table: teamName, numberOfAthletes, costPerAthleteCents, trainingType (STRENGTH/SPEED), frequency, durationWeeks, coachEmail, totalCents, status, stripeInvoiceId/Url
-  - POST /api/coach/team-quotes - Create quote, generate Stripe invoice, email to coach (COACH/ADMIN)
+- Team Quotes feature (/coach/team-quotes): generate team training quotes with monthly Stripe invoicing
+  - team_quotes table: teamName, numberOfAthletes, costPerAthleteCents, trainingType (STRENGTH/SPEED), frequency, durationWeeks (stores months), coachEmail, totalCents (monthly amount), status, stripeInvoiceId/Url, currentMonth, totalMonths
+  - POST /api/coach/team-quotes - Create quote, generate first month's Stripe invoice, email to coach (COACH/ADMIN)
   - GET /api/coach/team-quotes - List quotes (coach sees own, admin sees all) (COACH/ADMIN)
-  - Form: team name, # athletes, cost/athlete, training type, frequency, duration, email
-  - Generates Stripe invoice (send_invoice collection method, 30 days due)
-  - Sends branded email with invoice link via SendGrid
-  - Quote history with status badges and invoice links
+  - Form: team name, # athletes, cost/athlete/month, training type, frequency, program duration (months), email
+  - Monthly billing: generates one Stripe invoice per month (send_invoice collection method, 30 days due)
+  - Auto-renewal: when a monthly invoice is paid (via Stripe webhook), the next month's invoice is automatically generated and sent
+  - Each month creates a separate team_quote record with currentMonth tracking (e.g., Month 2 of 6)
+  - Sends branded email with invoice link via SendGrid (includes month X of Y info)
+  - Quote history grouped by team with payment progress bar and individual month invoice rows
   - "Team Quotes" link added to coach sidebar under Coach Tools
 - Payment method tracking on sessions and revenue analytics
   - paymentMethod column (WALLET, VENMO, CASH) added to bookings table

@@ -2163,9 +2163,9 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Coach profile not found" });
       }
 
-      const { teamName, numberOfAthletes, costPerAthleteCents, trainingType, frequency, durationWeeks, coachEmail } = req.body;
+      const { teamName, numberOfAthletes, costPerAthleteCents, trainingType, frequency, durationMonths, coachEmail } = req.body;
 
-      if (!teamName || !numberOfAthletes || !costPerAthleteCents || !trainingType || !frequency || !durationWeeks || !coachEmail) {
+      if (!teamName || !numberOfAthletes || !costPerAthleteCents || !trainingType || !frequency || !durationMonths || !coachEmail) {
         return res.status(400).json({ message: "All fields are required" });
       }
 
@@ -2178,7 +2178,12 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid email address" });
       }
 
-      const totalCents = numberOfAthletes * costPerAthleteCents;
+      const totalMonths = parseInt(durationMonths);
+      if (totalMonths < 1) {
+        return res.status(400).json({ message: "Duration must be at least 1 month" });
+      }
+
+      const monthlyCents = numberOfAthletes * costPerAthleteCents;
 
       const stripe = await getUncachableStripeClient();
 
@@ -2192,15 +2197,22 @@ export async function registerRoutes(
         customer: customer.id,
         collection_method: "send_invoice",
         days_until_due: 30,
-        metadata: { teamName, trainingType, frequency, durationWeeks: durationWeeks.toString(), numberOfAthletes: numberOfAthletes.toString() },
+        metadata: {
+          teamName,
+          trainingType,
+          frequency,
+          totalMonths: totalMonths.toString(),
+          currentMonth: "1",
+          numberOfAthletes: numberOfAthletes.toString(),
+        },
       });
 
       await stripe.invoiceItems.create({
         customer: customer.id,
         invoice: invoice.id,
-        amount: totalCents,
+        amount: monthlyCents,
         currency: "usd",
-        description: `Team Training — ${teamName} | ${numberOfAthletes} athletes × $${(costPerAthleteCents / 100).toFixed(2)} | ${trainingType} | ${frequency} for ${durationWeeks} weeks`,
+        description: `Team Training — ${teamName} | Month 1 of ${totalMonths} | ${numberOfAthletes} athletes × $${(costPerAthleteCents / 100).toFixed(2)} | ${trainingType} | ${frequency}`,
       });
 
       const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
@@ -2214,13 +2226,15 @@ export async function registerRoutes(
         costPerAthleteCents,
         trainingType,
         frequency,
-        durationWeeks,
+        durationWeeks: totalMonths,
         coachEmail,
-        totalCents,
+        totalCents: monthlyCents,
         status: "SENT",
         stripeInvoiceId: invoice.id,
         stripeInvoiceUrl: invoiceUrl,
         createdByCoachId,
+        currentMonth: 1,
+        totalMonths,
       });
 
       sendTeamQuoteEmail(
@@ -2230,9 +2244,11 @@ export async function registerRoutes(
         costPerAthleteCents,
         trainingType,
         frequency,
-        durationWeeks,
-        totalCents,
-        invoiceUrl
+        totalMonths,
+        monthlyCents,
+        invoiceUrl,
+        1,
+        totalMonths
       ).catch(err => console.error("Failed to send team quote email:", err));
 
       res.json(quote);

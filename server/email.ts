@@ -365,35 +365,47 @@ export async function sendTeamQuoteEmail(
   costPerAthleteCents: number,
   trainingType: string,
   frequency: string,
-  durationWeeks: number,
-  totalCents: number,
-  invoiceUrl: string
+  durationMonths: number,
+  monthlyCents: number,
+  invoiceUrl: string,
+  currentMonth: number = 1,
+  totalMonths: number = 1
 ) {
-  const subject = `Team Training Quote — ${teamName}`;
+  const monthLabel = totalMonths > 1 ? ` (Month ${currentMonth} of ${totalMonths})` : '';
+  const subject = `Team Training Invoice — ${teamName}${monthLabel}`;
   const costPerAthleteStr = `$${(costPerAthleteCents / 100).toFixed(2)}`;
-  const totalStr = `$${(totalCents / 100).toFixed(2)}`;
+  const monthlyStr = `$${(monthlyCents / 100).toFixed(2)}`;
+  const programTotalStr = `$${((monthlyCents * totalMonths) / 100).toFixed(2)}`;
+  const monthInfo = totalMonths > 1
+    ? `<p style="font-size: 15px; margin: 4px 0;"><strong>Billing Period:</strong> Month ${currentMonth} of ${totalMonths}</p>`
+    : '';
+  const programTotalLine = totalMonths > 1
+    ? `<p style="font-size: 14px; margin: 4px 0; color: #aaa;">Program Total (${totalMonths} months): ${programTotalStr}</p>`
+    : '';
 
   const html = `
     <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #111; color: #eee; border-radius: 8px; overflow: hidden;">
       <div style="background: #16a34a; padding: 24px 32px;">
-        <h1 style="margin: 0; font-size: 24px; color: #fff;">Team Training Quote</h1>
+        <h1 style="margin: 0; font-size: 24px; color: #fff;">Team Training Invoice${monthLabel}</h1>
       </div>
       <div style="padding: 32px;">
         <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hello,</p>
-        <p style="font-size: 16px; line-height: 1.6;">A team training quote has been generated for <strong>${teamName}</strong>. Here are the details:</p>
+        <p style="font-size: 16px; line-height: 1.6;">${currentMonth === 1 ? `A team training program has been set up for <strong>${teamName}</strong>.` : `The next monthly invoice for <strong>${teamName}</strong> is ready.`} Here are the details:</p>
         <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #16a34a;">
           <p style="font-size: 15px; margin: 4px 0;"><strong>Team:</strong> ${teamName}</p>
           <p style="font-size: 15px; margin: 4px 0;"><strong>Athletes:</strong> ${numberOfAthletes}</p>
-          <p style="font-size: 15px; margin: 4px 0;"><strong>Cost per Athlete:</strong> ${costPerAthleteStr}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Cost per Athlete:</strong> ${costPerAthleteStr}/mo</p>
           <p style="font-size: 15px; margin: 4px 0;"><strong>Training Type:</strong> ${trainingType}</p>
           <p style="font-size: 15px; margin: 4px 0;"><strong>Frequency:</strong> ${frequency}</p>
-          <p style="font-size: 15px; margin: 4px 0;"><strong>Program Duration:</strong> ${durationWeeks} weeks</p>
-          <p style="font-size: 18px; margin: 12px 0 4px; font-weight: bold;">Total: ${totalStr}</p>
+          <p style="font-size: 15px; margin: 4px 0;"><strong>Program Duration:</strong> ${durationMonths} months</p>
+          ${monthInfo}
+          <p style="font-size: 18px; margin: 12px 0 4px; font-weight: bold;">Monthly Invoice: ${monthlyStr}</p>
+          ${programTotalLine}
         </div>
         <div style="text-align: center; margin: 24px 0;">
           <a href="${invoiceUrl}" style="display: inline-block; background: #16a34a; color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 6px; font-size: 16px; font-weight: 600;">View & Pay Invoice</a>
         </div>
-        <p style="font-size: 14px; color: #888;">This invoice was generated through Stripe. Click the button above to view or pay.</p>
+        <p style="font-size: 14px; color: #888;">${totalMonths > 1 && currentMonth < totalMonths ? 'Once paid, the next month\'s invoice will be sent automatically.' : ''} This invoice was generated through Stripe.</p>
         <p style="font-size: 14px; color: #888; margin-top: 32px;">— Efficiency Strength Training</p>
       </div>
     </div>

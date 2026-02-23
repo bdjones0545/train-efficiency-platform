@@ -137,6 +137,9 @@ export const teamQuotes = pgTable("team_quotes", {
   stripeInvoiceId: varchar("stripe_invoice_id"),
   stripeInvoiceUrl: varchar("stripe_invoice_url"),
   createdByCoachId: varchar("created_by_coach_id").notNull(),
+  programId: varchar("program_id").default(sql`gen_random_uuid()`),
+  currentMonth: integer("current_month").notNull().default(1),
+  totalMonths: integer("total_months").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

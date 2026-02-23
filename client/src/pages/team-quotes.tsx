@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Users, DollarSign, Send, FileText, Dumbbell, Zap, ExternalLink } from "lucide-react";
+import { Users, DollarSign, Send, FileText, Dumbbell, Zap, ExternalLink, Calendar } from "lucide-react";
 import type { TeamQuote } from "@shared/schema";
 
 const FREQUENCY_OPTIONS = [
@@ -22,13 +22,14 @@ const FREQUENCY_OPTIONS = [
 ];
 
 const DURATION_OPTIONS = [
-  { value: 4, label: "4 weeks" },
-  { value: 6, label: "6 weeks" },
-  { value: 8, label: "8 weeks" },
-  { value: 10, label: "10 weeks" },
-  { value: 12, label: "12 weeks" },
-  { value: 16, label: "16 weeks" },
-  { value: 24, label: "24 weeks" },
+  { value: 1, label: "1 month" },
+  { value: 2, label: "2 months" },
+  { value: 3, label: "3 months" },
+  { value: 4, label: "4 months" },
+  { value: 5, label: "5 months" },
+  { value: 6, label: "6 months" },
+  { value: 9, label: "9 months" },
+  { value: 12, label: "12 months" },
 ];
 
 export default function TeamQuotesPage() {
@@ -40,7 +41,7 @@ export default function TeamQuotesPage() {
   const [costPerAthlete, setCostPerAthlete] = useState("");
   const [trainingType, setTrainingType] = useState<string>("");
   const [frequency, setFrequency] = useState<string>("");
-  const [durationWeeks, setDurationWeeks] = useState<string>("");
+  const [durationMonths, setDurationMonths] = useState<string>("");
   const [coachEmail, setCoachEmail] = useState(user?.email || "");
 
   useEffect(() => {
@@ -59,14 +60,14 @@ export default function TeamQuotesPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Quote sent!", description: "The Stripe invoice has been created and emailed." });
+      toast({ title: "Quote sent!", description: "The first monthly Stripe invoice has been created and emailed." });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/team-quotes"] });
       setTeamName("");
       setNumberOfAthletes("");
       setCostPerAthlete("");
       setTrainingType("");
       setFrequency("");
-      setDurationWeeks("");
+      setDurationMonths("");
       setCoachEmail(user?.email || "");
     },
     onError: (error: any) => {
@@ -76,13 +77,16 @@ export default function TeamQuotesPage() {
 
   const numAthletes = parseInt(numberOfAthletes) || 0;
   const costCents = Math.round((parseFloat(costPerAthlete) || 0) * 100);
-  const totalCents = numAthletes * costCents;
-  const totalDisplay = `$${(totalCents / 100).toFixed(2)}`;
+  const monthlyCents = numAthletes * costCents;
+  const months = parseInt(durationMonths) || 0;
+  const programTotalCents = monthlyCents * months;
+  const monthlyDisplay = `$${(monthlyCents / 100).toFixed(2)}`;
+  const programTotalDisplay = `$${(programTotalCents / 100).toFixed(2)}`;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!teamName || !numAthletes || !costCents || !trainingType || !frequency || !durationWeeks || !coachEmail) {
+    if (!teamName || !numAthletes || !costCents || !trainingType || !frequency || !durationMonths || !coachEmail) {
       toast({ title: "Missing fields", description: "Please fill in all fields", variant: "destructive" });
       return;
     }
@@ -93,7 +97,7 @@ export default function TeamQuotesPage() {
       costPerAthleteCents: costCents,
       trainingType,
       frequency,
-      durationWeeks: parseInt(durationWeeks),
+      durationMonths: parseInt(durationMonths),
       coachEmail,
     });
   };
@@ -108,11 +112,13 @@ export default function TeamQuotesPage() {
     }
   };
 
+  const groupedQuotes = quotes ? groupQuotesByTeam(quotes) : [];
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-team-quotes-title">Team Quotes</h1>
-        <p className="text-muted-foreground mt-1">Generate team training quotes with Stripe invoicing</p>
+        <p className="text-muted-foreground mt-1">Generate team training quotes with monthly Stripe invoicing</p>
       </div>
 
       <Card className="p-6">
@@ -145,7 +151,7 @@ export default function TeamQuotesPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="costPerAthlete">Cost per Athlete ($)</Label>
+              <Label htmlFor="costPerAthlete">Cost per Athlete / Month ($)</Label>
               <Input
                 id="costPerAthlete"
                 type="number"
@@ -194,7 +200,7 @@ export default function TeamQuotesPage() {
             </div>
             <div className="space-y-2">
               <Label>Program Duration</Label>
-              <Select value={durationWeeks} onValueChange={setDurationWeeks}>
+              <Select value={durationMonths} onValueChange={setDurationMonths}>
                 <SelectTrigger data-testid="select-duration">
                   <SelectValue placeholder="Select duration" />
                 </SelectTrigger>
@@ -215,7 +221,7 @@ export default function TeamQuotesPage() {
                 onChange={(e) => setCoachEmail(e.target.value)}
                 data-testid="input-coach-email"
               />
-              <p className="text-xs text-muted-foreground">The Stripe invoice and quote details will be sent to this email</p>
+              <p className="text-xs text-muted-foreground">Monthly Stripe invoices will be sent to this email</p>
             </div>
           </div>
 
@@ -225,12 +231,16 @@ export default function TeamQuotesPage() {
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Quote Summary</p>
                   <p className="text-sm" data-testid="text-quote-calculation">
-                    {numAthletes} athletes × ${(costCents / 100).toFixed(2)} per athlete
+                    {numAthletes} athletes x ${(costCents / 100).toFixed(2)}/mo per athlete
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-primary" data-testid="text-quote-total">{totalDisplay}</p>
-                  <p className="text-xs text-muted-foreground">Total</p>
+                <div className="text-right space-y-0.5">
+                  <p className="text-2xl font-bold text-primary" data-testid="text-quote-total">{monthlyDisplay}<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
+                  {months > 1 && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-program-total">
+                      {months} months = {programTotalDisplay} total
+                    </p>
+                  )}
                 </div>
               </div>
             </Card>
@@ -239,7 +249,7 @@ export default function TeamQuotesPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={createQuoteMutation.isPending || !teamName || !numAthletes || !costCents || !trainingType || !frequency || !durationWeeks || !coachEmail}
+            disabled={createQuoteMutation.isPending || !teamName || !numAthletes || !costCents || !trainingType || !frequency || !durationMonths || !coachEmail}
             data-testid="button-generate-quote"
           >
             {createQuoteMutation.isPending ? (
@@ -247,7 +257,7 @@ export default function TeamQuotesPage() {
             ) : (
               <>
                 <Send className="h-4 w-4 mr-2" />
-                Generate Quote & Send Invoice
+                Generate Quote & Send First Invoice
               </>
             )}
           </Button>
@@ -269,52 +279,97 @@ export default function TeamQuotesPage() {
             <p className="text-muted-foreground">No quotes generated yet</p>
           </Card>
         ) : (
-          <div className="space-y-3">
-            {quotes.map((quote) => (
-              <Card key={quote.id} className="p-4" data-testid={`card-quote-${quote.id}`}>
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="space-y-1 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold" data-testid={`text-quote-team-${quote.id}`}>{quote.teamName}</h3>
-                      <Badge variant={statusColor(quote.status)} data-testid={`badge-quote-status-${quote.id}`}>
-                        {quote.status}
-                      </Badge>
-                      <Badge variant="outline">
-                        {quote.trainingType === "STRENGTH" ? (
-                          <span className="flex items-center gap-1"><Dumbbell className="h-3 w-3" /> Strength</span>
-                        ) : (
-                          <span className="flex items-center gap-1"><Zap className="h-3 w-3" /> Speed</span>
-                        )}
-                      </Badge>
+          <div className="space-y-4">
+            {groupedQuotes.map((group) => (
+              <Card key={group.key} className="p-4" data-testid={`card-quote-group-${group.key}`}>
+                <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-base">{group.teamName}</h3>
+                    <Badge variant="outline">
+                      {group.trainingType === "STRENGTH" ? (
+                        <span className="flex items-center gap-1"><Dumbbell className="h-3 w-3" /> Strength</span>
+                      ) : (
+                        <span className="flex items-center gap-1"><Zap className="h-3 w-3" /> Speed</span>
+                      )}
+                    </Badge>
+                  </div>
+                  <div className="text-right text-sm text-muted-foreground">
+                    <Users className="h-3 w-3 inline mr-1" />
+                    {group.numberOfAthletes} athletes | {group.frequency} | {group.totalMonths} month program
+                  </div>
+                </div>
+
+                {group.totalMonths > 1 && (
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                      <span>Payment Progress</span>
+                      <span>{group.paidCount} of {group.totalMonths} months paid</span>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      <Users className="h-3 w-3 inline mr-1" />
-                      {quote.numberOfAthletes} athletes × ${(quote.costPerAthleteCents / 100).toFixed(2)} • {quote.frequency} • {quote.durationWeeks} weeks
-                    </p>
-                    <p className="text-xs text-muted-foreground">{quote.coachEmail}</p>
-                    {quote.createdAt && (
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(quote.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      </p>
-                    )}
+                    <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all"
+                        style={{ width: `${(group.paidCount / group.totalMonths) * 100}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-right space-y-1">
-                    <p className="text-xl font-bold" data-testid={`text-quote-amount-${quote.id}`}>
-                      ${(quote.totalCents / 100).toFixed(2)}
-                    </p>
-                    {quote.stripeInvoiceUrl && (
-                      <a
-                        href={quote.stripeInvoiceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1 justify-end"
-                        data-testid={`link-invoice-${quote.id}`}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        View Invoice
-                      </a>
+                )}
+
+                <div className="space-y-2">
+                  {group.invoices.map((quote) => (
+                    <div
+                      key={quote.id}
+                      className="flex items-center justify-between gap-3 p-2 rounded-md bg-muted/30 flex-wrap"
+                      data-testid={`row-invoice-${quote.id}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm font-medium">
+                          {quote.totalMonths > 1 ? `Month ${quote.currentMonth}` : 'Invoice'}
+                        </span>
+                        <Badge
+                          variant={statusColor(quote.status)}
+                          className={quote.status === 'PAID' ? 'bg-green-600 text-white' : ''}
+                          data-testid={`badge-quote-status-${quote.id}`}
+                        >
+                          {quote.status}
+                        </Badge>
+                        {quote.createdAt && (
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(quote.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-bold" data-testid={`text-quote-amount-${quote.id}`}>
+                          ${(quote.totalCents / 100).toFixed(2)}
+                        </span>
+                        {quote.stripeInvoiceUrl && (
+                          <a
+                            href={quote.stripeInvoiceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline flex items-center gap-1"
+                            data-testid={`link-invoice-${quote.id}`}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Invoice
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-border text-sm">
+                  <span className="text-muted-foreground">{group.coachEmail}</span>
+                  <span className="font-semibold">
+                    ${(group.monthlyAmount / 100).toFixed(2)}/mo
+                    {group.totalMonths > 1 && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        (${((group.monthlyAmount * group.totalMonths) / 100).toFixed(2)} total)
+                      </span>
                     )}
-                  </div>
+                  </span>
                 </div>
               </Card>
             ))}
@@ -323,4 +378,58 @@ export default function TeamQuotesPage() {
       </div>
     </div>
   );
+}
+
+interface QuoteGroup {
+  key: string;
+  teamName: string;
+  trainingType: string;
+  numberOfAthletes: number;
+  frequency: string;
+  totalMonths: number;
+  monthlyAmount: number;
+  coachEmail: string;
+  paidCount: number;
+  invoices: TeamQuote[];
+}
+
+function groupQuotesByTeam(quotes: TeamQuote[]): QuoteGroup[] {
+  const groups = new Map<string, QuoteGroup>();
+
+  for (const quote of quotes) {
+    const key = quote.programId || `${quote.teamName}-${quote.createdByCoachId}-${quote.totalMonths}-${quote.costPerAthleteCents}-${quote.numberOfAthletes}`;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        teamName: quote.teamName,
+        trainingType: quote.trainingType,
+        numberOfAthletes: quote.numberOfAthletes,
+        frequency: quote.frequency,
+        totalMonths: quote.totalMonths,
+        monthlyAmount: quote.totalCents,
+        coachEmail: quote.coachEmail,
+        paidCount: 0,
+        invoices: [],
+      });
+    }
+
+    const group = groups.get(key)!;
+    group.invoices.push(quote);
+    if (quote.status === 'PAID') {
+      group.paidCount++;
+    }
+  }
+
+  const result: QuoteGroup[] = [];
+  groups.forEach((group) => {
+    group.invoices.sort((a: TeamQuote, b: TeamQuote) => a.currentMonth - b.currentMonth);
+    result.push(group);
+  });
+
+  return result.sort((a: QuoteGroup, b: QuoteGroup) => {
+    const aDate = a.invoices[0]?.createdAt ? new Date(a.invoices[0].createdAt).getTime() : 0;
+    const bDate = b.invoices[0]?.createdAt ? new Date(b.invoices[0].createdAt).getTime() : 0;
+    return bDate - aDate;
+  });
 }
