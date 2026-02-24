@@ -10,6 +10,7 @@ import {
   athleticBookings,
   cashouts,
   walletTransactions,
+  appSettings,
   type UserProfile,
   type InsertUserProfile,
   type CoachProfile,
@@ -123,6 +124,10 @@ export interface IStorage {
   deleteTeamQuote(id: string): Promise<boolean>;
   getTeamQuoteByStripeInvoiceId(stripeInvoiceId: string): Promise<TeamQuote | undefined>;
   getActiveTeamContracts(coachId?: string): Promise<TeamQuote[]>;
+
+  getSetting(key: string): Promise<string | undefined>;
+  setSetting(key: string, value: string): Promise<void>;
+  getAllSettings(): Promise<{ key: string; value: string }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -758,6 +763,22 @@ export class DatabaseStorage implements IStorage {
       }
     });
     return activeContracts;
+  }
+
+  async getSetting(key: string): Promise<string | undefined> {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    return row?.value;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    await db.insert(appSettings).values({ key, value }).onConflictDoUpdate({
+      target: appSettings.key,
+      set: { value },
+    });
+  }
+
+  async getAllSettings(): Promise<{ key: string; value: string }[]> {
+    return db.select().from(appSettings);
   }
 }
 

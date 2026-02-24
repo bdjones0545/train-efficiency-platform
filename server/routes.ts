@@ -12,6 +12,14 @@ import { startWeeklyReminderJob } from "./weekly-reminder";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
 
+async function getCoachPayoutRate(coachId: string): Promise<number> {
+  const ownerCoach = await isOwner(coachId);
+  if (ownerCoach) return 1.0;
+  const pctStr = await storage.getSetting("coach_payout_percentage");
+  const pct = parseInt(pctStr || "50");
+  return (isNaN(pct) ? 50 : pct) / 100;
+}
+
 async function isOwner(coachId: string): Promise<boolean> {
   const profile = await storage.getCoachProfile(coachId);
   if (!profile) return false;
@@ -1033,8 +1041,7 @@ export async function registerRoutes(
           const freqNum = freqMatch ? parseInt(freqMatch[1]) : 1;
           const sessionsPerMonth = freqNum * 4.33;
           const perSessionCents = Math.round(contract.totalCents / sessionsPerMonth);
-          const ownerCoach = await isOwner(booking.coachId);
-          const payoutRate = ownerCoach ? 1.0 : 0.5;
+          const payoutRate = await getCoachPayoutRate(booking.coachId);
           amountCents = Math.round(perSessionCents * payoutRate);
         } else {
           amountCents = (service?.durationMin || 60) <= 30 ? 1000 : 2000;
@@ -1085,8 +1092,7 @@ export async function registerRoutes(
           if (totalParticipantCount === 1) {
             amountCents = 3000;
           } else {
-            const ownerCoach = await isOwner(booking.coachId);
-            const payoutRate = ownerCoach ? 1.0 : 0.5;
+            const payoutRate = await getCoachPayoutRate(booking.coachId);
             amountCents = Math.round(totalCollectedCents * payoutRate);
           }
         } else {
@@ -1101,8 +1107,7 @@ export async function registerRoutes(
             totalCollectedCents = perPersonCents;
           }
 
-          const ownerCoach = await isOwner(booking.coachId);
-          const payoutRate = ownerCoach ? 1.0 : 0.5;
+          const payoutRate = await getCoachPayoutRate(booking.coachId);
           amountCents = Math.round(totalCollectedCents * payoutRate);
         }
       }
@@ -1605,6 +1610,98 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/admin/services/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, durationMin, priceCents, active } = req.body;
+      const existing = await storage.getService(id);
+      if (!existing) return res.status(404).json({ message: "Service not found" });
+
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (durationMin !== undefined) updateData.durationMin = durationMin;
+      if (active !== undefined) updateData.active = active;
+
+      const priceChanged = priceCents !== undefined && priceCents !== existing.priceCents;
+      if (priceCents !== undefined) updateData.priceCents = priceCents;
+
+      try {
+        const stripe = await getUncachableStripeClient();
+        let stripeProductId = existing.stripeProductId;
+
+        if (!stripeProductId) {
+          const product = await stripe.products.create({
+            name: updateData.name || existing.name,
+            description: updateData.description || existing.description || undefined,
+          });
+          stripeProductId = product.id;
+          updateData.stripeProductId = product.id;
+        } else {
+          await stripe.products.update(stripeProductId, {
+            name: updateData.name || existing.name,
+            description: updateData.description || existing.description || undefined,
+          });
+        }
+
+        if (priceChanged && stripeProductId) {
+          if (existing.stripePriceId) {
+            await stripe.prices.update(existing.stripePriceId, { active: false });
+          }
+          const newPrice = await stripe.prices.create({
+            product: stripeProductId,
+            unit_amount: priceCents,
+            currency: "usd",
+          });
+          updateData.stripePriceId = newPrice.id;
+        }
+      } catch (stripeErr) {
+        console.error("Stripe sync error (continuing with local update):", stripeErr);
+      }
+
+      const updated = await storage.updateService(id, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating service:", error);
+      res.status(500).json({ message: "Failed to update service" });
+    }
+  });
+
+  app.get("/api/admin/settings", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
+    try {
+      const settings = await storage.getAllSettings();
+      const settingsObj: Record<string, string> = {};
+      for (const s of settings) settingsObj[s.key] = s.value;
+      if (!settingsObj.coach_payout_percentage) settingsObj.coach_payout_percentage = "50";
+      res.json(settingsObj);
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  app.put("/api/admin/settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { key, value } = req.body;
+      if (!key || value === undefined) return res.status(400).json({ message: "key and value required" });
+      const allowedKeys = ["coach_payout_percentage"];
+      if (!allowedKeys.includes(key)) return res.status(400).json({ message: "Invalid setting key" });
+
+      if (key === "coach_payout_percentage") {
+        const num = parseInt(value);
+        if (isNaN(num) || num < 0 || num > 100) {
+          return res.status(400).json({ message: "Percentage must be between 0 and 100" });
+        }
+      }
+
+      await storage.setSetting(key, String(value));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating setting:", error);
+      res.status(500).json({ message: "Failed to update setting" });
+    }
+  });
+
   app.get("/api/admin/bookings", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const bookingsList = await storage.getAllBookings();
@@ -1891,6 +1988,7 @@ export async function registerRoutes(
         redemptionByBooking.set(r.bookingId, r.amountCents);
       }
       const ownerCoach = await isOwner(coachId);
+      const coachPayoutRate = await getCoachPayoutRate(coachId);
 
       const allTeamQuotes = await storage.getAllTeamQuotes();
       const contractPerSessionMap = new Map<string, number>();
@@ -1934,7 +2032,7 @@ export async function registerRoutes(
         if (walletCharge !== undefined && walletCharge > 0) return walletCharge;
         const redemptionAmount = redemptionByBooking.get(bookingId);
         if (redemptionAmount !== undefined && redemptionAmount > 0) {
-          return ownerCoach ? redemptionAmount : Math.round(redemptionAmount / 0.5);
+          return ownerCoach ? redemptionAmount : Math.round(redemptionAmount / coachPayoutRate);
         }
         const location = bookingLocationMap.get(bookingId);
         const isSpringIsland = location?.toLowerCase().includes("spring island");

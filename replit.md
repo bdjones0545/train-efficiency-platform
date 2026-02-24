@@ -79,6 +79,17 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Passwords hashed with bcryptjs
 - Public API endpoints strip passwordHash from responses
 
+## Admin Configuration
+- Configuration page (/admin/configuration): admin-only page for managing core settings
+  - Add new coaches with name, email, password, bio, specialties
+  - Add/edit training options (services) with name, description, duration, price, active toggle
+  - Session price updates sync with Stripe (creates/updates Stripe products and prices)
+  - Configurable coach payout percentage (default 50%, owner always gets 100%)
+  - stripeProductId and stripePriceId columns added to services table
+  - app_settings table stores key-value configuration (e.g. coach_payout_percentage)
+  - API: GET/PUT /api/admin/settings, PATCH /api/admin/services/:id (ADMIN)
+  - "Configuration > Options" sidebar section visible only to ADMIN users
+
 ## Recent Changes
 - Client Team Training request page (/team-training): form for clients to request team training quotes
   - Fields: team name, sport, number of athletes, location, goals, preferred schedule, contact info, additional notes

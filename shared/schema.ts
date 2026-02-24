@@ -37,6 +37,13 @@ export const services = pgTable("services", {
   durationMin: integer("duration_min").notNull().default(60),
   priceCents: integer("price_cents").notNull().default(0),
   active: boolean("active").default(true),
+  stripeProductId: varchar("stripe_product_id"),
+  stripePriceId: varchar("stripe_price_id"),
+});
+
+export const appSettings = pgTable("app_settings", {
+  key: varchar("key").primaryKey(),
+  value: text("value").notNull(),
 });
 
 export const availabilityBlocks = pgTable("availability_blocks", {
@@ -143,6 +150,8 @@ export const teamQuotes = pgTable("team_quotes", {
   totalMonths: integer("total_months").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export type AppSetting = typeof appSettings.$inferSelect;
 
 export const insertAthleticBookingSchema = createInsertSchema(athleticBookings).omit({ id: true, createdAt: true });
 export type AthleticBooking = typeof athleticBookings.$inferSelect;
