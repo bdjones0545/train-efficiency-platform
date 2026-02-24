@@ -22,7 +22,6 @@ import {
   CalendarClock,
   LayoutDashboard,
   DollarSign,
-  Shield,
   LogOut,
   UserCog,
   Trophy,
@@ -72,9 +71,6 @@ export function AppSidebar() {
     { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
   ];
 
-  const adminItems = [
-    { title: "Admin", url: "/admin", icon: Shield },
-  ];
 
   return (
     <Sidebar>
@@ -160,25 +156,6 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {role === "ADMIN" && user?.id === "42755213" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Administration</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={location === item.url}>
-                      <Link href={item.url} onClick={handleNavClick} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
       </SidebarContent>
 
       <SidebarFooter className="p-3">
