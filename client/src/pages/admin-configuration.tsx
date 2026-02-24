@@ -30,6 +30,7 @@ type CoachWithUser = {
   bio: string;
   specialties: string[];
   isActive: boolean;
+  payoutPercentage: number | null;
   user: { id: string; firstName: string; lastName: string; email: string };
 };
 
@@ -69,6 +70,9 @@ export default function AdminConfigurationPage() {
 
   const [payoutPercentage, setPayoutPercentage] = useState("");
   const [payoutEditing, setPayoutEditing] = useState(false);
+
+  const [editingCoachPayoutId, setEditingCoachPayoutId] = useState<string | null>(null);
+  const [coachPayoutValue, setCoachPayoutValue] = useState("");
 
   const createCoachMutation = useMutation({
     mutationFn: async (data: {
@@ -153,9 +157,24 @@ export default function AdminConfigurationPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Setting updated successfully" });
+      toast({ title: "Default payout percentage updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
       setPayoutEditing(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateCoachPayoutMutation = useMutation({
+    mutationFn: async ({ id, payoutPercentage }: { id: string; payoutPercentage: number }) => {
+      const res = await apiRequest("PATCH", `/api/admin/coaches/${id}/payout`, { payoutPercentage });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Coach payout percentage updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      setEditingCoachPayoutId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -310,7 +329,7 @@ export default function AdminConfigurationPage() {
           {coaches?.map((coach) => (
             <Card key={coach.id} className="p-4" data-testid={`card-coach-${coach.id}`}>
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="font-medium" data-testid={`text-coach-name-${coach.id}`}>
                     {coach.user.firstName} {coach.user.lastName}
                   </p>
@@ -324,6 +343,69 @@ export default function AdminConfigurationPage() {
                       ))}
                     </div>
                   )}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Percent className="h-3.5 w-3.5 text-muted-foreground" />
+                    {editingCoachPayoutId === coach.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          className="w-20 h-7 text-sm"
+                          value={coachPayoutValue}
+                          onChange={(e) => setCoachPayoutValue(e.target.value)}
+                          data-testid={`input-coach-payout-${coach.id}`}
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          disabled={updateCoachPayoutMutation.isPending}
+                          onClick={() =>
+                            updateCoachPayoutMutation.mutate({
+                              id: coach.id,
+                              payoutPercentage: parseInt(coachPayoutValue) || 0,
+                            })
+                          }
+                          data-testid={`button-save-coach-payout-${coach.id}`}
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          onClick={() => setEditingCoachPayoutId(null)}
+                          data-testid={`button-cancel-coach-payout-${coach.id}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm" data-testid={`text-coach-payout-${coach.id}`}>
+                          Payout: {coach.payoutPercentage !== null && coach.payoutPercentage !== undefined
+                            ? `${coach.payoutPercentage}%`
+                            : `${settings?.coach_payout_percentage || "50"}% (default)`}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5"
+                          onClick={() => {
+                            setEditingCoachPayoutId(coach.id);
+                            setCoachPayoutValue(
+                              String(coach.payoutPercentage ?? settings?.coach_payout_percentage ?? "50")
+                            );
+                          }}
+                          data-testid={`button-edit-coach-payout-${coach.id}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <Badge variant={coach.isActive ? "default" : "secondary"}>
                   {coach.isActive ? "Active" : "Inactive"}
@@ -524,11 +606,11 @@ export default function AdminConfigurationPage() {
       <section>
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
           <Percent className="h-5 w-5" />
-          Coach Payout Percentage
+          Default Coach Payout Percentage
         </h2>
         <Card className="p-4" data-testid="card-payout-percentage">
           <p className="text-sm text-muted-foreground mb-3">
-            The percentage of session revenue that non-owner coaches receive. The owner always receives 100%.
+            The default percentage for coaches without a custom payout set above. Individual coach percentages override this value. The owner always receives 100%.
           </p>
           {settingsLoading ? (
             <p className="text-sm text-muted-foreground">Loading...</p>

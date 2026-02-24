@@ -28,6 +28,7 @@ export const coachProfiles = pgTable("coach_profiles", {
   photoUrl: text("photo_url"),
   timezone: varchar("timezone").default("America/New_York"),
   isActive: boolean("is_active").default(true),
+  payoutPercentage: integer("payout_percentage"),
 });
 
 export const services = pgTable("services", {

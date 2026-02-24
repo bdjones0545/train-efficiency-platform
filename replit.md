@@ -82,12 +82,15 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 ## Admin Configuration
 - Configuration page (/admin/configuration): admin-only page for managing core settings
   - Add new coaches with name, email, password, bio, specialties
+  - Per-coach payout percentage: each coach card shows editable payout % (edit icon inline)
+  - payoutPercentage column on coach_profiles table (nullable integer, null = use default)
   - Add/edit training options (services) with name, description, duration, price, active toggle
   - Session price updates sync with Stripe (creates/updates Stripe products and prices)
-  - Configurable coach payout percentage (default 50%, owner always gets 100%)
+  - Default coach payout percentage (applies to coaches without custom %, default 50%, owner always 100%)
   - stripeProductId and stripePriceId columns added to services table
   - app_settings table stores key-value configuration (e.g. coach_payout_percentage)
-  - API: GET/PUT /api/admin/settings, PATCH /api/admin/services/:id (ADMIN)
+  - Payout priority: per-coach payoutPercentage > global default > 50%
+  - API: GET/PUT /api/admin/settings, PATCH /api/admin/services/:id, PATCH /api/admin/coaches/:id/payout (ADMIN)
   - "Configuration > Options" sidebar section visible only to ADMIN users
 
 ## Recent Changes

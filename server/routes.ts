@@ -15,6 +15,10 @@ const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
 async function getCoachPayoutRate(coachId: string): Promise<number> {
   const ownerCoach = await isOwner(coachId);
   if (ownerCoach) return 1.0;
+  const profile = await storage.getCoachProfile(coachId);
+  if (profile && profile.payoutPercentage !== null && profile.payoutPercentage !== undefined) {
+    return profile.payoutPercentage / 100;
+  }
   const pctStr = await storage.getSetting("coach_payout_percentage");
   const pct = parseInt(pctStr || "50");
   return (isNaN(pct) ? 50 : pct) / 100;
@@ -1589,6 +1593,26 @@ export async function registerRoutes(
         return res.status(400).json({ message: "A coach with this email already exists" });
       }
       res.status(500).json({ message: "Failed to create coach" });
+    }
+  });
+
+  app.patch("/api/admin/coaches/:id/payout", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { payoutPercentage } = req.body;
+      if (payoutPercentage === undefined || payoutPercentage === null) {
+        return res.status(400).json({ message: "payoutPercentage required" });
+      }
+      const pct = parseInt(payoutPercentage);
+      if (isNaN(pct) || pct < 0 || pct > 100) {
+        return res.status(400).json({ message: "Percentage must be between 0 and 100" });
+      }
+      const updated = await storage.updateCoachProfile(id, { payoutPercentage: pct });
+      if (!updated) return res.status(404).json({ message: "Coach not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating coach payout:", error);
+      res.status(500).json({ message: "Failed to update coach payout" });
     }
   });
 
