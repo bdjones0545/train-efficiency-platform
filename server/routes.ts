@@ -1916,6 +1916,11 @@ export async function registerRoutes(
         }
       }
 
+      const bookingLocationMap = new Map<string, string | null>();
+      for (const b of allBookings) {
+        bookingLocationMap.set(b.id, b.location || null);
+      }
+
       const getBookingRevenue = (bookingId: string, serviceId: string): number => {
         const contractProgramId = bookingContractMap.get(bookingId);
         if (contractProgramId) {
@@ -1930,6 +1935,19 @@ export async function registerRoutes(
         const redemptionAmount = redemptionByBooking.get(bookingId);
         if (redemptionAmount !== undefined && redemptionAmount > 0) {
           return ownerCoach ? redemptionAmount : Math.round(redemptionAmount / 0.5);
+        }
+        const location = bookingLocationMap.get(bookingId);
+        const isSpringIsland = location?.toLowerCase().includes("spring island");
+        if (isSpringIsland && service) {
+          const isTeamTraining = service.name.toLowerCase().includes("team training");
+          const isBlufftonHS = location?.toLowerCase().includes("bluffton high");
+          if (!(isTeamTraining && isBlufftonHS)) {
+            if (service.durationMin <= 30) {
+              return 6200;
+            } else {
+              return 9500;
+            }
+          }
         }
         return service?.priceCents || 0;
       };
