@@ -155,23 +155,17 @@ function RedemptionOverview() {
                     <Badge className="text-xs bg-primary/15 text-primary">Owner</Badge>
                   )}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
                   <div>
-                    <p className="text-xs text-muted-foreground">Total Redeemed</p>
+                    <p className="text-xs text-muted-foreground">Total Earnings</p>
                     <p className="font-semibold text-sm" data-testid={`text-coach-redeemed-${coach.coachId}`}>
                       ${(coach.totalRedeemed / 100).toFixed(2)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Rate</p>
-                    <p className="font-semibold text-sm">
-                      {coach.isOwnerCoach ? "100%" : "50%"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Coach Earnings</p>
-                    <p className="font-semibold text-sm" data-testid={`text-coach-earnings-${coach.coachId}`}>
-                      ${((coach.isOwnerCoach ? coach.totalRedeemed : coach.totalRedeemed * 0.5) / 100).toFixed(2)}
+                    <p className="text-xs text-muted-foreground">Paid Out</p>
+                    <p className="font-semibold text-sm text-green-600 dark:text-green-400" data-testid={`text-coach-earnings-${coach.coachId}`}>
+                      {coach.isOwnerCoach ? "N/A" : `$${(coach.paidOut / 100).toFixed(2)}`}
                     </p>
                   </div>
                   <div>
@@ -181,11 +175,6 @@ function RedemptionOverview() {
                     </p>
                   </div>
                 </div>
-                {coach.paidOut > 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Already paid out: ${(coach.paidOut / 100).toFixed(2)}
-                  </p>
-                )}
               </div>
             </div>
           </Card>
@@ -201,31 +190,39 @@ function RedemptionOverview() {
       {redemptions.length > 0 && (
         <div className="space-y-3">
           <h2 className="font-semibold text-lg">All Redemptions</h2>
-          {redemptions.map((redemption) => (
-            <Card key={redemption.id} className="p-4" data-testid={`card-all-redemption-${redemption.id}`}>
-              <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
-                <div className="space-y-1 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="font-semibold text-sm">
-                      ${(redemption.amountCents / 100).toFixed(2)}
-                    </span>
-                    <Badge className={`text-xs ${payoutColors[redemption.payoutStatus]}`}>
-                      {redemption.payoutStatus}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Coach: {redemption.coachName} | Client: {redemption.clientName} | {redemption.serviceName}
-                  </p>
-                  {redemption.redeemedAt && (
-                    <p className="text-xs text-muted-foreground">
-                      {format(parseISO(redemption.redeemedAt as unknown as string), "MMM d, yyyy 'at' h:mm a")}
+          {redemptions.map((redemption) => {
+            const isOwnerRedemption = redemption.coachEmail === OWNER_EMAIL;
+            const displayStatus = isOwnerRedemption ? "COLLECTED" : redemption.payoutStatus;
+            const statusColor = isOwnerRedemption
+              ? "bg-green-500/15 text-green-700 dark:text-green-400"
+              : payoutColors[redemption.payoutStatus];
+            return (
+              <Card key={redemption.id} className="p-4" data-testid={`card-all-redemption-${redemption.id}`}>
+                <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
+                  <div className="space-y-1 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="font-semibold text-sm">
+                        ${(redemption.amountCents / 100).toFixed(2)}
+                      </span>
+                      <span className="text-sm text-muted-foreground">— {redemption.serviceName}</span>
+                      <Badge className={`text-xs ${statusColor}`}>
+                        {displayStatus}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Coach: {redemption.coachName} | Client: {redemption.clientName}
                     </p>
-                  )}
+                    {redemption.redeemedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        {format(parseISO(redemption.redeemedAt as unknown as string), "MMM d, yyyy 'at' h:mm a")}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
@@ -404,28 +401,38 @@ export default function RedemptionsPage() {
       {redemptions && redemptions.length > 0 && (
         <div className="space-y-3">
           <h2 className="font-semibold text-lg">Redemption History</h2>
-          {redemptions.map((redemption) => (
-            <Card key={redemption.id} className="p-4" data-testid={`card-redemption-${redemption.id}`}>
-              <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
-                <div className="space-y-1.5 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="font-semibold text-sm">
-                      ${(redemption.amountCents / 100).toFixed(2)}
-                    </span>
-                    <Badge className={`text-xs ${payoutColors[redemption.payoutStatus]}`}>
-                      {redemption.payoutStatus}
-                    </Badge>
+          {redemptions.map((redemption) => {
+            const r = redemption as any;
+            const displayStatus = isOwner ? "COLLECTED" : redemption.payoutStatus;
+            const statusColor = isOwner
+              ? "bg-green-500/15 text-green-700 dark:text-green-400"
+              : payoutColors[redemption.payoutStatus];
+            return (
+              <Card key={redemption.id} className="p-4" data-testid={`card-redemption-${redemption.id}`}>
+                <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="font-semibold text-sm">
+                        ${(redemption.amountCents / 100).toFixed(2)}
+                      </span>
+                      {r.serviceName && (
+                        <span className="text-sm text-muted-foreground">— {r.serviceName}</span>
+                      )}
+                      <Badge className={`text-xs ${statusColor}`}>
+                        {displayStatus}
+                      </Badge>
+                    </div>
+                    {redemption.redeemedAt && (
+                      <p className="text-sm text-muted-foreground">
+                        Redeemed: {format(parseISO(redemption.redeemedAt as unknown as string), "MMM d, yyyy 'at' h:mm a")}
+                      </p>
+                    )}
                   </div>
-                  {redemption.redeemedAt && (
-                    <p className="text-sm text-muted-foreground">
-                      Redeemed: {format(parseISO(redemption.redeemedAt as unknown as string), "MMM d, yyyy 'at' h:mm a")}
-                    </p>
-                  )}
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
 
