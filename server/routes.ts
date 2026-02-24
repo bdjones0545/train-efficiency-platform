@@ -1596,6 +1596,42 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/admin/coaches/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { bio, specialties, isActive, payoutPercentage } = req.body;
+      const updateData: Record<string, any> = {};
+      if (bio !== undefined) updateData.bio = bio;
+      if (specialties !== undefined) updateData.specialties = Array.isArray(specialties) ? specialties : [];
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (payoutPercentage !== undefined) {
+        const pct = parseInt(payoutPercentage);
+        if (isNaN(pct) || pct < 0 || pct > 100) {
+          return res.status(400).json({ message: "Percentage must be between 0 and 100" });
+        }
+        updateData.payoutPercentage = pct;
+      }
+      const updated = await storage.updateCoachProfile(id, updateData);
+      if (!updated) return res.status(404).json({ message: "Coach not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating coach:", error);
+      res.status(500).json({ message: "Failed to update coach" });
+    }
+  });
+
+  app.delete("/api/admin/coaches/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteCoachProfile(id);
+      if (!deleted) return res.status(404).json({ message: "Coach not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting coach:", error);
+      res.status(500).json({ message: "Failed to delete coach" });
+    }
+  });
+
   app.patch("/api/admin/coaches/:id/payout", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { id } = req.params;

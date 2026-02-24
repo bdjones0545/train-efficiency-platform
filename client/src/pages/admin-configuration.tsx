@@ -14,13 +14,14 @@ import {
   UserPlus,
   Plus,
   Pencil,
-  DollarSign,
   Percent,
   Settings,
   Dumbbell,
   Save,
   X,
+  Trash2,
 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useState } from "react";
 import type { Service } from "@shared/schema";
 
@@ -71,8 +72,13 @@ export default function AdminConfigurationPage() {
   const [payoutPercentage, setPayoutPercentage] = useState("");
   const [payoutEditing, setPayoutEditing] = useState(false);
 
-  const [editingCoachPayoutId, setEditingCoachPayoutId] = useState<string | null>(null);
-  const [coachPayoutValue, setCoachPayoutValue] = useState("");
+
+  const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null);
+  const [editCoachDialogOpen, setEditCoachDialogOpen] = useState(false);
+  const [editCoachBio, setEditCoachBio] = useState("");
+  const [editCoachSpecialties, setEditCoachSpecialties] = useState("");
+  const [editCoachActive, setEditCoachActive] = useState(true);
+  const [editCoachPayout, setEditCoachPayout] = useState("");
 
   const createCoachMutation = useMutation({
     mutationFn: async (data: {
@@ -101,6 +107,47 @@ export default function AdminConfigurationPage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const updateCoachMutation = useMutation({
+    mutationFn: async (data: { id: string; bio: string; specialties: string[]; isActive: boolean; payoutPercentage: number }) => {
+      const { id, ...body } = data;
+      const res = await apiRequest("PATCH", `/api/admin/coaches/${id}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Coach updated successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      setEditCoachDialogOpen(false);
+      setSelectedCoachId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteCoachMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/coaches/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Coach deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      setSelectedCoachId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openEditCoachDialog = (coach: CoachWithUser) => {
+    setSelectedCoachId(coach.id);
+    setEditCoachBio(coach.bio || "");
+    setEditCoachSpecialties(coach.specialties?.join(", ") || "");
+    setEditCoachActive(coach.isActive);
+    setEditCoachPayout(String(coach.payoutPercentage ?? settings?.coach_payout_percentage ?? "50"));
+    setEditCoachDialogOpen(true);
+  };
 
   const createServiceMutation = useMutation({
     mutationFn: async (data: {
@@ -160,21 +207,6 @@ export default function AdminConfigurationPage() {
       toast({ title: "Default payout percentage updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
       setPayoutEditing(false);
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const updateCoachPayoutMutation = useMutation({
-    mutationFn: async ({ id, payoutPercentage }: { id: string; payoutPercentage: number }) => {
-      const res = await apiRequest("PATCH", `/api/admin/coaches/${id}/payout`, { payoutPercentage });
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Coach payout percentage updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
-      setEditingCoachPayoutId(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -327,7 +359,12 @@ export default function AdminConfigurationPage() {
         <div className="grid gap-3">
           {coachesLoading && <p className="text-sm text-muted-foreground">Loading coaches...</p>}
           {coaches?.map((coach) => (
-            <Card key={coach.id} className="p-4" data-testid={`card-coach-${coach.id}`}>
+            <Card
+              key={coach.id}
+              className="p-4 cursor-pointer transition-colors hover:bg-accent/50"
+              data-testid={`card-coach-${coach.id}`}
+              onClick={() => openEditCoachDialog(coach)}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium" data-testid={`text-coach-name-${coach.id}`}>
@@ -345,71 +382,19 @@ export default function AdminConfigurationPage() {
                   )}
                   <div className="flex items-center gap-2 mt-2">
                     <Percent className="h-3.5 w-3.5 text-muted-foreground" />
-                    {editingCoachPayoutId === coach.id ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="100"
-                          className="w-20 h-7 text-sm"
-                          value={coachPayoutValue}
-                          onChange={(e) => setCoachPayoutValue(e.target.value)}
-                          data-testid={`input-coach-payout-${coach.id}`}
-                        />
-                        <span className="text-xs text-muted-foreground">%</span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2"
-                          disabled={updateCoachPayoutMutation.isPending}
-                          onClick={() =>
-                            updateCoachPayoutMutation.mutate({
-                              id: coach.id,
-                              payoutPercentage: parseInt(coachPayoutValue) || 0,
-                            })
-                          }
-                          data-testid={`button-save-coach-payout-${coach.id}`}
-                        >
-                          <Save className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2"
-                          onClick={() => setEditingCoachPayoutId(null)}
-                          data-testid={`button-cancel-coach-payout-${coach.id}`}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm" data-testid={`text-coach-payout-${coach.id}`}>
-                          Payout: {coach.payoutPercentage !== null && coach.payoutPercentage !== undefined
-                            ? `${coach.payoutPercentage}%`
-                            : `${settings?.coach_payout_percentage || "50"}% (default)`}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 px-1.5"
-                          onClick={() => {
-                            setEditingCoachPayoutId(coach.id);
-                            setCoachPayoutValue(
-                              String(coach.payoutPercentage ?? settings?.coach_payout_percentage ?? "50")
-                            );
-                          }}
-                          data-testid={`button-edit-coach-payout-${coach.id}`}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
+                    <span className="text-sm" data-testid={`text-coach-payout-${coach.id}`}>
+                      Payout: {coach.payoutPercentage !== null && coach.payoutPercentage !== undefined
+                        ? `${coach.payoutPercentage}%`
+                        : `${settings?.coach_payout_percentage || "50"}% (default)`}
+                    </span>
                   </div>
                 </div>
-                <Badge variant={coach.isActive ? "default" : "secondary"}>
-                  {coach.isActive ? "Active" : "Inactive"}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={coach.isActive ? "default" : "secondary"}>
+                    {coach.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                </div>
               </div>
             </Card>
           ))}
@@ -417,6 +402,117 @@ export default function AdminConfigurationPage() {
             <p className="text-sm text-muted-foreground">No coaches yet.</p>
           )}
         </div>
+
+        <Dialog open={editCoachDialogOpen} onOpenChange={setEditCoachDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Coach</DialogTitle>
+            </DialogHeader>
+            {(() => {
+              const coach = coaches?.find((c) => c.id === selectedCoachId);
+              if (!coach) return null;
+              return (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-muted-foreground">Name</Label>
+                    <p className="font-medium">{coach.user.firstName} {coach.user.lastName}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Email</Label>
+                    <p className="text-sm">{coach.user.email}</p>
+                  </div>
+                  <div>
+                    <Label>Bio</Label>
+                    <Textarea
+                      value={editCoachBio}
+                      onChange={(e) => setEditCoachBio(e.target.value)}
+                      rows={3}
+                      data-testid="input-edit-coach-bio"
+                    />
+                  </div>
+                  <div>
+                    <Label>Specialties (comma-separated)</Label>
+                    <Input
+                      value={editCoachSpecialties}
+                      onChange={(e) => setEditCoachSpecialties(e.target.value)}
+                      placeholder="Strength, Speed, Conditioning"
+                      data-testid="input-edit-coach-specialties"
+                    />
+                  </div>
+                  <div>
+                    <Label>Payout Percentage</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        className="w-24"
+                        value={editCoachPayout}
+                        onChange={(e) => setEditCoachPayout(e.target.value)}
+                        data-testid="input-edit-coach-payout"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label>Active</Label>
+                    <Switch
+                      checked={editCoachActive}
+                      onCheckedChange={setEditCoachActive}
+                      data-testid="switch-edit-coach-active"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" size="sm" data-testid="button-delete-coach">
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete Coach
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Coach</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete {coach.user.firstName} {coach.user.lastName} and all their associated data including bookings, availability, and earnings. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel data-testid="button-cancel-delete-coach">Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => deleteCoachMutation.mutate(coach.id)}
+                            data-testid="button-confirm-delete-coach"
+                          >
+                            {deleteCoachMutation.isPending ? "Deleting..." : "Delete"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <Button
+                      disabled={updateCoachMutation.isPending}
+                      onClick={() =>
+                        updateCoachMutation.mutate({
+                          id: coach.id,
+                          bio: editCoachBio,
+                          specialties: editCoachSpecialties
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                          isActive: editCoachActive,
+                          payoutPercentage: parseInt(editCoachPayout) || 0,
+                        })
+                      }
+                      data-testid="button-save-edit-coach"
+                    >
+                      {updateCoachMutation.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
       </section>
 
       <Separator />

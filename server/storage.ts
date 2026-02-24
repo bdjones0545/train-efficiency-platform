@@ -54,6 +54,7 @@ export interface IStorage {
   getCoachProfileByEmail(email: string): Promise<CoachProfile | undefined>;
   createCoachProfile(profile: InsertCoachProfile): Promise<CoachProfile>;
   updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
+  deleteCoachProfile(id: string): Promise<boolean>;
 
   getServices(): Promise<Service[]>;
   getService(id: string): Promise<Service | undefined>;
@@ -235,6 +236,22 @@ export class DatabaseStorage implements IStorage {
   async updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined> {
     const [updated] = await db.update(coachProfiles).set(data).where(eq(coachProfiles.id, id)).returning();
     return updated;
+  }
+
+  async deleteCoachProfile(id: string): Promise<boolean> {
+    const profile = await this.getCoachProfile(id);
+    if (!profile) return false;
+    await db.delete(availabilityBlocks).where(eq(availabilityBlocks.coachId, id));
+    const coachBookings = await db.select({ id: bookings.id }).from(bookings).where(eq(bookings.coachId, id));
+    for (const b of coachBookings) {
+      await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
+      await db.delete(redemptions).where(eq(redemptions.bookingId, b.id));
+    }
+    await db.delete(redemptions).where(eq(redemptions.coachId, id));
+    await db.delete(cashouts).where(eq(cashouts.coachId, id));
+    await db.delete(bookings).where(eq(bookings.coachId, id));
+    await db.delete(coachProfiles).where(eq(coachProfiles.id, id));
+    return true;
   }
 
   async getServices(): Promise<Service[]> {
