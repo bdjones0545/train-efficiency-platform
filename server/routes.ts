@@ -989,7 +989,18 @@ export async function registerRoutes(
       const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
       const redemptionsList = await storage.getCoachRedemptions(coachId);
-      res.json(redemptionsList);
+      const allBookings = await storage.getAllBookings();
+      const servicesList = await storage.getServices();
+      const enriched = redemptionsList.map((r: any) => {
+        const booking = allBookings.find((b: any) => b.id === r.bookingId);
+        const service = booking ? servicesList.find((s: any) => s.id === booking.serviceId) : undefined;
+        return {
+          ...r,
+          sessionPriceCents: service?.priceCents || 0,
+          serviceName: service?.name || "Session",
+        };
+      });
+      res.json(enriched);
     } catch (error) {
       console.error("Error fetching redemptions:", error);
       res.status(500).json({ message: "Failed to fetch redemptions" });

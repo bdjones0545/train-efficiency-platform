@@ -296,9 +296,9 @@ export default function RedemptionsPage() {
   const unredeemed = completedBookings?.filter((b) => !redeemedBookingIds.has(b.id)) || [];
   const isLoading = bookingsLoading || redemptionsLoading;
 
-  const totalRedeemed = redemptions?.reduce((sum, r) => sum + r.amountCents, 0) || 0;
+  const totalRedeemed = redemptions?.reduce((sum, r) => sum + ((r as any).sessionPriceCents || r.amountCents), 0) || 0;
   const pendingPayout = redemptions?.filter((r) => r.payoutStatus === "PENDING").reduce((sum, r) => sum + r.amountCents, 0) || 0;
-  const totalCashedOut = cashoutsList?.reduce((sum, c) => sum + c.amountCents, 0) || 0;
+  const totalCashedOut = cashoutsList?.filter((c) => c.status === "PAID").reduce((sum, c) => sum + c.amountCents, 0) || 0;
 
   if (isLoading) {
     return (
@@ -319,13 +319,13 @@ export default function RedemptionsPage() {
           <p className="text-3xl font-bold text-primary" data-testid="text-total-redeemed">
             ${(totalRedeemed / 100).toFixed(2)}
           </p>
-          <p className="text-sm text-muted-foreground">Total Redeemed</p>
+          <p className="text-sm text-muted-foreground">Total Session Revenue</p>
         </Card>
         <Card className="p-4 text-center">
           <p className="text-3xl font-bold" data-testid="text-pending-payout">
             ${(pendingPayout / 100).toFixed(2)}
           </p>
-          <p className="text-sm text-muted-foreground">Available to Cash Out</p>
+          <p className="text-sm text-muted-foreground">{isOwner ? "Pending Earnings" : "Available to Cash Out"}</p>
         </Card>
         {!isOwner && (
           <Card className="p-4 text-center">
