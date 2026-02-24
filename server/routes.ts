@@ -1952,6 +1952,23 @@ export async function registerRoutes(
         return service?.priceCents || 0;
       };
 
+      const getPerPersonRevenue = (booking: typeof allBookings[0]): number => {
+        const service = serviceMap.get(booking.serviceId);
+        if (!service) return 0;
+        const isFreeService = service.priceCents === 0;
+        if (isFreeService) return 0;
+        const location = booking.location || null;
+        const isSpringIsland = location?.toLowerCase().includes("spring island");
+        if (isSpringIsland) {
+          const isTeamTraining = service.name.toLowerCase().includes("team training");
+          const isBlufftonHS = location?.toLowerCase().includes("bluffton high");
+          if (!(isTeamTraining && isBlufftonHS)) {
+            return service.durationMin <= 30 ? 6200 : 9500;
+          }
+        }
+        return service.priceCents;
+      };
+
       const clientMap = new Map<string, { id: string; firstName: string; lastName: string; email: string | null; profileImageUrl: string | null; sessions: { date: string; status: string; serviceName: string; priceCents: number; paymentMethod: string | null }[] }>();
 
       for (const b of allBookings) {
@@ -1969,7 +1986,8 @@ export async function registerRoutes(
           });
         }
         const service = serviceMap.get(b.serviceId);
-        const actualRevenue = getBookingRevenue(b.id, b.serviceId);
+        const isSemiPrivate = b.maxParticipants !== null && b.maxParticipants > 1;
+        const actualRevenue = isSemiPrivate ? getPerPersonRevenue(b) : getBookingRevenue(b.id, b.serviceId);
         clientMap.get(clientId)!.sessions.push({
           date: b.startAt.toISOString(),
           status: b.status,
@@ -1984,6 +2002,8 @@ export async function registerRoutes(
       for (const b of allBookings) {
         const participants = await storage.getBookingParticipants(b.id);
         const service = serviceMap.get(b.serviceId);
+        const isSemiPrivate = b.maxParticipants !== null && b.maxParticipants > 1;
+        const perPersonRev = isSemiPrivate ? getPerPersonRevenue(b) : getBookingRevenue(b.id, b.serviceId);
         for (const p of participants) {
           if (p.participantName) {
             const walkInKey = `walkin_${p.participantName.toLowerCase().trim()}`;
@@ -2001,12 +2021,11 @@ export async function registerRoutes(
             if (p.userId && !walkInUserIdMap.has(walkInKey)) {
               walkInUserIdMap.set(walkInKey, p.userId);
             }
-            const walkInRevenue = getBookingRevenue(b.id, b.serviceId);
             clientMap.get(walkInKey)!.sessions.push({
               date: b.startAt.toISOString(),
               status: b.status,
               serviceName: service?.name || "Unknown",
-              priceCents: walkInRevenue,
+              priceCents: perPersonRev,
               paymentMethod: b.paymentMethod || null,
             });
           } else if (p.userId && p.userId !== b.clientId && !coachUserIds.has(p.userId)) {
@@ -2021,12 +2040,11 @@ export async function registerRoutes(
                 sessions: [],
               });
             }
-            const participantRevenue = getBookingRevenue(b.id, b.serviceId);
             clientMap.get(participantUserId)!.sessions.push({
               date: b.startAt.toISOString(),
               status: b.status,
               serviceName: service?.name || "Unknown",
-              priceCents: participantRevenue,
+              priceCents: perPersonRev,
               paymentMethod: b.paymentMethod || null,
             });
           }
