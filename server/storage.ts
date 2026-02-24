@@ -60,6 +60,7 @@ export interface IStorage {
   getService(id: string): Promise<Service | undefined>;
   createService(service: InsertService): Promise<Service>;
   updateService(id: string, data: Partial<Service>): Promise<Service | undefined>;
+  deleteService(id: string): Promise<boolean>;
 
   getAvailabilityBlocks(coachId: string): Promise<AvailabilityBlock[]>;
   createAvailabilityBlock(block: InsertAvailabilityBlock): Promise<AvailabilityBlock>;
@@ -271,6 +272,15 @@ export class DatabaseStorage implements IStorage {
   async updateService(id: string, data: Partial<Service>): Promise<Service | undefined> {
     const [updated] = await db.update(services).set(data).where(eq(services.id, id)).returning();
     return updated;
+  }
+
+  async deleteService(id: string): Promise<boolean> {
+    const existingBookings = await db.select({ id: bookings.id }).from(bookings).where(eq(bookings.serviceId, id)).limit(1);
+    if (existingBookings.length > 0) {
+      throw new Error("Cannot delete a training option that has existing bookings. Deactivate it instead.");
+    }
+    const result = await db.delete(services).where(eq(services.id, id)).returning();
+    return result.length > 0;
   }
 
   async getAvailabilityBlocks(coachId: string): Promise<AvailabilityBlock[]> {

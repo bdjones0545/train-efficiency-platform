@@ -1727,6 +1727,32 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/admin/services/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const existing = await storage.getService(id);
+      if (!existing) return res.status(404).json({ message: "Training option not found" });
+
+      try {
+        const stripe = await getUncachableStripeClient();
+        if (existing.stripeProductId) {
+          await stripe.products.update(existing.stripeProductId, { active: false });
+        }
+        if (existing.stripePriceId) {
+          await stripe.prices.update(existing.stripePriceId, { active: false });
+        }
+      } catch (stripeErr) {
+        console.error("Stripe archive error (continuing with local delete):", stripeErr);
+      }
+
+      await storage.deleteService(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting service:", error);
+      res.status(400).json({ message: error.message || "Failed to delete training option" });
+    }
+  });
+
   app.get("/api/admin/settings", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const settings = await storage.getAllSettings();

@@ -238,6 +238,21 @@ export default function AdminConfigurationPage() {
     });
   };
 
+  const deleteServiceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/services/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Training option deleted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/services"] });
+      setEditingServiceId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const startEditPayout = () => {
     setPayoutPercentage(settings?.coach_payout_percentage || "50");
     setPayoutEditing(true);
@@ -645,19 +660,47 @@ export default function AdminConfigurationPage() {
                     />
                     <Label>Active</Label>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      disabled={updateServiceMutation.isPending}
-                      onClick={saveEditService}
-                      data-testid={`button-save-service-${service.id}`}
-                    >
-                      <Save className="h-4 w-4 mr-1" />
-                      {updateServiceMutation.isPending ? "Saving..." : "Save & Sync Stripe"}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={cancelEditService} data-testid={`button-cancel-edit-${service.id}`}>
-                      <X className="h-4 w-4 mr-1" /> Cancel
-                    </Button>
+                  <div className="flex items-center justify-between">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="destructive" data-testid={`button-delete-service-${service.id}`}>
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Training Option</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete "{service.name}". If this option has existing bookings, it cannot be deleted — deactivate it instead. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel data-testid="button-cancel-delete-service">Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => deleteServiceMutation.mutate(service.id)}
+                            data-testid="button-confirm-delete-service"
+                          >
+                            {deleteServiceMutation.isPending ? "Deleting..." : "Delete"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={cancelEditService} data-testid={`button-cancel-edit-${service.id}`}>
+                        <X className="h-4 w-4 mr-1" /> Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={updateServiceMutation.isPending}
+                        onClick={saveEditService}
+                        data-testid={`button-save-service-${service.id}`}
+                      >
+                        <Save className="h-4 w-4 mr-1" />
+                        {updateServiceMutation.isPending ? "Saving..." : "Save & Sync Stripe"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : (
