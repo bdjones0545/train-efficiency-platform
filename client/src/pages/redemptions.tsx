@@ -19,6 +19,7 @@ type AdminRedemption = Redemption & {
   coachEmail: string | null;
   serviceName: string;
   clientName: string;
+  sessionPriceCents: number;
 };
 
 type CashoutWithCoach = Cashout & { coachName: string };
@@ -60,7 +61,7 @@ function RedemptionOverview() {
   const redemptions = allRedemptions || [];
   const cashouts = allCashouts || [];
 
-  const totalRevenue = redemptions.reduce((sum, r) => sum + r.amountCents, 0);
+  const totalRevenue = redemptions.reduce((sum, r) => sum + (r.sessionPriceCents || r.amountCents), 0);
   const totalPaidOut = cashouts
     .filter((c) => c.status === "PAID")
     .reduce((sum, c) => sum + c.amountCents, 0);
@@ -69,17 +70,19 @@ function RedemptionOverview() {
     .reduce((sum, c) => sum + c.amountCents, 0);
 
   const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
-  const coachMap = new Map<string, { name: string; coachUserId: string | null; isOwnerCoach: boolean; totalRedeemed: number; pendingPayout: number; paidOut: number }>();
+  const coachMap = new Map<string, { name: string; coachUserId: string | null; isOwnerCoach: boolean; totalRedeemed: number; pendingPayout: number; requestedPayout: number; paidOut: number }>();
 
   for (const r of redemptions) {
     const key = r.coachId;
     if (!coachMap.has(key)) {
-      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, isOwnerCoach: r.coachEmail === OWNER_EMAIL, totalRedeemed: 0, pendingPayout: 0, paidOut: 0 });
+      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, isOwnerCoach: r.coachEmail === OWNER_EMAIL, totalRedeemed: 0, pendingPayout: 0, requestedPayout: 0, paidOut: 0 });
     }
     const entry = coachMap.get(key)!;
     entry.totalRedeemed += r.amountCents;
     if (r.payoutStatus === "PENDING") {
       entry.pendingPayout += r.amountCents;
+    } else if (r.payoutStatus === "SENT") {
+      entry.requestedPayout += r.amountCents;
     }
   }
 
@@ -90,7 +93,10 @@ function RedemptionOverview() {
   }
 
   const coachSummaries = Array.from(coachMap.entries()).map(([coachId, data]) => {
-    const owedAmount = data.isOwnerCoach ? 0 : data.pendingPayout;
+    const unpaidCashouts = cashouts
+      .filter((c) => c.coachId === coachId && c.status === "REQUESTED")
+      .reduce((sum, c) => sum + c.amountCents, 0);
+    const owedAmount = data.isOwnerCoach ? 0 : (data.pendingPayout + unpaidCashouts);
     return { coachId, ...data, owedAmount };
   });
 

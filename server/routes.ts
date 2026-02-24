@@ -1803,11 +1803,11 @@ export async function registerRoutes(
       const redemptionsList = await storage.getAllRedemptions();
       const coaches = await storage.getCoachProfiles();
       const allBookings = await storage.getAllBookings();
-      const services = await storage.getServices();
+      const servicesList = await storage.getServices();
       const enriched = redemptionsList.map((r: any) => {
         const coach = coaches.find((cp: any) => cp.id === r.coachId);
         const booking = allBookings.find((b: any) => b.id === r.bookingId);
-        const service = booking ? services.find((s: any) => s.id === booking.serviceId) : undefined;
+        const service = booking ? servicesList.find((s: any) => s.id === booking.serviceId) : undefined;
         let clientName = "Unknown";
         if (booking?.client) {
           clientName = `${booking.client.firstName} ${booking.client.lastName}`;
@@ -1819,6 +1819,7 @@ export async function registerRoutes(
           coachEmail: coach?.user?.email || null,
           serviceName: service?.name || "Session",
           clientName,
+          sessionPriceCents: service?.priceCents || 0,
         };
       });
       res.json(enriched);
