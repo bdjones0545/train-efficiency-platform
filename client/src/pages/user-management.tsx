@@ -117,6 +117,13 @@ export default function UserManagementPage() {
   const [newCoachBio, setNewCoachBio] = useState("");
   const [newCoachSpecialties, setNewCoachSpecialties] = useState("");
 
+  const [clientDialogOpen, setClientDialogOpen] = useState(false);
+  const [newClientFirstName, setNewClientFirstName] = useState("");
+  const [newClientLastName, setNewClientLastName] = useState("");
+  const [newClientEmail, setNewClientEmail] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [newClientNotes, setNewClientNotes] = useState("");
+
   const { data: users, isLoading } = useQuery<UserWithProfile[]>({
     queryKey: ["/api/coach/users"],
   });
@@ -264,6 +271,49 @@ export default function UserManagementPage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const createClientMutation = useMutation({
+    mutationFn: async (data: { firstName: string; lastName: string; email: string; phone?: string; notes?: string }) => {
+      const res = await apiRequest("POST", "/api/admin/import-csv", {
+        rows: [data],
+      });
+      return res.json() as Promise<ImportResponse>;
+    },
+    onSuccess: (data) => {
+      const result = data.results?.[0];
+      if (result?.status === "created") {
+        toast({ title: "Client added", description: "Invite email sent" });
+      } else if (result?.status === "already_exists") {
+        toast({ title: "Client already exists", description: "This email is already registered", variant: "destructive" });
+      } else {
+        toast({ title: "Could not add client", description: result?.status || "Unknown error", variant: "destructive" });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/users"] });
+      setClientDialogOpen(false);
+      setNewClientFirstName("");
+      setNewClientLastName("");
+      setNewClientEmail("");
+      setNewClientPhone("");
+      setNewClientNotes("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleCreateClient = () => {
+    if (!newClientFirstName || !newClientEmail) {
+      toast({ title: "First name and email are required", variant: "destructive" });
+      return;
+    }
+    createClientMutation.mutate({
+      firstName: newClientFirstName,
+      lastName: newClientLastName,
+      email: newClientEmail,
+      phone: newClientPhone || undefined,
+      notes: newClientNotes || undefined,
+    });
+  };
 
   const importCsvMutation = useMutation({
     mutationFn: async (rows: Record<string, string>[]) => {
@@ -623,6 +673,10 @@ export default function UserManagementPage() {
             <Upload className="h-4 w-4 mr-1" />
             Import CSV
           </Button>
+          <Button variant="outline" onClick={() => setClientDialogOpen(true)} data-testid="button-add-client">
+            <UserPlus className="h-4 w-4 mr-1" />
+            Add Client
+          </Button>
           <Dialog open={coachDialogOpen} onOpenChange={setCoachDialogOpen}>
             <Button onClick={() => setCoachDialogOpen(true)} data-testid="button-add-coach">
               <UserCog className="h-4 w-4 mr-1" />
@@ -842,6 +896,71 @@ export default function UserManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={clientDialogOpen} onOpenChange={setClientDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>First Name *</Label>
+                <Input
+                  value={newClientFirstName}
+                  onChange={(e) => setNewClientFirstName(e.target.value)}
+                  placeholder="Jane"
+                  data-testid="input-client-first-name"
+                />
+              </div>
+              <div>
+                <Label>Last Name</Label>
+                <Input
+                  value={newClientLastName}
+                  onChange={(e) => setNewClientLastName(e.target.value)}
+                  placeholder="Doe"
+                  data-testid="input-client-last-name"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Email *</Label>
+              <Input
+                type="email"
+                value={newClientEmail}
+                onChange={(e) => setNewClientEmail(e.target.value)}
+                placeholder="client@example.com"
+                data-testid="input-client-email"
+              />
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input
+                type="tel"
+                value={newClientPhone}
+                onChange={(e) => setNewClientPhone(e.target.value)}
+                placeholder="(555) 123-4567"
+                data-testid="input-client-phone"
+              />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={newClientNotes}
+                onChange={(e) => setNewClientNotes(e.target.value)}
+                placeholder="Any notes about this client..."
+                data-testid="input-client-notes"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The client will receive an email with a link to create their password and sign in.
+            </p>
+            <Button onClick={handleCreateClient} disabled={createClientMutation.isPending} className="w-full" data-testid="button-submit-client">
+              {createClientMutation.isPending ? "Adding Client..." : "Add Client"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={csvDialogOpen} onOpenChange={(open) => { if (!open) closeCsvDialog(); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
