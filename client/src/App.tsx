@@ -1,6 +1,6 @@
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
+import { Card } from "@/components/ui/card";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import CoachesPage from "@/pages/coaches";
@@ -39,6 +40,73 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChatWidget } from "@/components/chat-widget";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
+interface SubscriptionStatus {
+  status: string;
+  isPlatformOrg: boolean;
+  isActive: boolean;
+}
+
+function SubscriptionGate({ children }: { children: React.ReactNode }) {
+  const [location, setLocation] = useLocation();
+
+  const { data: profile } = useQuery<{ role?: string; organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+
+  const hasOrg = !!profile?.organizationId;
+
+  const { data: subscription, isLoading: subLoading } = useQuery<SubscriptionStatus>({
+    queryKey: ["/api/subscription/status"],
+    enabled: hasOrg,
+  });
+
+  if (location === "/admin/subscription" || location === "/admin/setup") {
+    return <>{children}</>;
+  }
+
+  if (!hasOrg || subLoading) {
+    return <>{children}</>;
+  }
+
+  if (subscription?.isPlatformOrg || subscription?.isActive) {
+    return <>{children}</>;
+  }
+
+  const isAdmin = profile?.role === "ADMIN";
+
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <Card className="p-8 max-w-lg w-full text-center space-y-4">
+        <div className="mx-auto w-16 h-16 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-600 dark:text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <h2 className="text-xl font-bold" data-testid="text-subscription-required">Subscription Required</h2>
+        <p className="text-muted-foreground">
+          {subscription?.status === "canceled"
+            ? "Your subscription has been canceled. Resubscribe to regain access to the platform."
+            : subscription?.status === "past_due"
+            ? "Your payment is past due. Please update your payment method to continue using the platform."
+            : "Your free trial has ended. Subscribe to continue using the platform."}
+        </p>
+        {isAdmin ? (
+          <Button
+            size="lg"
+            className="w-full"
+            onClick={() => setLocation("/admin/subscription")}
+            data-testid="button-go-to-subscription"
+          >
+            {subscription?.status === "canceled" ? "Resubscribe" : "Manage Subscription"}
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Please contact your organization admin to manage the subscription.
+          </p>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function AuthenticatedLayout() {
   const [location] = useLocation();
 
@@ -62,33 +130,35 @@ function AuthenticatedLayout() {
           </header>
           <main className="flex-1 overflow-y-auto p-6">
             <div className="max-w-5xl mx-auto">
-              <Switch>
-                <Route path="/" component={CoachesPage} />
-                <Route path="/coaches" component={CoachesPage} />
-                <Route path="/coaches/:id" component={CoachSchedulePage} />
-                <Route path="/sessions" component={OpenSessionsPage} />
-                <Route path="/athletic" component={AthleticSchedulingPage} />
-                <Route path="/bookings" component={MyBookingsPage} />
-                <Route path="/wallet" component={WalletPage} />
-                <Route path="/coach" component={CoachDashboardPage} />
-                <Route path="/coach/profile" component={CoachProfilePage} />
-                <Route path="/coach/availability" component={AvailabilityManagerPage} />
-                <Route path="/coach/redemptions" component={RedemptionsPage} />
-                <Route path="/coach/users" component={UserManagementPage} />
-                <Route path="/coach/transactions" component={CoachTransactionsPage} />
-                <Route path="/coach/business-plan" component={CoachBusinessPlanPage} />
-                <Route path="/coach/athletic" component={CoachAthleticPage} />
-                <Route path="/coach/team-quotes" component={TeamQuotesPage} />
-                <Route path="/team-training" component={TeamTrainingPage} />
-                <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
-                <Route path="/org/:slug" component={OrgLandingPage} />
-                <Route path="/admin" component={AdminDashboardPage} />
-                <Route path="/admin/configuration" component={AdminConfigurationPage} />
-                <Route path="/admin/branding" component={AdminBrandingPage} />
-                <Route path="/admin/stripe" component={AdminStripePage} />
-                <Route path="/admin/subscription" component={AdminSubscriptionPage} />
-                <Route component={NotFound} />
-              </Switch>
+              <SubscriptionGate>
+                <Switch>
+                  <Route path="/" component={CoachesPage} />
+                  <Route path="/coaches" component={CoachesPage} />
+                  <Route path="/coaches/:id" component={CoachSchedulePage} />
+                  <Route path="/sessions" component={OpenSessionsPage} />
+                  <Route path="/athletic" component={AthleticSchedulingPage} />
+                  <Route path="/bookings" component={MyBookingsPage} />
+                  <Route path="/wallet" component={WalletPage} />
+                  <Route path="/coach" component={CoachDashboardPage} />
+                  <Route path="/coach/profile" component={CoachProfilePage} />
+                  <Route path="/coach/availability" component={AvailabilityManagerPage} />
+                  <Route path="/coach/redemptions" component={RedemptionsPage} />
+                  <Route path="/coach/users" component={UserManagementPage} />
+                  <Route path="/coach/transactions" component={CoachTransactionsPage} />
+                  <Route path="/coach/business-plan" component={CoachBusinessPlanPage} />
+                  <Route path="/coach/athletic" component={CoachAthleticPage} />
+                  <Route path="/coach/team-quotes" component={TeamQuotesPage} />
+                  <Route path="/team-training" component={TeamTrainingPage} />
+                  <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
+                  <Route path="/org/:slug" component={OrgLandingPage} />
+                  <Route path="/admin" component={AdminDashboardPage} />
+                  <Route path="/admin/configuration" component={AdminConfigurationPage} />
+                  <Route path="/admin/branding" component={AdminBrandingPage} />
+                  <Route path="/admin/stripe" component={AdminStripePage} />
+                  <Route path="/admin/subscription" component={AdminSubscriptionPage} />
+                  <Route component={NotFound} />
+                </Switch>
+              </SubscriptionGate>
             </div>
           </main>
         </div>

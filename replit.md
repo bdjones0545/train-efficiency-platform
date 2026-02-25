@@ -121,6 +121,11 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
 - Webhook events handled: customer.subscription.created/updated/deleted, checkout.session.completed
 - "Subscription" link in admin sidebar under Configuration
 - Subscription page shows: status badge, trial countdown, price display, feature list, start trial / resubscribe / cancel buttons
+- Feature gating: after trial ends (or subscription canceled/past_due), non-platform orgs see a "Subscription Required" paywall
+  - SubscriptionGate component in App.tsx wraps all authenticated routes
+  - /admin/subscription and /admin/setup are always accessible (so admins can resubscribe)
+  - Platform org (org-est) is always exempted
+  - Non-admin users see "contact your admin" message; admins see a button to manage subscription
 
 ## Recent Changes
 - Client Team Training request page (/team-training): form for clients to request team training quotes
