@@ -35,6 +35,8 @@ import TeamQuotesPage from "@/pages/team-quotes";
 import TeamTrainingPage from "@/pages/team-training";
 import EfficiencyStrengthPage from "@/pages/efficiency-strength";
 import OrgLandingPage from "@/pages/org-landing";
+import PrivacyPolicyPage from "@/pages/privacy-policy";
+import TermsConditionsPage from "@/pages/terms-conditions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatWidget } from "@/components/chat-widget";
@@ -151,6 +153,8 @@ function AuthenticatedLayout() {
                   <Route path="/team-training" component={TeamTrainingPage} />
                   <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
                   <Route path="/org/:slug" component={OrgLandingPage} />
+                  <Route path="/privacy" component={PrivacyPolicyPage} />
+                  <Route path="/terms" component={TermsConditionsPage} />
                   <Route path="/admin" component={AdminDashboardPage} />
                   <Route path="/admin/configuration" component={AdminConfigurationPage} />
                   <Route path="/admin/branding" component={AdminBrandingPage} />
@@ -174,6 +178,8 @@ function PublicLayout() {
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />
+      <Route path="/privacy" component={PrivacyPolicyPage} />
+      <Route path="/terms" component={TermsConditionsPage} />
       <Route><LandingPage /></Route>
     </Switch>
   );

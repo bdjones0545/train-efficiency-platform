@@ -512,12 +512,20 @@ export default function LandingPage() {
       </section>
 
       <footer className="py-8 px-6 border-t">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <img src={logoImg} alt="TrainEfficiency" className="h-8 rounded-sm" data-testid="img-footer-logo" />
-            <span>Train Efficiency Business Solutions</span>
+        <div className="max-w-6xl mx-auto space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <img src={logoImg} alt="TrainEfficiency" className="h-8 rounded-sm" data-testid="img-footer-logo" />
+              <span>Train Efficiency Business Solutions</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <a href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-privacy-policy">Privacy Policy</a>
+              <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms & Conditions</a>
+            </div>
           </div>
-          <p>&copy; {new Date().getFullYear()} All rights reserved.</p>
+          <div className="text-xs text-muted-foreground text-center">
+            <p>&copy; {new Date().getFullYear()} Train Efficiency Business Solutions. All rights reserved.</p>
+          </div>
         </div>
       </footer>
 

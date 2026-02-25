@@ -434,35 +434,41 @@ export default function OrgLandingPage() {
       )}
 
       <footer className="py-8 px-6 border-t">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            {org.logoUrl && (
-              <img src={org.logoUrl} alt={org.name} className="h-5 rounded-sm" data-testid="img-org-footer-logo" />
-            )}
-            <span>{org.name}</span>
+        <div className="max-w-6xl mx-auto space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              {org.logoUrl && (
+                <img src={org.logoUrl} alt={org.name} className="h-5 rounded-sm" data-testid="img-org-footer-logo" />
+              )}
+              <span>{org.name}</span>
+            </div>
+            <div className="flex items-center gap-4">
+              {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
+                <div className="flex items-center gap-3">
+                  {org.websiteUrl && (
+                    <a href={org.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-website">
+                      <Globe className="h-4 w-4" />
+                    </a>
+                  )}
+                  {org.instagramUrl && (
+                    <a href={org.instagramUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-instagram">
+                      <SiInstagram className="h-4 w-4" />
+                    </a>
+                  )}
+                  {org.facebookUrl && (
+                    <a href={org.facebookUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-facebook">
+                      <SiFacebook className="h-4 w-4" />
+                    </a>
+                  )}
+                </div>
+              )}
+              <a href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-privacy-policy">Privacy Policy</a>
+              <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms & Conditions</a>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
-              <div className="flex items-center gap-3">
-                {org.websiteUrl && (
-                  <a href={org.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-website">
-                    <Globe className="h-4 w-4" />
-                  </a>
-                )}
-                {org.instagramUrl && (
-                  <a href={org.instagramUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-instagram">
-                    <SiInstagram className="h-4 w-4" />
-                  </a>
-                )}
-                {org.facebookUrl && (
-                  <a href={org.facebookUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-facebook">
-                    <SiFacebook className="h-4 w-4" />
-                  </a>
-                )}
-              </div>
-            )}
-            <p>&copy; {new Date().getFullYear()} All rights reserved.</p>
-            <span className="text-xs opacity-50">Powered by Train Efficiency</span>
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-muted-foreground">
+            <p>&copy; {new Date().getFullYear()} {org.name}. All rights reserved.</p>
+            <span className="opacity-50">Powered by Train Efficiency</span>
           </div>
         </div>
       </footer>

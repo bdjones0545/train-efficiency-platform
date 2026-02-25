@@ -361,12 +361,20 @@ export default function EfficiencyStrengthPage() {
       )}
 
       <footer className="py-8 px-6 border-t">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <img src={logoImg} alt="EST" className="h-5 rounded-sm" data-testid="img-footer-logo" />
-            <span>Efficiency Strength Training LLC</span>
+        <div className="max-w-6xl mx-auto space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <img src={logoImg} alt="EST" className="h-5 rounded-sm" data-testid="img-footer-logo" />
+              <span>Efficiency Strength Training LLC</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <a href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-privacy-policy">Privacy Policy</a>
+              <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms & Conditions</a>
+            </div>
           </div>
-          <p>&copy; {new Date().getFullYear()} All rights reserved.</p>
+          <div className="text-xs text-muted-foreground text-center">
+            <p>&copy; {new Date().getFullYear()} Efficiency Strength Training LLC. All rights reserved.</p>
+          </div>
         </div>
       </footer>
 
