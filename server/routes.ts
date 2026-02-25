@@ -3315,9 +3315,6 @@ export async function registerRoutes(
       const orgId = profile.organizationId;
       if (!orgId) return res.status(400).json({ message: "No organization found" });
 
-      const org = await storage.getOrganizationById(orgId);
-      if (!org) return res.status(404).json({ message: "Organization not found" });
-
       if (orgId === PLATFORM_ORG_ID) {
         return res.json({
           status: "active",
@@ -3327,6 +3324,9 @@ export async function registerRoutes(
           isActive: true,
         });
       }
+
+      const org = await storage.getOrganizationById(orgId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
 
       let currentStatus = org.subscriptionStatus || "none";
 

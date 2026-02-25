@@ -1,11 +1,26 @@
 import { db } from "./db";
 import { users } from "@shared/models/auth";
-import { userProfiles, coachProfiles, services } from "@shared/schema";
-import { sql } from "drizzle-orm";
+import { userProfiles, coachProfiles, services, organizations } from "@shared/schema";
+import { sql, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+
+async function ensurePlatformOrg() {
+  const [existing] = await db.select().from(organizations).where(eq(organizations.id, "org-est"));
+  if (!existing) {
+    await db.insert(organizations).values({
+      id: "org-est",
+      name: "Efficiency Strength Training",
+      slug: "efficiencystrength",
+      ownerEmail: "bryan.jones@efficiencystrengthtraining.com",
+    }).onConflictDoNothing();
+    console.log("Platform organization (org-est) created.");
+  }
+}
 
 export async function seedDatabase() {
   try {
+    await ensurePlatformOrg();
+
     const existingServices = await db.select().from(services);
     if (existingServices.length > 0) {
       console.log("Database already seeded, skipping...");
