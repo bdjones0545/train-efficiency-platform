@@ -13,9 +13,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign, UserPlus, Users, X } from "lucide-react";
+import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign, UserPlus, Users, X, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addDays } from "date-fns";
 import type { Service } from "@shared/schema";
 import type { ParticipantWithUser } from "@/lib/types";
 
@@ -62,6 +62,10 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [showParticipantSearch, setShowParticipantSearch] = useState(false);
   const [walkInName, setWalkInName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<string>(booking.paymentMethod || "");
+  const [showCloneStep, setShowCloneStep] = useState(false);
+  const [cloneInterval, setCloneInterval] = useState<string>("7");
+  const [cloneEndDate, setCloneEndDate] = useState<string>("");
+  const [cloneDays, setCloneDays] = useState<number[]>([]);
 
   const initLocation = booking.location || "";
   const isPreset = PRESET_LOCATIONS.includes(initLocation);
@@ -89,6 +93,10 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setShowParticipantSearch(false);
       setWalkInName("");
       setPaymentMethod(booking.paymentMethod || "");
+      setShowCloneStep(false);
+      setCloneInterval("7");
+      setCloneEndDate("");
+      setCloneDays([]);
     }
   }, [open, booking]);
 
@@ -231,6 +239,37 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
     },
   });
 
+  const cloneMutation = useMutation({
+    mutationFn: async () => {
+      if (!cloneEndDate) throw new Error("Missing end date");
+      const body: any = {
+        bookingId: booking.id,
+        endDate: cloneEndDate,
+      };
+      if (cloneInterval === "custom") {
+        body.daysOfWeek = cloneDays;
+      } else {
+        body.intervalDays = parseInt(cloneInterval);
+      }
+      const res = await apiRequest("POST", "/api/coach/bookings/clone", body);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const msg = data.skipped > 0
+        ? `${data.created} session${data.created !== 1 ? "s" : ""} created, ${data.skipped} skipped (conflicts).`
+        : `${data.created} session${data.created !== 1 ? "s" : ""} created!`;
+      toast({ title: "Sessions Cloned", description: msg });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      setShowCloneStep(false);
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const selectedServiceObj = services?.find(s => s.id === serviceId);
   const isSemiPrivate = selectedServiceObj?.name.toLowerCase().includes("semi-private") || false;
 
@@ -300,6 +339,114 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        {showCloneStep ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Clone This Session</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                <p className="text-sm font-medium">Clone this session to future dates</p>
+                <p className="text-xs text-muted-foreground mt-1">Create copies of this session on a recurring schedule.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Repeat Every</Label>
+                <Select value={cloneInterval} onValueChange={(v) => { setCloneInterval(v); if (v !== "custom") setCloneDays([]); }}>
+                  <SelectTrigger data-testid="edit-select-clone-interval">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">Every week</SelectItem>
+                    <SelectItem value="14">Every 2 weeks</SelectItem>
+                    <SelectItem value="1">Every day</SelectItem>
+                    <SelectItem value="custom">Specific days of the week</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {cloneInterval === "custom" && (
+                <div className="space-y-2">
+                  <Label>Select Days</Label>
+                  <div className="flex flex-wrap gap-2" data-testid="edit-day-of-week-selector">
+                    {[
+                      { label: "Sun", value: 0 },
+                      { label: "Mon", value: 1 },
+                      { label: "Tue", value: 2 },
+                      { label: "Wed", value: 3 },
+                      { label: "Thu", value: 4 },
+                      { label: "Fri", value: 5 },
+                      { label: "Sat", value: 6 },
+                    ].map((day) => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        data-testid={`edit-day-toggle-${day.label.toLowerCase()}`}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                          cloneDays.includes(day.value)
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-muted-foreground border-border hover:bg-accent"
+                        }`}
+                        onClick={() => {
+                          setCloneDays((prev) =>
+                            prev.includes(day.value) ? prev.filter((d) => d !== day.value) : [...prev, day.value].sort()
+                          );
+                        }}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>End Date</Label>
+                <Input
+                  type="date"
+                  value={cloneEndDate}
+                  onChange={(e) => setCloneEndDate(e.target.value)}
+                  data-testid="edit-input-clone-end-date"
+                />
+              </div>
+
+              {cloneEndDate && selectedDate && (
+                <p className="text-xs text-muted-foreground">
+                  {cloneInterval === "custom"
+                    ? `This will create sessions on ${cloneDays.map(d => ["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"][d]).join(", ") || "selected days"}`
+                    : `This will create sessions ${cloneInterval === "1" ? "daily" : cloneInterval === "7" ? "weekly" : "every 2 weeks"}`
+                  } from{" "}
+                  {cloneInterval === "custom"
+                    ? format(addDays(selectedDate, 1), "MMM d, yyyy")
+                    : format(addDays(selectedDate, parseInt(cloneInterval)), "MMM d, yyyy")
+                  } through {format(new Date(cloneEndDate + "T12:00:00"), "MMM d, yyyy")}.
+                  Conflicting time slots will be skipped.
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowCloneStep(false)}
+                  data-testid="button-back-from-clone"
+                >
+                  Back
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => cloneMutation.mutate()}
+                  disabled={!cloneEndDate || cloneMutation.isPending || (cloneInterval === "custom" && cloneDays.length === 0)}
+                  data-testid="button-clone-existing-sessions"
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  {cloneMutation.isPending ? "Creating..." : "Clone Sessions"}
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : (
+        <>
         <DialogHeader>
           <DialogTitle>Edit Session</DialogTitle>
         </DialogHeader>
@@ -661,6 +808,18 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
               <Trash2 className="h-4 w-4" />
             </Button>
             <Button
+              variant="outline"
+              onClick={() => {
+                const defaultEnd = selectedDate ? format(addDays(selectedDate, 56), "yyyy-MM-dd") : "";
+                setCloneEndDate(defaultEnd);
+                setShowCloneStep(true);
+              }}
+              disabled={updateMutation.isPending || deleteMutation.isPending}
+              data-testid="button-open-clone"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+            <Button
               className="flex-1"
               onClick={handleSubmit}
               disabled={updateMutation.isPending || deleteMutation.isPending}
@@ -670,6 +829,8 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
             </Button>
           </div>
         </div>
+        </>
+        )}
       </DialogContent>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={(v) => { setShowDeleteConfirm(v); if (!v) setDeleteMode("single"); }}>
