@@ -19,6 +19,7 @@ import RedemptionsPage from "@/pages/redemptions";
 import CoachProfilePage from "@/pages/coach-profile";
 import AdminDashboardPage from "@/pages/admin-dashboard";
 import AdminConfigurationPage from "@/pages/admin-configuration";
+import AdminBrandingPage from "@/pages/admin-branding";
 import OpenSessionsPage from "@/pages/open-sessions";
 import AthleticSchedulingPage from "@/pages/athletic-scheduling";
 import CoachAthleticPage from "@/pages/coach-athletic";
@@ -74,6 +75,7 @@ function AuthenticatedLayout() {
                 <Route path="/org/:slug" component={OrgLandingPage} />
                 <Route path="/admin" component={AdminDashboardPage} />
                 <Route path="/admin/configuration" component={AdminConfigurationPage} />
+                <Route path="/admin/branding" component={AdminBrandingPage} />
                 <Route component={NotFound} />
               </Switch>
             </div>

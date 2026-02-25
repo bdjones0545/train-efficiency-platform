@@ -15,7 +15,9 @@ export const organizations = pgTable("organizations", {
   ownerUserId: varchar("owner_user_id"),
   ownerEmail: varchar("owner_email"),
   tagline: text("tagline").default(""),
+  tagline2: text("tagline2").default(""),
   primaryColor: varchar("primary_color").default(""),
+  secondaryColor: varchar("secondary_color").default(""),
   locations: text("locations").array().default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at").defaultNow(),
 });

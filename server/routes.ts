@@ -282,12 +282,22 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, primaryColor, logoUrl } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
+      if (tagline2 !== undefined) updateData.tagline2 = tagline2;
       if (primaryColor !== undefined) updateData.primaryColor = primaryColor;
+      if (secondaryColor !== undefined) updateData.secondaryColor = secondaryColor;
       if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
+      if (name !== undefined) updateData.name = name;
+      if (slug !== undefined) {
+        const existing = await storage.getOrganizationBySlug(slug);
+        if (existing && existing.id !== req.params.id) {
+          return res.status(400).json({ message: "That URL extension is already taken" });
+        }
+        updateData.slug = slug;
+      }
       const updated = await storage.updateOrganization(req.params.id, updateData);
       if (!updated) return res.status(404).json({ message: "Organization not found" });
       res.json(updated);

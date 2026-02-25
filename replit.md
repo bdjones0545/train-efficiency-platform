@@ -33,7 +33,7 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
 - Open Sessions page for clients to browse and join available group sessions
 
 ## Multi-Tenant Architecture
-- `organizations` table: id, name, slug, logoUrl, ownerUserId, ownerEmail, tagline, primaryColor, createdAt
+- `organizations` table: id, name, slug, logoUrl, ownerUserId, ownerEmail, tagline, tagline2, primaryColor, secondaryColor, locations, createdAt
 - `coach_profiles.organization_id` and `user_profiles.organization_id` link users/coaches to their organization
 - POST /api/organizations/register - Business owner sign-up (creates org + admin + coach profile)
 - GET /api/organizations/:slug - Get organization info (public)
@@ -90,7 +90,8 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
 - Public API endpoints strip passwordHash from responses
 
 ## Admin Configuration
-- Configuration page (/admin/configuration): admin-only page for managing core settings
+- Configuration page (/admin/configuration): admin-only page for managing training options, locations, services
+- Branding page (/admin/branding): admin-only page for customizing org logo, URL slug, taglines (1 & 2), and theme colors (primary & secondary) with color wheel pickers and live preview
   - Add new coaches with name, email, password, bio, specialties
   - Per-coach payout percentage: each coach card shows editable payout % (edit icon inline)
   - payoutPercentage column on coach_profiles table (nullable integer, null = use default)

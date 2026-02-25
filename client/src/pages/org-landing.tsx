@@ -29,7 +29,9 @@ interface Organization {
   slug: string;
   logoUrl: string | null;
   tagline: string | null;
+  tagline2: string | null;
   primaryColor: string | null;
+  secondaryColor: string | null;
 }
 
 export default function OrgLandingPage() {
@@ -244,34 +246,63 @@ export default function OrgLandingPage() {
       </nav>
 
       <section className="relative pt-32 pb-20 px-6 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/4 pointer-events-none" />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={
+            org.primaryColor
+              ? {
+                  background: `linear-gradient(135deg, ${org.primaryColor}14 0%, transparent 50%, ${org.secondaryColor || org.primaryColor}0a 100%)`,
+                }
+              : undefined
+          }
+        />
+        {!org.primaryColor && (
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/4 pointer-events-none" />
+        )}
         <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center relative">
           <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-primary/10 text-primary text-sm font-medium">
+            <div
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium"
+              style={
+                org.primaryColor
+                  ? { backgroundColor: `${org.primaryColor}1a`, color: org.primaryColor }
+                  : undefined
+              }
+            >
               <Zap className="h-3.5 w-3.5" />
               {org.tagline || "Elevate Your Game"}
             </div>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight" data-testid="text-org-hero-heading">
               Welcome to{" "}
-              <span className="text-primary">{org.name}</span>
+              <span style={org.primaryColor ? { color: org.primaryColor } : undefined} className={!org.primaryColor ? "text-primary" : ""}>
+                {org.name}
+              </span>
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed max-w-lg">
-              Book sessions with our expert coaches, manage your training schedule,
-              and take your athletic performance to the next level.
+              {org.tagline2 || "Book sessions with our expert coaches, manage your training schedule, and take your athletic performance to the next level."}
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-org-hero-cta">
+              <Button
+                size="lg"
+                onClick={() => openClientModal(true)}
+                data-testid="button-org-hero-cta"
+                style={
+                  org.primaryColor
+                    ? { backgroundColor: org.primaryColor, borderColor: org.primaryColor }
+                    : undefined
+                }
+              >
                 <Calendar className="h-4 w-4 mr-2" />
                 Book a Session
               </Button>
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2">
               <span className="flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5 text-primary" />
+                <Shield className="h-3.5 w-3.5" style={org.primaryColor ? { color: org.primaryColor } : undefined} />
                 Free to browse
               </span>
               <span className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5 text-primary" />
+                <Clock className="h-3.5 w-3.5" style={org.primaryColor ? { color: org.primaryColor } : undefined} />
                 Instant booking
               </span>
             </div>
