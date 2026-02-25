@@ -36,6 +36,12 @@ async function ensurePlatformOrg() {
     await db.update(services).set({ organizationId: "org-est" }).where(isNull(services.organizationId));
     console.log(`${unassignedServices.length} services assigned to org-est`);
   }
+
+  const unassignedProfiles = await db.select().from(userProfiles).where(isNull(userProfiles.organizationId));
+  if (unassignedProfiles.length > 0) {
+    await db.update(userProfiles).set({ organizationId: "org-est" }).where(isNull(userProfiles.organizationId));
+    console.log(`${unassignedProfiles.length} user profiles assigned to org-est`);
+  }
 }
 
 export async function seedDatabase() {
