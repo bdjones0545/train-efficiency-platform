@@ -269,7 +269,11 @@ export async function registerRoutes(
       if (!org) {
         return res.status(404).json({ message: "Organization not found" });
       }
-      res.json(org);
+      const { stripeSecretKey, ...safeOrg } = org;
+      res.json({
+        ...safeOrg,
+        stripeConnected: !!stripeSecretKey,
+      });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch organization" });
     }
@@ -282,7 +286,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
@@ -298,9 +302,12 @@ export async function registerRoutes(
         }
         updateData.slug = slug;
       }
+      if (stripeSecretKey !== undefined) updateData.stripeSecretKey = stripeSecretKey || null;
+      if (stripePublishableKey !== undefined) updateData.stripePublishableKey = stripePublishableKey || null;
       const updated = await storage.updateOrganization(req.params.id, updateData);
       if (!updated) return res.status(404).json({ message: "Organization not found" });
-      res.json(updated);
+      const { stripeSecretKey: sk, ...safeUpdated } = updated;
+      res.json({ ...safeUpdated, stripeConnected: !!sk });
     } catch (error) {
       console.error("Error updating organization:", error);
       res.status(500).json({ message: "Failed to update organization" });
@@ -313,7 +320,8 @@ export async function registerRoutes(
       if (!org) {
         return res.status(404).json({ message: "Organization not found" });
       }
-      res.json(org);
+      const { stripeSecretKey, ...safeOrg } = org;
+      res.json(safeOrg);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch organization" });
     }

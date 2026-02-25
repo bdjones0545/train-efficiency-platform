@@ -18,6 +18,8 @@ export const organizations = pgTable("organizations", {
   tagline2: text("tagline2").default(""),
   primaryColor: varchar("primary_color").default(""),
   secondaryColor: varchar("secondary_color").default(""),
+  stripeSecretKey: text("stripe_secret_key"),
+  stripePublishableKey: text("stripe_publishable_key"),
   locations: text("locations").array().default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at").defaultNow(),
 });

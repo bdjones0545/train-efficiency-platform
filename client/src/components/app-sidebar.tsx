@@ -31,6 +31,7 @@ import {
   Dumbbell,
   Settings,
   Paintbrush,
+  CreditCard,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -176,6 +177,14 @@ export function AppSidebar() {
                     <Link href="/admin/branding" onClick={handleNavClick} data-testid="nav-branding">
                       <Paintbrush className="h-4 w-4" />
                       <span>Branding</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location === "/admin/stripe"}>
+                    <Link href="/admin/stripe" onClick={handleNavClick} data-testid="nav-stripe">
+                      <CreditCard className="h-4 w-4" />
+                      <span>Stripe</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

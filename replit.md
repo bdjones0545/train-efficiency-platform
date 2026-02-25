@@ -91,7 +91,8 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
 
 ## Admin Configuration
 - Configuration page (/admin/configuration): admin-only page for managing training options, locations, services
-- Branding page (/admin/branding): admin-only page for customizing org logo, URL slug, taglines (1 & 2), and theme colors (primary & secondary) with color wheel pickers and live preview
+- Branding page (/admin/branding): admin-only page for customizing org logo, URL slug, taglines (1 & 2), with save+preview
+- Stripe page (/admin/stripe): admin-only page for connecting org's own Stripe account (publishable + secret keys), with connection status badge and disconnect option; secret key never exposed after save
   - Add new coaches with name, email, password, bio, specialties
   - Per-coach payout percentage: each coach card shows editable payout % (edit icon inline)
   - payoutPercentage column on coach_profiles table (nullable integer, null = use default)
