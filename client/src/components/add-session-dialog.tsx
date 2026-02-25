@@ -59,6 +59,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [location, setLocation] = useState("");
   const [customLocation, setCustomLocation] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
+  const [ageRange, setAgeRange] = useState("");
+  const [skillLevel, setSkillLevel] = useState("");
+  const [maxParticipants, setMaxParticipants] = useState("6");
   const [participants, setParticipants] = useState<ParticipantEntry[]>([]);
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
   const [walkinName, setWalkinName] = useState("");
@@ -186,6 +189,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setLocation("");
     setCustomLocation("");
     setGroupDescription("");
+    setAgeRange("");
+    setSkillLevel("");
+    setMaxParticipants("6");
     setParticipants([]);
     setParticipantSearchQuery("");
     setWalkinName("");
@@ -238,8 +244,10 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
         body.groupDescription = groupDescription.trim();
       }
     } else if (isSemiPrivate) {
-      body.maxParticipants = 6;
+      body.maxParticipants = parseInt(maxParticipants) || 6;
       body.groupDescription = groupDescription.trim();
+      body.ageRange = ageRange.trim();
+      body.skillLevel = skillLevel;
       if (participants.length > 0) {
         body.participants = participants.map(p => ({
           type: p.type,
@@ -428,10 +436,46 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                   className="resize-none"
                   data-testid="input-group-description"
                 />
-                <p className="text-xs text-muted-foreground">This will be shown to athletes who can register for this session (max 6 participants).</p>
+                <p className="text-xs text-muted-foreground">This will be shown to athletes who can register for this session.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Age Range</Label>
+                  <Input
+                    placeholder="e.g. 14-18, All Ages"
+                    value={ageRange}
+                    onChange={(e) => setAgeRange(e.target.value)}
+                    data-testid="input-age-range"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Skill Level</Label>
+                  <Select value={skillLevel} onValueChange={setSkillLevel}>
+                    <SelectTrigger data-testid="select-skill-level">
+                      <SelectValue placeholder="Any level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Beginner">Beginner</SelectItem>
+                      <SelectItem value="Intermediate">Intermediate</SelectItem>
+                      <SelectItem value="Advanced">Advanced</SelectItem>
+                      <SelectItem value="All Levels">All Levels</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-2">
-                <Label>Participants ({participants.length}/6)</Label>
+                <Label>Max Participants</Label>
+                <Input
+                  type="number"
+                  min="2"
+                  max="20"
+                  value={maxParticipants}
+                  onChange={(e) => setMaxParticipants(e.target.value)}
+                  data-testid="input-max-participants"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Participants ({participants.length}/{maxParticipants})</Label>
                 {participants.length > 0 && (
                   <div className="space-y-1.5">
                     {participants.map((p, index) => (
@@ -452,7 +496,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                     ))}
                   </div>
                 )}
-                {participants.length < 6 && (
+                {participants.length < (parseInt(maxParticipants) || 6) && (
                   <div className="space-y-2">
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -495,7 +539,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                         value={walkinName}
                         onChange={(e) => setWalkinName(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && walkinName.trim() && participants.length < 6) {
+                          if (e.key === "Enter" && walkinName.trim() && participants.length < (parseInt(maxParticipants) || 6)) {
                             e.preventDefault();
                             setParticipants([...participants, { type: "walkin", displayName: walkinName.trim() }]);
                             setWalkinName("");

@@ -423,6 +423,8 @@ export async function registerRoutes(
         location: req.body.location || "",
         maxParticipants: isSemiPrivate ? 6 : null,
         groupDescription: isSemiPrivate ? (req.body.groupDescription || "") : "",
+        ageRange: isSemiPrivate ? (req.body.ageRange || "") : "",
+        skillLevel: isSemiPrivate ? (req.body.skillLevel || "") : "",
       });
 
       if (isSemiPrivate) {
@@ -430,8 +432,9 @@ export async function registerRoutes(
         const filledNames = participantNames.filter((n: string) => n.trim());
         const count = filledNames.length > 0 ? filledNames.length : 1;
 
-        if (count > 6) {
-          return res.status(400).json({ message: "Maximum 6 participants per session" });
+        const maxP = booking.maxParticipants || 6;
+        if (count > maxP) {
+          return res.status(400).json({ message: `Maximum ${maxP} participants per session` });
         }
 
         if (filledNames.length > 0) {
@@ -616,7 +619,7 @@ export async function registerRoutes(
       const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
-      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription } = req.body;
+      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription, ageRange, skillLevel } = req.body;
 
       if (!serviceId || !startAt) {
         return res.status(400).json({ message: "serviceId and startAt are required" });
@@ -671,6 +674,8 @@ export async function registerRoutes(
         location: req.body.location || "",
         maxParticipants: isSemiPrivate ? (maxParticipants || 6) : null,
         groupDescription: groupDescription || "",
+        ageRange: isSemiPrivate ? (ageRange || "") : "",
+        skillLevel: isSemiPrivate ? (skillLevel || "") : "",
         teamQuoteProgramId: req.body.teamQuoteProgramId || null,
       });
 
@@ -681,8 +686,9 @@ export async function registerRoutes(
 
         if (participantsArr.length > 0) {
           const validParticipants = participantsArr.filter((p: any) => p.displayName?.trim());
-          if (validParticipants.length > 6) {
-            return res.status(400).json({ message: "Maximum 6 participants per session" });
+          const maxPCoach = booking.maxParticipants || 6;
+          if (validParticipants.length > maxPCoach) {
+            return res.status(400).json({ message: `Maximum ${maxPCoach} participants per session` });
           }
           const seen = new Set<string>();
           for (const p of validParticipants) {
@@ -696,8 +702,9 @@ export async function registerRoutes(
             });
           }
         } else if (filledNames.length > 0) {
-          if (filledNames.length > 6) {
-            return res.status(400).json({ message: "Maximum 6 participants per session" });
+          const maxPNames = booking.maxParticipants || 6;
+          if (filledNames.length > maxPNames) {
+            return res.status(400).json({ message: `Maximum ${maxPNames} participants per session` });
           }
           for (const name of filledNames) {
             await storage.addBookingParticipant({
@@ -809,6 +816,8 @@ export async function registerRoutes(
               location: sourceBooking.location || "",
               maxParticipants: sourceBooking.maxParticipants,
               groupDescription: sourceBooking.groupDescription || "",
+              ageRange: sourceBooking.ageRange || "",
+              skillLevel: sourceBooking.skillLevel || "",
               recurringGroupId: groupId,
             });
             created.push(booking);
@@ -836,13 +845,16 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "Booking not found" });
       const bookingCoachId = existing.coachId;
 
-      const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName, paymentMethod } = req.body;
+      const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName, paymentMethod, ageRange, skillLevel, maxParticipants } = req.body;
 
       const updateData: any = {};
       if (notes !== undefined) updateData.notes = notes;
       if (req.body.location !== undefined) updateData.location = req.body.location;
       if (groupDescription !== undefined) updateData.groupDescription = groupDescription;
       if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
+      if (ageRange !== undefined) updateData.ageRange = ageRange;
+      if (skillLevel !== undefined) updateData.skillLevel = skillLevel;
+      if (maxParticipants !== undefined) updateData.maxParticipants = maxParticipants;
 
       if (serviceId && serviceId !== existing.serviceId) {
         const service = await storage.getService(serviceId);

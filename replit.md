@@ -180,11 +180,12 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - Legacy `participantNames` string array still supported for backward compatibility
   - EditSessionDialog shows current participants with add/remove functionality for semi-private sessions
   - API: POST /api/coach/bookings/:id/add-participant, DELETE /api/coach/bookings/:id/participants/:participantId (COACH/ADMIN)
-- Semi-private group sessions: booking_participants table, maxParticipants column on bookings
-  - Coaches schedule semi-private sessions with group description (auto-detects from service name)
-  - Open Sessions page (/sessions) for clients to browse and join group sessions
-  - Join/leave API endpoints with capacity enforcement (max 6)
+- Semi-private group sessions: booking_participants table, maxParticipants/ageRange/skillLevel columns on bookings
+  - Coaches schedule semi-private sessions with group description, age range, skill level, and configurable max participants
+  - Open Sessions page (/sessions) for clients to browse and join group sessions with age range/skill level badges
+  - Join/leave API endpoints with dynamic capacity enforcement (configurable per session, default 6)
   - Participant display on coach dashboard and booking cards
+  - Session cloning from EditSessionDialog (clone button) with weekly/biweekly/daily/specific days options
 - Services updated: 1:1 60min ($70), 1:1 30min ($40), Semi-Private ($35), Team Training (by quote), Free Intro Session (30 min, one per user)
   - Team Training shows "Quoted Price" instead of $0.00
   - Free Intro Session limited to one per user (enforced backend + hidden from dropdown after use)

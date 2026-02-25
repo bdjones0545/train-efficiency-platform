@@ -166,6 +166,21 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
           </p>
         )}
 
+        {(session.ageRange || session.skillLevel) && (
+          <div className="flex flex-wrap gap-2">
+            {session.ageRange && (
+              <Badge variant="outline" className="text-xs" data-testid={`badge-age-range-${session.id}`}>
+                Ages: {session.ageRange}
+              </Badge>
+            )}
+            {session.skillLevel && (
+              <Badge variant="outline" className="text-xs" data-testid={`badge-skill-level-${session.id}`}>
+                {session.skillLevel}
+              </Badge>
+            )}
+          </div>
+        )}
+
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Calendar className="h-3.5 w-3.5" />

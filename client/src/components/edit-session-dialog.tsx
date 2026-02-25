@@ -55,6 +55,9 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [searchQuery, setSearchQuery] = useState("");
   const [notes, setNotes] = useState(booking.notes || "");
   const [groupDescription, setGroupDescription] = useState(booking.groupDescription || "");
+  const [ageRange, setAgeRange] = useState(booking.ageRange || "");
+  const [skillLevel, setSkillLevel] = useState(booking.skillLevel || "");
+  const [editMaxParticipants, setEditMaxParticipants] = useState(String(booking.maxParticipants || 6));
   const [showSearch, setShowSearch] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteMode, setDeleteMode] = useState<"single" | "all">("single");
@@ -83,6 +86,9 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setSelectedClientId(booking.clientId);
       setNotes(booking.notes || "");
       setGroupDescription(booking.groupDescription || "");
+      setAgeRange(booking.ageRange || "");
+      setSkillLevel(booking.skillLevel || "");
+      setEditMaxParticipants(String(booking.maxParticipants || 6));
       const loc = booking.location || "";
       const preset = PRESET_LOCATIONS.includes(loc);
       setLocation(preset ? loc : (loc ? "__custom__" : ""));
@@ -294,6 +300,9 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       notes,
       location: resolvedLocation,
       groupDescription: isSemiPrivate ? groupDescription : "",
+      ageRange: isSemiPrivate ? ageRange.trim() : "",
+      skillLevel: isSemiPrivate ? skillLevel : "",
+      maxParticipants: isSemiPrivate ? (parseInt(editMaxParticipants) || 6) : null,
       paymentMethod: paymentMethod || null,
     };
 
@@ -481,11 +490,53 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
           )}
 
           {isSemiPrivate && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Age Range</Label>
+                <Input
+                  placeholder="e.g. 14-18, All Ages"
+                  value={ageRange}
+                  onChange={(e) => setAgeRange(e.target.value)}
+                  data-testid="edit-input-age-range"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Skill Level</Label>
+                <Select value={skillLevel} onValueChange={setSkillLevel}>
+                  <SelectTrigger data-testid="edit-select-skill-level">
+                    <SelectValue placeholder="Any level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Beginner">Beginner</SelectItem>
+                    <SelectItem value="Intermediate">Intermediate</SelectItem>
+                    <SelectItem value="Advanced">Advanced</SelectItem>
+                    <SelectItem value="All Levels">All Levels</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {isSemiPrivate && (
+            <div className="space-y-2">
+              <Label>Max Participants</Label>
+              <Input
+                type="number"
+                min="2"
+                max="20"
+                value={editMaxParticipants}
+                onChange={(e) => setEditMaxParticipants(e.target.value)}
+                data-testid="edit-input-max-participants"
+              />
+            </div>
+          )}
+
+          {isSemiPrivate && (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Label className="flex items-center gap-1.5">
                   <Users className="h-4 w-4" />
-                  Participants ({participants?.length || 0}/{booking.maxParticipants || 6})
+                  Participants ({participants?.length || 0}/{editMaxParticipants})
                 </Label>
               </div>
 
@@ -523,7 +574,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
                 </div>
               )}
 
-              {(!participants || participants.length < (booking.maxParticipants || 6)) && (
+              {(!participants || participants.length < (parseInt(editMaxParticipants) || 6)) && (
                 <div className="space-y-2">
                   <Button
                     variant="outline"
