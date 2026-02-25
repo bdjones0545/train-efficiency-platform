@@ -435,11 +435,16 @@ export async function registerRoutes(
         lastSignInAt: new Date(),
       }).returning();
 
+      const trialEnd = new Date();
+      trialEnd.setDate(trialEnd.getDate() + 3);
+
       const [org] = await dbRef.insert(organizations).values({
         name: businessName.trim(),
         slug: slugClean,
         ownerUserId: user.id,
         ownerEmail: email.toLowerCase().trim(),
+        subscriptionStatus: "trialing" as any,
+        trialEndsAt: trialEnd,
       }).returning();
 
       await dbRef.insert(userProfiles).values({ userId: user.id, role: "ADMIN" as any, organizationId: org.id });
@@ -3179,10 +3184,23 @@ export async function registerRoutes(
         });
       }
 
-      const isActive = org.subscriptionStatus === "active" || org.subscriptionStatus === "trialing";
+      let currentStatus = org.subscriptionStatus || "none";
+
+      if (currentStatus === "trialing" && org.trialEndsAt && new Date(org.trialEndsAt) < new Date()) {
+        currentStatus = "none";
+        await storage.updateOrganization(org.id, { subscriptionStatus: "none" as any });
+
+        if (org.ownerEmail) {
+          const { sendSubscriptionExpiredEmail } = await import("./email");
+          sendSubscriptionExpiredEmail(org.ownerEmail, org.name, "trial_ended")
+            .catch(err => console.error(`Failed to send trial expired email:`, err));
+        }
+      }
+
+      const isActive = currentStatus === "active" || currentStatus === "trialing";
 
       res.json({
-        status: org.subscriptionStatus || "none",
+        status: currentStatus,
         isPlatformOrg: false,
         trialEndsAt: org.trialEndsAt,
         currentPeriodEnd: org.subscriptionCurrentPeriodEnd,
