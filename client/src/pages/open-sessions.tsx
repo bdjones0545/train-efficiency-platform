@@ -6,15 +6,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Calendar, Clock, Mail, MapPin, Trash2, Users, UserPlus, UserMinus, Plus, X } from "lucide-react";
+import { Calendar, Clock, Filter, Mail, MapPin, Trash2, Users, UserPlus, UserMinus, Plus, X } from "lucide-react";
 import { useState } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
 import { AddSessionDialog } from "@/components/add-session-dialog";
@@ -350,6 +351,9 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
 
 export default function OpenSessionsPage() {
   const { user, isAuthenticated } = useAuth();
+  const [timeFilter, setTimeFilter] = useState("all");
+  const [skillFilter, setSkillFilter] = useState("all");
+  const [ageFilter, setAgeFilter] = useState("all");
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -361,6 +365,29 @@ export default function OpenSessionsPage() {
   const { data: sessions, isLoading } = useQuery<OpenSession[]>({
     queryKey: ["/api/sessions/open"],
   });
+
+  const ageOptions = Array.from(new Set(
+    (sessions || []).map(s => s.ageRange).filter((a): a is string => !!a && a.trim() !== "")
+  )).sort();
+
+  const filteredSessions = (sessions || []).filter((session) => {
+    if (timeFilter !== "all") {
+      const sessionDate = parseISO(session.startAt as unknown as string);
+      const now = new Date();
+      if (timeFilter === "today") {
+        if (!isWithinInterval(sessionDate, { start: startOfDay(now), end: endOfDay(now) })) return false;
+      } else if (timeFilter === "week") {
+        if (!isWithinInterval(sessionDate, { start: startOfWeek(now, { weekStartsOn: 0 }), end: endOfWeek(now, { weekStartsOn: 0 }) })) return false;
+      } else if (timeFilter === "month") {
+        if (!isWithinInterval(sessionDate, { start: startOfMonth(now), end: endOfMonth(now) })) return false;
+      }
+    }
+    if (skillFilter !== "all" && session.skillLevel !== skillFilter) return false;
+    if (ageFilter !== "all" && session.ageRange !== ageFilter) return false;
+    return true;
+  });
+
+  const hasActiveFilters = timeFilter !== "all" || skillFilter !== "all" || ageFilter !== "all";
 
   if (isLoading) {
     return (
@@ -381,15 +408,84 @@ export default function OpenSessionsPage() {
         {isCoach && <AddSessionDialog />}
       </div>
 
-      {!sessions || sessions.length === 0 ? (
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Time Period</Label>
+          <Select value={timeFilter} onValueChange={setTimeFilter}>
+            <SelectTrigger className="w-[130px] h-9" data-testid="filter-time-period">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Upcoming</SelectItem>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Skill Level</Label>
+          <Select value={skillFilter} onValueChange={setSkillFilter}>
+            <SelectTrigger className="w-[130px] h-9" data-testid="filter-skill-level">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Levels</SelectItem>
+              <SelectItem value="Beginner">Beginner</SelectItem>
+              <SelectItem value="Intermediate">Intermediate</SelectItem>
+              <SelectItem value="Advanced">Advanced</SelectItem>
+              <SelectItem value="All Levels">All Levels</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {ageOptions.length > 0 && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Age Range</Label>
+            <Select value={ageFilter} onValueChange={setAgeFilter}>
+              <SelectTrigger className="w-[130px] h-9" data-testid="filter-age-range">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Ages</SelectItem>
+                {ageOptions.map((age) => (
+                  <SelectItem key={age} value={age}>{age}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9"
+            onClick={() => { setTimeFilter("all"); setSkillFilter("all"); setAgeFilter("all"); }}
+            data-testid="button-clear-filters"
+          >
+            <X className="h-3.5 w-3.5 mr-1" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {filteredSessions.length === 0 ? (
         <Card className="p-8 text-center">
           <Users className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-          <p className="text-muted-foreground">No open group sessions available right now</p>
-          <p className="text-sm text-muted-foreground mt-1">Check back later or browse coaches for 1-on-1 sessions</p>
+          {hasActiveFilters ? (
+            <>
+              <p className="text-muted-foreground">No sessions match your filters</p>
+              <p className="text-sm text-muted-foreground mt-1">Try adjusting your filters to see more sessions</p>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground">No open group sessions available right now</p>
+              <p className="text-sm text-muted-foreground mt-1">Check back later or browse coaches for 1-on-1 sessions</p>
+            </>
+          )}
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sessions.map((session) => (
+          {filteredSessions.map((session) => (
             <SessionCard
               key={session.id}
               session={session}
