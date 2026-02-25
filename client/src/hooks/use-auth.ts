@@ -19,14 +19,30 @@ async function fetchUser(): Promise<User | null> {
   return response.json();
 }
 
+async function getOrgSlug(): Promise<string | null> {
+  try {
+    const profileRes = await fetch("/api/profile", { headers: getAuthHeaders(), credentials: "include" });
+    if (!profileRes.ok) return null;
+    const profile = await profileRes.json();
+    if (!profile?.organizationId) return null;
+    const orgRes = await fetch(`/api/organizations/by-id/${profile.organizationId}`, { headers: getAuthHeaders(), credentials: "include" });
+    if (!orgRes.ok) return null;
+    const org = await orgRes.json();
+    return org?.slug || null;
+  } catch {
+    return null;
+  }
+}
+
 async function logout(): Promise<void> {
+  const slug = await getOrgSlug();
   await fetch("/api/client/logout", {
     method: "POST",
     credentials: "include",
     headers: getAuthHeaders(),
   });
   clearAuthToken();
-  window.location.href = "/";
+  window.location.href = slug ? `/org/${slug}` : "/";
 }
 
 export function useAuth() {
