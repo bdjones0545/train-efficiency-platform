@@ -1329,21 +1329,33 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coach/payout-redemptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+  app.get("/api/coach/payout-redemptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const allRedemptions = await storage.getAllRedemptions();
       const coaches = await storage.getCoachProfiles();
-      const result = allRedemptions.map((r: any) => {
-        const coach = coaches.find((cp: any) => cp.id === r.coachId);
-        return {
-          id: r.id,
-          coachId: r.coachId,
-          coachEmail: coach?.user?.email || null,
-          amountCents: r.amountCents,
-          redeemedAt: r.redeemedAt,
-          payoutStatus: r.payoutStatus,
-        };
-      });
+
+      let orgCoachIdSet: Set<string> | null = null;
+      if (orgId) {
+        const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+        orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
+      }
+
+      const result = allRedemptions
+        .filter((r: any) => !orgCoachIdSet || orgCoachIdSet.has(r.coachId))
+        .map((r: any) => {
+          const coach = coaches.find((cp: any) => cp.id === r.coachId);
+          return {
+            id: r.id,
+            coachId: r.coachId,
+            coachEmail: coach?.user?.email || null,
+            amountCents: r.amountCents,
+            redeemedAt: r.redeemedAt,
+            payoutStatus: r.payoutStatus,
+          };
+        });
       res.json(result);
     } catch (error) {
       console.error("Error fetching payout redemptions:", error);
@@ -1613,30 +1625,56 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+  app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const transactions = await storage.getAllWalletTransactions();
-      res.json(transactions);
+      if (orgId) {
+        const orgUserIds = await storage.getUserIdsByOrganization(orgId);
+        const orgSet = new Set(orgUserIds);
+        res.json(transactions.filter(tx => orgSet.has(tx.userId)));
+      } else {
+        res.json(transactions);
+      }
     } catch (error) {
       console.error("Error fetching transactions:", error);
       res.status(500).json({ message: "Failed to fetch transactions" });
     }
   });
 
-  app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+  app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const balances = await storage.getAllUserBalances();
-      res.json(balances);
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
+      if (orgId) {
+        const balances = await storage.getUserBalancesByOrganization(orgId);
+        res.json(balances);
+      } else {
+        const balances = await storage.getAllUserBalances();
+        res.json(balances);
+      }
     } catch (error) {
       console.error("Error fetching user balances:", error);
       res.status(500).json({ message: "Failed to fetch user balances" });
     }
   });
 
-  app.get("/api/admin/users", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
+  app.get("/api/admin/users", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const allUsers = await storage.getAllUsersWithProfiles();
-      res.json(allUsers);
+      if (orgId) {
+        const orgUserIds = await storage.getUserIdsByOrganization(orgId);
+        const orgSet = new Set(orgUserIds);
+        res.json(allUsers.filter(u => orgSet.has(u.id)));
+      } else {
+        res.json(allUsers);
+      }
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
@@ -1941,40 +1979,61 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/bookings", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
+  app.get("/api/admin/bookings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const bookingsList = await storage.getAllBookings();
-      res.json(bookingsList);
+      if (orgId) {
+        const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+        const coachIdSet = new Set(orgCoaches.map(c => c.id));
+        res.json(bookingsList.filter((b: any) => coachIdSet.has(b.coachId)));
+      } else {
+        res.json(bookingsList);
+      }
     } catch (error) {
       console.error("Error fetching all bookings:", error);
       res.status(500).json({ message: "Failed to fetch bookings" });
     }
   });
 
-  app.get("/api/admin/redemptions", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
+  app.get("/api/admin/redemptions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const redemptionsList = await storage.getAllRedemptions();
       const coaches = await storage.getCoachProfiles();
       const allBookings = await storage.getAllBookings();
       const servicesList = await storage.getServices();
-      const enriched = redemptionsList.map((r: any) => {
-        const coach = coaches.find((cp: any) => cp.id === r.coachId);
-        const booking = allBookings.find((b: any) => b.id === r.bookingId);
-        const service = booking ? servicesList.find((s: any) => s.id === booking.serviceId) : undefined;
-        let clientName = "Unknown";
-        if (booking?.client) {
-          clientName = `${booking.client.firstName} ${booking.client.lastName}`;
-        }
-        return {
-          ...r,
-          coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
-          coachUserId: coach?.userId || null,
-          coachEmail: coach?.user?.email || null,
-          serviceName: service?.name || "Session",
-          clientName,
-          sessionPriceCents: service?.priceCents || 0,
-        };
-      });
+
+      let orgCoachIdSet: Set<string> | null = null;
+      if (orgId) {
+        const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+        orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
+      }
+
+      const enriched = redemptionsList
+        .filter((r: any) => !orgCoachIdSet || orgCoachIdSet.has(r.coachId))
+        .map((r: any) => {
+          const coach = coaches.find((cp: any) => cp.id === r.coachId);
+          const booking = allBookings.find((b: any) => b.id === r.bookingId);
+          const service = booking ? servicesList.find((s: any) => s.id === booking.serviceId) : undefined;
+          let clientName = "Unknown";
+          if (booking?.client) {
+            clientName = `${booking.client.firstName} ${booking.client.lastName}`;
+          }
+          return {
+            ...r,
+            coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
+            coachUserId: coach?.userId || null,
+            coachEmail: coach?.user?.email || null,
+            serviceName: service?.name || "Session",
+            clientName,
+            sessionPriceCents: service?.priceCents || 0,
+          };
+        });
       res.json(enriched);
     } catch (error) {
       console.error("Error fetching all redemptions:", error);
@@ -1998,17 +2057,25 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
+  app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const cashoutsList = await storage.getAllCashouts();
-      const coaches = await storage.getCoachProfiles();
-      const enriched = cashoutsList.map((c: any) => {
-        const coach = coaches.find((cp: any) => cp.id === c.coachId);
-        return {
-          ...c,
-          coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
-        };
-      });
+      const coaches = orgId
+        ? await storage.getCoachProfilesByOrganization(orgId)
+        : await storage.getCoachProfiles();
+      const coachIdSet = new Set(coaches.map((c: any) => c.id));
+      const enriched = cashoutsList
+        .filter((c: any) => !orgId || coachIdSet.has(c.coachId))
+        .map((c: any) => {
+          const coach = coaches.find((cp: any) => cp.id === c.coachId);
+          return {
+            ...c,
+            coachName: coach?.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown",
+          };
+        });
       res.json(enriched);
     } catch (error) {
       console.error("Error fetching all cashouts:", error);

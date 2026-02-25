@@ -110,6 +110,8 @@ export interface IStorage {
 
   getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
   getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
+  getUserIdsByOrganization(orgId: string): Promise<string[]>;
+  getUserBalancesByOrganization(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
 
   getUserBalance(userId: string): Promise<number>;
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string): Promise<WalletTransaction>;
@@ -749,6 +751,27 @@ export class DatabaseStorage implements IStorage {
       email: users.email,
       balanceCents: users.balanceCents,
     }).from(users).orderBy(desc(users.balanceCents));
+  }
+
+  async getUserIdsByOrganization(orgId: string): Promise<string[]> {
+    const profiles = await db.select({ userId: userProfiles.userId })
+      .from(userProfiles)
+      .where(eq(userProfiles.organizationId, orgId));
+    return profiles.map(p => p.userId);
+  }
+
+  async getUserBalancesByOrganization(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]> {
+    const orgUserIds = await this.getUserIdsByOrganization(orgId);
+    if (orgUserIds.length === 0) return [];
+    const allBalances = await db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      balanceCents: users.balanceCents,
+    }).from(users).orderBy(desc(users.balanceCents));
+    const orgSet = new Set(orgUserIds);
+    return allBalances.filter(b => orgSet.has(b.id));
   }
 
   async updateLastSignIn(userId: string): Promise<void> {
