@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -21,6 +21,7 @@ import AdminDashboardPage from "@/pages/admin-dashboard";
 import AdminConfigurationPage from "@/pages/admin-configuration";
 import AdminBrandingPage from "@/pages/admin-branding";
 import AdminStripePage from "@/pages/admin-stripe";
+import AdminSetupPage from "@/pages/admin-setup";
 import OpenSessionsPage from "@/pages/open-sessions";
 import AthleticSchedulingPage from "@/pages/athletic-scheduling";
 import CoachAthleticPage from "@/pages/coach-athletic";
@@ -38,6 +39,12 @@ import { ChatWidget } from "@/components/chat-widget";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 function AuthenticatedLayout() {
+  const [location] = useLocation();
+
+  if (location === "/admin/setup") {
+    return <AdminSetupPage />;
+  }
+
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",

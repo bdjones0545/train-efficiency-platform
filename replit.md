@@ -33,7 +33,7 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
 - Open Sessions page for clients to browse and join available group sessions
 
 ## Multi-Tenant Architecture
-- `organizations` table: id, name, slug, logoUrl, ownerUserId, ownerEmail, tagline, tagline2, primaryColor, secondaryColor, locations, createdAt
+- `organizations` table: id, name, slug, logoUrl, ownerUserId, ownerEmail, tagline, tagline2, primaryColor, secondaryColor, websiteUrl, instagramUrl, facebookUrl, stripeSecretKey, stripePublishableKey, locations, createdAt
 - `coach_profiles.organization_id` and `user_profiles.organization_id` link users/coaches to their organization
 - POST /api/organizations/register - Business owner sign-up (creates org + admin + coach profile)
 - GET /api/organizations/:slug - Get organization info (public)
@@ -41,6 +41,7 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
 - Each org gets a landing page at /org/{slug} (dynamic OrgLandingPage component)
 - Efficiency Strength Training is the default org (slug: "efficiencystrength", id: "org-est")
 - The main landing page (/) is the Train Efficiency Business Solutions marketing page for business owners
+- New org owners are redirected to /admin/setup after registration for a 3-step setup walkthrough (Branding → Training Options → Stripe), each with a "Set up later" skip option
 
 ## API Routes
 - POST /api/coach/login - Coach email/password login (public)

@@ -89,7 +89,7 @@ export default function LandingPage() {
         });
         setRegisterModalOpen(false);
         await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-        window.location.href = "/coach";
+        window.location.href = "/admin/setup";
       }
     } catch (err: any) {
       try {
