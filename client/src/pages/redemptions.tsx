@@ -45,6 +45,18 @@ function RedemptionOverview() {
     queryKey: ["/api/admin/cashouts"],
   });
 
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({ queryKey: ["/api/profile"] });
+  const orgId = profile?.organizationId;
+  const { data: org } = useQuery<{ ownerEmail?: string | null; ownerName?: string | null }>({
+    queryKey: ["/api/organizations/by-id", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
   if (redemptionsLoading || cashoutsLoading) {
     return (
       <div className="space-y-6">
@@ -60,6 +72,7 @@ function RedemptionOverview() {
 
   const redemptions = allRedemptions || [];
   const cashouts = allCashouts || [];
+  const ownerEmail = org?.ownerEmail || "";
 
   const totalRevenue = redemptions.reduce((sum, r) => sum + (r.sessionPriceCents || r.amountCents), 0);
   const totalPaidOut = cashouts
@@ -68,14 +81,12 @@ function RedemptionOverview() {
   const pendingCashouts = cashouts
     .filter((c) => c.status === "REQUESTED")
     .reduce((sum, c) => sum + c.amountCents, 0);
-
-  const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
   const coachMap = new Map<string, { name: string; coachUserId: string | null; isOwnerCoach: boolean; totalRedeemed: number; pendingPayout: number; requestedPayout: number; paidOut: number }>();
 
   for (const r of redemptions) {
     const key = r.coachId;
     if (!coachMap.has(key)) {
-      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, isOwnerCoach: r.coachEmail === OWNER_EMAIL, totalRedeemed: 0, pendingPayout: 0, requestedPayout: 0, paidOut: 0 });
+      coachMap.set(key, { name: r.coachName, coachUserId: r.coachUserId, isOwnerCoach: !!ownerEmail && r.coachEmail === ownerEmail, totalRedeemed: 0, pendingPayout: 0, requestedPayout: 0, paidOut: 0 });
     }
     const entry = coachMap.get(key)!;
     entry.totalRedeemed += r.amountCents;
@@ -233,7 +244,19 @@ export default function RedemptionsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const isOwner = user?.email === "bryan.jones@efficiencystrengthtraining.com";
+  const { data: coachProfile } = useQuery<{ organizationId?: string | null }>({ queryKey: ["/api/profile"] });
+  const coachOrgId = coachProfile?.organizationId;
+  const { data: coachOrg } = useQuery<{ ownerEmail?: string | null; ownerName?: string | null; ownerUserId?: string | null }>({
+    queryKey: ["/api/organizations/by-id", coachOrgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${coachOrgId}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!coachOrgId,
+  });
+  const isOwner = !!coachOrg?.ownerEmail && user?.email === coachOrg.ownerEmail;
+  const adminName = coachOrg?.ownerName || "your admin";
 
   const { data: completedBookings, isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/coach/bookings/completed"],
@@ -275,7 +298,7 @@ export default function RedemptionsPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Cash Out Requested", description: "Bryan has been notified and will process your payout." });
+      toast({ title: "Cash Out Requested", description: `${adminName} has been notified and will process your payout.` });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/redemptions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/cashouts"] });
     },
@@ -340,7 +363,7 @@ export default function RedemptionsPage() {
             <div className="space-y-1">
               <h3 className="font-semibold">Ready to Cash Out</h3>
               <p className="text-sm text-muted-foreground">
-                You have ${(pendingPayout / 100).toFixed(2)} available. Cash out to request your payout from Bryan.
+                You have ${(pendingPayout / 100).toFixed(2)} available. Cash out to request your payout from {adminName}.
               </p>
             </div>
             <Button

@@ -302,9 +302,15 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Organization not found" });
       }
       const { stripeSecretKey, ...safeOrg } = org;
+      let ownerName: string | null = null;
+      if (org.ownerUserId) {
+        const owner = await storage.getUser(org.ownerUserId);
+        if (owner) ownerName = `${owner.firstName || ""} ${owner.lastName || ""}`.trim() || null;
+      }
       res.json({
         ...safeOrg,
         stripeConnected: !!stripeSecretKey,
+        ownerName,
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch organization" });
