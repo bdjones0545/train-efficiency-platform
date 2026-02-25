@@ -505,3 +505,28 @@ export async function sendSubscriptionExpiredEmail(email: string, orgName: strin
   `);
   await sendEmail(email, subject, html, b.name);
 }
+
+export async function sendClientInviteEmail(
+  email: string,
+  firstName: string,
+  resetLink: string,
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `You're Invited to ${b.name}!`;
+  const html = emailShell(`You're Invited!`, `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
+    ${para(`You've been added to the <strong>${b.name}</strong> platform by your coach. To get started, create a password for your account.`)}
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="${resetLink}" style="display: inline-block; background: ${b.color}; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px;">Create Your Password</a>
+    </div>
+    ${para("Once you set your password, you'll be able to:")}
+    <ul style="font-size: 15px; line-height: 1.8; padding-left: 20px;">
+      <li>Browse coaches and their specialties</li>
+      <li>Book training sessions</li>
+      <li>Join open group sessions</li>
+    </ul>
+    ${para("This link will expire in 7 days. If it expires, contact your coach to resend the invite.")}
+  `, org);
+  await sendEmail(email, subject, html, b.name);
+}

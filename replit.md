@@ -134,6 +134,17 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
   - sendSubscriptionExpiredEmail function in server/email.ts
 
 ## Recent Changes
+- CSV Client Import feature on User Management page (/coach/users)
+  - "Import CSV" button allows admins to upload a CSV file of their existing client list
+  - CSV parser supports flexible headers: first name, last name (or full name), email, phone, notes
+  - phone and notes columns added to users table for client data
+  - Preview dialog shows parsed data before import, with summary after
+  - POST /api/admin/import-csv - Parses rows, creates user accounts, sends invite emails (ADMIN)
+  - Each imported user gets a passwordResetToken and receives a branded email with a link to /create-password
+  - POST /api/create-password - Public endpoint for invited users to set their password using the token
+  - After setting password, users are automatically signed in via auth token
+  - Create Password page (/create-password) - Public page for token-based password creation
+  - Existing users are skipped (phone/notes updated if missing); invalid emails/names are reported
 - Client Team Training request page (/team-training): form for clients to request team training quotes
   - Fields: team name, sport, number of athletes, location, goals, preferred schedule, contact info, additional notes
   - POST /api/team-training-request - Sends branded email with all details to Bryan (auth required)

@@ -37,6 +37,7 @@ import EfficiencyStrengthPage from "@/pages/efficiency-strength";
 import OrgLandingPage from "@/pages/org-landing";
 import PrivacyPolicyPage from "@/pages/privacy-policy";
 import TermsConditionsPage from "@/pages/terms-conditions";
+import CreatePasswordPage from "@/pages/create-password";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
@@ -159,6 +160,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/branding" component={AdminBrandingPage} />
                   <Route path="/admin/stripe" component={AdminStripePage} />
                   <Route path="/admin/subscription" component={AdminSubscriptionPage} />
+                  <Route path="/create-password" component={CreatePasswordPage} />
                   <Route component={NotFound} />
                 </Switch>
               </SubscriptionGate>
@@ -177,6 +179,7 @@ function PublicLayout() {
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />
+      <Route path="/create-password" component={CreatePasswordPage} />
       <Route path="/privacy" component={PrivacyPolicyPage} />
       <Route path="/terms" component={TermsConditionsPage} />
       <Route><LandingPage /></Route>

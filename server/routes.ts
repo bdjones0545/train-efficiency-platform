@@ -5,7 +5,8 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, type OrgBranding } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, type OrgBranding } from "./email";
+import crypto from "crypto";
 import Stripe from "stripe";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
@@ -292,6 +293,146 @@ export async function registerRoutes(
         res.json({ success: true });
       });
     });
+  });
+
+  app.post("/api/admin/import-csv", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { rows } = req.body;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ message: "No data provided" });
+      }
+
+      const adminUserId = req.user.claims.sub;
+      const adminProfile = await storage.getUserProfile(adminUserId);
+      const adminOrgId = adminProfile?.organizationId || null;
+      const orgBranding = await getOrgBranding(adminOrgId);
+
+      const { db: dbRef } = await import("./db");
+      const { users: usersTable } = await import("@shared/models/auth");
+      const { userProfiles: userProfilesTable } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const host = req.headers["x-forwarded-host"] || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+
+      const results: { email: string; status: string; name?: string }[] = [];
+
+      for (const row of rows) {
+        const email = (row.email || "").toLowerCase().trim();
+        const firstName = (row.firstName || "").trim();
+        const lastName = (row.lastName || "").trim();
+        const phone = (row.phone || "").trim() || null;
+        const notes = (row.notes || "").trim() || null;
+
+        if (!email || !email.includes("@")) {
+          results.push({ email: email || "(empty)", status: "skipped_invalid_email" });
+          continue;
+        }
+
+        if (!firstName) {
+          results.push({ email, status: "skipped_missing_name" });
+          continue;
+        }
+
+        try {
+          const existing = await storage.getUserByEmail(email);
+          if (existing) {
+            const updateData: any = {};
+            if (phone && !existing.phone) updateData.phone = phone;
+            if (notes && !existing.notes) updateData.notes = notes;
+            if (Object.keys(updateData).length > 0) {
+              await dbRef.update(usersTable).set(updateData).where(eq(usersTable.id, existing.id));
+            }
+            results.push({ email, status: "already_exists", name: `${firstName} ${lastName}` });
+            continue;
+          }
+
+          const token = crypto.randomBytes(32).toString("hex");
+          const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+          const [newUser] = await dbRef.insert(usersTable).values({
+            email,
+            firstName,
+            lastName: lastName || null,
+            phone,
+            notes,
+            passwordResetToken: token,
+            passwordResetTokenExpires: tokenExpires,
+          }).returning();
+
+          await dbRef.insert(userProfilesTable).values({
+            userId: newUser.id,
+            role: "CLIENT" as any,
+            organizationId: adminOrgId,
+          });
+
+          const resetLink = `${baseUrl}/create-password?token=${token}`;
+          sendClientInviteEmail(email, firstName, resetLink, orgBranding).catch((err: any) => {
+            console.error(`Failed to send invite email to ${email}:`, err);
+          });
+
+          results.push({ email, status: "created", name: `${firstName} ${lastName}` });
+        } catch (err: any) {
+          console.error(`Error importing user ${email}:`, err);
+          if (err?.code === "23505") {
+            results.push({ email, status: "already_exists", name: `${firstName} ${lastName}` });
+          } else {
+            results.push({ email, status: "error", name: `${firstName} ${lastName}` });
+          }
+        }
+      }
+
+      const created = results.filter(r => r.status === "created").length;
+      const skipped = results.filter(r => r.status.startsWith("skipped") || r.status === "already_exists").length;
+      const errors = results.filter(r => r.status === "error").length;
+
+      res.json({ success: true, summary: { total: rows.length, created, skipped, errors }, results });
+    } catch (error: any) {
+      console.error("CSV import error:", error);
+      res.status(500).json({ message: "Import failed" });
+    }
+  });
+
+  app.post("/api/create-password", async (req: any, res) => {
+    try {
+      const { token, password } = req.body;
+      if (!token || !password) {
+        return res.status(400).json({ message: "Token and password are required" });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const { db: dbRef } = await import("./db");
+      const { users: usersTable } = await import("@shared/models/auth");
+      const { eq, and, gt } = await import("drizzle-orm");
+
+      const [user] = await dbRef.select().from(usersTable)
+        .where(and(
+          eq(usersTable.passwordResetToken, token),
+          gt(usersTable.passwordResetTokenExpires, new Date())
+        ));
+
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired token. Please contact your coach for a new invite." });
+      }
+
+      const hash = await bcrypt.hash(password, 10);
+      await dbRef.update(usersTable).set({
+        passwordHash: hash,
+        passwordResetToken: null,
+        passwordResetTokenExpires: null,
+        lastSignInAt: new Date(),
+      }).where(eq(usersTable.id, user.id));
+
+      const authToken = await createAuthToken(user.id);
+
+      res.json({ success: true, token: authToken });
+    } catch (error: any) {
+      console.error("Create password error:", error);
+      res.status(500).json({ message: "Failed to create password" });
+    }
   });
 
   app.get("/api/organizations/by-id/:id", async (req: any, res) => {
