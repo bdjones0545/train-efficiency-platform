@@ -70,7 +70,7 @@ export function AppSidebar() {
     { title: "Transactions", url: "/coach/transactions", icon: Wallet },
     { title: "Users", url: "/coach/users", icon: Users },
     ...(isEstOrg ? [{ title: "BLHS Athletic", url: "/coach/athletic", icon: Trophy }] : []),
-    ...(isEstOrg ? [{ title: "Team Quotes", url: "/coach/team-quotes", icon: FileText }] : []),
+    { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
   ];
 
 
