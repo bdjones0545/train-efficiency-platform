@@ -3156,6 +3156,14 @@ export async function registerRoutes(
       const role = await getUserRole(userId);
       
       if (role === "ADMIN") {
+        const profile = await storage.getUserProfile(userId);
+        const orgId = profile?.organizationId;
+        if (orgId) {
+          const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+          const orgCoachIds = new Set(orgCoaches.map(c => c.id));
+          const allQuotes = await storage.getAllTeamQuotes();
+          return res.json(allQuotes.filter(q => orgCoachIds.has(q.createdByCoachId)));
+        }
         const quotes = await storage.getAllTeamQuotes();
         return res.json(quotes);
       }
@@ -3188,6 +3196,14 @@ export async function registerRoutes(
       const role = await getUserRole(userId);
 
       if (role === "ADMIN") {
+        const profile = await storage.getUserProfile(userId);
+        const orgId = profile?.organizationId;
+        if (orgId) {
+          const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+          const orgCoachIds = new Set(orgCoaches.map(c => c.id));
+          const allContracts = await storage.getActiveTeamContracts();
+          return res.json(allContracts.filter(c => orgCoachIds.has(c.createdByCoachId)));
+        }
         const contracts = await storage.getActiveTeamContracts();
         return res.json(contracts);
       }
