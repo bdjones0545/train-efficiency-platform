@@ -16,21 +16,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign, UserPlus, Users, X, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, parseISO, addDays } from "date-fns";
-import type { Service } from "@shared/schema";
-import type { ParticipantWithUser } from "@/lib/types";
-
-const PRESET_LOCATIONS = [
-  "Bluffton High School",
-  "Oscar Frazier Park (Bluffton, SC)",
-  "PickUp USA Fitness (Bluffton, SC)",
-  "Sweet Grass Fitness (Beaufort, SC)",
-  "Coursen Tate Park (Beaufort, SC)",
-  "Robert Smalls International Academy (Burton, SC)",
-  "Humidity Fitness (Beaufort, SC)",
-  "Dataw Island Community Center (St. Helena, SC)",
-  "Spring Island Sports Complex (Okatie, SC)",
-];
-import type { BookingWithDetails } from "@/lib/types";
+import type { Service, Organization } from "@shared/schema";
+import type { ParticipantWithUser, BookingWithDetails } from "@/lib/types";
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
 
@@ -71,7 +58,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [cloneDays, setCloneDays] = useState<number[]>([]);
 
   const initLocation = booking.location || "";
-  const isPreset = PRESET_LOCATIONS.includes(initLocation);
+  const isPreset = orgLocations.includes(initLocation);
   const [location, setLocation] = useState(isPreset ? initLocation : (initLocation ? "__custom__" : ""));
   const [customLocation, setCustomLocation] = useState(isPreset ? "" : initLocation);
 
@@ -90,7 +77,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setSkillLevel(booking.skillLevel || "");
       setEditMaxParticipants(String(booking.maxParticipants || 6));
       const loc = booking.location || "";
-      const preset = PRESET_LOCATIONS.includes(loc);
+      const preset = orgLocations.includes(loc);
       setLocation(preset ? loc : (loc ? "__custom__" : ""));
       setCustomLocation(preset ? "" : loc);
       setSearchQuery("");
@@ -110,6 +97,16 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
     queryKey: ["/api/profile"],
   });
   const editSessionOrgId = editSessionProfile?.organizationId;
+  const { data: editSessionOrg } = useQuery<Organization>({
+    queryKey: ["/api/organizations/by-id", editSessionOrgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${editSessionOrgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!editSessionOrgId,
+  });
+  const orgLocations = editSessionOrg?.locations || [];
   const { data: services } = useQuery<Service[]>({
     queryKey: ["/api/services", editSessionOrgId],
     queryFn: async () => {
@@ -796,7 +793,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
                 <SelectValue placeholder="Select a location" />
               </SelectTrigger>
               <SelectContent>
-                {PRESET_LOCATIONS.map((loc) => (
+                {orgLocations.map((loc) => (
                   <SelectItem key={loc} value={loc}>
                     {loc}
                   </SelectItem>

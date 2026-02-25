@@ -23,7 +23,8 @@ import {
 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useState } from "react";
-import type { Service } from "@shared/schema";
+import type { Service, Organization } from "@shared/schema";
+import { MapPin } from "lucide-react";
 
 type CoachWithUser = {
   id: string;
@@ -42,6 +43,15 @@ export default function AdminConfigurationPage() {
     queryKey: ["/api/profile"],
   });
   const orgId = adminProfile?.organizationId;
+  const { data: orgData } = useQuery<Organization>({
+    queryKey: ["/api/organizations/by-id", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
   const { data: services, isLoading: servicesLoading } = useQuery<Service[]>({
     queryKey: ["/api/services", orgId],
     queryFn: async () => {
@@ -87,6 +97,8 @@ export default function AdminConfigurationPage() {
 
   const [payoutPercentage, setPayoutPercentage] = useState("");
   const [payoutEditing, setPayoutEditing] = useState(false);
+  const [newLocation, setNewLocation] = useState("");
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
 
 
   const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null);
@@ -268,6 +280,34 @@ export default function AdminConfigurationPage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const updateLocationsMutation = useMutation({
+    mutationFn: async (locations: string[]) => {
+      const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, { locations });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Locations updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addLocation = () => {
+    if (!newLocation.trim()) return;
+    const current = orgData?.locations || [];
+    updateLocationsMutation.mutate([...current, newLocation.trim()]);
+    setNewLocation("");
+    setLocationDialogOpen(false);
+  };
+
+  const removeLocation = (index: number) => {
+    const current = orgData?.locations || [];
+    const updated = current.filter((_, i) => i !== index);
+    updateLocationsMutation.mutate(updated);
+  };
 
   const startEditPayout = () => {
     setPayoutPercentage(settings?.coach_payout_percentage || "50");
@@ -753,6 +793,70 @@ export default function AdminConfigurationPage() {
           {!servicesLoading && services?.length === 0 && (
             <p className="text-sm text-muted-foreground">No training options yet.</p>
           )}
+        </div>
+      </section>
+
+      <Separator />
+
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <MapPin className="h-5 w-5" />
+            Session Locations
+          </h2>
+          <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" data-testid="button-add-location">
+                <Plus className="h-4 w-4 mr-1" /> Add Location
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Location</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 pt-2">
+                <div>
+                  <Label>Location Name</Label>
+                  <Input
+                    placeholder="e.g. Downtown Gym (City, State)"
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                    data-testid="input-new-location"
+                  />
+                </div>
+                <Button
+                  onClick={addLocation}
+                  disabled={updateLocationsMutation.isPending || !newLocation.trim()}
+                  data-testid="button-submit-location"
+                >
+                  {updateLocationsMutation.isPending ? "Adding..." : "Add Location"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <div className="grid gap-2">
+          {(orgData?.locations || []).length === 0 && (
+            <p className="text-sm text-muted-foreground">No locations configured yet. Add locations that coaches can select when scheduling sessions.</p>
+          )}
+          {(orgData?.locations || []).map((loc, index) => (
+            <Card key={index} className="p-3 flex items-center justify-between" data-testid={`card-location-${index}`}>
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium" data-testid={`text-location-${index}`}>{loc}</span>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => removeLocation(index)}
+                disabled={updateLocationsMutation.isPending}
+                data-testid={`button-remove-location-${index}`}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </Card>
+          ))}
         </div>
       </section>
 

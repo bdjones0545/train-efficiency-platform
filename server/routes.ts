@@ -275,6 +275,28 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/organizations/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only update your own organization" });
+      }
+      const { locations, tagline, primaryColor, logoUrl } = req.body;
+      const updateData: any = {};
+      if (locations !== undefined) updateData.locations = locations;
+      if (tagline !== undefined) updateData.tagline = tagline;
+      if (primaryColor !== undefined) updateData.primaryColor = primaryColor;
+      if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
+      const updated = await storage.updateOrganization(req.params.id, updateData);
+      if (!updated) return res.status(404).json({ message: "Organization not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating organization:", error);
+      res.status(500).json({ message: "Failed to update organization" });
+    }
+  });
+
   app.get("/api/organizations/:slug", async (req: any, res) => {
     try {
       const org = await storage.getOrganizationBySlug(req.params.slug);

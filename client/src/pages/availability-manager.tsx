@@ -11,20 +11,8 @@ import { getAuthHeaders } from "@/lib/authToken";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, Clock, MapPin, ArrowLeftRight } from "lucide-react";
 import { useState } from "react";
-import type { AvailabilityBlock } from "@shared/schema";
+import type { AvailabilityBlock, Organization } from "@shared/schema";
 import type { CoachWithUser } from "@/lib/types";
-
-const PRESET_LOCATIONS = [
-  "Bluffton High School",
-  "Oscar Frazier Park (Bluffton, SC)",
-  "PickUp USA Fitness (Bluffton, SC)",
-  "Sweet Grass Fitness (Beaufort, SC)",
-  "Coursen Tate Park (Beaufort, SC)",
-  "Robert Smalls International Academy (Burton, SC)",
-  "Humidity Fitness (Beaufort, SC)",
-  "Dataw Island Community Center (St. Helena, SC)",
-  "Spring Island Sports Complex (Okatie, SC)",
-];
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const TIMES: string[] = [];
@@ -65,6 +53,16 @@ export default function AvailabilityManagerPage() {
     queryKey: ["/api/profile"],
   });
   const avOrgId = avProfile?.organizationId;
+  const { data: avOrg } = useQuery<Organization>({
+    queryKey: ["/api/organizations/by-id", avOrgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${avOrgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!avOrgId,
+  });
+  const orgLocations = avOrg?.locations || [];
   const { data: coaches } = useQuery<CoachWithUser[]>({
     queryKey: ["/api/coaches", avOrgId],
     queryFn: async () => {
@@ -256,7 +254,7 @@ export default function AvailabilityManagerPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">No location</SelectItem>
-                {PRESET_LOCATIONS.map((loc) => (
+                {orgLocations.map((loc) => (
                   <SelectItem key={loc} value={loc}>{loc}</SelectItem>
                 ))}
                 <SelectItem value="__other__">Other (custom)</SelectItem>

@@ -15,19 +15,7 @@ import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
 import { Plus, CalendarIcon, Search, XCircle, MapPin, UserPlus, Trash2, Copy } from "lucide-react";
 import { format, addDays } from "date-fns";
-import type { Service, TeamQuote } from "@shared/schema";
-
-const PRESET_LOCATIONS = [
-  "Bluffton High School",
-  "Oscar Frazier Park (Bluffton, SC)",
-  "PickUp USA Fitness (Bluffton, SC)",
-  "Sweet Grass Fitness (Beaufort, SC)",
-  "Coursen Tate Park (Beaufort, SC)",
-  "Robert Smalls International Academy (Burton, SC)",
-  "Humidity Fitness (Beaufort, SC)",
-  "Dataw Island Community Center (St. Helena, SC)",
-  "Spring Island Sports Complex (Okatie, SC)",
-];
+import type { Service, TeamQuote, Organization } from "@shared/schema";
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
 
@@ -85,6 +73,16 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     queryKey: ["/api/profile"],
   });
   const addSessionOrgId = addSessionProfile?.organizationId;
+  const { data: addSessionOrg } = useQuery<Organization>({
+    queryKey: ["/api/organizations/by-id", addSessionOrgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${addSessionOrgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!addSessionOrgId,
+  });
+  const orgLocations = addSessionOrg?.locations || [];
   const { data: services } = useQuery<Service[]>({
     queryKey: ["/api/services", addSessionOrgId],
     queryFn: async () => {
@@ -772,7 +770,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                 <SelectValue placeholder="Select a location" />
               </SelectTrigger>
               <SelectContent>
-                {PRESET_LOCATIONS.map((loc) => (
+                {orgLocations.map((loc) => (
                   <SelectItem key={loc} value={loc} data-testid={`option-location-${loc.replace(/\s+/g, '-').toLowerCase()}`}>
                     {loc}
                   </SelectItem>
