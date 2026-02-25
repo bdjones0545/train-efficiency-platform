@@ -102,10 +102,16 @@ export default function AdminBrandingPage() {
   const handlePreview = () => {
     const payload = getSavePayload();
     if (!payload) return;
+    const previewWindow = window.open("", "_blank");
     updateMutation.mutate(payload as Partial<Organization>, {
       onSuccess: () => {
         toast({ title: "Changes saved" });
-        window.open(`/org/${payload.slug}`, "_blank");
+        if (previewWindow) {
+          previewWindow.location.href = `/org/${payload.slug}`;
+        }
+      },
+      onError: () => {
+        if (previewWindow) previewWindow.close();
       },
     });
   };
