@@ -489,9 +489,14 @@ export async function registerRoutes(
       if (stripeSecretKey && (stripeSecretKey.startsWith("sk_") || stripeSecretKey.startsWith("rk_"))) {
         try {
           const testStripe = new Stripe(stripeSecretKey);
-          await testStripe.accounts.retrieve();
+          await testStripe.balance.retrieve();
         } catch (stripeErr: any) {
-          return res.status(400).json({ message: "Invalid Stripe secret key. Please check your key and try again." });
+          if (stripeErr.type === "StripeAuthenticationError") {
+            return res.status(400).json({ message: "Invalid Stripe key. Please check your key and try again." });
+          }
+          if (stripeErr.code === "restricted_key_permission_denied") {
+            return res.status(400).json({ message: "This restricted key is missing required permissions. Please ensure it has access to Charges, Customers, Checkout Sessions, Invoices, and Payment Intents." });
+          }
         }
       }
 
