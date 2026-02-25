@@ -159,10 +159,14 @@ export class DatabaseStorage implements IStorage {
   async upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
     const [existing] = await db.select().from(userProfiles).where(eq(userProfiles.userId, profile.userId));
     if (existing) {
-      const updateData: any = { role: profile.role };
+      const updateData: any = {};
+      if (profile.role !== undefined) {
+        updateData.role = profile.role;
+      }
       if (profile.organizationId !== undefined) {
         updateData.organizationId = profile.organizationId;
       }
+      if (Object.keys(updateData).length === 0) return existing;
       const [updated] = await db.update(userProfiles).set(updateData).where(eq(userProfiles.userId, profile.userId)).returning();
       return updated;
     }

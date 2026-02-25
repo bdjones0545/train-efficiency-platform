@@ -626,11 +626,25 @@ export async function registerRoutes(
       }
 
       const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
+      const user = await storage.getUser(userId);
       if (profile.role !== "ADMIN") {
-        const user = await storage.getUser(userId);
         if (user && user.email === OWNER_EMAIL) {
           profile = await storage.upsertUserProfile({ userId, role: "ADMIN" as any });
           console.log(`Owner ${userId} (${user.email}) promoted to ADMIN`);
+        }
+      }
+
+      if (!profile.organizationId) {
+        let orgId: string | null = null;
+        const coachProfile = await storage.getCoachProfileByUserId(userId);
+        if (coachProfile?.organizationId) {
+          orgId = coachProfile.organizationId;
+        } else if (user?.email === OWNER_EMAIL) {
+          orgId = "org-est";
+        }
+        if (orgId) {
+          profile = await storage.upsertUserProfile({ userId, organizationId: orgId });
+          console.log(`User ${userId} assigned to organization ${orgId}`);
         }
       }
 
