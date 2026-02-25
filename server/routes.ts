@@ -273,10 +273,13 @@ export async function registerRoutes(
         }
       }
 
-      const OWNER_USER_ID = "42755213";
-      if (userId === OWNER_USER_ID && profile.role !== "ADMIN") {
-        profile = await storage.upsertUserProfile({ userId, role: "ADMIN" as any });
-        console.log(`Owner ${userId} promoted to ADMIN`);
+      const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
+      if (profile.role !== "ADMIN") {
+        const user = await storage.getUser(userId);
+        if (user && user.email === OWNER_EMAIL) {
+          profile = await storage.upsertUserProfile({ userId, role: "ADMIN" as any });
+          console.log(`Owner ${userId} (${user.email}) promoted to ADMIN`);
+        }
       }
 
       res.json(profile);
