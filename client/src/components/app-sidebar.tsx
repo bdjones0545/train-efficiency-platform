@@ -50,7 +50,7 @@ export function AppSidebar() {
   const role = profile?.role || "CLIENT";
 
   const orgId = profile?.organizationId;
-  const { data: organization } = useQuery<{ name: string; logoUrl?: string | null }>({
+  const { data: organization, isLoading: orgLoading } = useQuery<{ name: string; logoUrl?: string | null }>({
     queryKey: ["/api/organizations/by-id", orgId],
     queryFn: async () => {
       const res = await fetch(`/api/organizations/by-id/${orgId}`);
@@ -93,14 +93,18 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <div className="flex items-center gap-2 px-2 py-3">
-            {(organization?.logoUrl || (isEstOrg && logoImg)) ? (
+            {(organization?.logoUrl || isEstOrg) ? (
               <img src={organization?.logoUrl || logoImg} alt={organization?.name || "Logo"} className="h-8 rounded-md object-contain" data-testid="img-sidebar-logo" />
+            ) : orgLoading ? (
+              <div className="h-8 w-8 rounded-md bg-muted animate-pulse" />
             ) : (
               <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm" data-testid="img-sidebar-logo">
                 {(organization?.name || "").charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="font-semibold text-sm tracking-tight">{organization?.name || "Loading..."}</span>
+            <span className="font-semibold text-sm tracking-tight">
+              {organization?.name || (isEstOrg ? "Efficiency Strength Training" : orgLoading ? "Loading..." : "My Organization")}
+            </span>
           </div>
         </SidebarGroup>
 
