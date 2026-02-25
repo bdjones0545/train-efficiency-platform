@@ -137,8 +137,8 @@ export default function AdminSetupPage() {
       toast({ title: "Publishable key should start with pk_", variant: "destructive" });
       return;
     }
-    if (stripeSecretKey && !stripeSecretKey.startsWith("sk_")) {
-      toast({ title: "Secret key should start with sk_", variant: "destructive" });
+    if (stripeSecretKey && !stripeSecretKey.startsWith("sk_") && !stripeSecretKey.startsWith("rk_")) {
+      toast({ title: "Secret key should start with sk_ or rk_", variant: "destructive" });
       return;
     }
     if (!stripePublishableKey || !stripeSecretKey) {
@@ -337,7 +337,7 @@ export default function AdminSetupPage() {
                     type={showSecret ? "text" : "password"}
                     value={stripeSecretKey}
                     onChange={(e) => setStripeSecretKey(e.target.value)}
-                    placeholder="sk_live_... or sk_test_..."
+                    placeholder="sk_live_..., sk_test_..., or rk_live_..."
                     className="font-mono text-sm pr-10"
                     data-testid="input-setup-stripe-sk"
                   />

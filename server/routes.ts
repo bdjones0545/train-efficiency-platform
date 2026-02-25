@@ -486,7 +486,7 @@ export async function registerRoutes(
       if (stripeSecretKey !== undefined) updateData.stripeSecretKey = stripeSecretKey || null;
       if (stripePublishableKey !== undefined) updateData.stripePublishableKey = stripePublishableKey || null;
 
-      if (stripeSecretKey && stripeSecretKey.startsWith("sk_")) {
+      if (stripeSecretKey && (stripeSecretKey.startsWith("sk_") || stripeSecretKey.startsWith("rk_"))) {
         try {
           const testStripe = new Stripe(stripeSecretKey);
           await testStripe.accounts.retrieve();

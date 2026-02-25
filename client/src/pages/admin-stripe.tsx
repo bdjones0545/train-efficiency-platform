@@ -69,8 +69,8 @@ export default function AdminStripePage() {
       toast({ title: "Invalid Key", description: "Publishable key should start with pk_", variant: "destructive" });
       return;
     }
-    if (secretKey && !secretKey.startsWith("sk_")) {
-      toast({ title: "Invalid Key", description: "Secret key should start with sk_", variant: "destructive" });
+    if (secretKey && !secretKey.startsWith("sk_") && !secretKey.startsWith("rk_")) {
+      toast({ title: "Invalid Key", description: "Secret key should start with sk_ or rk_", variant: "destructive" });
       return;
     }
 
@@ -188,7 +188,7 @@ export default function AdminStripePage() {
                 type={showSecret ? "text" : "password"}
                 value={secretKey}
                 onChange={(e) => { setSecretKey(e.target.value); markChanged(); }}
-                placeholder={isConnected ? "••••••••  (leave blank to keep current)" : "sk_live_... or sk_test_..."}
+                placeholder={isConnected ? "••••••••  (leave blank to keep current)" : "sk_live_..., sk_test_..., or rk_live_..."}
                 className="font-mono text-sm pr-10"
                 data-testid="input-stripe-secret-key"
               />
