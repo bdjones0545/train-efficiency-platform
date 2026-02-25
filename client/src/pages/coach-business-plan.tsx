@@ -246,9 +246,16 @@ export default function CoachBusinessPlanPage() {
   });
 
   const isAdmin = profile?.role === "ADMIN";
+  const orgId = profile?.organizationId;
 
   const { data: coaches } = useQuery<CoachWithUser[]>({
-    queryKey: ["/api/coaches"],
+    queryKey: ["/api/coaches", orgId],
+    queryFn: async () => {
+      const url = orgId ? `/api/coaches?organizationId=${orgId}` : "/api/coaches";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch coaches");
+      return res.json();
+    },
   });
 
   const { data: myCoachProfile } = useQuery<{ id: string }>({
