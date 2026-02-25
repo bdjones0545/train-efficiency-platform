@@ -116,6 +116,7 @@ export default function OrgLandingPage() {
         toast({ title: isSignUp ? "Account created!" : "Welcome back!", description: "Redirecting..." });
         setClientModalOpen(false);
         await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        window.location.href = "/coaches";
       }
     } catch (err: any) {
       try {
