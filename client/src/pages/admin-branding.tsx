@@ -58,7 +58,6 @@ export default function AdminBrandingPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Branding updated successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
       setHasChanges(false);
     },
@@ -67,7 +66,7 @@ export default function AdminBrandingPage() {
     },
   });
 
-  const handleSave = () => {
+  const getSavePayload = () => {
     const cleanSlug = slug
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "-")
@@ -76,10 +75,10 @@ export default function AdminBrandingPage() {
 
     if (!cleanSlug) {
       toast({ title: "Invalid URL", description: "Please enter a valid URL extension.", variant: "destructive" });
-      return;
+      return null;
     }
 
-    updateMutation.mutate({
+    return {
       name,
       slug: cleanSlug,
       logoUrl: logoUrl || null,
@@ -87,6 +86,27 @@ export default function AdminBrandingPage() {
       tagline2,
       primaryColor,
       secondaryColor,
+    };
+  };
+
+  const handleSave = () => {
+    const payload = getSavePayload();
+    if (!payload) return;
+    updateMutation.mutate(payload as Partial<Organization>, {
+      onSuccess: () => {
+        toast({ title: "Branding updated successfully" });
+      },
+    });
+  };
+
+  const handlePreview = () => {
+    const payload = getSavePayload();
+    if (!payload) return;
+    updateMutation.mutate(payload as Partial<Organization>, {
+      onSuccess: () => {
+        toast({ title: "Changes saved" });
+        window.open(`/org/${payload.slug}`, "_blank");
+      },
     });
   };
 
@@ -109,12 +129,8 @@ export default function AdminBrandingPage() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => {
-              if (org?.slug) {
-                window.open(`/org/${org.slug}`, "_blank");
-              }
-            }}
-            disabled={!org?.slug}
+            onClick={handlePreview}
+            disabled={updateMutation.isPending}
             data-testid="button-preview-landing"
           >
             <ExternalLink className="h-4 w-4 mr-2" />
