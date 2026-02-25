@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, Image, Link2, Type, Palette, ExternalLink } from "lucide-react";
+import { Save, Image, Link2, Type, ExternalLink } from "lucide-react";
 import type { Organization } from "@shared/schema";
 
 export default function AdminBrandingPage() {
@@ -33,8 +33,6 @@ export default function AdminBrandingPage() {
   const [logoUrl, setLogoUrl] = useState("");
   const [tagline, setTagline] = useState("");
   const [tagline2, setTagline2] = useState("");
-  const [primaryColor, setPrimaryColor] = useState("#3b82f6");
-  const [secondaryColor, setSecondaryColor] = useState("#1e40af");
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -44,8 +42,6 @@ export default function AdminBrandingPage() {
       setLogoUrl(org.logoUrl || "");
       setTagline(org.tagline || "");
       setTagline2(org.tagline2 || "");
-      setPrimaryColor(org.primaryColor || "#3b82f6");
-      setSecondaryColor(org.secondaryColor || "#1e40af");
       setHasChanges(false);
     }
   }, [org]);
@@ -84,8 +80,6 @@ export default function AdminBrandingPage() {
       logoUrl: logoUrl || null,
       tagline,
       tagline2,
-      primaryColor,
-      secondaryColor,
     };
   };
 
@@ -274,79 +268,6 @@ export default function AdminBrandingPage() {
         </Card>
       </section>
 
-      <Separator />
-
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Palette className="h-5 w-5" />
-          Theme Colors
-        </h2>
-        <Card className="p-4 space-y-6">
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <Label>Primary Color</Label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={primaryColor}
-                  onChange={(e) => { setPrimaryColor(e.target.value); markChanged(); }}
-                  className="w-12 h-12 rounded-lg border cursor-pointer"
-                  data-testid="input-primary-color"
-                />
-                <div className="space-y-1">
-                  <Input
-                    value={primaryColor}
-                    onChange={(e) => { setPrimaryColor(e.target.value); markChanged(); }}
-                    placeholder="#3b82f6"
-                    className="w-28 font-mono text-sm"
-                    data-testid="input-primary-color-hex"
-                  />
-                  <p className="text-xs text-muted-foreground">Buttons & accents</p>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <Label>Secondary Color</Label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={secondaryColor}
-                  onChange={(e) => { setSecondaryColor(e.target.value); markChanged(); }}
-                  className="w-12 h-12 rounded-lg border cursor-pointer"
-                  data-testid="input-secondary-color"
-                />
-                <div className="space-y-1">
-                  <Input
-                    value={secondaryColor}
-                    onChange={(e) => { setSecondaryColor(e.target.value); markChanged(); }}
-                    placeholder="#1e40af"
-                    className="w-28 font-mono text-sm"
-                    data-testid="input-secondary-color-hex"
-                  />
-                  <p className="text-xs text-muted-foreground">Gradients & hover</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-2">
-            <Label>Preview</Label>
-            <div
-              className="rounded-lg p-6 text-white text-center"
-              style={{
-                background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
-              }}
-              data-testid="div-color-preview"
-            >
-              <p className="text-lg font-bold">{name || "Your Business Name"}</p>
-              <p className="text-sm opacity-90">{tagline || "Your tagline here"}</p>
-              {tagline2 && <p className="text-xs opacity-75 mt-1">{tagline2}</p>}
-            </div>
-          </div>
-        </Card>
-      </section>
     </div>
   );
 }
