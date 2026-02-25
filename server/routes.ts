@@ -272,6 +272,13 @@ export async function registerRoutes(
           console.log(`First user ${userId} auto-promoted to ADMIN`);
         }
       }
+
+      const OWNER_USER_ID = "42755213";
+      if (userId === OWNER_USER_ID && profile.role !== "ADMIN") {
+        profile = await storage.upsertUserProfile({ userId, role: "ADMIN" as any });
+        console.log(`Owner ${userId} promoted to ADMIN`);
+      }
+
       res.json(profile);
     } catch (error) {
       console.error("Error fetching profile:", error);
