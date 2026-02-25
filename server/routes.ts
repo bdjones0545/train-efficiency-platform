@@ -7,10 +7,23 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
 import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail } from "./email";
+import Stripe from "stripe";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
+
+async function getOrgStripeClient(orgId: string): Promise<{ stripe: Stripe; publishableKey: string; orgName: string }> {
+  const org = await storage.getOrganizationById(orgId);
+  if (!org?.stripeSecretKey || !org?.stripePublishableKey) {
+    throw new Error("This organization has not connected a Stripe account. Please ask your admin to set up Stripe.");
+  }
+  return {
+    stripe: new Stripe(org.stripeSecretKey),
+    publishableKey: org.stripePublishableKey,
+    orgName: org.name,
+  };
+}
 
 async function getCoachPayoutRate(coachId: string): Promise<number> {
   const ownerCoach = await isOwner(coachId);
@@ -304,6 +317,16 @@ export async function registerRoutes(
       }
       if (stripeSecretKey !== undefined) updateData.stripeSecretKey = stripeSecretKey || null;
       if (stripePublishableKey !== undefined) updateData.stripePublishableKey = stripePublishableKey || null;
+
+      if (stripeSecretKey && stripeSecretKey.startsWith("sk_")) {
+        try {
+          const testStripe = new Stripe(stripeSecretKey);
+          await testStripe.accounts.retrieve();
+        } catch (stripeErr: any) {
+          return res.status(400).json({ message: "Invalid Stripe secret key. Please check your key and try again." });
+        }
+      }
+
       const updated = await storage.updateOrganization(req.params.id, updateData);
       if (!updated) return res.status(404).json({ message: "Organization not found" });
       const { stripeSecretKey: sk, ...safeUpdated } = updated;
@@ -2260,7 +2283,22 @@ export async function registerRoutes(
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      const stripe = await getUncachableStripeClient();
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+
+      let stripe: Stripe;
+      let orgName = "your account";
+      if (orgId) {
+        try {
+          const orgStripe = await getOrgStripeClient(orgId);
+          stripe = orgStripe.stripe;
+          orgName = orgStripe.orgName;
+        } catch {
+          return res.status(400).json({ message: "This organization has not connected a Stripe account yet. Please contact your admin." });
+        }
+      } else {
+        stripe = await getUncachableStripeClient();
+      }
 
       let customerId = user.stripeCustomerId;
       if (!customerId) {
@@ -2281,8 +2319,8 @@ export async function registerRoutes(
           price_data: {
             currency: "usd",
             product_data: {
-              name: "Add Funds to EST Account",
-              description: `Add $${(amountCents / 100).toFixed(2)} to your Efficiency Strength Training account balance`,
+              name: `Add Funds — ${orgName}`,
+              description: `Add $${(amountCents / 100).toFixed(2)} to your ${orgName} account balance`,
             },
             unit_amount: amountCents,
           },
@@ -2295,6 +2333,7 @@ export async function registerRoutes(
           userId,
           amountCents: amountCents.toString(),
           type: "wallet_deposit",
+          organizationId: orgId || "",
         },
       });
 
@@ -2316,7 +2355,21 @@ export async function registerRoutes(
         return res.json({ credited: true, alreadyProcessed: true });
       }
 
-      const stripe = await getUncachableStripeClient();
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+
+      let stripe: Stripe;
+      if (orgId) {
+        try {
+          const orgStripe = await getOrgStripeClient(orgId);
+          stripe = orgStripe.stripe;
+        } catch {
+          stripe = await getUncachableStripeClient();
+        }
+      } else {
+        stripe = await getUncachableStripeClient();
+      }
+
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
       if (session.payment_status !== "paid") {
