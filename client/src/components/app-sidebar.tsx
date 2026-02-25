@@ -60,6 +60,8 @@ export function AppSidebar() {
     ...(role === "CLIENT" ? [{ title: "My Wallet", url: "/wallet", icon: Wallet }] : []),
   ];
 
+  const isEstOrg = profile?.organizationId === "org-est";
+
   const coachItems = [
     { title: "Dashboard", url: "/coach", icon: LayoutDashboard },
     { title: "My Profile", url: "/coach/profile", icon: UserCog },
@@ -67,8 +69,8 @@ export function AppSidebar() {
     { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign },
     { title: "Transactions", url: "/coach/transactions", icon: Wallet },
     { title: "Users", url: "/coach/users", icon: Users },
-    { title: "BLHS Athletic", url: "/coach/athletic", icon: Trophy },
-    { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
+    ...(isEstOrg ? [{ title: "BLHS Athletic", url: "/coach/athletic", icon: Trophy }] : []),
+    ...(isEstOrg ? [{ title: "Team Quotes", url: "/coach/team-quotes", icon: FileText }] : []),
   ];
 
 
