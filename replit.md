@@ -126,6 +126,12 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
   - /admin/subscription and /admin/setup are always accessible (so admins can resubscribe)
   - Platform org (org-est) is always exempted
   - Non-admin users see "contact your admin" message; admins see a button to manage subscription
+- Email notifications: org owner receives email when subscription becomes inactive
+  - Trial ended: "Your 3-day free trial has ended" with instructions to subscribe
+  - Payment failed: "Action Required: Payment Failed" with instructions to update payment method
+  - Canceled: "Your Subscription Has Ended" with instructions to resubscribe
+  - Emails sent via SendGrid, triggered by Stripe webhook subscription status changes
+  - sendSubscriptionExpiredEmail function in server/email.ts
 
 ## Recent Changes
 - Client Team Training request page (/team-training): form for clients to request team training quotes

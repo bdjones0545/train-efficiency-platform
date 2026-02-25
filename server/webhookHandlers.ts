@@ -1,6 +1,6 @@
 import { getStripeSync, getUncachableStripeClient } from './stripeClient';
 import { storage } from './storage';
-import { sendTeamQuoteEmail, type OrgBranding } from './email';
+import { sendTeamQuoteEmail, sendSubscriptionExpiredEmail, type OrgBranding } from './email';
 
 export class WebhookHandlers {
   static async processWebhook(payload: Buffer, signature: string): Promise<void> {
@@ -78,6 +78,8 @@ export class WebhookHandlers {
         return;
       }
 
+      const previousStatus = org.subscriptionStatus;
+
       await storage.updateOrganization(org.id, {
         stripeSubscriptionId: subscription.id,
         subscriptionStatus: subscription.status as any,
@@ -87,7 +89,24 @@ export class WebhookHandlers {
           : null,
       });
 
-      console.log(`Org ${org.id} (${org.name}) subscription updated: ${subscription.status}`);
+      console.log(`Org ${org.id} (${org.name}) subscription updated: ${previousStatus} → ${subscription.status}`);
+
+      const wasActive = previousStatus === 'active' || previousStatus === 'trialing';
+      const isNowInactive = subscription.status === 'canceled' || subscription.status === 'past_due' || subscription.status === 'incomplete';
+      const trialJustEnded = previousStatus === 'trialing' && subscription.status !== 'trialing' && subscription.status !== 'active';
+
+      if (org.ownerEmail && ((wasActive && isNowInactive) || trialJustEnded)) {
+        let reason: "trial_ended" | "canceled" | "past_due" = "canceled";
+        if (trialJustEnded || (previousStatus === 'trialing' && subscription.status === 'past_due')) {
+          reason = "trial_ended";
+        } else if (subscription.status === 'past_due') {
+          reason = "past_due";
+        }
+
+        sendSubscriptionExpiredEmail(org.ownerEmail, org.name, reason)
+          .catch(err => console.error(`Failed to send subscription email to ${org.ownerEmail}:`, err));
+        console.log(`Subscription notification email queued for ${org.ownerEmail} (reason: ${reason})`);
+      }
     } catch (err) {
       console.error('Error handling subscription event:', err);
     }

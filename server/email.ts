@@ -474,3 +474,34 @@ export async function sendTeamTrainingRequestEmail(
   `, org);
   await sendEmail(recipient, subject, html, b.name);
 }
+
+export async function sendSubscriptionExpiredEmail(email: string, orgName: string, reason: "trial_ended" | "canceled" | "past_due") {
+  const b = brand({ name: "Train Efficiency" });
+
+  const reasonText = reason === "trial_ended"
+    ? "Your 3-day free trial has ended."
+    : reason === "past_due"
+    ? "Your most recent payment failed."
+    : "Your subscription has been canceled.";
+
+  const actionText = reason === "past_due"
+    ? "Please update your payment method to restore access to your platform."
+    : "Resubscribe to restore access to your platform and keep your coaching business running.";
+
+  const subject = reason === "past_due"
+    ? `Action Required: Payment Failed for ${orgName}`
+    : `Your ${orgName} Subscription Has Ended`;
+
+  const html = emailShell(subject, `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi there,</p>
+    ${para(`${reasonText} Access to the <strong>${orgName}</strong> platform has been paused.`)}
+    ${detailBox([
+      line("Organization", orgName),
+      line("Status", reason === "past_due" ? "Payment Failed" : "Subscription Ended"),
+      line("Action Needed", actionText),
+    ], b.color)}
+    ${para(actionText)}
+    ${para('Log in to your admin dashboard and visit <strong>Configuration → Subscription</strong> to manage your plan.')}
+  `);
+  await sendEmail(email, subject, html, b.name);
+}
