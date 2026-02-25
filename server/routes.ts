@@ -263,6 +263,18 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/organizations/by-id/:id", async (req: any, res) => {
+    try {
+      const org = await storage.getOrganizationById(req.params.id);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      res.json(org);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organization" });
+    }
+  });
+
   app.get("/api/organizations/:slug", async (req: any, res) => {
     try {
       const org = await storage.getOrganizationBySlug(req.params.slug);

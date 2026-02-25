@@ -46,6 +46,16 @@ export function AppSidebar() {
 
   const role = profile?.role || "CLIENT";
 
+  const { data: organization } = useQuery<{ name: string; logoUrl?: string | null }>({
+    queryKey: ["/api/organizations/by-id", profile?.organizationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${profile!.organizationId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!profile?.organizationId,
+  });
+
   const handleNavClick = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -79,8 +89,14 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <div className="flex items-center gap-2 px-2 py-3">
-            <img src={logoImg} alt="EST" className="h-8 rounded-md" data-testid="img-sidebar-logo" />
-            <span className="font-semibold text-sm tracking-tight">Efficiency Strength Training</span>
+            {isEstOrg ? (
+              <img src={logoImg} alt="EST" className="h-8 rounded-md" data-testid="img-sidebar-logo" />
+            ) : (
+              <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm" data-testid="img-sidebar-logo">
+                {(organization?.name || "").charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="font-semibold text-sm tracking-tight">{organization?.name || "Loading..."}</span>
           </div>
         </SidebarGroup>
 
