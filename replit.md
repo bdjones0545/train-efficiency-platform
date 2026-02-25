@@ -1,7 +1,7 @@
-# Efficiency Strength Training Scheduler
+# Train Efficiency Business Solutions
 
 ## Overview
-A scheduling platform for Efficiency Strength Training LLC focused on sports performance and strength & conditioning. Clients can browse S&C coaches and book training sessions, coaches can manage availability and redeem completed sessions, and admins can manage the entire system.
+A multi-tenant white-label scheduling platform for strength & conditioning coaching businesses. Business owners sign up at the main landing page to get their own branded platform (at /org/{slug}), complete with their own coaches, clients, and sessions. The existing Efficiency Strength Training LLC operates as the first organization at /efficiencystrength.
 
 ## Tech Stack
 - Frontend: React + TypeScript + Tailwind CSS + Shadcn UI (Vite)
@@ -31,6 +31,16 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
 - Admin dashboard with user management, services, bookings, CSV export
 - Semi-private group sessions (2-6 participants) with join/leave functionality
 - Open Sessions page for clients to browse and join available group sessions
+
+## Multi-Tenant Architecture
+- `organizations` table: id, name, slug, logoUrl, ownerUserId, ownerEmail, tagline, primaryColor, createdAt
+- `coach_profiles.organization_id` and `user_profiles.organization_id` link users/coaches to their organization
+- POST /api/organizations/register - Business owner sign-up (creates org + admin + coach profile)
+- GET /api/organizations/:slug - Get organization info (public)
+- GET /api/organizations/:slug/coaches - Get coaches for an organization (public)
+- Each org gets a landing page at /org/{slug} (dynamic OrgLandingPage component)
+- Efficiency Strength Training is the default org (slug: "efficiencystrength", id: "org-est")
+- The main landing page (/) is the Train Efficiency Business Solutions marketing page for business owners
 
 ## API Routes
 - POST /api/coach/login - Coach email/password login (public)

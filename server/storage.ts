@@ -34,6 +34,8 @@ import {
   teamQuotes,
   type TeamQuote,
   type InsertTeamQuote,
+  organizations,
+  type Organization,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -131,6 +133,10 @@ export interface IStorage {
   getSetting(key: string): Promise<string | undefined>;
   setSetting(key: string, value: string): Promise<void>;
   getAllSettings(): Promise<{ key: string; value: string }[]>;
+
+  getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
+  getOrganizationById(id: string): Promise<Organization | undefined>;
+  getCoachProfilesByOrganization(orgId: string): Promise<(CoachProfile & { user?: User })[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -832,6 +838,30 @@ export class DatabaseStorage implements IStorage {
 
   async getAllSettings(): Promise<{ key: string; value: string }[]> {
     return db.select().from(appSettings);
+  }
+
+  async getOrganizationBySlug(slug: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.slug, slug));
+    return org || undefined;
+  }
+
+  async getOrganizationById(id: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org || undefined;
+  }
+
+  async getCoachProfilesByOrganization(orgId: string): Promise<(CoachProfile & { user?: User })[]> {
+    const coaches = await db
+      .select()
+      .from(coachProfiles)
+      .where(and(eq(coachProfiles.organizationId, orgId), eq(coachProfiles.isActive, true)));
+
+    const result = [];
+    for (const coach of coaches) {
+      const [user] = await db.select().from(users).where(eq(users.id, coach.userId));
+      result.push({ ...coach, user: user || undefined });
+    }
+    return result;
   }
 }
 

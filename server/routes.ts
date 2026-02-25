@@ -259,6 +259,105 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/organizations/:slug", async (req: any, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.slug);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      res.json(org);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organization" });
+    }
+  });
+
+  app.get("/api/organizations/:slug/coaches", async (req: any, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.slug);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      const coaches = await storage.getCoachProfilesByOrganization(org.id);
+      res.json(coaches);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch coaches" });
+    }
+  });
+
+  app.post("/api/organizations/register", async (req: any, res) => {
+    try {
+      const { businessName, slug, email, password, firstName, lastName } = req.body;
+      if (!businessName || !slug || !email || !password || !firstName || !lastName) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const slugClean = slug.toLowerCase().replace(/[^a-z0-9-]/g, "").trim();
+      if (!slugClean || slugClean.length < 3) {
+        return res.status(400).json({ message: "URL slug must be at least 3 characters (letters, numbers, hyphens)" });
+      }
+
+      const reservedSlugs = ["api", "admin", "coach", "sessions", "athletic", "bookings", "wallet", "efficiencystrength", "team-training"];
+      if (reservedSlugs.includes(slugClean)) {
+        return res.status(400).json({ message: "This URL is reserved. Please choose a different one." });
+      }
+
+      const existingOrg = await storage.getOrganizationBySlug(slugClean);
+      if (existingOrg) {
+        return res.status(409).json({ message: "This URL is already taken. Please choose a different one." });
+      }
+
+      const existingUser = await storage.getUserByEmail(email.toLowerCase());
+      if (existingUser) {
+        return res.status(409).json({ message: "An account with this email already exists" });
+      }
+
+      const hash = await bcrypt.hash(password, 10);
+
+      const { db: dbRef } = await import("./db");
+      const { users } = await import("@shared/models/auth");
+      const { userProfiles, organizations, coachProfiles } = await import("@shared/schema");
+
+      const [user] = await dbRef.insert(users).values({
+        email: email.toLowerCase().trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        passwordHash: hash,
+        lastSignInAt: new Date(),
+      }).returning();
+
+      const [org] = await dbRef.insert(organizations).values({
+        name: businessName.trim(),
+        slug: slugClean,
+        ownerUserId: user.id,
+        ownerEmail: email.toLowerCase().trim(),
+      }).returning();
+
+      await dbRef.insert(userProfiles).values({ userId: user.id, role: "ADMIN" as any, organizationId: org.id });
+
+      await dbRef.insert(coachProfiles).values({
+        userId: user.id,
+        email: email.toLowerCase().trim(),
+        passwordHash: hash,
+        bio: "",
+        specialties: [],
+        isActive: true,
+        organizationId: org.id,
+      });
+
+      const token = await createAuthToken(user.id);
+
+      sendCoachWelcomeEmail(email.toLowerCase().trim(), firstName.trim()).catch(() => {});
+
+      res.json({ success: true, organization: org, token, redirect: "/coach" });
+    } catch (error) {
+      console.error("Organization register error:", error);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
   app.get("/api/profile", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

@@ -29,6 +29,7 @@ import WalletPage from "@/pages/wallet";
 import TeamQuotesPage from "@/pages/team-quotes";
 import TeamTrainingPage from "@/pages/team-training";
 import EfficiencyStrengthPage from "@/pages/efficiency-strength";
+import OrgLandingPage from "@/pages/org-landing";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatWidget } from "@/components/chat-widget";
@@ -70,6 +71,7 @@ function AuthenticatedLayout() {
                 <Route path="/coach/team-quotes" component={TeamQuotesPage} />
                 <Route path="/team-training" component={TeamTrainingPage} />
                 <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
+                <Route path="/org/:slug" component={OrgLandingPage} />
                 <Route path="/admin" component={AdminDashboardPage} />
                 <Route path="/admin/configuration" component={AdminConfigurationPage} />
                 <Route component={NotFound} />
@@ -88,6 +90,7 @@ function PublicLayout() {
       <Route path="/sessions" component={OpenSessionsPublicPage} />
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
+      <Route path="/org/:slug" component={OrgLandingPage} />
       <Route><LandingPage /></Route>
     </Switch>
   );

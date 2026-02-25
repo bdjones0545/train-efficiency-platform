@@ -7,6 +7,22 @@ export * from "./models/auth";
 export * from "./models/chat";
 import { users } from "./models/auth";
 
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  slug: varchar("slug").notNull().unique(),
+  logoUrl: text("logo_url"),
+  ownerUserId: varchar("owner_user_id"),
+  ownerEmail: varchar("owner_email"),
+  tagline: text("tagline").default(""),
+  primaryColor: varchar("primary_color").default(""),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+
 export const roleEnum = pgEnum("user_role", ["CLIENT", "COACH", "ADMIN"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"]);
 export const payoutStatusEnum = pgEnum("payout_status", ["PENDING", "SENT", "FAILED"]);
@@ -16,6 +32,7 @@ export const userProfiles = pgTable("user_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
   role: roleEnum("role").notNull().default("CLIENT"),
+  organizationId: varchar("organization_id"),
 });
 
 export const coachProfiles = pgTable("coach_profiles", {
@@ -29,6 +46,7 @@ export const coachProfiles = pgTable("coach_profiles", {
   timezone: varchar("timezone").default("America/New_York"),
   isActive: boolean("is_active").default(true),
   payoutPercentage: integer("payout_percentage"),
+  organizationId: varchar("organization_id"),
 });
 
 export const services = pgTable("services", {

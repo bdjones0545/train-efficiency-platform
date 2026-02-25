@@ -21,23 +21,26 @@ import logoImg from "@assets/A5CAB7DB-0296-44BE-A684-9F213A62D633_1772032608136.
 
 export default function LandingPage() {
   const [coachModalOpen, setCoachModalOpen] = useState(false);
-  const [clientModalOpen, setClientModalOpen] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(true);
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [slug, setSlug] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toast } = useToast();
 
-  const resetClientForm = () => {
+  const resetForm = () => {
     setEmail("");
     setPassword("");
     setFirstName("");
     setLastName("");
+    setBusinessName("");
+    setSlug("");
     setError("");
     setShowPassword(false);
   };
@@ -63,45 +66,46 @@ export default function LandingPage() {
     }
   };
 
-  const handleClientAuth = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
     try {
-      const endpoint = isSignUp ? "/api/client/register" : "/api/client/login";
-      const body = isSignUp
-        ? { email, password, firstName, lastName }
-        : { email, password };
-
-      const res = await apiRequest("POST", endpoint, body);
+      const res = await apiRequest("POST", "/api/organizations/register", {
+        businessName,
+        slug,
+        email,
+        password,
+        firstName,
+        lastName,
+      });
       const data = await res.json();
       if (data.success) {
         if (data.token) setAuthToken(data.token);
-        toast({ title: isSignUp ? "Account created!" : "Welcome back!", description: "Redirecting..." });
-        setClientModalOpen(false);
+        toast({
+          title: "Business registered!",
+          description: `Your platform is live at /org/${data.organization.slug}`,
+        });
+        setRegisterModalOpen(false);
         await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        window.location.href = "/coach";
       }
     } catch (err: any) {
       try {
         const msg = await err?.message;
-        if (msg) {
-          setError(msg);
-        } else {
-          setError(isSignUp ? "Registration failed. Try a different email." : "Invalid email or password.");
-        }
+        setError(msg || "Registration failed. Please try again.");
       } catch {
-        setError(isSignUp ? "Registration failed. Try a different email." : "Invalid email or password.");
+        setError("Registration failed. Please try again.");
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const openClientModal = (signUp: boolean) => {
-    setIsSignUp(signUp);
-    resetClientForm();
-    setClientModalOpen(true);
+  const openRegisterModal = () => {
+    resetForm();
+    setRegisterModalOpen(true);
   };
 
   return (
@@ -136,7 +140,7 @@ export default function LandingPage() {
               Coach Login
             </Button>
             <Button
-              onClick={() => openClientModal(true)}
+              onClick={() => openRegisterModal()}
               data-testid="button-get-started"
             >
               <UserPlus className="h-4 w-4 mr-1" />
@@ -179,7 +183,7 @@ export default function LandingPage() {
             </Button>
             <Button
               className="w-full justify-start"
-              onClick={() => { openClientModal(true); setMobileMenuOpen(false); }}
+              onClick={() => { openRegisterModal(); setMobileMenuOpen(false); }}
               data-testid="button-get-started-mobile"
             >
               <UserPlus className="h-4 w-4 mr-1" />
@@ -210,7 +214,7 @@ export default function LandingPage() {
               payments, clients, team contracts, and payouts — all from one dashboard.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-              <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-hero-cta">
+              <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-hero-cta">
                 <ArrowRight className="h-4 w-4 mr-2" />
                 Start Your Free Account
               </Button>
@@ -375,7 +379,7 @@ export default function LandingPage() {
           </div>
 
           <div className="text-center mt-12">
-            <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-how-cta">
+            <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-how-cta">
               <ArrowRight className="h-4 w-4 mr-2" />
               Create Your Coach Account
             </Button>
@@ -433,7 +437,7 @@ export default function LandingPage() {
             Start managing your coaching business the right way.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-            <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-final-cta">
+            <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-final-cta">
               <ArrowRight className="h-4 w-4 mr-2" />
               Get Started Free
             </Button>
@@ -529,74 +533,103 @@ export default function LandingPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={clientModalOpen} onOpenChange={(open) => {
-        setClientModalOpen(open);
-        if (!open) resetClientForm();
+      <Dialog open={registerModalOpen} onOpenChange={(open) => {
+        setRegisterModalOpen(open);
+        if (!open) resetForm();
       }}>
-        <DialogContent className="sm:max-w-md" data-testid="modal-client-auth">
+        <DialogContent className="sm:max-w-lg" data-testid="modal-register-org">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {isSignUp ? <UserPlus className="h-5 w-5 text-primary" /> : <LogIn className="h-5 w-5 text-primary" />}
-              {isSignUp ? "Create Your Account" : "Welcome Back"}
+              <Building2 className="h-5 w-5 text-primary" />
+              Register Your Coaching Business
             </DialogTitle>
             <DialogDescription>
-              {isSignUp
-                ? "Sign up to start managing your coaching business on Train Efficiency."
-                : "Log in to your account to access your dashboard."}
+              Create your platform in minutes. You'll get your own landing page, client portal, and coach dashboard.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleClientAuth} className="space-y-4 pt-2">
-            {isSignUp && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <label htmlFor="client-first" className="text-sm font-medium">First Name</label>
-                  <Input
-                    id="client-first"
-                    placeholder="First name"
-                    value={firstName}
-                    onChange={(e) => { setFirstName(e.target.value); setError(""); }}
-                    required
-                    data-testid="input-client-first-name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="client-last" className="text-sm font-medium">Last Name</label>
-                  <Input
-                    id="client-last"
-                    placeholder="Last name"
-                    value={lastName}
-                    onChange={(e) => { setLastName(e.target.value); setError(""); }}
-                    required
-                    data-testid="input-client-last-name"
-                  />
-                </div>
-              </div>
-            )}
+          <form onSubmit={handleRegister} className="space-y-4 pt-2">
             <div className="space-y-2">
-              <label htmlFor="client-email" className="text-sm font-medium">Email</label>
+              <label htmlFor="reg-business" className="text-sm font-medium">Business Name</label>
               <Input
-                id="client-email"
+                id="reg-business"
+                placeholder="e.g. Elite Performance Training"
+                value={businessName}
+                onChange={(e) => {
+                  setBusinessName(e.target.value);
+                  setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+                  setError("");
+                }}
+                required
+                data-testid="input-reg-business-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="reg-slug" className="text-sm font-medium">Your Platform URL</label>
+              <div className="flex items-center gap-0">
+                <span className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-l-md border border-r-0">
+                  /org/
+                </span>
+                <Input
+                  id="reg-slug"
+                  placeholder="elite-performance"
+                  value={slug}
+                  onChange={(e) => { setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")); setError(""); }}
+                  required
+                  className="rounded-l-none"
+                  data-testid="input-reg-slug"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">This is where your clients will sign up and book sessions.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label htmlFor="reg-first" className="text-sm font-medium">First Name</label>
+                <Input
+                  id="reg-first"
+                  placeholder="First name"
+                  value={firstName}
+                  onChange={(e) => { setFirstName(e.target.value); setError(""); }}
+                  required
+                  data-testid="input-reg-first-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="reg-last" className="text-sm font-medium">Last Name</label>
+                <Input
+                  id="reg-last"
+                  placeholder="Last name"
+                  value={lastName}
+                  onChange={(e) => { setLastName(e.target.value); setError(""); }}
+                  required
+                  data-testid="input-reg-last-name"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="reg-email" className="text-sm font-medium">Email</label>
+              <Input
+                id="reg-email"
                 type="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => { setEmail(e.target.value); setError(""); }}
                 required
-                data-testid="input-client-email"
+                data-testid="input-reg-email"
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="client-password" className="text-sm font-medium">Password</label>
+              <label htmlFor="reg-password" className="text-sm font-medium">Password</label>
               <div className="relative">
                 <Input
-                  id="client-password"
+                  id="reg-password"
                   type={showPassword ? "text" : "password"}
-                  placeholder={isSignUp ? "Create a password (6+ characters)" : "Enter your password"}
+                  placeholder="Create a password (6+ characters)"
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setError(""); }}
                   required
                   minLength={6}
                   className="pr-10"
-                  data-testid="input-client-password"
+                  data-testid="input-reg-password"
                 />
                 <Button
                   type="button"
@@ -604,49 +637,27 @@ export default function LandingPage() {
                   variant="ghost"
                   className="absolute right-0 top-0"
                   onClick={() => setShowPassword(!showPassword)}
-                  data-testid="button-toggle-client-password"
+                  data-testid="button-toggle-reg-password"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
             {error && (
-              <p className="text-sm text-destructive" data-testid="text-client-auth-error">{error}</p>
+              <p className="text-sm text-destructive" data-testid="text-reg-error">{error}</p>
             )}
             <Button
               type="submit"
               className="w-full"
               size="lg"
-              disabled={isLoading || !email || !password || (isSignUp && (!firstName || !lastName))}
-              data-testid="button-client-auth-submit"
+              disabled={isLoading || !businessName || !slug || !email || !password || !firstName || !lastName}
+              data-testid="button-reg-submit"
             >
-              {isSignUp ? <UserPlus className="h-4 w-4 mr-2" /> : <LogIn className="h-4 w-4 mr-2" />}
-              {isLoading ? (isSignUp ? "Creating account..." : "Signing in...") : (isSignUp ? "Create Account" : "Log In")}
+              <ArrowRight className="h-4 w-4 mr-2" />
+              {isLoading ? "Creating your platform..." : "Create My Platform"}
             </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              {isSignUp ? (
-                <>Already have an account?{" "}
-                  <button
-                    type="button"
-                    className="text-primary underline-offset-4 hover:underline"
-                    onClick={() => { setIsSignUp(false); setError(""); }}
-                    data-testid="button-switch-to-login"
-                  >
-                    Log in
-                  </button>
-                </>
-              ) : (
-                <>Don't have an account?{" "}
-                  <button
-                    type="button"
-                    className="text-primary underline-offset-4 hover:underline"
-                    onClick={() => { setIsSignUp(true); setError(""); }}
-                    data-testid="button-switch-to-signup"
-                  >
-                    Sign up
-                  </button>
-                </>
-              )}
+            <p className="text-center text-xs text-muted-foreground">
+              Already have an account? Use <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => { setRegisterModalOpen(false); setCoachModalOpen(true); }} data-testid="button-reg-to-login">Coach Sign In</button> instead.
             </p>
           </form>
         </DialogContent>
