@@ -12,7 +12,7 @@ import {
 import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
   UserPlus, Menu, X, DollarSign, CreditCard, BarChart3, Mail, Dumbbell,
-  ClipboardList, UserCheck, Wallet, Receipt, Building2, CheckCircle2, ArrowRight,
+  ClipboardList, UserCheck, Wallet, Receipt, Building2, CheckCircle2, ArrowRight, Sparkles,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -124,6 +124,9 @@ export default function LandingPage() {
             <a href="#how-it-works">
               <Button variant="ghost" size="sm" data-testid="link-how-it-works">How It Works</Button>
             </a>
+            <a href="#pricing">
+              <Button variant="ghost" size="sm" data-testid="link-pricing">Pricing</Button>
+            </a>
             <a href="/efficiencystrength">
               <Button variant="ghost" size="sm" data-testid="link-client-portal">
                 <Dumbbell className="h-4 w-4 mr-1" />
@@ -144,7 +147,7 @@ export default function LandingPage() {
               data-testid="button-get-started"
             >
               <UserPlus className="h-4 w-4 mr-1" />
-              Get Started
+              Start Free Trial
             </Button>
           </div>
           <Button
@@ -164,6 +167,9 @@ export default function LandingPage() {
             </a>
             <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-how-it-works-mobile">How It Works</Button>
+            </a>
+            <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-pricing-mobile">Pricing</Button>
             </a>
             <a href="/efficiencystrength" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-client-portal-mobile">
@@ -187,7 +193,7 @@ export default function LandingPage() {
               data-testid="button-get-started-mobile"
             >
               <UserPlus className="h-4 w-4 mr-1" />
-              Get Started
+              Start Free Trial
             </Button>
           </div>
         )}
@@ -216,7 +222,7 @@ export default function LandingPage() {
             <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
               <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-hero-cta">
                 <ArrowRight className="h-4 w-4 mr-2" />
-                Start Your Free Account
+                Start Free 3-Day Trial
               </Button>
               <Button variant="outline" size="lg" onClick={() => setCoachModalOpen(true)} data-testid="button-hero-login">
                 <LogIn className="h-4 w-4 mr-2" />
@@ -226,7 +232,7 @@ export default function LandingPage() {
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground pt-4">
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
-                No monthly fees
+                3-day free trial
               </span>
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
@@ -235,6 +241,10 @@ export default function LandingPage() {
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
                 Set up in minutes
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                Your own branded platform
               </span>
             </div>
           </div>
@@ -328,6 +338,11 @@ export default function LandingPage() {
                 title: "Role-Based Access",
                 description: "Separate dashboards for coaches, clients, and admins. Everyone sees exactly what they need — nothing more.",
               },
+              {
+                icon: Sparkles,
+                title: "Your Own Branded Landing Page",
+                description: "Get a custom-branded landing page at your own URL with your logo, colors, tagline, and social links. Clients sign up and book directly from your page.",
+              },
             ].map(({ icon: Icon, title, description }) => (
               <Card key={title} className="p-6 space-y-3 hover-elevate" data-testid={`card-feature-${title.toLowerCase().replace(/\s+/g, '-')}`}>
                 <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
@@ -352,18 +367,18 @@ export default function LandingPage() {
             {[
               {
                 step: "1",
-                title: "Create Your Coach Account",
-                description: "Sign up, set your hourly rate, add your bio and specialties, and configure your training locations. Your profile is live in minutes.",
+                title: "Register Your Business",
+                description: "Sign up and get your own branded platform instantly. Add your logo, colors, and tagline — your clients will see your brand, not ours.",
               },
               {
                 step: "2",
-                title: "Set Your Availability & Start Booking",
-                description: "Define your weekly availability by day, time, and location. Clients can browse your open slots, book sessions, and pay through Stripe — or you can schedule sessions directly.",
+                title: "Set Up Your Team & Schedule",
+                description: "Add coaches, configure locations, set availability, and connect your Stripe account. Build your full schedule in minutes with session cloning.",
               },
               {
                 step: "3",
-                title: "Train, Redeem, Get Paid",
-                description: "After each session, mark it complete and redeem it. Track your earnings on your dashboard, request payouts, and watch your business grow.",
+                title: "Start Booking & Getting Paid",
+                description: "Share your branded link with clients. They sign up, book sessions, and pay through your Stripe account. Track everything from your admin dashboard.",
               },
             ].map(({ step, title, description }) => (
               <div key={step} className="flex gap-5 items-start" data-testid={`step-${step}`}>
@@ -381,7 +396,7 @@ export default function LandingPage() {
           <div className="text-center mt-12">
             <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-how-cta">
               <ArrowRight className="h-4 w-4 mr-2" />
-              Create Your Coach Account
+              Start Free 3-Day Trial
             </Button>
           </div>
         </div>
@@ -403,8 +418,8 @@ export default function LandingPage() {
               },
               {
                 icon: DollarSign,
-                title: "No Monthly Subscription",
-                description: "No seat fees, no monthly charges, no hidden costs. The platform earns when you earn — aligned incentives.",
+                title: "One Simple Price",
+                description: "Just $49.99/month for everything — unlimited coaches, unlimited clients, no hidden fees. Start with a free 3-day trial.",
               },
               {
                 icon: TrendingUp,
@@ -429,6 +444,53 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section id="pricing" className="py-20 px-6 border-y">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-14 space-y-3">
+            <p className="text-sm font-medium text-primary uppercase tracking-wider">Pricing</p>
+            <h2 className="text-3xl font-bold" data-testid="text-pricing-heading">One Plan. Everything Included.</h2>
+            <p className="text-muted-foreground max-w-lg mx-auto">
+              No tiers, no per-seat fees, no feature gates. Every business gets the full platform.
+            </p>
+          </div>
+
+          <Card className="max-w-lg mx-auto p-8 space-y-6 border-primary/30 shadow-lg" data-testid="card-pricing">
+            <div className="text-center space-y-2">
+              <div className="flex items-baseline justify-center gap-1">
+                <span className="text-5xl font-bold" data-testid="text-pricing-amount">$49.99</span>
+                <span className="text-xl text-muted-foreground">/month</span>
+              </div>
+              <p className="text-muted-foreground">Start with a free 3-day trial — no charge until it ends</p>
+            </div>
+            <div className="space-y-3">
+              {[
+                "Unlimited coaches & clients",
+                "Your own branded landing page",
+                "Full scheduling & booking system",
+                "Stripe payment integration",
+                "Client wallet & session credits",
+                "Team training contracts & invoicing",
+                "Session redemptions & payout tracking",
+                "Automated email notifications",
+                "Business analytics dashboard",
+                "AI scheduling assistant",
+                "Multi-location support",
+              ].map((feature) => (
+                <div key={feature} className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                  <span>{feature}</span>
+                </div>
+              ))}
+            </div>
+            <Button size="lg" className="w-full" onClick={() => openRegisterModal()} data-testid="button-pricing-cta">
+              <ArrowRight className="h-4 w-4 mr-2" />
+              Start Free 3-Day Trial
+            </Button>
+            <p className="text-xs text-center text-muted-foreground">No credit card required to start your trial</p>
+          </Card>
+        </div>
+      </section>
+
       <section className="py-20 px-6 bg-primary/5 border-y">
         <div className="max-w-3xl mx-auto text-center space-y-6">
           <h2 className="text-3xl font-bold" data-testid="text-cta-heading">Ready to Run Your Business Like a Pro?</h2>
@@ -439,7 +501,7 @@ export default function LandingPage() {
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
             <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-final-cta">
               <ArrowRight className="h-4 w-4 mr-2" />
-              Get Started Free
+              Start Free 3-Day Trial
             </Button>
             <Button variant="outline" size="lg" onClick={() => setCoachModalOpen(true)} data-testid="button-final-login">
               <LogIn className="h-4 w-4 mr-2" />
@@ -544,7 +606,7 @@ export default function LandingPage() {
               Register Your Coaching Business
             </DialogTitle>
             <DialogDescription>
-              Create your platform in minutes. You'll get your own landing page, client portal, and coach dashboard.
+              Start your free 3-day trial. You'll get your own branded landing page, client portal, and full coaching platform.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleRegister} className="space-y-4 pt-2">
@@ -654,8 +716,11 @@ export default function LandingPage() {
               data-testid="button-reg-submit"
             >
               <ArrowRight className="h-4 w-4 mr-2" />
-              {isLoading ? "Creating your platform..." : "Create My Platform"}
+              {isLoading ? "Creating your platform..." : "Start Free 3-Day Trial"}
             </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              Free for 3 days, then $49.99/month. No credit card required to start.
+            </p>
             <p className="text-center text-xs text-muted-foreground">
               Already have an account? Use <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => { setRegisterModalOpen(false); setCoachModalOpen(true); }} data-testid="button-reg-to-login">Coach Sign In</button> instead.
             </p>
