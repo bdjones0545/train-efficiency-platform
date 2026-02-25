@@ -786,6 +786,9 @@ export async function registerRoutes(
       const service = await storage.getService(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
 
+      const coachProfile = await storage.getUserProfile(userId);
+      const coachOrgId = coachProfile?.organizationId || null;
+
       const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
 
       if (!isSemiPrivate && !clientId && (!clientFirstName || !clientLastName)) {
@@ -794,11 +797,11 @@ export async function registerRoutes(
 
       let resolvedClientId = clientId;
       if (!resolvedClientId && !isSemiPrivate) {
-        const user = await storage.findOrCreateUserByName(clientFirstName, clientLastName);
+        const user = await storage.findOrCreateUserByName(clientFirstName, clientLastName, coachOrgId);
         resolvedClientId = user.id;
       } else if (!resolvedClientId && isSemiPrivate) {
         if (clientFirstName && clientLastName) {
-          const user = await storage.findOrCreateUserByName(clientFirstName, clientLastName);
+          const user = await storage.findOrCreateUserByName(clientFirstName, clientLastName, coachOrgId);
           resolvedClientId = user.id;
         } else {
           resolvedClientId = userId;
@@ -1041,10 +1044,13 @@ export async function registerRoutes(
         updateData.endAt = end;
       }
 
+      const editCoachProfile = await storage.getUserProfile(userId);
+      const editCoachOrgId = editCoachProfile?.organizationId || null;
+
       if (clientId) {
         updateData.clientId = clientId;
       } else if (clientFirstName && clientLastName) {
-        const user = await storage.findOrCreateUserByName(clientFirstName.trim(), clientLastName.trim());
+        const user = await storage.findOrCreateUserByName(clientFirstName.trim(), clientLastName.trim(), editCoachOrgId);
         updateData.clientId = user.id;
       }
 

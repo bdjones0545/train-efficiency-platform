@@ -92,7 +92,7 @@ export interface IStorage {
   getAllRedemptions(): Promise<Redemption[]>;
   createRedemption(redemption: InsertRedemption): Promise<Redemption>;
   getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined>;
-  findOrCreateUserByName(firstName: string, lastName: string): Promise<User>;
+  findOrCreateUserByName(firstName: string, lastName: string, organizationId?: string | null): Promise<User>;
   findOrCreateTeamUser(teamName: string, coachEmail: string, programId: string): Promise<User>;
   searchUsers(query: string): Promise<User[]>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -545,19 +545,27 @@ export class DatabaseStorage implements IStorage {
     return result || undefined;
   }
 
-  async findOrCreateUserByName(firstName: string, lastName: string): Promise<User> {
+  async findOrCreateUserByName(firstName: string, lastName: string, organizationId?: string | null): Promise<User> {
     const existing = await db
       .select()
       .from(users)
       .where(and(ilike(users.firstName, firstName.trim()), ilike(users.lastName, lastName.trim())));
-    if (existing.length > 0) return existing[0];
+    if (existing.length > 0) {
+      if (organizationId) {
+        const profile = await db.select().from(userProfiles).where(eq(userProfiles.userId, existing[0].id));
+        if (profile.length > 0 && !profile[0].organizationId) {
+          await db.update(userProfiles).set({ organizationId }).where(eq(userProfiles.userId, existing[0].id));
+        }
+      }
+      return existing[0];
+    }
 
     const id = `walk-in-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [created] = await db
       .insert(users)
       .values({ id, firstName: firstName.trim(), lastName: lastName.trim(), email: null, profileImageUrl: null })
       .returning();
-    await db.insert(userProfiles).values({ userId: id, role: "CLIENT" as any });
+    await db.insert(userProfiles).values({ userId: id, role: "CLIENT" as any, organizationId: organizationId || null });
     return created;
   }
 
