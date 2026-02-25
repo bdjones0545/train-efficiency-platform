@@ -214,7 +214,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setTeamQuoteProgramId("");
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedDate || !serviceId || !startTime) {
       toast({ title: "Missing Fields", description: "Please fill in date, time, and service.", variant: "destructive" });
       return;
@@ -234,6 +234,14 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     startAt.setHours(hours, minutes, 0, 0);
 
     const finalLocation = location === "__custom__" ? customLocation.trim() : location;
+    if (location === "__custom__" && customLocation.trim() && addSessionOrgId && !orgLocations.includes(customLocation.trim())) {
+      try {
+        await apiRequest("PATCH", `/api/organizations/${addSessionOrgId}`, {
+          locations: [...orgLocations, customLocation.trim()],
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", addSessionOrgId] });
+      } catch (e) {}
+    }
     const body: any = { serviceId, startAt: startAt.toISOString(), notes, location: finalLocation };
     if (coachId) {
       body.coachId = coachId;

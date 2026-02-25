@@ -128,12 +128,20 @@ export default function AvailabilityManagerPage() {
     },
   });
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (newStart >= newEnd) {
       toast({ title: "Invalid Time", description: "End time must be after start time.", variant: "destructive" });
       return;
     }
     const resolvedLocation = newLocation === "__other__" ? customLocation : newLocation;
+    if (newLocation === "__other__" && customLocation.trim() && avOrgId && !orgLocations.includes(customLocation.trim())) {
+      try {
+        await apiRequest("PATCH", `/api/organizations/${avOrgId}`, {
+          locations: [...orgLocations, customLocation.trim()],
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", avOrgId] });
+      } catch (e) {}
+    }
     const payload: { dayOfWeek: number; startTime: string; endTime: string; coachId?: string; location?: string } = {
       dayOfWeek: parseInt(newDay),
       startTime: newStart,

@@ -288,7 +288,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const selectedServiceObj = services?.find(s => s.id === serviceId);
   const isSemiPrivate = selectedServiceObj?.name.toLowerCase().includes("semi-private") || false;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedDate || !serviceId || !startTime) {
       toast({ title: "Missing Fields", description: "Please fill in date, time, and service.", variant: "destructive" });
       return;
@@ -303,6 +303,14 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
     startAt.setHours(hours, minutes, 0, 0);
 
     const resolvedLocation = location === "__custom__" ? customLocation.trim() : location;
+    if (location === "__custom__" && customLocation.trim() && editSessionOrgId && !orgLocations.includes(customLocation.trim())) {
+      try {
+        await apiRequest("PATCH", `/api/organizations/${editSessionOrgId}`, {
+          locations: [...orgLocations, customLocation.trim()],
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", editSessionOrgId] });
+      } catch (e) {}
+    }
     const body: any = {
       serviceId,
       startAt: startAt.toISOString(),
