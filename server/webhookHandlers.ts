@@ -25,8 +25,71 @@ export class WebhookHandlers {
           await WebhookHandlers.handleInvoicePaid(invoice.id);
         }
       }
+
+      if (event.type === 'customer.subscription.created' ||
+          event.type === 'customer.subscription.updated' ||
+          event.type === 'customer.subscription.deleted') {
+        await WebhookHandlers.handleSubscriptionEvent(event.data?.object);
+      }
+
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data?.object;
+        if (session?.mode === 'subscription' && session?.subscription) {
+          const orgId = session.metadata?.orgId;
+          if (orgId) {
+            const stripe = await getUncachableStripeClient();
+            const subscription = await stripe.subscriptions.retrieve(session.subscription);
+            await storage.updateOrganization(orgId, {
+              stripeSubscriptionId: subscription.id,
+              subscriptionStatus: subscription.status as any,
+              trialEndsAt: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
+              subscriptionCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+            });
+            console.log(`Subscription ${subscription.id} linked to org ${orgId} (status: ${subscription.status})`);
+          }
+        }
+      }
     } catch (err) {
       console.error('Error processing custom webhook logic:', err);
+    }
+  }
+
+  static async handleSubscriptionEvent(subscription: any): Promise<void> {
+    if (!subscription?.id) return;
+
+    try {
+      const orgId = subscription.metadata?.orgId;
+      let org;
+
+      if (orgId) {
+        org = await storage.getOrganizationById(orgId);
+      }
+      if (!org) {
+        org = await storage.getOrganizationByStripeSubscriptionId(subscription.id);
+      }
+      if (!org && subscription.customer) {
+        org = await storage.getOrganizationByStripeCustomerId(
+          typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
+        );
+      }
+
+      if (!org) {
+        console.log(`No org found for subscription ${subscription.id}, skipping`);
+        return;
+      }
+
+      await storage.updateOrganization(org.id, {
+        stripeSubscriptionId: subscription.id,
+        subscriptionStatus: subscription.status as any,
+        trialEndsAt: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
+        subscriptionCurrentPeriodEnd: subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000)
+          : null,
+      });
+
+      console.log(`Org ${org.id} (${org.name}) subscription updated: ${subscription.status}`);
+    } catch (err) {
+      console.error('Error handling subscription event:', err);
     }
   }
 

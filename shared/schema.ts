@@ -7,6 +7,8 @@ export * from "./models/auth";
 export * from "./models/chat";
 import { users } from "./models/auth";
 
+export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "incomplete", "none"]);
+
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(),
@@ -24,6 +26,11 @@ export const organizations = pgTable("organizations", {
   stripeSecretKey: text("stripe_secret_key"),
   stripePublishableKey: text("stripe_publishable_key"),
   locations: text("locations").array().default(sql`'{}'::text[]`),
+  stripeCustomerId: varchar("stripe_customer_id"),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  subscriptionStatus: subscriptionStatusEnum("subscription_status").default("none"),
+  trialEndsAt: timestamp("trial_ends_at"),
+  subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

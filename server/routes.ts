@@ -3088,6 +3088,218 @@ export async function registerRoutes(
     }
   });
 
+  const PLATFORM_ORG_ID = "org-est";
+
+  app.post("/api/subscription/create-checkout", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile || profile.role !== "ADMIN") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization found" });
+      if (orgId === PLATFORM_ORG_ID) return res.status(400).json({ message: "Platform org does not need a subscription" });
+
+      const org = await storage.getOrganizationById(orgId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      if (org.subscriptionStatus === "active" || org.subscriptionStatus === "trialing") {
+        return res.status(400).json({ message: "You already have an active subscription" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+
+      let customerId = org.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: org.ownerEmail || undefined,
+          name: org.name,
+          metadata: { orgId: org.id, orgSlug: org.slug },
+        });
+        customerId = customer.id;
+        await storage.updateOrganization(org.id, { stripeCustomerId: customerId });
+      }
+
+      const baseUrl = `https://${process.env.REPLIT_DOMAINS?.split(",")[0] || req.get("host")}`;
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode: "subscription",
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: "Train Efficiency Platform - Organization Subscription",
+                description: "Full access to the scheduling platform for your coaching business",
+              },
+              unit_amount: 4999,
+              recurring: { interval: "month" },
+            },
+            quantity: 1,
+          },
+        ],
+        subscription_data: {
+          trial_period_days: 3,
+          metadata: { orgId: org.id },
+        },
+        success_url: `${baseUrl}/admin/subscription?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/admin/subscription`,
+        metadata: { orgId: org.id },
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Subscription checkout error:", error);
+      res.status(500).json({ message: error.message || "Failed to create checkout session" });
+    }
+  });
+
+  app.get("/api/subscription/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile) return res.status(400).json({ message: "No profile found" });
+
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization found" });
+
+      const org = await storage.getOrganizationById(orgId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      if (orgId === PLATFORM_ORG_ID) {
+        return res.json({
+          status: "active",
+          isPlatformOrg: true,
+          trialEndsAt: null,
+          currentPeriodEnd: null,
+          isActive: true,
+        });
+      }
+
+      const isActive = org.subscriptionStatus === "active" || org.subscriptionStatus === "trialing";
+
+      res.json({
+        status: org.subscriptionStatus || "none",
+        isPlatformOrg: false,
+        trialEndsAt: org.trialEndsAt,
+        currentPeriodEnd: org.subscriptionCurrentPeriodEnd,
+        isActive,
+        stripeSubscriptionId: org.stripeSubscriptionId,
+      });
+    } catch (error: any) {
+      console.error("Subscription status error:", error);
+      res.status(500).json({ message: "Failed to get subscription status" });
+    }
+  });
+
+  app.post("/api/subscription/cancel", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile || profile.role !== "ADMIN") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization found" });
+      if (orgId === PLATFORM_ORG_ID) return res.status(400).json({ message: "Platform org does not need subscription management" });
+
+      const org = await storage.getOrganizationById(orgId);
+      if (!org?.stripeSubscriptionId) {
+        return res.status(400).json({ message: "No active subscription found" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const updated = await stripe.subscriptions.update(org.stripeSubscriptionId, {
+        cancel_at_period_end: true,
+      });
+
+      await storage.updateOrganization(org.id, {
+        subscriptionStatus: updated.status as any,
+      });
+
+      res.json({ message: "Subscription will be canceled at the end of the current period" });
+    } catch (error: any) {
+      console.error("Subscription cancel error:", error);
+      res.status(500).json({ message: error.message || "Failed to cancel subscription" });
+    }
+  });
+
+  app.post("/api/subscription/reactivate", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile || profile.role !== "ADMIN") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization found" });
+      if (orgId === PLATFORM_ORG_ID) return res.status(400).json({ message: "Platform org does not need subscription management" });
+
+      const org = await storage.getOrganizationById(orgId);
+      if (!org?.stripeSubscriptionId) {
+        return res.status(400).json({ message: "No subscription found" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const updated = await stripe.subscriptions.update(org.stripeSubscriptionId, {
+        cancel_at_period_end: false,
+      });
+
+      await storage.updateOrganization(org.id, {
+        subscriptionStatus: updated.status as any,
+      });
+
+      res.json({ message: "Subscription reactivated" });
+    } catch (error: any) {
+      console.error("Subscription reactivate error:", error);
+      res.status(500).json({ message: error.message || "Failed to reactivate subscription" });
+    }
+  });
+
+  app.get("/api/subscription/verify-session", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile || profile.role !== "ADMIN") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const callerOrgId = profile.organizationId;
+      if (!callerOrgId) return res.status(400).json({ message: "No organization found" });
+
+      const sessionId = req.query.session_id as string;
+      if (!sessionId) return res.status(400).json({ message: "Missing session_id" });
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ["subscription"],
+      });
+
+      const sessionOrgId = session.metadata?.orgId;
+      if (sessionOrgId !== callerOrgId) {
+        return res.status(403).json({ message: "Session does not belong to your organization" });
+      }
+
+      if (session.status === "complete" && session.subscription) {
+        const subscription = session.subscription as Stripe.Subscription;
+        await storage.updateOrganization(callerOrgId, {
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus: subscription.status as any,
+          trialEndsAt: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
+          subscriptionCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+        });
+        res.json({ success: true, status: subscription.status });
+      } else {
+        res.json({ success: false, status: session.status });
+      }
+    } catch (error: any) {
+      console.error("Verify session error:", error);
+      res.status(500).json({ message: "Failed to verify session" });
+    }
+  });
+
   startWeeklyReminderJob();
 
   return httpServer;

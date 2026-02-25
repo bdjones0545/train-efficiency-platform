@@ -106,6 +106,22 @@ A multi-tenant white-label scheduling platform for strength & conditioning coach
   - API: GET/PUT /api/admin/settings, PATCH /api/admin/services/:id, PATCH /api/admin/coaches/:id/payout (ADMIN)
   - "Configuration > Options" sidebar section visible only to ADMIN users
 
+## Organization Subscription
+- $49.99/month subscription with 3-day free trial for new organizations
+- Platform org (org-est / Efficiency Strength Training) is exempt — always active
+- Uses the platform's Stripe account (Replit connector), NOT each org's own Stripe keys
+- Organizations table has: stripeCustomerId, stripeSubscriptionId, subscriptionStatus (trialing/active/past_due/canceled/incomplete/none), trialEndsAt, subscriptionCurrentPeriodEnd
+- Subscription management page: /admin/subscription (ADMIN only)
+- API Routes:
+  - POST /api/subscription/create-checkout - Creates Stripe Checkout session for subscription
+  - GET /api/subscription/status - Get current subscription status
+  - POST /api/subscription/cancel - Cancel subscription at period end
+  - POST /api/subscription/reactivate - Reactivate a canceled subscription
+  - GET /api/subscription/verify-session - Verify checkout session after redirect
+- Webhook events handled: customer.subscription.created/updated/deleted, checkout.session.completed
+- "Subscription" link in admin sidebar under Configuration
+- Subscription page shows: status badge, trial countdown, price display, feature list, start trial / resubscribe / cancel buttons
+
 ## Recent Changes
 - Client Team Training request page (/team-training): form for clients to request team training quotes
   - Fields: team name, sport, number of athletes, location, goals, preferred schedule, contact info, additional notes

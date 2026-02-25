@@ -32,6 +32,7 @@ import {
   Settings,
   Paintbrush,
   CreditCard,
+  Sparkles,
 } from "lucide-react";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
@@ -185,6 +186,14 @@ export function AppSidebar() {
                     <Link href="/admin/stripe" onClick={handleNavClick} data-testid="nav-stripe">
                       <CreditCard className="h-4 w-4" />
                       <span>Stripe</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location === "/admin/subscription"}>
+                    <Link href="/admin/subscription" onClick={handleNavClick} data-testid="nav-subscription">
+                      <Sparkles className="h-4 w-4" />
+                      <span>Subscription</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

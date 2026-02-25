@@ -21,6 +21,7 @@ import AdminDashboardPage from "@/pages/admin-dashboard";
 import AdminConfigurationPage from "@/pages/admin-configuration";
 import AdminBrandingPage from "@/pages/admin-branding";
 import AdminStripePage from "@/pages/admin-stripe";
+import AdminSubscriptionPage from "@/pages/admin-subscription";
 import AdminSetupPage from "@/pages/admin-setup";
 import OpenSessionsPage from "@/pages/open-sessions";
 import AthleticSchedulingPage from "@/pages/athletic-scheduling";
@@ -85,6 +86,7 @@ function AuthenticatedLayout() {
                 <Route path="/admin/configuration" component={AdminConfigurationPage} />
                 <Route path="/admin/branding" component={AdminBrandingPage} />
                 <Route path="/admin/stripe" component={AdminStripePage} />
+                <Route path="/admin/subscription" component={AdminSubscriptionPage} />
                 <Route component={NotFound} />
               </Switch>
             </div>
