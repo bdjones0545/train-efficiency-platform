@@ -2560,21 +2560,10 @@ export async function registerRoutes(
         stripe = await getUncachableStripeClient();
       }
 
-      let customerId = user.stripeCustomerId;
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          email: user.email || undefined,
-          name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || undefined,
-          metadata: { userId },
-        });
-        customerId = customer.id;
-        await storage.updateUserStripeCustomerId(userId, customerId);
-      }
-
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      const session = await stripe.checkout.sessions.create({
-        customer: customerId,
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
         payment_method_types: ["card"],
+        customer_email: user.email || undefined,
         line_items: [{
           price_data: {
             currency: "usd",
@@ -2595,8 +2584,24 @@ export async function registerRoutes(
           type: "wallet_deposit",
           organizationId: orgId || "",
         },
-      });
+      };
 
+      if (!orgId) {
+        let customerId = user.stripeCustomerId;
+        if (!customerId) {
+          const customer = await stripe.customers.create({
+            email: user.email || undefined,
+            name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || undefined,
+            metadata: { userId },
+          });
+          customerId = customer.id;
+          await storage.updateUserStripeCustomerId(userId, customerId);
+        }
+        sessionParams.customer = customerId;
+        delete sessionParams.customer_email;
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionParams);
       res.json({ url: session.url });
     } catch (error) {
       console.error("Error creating checkout session:", error);
