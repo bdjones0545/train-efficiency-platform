@@ -6,12 +6,29 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { handleAssistantMessage } from "./scheduling-assistant";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, type OrgBranding } from "./email";
 import Stripe from "stripe";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
+
+async function getOrgBranding(orgId: string | null | undefined): Promise<OrgBranding | undefined> {
+  if (!orgId) return undefined;
+  try {
+    const org = await storage.getOrganizationById(orgId);
+    if (!org) return undefined;
+    const owner = org.ownerUserId ? await storage.getUser(org.ownerUserId) : null;
+    return {
+      name: org.name,
+      accentColor: org.primaryColor || undefined,
+      ownerName: owner ? `${owner.firstName} ${owner.lastName}`.trim() : undefined,
+      ownerEmail: org.ownerEmail || undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 async function getOrgStripeClient(orgId: string): Promise<{ stripe: Stripe; publishableKey: string; orgName: string }> {
   const org = await storage.getOrganizationById(orgId);
@@ -229,7 +246,9 @@ export async function registerRoutes(
 
       const token = await createAuthToken(user.id);
 
-      sendWelcomeEmail(email.toLowerCase().trim(), firstName.trim()).catch(() => {});
+      getOrgBranding(organizationId).then(orgB => {
+        sendWelcomeEmail(email.toLowerCase().trim(), firstName.trim(), orgB).catch(() => {});
+      });
 
       res.json({ success: true, redirect: "/", token });
     } catch (error) {
@@ -431,7 +450,8 @@ export async function registerRoutes(
 
       const token = await createAuthToken(user.id);
 
-      sendCoachWelcomeEmail(email.toLowerCase().trim(), firstName.trim()).catch(() => {});
+      const orgBranding: OrgBranding = { name: org.name, ownerName: firstName.trim(), ownerEmail: email.toLowerCase().trim() };
+      sendCoachWelcomeEmail(email.toLowerCase().trim(), firstName.trim(), undefined, orgBranding).catch(() => {});
 
       res.json({ success: true, organization: org, token, redirect: "/coach" });
     } catch (error) {
@@ -651,6 +671,7 @@ export async function registerRoutes(
           const clientUser = await storage.getUser(userId);
           const coachProfile = await storage.getCoachProfile(coachId);
           const tz = coachProfile?.timezone || coach?.timezone || "America/New_York";
+          const orgB = await getOrgBranding(coachProfile?.organizationId);
           if (clientUser?.email) {
             sendBookingConfirmationToClient(
               clientUser.email,
@@ -660,7 +681,8 @@ export async function registerRoutes(
               start,
               end,
               req.body.location || undefined,
-              tz
+              tz,
+              orgB
             ).catch(() => {});
           }
           const coachEmail = coachProfile?.email || coachProfile?.user?.email;
@@ -673,7 +695,8 @@ export async function registerRoutes(
               start,
               end,
               req.body.location || undefined,
-              tz
+              tz,
+              orgB
             ).catch(() => {});
           }
         } catch (e) { console.error("Booking email error:", e); }
@@ -931,6 +954,7 @@ export async function registerRoutes(
           const clientUser = await storage.getUser(resolvedClientId);
           const coachProfile = await storage.getCoachProfile(coachId);
           const tz = coachProfile?.timezone || "America/New_York";
+          const orgB = await getOrgBranding(coachProfile?.organizationId);
           if (clientUser?.email) {
             sendBookingConfirmationToClient(
               clientUser.email,
@@ -940,7 +964,8 @@ export async function registerRoutes(
               start,
               end,
               req.body.location || undefined,
-              tz
+              tz,
+              orgB
             ).catch(() => {});
           }
           const coachEmail = coachProfile?.email || coachProfile?.user?.email;
@@ -953,7 +978,8 @@ export async function registerRoutes(
               start,
               end,
               req.body.location || undefined,
-              tz
+              tz,
+              orgB
             ).catch(() => {});
           }
         } catch (e) { console.error("Coach booking email error:", e); }
@@ -1418,8 +1444,9 @@ export async function registerRoutes(
       await storage.markRedemptionsSent(coachId);
 
       const coachName = `${coachProfile.user?.firstName} ${coachProfile.user?.lastName}`;
-      const bryanEmail = "bryan.jones@efficiencystrengthtraining.com";
-      sendCashoutRequestEmail(bryanEmail, coachName, pendingAmount, cashout.id).catch(console.error);
+      const orgB = await getOrgBranding(coachProfile.organizationId);
+      const ownerEmail = orgB?.ownerEmail || "bryan.jones@efficiencystrengthtraining.com";
+      sendCashoutRequestEmail(ownerEmail, coachName, pendingAmount, cashout.id, orgB).catch(console.error);
 
       res.json(cashout);
     } catch (error) {
@@ -1545,6 +1572,7 @@ export async function registerRoutes(
           const tz = coachProfile.timezone || "America/New_York";
           const sessionName = service?.name || "Group Session";
           const { sendGroupSessionJoinNotification, sendGroupSessionJoinConfirmation } = await import("./email");
+          const grpOrgB = await getOrgBranding(coachProfile.organizationId);
           if (coachProfile.user?.email) {
             sendGroupSessionJoinNotification(
               coachProfile.user.email,
@@ -1554,7 +1582,8 @@ export async function registerRoutes(
               booking.startAt,
               booking.endAt,
               booking.location || undefined,
-              tz
+              tz,
+              grpOrgB
             ).catch(() => {});
           }
           if (joiningUser.email) {
@@ -1566,7 +1595,8 @@ export async function registerRoutes(
               booking.startAt,
               booking.endAt,
               booking.location || undefined,
-              tz
+              tz,
+              grpOrgB
             ).catch(() => {});
           }
         }
@@ -1723,7 +1753,10 @@ export async function registerRoutes(
 
       if (user.email) {
         const newBalance = await storage.getUserBalance(userId);
-        sendPaymentConfirmationEmail(user.email, user.firstName || "Client", amountCents, description, newBalance).catch(() => {});
+        const coachUserId = req.user.claims.sub;
+        const coachProf = await storage.getCoachProfile(coachUserId);
+        const orgB = await getOrgBranding(coachProf?.organizationId);
+        sendPaymentConfirmationEmail(user.email, user.firstName || "Client", amountCents, description, newBalance, orgB).catch(() => {});
       }
 
       res.json(tx);
@@ -1881,8 +1914,10 @@ export async function registerRoutes(
         organizationId: adminOrgId,
       });
 
-      sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password).catch((err: any) => {
-        console.error("Failed to send coach welcome email:", err);
+      getOrgBranding(adminOrgId).then(orgB => {
+        sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password, orgB).catch((err: any) => {
+          console.error("Failed to send coach welcome email:", err);
+        });
       });
 
       res.json({ success: true, coachProfile });
@@ -2391,7 +2426,9 @@ export async function registerRoutes(
       const stripeUser = await storage.getUser(userId);
       if (stripeUser?.email) {
         const newBal = await storage.getUserBalance(userId);
-        sendPaymentConfirmationEmail(stripeUser.email, stripeUser.firstName || "Client", amountCents, `Wallet deposit — $${(amountCents / 100).toFixed(2)} via Stripe`, newBal).catch(() => {});
+        const userProf = await storage.getUserProfile(userId);
+        const orgB = await getOrgBranding(userProf?.organizationId);
+        sendPaymentConfirmationEmail(stripeUser.email, stripeUser.firstName || "Client", amountCents, `Wallet deposit — $${(amountCents / 100).toFixed(2)} via Stripe`, newBal, orgB).catch(() => {});
       }
 
       res.json({ credited: true, amountCents });
@@ -2872,6 +2909,8 @@ export async function registerRoutes(
         totalMonths,
       });
 
+      const coachProf = await storage.getCoachProfileByEmail(coachEmail);
+      const orgB = await getOrgBranding(coachProf?.organizationId || adminProfile?.organizationId);
       sendTeamQuoteEmail(
         coachEmail,
         teamName,
@@ -2883,7 +2922,8 @@ export async function registerRoutes(
         monthlyCents,
         invoiceUrl,
         1,
-        totalMonths
+        totalMonths,
+        orgB
       ).catch(err => console.error("Failed to send team quote email:", err));
 
       res.json(quote);
@@ -2964,6 +3004,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Number of athletes must be a positive number" });
       }
 
+      const reqUserId = req.user.claims.sub;
+      const reqProfile = await storage.getUserProfile(reqUserId);
+      const reqOrgB = await getOrgBranding(reqProfile?.organizationId);
       await sendTeamTrainingRequestEmail({
         teamName,
         contactName,
@@ -2975,7 +3018,7 @@ export async function registerRoutes(
         goals,
         preferredSchedule: preferredSchedule || "",
         additionalNotes: additionalNotes || "",
-      });
+      }, reqOrgB?.ownerEmail, reqOrgB);
 
       res.json({ success: true, message: "Your team training request has been submitted! We'll be in touch soon." });
     } catch (error: any) {

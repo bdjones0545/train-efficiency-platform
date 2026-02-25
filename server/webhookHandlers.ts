@@ -1,6 +1,6 @@
 import { getStripeSync, getUncachableStripeClient } from './stripeClient';
 import { storage } from './storage';
-import { sendTeamQuoteEmail } from './email';
+import { sendTeamQuoteEmail, type OrgBranding } from './email';
 
 export class WebhookHandlers {
   static async processWebhook(payload: Buffer, signature: string): Promise<void> {
@@ -116,6 +116,14 @@ export class WebhookHandlers {
         totalMonths: paidQuote.totalMonths,
       });
 
+      let orgB: OrgBranding | undefined;
+      try {
+        const coachProf = await storage.getCoachProfileByEmail(paidQuote.coachEmail);
+        if (coachProf?.organizationId) {
+          const org = await storage.getOrganizationById(coachProf.organizationId);
+          if (org) orgB = { name: org.name, accentColor: org.primaryColor || undefined, ownerEmail: org.ownerEmail || undefined };
+        }
+      } catch {}
       sendTeamQuoteEmail(
         paidQuote.coachEmail,
         paidQuote.teamName,
@@ -127,7 +135,8 @@ export class WebhookHandlers {
         monthlyCents,
         invoiceUrl,
         nextMonth,
-        paidQuote.totalMonths
+        paidQuote.totalMonths,
+        orgB
       ).catch(err => console.error("Failed to send next month team quote email:", err));
 
       console.log(`Month ${nextMonth}/${paidQuote.totalMonths} invoice created for "${paidQuote.teamName}" (quote: ${newQuote.id})`);
