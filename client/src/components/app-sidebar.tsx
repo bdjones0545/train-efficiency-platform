@@ -92,8 +92,8 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <div className="flex items-center gap-2 px-2 py-3">
-            {isEstOrg ? (
-              <img src={logoImg} alt="EST" className="h-8 rounded-md" data-testid="img-sidebar-logo" />
+            {(organization?.logoUrl || (isEstOrg && logoImg)) ? (
+              <img src={organization?.logoUrl || logoImg} alt={organization?.name || "Logo"} className="h-8 rounded-md object-contain" data-testid="img-sidebar-logo" />
             ) : (
               <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm" data-testid="img-sidebar-logo">
                 {(organization?.name || "").charAt(0).toUpperCase()}
