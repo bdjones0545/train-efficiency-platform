@@ -50,6 +50,8 @@ export const coachProfiles = pgTable("coach_profiles", {
   organizationId: varchar("organization_id"),
 });
 
+export const sessionTypeEnum = pgEnum("session_type", ["1_ON_1", "GROUP"]);
+
 export const services = pgTable("services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(),
@@ -57,6 +59,7 @@ export const services = pgTable("services", {
   durationMin: integer("duration_min").notNull().default(60),
   priceCents: integer("price_cents").notNull().default(0),
   active: boolean("active").default(true),
+  sessionType: sessionTypeEnum("session_type").default("1_ON_1"),
   stripeProductId: varchar("stripe_product_id"),
   stripePriceId: varchar("stripe_price_id"),
   organizationId: varchar("organization_id"),

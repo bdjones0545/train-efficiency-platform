@@ -21,6 +21,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useState } from "react";
 import type { Service, Organization } from "@shared/schema";
@@ -87,6 +88,7 @@ export default function AdminConfigurationPage() {
   const [newServiceDesc, setNewServiceDesc] = useState("");
   const [newServiceDuration, setNewServiceDuration] = useState("60");
   const [newServicePrice, setNewServicePrice] = useState("50");
+  const [newServiceType, setNewServiceType] = useState<"1_ON_1" | "GROUP">("1_ON_1");
 
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [editServiceName, setEditServiceName] = useState("");
@@ -94,6 +96,7 @@ export default function AdminConfigurationPage() {
   const [editServiceDuration, setEditServiceDuration] = useState("");
   const [editServicePrice, setEditServicePrice] = useState("");
   const [editServiceActive, setEditServiceActive] = useState(true);
+  const [editServiceType, setEditServiceType] = useState<"1_ON_1" | "GROUP">("1_ON_1");
 
   const [payoutPercentage, setPayoutPercentage] = useState("");
   const [payoutEditing, setPayoutEditing] = useState(false);
@@ -183,6 +186,7 @@ export default function AdminConfigurationPage() {
       description: string;
       durationMin: number;
       priceCents: number;
+      sessionType: string;
     }) => {
       const res = await apiRequest("POST", "/api/admin/services", data);
       return res.json();
@@ -193,6 +197,7 @@ export default function AdminConfigurationPage() {
       setServiceDialogOpen(false);
       setNewServiceName("");
       setNewServiceDesc("");
+      setNewServiceType("1_ON_1");
       setNewServiceDuration("60");
       setNewServicePrice("50");
     },
@@ -248,6 +253,7 @@ export default function AdminConfigurationPage() {
     setEditServiceDuration(String(service.durationMin));
     setEditServicePrice(String((service.priceCents || 0) / 100));
     setEditServiceActive(service.active ?? true);
+    setEditServiceType((service.sessionType as "1_ON_1" | "GROUP") || "1_ON_1");
   };
 
   const cancelEditService = () => {
@@ -263,6 +269,7 @@ export default function AdminConfigurationPage() {
       durationMin: parseInt(editServiceDuration) || 60,
       priceCents: Math.round(parseFloat(editServicePrice) * 100) || 0,
       active: editServiceActive,
+      sessionType: editServiceType,
     });
   };
 
@@ -623,6 +630,18 @@ export default function AdminConfigurationPage() {
                     data-testid="input-service-description"
                   />
                 </div>
+                <div>
+                  <Label>Session Type</Label>
+                  <Select value={newServiceType} onValueChange={(v) => setNewServiceType(v as "1_ON_1" | "GROUP")}>
+                    <SelectTrigger data-testid="select-new-service-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1_ON_1">1 on 1</SelectItem>
+                      <SelectItem value="GROUP">Group</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Duration (minutes)</Label>
@@ -654,6 +673,7 @@ export default function AdminConfigurationPage() {
                       description: newServiceDesc,
                       durationMin: parseInt(newServiceDuration) || 60,
                       priceCents: Math.round(parseFloat(newServicePrice) * 100) || 0,
+                      sessionType: newServiceType,
                     })
                   }
                 >
@@ -686,6 +706,18 @@ export default function AdminConfigurationPage() {
                       rows={2}
                       data-testid={`input-edit-service-desc-${service.id}`}
                     />
+                  </div>
+                  <div>
+                    <Label>Session Type</Label>
+                    <Select value={editServiceType} onValueChange={(v) => setEditServiceType(v as "1_ON_1" | "GROUP")}>
+                      <SelectTrigger data-testid={`select-edit-service-type-${service.id}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1_ON_1">1 on 1</SelectItem>
+                        <SelectItem value="GROUP">Group</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -767,6 +799,9 @@ export default function AdminConfigurationPage() {
                       <p className="text-sm text-muted-foreground">{service.description}</p>
                     )}
                     <div className="flex gap-2 mt-1">
+                      <Badge variant="secondary" className="text-xs">
+                        {service.sessionType === "GROUP" ? "Group" : "1 on 1"}
+                      </Badge>
                       <Badge variant="secondary" className="text-xs">
                         {service.durationMin} min
                       </Badge>

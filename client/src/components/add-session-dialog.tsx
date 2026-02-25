@@ -182,7 +182,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   });
 
   const selectedServiceObj = services?.find(s => s.id === serviceId);
-  const isSemiPrivate = selectedServiceObj?.name.toLowerCase().includes("semi-private") || false;
+  const isSemiPrivate = selectedServiceObj?.sessionType === "GROUP" || false;
   const isTeamTraining = selectedServiceObj?.name.toLowerCase().includes("team training") || false;
   const resolvedLoc = location === "__custom__" ? customLocation.trim() : location;
   const isTeamBHS = isTeamTraining && resolvedLoc.toLowerCase().includes("bluffton high");

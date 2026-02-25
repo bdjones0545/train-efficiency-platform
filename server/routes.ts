@@ -559,7 +559,7 @@ export async function registerRoutes(
         }
       }
 
-      const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
+      const isSemiPrivate = service.sessionType === "GROUP";
 
       const booking = await storage.createBooking({
         clientId: userId,
@@ -789,7 +789,7 @@ export async function registerRoutes(
       const coachProfile = await storage.getUserProfile(userId);
       const coachOrgId = coachProfile?.organizationId || null;
 
-      const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
+      const isSemiPrivate = service.sessionType === "GROUP";
 
       if (!isSemiPrivate && !clientId && (!clientFirstName || !clientLastName)) {
         return res.status(400).json({ message: "Provide clientId or clientFirstName and clientLastName" });
@@ -1022,7 +1022,7 @@ export async function registerRoutes(
         if (!service) return res.status(404).json({ message: "Service not found" });
         updateData.serviceId = serviceId;
 
-        const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
+        const isSemiPrivate = service.sessionType === "GROUP";
         updateData.maxParticipants = isSemiPrivate ? 6 : null;
 
         if (startAt) {
@@ -1056,7 +1056,7 @@ export async function registerRoutes(
 
       const finalServiceId = updateData.serviceId || existing.serviceId;
       const finalService = await storage.getService(finalServiceId);
-      const finalIsSemiPrivate = finalService?.name.toLowerCase().includes("semi-private") || false;
+      const finalIsSemiPrivate = finalService?.sessionType === "GROUP" || false;
       if (!finalIsSemiPrivate && !updateData.clientId && existing.clientId === userId) {
         return res.status(400).json({ message: "A client is required for non-group sessions. Please select or enter a client." });
       }
@@ -1909,7 +1909,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/services", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const { name, description, durationMin, priceCents } = req.body;
+      const { name, description, durationMin, priceCents, sessionType } = req.body;
       if (!name) return res.status(400).json({ message: "name required" });
       const userId = req.user.claims.sub;
       const profile = await storage.getUserProfile(userId);
@@ -1920,6 +1920,7 @@ export async function registerRoutes(
         durationMin: durationMin || 60,
         priceCents: priceCents || 0,
         active: true,
+        sessionType: sessionType || "1_ON_1",
         organizationId: orgId,
       });
       res.json(service);
@@ -1932,7 +1933,7 @@ export async function registerRoutes(
   app.patch("/api/admin/services/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { name, description, durationMin, priceCents, active } = req.body;
+      const { name, description, durationMin, priceCents, active, sessionType } = req.body;
       const existing = await storage.getService(id);
       if (!existing) return res.status(404).json({ message: "Service not found" });
 
@@ -1941,6 +1942,7 @@ export async function registerRoutes(
       if (description !== undefined) updateData.description = description;
       if (durationMin !== undefined) updateData.durationMin = durationMin;
       if (active !== undefined) updateData.active = active;
+      if (sessionType !== undefined) updateData.sessionType = sessionType;
 
       const priceChanged = priceCents !== undefined && priceCents !== existing.priceCents;
       if (priceCents !== undefined) updateData.priceCents = priceCents;
