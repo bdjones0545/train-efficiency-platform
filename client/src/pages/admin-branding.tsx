@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, Image, Link2, Type, Palette } from "lucide-react";
+import { Save, Image, Link2, Type, Palette, ExternalLink } from "lucide-react";
 import type { Organization } from "@shared/schema";
 
 export default function AdminBrandingPage() {
@@ -106,14 +106,29 @@ export default function AdminBrandingPage() {
           <h1 className="text-2xl font-bold" data-testid="text-branding-title">Branding</h1>
           <p className="text-sm text-muted-foreground">Customize your organization's look and feel</p>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={updateMutation.isPending || !hasChanges}
-          data-testid="button-save-branding"
-        >
-          <Save className="h-4 w-4 mr-2" />
-          {updateMutation.isPending ? "Saving..." : "Save Changes"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (org?.slug) {
+                window.open(`/org/${org.slug}`, "_blank");
+              }
+            }}
+            disabled={!org?.slug}
+            data-testid="button-preview-landing"
+          >
+            <ExternalLink className="h-4 w-4 mr-2" />
+            Preview
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={updateMutation.isPending || !hasChanges}
+            data-testid="button-save-branding"
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
       </div>
 
       <Separator />
