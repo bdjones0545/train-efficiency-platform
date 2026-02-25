@@ -106,7 +106,19 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
     }
   }, [open, booking]);
 
-  const { data: services } = useQuery<Service[]>({ queryKey: ["/api/services"] });
+  const { data: editSessionProfile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const editSessionOrgId = editSessionProfile?.organizationId;
+  const { data: services } = useQuery<Service[]>({
+    queryKey: ["/api/services", editSessionOrgId],
+    queryFn: async () => {
+      const url = editSessionOrgId ? `/api/services?organizationId=${editSessionOrgId}` : "/api/services";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch services");
+      return res.json();
+    },
+  });
 
   const { data: searchResults } = useQuery<ClientSearchResult[]>({
     queryKey: ["/api/coach/clients/search", searchQuery],

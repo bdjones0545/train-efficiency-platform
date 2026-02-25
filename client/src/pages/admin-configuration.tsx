@@ -43,7 +43,13 @@ export default function AdminConfigurationPage() {
   });
   const orgId = adminProfile?.organizationId;
   const { data: services, isLoading: servicesLoading } = useQuery<Service[]>({
-    queryKey: ["/api/services"],
+    queryKey: ["/api/services", orgId],
+    queryFn: async () => {
+      const url = orgId ? `/api/services?organizationId=${orgId}` : "/api/services";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch services");
+      return res.json();
+    },
   });
   const { data: coaches, isLoading: coachesLoading } = useQuery<CoachWithUser[]>({
     queryKey: ["/api/coaches", orgId],

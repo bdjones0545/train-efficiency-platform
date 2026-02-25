@@ -81,7 +81,19 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     if (initialTime) setStartTime(initialTime);
   }, [initialTime]);
 
-  const { data: services } = useQuery<Service[]>({ queryKey: ["/api/services"] });
+  const { data: addSessionProfile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const addSessionOrgId = addSessionProfile?.organizationId;
+  const { data: services } = useQuery<Service[]>({
+    queryKey: ["/api/services", addSessionOrgId],
+    queryFn: async () => {
+      const url = addSessionOrgId ? `/api/services?organizationId=${addSessionOrgId}` : "/api/services";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch services");
+      return res.json();
+    },
+  });
 
   const { data: teamContracts } = useQuery<TeamQuote[]>({
     queryKey: ["/api/coach/team-contracts"],

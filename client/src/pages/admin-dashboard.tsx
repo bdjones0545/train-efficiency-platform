@@ -36,7 +36,15 @@ export default function AdminDashboardPage() {
       return res.json();
     },
   });
-  const { data: services } = useQuery<Service[]>({ queryKey: ["/api/services"] });
+  const { data: services } = useQuery<Service[]>({
+    queryKey: ["/api/services", orgId],
+    queryFn: async () => {
+      const url = orgId ? `/api/services?organizationId=${orgId}` : "/api/services";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch services");
+      return res.json();
+    },
+  });
   const { data: allBookings } = useQuery<BookingWithDetails[]>({ queryKey: ["/api/admin/bookings"] });
   const { data: allRedemptions } = useQuery<RedemptionWithDetails[]>({ queryKey: ["/api/admin/redemptions"] });
   const { data: allUsers } = useQuery<(User & { profile?: UserProfile })[]>({ queryKey: ["/api/admin/users"] });

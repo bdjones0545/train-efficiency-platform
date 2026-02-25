@@ -465,10 +465,16 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/services", async (_req, res) => {
+  app.get("/api/services", async (req: any, res) => {
     try {
-      const srvs = await storage.getServices();
-      res.json(srvs);
+      const orgId = req.query.organizationId as string | undefined;
+      if (orgId) {
+        const srvs = await storage.getServicesByOrganization(orgId);
+        res.json(srvs);
+      } else {
+        const srvs = await storage.getServices();
+        res.json(srvs);
+      }
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch services" });
     }
@@ -1877,12 +1883,16 @@ export async function registerRoutes(
     try {
       const { name, description, durationMin, priceCents } = req.body;
       if (!name) return res.status(400).json({ message: "name required" });
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const service = await storage.createService({
         name,
         description: description || "",
         durationMin: durationMin || 60,
         priceCents: priceCents || 0,
         active: true,
+        organizationId: orgId,
       });
       res.json(service);
     } catch (error) {

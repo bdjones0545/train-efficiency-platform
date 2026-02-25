@@ -59,6 +59,7 @@ export interface IStorage {
   deleteCoachProfile(id: string): Promise<boolean>;
 
   getServices(): Promise<Service[]>;
+  getServicesByOrganization(orgId: string): Promise<Service[]>;
   getService(id: string): Promise<Service | undefined>;
   createService(service: InsertService): Promise<Service>;
   updateService(id: string, data: Partial<Service>): Promise<Service | undefined>;
@@ -270,6 +271,10 @@ export class DatabaseStorage implements IStorage {
 
   async getServices(): Promise<Service[]> {
     return db.select().from(services);
+  }
+
+  async getServicesByOrganization(orgId: string): Promise<Service[]> {
+    return db.select().from(services).where(eq(services.organizationId, orgId));
   }
 
   async getService(id: string): Promise<Service | undefined> {

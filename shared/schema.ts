@@ -58,6 +58,7 @@ export const services = pgTable("services", {
   active: boolean("active").default(true),
   stripeProductId: varchar("stripe_product_id"),
   stripePriceId: varchar("stripe_price_id"),
+  organizationId: varchar("organization_id"),
 });
 
 export const appSettings = pgTable("app_settings", {

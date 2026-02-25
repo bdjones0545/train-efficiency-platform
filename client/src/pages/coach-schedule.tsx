@@ -70,7 +70,13 @@ export default function CoachSchedulePage() {
   });
 
   const { data: services } = useQuery<Service[]>({
-    queryKey: ["/api/services"],
+    queryKey: ["/api/services", orgId],
+    queryFn: async () => {
+      const url = orgId ? `/api/services?organizationId=${orgId}` : "/api/services";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch services");
+      return res.json();
+    },
   });
 
   const { data: freeSessionStatus } = useQuery<{ hasUsedFreeSession: boolean }>({
