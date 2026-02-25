@@ -713,8 +713,17 @@ export async function registerRoutes(
     try {
       const q = req.query.q as string;
       if (!q || q.trim().length < 1) return res.json([]);
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const results = await storage.searchUsers(q);
-      res.json(results.map(({ id, firstName, lastName, email }) => ({ id, firstName, lastName, email })));
+      let filtered = results;
+      if (orgId) {
+        const orgUserIds = await storage.getUserIdsByOrganization(orgId);
+        const orgSet = new Set(orgUserIds);
+        filtered = results.filter(u => orgSet.has(u.id));
+      }
+      res.json(filtered.map(({ id, firstName, lastName, email }) => ({ id, firstName, lastName, email })));
     } catch (error) {
       console.error("Error searching clients:", error);
       res.status(500).json({ message: "Failed to search clients" });
@@ -1495,10 +1504,19 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coach/users", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+  app.get("/api/coach/users", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
       const allUsers = await storage.getAllUsersWithProfiles();
-      res.json(allUsers);
+      if (orgId) {
+        const orgUserIds = await storage.getUserIdsByOrganization(orgId);
+        const orgSet = new Set(orgUserIds);
+        res.json(allUsers.filter(u => orgSet.has(u.id)));
+      } else {
+        res.json(allUsers);
+      }
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
