@@ -46,14 +46,15 @@ export function AppSidebar() {
 
   const role = profile?.role || "CLIENT";
 
+  const orgId = profile?.organizationId;
   const { data: organization } = useQuery<{ name: string; logoUrl?: string | null }>({
-    queryKey: ["/api/organizations/by-id", profile?.organizationId],
+    queryKey: ["/api/organizations/by-id", orgId],
     queryFn: async () => {
-      const res = await fetch(`/api/organizations/by-id/${profile!.organizationId}`);
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
       if (!res.ok) throw new Error("Failed to fetch org");
       return res.json();
     },
-    enabled: !!profile?.organizationId,
+    enabled: !!orgId,
   });
 
   const handleNavClick = () => {
