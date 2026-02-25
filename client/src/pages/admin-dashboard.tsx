@@ -23,7 +23,19 @@ type CashoutWithCoach = Cashout & { coachName: string };
 export default function AdminDashboardPage() {
   const { toast } = useToast();
 
-  const { data: coaches } = useQuery<CoachWithUser[]>({ queryKey: ["/api/coaches"] });
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId;
+  const { data: coaches } = useQuery<CoachWithUser[]>({
+    queryKey: ["/api/coaches", orgId],
+    queryFn: async () => {
+      const url = orgId ? `/api/coaches?organizationId=${orgId}` : "/api/coaches";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch coaches");
+      return res.json();
+    },
+  });
   const { data: services } = useQuery<Service[]>({ queryKey: ["/api/services"] });
   const { data: allBookings } = useQuery<BookingWithDetails[]>({ queryKey: ["/api/admin/bookings"] });
   const { data: allRedemptions } = useQuery<RedemptionWithDetails[]>({ queryKey: ["/api/admin/redemptions"] });

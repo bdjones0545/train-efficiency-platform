@@ -232,8 +232,18 @@ export default function CoachDashboardPage() {
   const [editBooking, setEditBooking] = useState<BookingWithDetails | null>(null);
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
 
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId;
   const { data: coaches } = useQuery<CoachWithUser[]>({
-    queryKey: ["/api/coaches"],
+    queryKey: ["/api/coaches", orgId],
+    queryFn: async () => {
+      const url = orgId ? `/api/coaches?organizationId=${orgId}` : "/api/coaches";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch coaches");
+      return res.json();
+    },
   });
 
   const { data: myCoachProfile } = useQuery<{ id: string }>({

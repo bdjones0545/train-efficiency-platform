@@ -1714,7 +1714,11 @@ export async function registerRoutes(
         userId = newUser.id;
       }
 
-      await storage.upsertUserProfile({ userId, role: "COACH" });
+      const adminUserId = req.user.claims.sub;
+      const adminProfile = await storage.getUserProfile(adminUserId);
+      const adminOrgId = adminProfile?.organizationId || null;
+
+      await storage.upsertUserProfile({ userId, role: "COACH", organizationId: adminOrgId });
 
       const passwordHash = await bcrypt.hash(password, 10);
       const parsedSpecialties = Array.isArray(specialties)
@@ -1728,6 +1732,7 @@ export async function registerRoutes(
         specialties: parsedSpecialties,
         timezone: "America/New_York",
         isActive: true,
+        organizationId: adminOrgId,
       });
 
       sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password).catch((err: any) => {

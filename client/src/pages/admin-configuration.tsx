@@ -38,11 +38,21 @@ type CoachWithUser = {
 export default function AdminConfigurationPage() {
   const { toast } = useToast();
 
+  const { data: adminProfile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = adminProfile?.organizationId;
   const { data: services, isLoading: servicesLoading } = useQuery<Service[]>({
     queryKey: ["/api/services"],
   });
   const { data: coaches, isLoading: coachesLoading } = useQuery<CoachWithUser[]>({
-    queryKey: ["/api/coaches"],
+    queryKey: ["/api/coaches", orgId],
+    queryFn: async () => {
+      const url = orgId ? `/api/coaches?organizationId=${orgId}` : "/api/coaches";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch coaches");
+      return res.json();
+    },
   });
   const { data: settings, isLoading: settingsLoading } = useQuery<Record<string, string>>({
     queryKey: ["/api/admin/settings"],

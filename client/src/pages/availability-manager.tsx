@@ -61,8 +61,18 @@ export default function AvailabilityManagerPage() {
   const [customLocation, setCustomLocation] = useState("");
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
 
+  const { data: avProfile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const avOrgId = avProfile?.organizationId;
   const { data: coaches } = useQuery<CoachWithUser[]>({
-    queryKey: ["/api/coaches"],
+    queryKey: ["/api/coaches", avOrgId],
+    queryFn: async () => {
+      const url = avOrgId ? `/api/coaches?organizationId=${avOrgId}` : "/api/coaches";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch coaches");
+      return res.json();
+    },
   });
 
   const { data: myCoachProfile } = useQuery<{ id: string }>({
