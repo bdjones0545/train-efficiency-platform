@@ -3094,6 +3094,50 @@ export async function registerRoutes(
   });
 
   const PLATFORM_ORG_ID = "org-est";
+  const PROMO_CODES: Record<string, { type: "lifetime_free" }> = {
+    "SpeedSystem2026!": { type: "lifetime_free" },
+  };
+
+  app.post("/api/subscription/redeem-promo", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile || profile.role !== "ADMIN") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization found" });
+
+      const { code } = req.body;
+      if (!code || typeof code !== "string") {
+        return res.status(400).json({ message: "Promo code is required" });
+      }
+
+      const promo = PROMO_CODES[code.trim()];
+      if (!promo) {
+        return res.status(400).json({ message: "Invalid promo code" });
+      }
+
+      if (promo.type === "lifetime_free") {
+        await storage.updateOrganization(orgId, {
+          subscriptionStatus: "active" as any,
+          trialEndsAt: null,
+          subscriptionCurrentPeriodEnd: null,
+          stripeSubscriptionId: `promo_${code.trim()}`,
+        });
+
+        const org = await storage.getOrganizationById(orgId);
+        console.log(`Promo code "${code}" redeemed by org ${orgId} (${org?.name}) — lifetime free access`);
+
+        return res.json({ success: true, message: "Promo code applied! You now have lifetime free access." });
+      }
+
+      res.status(400).json({ message: "Invalid promo code type" });
+    } catch (error: any) {
+      console.error("Promo code error:", error);
+      res.status(500).json({ message: "Failed to apply promo code" });
+    }
+  });
 
   app.post("/api/subscription/create-checkout", isAuthenticated, async (req: any, res) => {
     try {
@@ -3227,6 +3271,9 @@ export async function registerRoutes(
       const org = await storage.getOrganizationById(orgId);
       if (!org?.stripeSubscriptionId) {
         return res.status(400).json({ message: "No active subscription found" });
+      }
+      if (org.stripeSubscriptionId.startsWith("promo_")) {
+        return res.status(400).json({ message: "Promo subscriptions cannot be canceled" });
       }
 
       const stripe = await getUncachableStripeClient();

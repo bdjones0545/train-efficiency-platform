@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +21,7 @@ import {
   Calendar,
   BarChart3,
   Zap,
+  Tag,
 } from "lucide-react";
 
 interface SubscriptionStatus {
@@ -34,6 +36,8 @@ interface SubscriptionStatus {
 export default function AdminSubscriptionPage() {
   const { toast } = useToast();
   const [location] = useLocation();
+  const [promoCode, setPromoCode] = useState("");
+  const [showPromo, setShowPromo] = useState(false);
 
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("session_id");
@@ -72,6 +76,22 @@ export default function AdminSubscriptionPage() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const promoMutation = useMutation({
+    mutationFn: async (code: string) => {
+      const res = await apiRequest("POST", "/api/subscription/redeem-promo", { code });
+      return res.json();
+    },
+    onSuccess: (data: { message: string }) => {
+      toast({ title: "Promo Code Applied!", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/subscription/status"] });
+      setPromoCode("");
+      setShowPromo(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Invalid Code", description: error.message, variant: "destructive" });
     },
   });
 
@@ -142,6 +162,7 @@ export default function AdminSubscriptionPage() {
   const isCanceled = subscription?.status === "canceled";
   const isPastDue = subscription?.status === "past_due";
   const hasNoSub = !subscription?.status || subscription?.status === "none";
+  const isPromo = subscription?.stripeSubscriptionId?.startsWith("promo_");
 
   const trialEnd = subscription?.trialEndsAt ? new Date(subscription.trialEndsAt) : null;
   const periodEnd = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
@@ -184,10 +205,12 @@ export default function AdminSubscriptionPage() {
             </div>
             <div>
               <p className="font-semibold text-lg" data-testid="text-subscription-status">
-                {isTrial ? "Free Trial" : isActive ? "Active" : isCanceled ? "Canceled" : isPastDue ? "Past Due" : "No Subscription"}
+                {isPromo && isActive ? "Active — Promo" : isTrial ? "Free Trial" : isActive ? "Active" : isCanceled ? "Canceled" : isPastDue ? "Past Due" : "No Subscription"}
               </p>
               <p className="text-sm text-muted-foreground">
-                {isTrial && trialEnd
+                {isPromo && isActive
+                  ? "Lifetime free access via promo code"
+                  : isTrial && trialEnd
                   ? `${daysLeft} day${daysLeft !== 1 ? "s" : ""} remaining — trial ends ${trialEnd.toLocaleDateString()}`
                   : isActive && periodEnd
                   ? `Renews ${periodEnd.toLocaleDateString()}`
@@ -202,18 +225,20 @@ export default function AdminSubscriptionPage() {
           {isActive && (
             <Badge
               className={
-                isTrial
+                isPromo
+                  ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                  : isTrial
                   ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
                   : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
               }
               data-testid="badge-subscription-status"
             >
-              {isTrial ? "Trial" : "Active"}
+              {isPromo ? "Promo" : isTrial ? "Trial" : "Active"}
             </Badge>
           )}
         </div>
 
-        {isActive && (
+        {isActive && !isPromo && (
           <div className="bg-muted/50 border rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -226,6 +251,18 @@ export default function AdminSubscriptionPage() {
             </div>
           </div>
         )}
+
+        {isPromo && isActive && (
+          <div className="bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <Tag className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              <div>
+                <p className="font-medium">Lifetime Free Access</p>
+                <p className="text-sm text-muted-foreground">Your promo code grants permanent free access to the platform.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
       {hasNoSub || isCanceled ? (
@@ -233,12 +270,12 @@ export default function AdminSubscriptionPage() {
           <div className="text-center space-y-2">
             <Sparkles className="h-10 w-10 text-primary mx-auto" />
             <h2 className="text-xl font-bold" data-testid="text-start-trial">
-              {isCanceled ? "Resubscribe to Train Efficiency" : "Start Your Free 3-Day Trial"}
+              {isCanceled ? "Resubscribe to Train Efficiency" : "Subscribe to Train Efficiency"}
             </h2>
             <p className="text-muted-foreground max-w-md mx-auto">
               {isCanceled
                 ? "Get back to running your coaching business with full platform access."
-                : "Try everything free for 3 days. No charge until your trial ends. Cancel anytime."}
+                : "Subscribe to continue using the platform for your coaching business."}
             </p>
           </div>
 
@@ -256,7 +293,6 @@ export default function AdminSubscriptionPage() {
               <span className="text-4xl font-bold" data-testid="text-price-display">$49.99</span>
               <span className="text-muted-foreground">/month</span>
             </div>
-            <p className="text-xs text-muted-foreground">3-day free trial included</p>
             <Button
               size="lg"
               className="w-full max-w-sm"
@@ -264,17 +300,55 @@ export default function AdminSubscriptionPage() {
               disabled={checkoutMutation.isPending}
               data-testid="button-start-trial"
             >
-              {checkoutMutation.isPending ? "Redirecting to Stripe..." : isCanceled ? "Resubscribe — $49.99/mo" : "Start Free Trial"}
+              {checkoutMutation.isPending ? "Redirecting to Stripe..." : isCanceled ? "Resubscribe — $49.99/mo" : "Subscribe — $49.99/mo"}
             </Button>
             <p className="text-xs text-muted-foreground">
               You will be redirected to Stripe to enter your payment details.
-              {!isCanceled && " You won't be charged until your 3-day trial ends."}
             </p>
+          </div>
+
+          <Separator />
+
+          <div className="text-center">
+            {!showPromo ? (
+              <button
+                type="button"
+                onClick={() => setShowPromo(true)}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="button-show-promo"
+              >
+                Have a promo code?
+              </button>
+            ) : (
+              <div className="max-w-sm mx-auto space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value)}
+                    placeholder="Enter promo code"
+                    className="font-mono"
+                    data-testid="input-promo-code"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && promoCode.trim()) {
+                        promoMutation.mutate(promoCode.trim());
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={() => promoMutation.mutate(promoCode.trim())}
+                    disabled={!promoCode.trim() || promoMutation.isPending}
+                    data-testid="button-apply-promo"
+                  >
+                    {promoMutation.isPending ? "Applying..." : "Apply"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       ) : null}
 
-      {isActive && !isTrial && (
+      {isActive && !isTrial && !isPromo && (
         <>
           <Separator />
           <Card className="p-4 border-destructive/30">
@@ -306,8 +380,8 @@ export default function AdminSubscriptionPage() {
             <div className="space-y-1">
               <p className="font-medium text-sm">Trial Information</p>
               <p className="text-xs text-muted-foreground">
-                Your 3-day free trial gives you full access to everything. After the trial, you'll be charged
-                $49.99/month. You can cancel anytime before the trial ends to avoid being charged.
+                Your 3-day free trial gives you full access to everything. After the trial, you'll need to
+                subscribe at $49.99/month to continue using the platform.
               </p>
             </div>
           </div>
