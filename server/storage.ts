@@ -86,7 +86,7 @@ export interface IStorage {
   addBookingParticipant(participant: InsertBookingParticipant): Promise<BookingParticipant>;
   removeBookingParticipant(bookingId: string, userId: string): Promise<void>;
   removeBookingParticipantById(participantId: string): Promise<void>;
-  getOpenSemiPrivateSessions(): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]>;
+  getOpenSemiPrivateSessions(organizationId?: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]>;
 
   getCoachRedemptions(coachId: string): Promise<Redemption[]>;
   getAllRedemptions(): Promise<Redemption[]>;
@@ -500,20 +500,22 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookingParticipants).where(eq(bookingParticipants.id, participantId));
   }
 
-  async getOpenSemiPrivateSessions(): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]> {
+  async getOpenSemiPrivateSessions(organizationId?: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]> {
+    const conditions = [
+      sql`${bookings.maxParticipants} IS NOT NULL`,
+      or(eq(bookings.status, "CONFIRMED"), eq(bookings.status, "PENDING")),
+      gte(bookings.startAt, new Date()),
+    ];
+    if (organizationId) {
+      conditions.push(eq(coachProfiles.organizationId, organizationId));
+    }
     const result = await db
       .select()
       .from(bookings)
       .leftJoin(services, eq(bookings.serviceId, services.id))
       .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
       .leftJoin(users, eq(coachProfiles.userId, users.id))
-      .where(
-        and(
-          sql`${bookings.maxParticipants} IS NOT NULL`,
-          or(eq(bookings.status, "CONFIRMED"), eq(bookings.status, "PENDING")),
-          gte(bookings.startAt, new Date())
-        )
-      )
+      .where(and(...conditions))
       .orderBy(bookings.startAt);
 
     const enriched = await Promise.all(

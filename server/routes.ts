@@ -1686,9 +1686,29 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/sessions/open", async (_req, res) => {
+  app.get("/api/sessions/open", async (req: any, res) => {
     try {
-      const sessions = await storage.getOpenSemiPrivateSessions();
+      let orgId: string | undefined;
+      try {
+        let userId: string | undefined;
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith("Bearer ")) {
+          const token = authHeader.slice(7);
+          const { db: dbRef } = await import("./db");
+          const { sql: sqlRef } = await import("drizzle-orm");
+          const tokenResult = await dbRef.execute(sqlRef`SELECT user_id FROM auth_tokens WHERE token = ${token} AND expires_at > NOW()`);
+          if (tokenResult.rows.length > 0) {
+            userId = (tokenResult.rows[0] as any).user_id;
+          }
+        } else if (req.isAuthenticated?.() && req.user?.claims?.sub) {
+          userId = req.user.claims.sub;
+        }
+        if (userId) {
+          const profile = await storage.getUserProfile(userId);
+          orgId = profile?.organizationId || undefined;
+        }
+      } catch {}
+      const sessions = await storage.getOpenSemiPrivateSessions(orgId);
       const safe = sessions.map(s => {
         const { coach, ...rest } = s;
         if (coach) {
