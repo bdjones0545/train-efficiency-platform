@@ -15,6 +15,20 @@ async function ensurePlatformOrg() {
     }).onConflictDoNothing();
     console.log("Platform organization (org-est) created.");
   }
+
+  const estCoachUserIds = ["coach-bryan", "coach-hunter"];
+  for (const userId of estCoachUserIds) {
+    const [coach] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, userId));
+    if (coach && !coach.organizationId) {
+      await db.update(coachProfiles).set({ organizationId: "org-est" }).where(eq(coachProfiles.userId, userId));
+      console.log(`Coach ${userId} assigned to org-est`);
+    }
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
+    if (profile && !profile.organizationId) {
+      await db.update(userProfiles).set({ organizationId: "org-est" }).where(eq(userProfiles.userId, userId));
+      console.log(`User profile ${userId} assigned to org-est`);
+    }
+  }
 }
 
 export async function seedDatabase() {
