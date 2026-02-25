@@ -16,7 +16,7 @@ import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, E
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
-import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
+import logoImg from "@assets/A5CAB7DB-0296-44BE-A684-9F213A62D633_1772032608136.png";
 import type { CoachWithUser } from "@/lib/types";
 
 export default function LandingPage() {
@@ -110,9 +110,8 @@ export default function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <img src={logoImg} alt="EST Logo" className="h-8 rounded-md" data-testid="img-nav-logo" />
             <span className="font-semibold text-lg tracking-tight" data-testid="text-brand-name">
-              Efficiency Strength Training
+              Train Efficiency Business Solutions
             </span>
           </div>
           <div className="hidden md:flex items-center gap-3">
@@ -204,21 +203,29 @@ export default function LandingPage() {
 
       <section className="relative pt-32 pb-20 px-6 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/4 pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center relative">
-          <div className="space-y-6">
+        <div className="max-w-6xl mx-auto flex flex-col items-center text-center relative">
+          <div className="space-y-6 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-primary/10 text-primary text-sm font-medium">
               <Zap className="h-3.5 w-3.5" />
               Elevate Your Game
             </div>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight">
-              Sports Performance,{" "}
-              <span className="text-primary">Simplified</span>
+              Train Efficiency{" "}
+              <span className="text-primary">Business Solutions</span>
             </h1>
-            <p className="text-lg text-muted-foreground leading-relaxed max-w-lg">
+            <div className="flex justify-center pt-2">
+              <img
+                src={logoImg}
+                alt="TrainEfficiency.com"
+                className="w-full max-w-md object-contain"
+                data-testid="img-hero-logo"
+              />
+            </div>
+            <p className="text-lg text-muted-foreground leading-relaxed">
               Book sessions with expert strength & conditioning coaches, manage your training schedule,
-              and take your athletic performance to the next level with Efficiency Strength Training.
+              and take your athletic performance to the next level.
             </p>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
               <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-hero-cta">
                 <Calendar className="h-4 w-4 mr-2" />
                 Book a Session
@@ -230,7 +237,7 @@ export default function LandingPage() {
                 </Button>
               </a>
             </div>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2">
+            <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground pt-2">
               <span className="flex items-center gap-1.5">
                 <Shield className="h-3.5 w-3.5 text-primary" />
                 Free to browse
@@ -239,18 +246,6 @@ export default function LandingPage() {
                 <Clock className="h-3.5 w-3.5 text-primary" />
                 Instant booking
               </span>
-            </div>
-          </div>
-
-          <div className="relative hidden lg:flex items-center justify-center">
-            <div className="relative">
-              <div className="absolute -inset-4 bg-primary/10 rounded-md blur-2xl" />
-              <img
-                src={logoImg}
-                alt="Efficiency Strength Training"
-                className="relative w-80 h-80 object-contain rounded-md"
-                data-testid="img-hero-logo"
-              />
             </div>
           </div>
         </div>
@@ -363,8 +358,8 @@ export default function LandingPage() {
       <footer className="py-8 px-6 border-t">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
-            <img src={logoImg} alt="EST" className="h-5 rounded-sm" data-testid="img-footer-logo" />
-            <span>Efficiency Strength Training LLC</span>
+            <img src={logoImg} alt="TrainEfficiency" className="h-8 rounded-sm" data-testid="img-footer-logo" />
+            <span>Train Efficiency Business Solutions</span>
           </div>
           <p>&copy; {new Date().getFullYear()} All rights reserved.</p>
         </div>
