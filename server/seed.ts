@@ -29,6 +29,13 @@ async function ensurePlatformOrg() {
       console.log(`User profile ${userId} assigned to org-est`);
     }
   }
+
+  const { isNull } = await import("drizzle-orm");
+  const unassignedServices = await db.select().from(services).where(isNull(services.organizationId));
+  if (unassignedServices.length > 0) {
+    await db.update(services).set({ organizationId: "org-est" }).where(isNull(services.organizationId));
+    console.log(`${unassignedServices.length} services assigned to org-est`);
+  }
 }
 
 export async function seedDatabase() {
