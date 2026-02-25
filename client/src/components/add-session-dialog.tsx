@@ -67,6 +67,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
   const [repeatInterval, setRepeatInterval] = useState<string>("7");
   const [repeatEndDate, setRepeatEndDate] = useState<string>("");
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [teamQuoteProgramId, setTeamQuoteProgramId] = useState<string>("");
 
   useEffect(() => {
@@ -137,11 +138,16 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const cloneMutation = useMutation({
     mutationFn: async () => {
       if (!createdBookingId || !repeatEndDate) throw new Error("Missing data");
-      const res = await apiRequest("POST", "/api/coach/bookings/clone", {
+      const body: any = {
         bookingId: createdBookingId,
-        intervalDays: parseInt(repeatInterval),
         endDate: repeatEndDate,
-      });
+      };
+      if (repeatInterval === "custom") {
+        body.daysOfWeek = selectedDays;
+      } else {
+        body.intervalDays = parseInt(repeatInterval);
+      }
+      const res = await apiRequest("POST", "/api/coach/bookings/clone", body);
       return res.json();
     },
     onSuccess: (data: any) => {
@@ -188,6 +194,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setCreatedBookingId(null);
     setRepeatInterval("7");
     setRepeatEndDate("");
+    setSelectedDays([]);
     setTeamQuoteProgramId("");
   };
 
@@ -295,7 +302,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
 
               <div className="space-y-2">
                 <Label>Repeat Every</Label>
-                <Select value={repeatInterval} onValueChange={setRepeatInterval}>
+                <Select value={repeatInterval} onValueChange={(v) => { setRepeatInterval(v); if (v !== "custom") setSelectedDays([]); }}>
                   <SelectTrigger data-testid="select-repeat-interval">
                     <SelectValue />
                   </SelectTrigger>
@@ -303,9 +310,45 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                     <SelectItem value="7">Every week</SelectItem>
                     <SelectItem value="14">Every 2 weeks</SelectItem>
                     <SelectItem value="1">Every day</SelectItem>
+                    <SelectItem value="custom">Specific days of the week</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {repeatInterval === "custom" && (
+                <div className="space-y-2">
+                  <Label>Select Days</Label>
+                  <div className="flex flex-wrap gap-2" data-testid="day-of-week-selector">
+                    {[
+                      { label: "Sun", value: 0 },
+                      { label: "Mon", value: 1 },
+                      { label: "Tue", value: 2 },
+                      { label: "Wed", value: 3 },
+                      { label: "Thu", value: 4 },
+                      { label: "Fri", value: 5 },
+                      { label: "Sat", value: 6 },
+                    ].map((day) => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        data-testid={`day-toggle-${day.label.toLowerCase()}`}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                          selectedDays.includes(day.value)
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-muted-foreground border-border hover:bg-accent"
+                        }`}
+                        onClick={() => {
+                          setSelectedDays((prev) =>
+                            prev.includes(day.value) ? prev.filter((d) => d !== day.value) : [...prev, day.value].sort()
+                          );
+                        }}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label>End Date</Label>
@@ -319,8 +362,14 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
 
               {repeatEndDate && selectedDate && (
                 <p className="text-xs text-muted-foreground">
-                  This will create sessions {repeatInterval === "1" ? "daily" : repeatInterval === "7" ? "weekly" : "every 2 weeks"} from{" "}
-                  {format(addDays(selectedDate, parseInt(repeatInterval)), "MMM d, yyyy")} through {format(new Date(repeatEndDate + "T12:00:00"), "MMM d, yyyy")}.
+                  {repeatInterval === "custom"
+                    ? `This will create sessions on ${selectedDays.map(d => ["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"][d]).join(", ") || "selected days"}`
+                    : `This will create sessions ${repeatInterval === "1" ? "daily" : repeatInterval === "7" ? "weekly" : "every 2 weeks"}`
+                  } from{" "}
+                  {repeatInterval === "custom"
+                    ? format(addDays(selectedDate, 1), "MMM d, yyyy")
+                    : format(addDays(selectedDate, parseInt(repeatInterval)), "MMM d, yyyy")
+                  } through {format(new Date(repeatEndDate + "T12:00:00"), "MMM d, yyyy")}.
                   Conflicting time slots will be skipped.
                 </p>
               )}
@@ -337,7 +386,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                 <Button
                   className="flex-1"
                   onClick={() => cloneMutation.mutate()}
-                  disabled={!repeatEndDate || cloneMutation.isPending}
+                  disabled={!repeatEndDate || cloneMutation.isPending || (repeatInterval === "custom" && selectedDays.length === 0)}
                   data-testid="button-clone-sessions"
                 >
                   <Copy className="h-4 w-4 mr-1" />

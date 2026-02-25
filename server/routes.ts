@@ -757,9 +757,12 @@ export async function registerRoutes(
   app.post("/api/coach/bookings/clone", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { bookingId, intervalDays, endDate } = req.body;
-      if (!bookingId || !intervalDays || !endDate) {
-        return res.status(400).json({ message: "bookingId, intervalDays, and endDate are required" });
+      const { bookingId, intervalDays, endDate, daysOfWeek } = req.body;
+      if (!bookingId || !endDate) {
+        return res.status(400).json({ message: "bookingId and endDate are required" });
+      }
+      if (!intervalDays && (!daysOfWeek || !Array.isArray(daysOfWeek) || daysOfWeek.length === 0)) {
+        return res.status(400).json({ message: "Either intervalDays or daysOfWeek must be provided" });
       }
 
       const sourceBooking = await storage.getBooking(bookingId);
@@ -782,34 +785,37 @@ export async function registerRoutes(
 
       const created: any[] = [];
       const skipped: string[] = [];
-      let currentStart = new Date(sourceStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+      const useCustomDays = daysOfWeek && Array.isArray(daysOfWeek) && daysOfWeek.length > 0;
+      const dayStep = useCustomDays ? 1 : intervalDays;
+      let currentStart = new Date(sourceStart.getTime() + dayStep * 24 * 60 * 60 * 1000);
 
       while (currentStart <= endDateObj) {
-        const currentEnd = new Date(currentStart.getTime() + durationMs);
+        const shouldCreate = useCustomDays ? daysOfWeek.includes(currentStart.getDay()) : true;
 
-        const overlapping = await storage.getOverlappingBookings(targetCoachId, currentStart, currentEnd);
-        if (overlapping.length > 0) {
-          skipped.push(currentStart.toISOString());
-          currentStart = new Date(currentStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
-          continue;
+        if (shouldCreate) {
+          const currentEnd = new Date(currentStart.getTime() + durationMs);
+          const overlapping = await storage.getOverlappingBookings(targetCoachId, currentStart, currentEnd);
+          if (overlapping.length > 0) {
+            skipped.push(currentStart.toISOString());
+          } else {
+            const booking = await storage.createBooking({
+              clientId: sourceBooking.clientId,
+              coachId: targetCoachId,
+              serviceId: sourceBooking.serviceId,
+              startAt: currentStart,
+              endAt: currentEnd,
+              status: "CONFIRMED",
+              notes: sourceBooking.notes || "",
+              location: sourceBooking.location || "",
+              maxParticipants: sourceBooking.maxParticipants,
+              groupDescription: sourceBooking.groupDescription || "",
+              recurringGroupId: groupId,
+            });
+            created.push(booking);
+          }
         }
 
-        const booking = await storage.createBooking({
-          clientId: sourceBooking.clientId,
-          coachId: targetCoachId,
-          serviceId: sourceBooking.serviceId,
-          startAt: currentStart,
-          endAt: currentEnd,
-          status: "CONFIRMED",
-          notes: sourceBooking.notes || "",
-          location: sourceBooking.location || "",
-          maxParticipants: sourceBooking.maxParticipants,
-          groupDescription: sourceBooking.groupDescription || "",
-          recurringGroupId: groupId,
-        });
-
-        created.push(booking);
-        currentStart = new Date(currentStart.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+        currentStart = new Date(currentStart.getTime() + dayStep * 24 * 60 * 60 * 1000);
       }
 
       res.json({ created: created.length, skipped: skipped.length, skippedDates: skipped, recurringGroupId: groupId });
