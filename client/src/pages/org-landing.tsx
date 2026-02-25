@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/dialog";
 import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
-  UserPlus, Trophy, Menu, X,
+  UserPlus, Trophy, Menu, X, Globe,
 } from "lucide-react";
+import { SiInstagram, SiFacebook } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
@@ -32,6 +33,9 @@ interface Organization {
   tagline2: string | null;
   primaryColor: string | null;
   secondaryColor: string | null;
+  websiteUrl: string | null;
+  instagramUrl: string | null;
+  facebookUrl: string | null;
 }
 
 export default function OrgLandingPage() {
@@ -437,7 +441,26 @@ export default function OrgLandingPage() {
             )}
             <span>{org.name}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
+              <div className="flex items-center gap-3">
+                {org.websiteUrl && (
+                  <a href={org.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-website">
+                    <Globe className="h-4 w-4" />
+                  </a>
+                )}
+                {org.instagramUrl && (
+                  <a href={org.instagramUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-instagram">
+                    <SiInstagram className="h-4 w-4" />
+                  </a>
+                )}
+                {org.facebookUrl && (
+                  <a href={org.facebookUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-facebook">
+                    <SiFacebook className="h-4 w-4" />
+                  </a>
+                )}
+              </div>
+            )}
             <p>&copy; {new Date().getFullYear()} All rights reserved.</p>
             <span className="text-xs opacity-50">Powered by Train Efficiency</span>
           </div>

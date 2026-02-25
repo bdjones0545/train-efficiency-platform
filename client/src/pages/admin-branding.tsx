@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, Image, Link2, Type, ExternalLink } from "lucide-react";
+import { Save, Image, Link2, Type, ExternalLink, Globe } from "lucide-react";
+import { SiInstagram, SiFacebook } from "react-icons/si";
 import type { Organization } from "@shared/schema";
 
 export default function AdminBrandingPage() {
@@ -33,6 +34,9 @@ export default function AdminBrandingPage() {
   const [logoUrl, setLogoUrl] = useState("");
   const [tagline, setTagline] = useState("");
   const [tagline2, setTagline2] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [instagramUrl, setInstagramUrl] = useState("");
+  const [facebookUrl, setFacebookUrl] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -42,6 +46,9 @@ export default function AdminBrandingPage() {
       setLogoUrl(org.logoUrl || "");
       setTagline(org.tagline || "");
       setTagline2(org.tagline2 || "");
+      setWebsiteUrl(org.websiteUrl || "");
+      setInstagramUrl(org.instagramUrl || "");
+      setFacebookUrl(org.facebookUrl || "");
       setHasChanges(false);
     }
   }, [org]);
@@ -80,6 +87,9 @@ export default function AdminBrandingPage() {
       logoUrl: logoUrl || null,
       tagline,
       tagline2,
+      websiteUrl: websiteUrl || null,
+      instagramUrl: instagramUrl || null,
+      facebookUrl: facebookUrl || null,
     };
   };
 
@@ -265,6 +275,56 @@ export default function AdminBrandingPage() {
               Displayed below the main tagline for additional context.
             </p>
           </div>
+        </Card>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Globe className="h-5 w-5" />
+          Social Links
+        </h2>
+        <Card className="p-4 space-y-4">
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Website
+            </Label>
+            <Input
+              value={websiteUrl}
+              onChange={(e) => { setWebsiteUrl(e.target.value); markChanged(); }}
+              placeholder="https://yourwebsite.com"
+              data-testid="input-website-url"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <SiInstagram className="h-4 w-4" />
+              Instagram
+            </Label>
+            <Input
+              value={instagramUrl}
+              onChange={(e) => { setInstagramUrl(e.target.value); markChanged(); }}
+              placeholder="https://instagram.com/yourbusiness"
+              data-testid="input-instagram-url"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <SiFacebook className="h-4 w-4" />
+              Facebook
+            </Label>
+            <Input
+              value={facebookUrl}
+              onChange={(e) => { setFacebookUrl(e.target.value); markChanged(); }}
+              placeholder="https://facebook.com/yourbusiness"
+              data-testid="input-facebook-url"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            These links will appear on your landing page so visitors can find you on the web.
+          </p>
         </Card>
       </section>
 
