@@ -38,6 +38,19 @@ export class WebhookHandlers {
     await storage.updateTeamQuote(quote.id, { status: 'PAID' });
     console.log(`Team quote ${quote.id} for "${quote.teamName}" Month ${quote.currentMonth}/${quote.totalMonths} marked as PAID (invoice: ${stripeInvoiceId})`);
 
+    if (quote.currentMonth === 1) {
+      try {
+        const teamUser = await storage.findOrCreateTeamUser(
+          quote.teamName,
+          quote.coachEmail,
+          quote.programId || quote.id
+        );
+        console.log(`Team user created/found for "${quote.teamName}": ${teamUser.id} (email: ${quote.coachEmail})`);
+      } catch (err) {
+        console.error(`Failed to create team user for "${quote.teamName}":`, err);
+      }
+    }
+
     if (quote.currentMonth < quote.totalMonths) {
       await WebhookHandlers.generateNextMonthInvoice(quote);
     }

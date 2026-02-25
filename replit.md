@@ -113,6 +113,7 @@ A scheduling platform for Efficiency Strength Training LLC focused on sports per
   - Form: team name, # athletes, cost/athlete/month, training type, frequency, program duration (months), email
   - Monthly billing: generates one Stripe invoice per month (send_invoice collection method, 30 days due)
   - Auto-renewal: when a monthly invoice is paid (via Stripe webhook), the next month's invoice is automatically generated and sent
+  - Automatic team user creation: when first month's invoice is paid, a user record is created (teamName + "Team Training", coach email) so the team is immediately searchable and schedulable
   - Each month creates a separate team_quote record with currentMonth tracking (e.g., Month 2 of 6)
   - Sends branded email with invoice link via SendGrid (includes month X of Y info)
   - Quote history grouped by team with payment progress bar and individual month invoice rows

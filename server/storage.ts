@@ -90,6 +90,7 @@ export interface IStorage {
   createRedemption(redemption: InsertRedemption): Promise<Redemption>;
   getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined>;
   findOrCreateUserByName(firstName: string, lastName: string): Promise<User>;
+  findOrCreateTeamUser(teamName: string, coachEmail: string, programId: string): Promise<User>;
   searchUsers(query: string): Promise<User[]>;
   getUserByEmail(email: string): Promise<User | undefined>;
   hasUsedFreeSession(userId: string): Promise<boolean>;
@@ -539,6 +540,31 @@ export class DatabaseStorage implements IStorage {
       .values({ id, firstName: firstName.trim(), lastName: lastName.trim(), email: null, profileImageUrl: null })
       .returning();
     await db.insert(userProfiles).values({ userId: id, role: "CLIENT" as any });
+    return created;
+  }
+
+  async findOrCreateTeamUser(teamName: string, coachEmail: string, programId: string): Promise<User> {
+    const teamId = `team-${programId}`;
+    const existingById = await db.select().from(users).where(eq(users.id, teamId));
+    if (existingById.length > 0) return existingById[0];
+
+    const existing = await db
+      .select()
+      .from(users)
+      .where(and(ilike(users.firstName, teamName.trim()), ilike(users.lastName, "Team Training")));
+    if (existing.length > 0) return existing[0];
+
+    const [created] = await db
+      .insert(users)
+      .values({
+        id: teamId,
+        firstName: teamName.trim(),
+        lastName: "Team Training",
+        email: coachEmail,
+        profileImageUrl: null,
+      })
+      .returning();
+    await db.insert(userProfiles).values({ userId: teamId, role: "CLIENT" as any });
     return created;
   }
 
