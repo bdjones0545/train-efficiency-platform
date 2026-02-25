@@ -182,7 +182,7 @@ export async function registerRoutes(
 
   app.post("/api/client/register", async (req: any, res) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName, organizationId } = req.body;
       if (!email || !password || !firstName || !lastName) {
         return res.status(400).json({ message: "All fields are required" });
       }
@@ -208,7 +208,11 @@ export async function registerRoutes(
       }).returning();
       const user = created;
       const { userProfiles } = await import("@shared/schema");
-      await dbRef.insert(userProfiles).values({ userId: user.id, role: "CLIENT" as any });
+      await dbRef.insert(userProfiles).values({
+        userId: user.id,
+        role: "CLIENT" as any,
+        organizationId: organizationId || null,
+      });
 
       const token = await createAuthToken(user.id);
 
@@ -388,10 +392,16 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coaches", async (_req, res) => {
+  app.get("/api/coaches", async (req: any, res) => {
     try {
-      const coaches = await storage.getCoachProfiles();
-      const safe = coaches.map(({ passwordHash, email, ...rest }) => rest);
+      const orgId = req.query.organizationId as string | undefined;
+      let coaches;
+      if (orgId) {
+        coaches = await storage.getCoachProfilesByOrganization(orgId);
+      } else {
+        coaches = await storage.getCoachProfiles();
+      }
+      const safe = coaches.map(({ passwordHash, email, ...rest }: any) => rest);
       res.json(safe);
     } catch (error) {
       console.error("Error fetching coaches:", error);

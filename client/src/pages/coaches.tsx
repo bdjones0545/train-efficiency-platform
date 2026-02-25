@@ -10,8 +10,18 @@ import type { CoachWithUser } from "@/lib/types";
 
 export default function CoachesPage() {
   const [, navigate] = useLocation();
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId;
+  const coachesUrl = orgId ? `/api/coaches?organizationId=${orgId}` : "/api/coaches";
   const { data: coaches, isLoading } = useQuery<CoachWithUser[]>({
-    queryKey: ["/api/coaches"],
+    queryKey: ["/api/coaches", orgId],
+    queryFn: async () => {
+      const res = await fetch(coachesUrl);
+      if (!res.ok) throw new Error("Failed to fetch coaches");
+      return res.json();
+    },
   });
 
   return (

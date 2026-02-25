@@ -105,7 +105,7 @@ export default function OrgLandingPage() {
     try {
       const endpoint = isSignUp ? "/api/client/register" : "/api/client/login";
       const body = isSignUp
-        ? { email, password, firstName, lastName }
+        ? { email, password, firstName, lastName, organizationId: org?.id }
         : { email, password };
       const res = await apiRequest("POST", endpoint, body);
       const data = await res.json();
