@@ -39,7 +39,6 @@ import PrivacyPolicyPage from "@/pages/privacy-policy";
 import TermsConditionsPage from "@/pages/terms-conditions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChatWidget } from "@/components/chat-widget";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 
 interface SubscriptionStatus {
@@ -242,7 +241,6 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <AppContent />
-          <ChatWidget />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

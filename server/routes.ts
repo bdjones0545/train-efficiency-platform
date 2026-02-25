@@ -5,7 +5,6 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { handleAssistantMessage } from "./scheduling-assistant";
 import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, type OrgBranding } from "./email";
 import Stripe from "stripe";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
@@ -3038,60 +3037,6 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/chat", async (req: any, res) => {
-    try {
-      const { messages } = req.body;
-      if (!messages || !Array.isArray(messages)) {
-        return res.status(400).json({ message: "Messages array required" });
-      }
-
-      const userId = req.user?.claims?.sub || null;
-      let userRole = "CLIENT";
-      let userName: string | null = null;
-      let coachId: string | null = null;
-
-      if (userId) {
-        userRole = await getUserRole(userId);
-        const user = await storage.getUser(userId);
-        if (user) {
-          userName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || null;
-        }
-        if (userRole === "COACH" || userRole === "ADMIN") {
-          const coachProfile = await storage.getCoachProfileByUserId(userId);
-          if (coachProfile) {
-            coachId = coachProfile.id;
-          }
-        }
-      }
-
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      });
-
-      let clientDisconnected = false;
-      req.on("close", () => { clientDisconnected = true; });
-
-      const generator = handleAssistantMessage(messages, userId, userRole, userName, coachId);
-      for await (const chunk of generator) {
-        if (clientDisconnected) break;
-        res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
-      }
-      if (!clientDisconnected) {
-        res.write("data: [DONE]\n\n");
-      }
-      res.end();
-    } catch (error: any) {
-      console.error("Chat error:", error);
-      if (!res.headersSent) {
-        res.status(500).json({ message: "Chat error: " + (error.message || "Unknown error") });
-      } else {
-        res.write(`data: ${JSON.stringify({ error: error.message || "Unknown error" })}\n\n`);
-        res.end();
-      }
-    }
-  });
 
   const PLATFORM_ORG_ID = "org-est";
   const PROMO_CODES: Record<string, { type: "lifetime_free" }> = {

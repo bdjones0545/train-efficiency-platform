@@ -20,7 +20,6 @@ import {
   Users,
   Calendar,
   BarChart3,
-  Zap,
   Tag,
 } from "lucide-react";
 
@@ -172,7 +171,6 @@ export default function AdminSubscriptionPage() {
     { icon: Users, label: "Unlimited coaches & clients" },
     { icon: Calendar, label: "Full scheduling platform" },
     { icon: BarChart3, label: "Business analytics & reporting" },
-    { icon: Zap, label: "AI scheduling assistant" },
     { icon: CreditCard, label: "Stripe payment integration" },
     { icon: Sparkles, label: "Custom branding & landing page" },
   ];

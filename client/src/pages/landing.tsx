@@ -473,7 +473,6 @@ export default function LandingPage() {
                 "Session redemptions & payout tracking",
                 "Automated email notifications",
                 "Business analytics dashboard",
-                "AI scheduling assistant",
                 "Multi-location support",
               ].map((feature) => (
                 <div key={feature} className="flex items-center gap-2 text-sm">
