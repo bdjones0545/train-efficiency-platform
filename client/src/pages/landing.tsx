@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -12,15 +9,17 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy, Menu, X } from "lucide-react";
+import {
+  Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
+  UserPlus, Menu, X, DollarSign, CreditCard, BarChart3, Mail, Dumbbell,
+  ClipboardList, UserCheck, Wallet, Receipt, Building2, CheckCircle2, ArrowRight,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
 import logoImg from "@assets/A5CAB7DB-0296-44BE-A684-9F213A62D633_1772032608136.png";
-import type { CoachWithUser } from "@/lib/types";
 
 export default function LandingPage() {
-  const { data: coaches } = useQuery<CoachWithUser[]>({ queryKey: ["/api/coaches"] });
   const [coachModalOpen, setCoachModalOpen] = useState(false);
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
@@ -118,10 +117,13 @@ export default function LandingPage() {
             <a href="#features">
               <Button variant="ghost" size="sm" data-testid="link-features">Features</Button>
             </a>
-            <a href="/athletic">
-              <Button variant="ghost" size="sm" data-testid="link-blhs-athletic">
-                <Trophy className="h-4 w-4 mr-1" />
-                BLHS Athletic
+            <a href="#how-it-works">
+              <Button variant="ghost" size="sm" data-testid="link-how-it-works">How It Works</Button>
+            </a>
+            <a href="/efficiencystrength">
+              <Button variant="ghost" size="sm" data-testid="link-client-portal">
+                <Dumbbell className="h-4 w-4 mr-1" />
+                Client Portal
               </Button>
             </a>
             <Button
@@ -130,23 +132,15 @@ export default function LandingPage() {
               onClick={() => setCoachModalOpen(true)}
               data-testid="button-coach-login"
             >
-              Coach Login
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openClientModal(false)}
-              data-testid="button-login"
-            >
               <LogIn className="h-4 w-4 mr-1" />
-              Log In
+              Coach Login
             </Button>
             <Button
               onClick={() => openClientModal(true)}
               data-testid="button-get-started"
             >
               <UserPlus className="h-4 w-4 mr-1" />
-              Sign Up
+              Get Started
             </Button>
           </div>
           <Button
@@ -164,10 +158,13 @@ export default function LandingPage() {
             <a href="#features" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-features-mobile">Features</Button>
             </a>
-            <a href="/athletic" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-blhs-athletic-mobile">
-                <Trophy className="h-4 w-4 mr-1" />
-                BLHS Athletic
+            <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-how-it-works-mobile">How It Works</Button>
+            </a>
+            <a href="/efficiencystrength" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-client-portal-mobile">
+                <Dumbbell className="h-4 w-4 mr-1" />
+                Client Portal
               </Button>
             </a>
             <Button
@@ -177,17 +174,8 @@ export default function LandingPage() {
               onClick={() => { setCoachModalOpen(true); setMobileMenuOpen(false); }}
               data-testid="button-coach-login-mobile"
             >
-              Coach Login
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start"
-              onClick={() => { openClientModal(false); setMobileMenuOpen(false); }}
-              data-testid="button-login-mobile"
-            >
               <LogIn className="h-4 w-4 mr-1" />
-              Log In
+              Coach Login
             </Button>
             <Button
               className="w-full justify-start"
@@ -195,25 +183,21 @@ export default function LandingPage() {
               data-testid="button-get-started-mobile"
             >
               <UserPlus className="h-4 w-4 mr-1" />
-              Sign Up
+              Get Started
             </Button>
           </div>
         )}
       </nav>
 
-      <section className="relative pt-32 pb-20 px-6 overflow-hidden">
+      <section className="relative pt-32 pb-24 px-6 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/4 pointer-events-none" />
         <div className="max-w-6xl mx-auto flex flex-col items-center text-center relative">
-          <div className="space-y-6 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-primary/10 text-primary text-sm font-medium">
-              <Zap className="h-3.5 w-3.5" />
-              Elevate Your Game
-            </div>
-            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight">
-              Train Efficiency{" "}
-              <span className="text-primary">Business Solutions</span>
+          <div className="space-y-6 max-w-3xl">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight" data-testid="text-hero-heading">
+              Stop Using Studio Software.{" "}
+              <span className="text-primary">Start Using Coaching Software.</span>
             </h1>
-            <div className="flex justify-center pt-2">
+            <div className="flex justify-center pt-2 pb-2">
               <img
                 src={logoImg}
                 alt="TrainEfficiency.com"
@@ -221,42 +205,60 @@ export default function LandingPage() {
                 data-testid="img-hero-logo"
               />
             </div>
-            <p className="text-lg text-muted-foreground leading-relaxed">
-              Book sessions with expert strength & conditioning coaches, manage your training schedule,
-              and take your athletic performance to the next level.
+            <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto">
+              The all-in-one platform built for strength & conditioning coaches. Manage scheduling,
+              payments, clients, team contracts, and payouts — all from one dashboard.
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
               <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-hero-cta">
-                <Calendar className="h-4 w-4 mr-2" />
-                Book a Session
+                <ArrowRight className="h-4 w-4 mr-2" />
+                Start Your Free Account
               </Button>
-              <a href="/sessions">
-                <Button variant="outline" size="lg" data-testid="button-view-sessions">
-                  <Users className="h-4 w-4 mr-2" />
-                  View Group Sessions
-                </Button>
-              </a>
+              <Button variant="outline" size="lg" onClick={() => setCoachModalOpen(true)} data-testid="button-hero-login">
+                <LogIn className="h-4 w-4 mr-2" />
+                Coach Sign In
+              </Button>
             </div>
-            <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground pt-2">
+            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground pt-4">
               <span className="flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5 text-primary" />
-                Free to browse
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                No monthly fees
               </span>
               <span className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5 text-primary" />
-                Instant booking
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                Built for S&C coaches
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                Set up in minutes
               </span>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="features" className="py-20 px-6 bg-card/50">
+      <section className="py-16 px-6 bg-card/50 border-y">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12 space-y-3">
-            <h2 className="text-3xl font-bold">Everything You Need</h2>
-            <p className="text-muted-foreground max-w-md mx-auto">
-              A complete platform for sports performance and strength & conditioning scheduling.
+          <div className="text-center mb-4 space-y-2">
+            <p className="text-sm font-medium text-primary uppercase tracking-wider">The Problem</p>
+            <h2 className="text-2xl sm:text-3xl font-bold" data-testid="text-problem-heading">
+              Generic fitness software wasn't built for coaches like you
+            </h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Studio and gym management tools are designed for yoga classes and group fitness.
+              You need software that understands private training, semi-privates, team contracts, and session-based payouts.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" className="py-20 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14 space-y-3">
+            <p className="text-sm font-medium text-primary uppercase tracking-wider">Platform Features</p>
+            <h2 className="text-3xl font-bold" data-testid="text-features-heading">Everything You Need to Run Your Coaching Business</h2>
+            <p className="text-muted-foreground max-w-lg mx-auto">
+              From booking your first client to managing team contracts — we've got you covered.
             </p>
           </div>
 
@@ -264,36 +266,66 @@ export default function LandingPage() {
             {[
               {
                 icon: Calendar,
-                title: "Easy Scheduling",
-                description: "Browse coach availability and book sessions in seconds. No phone calls needed.",
+                title: "Smart Scheduling",
+                description: "Set your availability by day, time, and location. Clients book directly from your open slots — no back-and-forth texting.",
               },
               {
                 icon: Users,
-                title: "Expert Coaches",
-                description: "Work with experienced strength & conditioning coaches focused on athletic development.",
+                title: "Semi-Private Sessions",
+                description: "Run group training with configurable participant limits, age ranges, and skill levels. Clients sign up for open spots.",
               },
               {
-                icon: Zap,
-                title: "Tailored Programs",
-                description: "From speed and agility to max-effort lifting, find the session format that fits your sport.",
+                icon: Building2,
+                title: "Team Training Contracts",
+                description: "Generate team quotes with per-athlete pricing, multi-month invoicing through Stripe, and automatic recurring billing.",
+              },
+              {
+                icon: CreditCard,
+                title: "Stripe Payments Built In",
+                description: "Accept payments for session packages, team contracts, and wallet top-ups. Everything flows through your Stripe account.",
+              },
+              {
+                icon: Wallet,
+                title: "Client Wallet System",
+                description: "Clients prepay for session credits. Balances are tracked automatically. Coaches redeem sessions against wallet funds.",
+              },
+              {
+                icon: Receipt,
+                title: "Session Redemptions & Payouts",
+                description: "Mark sessions complete, track what you're owed, and request payouts. Full transparency on every dollar.",
+              },
+              {
+                icon: ClipboardList,
+                title: "Client Management",
+                description: "Manage your full client roster. View booking history, session credits, and contact info — all in one place.",
+              },
+              {
+                icon: Mail,
+                title: "Automated Email Notifications",
+                description: "Booking confirmations, payment receipts, team invoices, and reminder emails sent automatically via SendGrid.",
+              },
+              {
+                icon: BarChart3,
+                title: "Business Plan & Analytics",
+                description: "Set revenue goals, track sessions completed, and monitor your earnings. See your coaching business at a glance.",
               },
               {
                 icon: Clock,
-                title: "Real-Time Availability",
-                description: "See up-to-date schedules and never miss a slot. Instant booking confirmation.",
+                title: "Session Cloning & Repeats",
+                description: "Clone sessions daily, weekly, or on specific days of the week. Build your recurring schedule in seconds.",
+              },
+              {
+                icon: UserCheck,
+                title: "Multi-Location Support",
+                description: "Manage sessions across different training locations. Clients see exactly where each session takes place.",
               },
               {
                 icon: Shield,
-                title: "Secure & Reliable",
-                description: "Your data is protected. Manage your bookings and profile with confidence.",
-              },
-              {
-                icon: TrendingUp,
-                title: "Track Progress",
-                description: "View your session history and stay on top of your performance journey.",
+                title: "Role-Based Access",
+                description: "Separate dashboards for coaches, clients, and admins. Everyone sees exactly what they need — nothing more.",
               },
             ].map(({ icon: Icon, title, description }) => (
-              <Card key={title} className="p-6 space-y-3 hover-elevate">
+              <Card key={title} className="p-6 space-y-3 hover-elevate" data-testid={`card-feature-${title.toLowerCase().replace(/\s+/g, '-')}`}>
                 <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
                   <Icon className="h-5 w-5 text-primary" />
                 </div>
@@ -305,55 +337,113 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {coaches && coaches.length > 0 && (
-        <section className="py-20 px-6">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
-              <h2 className="text-3xl font-bold" data-testid="text-coaches-heading">Meet Our Coaches</h2>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                Train with experienced strength & conditioning professionals dedicated to your athletic development.
-              </p>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
-              {coaches.map((coach) => (
-                <Card key={coach.id} className="p-6 space-y-4" data-testid={`card-landing-coach-${coach.id}`}>
-                  <div className="flex items-center gap-4">
-                    <Avatar className="h-16 w-16">
-                      <AvatarImage src={coach.photoUrl || coach.user?.profileImageUrl || undefined} data-testid={`img-coach-photo-${coach.id}`} />
-                      <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
-                        {(coach.user?.firstName?.[0] || "C").toUpperCase()}
-                        {(coach.user?.lastName?.[0] || "").toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <h3 className="text-lg font-semibold" data-testid={`text-landing-coach-name-${coach.id}`}>
-                        {coach.user?.firstName} {coach.user?.lastName}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">Strength & Conditioning Coach</p>
-                    </div>
-                  </div>
-                  {coach.bio && (
-                    <p className="text-sm text-muted-foreground leading-relaxed">{coach.bio}</p>
-                  )}
-                  {coach.specialties && coach.specialties.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {coach.specialties.map((spec) => (
-                        <Badge key={spec} variant="secondary" className="text-xs">{spec}</Badge>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-            <div className="text-center mt-8">
-              <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-coaches-cta">
-                <Calendar className="h-4 w-4 mr-2" />
-                Sign Up to Book a Session
-              </Button>
-            </div>
+      <section id="how-it-works" className="py-20 px-6 bg-card/50 border-y">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-14 space-y-3">
+            <p className="text-sm font-medium text-primary uppercase tracking-wider">How It Works</p>
+            <h2 className="text-3xl font-bold" data-testid="text-how-heading">Get Up and Running in 3 Steps</h2>
           </div>
-        </section>
-      )}
+
+          <div className="space-y-8">
+            {[
+              {
+                step: "1",
+                title: "Create Your Coach Account",
+                description: "Sign up, set your hourly rate, add your bio and specialties, and configure your training locations. Your profile is live in minutes.",
+              },
+              {
+                step: "2",
+                title: "Set Your Availability & Start Booking",
+                description: "Define your weekly availability by day, time, and location. Clients can browse your open slots, book sessions, and pay through Stripe — or you can schedule sessions directly.",
+              },
+              {
+                step: "3",
+                title: "Train, Redeem, Get Paid",
+                description: "After each session, mark it complete and redeem it. Track your earnings on your dashboard, request payouts, and watch your business grow.",
+              },
+            ].map(({ step, title, description }) => (
+              <div key={step} className="flex gap-5 items-start" data-testid={`step-${step}`}>
+                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold">
+                  {step}
+                </div>
+                <div className="space-y-1 pt-1">
+                  <h3 className="text-lg font-semibold">{title}</h3>
+                  <p className="text-muted-foreground leading-relaxed">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center mt-12">
+            <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-how-cta">
+              <ArrowRight className="h-4 w-4 mr-2" />
+              Create Your Coach Account
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-14 space-y-3">
+            <p className="text-sm font-medium text-primary uppercase tracking-wider">Built Different</p>
+            <h2 className="text-3xl font-bold" data-testid="text-why-heading">Why Coaches Choose Train Efficiency</h2>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-6">
+            {[
+              {
+                icon: Dumbbell,
+                title: "Purpose-Built for S&C",
+                description: "Not a yoga studio app repurposed for trainers. Every feature is designed around how strength & conditioning coaches actually work.",
+              },
+              {
+                icon: DollarSign,
+                title: "No Monthly Subscription",
+                description: "No seat fees, no monthly charges, no hidden costs. The platform earns when you earn — aligned incentives.",
+              },
+              {
+                icon: TrendingUp,
+                title: "Scale from Solo to Team",
+                description: "Start with private sessions. Add semi-privates. Land a team contract. The platform grows with your business.",
+              },
+              {
+                icon: Zap,
+                title: "Fast & Simple",
+                description: "No 30-page setup wizard. Set your availability, share your link, and start booking clients today.",
+              },
+            ].map(({ icon: Icon, title, description }) => (
+              <Card key={title} className="p-6 space-y-3" data-testid={`card-why-${title.toLowerCase().replace(/\s+/g, '-')}`}>
+                <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
+                  <Icon className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="font-semibold">{title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 px-6 bg-primary/5 border-y">
+        <div className="max-w-3xl mx-auto text-center space-y-6">
+          <h2 className="text-3xl font-bold" data-testid="text-cta-heading">Ready to Run Your Business Like a Pro?</h2>
+          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+            Join coaches who are ditching spreadsheets, Venmo requests, and studio software that doesn't fit.
+            Start managing your coaching business the right way.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
+            <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-final-cta">
+              <ArrowRight className="h-4 w-4 mr-2" />
+              Get Started Free
+            </Button>
+            <Button variant="outline" size="lg" onClick={() => setCoachModalOpen(true)} data-testid="button-final-login">
+              <LogIn className="h-4 w-4 mr-2" />
+              Already a Coach? Sign In
+            </Button>
+          </div>
+        </div>
+      </section>
 
       <footer className="py-8 px-6 border-t">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
@@ -390,7 +480,7 @@ export default function LandingPage() {
               <Input
                 id="coach-email"
                 type="email"
-                placeholder="you@efficiencystrengthtraining.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => { setEmail(e.target.value); setError(""); }}
                 required
@@ -447,12 +537,12 @@ export default function LandingPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {isSignUp ? <UserPlus className="h-5 w-5 text-primary" /> : <LogIn className="h-5 w-5 text-primary" />}
-              {isSignUp ? "Create Account" : "Welcome Back"}
+              {isSignUp ? "Create Your Account" : "Welcome Back"}
             </DialogTitle>
             <DialogDescription>
               {isSignUp
-                ? "Sign up to book sessions and manage your training schedule."
-                : "Log in to your account to view and manage your bookings."}
+                ? "Sign up to start managing your coaching business on Train Efficiency."
+                : "Log in to your account to access your dashboard."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleClientAuth} className="space-y-4 pt-2">
