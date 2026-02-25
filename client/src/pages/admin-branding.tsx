@@ -77,7 +77,12 @@ export default function AdminBrandingPage() {
       .replace(/^-|-$/g, "");
 
     if (!cleanSlug) {
-      toast({ title: "Invalid URL", description: "Please enter a valid URL extension.", variant: "destructive" });
+      toast({ title: "URL slug is required", description: "Please enter a URL slug for your organization (e.g. 'my-gym').", variant: "destructive" });
+      return null;
+    }
+
+    if (logoUrl && !logoUrl.match(/^https?:\/\/.+/i)) {
+      toast({ title: "Invalid logo URL", description: "Logo URL must start with http:// or https://", variant: "destructive" });
       return null;
     }
 
