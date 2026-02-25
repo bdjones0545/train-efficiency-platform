@@ -37,6 +37,8 @@ export default function AdminBrandingPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [instagramUrl, setInstagramUrl] = useState("");
   const [facebookUrl, setFacebookUrl] = useState("");
+  const [primaryColor, setPrimaryColor] = useState("");
+  const [secondaryColor, setSecondaryColor] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -49,6 +51,8 @@ export default function AdminBrandingPage() {
       setWebsiteUrl(org.websiteUrl || "");
       setInstagramUrl(org.instagramUrl || "");
       setFacebookUrl(org.facebookUrl || "");
+      setPrimaryColor(org.primaryColor || "");
+      setSecondaryColor(org.secondaryColor || "");
       setHasChanges(false);
     }
   }, [org]);
