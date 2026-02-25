@@ -1,8 +1,19 @@
+import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -33,7 +44,11 @@ import {
   Paintbrush,
   CreditCard,
   Sparkles,
+  Trash2,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { clearAuthToken } from "@/lib/authToken";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
 
@@ -41,6 +56,8 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
   const { isMobile, setOpenMobile } = useSidebar();
+  const { toast } = useToast();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -58,6 +75,21 @@ export function AppSidebar() {
       return res.json();
     },
     enabled: !!orgId,
+  });
+
+  const deleteOrgMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/organizations/${orgId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Organization deleted", description: "Your organization has been permanently deleted." });
+      clearAuthToken();
+      window.location.href = "/";
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to delete organization", variant: "destructive" });
+    },
   });
 
   const handleNavClick = () => {
@@ -89,69 +121,33 @@ export function AppSidebar() {
 
 
   return (
-    <Sidebar>
-      <SidebarContent>
-        <SidebarGroup>
-          <div className="flex items-center gap-2 px-2 py-3">
-            {(organization?.logoUrl || isEstOrg) ? (
-              <img src={organization?.logoUrl || logoImg} alt={organization?.name || "Logo"} className="h-8 rounded-md object-contain" data-testid="img-sidebar-logo" />
-            ) : orgLoading ? (
-              <div className="h-8 w-8 rounded-md bg-muted animate-pulse" />
-            ) : (
-              <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm" data-testid="img-sidebar-logo">
-                {(organization?.name || "").charAt(0).toUpperCase()}
-              </div>
-            )}
-            <span className="font-semibold text-sm tracking-tight">
-              {organization?.name || (isEstOrg ? "Efficiency Strength Training" : orgLoading ? "Loading..." : "My Organization")}
-            </span>
-          </div>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Browse</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {clientItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={location === item.url || location.startsWith(item.url + "/")}>
-                    <Link href={item.url} onClick={handleNavClick} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {(role === "COACH" || role === "ADMIN") && (
+    <>
+      <Sidebar>
+        <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Business Plan</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={location === "/coach/business-plan"}>
-                    <Link href="/coach/business-plan" onClick={handleNavClick} data-testid="nav-business-plan">
-                      <Briefcase className="h-4 w-4" />
-                      <span>Business Plan</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
+            <div className="flex items-center gap-2 px-2 py-3">
+              {(organization?.logoUrl || isEstOrg) ? (
+                <img src={organization?.logoUrl || logoImg} alt={organization?.name || "Logo"} className="h-8 rounded-md object-contain" data-testid="img-sidebar-logo" />
+              ) : orgLoading ? (
+                <div className="h-8 w-8 rounded-md bg-muted animate-pulse" />
+              ) : (
+                <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm" data-testid="img-sidebar-logo">
+                  {(organization?.name || "").charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span className="font-semibold text-sm tracking-tight">
+                {organization?.name || (isEstOrg ? "Efficiency Strength Training" : orgLoading ? "Loading..." : "My Organization")}
+              </span>
+            </div>
           </SidebarGroup>
-        )}
 
-        {(role === "COACH" || role === "ADMIN") && (
           <SidebarGroup>
-            <SidebarGroupLabel>Coach Tools</SidebarGroupLabel>
+            <SidebarGroupLabel>Browse</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {coachItems.map((item) => (
+                {clientItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={location === item.url}>
+                    <SidebarMenuButton asChild isActive={location === item.url || location.startsWith(item.url + "/")}>
                       <Link href={item.url} onClick={handleNavClick} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
@@ -162,71 +158,151 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
 
-        {role === "ADMIN" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Configuration</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={location === "/admin/configuration"}>
-                    <Link href="/admin/configuration" onClick={handleNavClick} data-testid="nav-options">
-                      <Settings className="h-4 w-4" />
-                      <span>Options</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={location === "/admin/branding"}>
-                    <Link href="/admin/branding" onClick={handleNavClick} data-testid="nav-branding">
-                      <Paintbrush className="h-4 w-4" />
-                      <span>Branding</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={location === "/admin/stripe"}>
-                    <Link href="/admin/stripe" onClick={handleNavClick} data-testid="nav-stripe">
-                      <CreditCard className="h-4 w-4" />
-                      <span>Stripe</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={location === "/admin/subscription"}>
-                    <Link href="/admin/subscription" onClick={handleNavClick} data-testid="nav-subscription">
-                      <Sparkles className="h-4 w-4" />
-                      <span>Subscription</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+          {(role === "COACH" || role === "ADMIN") && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Business Plan</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/coach/business-plan"}>
+                      <Link href="/coach/business-plan" onClick={handleNavClick} data-testid="nav-business-plan">
+                        <Briefcase className="h-4 w-4" />
+                        <span>Business Plan</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
 
-      </SidebarContent>
+          {(role === "COACH" || role === "ADMIN") && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Coach Tools</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {coachItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton asChild isActive={location === item.url}>
+                        <Link href={item.url} onClick={handleNavClick} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
 
-      <SidebarFooter className="p-3">
-        {user && (
-          <div className="flex items-center gap-2">
-            <Avatar className="h-8 w-8">
-              <AvatarImage src={user.profileImageUrl || undefined} />
-              <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                {(user.firstName?.[0] || "U").toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate">{user.firstName} {user.lastName}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+          {role === "ADMIN" && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Configuration</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/configuration"}>
+                      <Link href="/admin/configuration" onClick={handleNavClick} data-testid="nav-options">
+                        <Settings className="h-4 w-4" />
+                        <span>Options</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/branding"}>
+                      <Link href="/admin/branding" onClick={handleNavClick} data-testid="nav-branding">
+                        <Paintbrush className="h-4 w-4" />
+                        <span>Branding</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/stripe"}>
+                      <Link href="/admin/stripe" onClick={handleNavClick} data-testid="nav-stripe">
+                        <CreditCard className="h-4 w-4" />
+                        <span>Stripe</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/subscription"}>
+                      <Link href="/admin/subscription" onClick={handleNavClick} data-testid="nav-subscription">
+                        <Sparkles className="h-4 w-4" />
+                        <span>Subscription</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+
+          {role === "ADMIN" && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Danger Zone</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => setDeleteDialogOpen(true)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      data-testid="button-delete-organization"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Delete Organization</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+
+        </SidebarContent>
+
+        <SidebarFooter className="p-3">
+          {user && (
+            <div className="flex items-center gap-2">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={user.profileImageUrl || undefined} />
+                <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                  {(user.firstName?.[0] || "U").toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{user.firstName} {user.lastName}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+              </div>
+              <Button size="icon" variant="ghost" data-testid="button-logout" onClick={() => logout()}>
+                <LogOut className="h-4 w-4" />
+              </Button>
             </div>
-            <Button size="icon" variant="ghost" data-testid="button-logout" onClick={() => logout()}>
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-      </SidebarFooter>
-    </Sidebar>
+          )}
+        </SidebarFooter>
+      </Sidebar>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-delete-dialog-title">Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription data-testid="text-delete-dialog-description">
+              This will permanently delete your organization, all services, coach profiles, and user data associated with it. If you have an active subscription, it will also be canceled. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteOrgMutation.mutate()}
+              disabled={deleteOrgMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-delete-confirm"
+            >
+              {deleteOrgMutation.isPending ? "Deleting..." : "Delete Organization"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

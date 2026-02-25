@@ -611,6 +611,38 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/organizations/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only delete your own organization" });
+      }
+
+      const org = await storage.getOrganizationById(req.params.id);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      if (org.stripeSubscriptionId && !org.stripeSubscriptionId.startsWith("promo_")) {
+        try {
+          const stripe = await getUncachableStripeClient();
+          await stripe.subscriptions.cancel(org.stripeSubscriptionId);
+        } catch (stripeErr: any) {
+          console.error("Failed to cancel Stripe subscription during org delete:", stripeErr.message);
+        }
+      }
+
+      await storage.deleteOrganization(req.params.id);
+      await deleteAuthToken(userId);
+
+      res.json({ success: true, message: "Organization deleted successfully" });
+    } catch (error: any) {
+      console.error("Delete organization error:", error);
+      res.status(500).json({ message: "Failed to delete organization" });
+    }
+  });
+
   app.get("/api/profile", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
