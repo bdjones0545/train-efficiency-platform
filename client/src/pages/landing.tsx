@@ -17,7 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
-import logoImg from "@assets/A5CAB7DB-0296-44BE-A684-9F213A62D633_1772032608136.png";
+import logoImg from "@assets/423DAA2D-0186-4069-8E23-722C2692C9B2_1772067637913.jpeg";
 
 export default function LandingPage() {
   const [coachModalOpen, setCoachModalOpen] = useState(false);
