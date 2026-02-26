@@ -57,10 +57,23 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [cloneEndDate, setCloneEndDate] = useState<string>("");
   const [cloneDays, setCloneDays] = useState<number[]>([]);
 
-  const initLocation = booking.location || "";
-  const isPreset = orgLocations.includes(initLocation);
-  const [location, setLocation] = useState(isPreset ? initLocation : (initLocation ? "__custom__" : ""));
-  const [customLocation, setCustomLocation] = useState(isPreset ? "" : initLocation);
+  const [location, setLocation] = useState(booking.location || "");
+  const [customLocation, setCustomLocation] = useState("");
+
+  const { data: editSessionProfile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const editSessionOrgId = editSessionProfile?.organizationId;
+  const { data: editSessionOrg } = useQuery<Organization>({
+    queryKey: ["/api/organizations/by-id", editSessionOrgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${editSessionOrgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!editSessionOrgId,
+  });
+  const orgLocations = editSessionOrg?.locations || [];
 
   useEffect(() => {
     if (open) {
@@ -91,22 +104,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setCloneEndDate("");
       setCloneDays([]);
     }
-  }, [open, booking]);
-
-  const { data: editSessionProfile } = useQuery<{ organizationId?: string | null }>({
-    queryKey: ["/api/profile"],
-  });
-  const editSessionOrgId = editSessionProfile?.organizationId;
-  const { data: editSessionOrg } = useQuery<Organization>({
-    queryKey: ["/api/organizations/by-id", editSessionOrgId],
-    queryFn: async () => {
-      const res = await fetch(`/api/organizations/by-id/${editSessionOrgId}`);
-      if (!res.ok) throw new Error("Failed to fetch org");
-      return res.json();
-    },
-    enabled: !!editSessionOrgId,
-  });
-  const orgLocations = editSessionOrg?.locations || [];
+  }, [open, booking, orgLocations]);
   const { data: services } = useQuery<Service[]>({
     queryKey: ["/api/services", editSessionOrgId],
     queryFn: async () => {
