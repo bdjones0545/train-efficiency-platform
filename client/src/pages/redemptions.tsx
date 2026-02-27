@@ -202,7 +202,7 @@ function RedemptionOverview() {
         <div className="space-y-3">
           <h2 className="font-semibold text-lg">All Redemptions</h2>
           {redemptions.map((redemption) => {
-            const isOwnerRedemption = redemption.coachEmail === OWNER_EMAIL;
+            const isOwnerRedemption = redemption.coachEmail === ownerEmail;
             const displayStatus = isOwnerRedemption ? "COLLECTED" : redemption.payoutStatus;
             const statusColor = isOwnerRedemption
               ? "bg-green-500/15 text-green-700 dark:text-green-400"
