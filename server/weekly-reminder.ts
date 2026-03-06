@@ -1,7 +1,7 @@
 import { storage } from "./storage";
 import { sendWeeklyReminderEmail, type OrgBranding } from "./email";
 
-const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const INACTIVE_DAYS = 7;
 
 async function getOrgBrandingForUser(userId: string): Promise<OrgBranding | undefined> {
@@ -50,7 +50,7 @@ async function sendWeeklyReminders() {
 }
 
 export function startWeeklyReminderJob() {
-  console.log("[Weekly Reminder] Job started. Checking daily for users inactive 7+ days.");
+  console.log("[Weekly Reminder] Job started. Checking every 7 days for users inactive 7+ days.");
 
   setTimeout(() => {
     sendWeeklyReminders();
