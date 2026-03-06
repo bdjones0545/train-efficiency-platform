@@ -845,10 +845,8 @@ export async function registerRoutes(
       if (isSemiPrivate) {
         const participantNames: string[] = req.body.participantNames || [];
         const filledNames = participantNames.filter((n: string) => n.trim());
-        const count = filledNames.length > 0 ? filledNames.length : 1;
-
         const maxP = booking.maxParticipants || 6;
-        if (count > maxP) {
+        if (filledNames.length > maxP) {
           return res.status(400).json({ message: `Maximum ${maxP} participants per session` });
         }
 
@@ -860,11 +858,6 @@ export async function registerRoutes(
               participantName: name.trim(),
             });
           }
-        } else {
-          await storage.addBookingParticipant({
-            bookingId: booking.id,
-            userId,
-          });
         }
       }
 
@@ -1143,11 +1136,6 @@ export async function registerRoutes(
               participantName: name.trim(),
             });
           }
-        } else {
-          await storage.addBookingParticipant({
-            bookingId: booking.id,
-            userId: resolvedClientId,
-          });
         }
       }
 
