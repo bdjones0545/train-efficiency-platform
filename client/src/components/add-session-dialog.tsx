@@ -49,6 +49,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [groupDescription, setGroupDescription] = useState("");
   const [ageRange, setAgeRange] = useState("");
   const [skillLevel, setSkillLevel] = useState("");
+  const [sport, setSport] = useState("");
   const [maxParticipants, setMaxParticipants] = useState("6");
   const [participants, setParticipants] = useState<ParticipantEntry[]>([]);
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
@@ -182,7 +183,8 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   });
 
   const selectedServiceObj = services?.find(s => s.id === serviceId);
-  const isSemiPrivate = selectedServiceObj?.sessionType === "GROUP" || false;
+  const groupNameKeywords = ["semi-private", "team training", "group", "partner training"];
+  const isSemiPrivate = selectedServiceObj?.sessionType === "GROUP" || (selectedServiceObj ? groupNameKeywords.some(kw => selectedServiceObj.name.toLowerCase().includes(kw)) : false);
   const isTeamTraining = selectedServiceObj?.name.toLowerCase().includes("team training") || false;
   const resolvedLoc = location === "__custom__" ? customLocation.trim() : location;
   const isTeamBHS = isTeamTraining && resolvedLoc.toLowerCase().includes("bluffton high");
@@ -201,6 +203,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setGroupDescription("");
     setAgeRange("");
     setSkillLevel("");
+    setSport("");
     setMaxParticipants("6");
     setParticipants([]);
     setParticipantSearchQuery("");
@@ -266,6 +269,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
       body.groupDescription = groupDescription.trim();
       body.ageRange = ageRange.trim();
       body.skillLevel = skillLevel;
+      body.sport = sport.trim();
       if (participants.length > 0) {
         body.participants = participants.map(p => ({
           type: p.type,
@@ -480,6 +484,15 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Sport</Label>
+                <Input
+                  placeholder="e.g. Football, Basketball, Soccer"
+                  value={sport}
+                  onChange={(e) => setSport(e.target.value)}
+                  data-testid="input-sport"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Max Participants</Label>

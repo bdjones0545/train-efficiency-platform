@@ -44,6 +44,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   const [groupDescription, setGroupDescription] = useState(booking.groupDescription || "");
   const [ageRange, setAgeRange] = useState(booking.ageRange || "");
   const [skillLevel, setSkillLevel] = useState(booking.skillLevel || "");
+  const [sport, setSport] = useState(booking.sport || "");
   const [editMaxParticipants, setEditMaxParticipants] = useState(String(booking.maxParticipants || 6));
   const [showSearch, setShowSearch] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -88,6 +89,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       setGroupDescription(booking.groupDescription || "");
       setAgeRange(booking.ageRange || "");
       setSkillLevel(booking.skillLevel || "");
+      setSport(booking.sport || "");
       setEditMaxParticipants(String(booking.maxParticipants || 6));
       const loc = booking.location || "";
       const preset = orgLocations.includes(loc);
@@ -317,6 +319,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
       groupDescription: isSemiPrivate ? groupDescription : "",
       ageRange: isSemiPrivate ? ageRange.trim() : "",
       skillLevel: isSemiPrivate ? skillLevel : "",
+      sport: isSemiPrivate ? sport.trim() : "",
       maxParticipants: isSemiPrivate ? (parseInt(editMaxParticipants) || 6) : null,
       paymentMethod: paymentMethod || null,
     };
@@ -529,6 +532,18 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+          )}
+
+          {isSemiPrivate && (
+            <div className="space-y-2">
+              <Label>Sport</Label>
+              <Input
+                placeholder="e.g. Football, Basketball, Soccer"
+                value={sport}
+                onChange={(e) => setSport(e.target.value)}
+                data-testid="edit-input-sport"
+              />
             </div>
           )}
 

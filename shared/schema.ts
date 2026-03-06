@@ -110,6 +110,7 @@ export const bookings = pgTable("bookings", {
   groupDescription: text("group_description").default(""),
   ageRange: text("age_range").default(""),
   skillLevel: text("skill_level").default(""),
+  sport: text("sport").default(""),
   recurringGroupId: varchar("recurring_group_id"),
   paymentMethod: paymentMethodEnum("payment_method"),
   teamQuoteProgramId: varchar("team_quote_program_id"),

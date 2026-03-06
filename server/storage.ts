@@ -76,7 +76,7 @@ export interface IStorage {
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
-  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null }): Promise<Booking | undefined>;
+  updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null; ageRange?: string; skillLevel?: string; sport?: string }): Promise<Booking | undefined>;
   deleteBooking(id: string): Promise<boolean>;
   deleteBookingsByClientAndCoach(clientId: string, coachId: string): Promise<number>;
   deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted?: boolean): Promise<number>;
@@ -401,7 +401,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null }): Promise<Booking | undefined> {
+  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null; ageRange?: string; skillLevel?: string; sport?: string }): Promise<Booking | undefined> {
     const setData: any = {};
     if (data.serviceId !== undefined) setData.serviceId = data.serviceId;
     if (data.startAt !== undefined) setData.startAt = data.startAt;
@@ -413,6 +413,9 @@ export class DatabaseStorage implements IStorage {
     if (data.recurringGroupId !== undefined) setData.recurringGroupId = data.recurringGroupId;
     if (data.paymentMethod !== undefined) setData.paymentMethod = data.paymentMethod;
     if (data.teamQuoteProgramId !== undefined) setData.teamQuoteProgramId = data.teamQuoteProgramId;
+    if (data.ageRange !== undefined) setData.ageRange = data.ageRange;
+    if (data.skillLevel !== undefined) setData.skillLevel = data.skillLevel;
+    if (data.sport !== undefined) setData.sport = data.sport;
 
     if (Object.keys(setData).length === 0) {
       return this.getBooking(id);

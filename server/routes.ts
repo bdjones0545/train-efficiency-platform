@@ -1039,7 +1039,7 @@ export async function registerRoutes(
       const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
-      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription, ageRange, skillLevel } = req.body;
+      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription, ageRange, skillLevel, sport } = req.body;
 
       if (!serviceId || !startAt) {
         return res.status(400).json({ message: "serviceId and startAt are required" });
@@ -1099,6 +1099,7 @@ export async function registerRoutes(
         groupDescription: groupDescription || "",
         ageRange: isSemiPrivate ? (ageRange || "") : "",
         skillLevel: isSemiPrivate ? (skillLevel || "") : "",
+        sport: isSemiPrivate ? (sport || "") : "",
         teamQuoteProgramId: req.body.teamQuoteProgramId || null,
       });
 
@@ -1239,6 +1240,7 @@ export async function registerRoutes(
               groupDescription: sourceBooking.groupDescription || "",
               ageRange: sourceBooking.ageRange || "",
               skillLevel: sourceBooking.skillLevel || "",
+              sport: sourceBooking.sport || "",
               recurringGroupId: groupId,
             });
             created.push(booking);
@@ -1266,7 +1268,7 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "Booking not found" });
       const bookingCoachId = existing.coachId;
 
-      const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName, paymentMethod, ageRange, skillLevel, maxParticipants } = req.body;
+      const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName, paymentMethod, ageRange, skillLevel, sport, maxParticipants } = req.body;
 
       const updateData: any = {};
       if (notes !== undefined) updateData.notes = notes;
@@ -1275,6 +1277,7 @@ export async function registerRoutes(
       if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
       if (ageRange !== undefined) updateData.ageRange = ageRange;
       if (skillLevel !== undefined) updateData.skillLevel = skillLevel;
+      if (sport !== undefined) updateData.sport = sport;
       if (maxParticipants !== undefined) updateData.maxParticipants = maxParticipants;
 
       if (serviceId && serviceId !== existing.serviceId) {
