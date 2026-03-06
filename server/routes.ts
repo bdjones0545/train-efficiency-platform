@@ -1247,7 +1247,7 @@ export async function registerRoutes(
               status: "CONFIRMED",
               notes: sourceBooking.notes || "",
               location: sourceBooking.location || "",
-              maxParticipants: sourceBooking.maxParticipants,
+              maxParticipants: service.sessionType === "GROUP" ? (sourceBooking.maxParticipants || 6) : sourceBooking.maxParticipants,
               groupDescription: sourceBooking.groupDescription || "",
               ageRange: sourceBooking.ageRange || "",
               skillLevel: sourceBooking.skillLevel || "",
