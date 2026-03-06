@@ -1051,7 +1051,7 @@ export async function registerRoutes(
       const coachProfile = await storage.getUserProfile(userId);
       const coachOrgId = coachProfile?.organizationId || null;
 
-      const isSemiPrivate = service.sessionType === "GROUP";
+      const isSemiPrivate = service.sessionType === "GROUP" || !!maxParticipants;
 
       if (!isSemiPrivate && !clientId && (!clientFirstName || !clientLastName)) {
         return res.status(400).json({ message: "Provide clientId or clientFirstName and clientLastName" });
@@ -1235,7 +1235,7 @@ export async function registerRoutes(
               status: "CONFIRMED",
               notes: sourceBooking.notes || "",
               location: sourceBooking.location || "",
-              maxParticipants: service.sessionType === "GROUP" ? (sourceBooking.maxParticipants || 6) : sourceBooking.maxParticipants,
+              maxParticipants: (service.sessionType === "GROUP" || sourceBooking.maxParticipants) ? (sourceBooking.maxParticipants || 6) : null,
               groupDescription: sourceBooking.groupDescription || "",
               ageRange: sourceBooking.ageRange || "",
               skillLevel: sourceBooking.skillLevel || "",
