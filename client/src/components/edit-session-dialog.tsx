@@ -286,7 +286,8 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
   });
 
   const selectedServiceObj = services?.find(s => s.id === serviceId);
-  const isSemiPrivate = selectedServiceObj?.sessionType === "GROUP" || false;
+  const groupNameKeywords = ["semi-private", "team training", "group", "partner training"];
+  const isSemiPrivate = selectedServiceObj?.sessionType === "GROUP" || (selectedServiceObj ? groupNameKeywords.some(kw => selectedServiceObj.name.toLowerCase().includes(kw)) : false);
 
   const handleSubmit = async () => {
     if (!selectedDate || !serviceId || !startTime) {
