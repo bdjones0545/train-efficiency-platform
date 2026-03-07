@@ -2894,39 +2894,23 @@ export async function registerRoutes(
 
       let predictedMonthlyRevenueCents = 0;
 
-      const oneWeekAgo = new Date(now);
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const daysInMonth = monthEnd.getDate();
+      const dayOfMonth = now.getDate();
+      const monthProgress = Math.max(dayOfMonth / daysInMonth, 0.01);
 
-      let totalPredicted = 0;
+      let currentMonthRevenue = 0;
       for (const client of Array.from(clientMap.values())) {
-        const hadSessionLastWeek = client.sessions.some(
+        const thisMonthSessions = client.sessions.filter(
           (s: { date: string; status: string }) => {
             const d = new Date(s.date);
-            return d >= oneWeekAgo && d <= now && s.status === "COMPLETED";
+            return d >= monthStart && d <= now && s.status === "COMPLETED";
           }
         );
-        if (!hadSessionLastWeek) continue;
-
-        const recentClientSessions = client.sessions.filter(
-          (s: { date: string; status: string }) => {
-            const d = new Date(s.date);
-            return d >= threeMonthsAgo && d <= now && s.status === "COMPLETED";
-          }
-        );
-        if (recentClientSessions.length === 0) continue;
-
-        const earliestSession = recentClientSessions.reduce((earliest: Date, s: { date: string }) => {
-          const d = new Date(s.date);
-          return d < earliest ? d : earliest;
-        }, now);
-        const msActive = now.getTime() - earliestSession.getTime();
-        const monthsActive = Math.max(msActive / (30.44 * 24 * 60 * 60 * 1000), 1);
-        const activeMonths = Math.min(monthsActive, 3);
-        const sessionsPerMonth = recentClientSessions.length / activeMonths;
-        const avgPriceCents = recentClientSessions.reduce((sum: number, s: { priceCents: number }) => sum + s.priceCents, 0) / recentClientSessions.length;
-        totalPredicted += sessionsPerMonth * avgPriceCents;
+        currentMonthRevenue += thisMonthSessions.reduce((sum: number, s: { priceCents: number }) => sum + s.priceCents, 0);
       }
-      predictedMonthlyRevenueCents = Math.round(totalPredicted);
+      predictedMonthlyRevenueCents = Math.round(currentMonthRevenue / monthProgress);
 
       const totalSessions = allBookings.length;
       const completedSessions = allBookings.filter(b => b.status === "COMPLETED").length;
