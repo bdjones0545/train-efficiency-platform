@@ -2704,6 +2704,76 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/wallet/subscription-plans", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.json([]);
+      const org = await storage.getOrganizationById(orgId);
+      if (!org?.subscriptionsEnabled) return res.json([]);
+      const plans = await storage.getOrganizationSubscriptionPlans(orgId);
+      res.json(plans.filter(p => p.active));
+    } catch (error) {
+      console.error("Error fetching wallet subscription plans:", error);
+      res.status(500).json({ message: "Failed to fetch subscription plans" });
+    }
+  });
+
+  app.post("/api/wallet/subscribe", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { planId } = req.body;
+      if (!planId) return res.status(400).json({ message: "planId is required" });
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization found" });
+
+      const org = await storage.getOrganizationById(orgId);
+      if (!org?.subscriptionsEnabled) return res.status(400).json({ message: "Subscriptions are not enabled" });
+
+      const plans = await storage.getOrganizationSubscriptionPlans(orgId);
+      const plan = plans.find(p => p.id === planId && p.active);
+      if (!plan) return res.status(404).json({ message: "Subscription plan not found" });
+
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(orgId);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.status(400).json({ message: "This organization has not connected a Stripe account yet. Please contact your admin." });
+      }
+
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        customer_email: user.email || undefined,
+        line_items: [{
+          price: plan.stripePriceId,
+          quantity: 1,
+        }],
+        mode: "subscription",
+        success_url: `${baseUrl}/wallet?subscription_success=true`,
+        cancel_url: `${baseUrl}/wallet?canceled=true`,
+        metadata: {
+          userId,
+          planId: plan.id,
+          organizationId: orgId,
+          type: "client_subscription",
+        },
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Error creating subscription checkout:", error);
+      res.status(500).json({ message: "Failed to create subscription checkout" });
+    }
+  });
+
   app.post("/api/wallet/checkout", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

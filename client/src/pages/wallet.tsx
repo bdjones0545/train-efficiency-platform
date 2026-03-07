@@ -8,8 +8,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, CreditCard } from "lucide-react";
+import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, CreditCard, RefreshCw } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import type { OrganizationSubscriptionPlan } from "@shared/schema";
 
 interface WalletTransaction {
   id: string;
@@ -39,6 +40,29 @@ export default function WalletPage() {
     queryKey: ["/api/wallet"],
   });
 
+  const { data: subscriptionPlans } = useQuery<OrganizationSubscriptionPlan[]>({
+    queryKey: ["/api/wallet/subscription-plans"],
+  });
+
+  const subscribeMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const res = await apiRequest("POST", "/api/wallet/subscribe", { planId });
+      return res.json();
+    },
+    onSuccess: (data: { url: string }) => {
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", description: "Please log in again.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
@@ -60,6 +84,9 @@ export default function WalletPage() {
           queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
           window.history.replaceState({}, "", "/wallet");
         });
+    } else if (params.get("subscription_success") === "true") {
+      toast({ title: "Subscription Active", description: "Your subscription has been set up successfully!" });
+      window.history.replaceState({}, "", "/wallet");
     } else if (params.get("canceled") === "true") {
       toast({ title: "Payment Canceled", description: "No charges were made.", variant: "destructive" });
       window.history.replaceState({}, "", "/wallet");
@@ -195,6 +222,48 @@ export default function WalletPage() {
           {checkoutMutation.isPending ? "Redirecting to payment..." : "Add Funds via Stripe"}
         </Button>
       </Card>
+
+      {subscriptionPlans && subscriptionPlans.length > 0 && (
+        <Card className="p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <RefreshCw className="h-5 w-5 text-amber-500" />
+            <h2 className="text-lg font-semibold">Subscription Plans</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Subscribe to a recurring plan for regular training sessions.
+          </p>
+          <div className="space-y-3">
+            {subscriptionPlans.map((plan) => (
+              <div
+                key={plan.id}
+                className="flex items-center justify-between gap-4 p-4 rounded-lg border border-border hover:border-amber-500/30 transition-colors"
+                data-testid={`card-plan-${plan.id}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium" data-testid={`text-plan-name-${plan.id}`}>{plan.name}</p>
+                  {plan.description && (
+                    <p className="text-sm text-muted-foreground mt-0.5">{plan.description}</p>
+                  )}
+                  <Badge className="mt-1.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 no-default-hover-elevate no-default-active-elevate" data-testid={`badge-plan-price-${plan.id}`}>
+                    ${(plan.amountCents / 100).toFixed(2)}/{plan.interval}
+                    {(plan.intervalCount || 1) > 1 ? ` (every ${plan.intervalCount} ${plan.interval}s)` : ""}
+                  </Badge>
+                </div>
+                <Button
+                  variant="outline"
+                  className="shrink-0 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                  onClick={() => subscribeMutation.mutate(plan.id)}
+                  disabled={subscribeMutation.isPending}
+                  data-testid={`button-subscribe-${plan.id}`}
+                >
+                  <CreditCard className="h-4 w-4 mr-1.5" />
+                  {subscribeMutation.isPending ? "Redirecting..." : "Subscribe"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-6 space-y-4">
         <h2 className="text-lg font-semibold">Transaction History</h2>
