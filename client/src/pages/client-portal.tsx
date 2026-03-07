@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, MapPin, ArrowRight } from "lucide-react";
+import { Search, ArrowRight } from "lucide-react";
 import type { Organization } from "@shared/schema";
+import estLogo from "@assets/IMG_7961_1771105509253.jpeg";
 
 export default function ClientPortalPage() {
   const [search, setSearch] = useState("");
@@ -74,8 +75,8 @@ export default function ClientPortalPage() {
                 <Card className="p-5 h-full transition-all hover:border-primary/40 hover:shadow-md group-hover:bg-accent/30">
                   <div className="flex items-center gap-4">
                     <Avatar className="h-12 w-12 shrink-0">
-                      {org.logoUrl ? (
-                        <AvatarImage src={org.logoUrl} alt={org.name} />
+                      {(org.logoUrl || org.slug === "efficiencystrength") ? (
+                        <AvatarImage src={org.logoUrl || (org.slug === "efficiencystrength" ? estLogo : undefined)} alt={org.name} />
                       ) : null}
                       <AvatarFallback
                         className="text-sm font-semibold"
