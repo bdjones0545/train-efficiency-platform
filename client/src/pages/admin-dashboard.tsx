@@ -151,7 +151,7 @@ export default function AdminDashboardPage() {
       return res.json();
     },
     onSuccess: (_data, variables) => {
-      toast({ title: variables.status === "PAID" ? "Marked as Paid" : "Cashout Denied" });
+      toast({ title: variables.status === "PAID" ? "Marked as Completed" : "Cashout Denied" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/cashouts"] });
     },
     onError: (error: Error) => {
@@ -462,7 +462,51 @@ export default function AdminDashboardPage() {
               Export CSV
             </Button>
           </div>
+
+          {allCashouts?.some((c) => c.status === "REQUESTED") && (
+            <Card className="p-4">
+              <h3 className="text-sm font-semibold mb-3">Pending Cash Out Requests</h3>
+              <div className="space-y-3">
+                {allCashouts
+                  .filter((c) => c.status === "REQUESTED")
+                  .map((c) => (
+                    <div key={c.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b last:border-0" data-testid={`card-pending-cashout-${c.id}`}>
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-sm" data-testid={`text-pending-cashout-coach-${c.id}`}>{c.coachName}</p>
+                        <p className="text-lg font-bold" data-testid={`text-pending-cashout-amount-${c.id}`}>${(c.amountCents / 100).toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Requested {c.requestedAt && format(parseISO(c.requestedAt as unknown as string), "MMM d, yyyy h:mm a")}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => updateCashoutMutation.mutate({ id: c.id, status: "PAID" })}
+                          disabled={updateCashoutMutation.isPending}
+                          data-testid={`button-complete-cashout-${c.id}`}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Mark Completed
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updateCashoutMutation.mutate({ id: c.id, status: "DENIED" })}
+                          disabled={updateCashoutMutation.isPending}
+                          data-testid={`button-deny-pending-cashout-${c.id}`}
+                        >
+                          <XCircle className="h-4 w-4 mr-1" />
+                          Deny
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </Card>
+          )}
+
           <Card className="p-4">
+            <h3 className="text-sm font-semibold mb-3">Redemption History</h3>
             <div className="space-y-3">
               {allRedemptions?.map((r) => (
                 <div key={r.id} className="flex flex-col sm:flex-row items-start justify-between gap-2 py-2 border-b last:border-0">
@@ -511,7 +555,7 @@ export default function AdminDashboardPage() {
                           data-testid={`button-pay-cashout-${c.id}`}
                         >
                           <CheckCircle className="h-4 w-4 mr-1" />
-                          Mark Paid
+                          Mark Completed
                         </Button>
                         <Button
                           size="sm"
