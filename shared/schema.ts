@@ -59,6 +59,25 @@ export const insertOrganizationSubscriptionPlanSchema = createInsertSchema(organ
 export type OrganizationSubscriptionPlan = typeof organizationSubscriptionPlans.$inferSelect;
 export type InsertOrganizationSubscriptionPlan = z.infer<typeof insertOrganizationSubscriptionPlanSchema>;
 
+export const subscriptionSchedules = pgTable("subscription_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  subscriptionPlanId: varchar("subscription_plan_id").notNull(),
+  clientId: varchar("client_id").notNull().references(() => users.id),
+  coachId: varchar("coach_id").notNull(),
+  serviceId: varchar("service_id").notNull(),
+  daysOfWeek: integer("days_of_week").array().notNull(),
+  startTime: varchar("start_time").notNull(),
+  location: varchar("location").default(""),
+  notes: text("notes").default(""),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSubscriptionScheduleSchema = createInsertSchema(subscriptionSchedules).omit({ id: true, createdAt: true });
+export type SubscriptionSchedule = typeof subscriptionSchedules.$inferSelect;
+export type InsertSubscriptionSchedule = z.infer<typeof insertSubscriptionScheduleSchema>;
+
 export const roleEnum = pgEnum("user_role", ["CLIENT", "COACH", "ADMIN"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"]);
 export const payoutStatusEnum = pgEnum("payout_status", ["PENDING", "SENT", "FAILED"]);

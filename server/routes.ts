@@ -3724,6 +3724,214 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/subscription-schedules", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const schedules = await storage.getSubscriptionSchedules(profile.organizationId);
+      res.json(schedules);
+    } catch (error: any) {
+      console.error("Get subscription schedules error:", error);
+      res.status(500).json({ message: "Failed to fetch subscription schedules" });
+    }
+  });
+
+  app.post("/api/coach/subscription-schedules", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const coachId = req.body.coachId || await getCoachId(userId);
+      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+
+      const schema = z.object({
+        subscriptionPlanId: z.string(),
+        clientId: z.string(),
+        serviceId: z.string(),
+        daysOfWeek: z.array(z.number().min(0).max(6)).min(1),
+        startTime: z.string().regex(/^\d{2}:\d{2}$/),
+        location: z.string().optional(),
+        notes: z.string().optional(),
+        weeksToGenerate: z.number().min(1).max(52).default(8),
+        coachId: z.string().optional(),
+      });
+
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+
+      const { subscriptionPlanId, clientId, serviceId, daysOfWeek, startTime, location, notes, weeksToGenerate } = parsed.data;
+
+      const plans = await storage.getOrganizationSubscriptionPlans(profile.organizationId);
+      const plan = plans.find(p => p.id === subscriptionPlanId);
+      if (!plan) return res.status(404).json({ message: "Subscription plan not found" });
+
+      const service = await storage.getService(serviceId);
+      if (!service) return res.status(404).json({ message: "Service not found" });
+      if (service.organizationId && service.organizationId !== profile.organizationId) {
+        return res.status(403).json({ message: "Service does not belong to your organization" });
+      }
+
+      const client = await storage.getUser(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      const clientProfile = await storage.getUserProfile(clientId);
+      if (clientProfile && clientProfile.organizationId && clientProfile.organizationId !== profile.organizationId) {
+        return res.status(403).json({ message: "Client does not belong to your organization" });
+      }
+
+      const coachProfile = await storage.getCoachProfile(coachId);
+      if (!coachProfile || coachProfile.organizationId !== profile.organizationId) {
+        return res.status(403).json({ message: "Coach does not belong to your organization" });
+      }
+
+      const schedule = await storage.createSubscriptionSchedule({
+        organizationId: profile.organizationId,
+        subscriptionPlanId,
+        clientId,
+        coachId,
+        serviceId,
+        daysOfWeek,
+        startTime,
+        location: location || "",
+        notes: notes || "",
+      });
+
+      let created = 0;
+      let skipped = 0;
+      const today = new Date();
+
+      for (let week = 0; week < weeksToGenerate; week++) {
+        for (const dayOfWeek of daysOfWeek) {
+          const currentDay = today.getDay();
+          let daysUntil = dayOfWeek - currentDay + (week * 7);
+          if (week === 0 && daysUntil <= 0) daysUntil += 7;
+
+          const sessionDate = addDays(today, daysUntil);
+          const [hours, minutes] = startTime.split(":").map(Number);
+          const startAt = new Date(sessionDate);
+          startAt.setHours(hours, minutes, 0, 0);
+          const endAt = addMinutes(startAt, service.durationMin);
+
+          const overlapping = await storage.getOverlappingBookings(coachId, startAt, endAt);
+          if (overlapping.length > 0) {
+            skipped++;
+            continue;
+          }
+
+          await storage.createBooking({
+            clientId,
+            coachId,
+            serviceId,
+            startAt,
+            endAt,
+            status: "CONFIRMED",
+            notes: notes || "",
+            location: location || "",
+            maxParticipants: null,
+            groupDescription: "",
+            ageRange: "",
+            skillLevel: "",
+            sport: "",
+            teamQuoteProgramId: null,
+          });
+          created++;
+        }
+      }
+
+      res.json({ schedule, sessionsCreated: created, sessionsSkipped: skipped });
+    } catch (error: any) {
+      console.error("Create subscription schedule error:", error);
+      res.status(500).json({ message: "Failed to create subscription schedule" });
+    }
+  });
+
+  app.delete("/api/coach/subscription-schedules/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const schedule = await storage.getSubscriptionSchedule(req.params.id);
+      if (!schedule || schedule.organizationId !== profile.organizationId) {
+        return res.status(404).json({ message: "Schedule not found" });
+      }
+
+      await storage.deleteSubscriptionSchedule(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete subscription schedule error:", error);
+      res.status(500).json({ message: "Failed to delete subscription schedule" });
+    }
+  });
+
+  app.post("/api/coach/subscription-schedules/:id/generate-sessions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const schedule = await storage.getSubscriptionSchedule(req.params.id);
+      if (!schedule || schedule.organizationId !== profile.organizationId) {
+        return res.status(404).json({ message: "Schedule not found" });
+      }
+
+      const weeksSchema = z.object({ weeks: z.number().min(1).max(52).default(4) });
+      const parsed = weeksSchema.safeParse(req.body);
+      const weeks = parsed.success ? parsed.data.weeks : 4;
+
+      const service = await storage.getService(schedule.serviceId);
+      if (!service) return res.status(404).json({ message: "Service not found" });
+
+      let created = 0;
+      let skipped = 0;
+      const today = new Date();
+
+      for (let week = 0; week < weeks; week++) {
+        for (const dayOfWeek of schedule.daysOfWeek) {
+          const currentDay = today.getDay();
+          let daysUntil = dayOfWeek - currentDay + (week * 7);
+          if (week === 0 && daysUntil <= 0) daysUntil += 7;
+
+          const sessionDate = addDays(today, daysUntil);
+          const [hours, minutes] = schedule.startTime.split(":").map(Number);
+          const startAt = new Date(sessionDate);
+          startAt.setHours(hours, minutes, 0, 0);
+          const endAt = addMinutes(startAt, service.durationMin);
+
+          const overlapping = await storage.getOverlappingBookings(schedule.coachId, startAt, endAt);
+          if (overlapping.length > 0) {
+            skipped++;
+            continue;
+          }
+
+          await storage.createBooking({
+            clientId: schedule.clientId,
+            coachId: schedule.coachId,
+            serviceId: schedule.serviceId,
+            startAt,
+            endAt,
+            status: "CONFIRMED",
+            notes: schedule.notes || "",
+            location: schedule.location || "",
+            maxParticipants: null,
+            groupDescription: "",
+            ageRange: "",
+            skillLevel: "",
+            sport: "",
+            teamQuoteProgramId: null,
+          });
+          created++;
+        }
+      }
+
+      res.json({ created, skipped });
+    } catch (error: any) {
+      console.error("Generate sessions error:", error);
+      res.status(500).json({ message: "Failed to generate sessions" });
+    }
+  });
+
   startWeeklyReminderJob();
 
   return httpServer;

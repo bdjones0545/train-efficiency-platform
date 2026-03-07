@@ -23,6 +23,7 @@ import {
   DollarSign,
   ArrowLeftRight,
   MapPin,
+  RefreshCw,
 } from "lucide-react";
 import {
   format,
@@ -34,8 +35,9 @@ import {
 } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 import { EditSessionDialog } from "@/components/edit-session-dialog";
+import { SubscriptionScheduleDialog } from "@/components/subscription-schedule-dialog";
 import type { BookingWithDetails, ParticipantWithUser, RedemptionWithDetails, CoachWithUser } from "@/lib/types";
-import type { AvailabilityBlock } from "@shared/schema";
+import type { AvailabilityBlock, Organization } from "@shared/schema";
 
 const START_HOUR = 5;
 const END_HOUR = 22;
@@ -236,6 +238,17 @@ export default function CoachDashboardPage() {
     queryKey: ["/api/profile"],
   });
   const orgId = profile?.organizationId;
+
+  const { data: orgData } = useQuery<Organization>({
+    queryKey: ["/api/organizations/by-id", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
   const { data: coaches } = useQuery<CoachWithUser[]>({
     queryKey: ["/api/coaches", orgId],
     queryFn: async () => {
@@ -366,17 +379,30 @@ export default function CoachDashboardPage() {
           </h1>
           <p className="text-muted-foreground mt-1">Daily calendar view</p>
         </div>
-        <AddSessionDialog
-          initialDate={selectedDate}
-          initialTime={slotTime}
-          coachId={activeCoachId}
-          triggerButton={
-            <Button ref={addSessionRef} data-testid="button-add-session">
-              <Plus className="h-4 w-4 mr-1" />
-              Add Session
-            </Button>
-          }
-        />
+        <div className="flex items-center gap-2">
+          {orgData?.subscriptionsEnabled && (
+            <SubscriptionScheduleDialog
+              coachId={activeCoachId}
+              triggerButton={
+                <Button variant="outline" data-testid="button-schedule-subscription">
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Schedule Subscription
+                </Button>
+              }
+            />
+          )}
+          <AddSessionDialog
+            initialDate={selectedDate}
+            initialTime={slotTime}
+            coachId={activeCoachId}
+            triggerButton={
+              <Button ref={addSessionRef} data-testid="button-add-session">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Session
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       {coaches && coaches.length > 1 && (

@@ -39,6 +39,9 @@ import {
   organizationSubscriptionPlans,
   type OrganizationSubscriptionPlan,
   type InsertOrganizationSubscriptionPlan,
+  subscriptionSchedules,
+  type SubscriptionSchedule,
+  type InsertSubscriptionSchedule,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -152,6 +155,10 @@ export interface IStorage {
   createOrganizationSubscriptionPlan(data: InsertOrganizationSubscriptionPlan): Promise<OrganizationSubscriptionPlan>;
   deleteOrganizationSubscriptionPlan(id: string): Promise<boolean>;
   deleteOrganizationSubscriptionPlansByOrg(orgId: string): Promise<void>;
+  getSubscriptionSchedules(orgId: string): Promise<SubscriptionSchedule[]>;
+  getSubscriptionSchedule(id: string): Promise<SubscriptionSchedule | undefined>;
+  createSubscriptionSchedule(data: InsertSubscriptionSchedule): Promise<SubscriptionSchedule>;
+  deleteSubscriptionSchedule(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -968,6 +975,25 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOrganizationSubscriptionPlansByOrg(orgId: string): Promise<void> {
     await db.delete(organizationSubscriptionPlans).where(eq(organizationSubscriptionPlans.organizationId, orgId));
+  }
+
+  async getSubscriptionSchedules(orgId: string): Promise<SubscriptionSchedule[]> {
+    return db.select().from(subscriptionSchedules).where(eq(subscriptionSchedules.organizationId, orgId));
+  }
+
+  async getSubscriptionSchedule(id: string): Promise<SubscriptionSchedule | undefined> {
+    const [schedule] = await db.select().from(subscriptionSchedules).where(eq(subscriptionSchedules.id, id));
+    return schedule;
+  }
+
+  async createSubscriptionSchedule(data: InsertSubscriptionSchedule): Promise<SubscriptionSchedule> {
+    const [schedule] = await db.insert(subscriptionSchedules).values(data).returning();
+    return schedule;
+  }
+
+  async deleteSubscriptionSchedule(id: string): Promise<boolean> {
+    const result = await db.delete(subscriptionSchedules).where(eq(subscriptionSchedules.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 
