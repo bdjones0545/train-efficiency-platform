@@ -36,6 +36,11 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
   const [customLocation, setCustomLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [weeksToGenerate, setWeeksToGenerate] = useState("8");
+  const [maxParticipants, setMaxParticipants] = useState("6");
+  const [groupDescription, setGroupDescription] = useState("");
+  const [ageRange, setAgeRange] = useState("");
+  const [skillLevel, setSkillLevel] = useState("");
+  const [sport, setSport] = useState("");
 
   const { data: profileData } = useQuery<{ organizationId?: string | null }>({
     queryKey: ["/api/profile"],
@@ -128,6 +133,11 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
     setCustomLocation("");
     setNotes("");
     setWeeksToGenerate("8");
+    setMaxParticipants("6");
+    setGroupDescription("");
+    setAgeRange("");
+    setSkillLevel("");
+    setSport("");
   };
 
   const handleSubmit = () => {
@@ -149,6 +159,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
     }
 
     const finalLocation = location === "__custom__" ? customLocation.trim() : location;
+    const isGroup = selectedService?.sessionType === "GROUP";
 
     createMutation.mutate({
       subscriptionPlanId,
@@ -160,6 +171,13 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
       notes,
       weeksToGenerate: parseInt(weeksToGenerate) || 8,
       ...(coachId ? { coachId } : {}),
+      ...(isGroup ? {
+        maxParticipants: parseInt(maxParticipants) || 6,
+        groupDescription,
+        ageRange,
+        skillLevel: skillLevel === "none" ? "" : skillLevel,
+        sport,
+      } : {}),
     });
   };
 
@@ -288,6 +306,73 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
               </SelectContent>
             </Select>
           </div>
+
+          {selectedService?.sessionType === "GROUP" && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-400">Group / Semi-Private Settings</p>
+              <p className="text-xs text-muted-foreground">
+                These sessions will appear on Open Sessions for other clients to join.
+              </p>
+              <div className="space-y-2">
+                <Label>Max Participants</Label>
+                <Select value={maxParticipants} onValueChange={setMaxParticipants}>
+                  <SelectTrigger data-testid="select-sub-max-participants">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2,3,4,5,6,8,10,12,15,20,25,30].map(n => (
+                      <SelectItem key={n} value={String(n)}>{n} participants</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Session Description</Label>
+                <Textarea
+                  placeholder="Describe the group session (visible to clients)..."
+                  value={groupDescription}
+                  onChange={(e) => setGroupDescription(e.target.value)}
+                  className="resize-none"
+                  data-testid="input-sub-group-description"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <Label>Sport</Label>
+                  <Input
+                    placeholder="e.g. Football"
+                    value={sport}
+                    onChange={(e) => setSport(e.target.value)}
+                    data-testid="input-sub-sport"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Age Range</Label>
+                  <Input
+                    placeholder="e.g. 14-18"
+                    value={ageRange}
+                    onChange={(e) => setAgeRange(e.target.value)}
+                    data-testid="input-sub-age-range"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Skill Level</Label>
+                <Select value={skillLevel} onValueChange={setSkillLevel}>
+                  <SelectTrigger data-testid="select-sub-skill-level">
+                    <SelectValue placeholder="Select skill level (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Any level</SelectItem>
+                    <SelectItem value="Beginner">Beginner</SelectItem>
+                    <SelectItem value="Intermediate">Intermediate</SelectItem>
+                    <SelectItem value="Advanced">Advanced</SelectItem>
+                    <SelectItem value="Elite">Elite</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Training Days</Label>
@@ -421,6 +506,11 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
               <p className="text-xs text-muted-foreground">
                 <strong>Duration:</strong> {weeksToGenerate} weeks ({selectedDays.length * parseInt(weeksToGenerate || "8")} sessions max)
               </p>
+              {selectedService?.sessionType === "GROUP" && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  <strong>Group:</strong> Up to {maxParticipants} participants — visible on Open Sessions
+                </p>
+              )}
             </div>
           )}
 

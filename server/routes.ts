@@ -3849,12 +3849,17 @@ export async function registerRoutes(
         notes: z.string().optional(),
         weeksToGenerate: z.number().min(1).max(52).default(8),
         coachId: z.string().optional(),
+        maxParticipants: z.number().min(2).max(50).optional(),
+        groupDescription: z.string().optional(),
+        ageRange: z.string().optional(),
+        skillLevel: z.string().optional(),
+        sport: z.string().optional(),
       });
 
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
 
-      const { subscriptionPlanId, clientId, serviceId, daysOfWeek, startTime, location, notes, weeksToGenerate } = parsed.data;
+      const { subscriptionPlanId, clientId, serviceId, daysOfWeek, startTime, location, notes, weeksToGenerate, maxParticipants, groupDescription, ageRange, skillLevel, sport } = parsed.data;
 
       const plans = await storage.getOrganizationSubscriptionPlans(profile.organizationId);
       const plan = plans.find(p => p.id === subscriptionPlanId);
@@ -3878,6 +3883,9 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Coach does not belong to your organization" });
       }
 
+      const isSemiPrivate = service.sessionType === "GROUP";
+      const effectiveMaxParticipants = isSemiPrivate ? (maxParticipants || 6) : null;
+
       const schedule = await storage.createSubscriptionSchedule({
         organizationId: profile.organizationId,
         subscriptionPlanId,
@@ -3888,6 +3896,11 @@ export async function registerRoutes(
         startTime,
         location: location || "",
         notes: notes || "",
+        maxParticipants: effectiveMaxParticipants,
+        groupDescription: isSemiPrivate ? (groupDescription || "") : "",
+        ageRange: isSemiPrivate ? (ageRange || "") : "",
+        skillLevel: isSemiPrivate ? (skillLevel || "") : "",
+        sport: isSemiPrivate ? (sport || "") : "",
       });
 
       let created = 0;
@@ -3921,11 +3934,11 @@ export async function registerRoutes(
             status: "CONFIRMED",
             notes: notes || "",
             location: location || "",
-            maxParticipants: null,
-            groupDescription: "",
-            ageRange: "",
-            skillLevel: "",
-            sport: "",
+            maxParticipants: effectiveMaxParticipants,
+            groupDescription: isSemiPrivate ? (groupDescription || "") : "",
+            ageRange: isSemiPrivate ? (ageRange || "") : "",
+            skillLevel: isSemiPrivate ? (skillLevel || "") : "",
+            sport: isSemiPrivate ? (sport || "") : "",
             teamQuoteProgramId: null,
           });
           created++;
@@ -4007,11 +4020,11 @@ export async function registerRoutes(
             status: "CONFIRMED",
             notes: schedule.notes || "",
             location: schedule.location || "",
-            maxParticipants: null,
-            groupDescription: "",
-            ageRange: "",
-            skillLevel: "",
-            sport: "",
+            maxParticipants: schedule.maxParticipants || (service.sessionType === "GROUP" ? 6 : null),
+            groupDescription: schedule.groupDescription || "",
+            ageRange: schedule.ageRange || "",
+            skillLevel: schedule.skillLevel || "",
+            sport: schedule.sport || "",
             teamQuoteProgramId: null,
           });
           created++;

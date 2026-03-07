@@ -70,6 +70,11 @@ export const subscriptionSchedules = pgTable("subscription_schedules", {
   startTime: varchar("start_time").notNull(),
   location: varchar("location").default(""),
   notes: text("notes").default(""),
+  maxParticipants: integer("max_participants"),
+  groupDescription: text("group_description").default(""),
+  ageRange: varchar("age_range").default(""),
+  skillLevel: varchar("skill_level").default(""),
+  sport: varchar("sport").default(""),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
