@@ -266,6 +266,43 @@ export default function OrgLandingPage() {
         )}
         <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center relative">
           <div className="space-y-6">
+            {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
+              <div className="flex items-center gap-3" data-testid="hero-social-links">
+                {org.websiteUrl && (
+                  <a
+                    href={org.websiteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    data-testid="link-hero-website"
+                  >
+                    <Globe className="h-4 w-4" />
+                  </a>
+                )}
+                {org.instagramUrl && (
+                  <a
+                    href={org.instagramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    data-testid="link-hero-instagram"
+                  >
+                    <SiInstagram className="h-4 w-4" />
+                  </a>
+                )}
+                {org.facebookUrl && (
+                  <a
+                    href={org.facebookUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    data-testid="link-hero-facebook"
+                  >
+                    <SiFacebook className="h-4 w-4" />
+                  </a>
+                )}
+              </div>
+            )}
             <div
               className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium"
               style={
