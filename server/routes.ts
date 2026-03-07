@@ -2900,12 +2900,18 @@ export async function registerRoutes(
       let totalPredicted = 0;
       for (const client of Array.from(clientMap.values())) {
         const hadSessionLastWeek = client.sessions.some(
-          (s: { date: string; status: string }) => new Date(s.date) >= oneWeekAgo && (s.status === "COMPLETED" || s.status === "CONFIRMED")
+          (s: { date: string; status: string }) => {
+            const d = new Date(s.date);
+            return d >= oneWeekAgo && d <= now && s.status === "COMPLETED";
+          }
         );
         if (!hadSessionLastWeek) continue;
 
         const recentClientSessions = client.sessions.filter(
-          (s: { date: string; status: string }) => new Date(s.date) >= threeMonthsAgo && (s.status === "COMPLETED" || s.status === "CONFIRMED")
+          (s: { date: string; status: string }) => {
+            const d = new Date(s.date);
+            return d >= threeMonthsAgo && d <= now && s.status === "COMPLETED";
+          }
         );
         if (recentClientSessions.length === 0) continue;
 
