@@ -47,6 +47,7 @@ export const organizationSubscriptionPlans = pgTable("organization_subscription_
   amountCents: integer("amount_cents").notNull(),
   interval: varchar("interval").notNull(),
   intervalCount: integer("interval_count").default(1),
+  cancellationPolicy: varchar("cancellation_policy").default("end_of_period"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -58,6 +59,24 @@ export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export const insertOrganizationSubscriptionPlanSchema = createInsertSchema(organizationSubscriptionPlans).omit({ id: true, createdAt: true });
 export type OrganizationSubscriptionPlan = typeof organizationSubscriptionPlans.$inferSelect;
 export type InsertOrganizationSubscriptionPlan = z.infer<typeof insertOrganizationSubscriptionPlanSchema>;
+
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  planId: varchar("plan_id").notNull(),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  stripeCheckoutSessionId: varchar("stripe_checkout_session_id"),
+  status: varchar("status").notNull().default("active"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
 
 export const subscriptionSchedules = pgTable("subscription_schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

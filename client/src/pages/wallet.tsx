@@ -8,9 +8,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, CreditCard, RefreshCw } from "lucide-react";
+import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, CreditCard, RefreshCw, XCircle, CheckCircle, Clock, AlertTriangle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { OrganizationSubscriptionPlan } from "@shared/schema";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface WalletTransaction {
   id: string;
@@ -29,12 +39,31 @@ interface WalletData {
   transactions: WalletTransaction[];
 }
 
+interface UserSubscriptionWithPlan {
+  id: string;
+  planId: string;
+  stripeSubscriptionId: string | null;
+  status: string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean | null;
+  createdAt: string;
+  plan: {
+    name: string;
+    description: string | null;
+    amountCents: number;
+    interval: string;
+    intervalCount: number | null;
+    cancellationPolicy: string | null;
+  };
+}
+
 const PRESET_AMOUNTS = [2500, 5000, 10000, 20000, 50000];
 
 export default function WalletPage() {
   const { toast } = useToast();
   const [customAmount, setCustomAmount] = useState("");
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
+  const [cancelDialogSub, setCancelDialogSub] = useState<UserSubscriptionWithPlan | null>(null);
 
   const { data: wallet, isLoading } = useQuery<WalletData>({
     queryKey: ["/api/wallet"],
@@ -42,6 +71,10 @@ export default function WalletPage() {
 
   const { data: subscriptionPlans } = useQuery<OrganizationSubscriptionPlan[]>({
     queryKey: ["/api/wallet/subscription-plans"],
+  });
+
+  const { data: mySubscriptions } = useQuery<UserSubscriptionWithPlan[]>({
+    queryKey: ["/api/wallet/my-subscriptions"],
   });
 
   const subscribeMutation = useMutation({
@@ -63,9 +96,29 @@ export default function WalletPage() {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: async (subscriptionId: string) => {
+      const res = await apiRequest("POST", `/api/wallet/subscriptions/${subscriptionId}/cancel`, {});
+      return res.json();
+    },
+    onSuccess: (data: { policy: string }) => {
+      const msg = data.policy === "immediate"
+        ? "Your subscription has been canceled immediately."
+        : "Your subscription will be canceled at the end of the current billing period.";
+      toast({ title: "Subscription Canceled", description: msg });
+      queryClient.invalidateQueries({ queryKey: ["/api/wallet/my-subscriptions"] });
+      setCancelDialogSub(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      setCancelDialogSub(null);
+    },
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
+    const subSessionId = params.get("sub_session_id");
 
     if (params.get("success") === "true" && sessionId) {
       apiRequest("GET", `/api/wallet/verify-session?sessionId=${sessionId}`)
@@ -84,8 +137,23 @@ export default function WalletPage() {
           queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
           window.history.replaceState({}, "", "/wallet");
         });
+    } else if (params.get("subscription_success") === "true" && subSessionId) {
+      apiRequest("POST", "/api/wallet/verify-subscription", { sessionId: subSessionId })
+        .then((r) => r.json())
+        .then(() => {
+          toast({ title: "Subscription Active", description: "Your subscription has been set up successfully!" });
+          queryClient.invalidateQueries({ queryKey: ["/api/wallet/my-subscriptions"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/wallet/subscription-plans"] });
+          window.history.replaceState({}, "", "/wallet");
+        })
+        .catch(() => {
+          toast({ title: "Subscription Active", description: "Your subscription has been set up successfully!" });
+          queryClient.invalidateQueries({ queryKey: ["/api/wallet/my-subscriptions"] });
+          window.history.replaceState({}, "", "/wallet");
+        });
     } else if (params.get("subscription_success") === "true") {
       toast({ title: "Subscription Active", description: "Your subscription has been set up successfully!" });
+      queryClient.invalidateQueries({ queryKey: ["/api/wallet/my-subscriptions"] });
       window.history.replaceState({}, "", "/wallet");
     } else if (params.get("canceled") === "true") {
       toast({ title: "Payment Canceled", description: "No charges were made.", variant: "destructive" });
@@ -148,6 +216,28 @@ export default function WalletPage() {
   const balance = wallet?.balanceCents || 0;
   const transactions = wallet?.transactions || [];
 
+  const activeSubs = mySubscriptions?.filter(s => s.status === "active" || s.status === "trialing") || [];
+  const subscribedPlanIds = new Set(activeSubs.map(s => s.planId));
+
+  const getStatusBadge = (sub: UserSubscriptionWithPlan) => {
+    if (sub.cancelAtPeriodEnd) {
+      return <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 no-default-hover-elevate no-default-active-elevate"><Clock className="h-3 w-3 mr-1" />Cancels at period end</Badge>;
+    }
+    if (sub.status === "active") {
+      return <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 no-default-hover-elevate no-default-active-elevate"><CheckCircle className="h-3 w-3 mr-1" />Active</Badge>;
+    }
+    if (sub.status === "trialing") {
+      return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 no-default-hover-elevate no-default-active-elevate"><Clock className="h-3 w-3 mr-1" />Trial</Badge>;
+    }
+    if (sub.status === "canceled") {
+      return <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 no-default-hover-elevate no-default-active-elevate"><XCircle className="h-3 w-3 mr-1" />Canceled</Badge>;
+    }
+    if (sub.status === "past_due") {
+      return <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 no-default-hover-elevate no-default-active-elevate"><AlertTriangle className="h-3 w-3 mr-1" />Past Due</Badge>;
+    }
+    return <Badge variant="secondary" className="no-default-hover-elevate no-default-active-elevate">{sub.status}</Badge>;
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -167,6 +257,51 @@ export default function WalletPage() {
           {balance < 0 ? "You have an outstanding balance. Please add funds to cover it." : "Available for session payments"}
         </p>
       </Card>
+
+      {mySubscriptions && mySubscriptions.length > 0 && (
+        <Card className="p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <RefreshCw className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">My Subscriptions</h2>
+          </div>
+          <div className="space-y-3">
+            {mySubscriptions.map((sub) => (
+              <div
+                key={sub.id}
+                className="p-4 rounded-lg border border-border space-y-2"
+                data-testid={`card-my-subscription-${sub.id}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium" data-testid={`text-sub-name-${sub.id}`}>{sub.plan.name}</p>
+                    <Badge className="mt-1 bg-amber-500/15 text-amber-700 dark:text-amber-400 no-default-hover-elevate no-default-active-elevate">
+                      ${(sub.plan.amountCents / 100).toFixed(2)}/{sub.plan.interval}
+                    </Badge>
+                  </div>
+                  {getStatusBadge(sub)}
+                </div>
+                {sub.currentPeriodEnd && (sub.status === "active" || sub.status === "trialing") && (
+                  <p className="text-xs text-muted-foreground">
+                    {sub.cancelAtPeriodEnd ? "Access until" : "Next billing"}: {format(parseISO(sub.currentPeriodEnd), "MMM d, yyyy")}
+                  </p>
+                )}
+                {(sub.status === "active" || sub.status === "trialing") && !sub.cancelAtPeriodEnd && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setCancelDialogSub(sub)}
+                    data-testid={`button-cancel-sub-${sub.id}`}
+                  >
+                    <XCircle className="h-3.5 w-3.5 mr-1" />
+                    Cancel Subscription
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-6 space-y-4">
         <div className="flex items-center gap-3">
@@ -233,34 +368,44 @@ export default function WalletPage() {
             Subscribe to a recurring plan for regular training sessions.
           </p>
           <div className="space-y-3">
-            {subscriptionPlans.map((plan) => (
-              <div
-                key={plan.id}
-                className="flex items-center justify-between gap-4 p-4 rounded-lg border border-border hover:border-amber-500/30 transition-colors"
-                data-testid={`card-plan-${plan.id}`}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium" data-testid={`text-plan-name-${plan.id}`}>{plan.name}</p>
-                  {plan.description && (
-                    <p className="text-sm text-muted-foreground mt-0.5">{plan.description}</p>
-                  )}
-                  <Badge className="mt-1.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 no-default-hover-elevate no-default-active-elevate" data-testid={`badge-plan-price-${plan.id}`}>
-                    ${(plan.amountCents / 100).toFixed(2)}/{plan.interval}
-                    {(plan.intervalCount || 1) > 1 ? ` (every ${plan.intervalCount} ${plan.interval}s)` : ""}
-                  </Badge>
-                </div>
-                <Button
-                  variant="outline"
-                  className="shrink-0 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
-                  onClick={() => subscribeMutation.mutate(plan.id)}
-                  disabled={subscribeMutation.isPending}
-                  data-testid={`button-subscribe-${plan.id}`}
+            {subscriptionPlans.map((plan) => {
+              const isSubscribed = subscribedPlanIds.has(plan.id);
+              return (
+                <div
+                  key={plan.id}
+                  className="flex items-center justify-between gap-4 p-4 rounded-lg border border-border hover:border-amber-500/30 transition-colors"
+                  data-testid={`card-plan-${plan.id}`}
                 >
-                  <CreditCard className="h-4 w-4 mr-1.5" />
-                  {subscribeMutation.isPending ? "Redirecting..." : "Subscribe"}
-                </Button>
-              </div>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium" data-testid={`text-plan-name-${plan.id}`}>{plan.name}</p>
+                    {plan.description && (
+                      <p className="text-sm text-muted-foreground mt-0.5">{plan.description}</p>
+                    )}
+                    <Badge className="mt-1.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 no-default-hover-elevate no-default-active-elevate" data-testid={`badge-plan-price-${plan.id}`}>
+                      ${(plan.amountCents / 100).toFixed(2)}/{plan.interval}
+                      {(plan.intervalCount || 1) > 1 ? ` (every ${plan.intervalCount} ${plan.interval}s)` : ""}
+                    </Badge>
+                  </div>
+                  {isSubscribed ? (
+                    <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 no-default-hover-elevate no-default-active-elevate shrink-0">
+                      <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                      Subscribed
+                    </Badge>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="shrink-0 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                      onClick={() => subscribeMutation.mutate(plan.id)}
+                      disabled={subscribeMutation.isPending}
+                      data-testid={`button-subscribe-${plan.id}`}
+                    >
+                      <CreditCard className="h-4 w-4 mr-1.5" />
+                      {subscribeMutation.isPending ? "Redirecting..." : "Subscribe"}
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
@@ -307,6 +452,35 @@ export default function WalletPage() {
           </div>
         )}
       </Card>
+
+      <AlertDialog open={!!cancelDialogSub} onOpenChange={(open) => { if (!open) setCancelDialogSub(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Subscription</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cancelDialogSub?.plan.cancellationPolicy === "immediate" ? (
+                <>Your subscription to <strong>{cancelDialogSub?.plan.name}</strong> will be canceled immediately and you will lose access right away.</>
+              ) : (
+                <>Your subscription to <strong>{cancelDialogSub?.plan.name}</strong> will remain active until the end of your current billing period
+                  {cancelDialogSub?.currentPeriodEnd && (
+                    <> ({format(parseISO(cancelDialogSub.currentPeriodEnd), "MMM d, yyyy")})</>
+                  )}. You will not be charged again.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-dialog-dismiss">Keep Subscription</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => cancelDialogSub && cancelMutation.mutate(cancelDialogSub.id)}
+              disabled={cancelMutation.isPending}
+              data-testid="button-confirm-cancel-sub"
+            >
+              {cancelMutation.isPending ? "Canceling..." : "Yes, Cancel"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

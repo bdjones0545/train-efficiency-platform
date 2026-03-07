@@ -9,6 +9,9 @@ import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClien
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
+import { organizationSubscriptionPlans } from "@shared/schema";
+import { db } from "./db";
+import { eq, and } from "drizzle-orm";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
@@ -585,6 +588,7 @@ export async function registerRoutes(
         amountCents: z.number().int().min(0),
         interval: z.string().min(1),
         intervalCount: z.number().int().min(1).optional().default(1),
+        cancellationPolicy: z.string().optional().default("end_of_period"),
       });
       const validatedPlans = [];
       for (const plan of plans) {
@@ -606,6 +610,7 @@ export async function registerRoutes(
           amountCents: plan.amountCents,
           interval: plan.interval,
           intervalCount: plan.intervalCount,
+          cancellationPolicy: plan.cancellationPolicy,
           active: true,
         });
         created.push(newPlan);
@@ -614,6 +619,32 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error saving subscription plans:", error);
       res.status(500).json({ message: "Failed to save subscription plans" });
+    }
+  });
+
+  app.patch("/api/organizations/:id/subscription-plans/:planId", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only manage your own organization" });
+      }
+      const { cancellationPolicy } = req.body;
+      if (!cancellationPolicy || !["end_of_period", "immediate"].includes(cancellationPolicy)) {
+        return res.status(400).json({ message: "cancellationPolicy must be 'end_of_period' or 'immediate'" });
+      }
+      const [updated] = await db.update(organizationSubscriptionPlans)
+        .set({ cancellationPolicy })
+        .where(and(
+          eq(organizationSubscriptionPlans.id, req.params.planId),
+          eq(organizationSubscriptionPlans.organizationId, req.params.id)
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Plan not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating subscription plan:", error);
+      res.status(500).json({ message: "Failed to update subscription plan" });
     }
   });
 
@@ -2740,6 +2771,9 @@ export async function registerRoutes(
       const plan = plans.find(p => p.id === planId && p.active);
       if (!plan) return res.status(404).json({ message: "Subscription plan not found" });
 
+      const existingSub = await storage.getUserSubscriptionByPlan(userId, planId);
+      if (existingSub) return res.status(400).json({ message: "You are already subscribed to this plan" });
+
       let stripe: Stripe;
       try {
         const orgStripe = await getOrgStripeClient(orgId);
@@ -2757,7 +2791,7 @@ export async function registerRoutes(
           quantity: 1,
         }],
         mode: "subscription",
-        success_url: `${baseUrl}/wallet?subscription_success=true`,
+        success_url: `${baseUrl}/wallet?subscription_success=true&sub_session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${baseUrl}/wallet?canceled=true`,
         metadata: {
           userId,
@@ -2767,10 +2801,207 @@ export async function registerRoutes(
         },
       });
 
+      await storage.createUserSubscription({
+        organizationId: orgId,
+        userId,
+        planId,
+        stripeCheckoutSessionId: session.id,
+        status: "pending",
+      });
+
       res.json({ url: session.url });
     } catch (error: any) {
       console.error("Error creating subscription checkout:", error);
       res.status(500).json({ message: "Failed to create subscription checkout" });
+    }
+  });
+
+  app.get("/api/wallet/my-subscriptions", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.json([]);
+
+      const subs = await storage.getUserSubscriptions(userId);
+      const plans = await storage.getOrganizationSubscriptionPlans(orgId);
+      const planMap = new Map(plans.map(p => [p.id, p]));
+
+      let stripe: Stripe | null = null;
+      try {
+        const orgStripe = await getOrgStripeClient(orgId);
+        stripe = orgStripe.stripe;
+      } catch {}
+
+      const enriched = [];
+      for (const sub of subs) {
+        const plan = planMap.get(sub.planId);
+        if (!plan) continue;
+
+        if (stripe && sub.stripeSubscriptionId && sub.status !== "pending") {
+          try {
+            const stripeSub = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId);
+            if (stripeSub.status !== sub.status || stripeSub.cancel_at_period_end !== sub.cancelAtPeriodEnd) {
+              await storage.updateUserSubscription(sub.id, {
+                status: stripeSub.status,
+                cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
+                currentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+              });
+              sub.status = stripeSub.status;
+              sub.cancelAtPeriodEnd = stripeSub.cancel_at_period_end;
+              sub.currentPeriodEnd = new Date(stripeSub.current_period_end * 1000);
+            }
+          } catch {}
+        }
+
+        enriched.push({
+          ...sub,
+          plan: {
+            name: plan.name,
+            description: plan.description,
+            amountCents: plan.amountCents,
+            interval: plan.interval,
+            intervalCount: plan.intervalCount,
+            cancellationPolicy: plan.cancellationPolicy,
+          },
+        });
+      }
+
+      res.json(enriched.filter(s => s.status !== "pending"));
+    } catch (error) {
+      console.error("Error fetching user subscriptions:", error);
+      res.status(500).json({ message: "Failed to fetch subscriptions" });
+    }
+  });
+
+  app.post("/api/wallet/verify-subscription", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { sessionId } = req.body;
+      if (!sessionId) return res.status(400).json({ message: "sessionId is required" });
+
+      const existing = await storage.getUserSubscriptionByCheckoutSession(sessionId);
+      if (!existing) return res.status(404).json({ message: "Subscription not found" });
+      if (existing.userId !== userId) return res.status(403).json({ message: "Forbidden" });
+      if (existing.status !== "pending") return res.json({ subscription: existing });
+
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(orgId);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.status(400).json({ message: "Stripe not configured" });
+      }
+
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.payment_status !== "paid" && session.status !== "complete") {
+        return res.json({ subscription: existing });
+      }
+
+      const stripeSubscriptionId = session.subscription as string;
+      let currentPeriodEnd: Date | null = null;
+      let status = "active";
+
+      if (stripeSubscriptionId) {
+        try {
+          const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+          currentPeriodEnd = new Date(stripeSub.current_period_end * 1000);
+          status = stripeSub.status;
+        } catch {}
+      }
+
+      const updated = await storage.updateUserSubscription(existing.id, {
+        stripeSubscriptionId,
+        status,
+        currentPeriodEnd,
+      });
+
+      res.json({ subscription: updated });
+    } catch (error) {
+      console.error("Error verifying subscription:", error);
+      res.status(500).json({ message: "Failed to verify subscription" });
+    }
+  });
+
+  app.post("/api/wallet/subscriptions/:id/cancel", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const sub = await storage.getUserSubscriptions(userId);
+      const subscription = sub.find(s => s.id === req.params.id);
+      if (!subscription) return res.status(404).json({ message: "Subscription not found" });
+      if (subscription.userId !== userId) return res.status(403).json({ message: "Forbidden" });
+
+      if (!subscription.stripeSubscriptionId) {
+        await storage.updateUserSubscription(subscription.id, { status: "canceled" });
+        return res.json({ message: "Subscription canceled" });
+      }
+
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(orgId);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.status(400).json({ message: "Stripe not configured" });
+      }
+
+      const plans = await storage.getOrganizationSubscriptionPlans(orgId);
+      const plan = plans.find(p => p.id === subscription.planId);
+      const policy = plan?.cancellationPolicy || "end_of_period";
+
+      if (policy === "immediate") {
+        await stripe.subscriptions.cancel(subscription.stripeSubscriptionId);
+        await storage.updateUserSubscription(subscription.id, { status: "canceled" });
+      } else {
+        await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+          cancel_at_period_end: true,
+        });
+        await storage.updateUserSubscription(subscription.id, { cancelAtPeriodEnd: true });
+      }
+
+      res.json({ message: "Subscription canceled", policy });
+    } catch (error) {
+      console.error("Error canceling subscription:", error);
+      res.status(500).json({ message: "Failed to cancel subscription" });
+    }
+  });
+
+  app.get("/api/coach/client-subscriptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const subs = await storage.getOrganizationUserSubscriptions(profile.organizationId);
+      const plans = await storage.getOrganizationSubscriptionPlans(profile.organizationId);
+      const planMap = new Map(plans.map(p => [p.id, p]));
+
+      const userIds = [...new Set(subs.map(s => s.userId))];
+      const usersData: { [key: string]: any } = {};
+      for (const uid of userIds) {
+        const user = await storage.getUser(uid);
+        if (user) usersData[uid] = { firstName: user.firstName, lastName: user.lastName, email: user.email };
+      }
+
+      const enriched = subs
+        .filter(s => s.status !== "pending")
+        .map(s => ({
+          ...s,
+          plan: planMap.get(s.planId) ? { name: planMap.get(s.planId)!.name, amountCents: planMap.get(s.planId)!.amountCents, interval: planMap.get(s.planId)!.interval } : null,
+          user: usersData[s.userId] || null,
+        }));
+
+      res.json(enriched);
+    } catch (error) {
+      console.error("Error fetching client subscriptions:", error);
+      res.status(500).json({ message: "Failed to fetch client subscriptions" });
     }
   });
 

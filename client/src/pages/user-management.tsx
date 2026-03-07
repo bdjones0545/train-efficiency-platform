@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward } from "lucide-react";
+import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { UserProfile, Booking, Service } from "@shared/schema";
 import type { User } from "@shared/models/auth";
@@ -127,6 +127,16 @@ export default function UserManagementPage() {
   const { data: users, isLoading } = useQuery<UserWithProfile[]>({
     queryKey: ["/api/coach/users"],
   });
+
+  const { data: clientSubscriptions } = useQuery<any[]>({
+    queryKey: ["/api/coach/client-subscriptions"],
+  });
+
+  const subscribedUserIds = new Set(
+    (clientSubscriptions || [])
+      .filter(s => s.status === "active" || s.status === "trialing")
+      .map(s => s.userId)
+  );
 
   const { data: userBookings, isLoading: bookingsLoading } = useQuery<UserBooking[]>({
     queryKey: ["/api/coach/users", selectedUser?.id, "bookings"],
@@ -798,6 +808,12 @@ export default function UserManagementPage() {
                     {user.email || "No email"}
                   </p>
                 </div>
+                {subscribedUserIds.has(user.id) && (
+                  <Badge className="shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-xs no-default-hover-elevate no-default-active-elevate" data-testid={`badge-subscribed-${user.id}`}>
+                    <RefreshCw className="h-3 w-3 mr-0.5" />
+                    Sub
+                  </Badge>
+                )}
                 <Badge variant="outline" className="shrink-0" data-testid={`badge-role-${user.id}`}>
                   {user.profile?.role || "CLIENT"}
                 </Badge>

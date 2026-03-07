@@ -1061,25 +1061,50 @@ export default function AdminConfigurationPage() {
                   <div className="grid gap-2">
                     <p className="text-sm text-muted-foreground">Active subscription plans on your platform:</p>
                     {savedPlans.map((plan) => (
-                      <Card key={plan.id} className="p-3 flex items-center justify-between" data-testid={`card-subscription-plan-${plan.id}`}>
-                        <div>
-                          <p className="font-medium text-sm" data-testid={`text-plan-name-${plan.id}`}>{plan.name}</p>
-                          {plan.description && (
-                            <p className="text-xs text-muted-foreground">{plan.description}</p>
-                          )}
-                          <Badge variant="secondary" className="text-xs mt-1">
-                            {formatPrice(plan.amountCents, plan.interval, plan.intervalCount ?? 1)}
-                          </Badge>
+                      <Card key={plan.id} className="p-3 space-y-2" data-testid={`card-subscription-plan-${plan.id}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-sm" data-testid={`text-plan-name-${plan.id}`}>{plan.name}</p>
+                            {plan.description && (
+                              <p className="text-xs text-muted-foreground">{plan.description}</p>
+                            )}
+                            <Badge variant="secondary" className="text-xs mt-1">
+                              {formatPrice(plan.amountCents, plan.interval, plan.intervalCount ?? 1)}
+                            </Badge>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => deleteSubscriptionPlanMutation.mutate(plan.id)}
+                            disabled={deleteSubscriptionPlanMutation.isPending}
+                            data-testid={`button-remove-plan-${plan.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => deleteSubscriptionPlanMutation.mutate(plan.id)}
-                          disabled={deleteSubscriptionPlanMutation.isPending}
-                          data-testid={`button-remove-plan-${plan.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">Cancellation:</span>
+                          <Select
+                            value={(plan as any).cancellationPolicy || "end_of_period"}
+                            onValueChange={async (value) => {
+                              try {
+                                await apiRequest("PATCH", `/api/organizations/${orgId}/subscription-plans/${plan.id}`, { cancellationPolicy: value });
+                                queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "subscription-plans"] });
+                                toast({ title: "Updated", description: `Cancellation policy set to ${value === "immediate" ? "Immediate" : "End of billing period"}` });
+                              } catch {
+                                toast({ title: "Error", description: "Failed to update policy", variant: "destructive" });
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-auto min-w-[180px]" data-testid={`select-cancel-policy-${plan.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="end_of_period">End of billing period</SelectItem>
+                              <SelectItem value="immediate">Immediate</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </Card>
                     ))}
                   </div>

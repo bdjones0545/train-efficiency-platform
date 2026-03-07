@@ -42,6 +42,9 @@ import {
   subscriptionSchedules,
   type SubscriptionSchedule,
   type InsertSubscriptionSchedule,
+  userSubscriptions,
+  type UserSubscription,
+  type InsertUserSubscription,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -159,6 +162,13 @@ export interface IStorage {
   getSubscriptionSchedule(id: string): Promise<SubscriptionSchedule | undefined>;
   createSubscriptionSchedule(data: InsertSubscriptionSchedule): Promise<SubscriptionSchedule>;
   deleteSubscriptionSchedule(id: string): Promise<boolean>;
+  getUserSubscriptions(userId: string): Promise<UserSubscription[]>;
+  getUserSubscriptionByPlan(userId: string, planId: string): Promise<UserSubscription | undefined>;
+  getUserSubscriptionByStripeId(stripeSubscriptionId: string): Promise<UserSubscription | undefined>;
+  getUserSubscriptionByCheckoutSession(sessionId: string): Promise<UserSubscription | undefined>;
+  createUserSubscription(data: InsertUserSubscription): Promise<UserSubscription>;
+  updateUserSubscription(id: string, data: Partial<UserSubscription>): Promise<UserSubscription | undefined>;
+  getOrganizationUserSubscriptions(orgId: string): Promise<UserSubscription[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -994,6 +1004,44 @@ export class DatabaseStorage implements IStorage {
   async deleteSubscriptionSchedule(id: string): Promise<boolean> {
     const result = await db.delete(subscriptionSchedules).where(eq(subscriptionSchedules.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getUserSubscriptions(userId: string): Promise<UserSubscription[]> {
+    return db.select().from(userSubscriptions).where(eq(userSubscriptions.userId, userId)).orderBy(desc(userSubscriptions.createdAt));
+  }
+
+  async getUserSubscriptionByPlan(userId: string, planId: string): Promise<UserSubscription | undefined> {
+    const rows = await db.select().from(userSubscriptions).where(
+      and(
+        eq(userSubscriptions.userId, userId),
+        eq(userSubscriptions.planId, planId)
+      )
+    );
+    return rows.find(s => ["active", "trialing", "pending", "past_due"].includes(s.status));
+  }
+
+  async getUserSubscriptionByStripeId(stripeSubscriptionId: string): Promise<UserSubscription | undefined> {
+    const [sub] = await db.select().from(userSubscriptions).where(eq(userSubscriptions.stripeSubscriptionId, stripeSubscriptionId));
+    return sub;
+  }
+
+  async getUserSubscriptionByCheckoutSession(sessionId: string): Promise<UserSubscription | undefined> {
+    const [sub] = await db.select().from(userSubscriptions).where(eq(userSubscriptions.stripeCheckoutSessionId, sessionId));
+    return sub;
+  }
+
+  async createUserSubscription(data: InsertUserSubscription): Promise<UserSubscription> {
+    const [sub] = await db.insert(userSubscriptions).values(data).returning();
+    return sub;
+  }
+
+  async updateUserSubscription(id: string, data: Partial<UserSubscription>): Promise<UserSubscription | undefined> {
+    const [sub] = await db.update(userSubscriptions).set({ ...data, updatedAt: new Date() }).where(eq(userSubscriptions.id, id)).returning();
+    return sub;
+  }
+
+  async getOrganizationUserSubscriptions(orgId: string): Promise<UserSubscription[]> {
+    return db.select().from(userSubscriptions).where(eq(userSubscriptions.organizationId, orgId)).orderBy(desc(userSubscriptions.createdAt));
   }
 }
 
