@@ -48,6 +48,7 @@ export const organizationSubscriptionPlans = pgTable("organization_subscription_
   interval: varchar("interval").notNull(),
   intervalCount: integer("interval_count").default(1),
   cancellationPolicy: varchar("cancellation_policy").default("end_of_period"),
+  coachPayPerSessionCents: integer("coach_pay_per_session_cents"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -178,6 +179,7 @@ export const bookings = pgTable("bookings", {
   recurringGroupId: varchar("recurring_group_id"),
   paymentMethod: paymentMethodEnum("payment_method"),
   teamQuoteProgramId: varchar("team_quote_program_id"),
+  subscriptionPlanId: varchar("subscription_plan_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

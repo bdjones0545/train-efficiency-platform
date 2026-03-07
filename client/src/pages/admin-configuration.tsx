@@ -1105,6 +1105,32 @@ export default function AdminConfigurationPage() {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">Coach pay/session:</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">$</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="Not set"
+                              className="h-7 text-xs w-24"
+                              defaultValue={(plan as any).coachPayPerSessionCents ? ((plan as any).coachPayPerSessionCents / 100).toFixed(2) : ""}
+                              data-testid={`input-coach-pay-${plan.id}`}
+                              onBlur={async (e) => {
+                                const val = e.target.value;
+                                const cents = val ? Math.round(parseFloat(val) * 100) : null;
+                                try {
+                                  await apiRequest("PATCH", `/api/organizations/${orgId}/subscription-plans/${plan.id}`, { coachPayPerSessionCents: cents });
+                                  queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "subscription-plans"] });
+                                  toast({ title: "Updated", description: cents ? `Coach pay set to $${(cents / 100).toFixed(2)} per session` : "Coach pay cleared" });
+                                } catch {
+                                  toast({ title: "Error", description: "Failed to update coach pay", variant: "destructive" });
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
                       </Card>
                     ))}
                   </div>

@@ -589,6 +589,7 @@ export async function registerRoutes(
         interval: z.string().min(1),
         intervalCount: z.number().int().min(1).optional().default(1),
         cancellationPolicy: z.string().optional().default("end_of_period"),
+        coachPayPerSessionCents: z.number().int().min(0).optional(),
       });
       const validatedPlans = [];
       for (const plan of plans) {
@@ -611,6 +612,7 @@ export async function registerRoutes(
           interval: plan.interval,
           intervalCount: plan.intervalCount,
           cancellationPolicy: plan.cancellationPolicy,
+          coachPayPerSessionCents: plan.coachPayPerSessionCents ?? null,
           active: true,
         });
         created.push(newPlan);
@@ -629,12 +631,22 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only manage your own organization" });
       }
-      const { cancellationPolicy } = req.body;
-      if (!cancellationPolicy || !["end_of_period", "immediate"].includes(cancellationPolicy)) {
-        return res.status(400).json({ message: "cancellationPolicy must be 'end_of_period' or 'immediate'" });
+      const { cancellationPolicy, coachPayPerSessionCents } = req.body;
+      const updateData: any = {};
+      if (cancellationPolicy) {
+        if (!["end_of_period", "immediate"].includes(cancellationPolicy)) {
+          return res.status(400).json({ message: "cancellationPolicy must be 'end_of_period' or 'immediate'" });
+        }
+        updateData.cancellationPolicy = cancellationPolicy;
+      }
+      if (coachPayPerSessionCents !== undefined) {
+        updateData.coachPayPerSessionCents = coachPayPerSessionCents === null ? null : Math.max(0, Math.round(coachPayPerSessionCents));
+      }
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
       }
       const [updated] = await db.update(organizationSubscriptionPlans)
-        .set({ cancellationPolicy })
+        .set(updateData)
         .where(and(
           eq(organizationSubscriptionPlans.id, req.params.planId),
           eq(organizationSubscriptionPlans.organizationId, req.params.id)
@@ -1666,6 +1678,21 @@ export async function registerRoutes(
 
       if (isFreeIntro) {
         amountCents = 2000;
+      } else if (booking.subscriptionPlanId) {
+        const plans = booking.coachId ? await (async () => {
+          const coachProfile = await storage.getCoachProfile(booking.coachId);
+          if (coachProfile?.organizationId) {
+            return storage.getOrganizationSubscriptionPlans(coachProfile.organizationId);
+          }
+          return [];
+        })() : [];
+        const subPlan = plans.find(p => p.id === booking.subscriptionPlanId);
+        if (subPlan?.coachPayPerSessionCents !== null && subPlan?.coachPayPerSessionCents !== undefined) {
+          amountCents = subPlan.coachPayPerSessionCents;
+        } else {
+          const payoutRate = await getCoachPayoutRate(booking.coachId);
+          amountCents = Math.round((perPersonCents || 0) * payoutRate);
+        }
       } else if (booking.teamQuoteProgramId) {
         const allQuotes = await storage.getAllTeamQuotes();
         const contractQuotes = allQuotes.filter(q => q.programId === booking.teamQuoteProgramId);
@@ -4171,6 +4198,7 @@ export async function registerRoutes(
             skillLevel: isSemiPrivate ? (skillLevel || "") : "",
             sport: isSemiPrivate ? (sport || "") : "",
             teamQuoteProgramId: null,
+            subscriptionPlanId,
           });
           created++;
         }
@@ -4257,6 +4285,7 @@ export async function registerRoutes(
             skillLevel: schedule.skillLevel || "",
             sport: schedule.sport || "",
             teamQuoteProgramId: null,
+            subscriptionPlanId: schedule.subscriptionPlanId,
           });
           created++;
         }
