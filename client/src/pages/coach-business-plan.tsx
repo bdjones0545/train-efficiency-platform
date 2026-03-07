@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, Pencil, Trash2, X, Gift } from "lucide-react";
+import { Users, TrendingUp, DollarSign, Calendar, BarChart3, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, Pencil, Trash2, X, Gift, RefreshCw } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
 import type { CoachWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
@@ -68,12 +68,14 @@ type BusinessPlanData = {
     freeSessionsPerformed: number;
     totalRevenueCents: number;
     predictedMonthlyRevenueCents: number;
+    subscriptionRevenueCents: number;
   };
   revenueHistory: RevenueMonth[];
   actualRevenue: {
     walletCents: number;
     venmoCents: number;
     cashCents: number;
+    subscriptionCents: number;
   };
 };
 
@@ -330,6 +332,7 @@ export default function CoachBusinessPlanPage() {
     ...(plan.actualRevenue.walletCents > 0 ? [{ label: "Wallet", revenueCents: plan.actualRevenue.walletCents, colorClass: "bg-blue-500" }] : []),
     ...(plan.actualRevenue.venmoCents > 0 ? [{ label: "Venmo", revenueCents: plan.actualRevenue.venmoCents, colorClass: "bg-purple-500" }] : []),
     ...(plan.actualRevenue.cashCents > 0 ? [{ label: "Cash", revenueCents: plan.actualRevenue.cashCents, colorClass: "bg-green-500" }] : []),
+    ...(plan.actualRevenue.subscriptionCents > 0 ? [{ label: "Subscriptions", revenueCents: plan.actualRevenue.subscriptionCents, colorClass: "bg-amber-500" }] : []),
   ] : [];
   const maxActualRevenue = actualData.length > 0
     ? Math.max(...actualData.map((r) => r.revenueCents))
@@ -432,6 +435,21 @@ export default function CoachBusinessPlanPage() {
               <p className="text-xs text-muted-foreground">Based on session consistency</p>
             </Card>
           </div>
+
+          {(plan.stats.subscriptionRevenueCents || 0) > 0 && (
+            <Card className="p-4 border-amber-500/30 bg-amber-500/5" data-testid="stat-subscription-revenue">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-amber-500 text-xs font-medium">
+                    <RefreshCw className="h-4 w-4" />
+                    Subscription Revenue
+                  </div>
+                  <p className="text-2xl font-bold">${((plan.stats.subscriptionRevenueCents || 0) / 100).toFixed(0)}</p>
+                </div>
+                <p className="text-xs text-muted-foreground max-w-[200px] text-right">From Stripe subscription invoices</p>
+              </div>
+            </Card>
+          )}
 
           <Card className="p-5 space-y-4" data-testid="card-revenue-chart">
             <div className="flex items-center justify-between flex-wrap gap-3">

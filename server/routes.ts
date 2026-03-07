@@ -3166,6 +3166,27 @@ export async function registerRoutes(
         return { ...c, actualRevenue: { walletCents: walletChargedCents, venmoCents, cashCents }, clientStats: { totalSessions, completedCount, scheduledCount, revenueCents, walletBalanceCents } };
       });
 
+      let subscriptionRevenueCents = 0;
+      const coachOrg = coach.organizationId ? await storage.getOrganizationById(coach.organizationId) : null;
+      if (coachOrg?.subscriptionsEnabled && coach.organizationId) {
+        try {
+          const orgStripe = await getOrgStripeClient(coach.organizationId);
+          const allInvoices: Stripe.Invoice[] = [];
+          for await (const inv of orgStripe.stripe.invoices.list({
+            limit: 100,
+            status: 'paid',
+            expand: ['data.subscription'],
+          })) {
+            allInvoices.push(inv);
+          }
+          subscriptionRevenueCents = allInvoices
+            .filter(inv => inv.subscription)
+            .reduce((sum, inv) => sum + (inv.amount_paid || 0), 0);
+        } catch {
+          subscriptionRevenueCents = 0;
+        }
+      }
+
       res.json({
         coach: {
           id: coach.id,
@@ -3180,15 +3201,17 @@ export async function registerRoutes(
           completedSessions,
           redeemedSessions: coachRedemptions.length,
           freeSessionsPerformed,
-          totalRevenueCents,
+          totalRevenueCents: totalRevenueCents + subscriptionRevenueCents,
           coachEarningsCents,
           predictedMonthlyRevenueCents,
+          subscriptionRevenueCents,
         },
         revenueHistory,
         actualRevenue: {
           walletCents: clientWalletCharges,
           venmoCents: venmoTotal,
           cashCents: cashTotal,
+          subscriptionCents: subscriptionRevenueCents,
         },
       });
     } catch (error: any) {
