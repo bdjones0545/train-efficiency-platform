@@ -13,6 +13,8 @@ async function getOrgBrandingForUser(userId: string): Promise<OrgBranding | unde
     return {
       name: org.name,
       accentColor: org.primaryColor || undefined,
+      emailPrimaryColor: org.emailPrimaryColor || undefined,
+      emailSecondaryColor: org.emailSecondaryColor || undefined,
       ownerEmail: org.ownerEmail || undefined,
     };
   } catch {

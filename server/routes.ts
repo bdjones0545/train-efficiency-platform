@@ -22,6 +22,8 @@ async function getOrgBranding(orgId: string | null | undefined): Promise<OrgBran
     return {
       name: org.name,
       accentColor: org.primaryColor || undefined,
+      emailPrimaryColor: org.emailPrimaryColor || undefined,
+      emailSecondaryColor: org.emailSecondaryColor || undefined,
       ownerName: owner ? `${owner.firstName} ${owner.lastName}`.trim() : undefined,
       ownerEmail: org.ownerEmail || undefined,
     };

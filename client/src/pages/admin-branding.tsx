@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, Image, Link2, Type, ExternalLink, Globe } from "lucide-react";
+import { Save, Image, Link2, Type, ExternalLink, Globe, Mail } from "lucide-react";
 import { SiInstagram, SiFacebook } from "react-icons/si";
 import type { Organization } from "@shared/schema";
 
@@ -37,6 +37,8 @@ export default function AdminBrandingPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [instagramUrl, setInstagramUrl] = useState("");
   const [facebookUrl, setFacebookUrl] = useState("");
+  const [emailPrimaryColor, setEmailPrimaryColor] = useState("");
+  const [emailSecondaryColor, setEmailSecondaryColor] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -49,6 +51,8 @@ export default function AdminBrandingPage() {
       setWebsiteUrl(org.websiteUrl || "");
       setInstagramUrl(org.instagramUrl || "");
       setFacebookUrl(org.facebookUrl || "");
+      setEmailPrimaryColor(org.emailPrimaryColor || "");
+      setEmailSecondaryColor(org.emailSecondaryColor || "");
       setHasChanges(false);
     }
   }, [org]);
@@ -95,6 +99,8 @@ export default function AdminBrandingPage() {
       websiteUrl: websiteUrl || null,
       instagramUrl: instagramUrl || null,
       facebookUrl: facebookUrl || null,
+      emailPrimaryColor: emailPrimaryColor || null,
+      emailSecondaryColor: emailSecondaryColor || null,
     };
   };
 
@@ -330,6 +336,95 @@ export default function AdminBrandingPage() {
           <p className="text-xs text-muted-foreground">
             These links will appear on your landing page so visitors can find you on the web.
           </p>
+        </Card>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Mail className="h-5 w-5" />
+          Email Colors
+        </h2>
+        <Card className="p-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Customize the colors used in emails sent to your clients and teams. The primary color is used for the email header and buttons. The secondary color is used for detail box backgrounds.
+          </p>
+          <div className="space-y-2">
+            <Label>Primary Color (Header & Buttons)</Label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={emailPrimaryColor || "#16a34a"}
+                onChange={(e) => { setEmailPrimaryColor(e.target.value); markChanged(); }}
+                className="w-10 h-10 rounded border cursor-pointer bg-transparent"
+                data-testid="input-email-primary-color-picker"
+              />
+              <Input
+                value={emailPrimaryColor}
+                onChange={(e) => { setEmailPrimaryColor(e.target.value); markChanged(); }}
+                placeholder="#16a34a"
+                className="max-w-[180px]"
+                data-testid="input-email-primary-color"
+              />
+              {emailPrimaryColor && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setEmailPrimaryColor(""); markChanged(); }}
+                  data-testid="button-reset-email-primary"
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Secondary Color (Detail Backgrounds)</Label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={emailSecondaryColor || "#1a1a1a"}
+                onChange={(e) => { setEmailSecondaryColor(e.target.value); markChanged(); }}
+                className="w-10 h-10 rounded border cursor-pointer bg-transparent"
+                data-testid="input-email-secondary-color-picker"
+              />
+              <Input
+                value={emailSecondaryColor}
+                onChange={(e) => { setEmailSecondaryColor(e.target.value); markChanged(); }}
+                placeholder="#1a1a1a"
+                className="max-w-[180px]"
+                data-testid="input-email-secondary-color"
+              />
+              {emailSecondaryColor && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setEmailSecondaryColor(""); markChanged(); }}
+                  data-testid="button-reset-email-secondary"
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="rounded-lg overflow-hidden border" data-testid="email-color-preview">
+            <div style={{ background: emailPrimaryColor || "#16a34a", padding: "16px 24px" }}>
+              <p className="text-white font-semibold text-sm">Email Header Preview</p>
+            </div>
+            <div style={{ background: "#111", padding: "16px 24px" }}>
+              <p className="text-sm text-gray-300 mb-2">Sample email body text goes here.</p>
+              <div style={{ background: emailSecondaryColor || "#1a1a1a", borderLeft: `4px solid ${emailPrimaryColor || "#16a34a"}`, borderRadius: "6px", padding: "12px 16px" }}>
+                <p className="text-sm text-gray-300"><strong>Detail:</strong> Example content</p>
+                <p className="text-sm text-gray-300"><strong>Amount:</strong> $150.00</p>
+              </div>
+              <div style={{ marginTop: "12px", textAlign: "center" as const }}>
+                <span style={{ display: "inline-block", background: emailPrimaryColor || "#16a34a", color: "#fff", padding: "8px 24px", borderRadius: "6px", fontSize: "13px", fontWeight: 600 }}>
+                  Sample Button
+                </span>
+              </div>
+            </div>
+          </div>
         </Card>
       </section>
 

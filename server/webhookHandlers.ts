@@ -217,12 +217,12 @@ export class WebhookHandlers {
         const orgId = paidQuote.organizationId;
         if (orgId) {
           const org = await storage.getOrganizationById(orgId);
-          if (org) orgB = { name: org.name, accentColor: org.primaryColor || undefined, ownerEmail: org.ownerEmail || undefined };
+          if (org) orgB = { name: org.name, accentColor: org.primaryColor || undefined, emailPrimaryColor: org.emailPrimaryColor || undefined, emailSecondaryColor: org.emailSecondaryColor || undefined, ownerEmail: org.ownerEmail || undefined };
         } else {
           const coachProf = await storage.getCoachProfileByEmail(paidQuote.coachEmail);
           if (coachProf?.organizationId) {
             const org = await storage.getOrganizationById(coachProf.organizationId);
-            if (org) orgB = { name: org.name, accentColor: org.primaryColor || undefined, ownerEmail: org.ownerEmail || undefined };
+            if (org) orgB = { name: org.name, accentColor: org.primaryColor || undefined, emailPrimaryColor: org.emailPrimaryColor || undefined, emailSecondaryColor: org.emailSecondaryColor || undefined, ownerEmail: org.ownerEmail || undefined };
           }
         }
       } catch {}

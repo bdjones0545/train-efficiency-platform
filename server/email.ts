@@ -7,6 +7,8 @@ let connectionSettings: any;
 export interface OrgBranding {
   name: string;
   accentColor?: string;
+  emailPrimaryColor?: string;
+  emailSecondaryColor?: string;
   ownerName?: string;
   ownerEmail?: string;
 }
@@ -18,9 +20,11 @@ const DEFAULT_BRANDING: OrgBranding = {
 
 function brand(org?: OrgBranding) {
   const b = org || DEFAULT_BRANDING;
+  const fallbackColor = b.accentColor || "#16a34a";
   return {
     name: b.name || DEFAULT_BRANDING.name!,
-    color: b.accentColor || "#16a34a",
+    color: b.emailPrimaryColor || fallbackColor,
+    secondaryColor: b.emailSecondaryColor || "#1a1a1a",
     ownerName: b.ownerName || "Admin",
     ownerEmail: b.ownerEmail,
   };
@@ -41,9 +45,10 @@ function emailShell(title: string, body: string, orgBranding?: OrgBranding) {
   `;
 }
 
-function detailBox(lines: string[], accentColor?: string) {
+function detailBox(lines: string[], accentColor?: string, secondaryColor?: string) {
   const color = accentColor || "#16a34a";
-  return `<div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid ${color};">${lines.join("")}</div>`;
+  const bg = secondaryColor || "#1a1a1a";
+  return `<div style="background: ${bg}; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid ${color};">${lines.join("")}</div>`;
 }
 
 function line(label: string, value: string, size = "15px") {
@@ -137,7 +142,7 @@ export async function sendCoachWelcomeEmail(email: string, firstName: string, pa
   const credBlock = password ? detailBox([
     line("Login Email", email),
     line("Password", password),
-  ], b.color) : '';
+  ], b.color, b.secondaryColor) : '';
   const html = emailShell(`Welcome, Coach ${firstName}!`, `
     <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
     ${para(`You've been added as a coach on the <strong>${b.name}</strong> scheduling platform. We're excited to have you on the team!`)}
@@ -182,7 +187,7 @@ export async function sendBookingConfirmationToClient(
       line("Date", dateStr),
       line("Time", timeStr),
       locationLine,
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para("See you there! If you need to make changes, you can manage your bookings from your account.")}
   `, org);
   await sendEmail(clientEmail, subject, html, b.name);
@@ -216,7 +221,7 @@ export async function sendBookingNotificationToCoach(
       line("Date", dateStr),
       line("Time", timeStr),
       locationLine,
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para("You can view and manage this session from your coach dashboard.")}
   `, org);
   await sendEmail(coachEmail, subject, html, b.name);
@@ -237,7 +242,7 @@ export async function sendCashoutRequestEmail(
     ${detailBox([
       bigLine("Amount", amountStr),
       `<p style="font-size: 14px; margin: 4px 0; color: #888;">Cashout ID: ${cashoutId}</p>`,
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para("Please process this payout at your earliest convenience. You can manage cashout requests from the admin dashboard.")}
   `, org);
   await sendEmail(ownerEmail, `Cash Out Request — ${coachName}`, html, b.name);
@@ -264,7 +269,7 @@ export async function sendPaymentConfirmationEmail(
       bigLine("Amount", amountStr),
       line("Description", description),
       line("Updated Wallet Balance", balanceStr),
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para("Thank you for your payment! You can view your full transaction history from your account.")}
   `, org);
   await sendEmail(clientEmail, `Payment Confirmation — ${b.name}`, html, b.name);
@@ -291,7 +296,7 @@ export async function sendSessionChargeEmail(
       line("Session", serviceName),
       bigLine("Amount Charged", amountStr),
       line("Updated Wallet Balance", balanceStr),
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para("You can view your full transaction history from your account. If you have any questions, feel free to reach out.")}
   `, org);
   await sendEmail(clientEmail, `Session Charged — ${serviceName}`, html, b.name);
@@ -341,7 +346,7 @@ export async function sendGroupSessionJoinConfirmation(
       line("Date", dateStr),
       line("Time", timeStr),
       locationLine,
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para("We look forward to seeing you there! If you need to make changes, you can manage your bookings from your account.")}
   `, org);
   await sendEmail(clientEmail, `You're In! — ${serviceName}`, html, b.name);
@@ -373,7 +378,7 @@ export async function sendGroupSessionJoinNotification(
       line("Date", dateStr),
       line("Time", timeStr),
       locationLine,
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para("You can view the full participant list from your coach dashboard.")}
   `, org);
   await sendEmail(coachEmail, `New Participant Joined — ${serviceName}`, html, b.name);
@@ -419,7 +424,7 @@ export async function sendTeamQuoteEmail(
       monthInfo,
       bigLine("Monthly Invoice", monthlyStr),
       programTotalLine,
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     <div style="text-align: center; margin: 24px 0;">
       <a href="${invoiceUrl}" style="display: inline-block; background: ${b.color}; color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 6px; font-size: 16px; font-weight: 600;">View & Pay Invoice</a>
     </div>
@@ -456,21 +461,21 @@ export async function sendTeamTrainingRequestEmail(
       line("Number of Athletes", String(data.numberOfAthletes)),
       line("Location", data.location),
       line("Preferred Schedule", data.preferredSchedule || 'Not specified'),
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${detailBox([
       `<p style="font-size: 14px; color: #aaa; margin: 0 0 8px;">CONTACT INFO</p>`,
       line("Name", data.contactName),
       line("Email", data.contactEmail),
       line("Phone", data.contactPhone || 'Not provided'),
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${detailBox([
       `<p style="font-size: 14px; color: #aaa; margin: 0 0 8px;">TRAINING GOALS</p>`,
       `<p style="font-size: 15px; margin: 4px 0; white-space: pre-wrap;">${data.goals}</p>`,
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${data.additionalNotes ? detailBox([
       `<p style="font-size: 14px; color: #aaa; margin: 0 0 8px;">ADDITIONAL NOTES</p>`,
       `<p style="font-size: 15px; margin: 4px 0; white-space: pre-wrap;">${data.additionalNotes}</p>`,
-    ], b.color) : ''}
+    ], b.color, b.secondaryColor) : ''}
   `, org);
   await sendEmail(recipient, subject, html, b.name);
 }
@@ -499,7 +504,7 @@ export async function sendSubscriptionExpiredEmail(email: string, orgName: strin
       line("Organization", orgName),
       line("Status", reason === "past_due" ? "Payment Failed" : "Subscription Ended"),
       line("Action Needed", actionText),
-    ], b.color)}
+    ], b.color, b.secondaryColor)}
     ${para(actionText)}
     ${para('Log in to your admin dashboard and visit <strong>Configuration → Subscription</strong> to manage your plan.')}
   `);

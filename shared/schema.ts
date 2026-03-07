@@ -20,6 +20,8 @@ export const organizations = pgTable("organizations", {
   tagline2: text("tagline2").default(""),
   primaryColor: varchar("primary_color").default(""),
   secondaryColor: varchar("secondary_color").default(""),
+  emailPrimaryColor: varchar("email_primary_color").default(""),
+  emailSecondaryColor: varchar("email_secondary_color").default(""),
   websiteUrl: text("website_url"),
   instagramUrl: text("instagram_url"),
   facebookUrl: text("facebook_url"),
