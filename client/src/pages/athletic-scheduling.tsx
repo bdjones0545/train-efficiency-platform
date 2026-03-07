@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Clock, Users, Trophy, ArrowLeft, Zap, Dumbbell } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Users, Trophy, ArrowLeft, Zap, Dumbbell, X } from "lucide-react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -75,6 +75,20 @@ export default function AthleticSchedulingPage() {
     },
     onError: (error: any) => {
       toast({ title: "Could not schedule", description: error.message || "This slot may be full.", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (bookingId: string) => {
+      const res = await apiRequest("DELETE", `/api/athletic/bookings/${bookingId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
+      toast({ title: "Session removed", description: "The scheduled session has been deleted." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Could not delete", description: error.message || "Failed to remove session.", variant: "destructive" });
     },
   });
 
@@ -260,6 +274,19 @@ export default function AthleticSchedulingPage() {
                               <><Dumbbell className="h-3 w-3 mr-1" />Strength</>
                             )}
                           </Badge>
+                          <button
+                            className="ml-auto flex-shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Remove ${booking.teamName} from this time slot?`)) {
+                                deleteMutation.mutate(booking.id);
+                              }
+                            }}
+                            disabled={deleteMutation.isPending}
+                            data-testid={`button-delete-booking-${booking.id}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
                     ))}
