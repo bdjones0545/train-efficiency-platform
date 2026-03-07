@@ -20,7 +20,14 @@ import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { CoachWithUser } from "@/lib/types";
 
 export default function EfficiencyStrengthPage() {
-  const { data: coaches } = useQuery<CoachWithUser[]>({ queryKey: ["/api/coaches"] });
+  const { data: coaches } = useQuery<CoachWithUser[]>({
+    queryKey: ["/api/organizations", "efficiencystrength", "coaches"],
+    queryFn: async () => {
+      const res = await fetch("/api/organizations/efficiencystrength/coaches");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
   const [coachModalOpen, setCoachModalOpen] = useState(false);
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
