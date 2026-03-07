@@ -2918,8 +2918,9 @@ export async function registerRoutes(
         const s = serviceMap.get(b.serviceId);
         return s?.name.toLowerCase().includes("free intro") && b.status === "COMPLETED";
       }).length;
+      const redeemedBookingIds = new Set(coachRedemptions.map(r => r.bookingId));
       const totalRevenueCents = allBookings
-        .filter(b => b.status !== "CANCELLED" && b.status !== "NO_SHOW")
+        .filter(b => redeemedBookingIds.has(b.id))
         .reduce((sum, b) => sum + getBookingRevenue(b.id, b.serviceId), 0);
 
       const coachEarningsCents = coachRedemptions
