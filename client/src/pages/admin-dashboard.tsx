@@ -208,8 +208,7 @@ export default function AdminDashboardPage() {
     URL.revokeObjectURL(url);
   };
 
-  const totalRevenue = allBookings?.filter(b => b.status === "CONFIRMED" || b.status === "COMPLETED")
-    .reduce((sum, b) => sum + (b.service?.priceCents || 0), 0) || 0;
+  const totalRevenue = allRedemptions?.reduce((sum, r) => sum + (r.amountCents || 0), 0) || 0;
 
   return (
     <div className="space-y-6">
@@ -236,8 +235,8 @@ export default function AdminDashboardPage() {
         </Card>
         <Card className="p-4 text-center">
           <DollarSign className="h-5 w-5 mx-auto text-primary mb-1" />
-          <p className="text-2xl font-bold" data-testid="text-total-revenue">${(totalRevenue / 100).toFixed(0)}</p>
-          <p className="text-xs text-muted-foreground">Total Revenue</p>
+          <p className="text-2xl font-bold" data-testid="text-total-revenue">${(totalRevenue / 100).toFixed(2)}</p>
+          <p className="text-xs text-muted-foreground">Total Redeemed</p>
         </Card>
       </div>
 
