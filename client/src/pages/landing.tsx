@@ -127,7 +127,7 @@ export default function LandingPage() {
             <a href="#pricing">
               <Button variant="ghost" size="sm" data-testid="link-pricing">Pricing</Button>
             </a>
-            <a href="/efficiencystrength">
+            <a href="/portal">
               <Button variant="ghost" size="sm" data-testid="link-client-portal">
                 <Dumbbell className="h-4 w-4 mr-1" />
                 Client Portal
@@ -171,7 +171,7 @@ export default function LandingPage() {
             <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-pricing-mobile">Pricing</Button>
             </a>
-            <a href="/efficiencystrength" onClick={() => setMobileMenuOpen(false)}>
+            <a href="/portal" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-client-portal-mobile">
                 <Dumbbell className="h-4 w-4 mr-1" />
                 Client Portal

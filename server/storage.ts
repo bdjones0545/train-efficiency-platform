@@ -137,6 +137,7 @@ export interface IStorage {
   setSetting(key: string, value: string): Promise<void>;
   getAllSettings(): Promise<{ key: string; value: string }[]>;
 
+  getAllOrganizations(): Promise<Organization[]>;
   getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
   getOrganizationById(id: string): Promise<Organization | undefined>;
   getOrganizationByStripeCustomerId(customerId: string): Promise<Organization | undefined>;
@@ -891,6 +892,10 @@ export class DatabaseStorage implements IStorage {
 
   async getAllSettings(): Promise<{ key: string; value: string }[]> {
     return db.select().from(appSettings);
+  }
+
+  async getAllOrganizations(): Promise<Organization[]> {
+    return db.select().from(organizations);
   }
 
   async getOrganizationBySlug(slug: string): Promise<Organization | undefined> {

@@ -512,6 +512,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/organizations", async (_req: any, res) => {
+    try {
+      const orgs = await storage.getAllOrganizations();
+      const safeOrgs = orgs.map(({ stripeSecretKey, stripePublishableKey, ...rest }) => rest);
+      res.json(safeOrgs);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organizations" });
+    }
+  });
+
   app.get("/api/organizations/:slug", async (req: any, res) => {
     try {
       const org = await storage.getOrganizationBySlug(req.params.slug);

@@ -38,6 +38,7 @@ import OrgLandingPage from "@/pages/org-landing";
 import PrivacyPolicyPage from "@/pages/privacy-policy";
 import TermsConditionsPage from "@/pages/terms-conditions";
 import CreatePasswordPage from "@/pages/create-password";
+import ClientPortalPage from "@/pages/client-portal";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
@@ -151,6 +152,7 @@ function AuthenticatedLayout() {
                   <Route path="/coach/athletic" component={CoachAthleticPage} />
                   <Route path="/coach/team-quotes" component={TeamQuotesPage} />
                   <Route path="/team-training" component={TeamTrainingPage} />
+                  <Route path="/portal" component={ClientPortalPage} />
                   <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
                   <Route path="/org/:slug" component={OrgLandingPage} />
                   <Route path="/privacy" component={PrivacyPolicyPage} />
@@ -175,6 +177,7 @@ function AuthenticatedLayout() {
 function PublicLayout() {
   return (
     <Switch>
+      <Route path="/portal" component={ClientPortalPage} />
       <Route path="/sessions" component={OpenSessionsPublicPage} />
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
