@@ -189,6 +189,7 @@ export const teamQuotes = pgTable("team_quotes", {
   programId: varchar("program_id").default(sql`gen_random_uuid()`),
   currentMonth: integer("current_month").notNull().default(1),
   totalMonths: integer("total_months").notNull().default(1),
+  organizationId: varchar("organization_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -3075,7 +3075,20 @@ export async function registerRoutes(
       const sessionsPerMonth = Math.round(sessionsPerWeek * 4.33);
       const monthlyCents = numberOfAthletes * costPerAthleteCents * sessionsPerMonth;
 
-      const stripe = await getUncachableStripeClient();
+      const coachProf = await storage.getCoachProfile(createdByCoachId);
+      const orgId = coachProf?.organizationId || null;
+
+      let stripe: Stripe;
+      if (orgId) {
+        try {
+          const orgStripe = await getOrgStripeClient(orgId);
+          stripe = orgStripe.stripe;
+        } catch {
+          stripe = await getUncachableStripeClient();
+        }
+      } else {
+        stripe = await getUncachableStripeClient();
+      }
 
       const customer = await stripe.customers.create({
         email: coachEmail,
@@ -3125,10 +3138,10 @@ export async function registerRoutes(
         createdByCoachId,
         currentMonth: 1,
         totalMonths,
+        organizationId: orgId,
       });
 
-      const coachProf = await storage.getCoachProfileByEmail(coachEmail);
-      const orgB = await getOrgBranding(coachProf?.organizationId || adminProfile?.organizationId);
+      const orgB = await getOrgBranding(orgId || adminProfile?.organizationId);
       sendTeamQuoteEmail(
         coachEmail,
         teamName,

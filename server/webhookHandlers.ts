@@ -1,6 +1,19 @@
+import Stripe from 'stripe';
 import { getStripeSync, getUncachableStripeClient } from './stripeClient';
 import { storage } from './storage';
 import { sendTeamQuoteEmail, sendSubscriptionExpiredEmail, type OrgBranding } from './email';
+
+async function getOrgStripeForQuote(organizationId: string | null): Promise<Stripe> {
+  if (organizationId) {
+    try {
+      const org = await storage.getOrganizationById(organizationId);
+      if (org?.stripeSecretKey) {
+        return new Stripe(org.stripeSecretKey);
+      }
+    } catch {}
+  }
+  return getUncachableStripeClient();
+}
 
 export class WebhookHandlers {
   static async processWebhook(payload: Buffer, signature: string): Promise<void> {
@@ -145,7 +158,7 @@ export class WebhookHandlers {
 
       console.log(`Generating month ${nextMonth}/${paidQuote.totalMonths} invoice for "${paidQuote.teamName}"...`);
 
-      const stripe = await getUncachableStripeClient();
+      const stripe = await getOrgStripeForQuote(paidQuote.organizationId);
 
       const customer = await stripe.customers.create({
         email: paidQuote.coachEmail,
@@ -196,6 +209,7 @@ export class WebhookHandlers {
         programId: paidQuote.programId,
         currentMonth: nextMonth,
         totalMonths: paidQuote.totalMonths,
+        organizationId: paidQuote.organizationId,
       });
 
       let orgB: OrgBranding | undefined;
