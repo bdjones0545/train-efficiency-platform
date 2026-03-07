@@ -12,8 +12,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Users, Calendar, DollarSign, Plus, Download, Settings, Banknote, CheckCircle, XCircle, UserPlus } from "lucide-react";
-import { format, parseISO } from "date-fns";
-import { useState } from "react";
+import { format, parseISO, subDays, subWeeks, subMonths, subYears, isAfter } from "date-fns";
+import { useState, useMemo } from "react";
 import type { CoachWithUser, BookingWithDetails, RedemptionWithDetails } from "@/lib/types";
 import type { Service, UserProfile, Cashout } from "@shared/schema";
 import type { User } from "@shared/models/auth";
@@ -63,6 +63,22 @@ export default function AdminDashboardPage() {
   const [newCoachPassword, setNewCoachPassword] = useState("");
   const [newCoachBio, setNewCoachBio] = useState("");
   const [newCoachSpecialties, setNewCoachSpecialties] = useState("");
+  const [redemptionPeriod, setRedemptionPeriod] = useState<"all" | "day" | "week" | "month" | "year">("all");
+
+  const filteredRedemptions = useMemo(() => {
+    if (!allRedemptions) return [];
+    if (redemptionPeriod === "all") return allRedemptions;
+    const now = new Date();
+    const cutoff =
+      redemptionPeriod === "day" ? subDays(now, 1) :
+      redemptionPeriod === "week" ? subWeeks(now, 1) :
+      redemptionPeriod === "month" ? subMonths(now, 1) :
+      subYears(now, 1);
+    return allRedemptions.filter((r) => {
+      if (!r.redeemedAt) return false;
+      return isAfter(parseISO(r.redeemedAt as unknown as string), cutoff);
+    });
+  }, [allRedemptions, redemptionPeriod]);
 
   const createCoachMutation = useMutation({
     mutationFn: async (data: { firstName: string; lastName: string; email: string; password: string; bio: string; specialties: string[] }) => {
@@ -506,9 +522,25 @@ export default function AdminDashboardPage() {
           )}
 
           <Card className="p-4">
-            <h3 className="text-sm font-semibold mb-3">Redemption History</h3>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+              <h3 className="text-sm font-semibold">Redemption History</h3>
+              <div className="flex items-center gap-1">
+                {(["all", "day", "week", "month", "year"] as const).map((period) => (
+                  <Button
+                    key={period}
+                    size="sm"
+                    variant={redemptionPeriod === period ? "default" : "outline"}
+                    onClick={() => setRedemptionPeriod(period)}
+                    className="text-xs px-3 h-7"
+                    data-testid={`button-filter-${period}`}
+                  >
+                    {period === "all" ? "All" : period === "day" ? "Day" : period === "week" ? "Week" : period === "month" ? "Month" : "Year"}
+                  </Button>
+                ))}
+              </div>
+            </div>
             <div className="space-y-3">
-              {allRedemptions?.map((r) => (
+              {filteredRedemptions.map((r) => (
                 <div key={r.id} className="flex flex-col sm:flex-row items-start justify-between gap-2 py-2 border-b last:border-0">
                   <div className="space-y-0.5">
                     <p className="text-sm font-medium">${(r.amountCents / 100).toFixed(2)}</p>
@@ -521,8 +553,10 @@ export default function AdminDashboardPage() {
                   </Badge>
                 </div>
               ))}
-              {(!allRedemptions || allRedemptions.length === 0) && (
-                <p className="text-sm text-muted-foreground text-center py-4">No redemptions yet</p>
+              {filteredRedemptions.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  {redemptionPeriod === "all" ? "No redemptions yet" : `No redemptions in the past ${redemptionPeriod}`}
+                </p>
               )}
             </div>
           </Card>
