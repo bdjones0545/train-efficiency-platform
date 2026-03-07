@@ -20,12 +20,27 @@ import {
   Save,
   X,
   Trash2,
+  CreditCard,
+  Loader2,
+  Check,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useState } from "react";
-import type { Service, Organization } from "@shared/schema";
+import type { Service, Organization, OrganizationSubscriptionPlan } from "@shared/schema";
 import { MapPin } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+
+type StripeProduct = {
+  productId: string;
+  productName: string;
+  productDescription: string;
+  priceId: string;
+  amountCents: number;
+  currency: string;
+  interval: string;
+  intervalCount: number;
+};
 
 type CoachWithUser = {
   id: string;
@@ -110,6 +125,117 @@ export default function AdminConfigurationPage() {
   const [editCoachSpecialties, setEditCoachSpecialties] = useState("");
   const [editCoachActive, setEditCoachActive] = useState(true);
   const [editCoachPayout, setEditCoachPayout] = useState("");
+
+  const [showStripeProducts, setShowStripeProducts] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+
+  const { data: savedPlans } = useQuery<OrganizationSubscriptionPlan[]>({
+    queryKey: ["/api/organizations", orgId, "subscription-plans"],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/${orgId}/subscription-plans`);
+      if (!res.ok) throw new Error("Failed to fetch plans");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
+  const { data: stripeProducts, isLoading: stripeProductsLoading, refetch: refetchStripeProducts } = useQuery<StripeProduct[]>({
+    queryKey: ["/api/organizations", orgId, "stripe-products"],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/${orgId}/stripe-products`);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to fetch products");
+      }
+      return res.json();
+    },
+    enabled: false,
+  });
+
+  const toggleSubscriptionsMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, { subscriptionsEnabled: enabled });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Subscriptions setting updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const saveSubscriptionPlansMutation = useMutation({
+    mutationFn: async (plans: any[]) => {
+      const res = await apiRequest("POST", `/api/organizations/${orgId}/subscription-plans`, { plans });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Subscription plans saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "subscription-plans"] });
+      setShowStripeProducts(false);
+      setSelectedProducts(new Set());
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteSubscriptionPlanMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const res = await apiRequest("DELETE", `/api/organizations/${orgId}/subscription-plans/${planId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Subscription plan removed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "subscription-plans"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleConnectStripeSubscriptions = () => {
+    setShowStripeProducts(true);
+    refetchStripeProducts();
+    if (savedPlans?.length) {
+      setSelectedProducts(new Set(savedPlans.map(p => p.stripePriceId)));
+    }
+  };
+
+  const toggleProductSelection = (priceId: string) => {
+    setSelectedProducts(prev => {
+      const next = new Set(prev);
+      if (next.has(priceId)) {
+        next.delete(priceId);
+      } else {
+        next.add(priceId);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveSelectedPlans = () => {
+    if (!stripeProducts) return;
+    const selected = stripeProducts.filter(p => selectedProducts.has(p.priceId));
+    const plans = selected.map(p => ({
+      stripeProductId: p.productId,
+      stripePriceId: p.priceId,
+      name: p.productName,
+      description: p.productDescription,
+      amountCents: p.amountCents,
+      interval: p.interval,
+      intervalCount: p.intervalCount,
+    }));
+    saveSubscriptionPlansMutation.mutate(plans);
+  };
+
+  const formatPrice = (cents: number, interval: string, intervalCount: number) => {
+    const dollars = (cents / 100).toFixed(2);
+    const intervalLabel = intervalCount > 1 ? `every ${intervalCount} ${interval}s` : `/${interval}`;
+    return `$${dollars}${intervalLabel}`;
+  };
 
   const createCoachMutation = useMutation({
     mutationFn: async (data: {
@@ -893,6 +1019,162 @@ export default function AdminConfigurationPage() {
             </Card>
           ))}
         </div>
+      </section>
+
+      <Separator />
+
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <CreditCard className="h-5 w-5" />
+            Subscriptions
+          </h2>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="subscriptions-toggle" className="text-sm text-muted-foreground">
+              {orgData?.subscriptionsEnabled ? "Enabled" : "Disabled"}
+            </Label>
+            <Switch
+              id="subscriptions-toggle"
+              checked={orgData?.subscriptionsEnabled ?? false}
+              onCheckedChange={(checked) => toggleSubscriptionsMutation.mutate(checked)}
+              disabled={toggleSubscriptionsMutation.isPending}
+              data-testid="switch-subscriptions-enabled"
+            />
+          </div>
+        </div>
+
+        {orgData?.subscriptionsEnabled && (
+          <div className="space-y-4">
+            {!showStripeProducts && (
+              <>
+                <Button
+                  onClick={handleConnectStripeSubscriptions}
+                  variant="outline"
+                  className="w-full"
+                  data-testid="button-connect-stripe-subscriptions"
+                >
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  Connect with your Stripe Subscriptions
+                </Button>
+
+                {savedPlans && savedPlans.length > 0 && (
+                  <div className="grid gap-2">
+                    <p className="text-sm text-muted-foreground">Active subscription plans on your platform:</p>
+                    {savedPlans.map((plan) => (
+                      <Card key={plan.id} className="p-3 flex items-center justify-between" data-testid={`card-subscription-plan-${plan.id}`}>
+                        <div>
+                          <p className="font-medium text-sm" data-testid={`text-plan-name-${plan.id}`}>{plan.name}</p>
+                          {plan.description && (
+                            <p className="text-xs text-muted-foreground">{plan.description}</p>
+                          )}
+                          <Badge variant="secondary" className="text-xs mt-1">
+                            {formatPrice(plan.amountCents, plan.interval, plan.intervalCount ?? 1)}
+                          </Badge>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => deleteSubscriptionPlanMutation.mutate(plan.id)}
+                          disabled={deleteSubscriptionPlanMutation.isPending}
+                          data-testid={`button-remove-plan-${plan.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                {savedPlans && savedPlans.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No subscription plans configured yet. Connect your Stripe account to import subscription products.</p>
+                )}
+              </>
+            )}
+
+            {showStripeProducts && (
+              <Card className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-sm">Select Stripe Subscription Products</h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setShowStripeProducts(false); setSelectedProducts(new Set()); }}
+                    data-testid="button-close-stripe-products"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {stripeProductsLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading Stripe products...</span>
+                  </div>
+                )}
+
+                {!stripeProductsLoading && stripeProducts && stripeProducts.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-4 text-center">
+                    No recurring subscription products found in your Stripe account. Create subscription products in your Stripe Dashboard first.
+                  </p>
+                )}
+
+                {!stripeProductsLoading && stripeProducts && stripeProducts.length > 0 && (
+                  <div className="grid gap-2">
+                    {stripeProducts.map((product) => {
+                      const isSelected = selectedProducts.has(product.priceId);
+                      return (
+                        <div
+                          key={product.priceId}
+                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-accent/50"
+                          }`}
+                          onClick={() => toggleProductSelection(product.priceId)}
+                          data-testid={`card-stripe-product-${product.priceId}`}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleProductSelection(product.priceId)}
+                            data-testid={`checkbox-product-${product.priceId}`}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{product.productName}</p>
+                            {product.productDescription && (
+                              <p className="text-xs text-muted-foreground truncate">{product.productDescription}</p>
+                            )}
+                          </div>
+                          <Badge variant="secondary" className="text-xs shrink-0">
+                            {formatPrice(product.amountCents, product.interval, product.intervalCount)}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!stripeProductsLoading && stripeProducts && stripeProducts.length > 0 && (
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { setShowStripeProducts(false); setSelectedProducts(new Set()); }}
+                      data-testid="button-cancel-stripe-selection"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveSelectedPlans}
+                      disabled={selectedProducts.size === 0 || saveSubscriptionPlansMutation.isPending}
+                      data-testid="button-save-stripe-selection"
+                    >
+                      <Check className="h-4 w-4 mr-1" />
+                      {saveSubscriptionPlansMutation.isPending ? "Saving..." : `Add ${selectedProducts.size} Plan${selectedProducts.size !== 1 ? "s" : ""}`}
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+        )}
       </section>
 
       <Separator />

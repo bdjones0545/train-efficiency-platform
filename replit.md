@@ -36,6 +36,7 @@ The application follows a client-server architecture. The frontend is built with
 - **Location Management:** Sessions can be assigned preset or custom locations.
 - **Coach Toggle:** Admins/Coaches can toggle between viewing/editing different coach schedules and availability.
 - **Wallet and Transactions:** A coach-specific "Transactions" page displays all wallet credits/debits and user balances.
+- **Subscription Management:** Organizations can enable subscriptions via a toggle in the Configuration page. When enabled, admins can connect to their Stripe account to browse and import recurring subscription products. Selected products are stored in the `organization_subscription_plans` table. The `organizations` table has a `subscriptionsEnabled` boolean field to gate this feature.
 
 ## External Dependencies
 - **PostgreSQL:** Primary relational database for all application data.

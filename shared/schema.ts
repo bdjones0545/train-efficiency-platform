@@ -33,12 +33,31 @@ export const organizations = pgTable("organizations", {
   subscriptionStatus: subscriptionStatusEnum("subscription_status").default("none"),
   trialEndsAt: timestamp("trial_ends_at"),
   subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
+  subscriptionsEnabled: boolean("subscriptions_enabled").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const organizationSubscriptionPlans = pgTable("organization_subscription_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  stripeProductId: varchar("stripe_product_id").notNull(),
+  stripePriceId: varchar("stripe_price_id").notNull(),
+  name: varchar("name").notNull(),
+  description: text("description").default(""),
+  amountCents: integer("amount_cents").notNull(),
+  interval: varchar("interval").notNull(),
+  intervalCount: integer("interval_count").default(1),
+  active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+
+export const insertOrganizationSubscriptionPlanSchema = createInsertSchema(organizationSubscriptionPlans).omit({ id: true, createdAt: true });
+export type OrganizationSubscriptionPlan = typeof organizationSubscriptionPlans.$inferSelect;
+export type InsertOrganizationSubscriptionPlan = z.infer<typeof insertOrganizationSubscriptionPlanSchema>;
 
 export const roleEnum = pgEnum("user_role", ["CLIENT", "COACH", "ADMIN"]);
 export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"]);

@@ -36,6 +36,9 @@ import {
   type InsertTeamQuote,
   organizations,
   type Organization,
+  organizationSubscriptionPlans,
+  type OrganizationSubscriptionPlan,
+  type InsertOrganizationSubscriptionPlan,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { db } from "./db";
@@ -145,6 +148,10 @@ export interface IStorage {
   updateOrganization(id: string, data: Partial<Organization>): Promise<Organization | undefined>;
   deleteOrganization(id: string): Promise<boolean>;
   getCoachProfilesByOrganization(orgId: string): Promise<(CoachProfile & { user?: User })[]>;
+  getOrganizationSubscriptionPlans(orgId: string): Promise<OrganizationSubscriptionPlan[]>;
+  createOrganizationSubscriptionPlan(data: InsertOrganizationSubscriptionPlan): Promise<OrganizationSubscriptionPlan>;
+  deleteOrganizationSubscriptionPlan(id: string): Promise<boolean>;
+  deleteOrganizationSubscriptionPlansByOrg(orgId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -943,6 +950,24 @@ export class DatabaseStorage implements IStorage {
       result.push({ ...coach, user: user || undefined });
     }
     return result;
+  }
+
+  async getOrganizationSubscriptionPlans(orgId: string): Promise<OrganizationSubscriptionPlan[]> {
+    return db.select().from(organizationSubscriptionPlans).where(eq(organizationSubscriptionPlans.organizationId, orgId));
+  }
+
+  async createOrganizationSubscriptionPlan(data: InsertOrganizationSubscriptionPlan): Promise<OrganizationSubscriptionPlan> {
+    const [plan] = await db.insert(organizationSubscriptionPlans).values(data).returning();
+    return plan;
+  }
+
+  async deleteOrganizationSubscriptionPlan(id: string): Promise<boolean> {
+    const result = await db.delete(organizationSubscriptionPlans).where(eq(organizationSubscriptionPlans.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async deleteOrganizationSubscriptionPlansByOrg(orgId: string): Promise<void> {
+    await db.delete(organizationSubscriptionPlans).where(eq(organizationSubscriptionPlans.organizationId, orgId));
   }
 }
 

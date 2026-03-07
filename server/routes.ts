@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, type OrgBranding } from "./email";
 import crypto from "crypto";
 import Stripe from "stripe";
+import { z } from "zod";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 
@@ -466,7 +467,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
@@ -487,6 +488,7 @@ export async function registerRoutes(
       if (facebookUrl !== undefined) updateData.facebookUrl = facebookUrl || null;
       if (stripeSecretKey !== undefined) updateData.stripeSecretKey = stripeSecretKey || null;
       if (stripePublishableKey !== undefined) updateData.stripePublishableKey = stripePublishableKey || null;
+      if (subscriptionsEnabled !== undefined) updateData.subscriptionsEnabled = subscriptionsEnabled;
 
       if (stripeSecretKey && (stripeSecretKey.startsWith("sk_") || stripeSecretKey.startsWith("rk_"))) {
         try {
@@ -509,6 +511,125 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating organization:", error);
       res.status(500).json({ message: "Failed to update organization" });
+    }
+  });
+
+  app.get("/api/organizations/:id/stripe-products", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only access your own organization" });
+      }
+      const { stripe } = await getOrgStripeClient(req.params.id);
+      const products = await stripe.products.list({ active: true, limit: 100, expand: ['data.default_price'] });
+      const subscriptionProducts: any[] = [];
+      for (const product of products.data) {
+        const prices = await stripe.prices.list({ product: product.id, active: true, type: 'recurring', limit: 100 });
+        if (prices.data.length > 0) {
+          for (const price of prices.data) {
+            subscriptionProducts.push({
+              productId: product.id,
+              productName: product.name,
+              productDescription: product.description || "",
+              priceId: price.id,
+              amountCents: price.unit_amount || 0,
+              currency: price.currency,
+              interval: price.recurring?.interval || "month",
+              intervalCount: price.recurring?.interval_count || 1,
+            });
+          }
+        }
+      }
+      res.json(subscriptionProducts);
+    } catch (error: any) {
+      console.error("Error fetching Stripe products:", error);
+      if (error.message?.includes("not connected")) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: "Failed to fetch Stripe subscription products" });
+    }
+  });
+
+  app.get("/api/organizations/:id/subscription-plans", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only access your own organization" });
+      }
+      const plans = await storage.getOrganizationSubscriptionPlans(req.params.id);
+      res.json(plans);
+    } catch (error) {
+      console.error("Error fetching subscription plans:", error);
+      res.status(500).json({ message: "Failed to fetch subscription plans" });
+    }
+  });
+
+  app.post("/api/organizations/:id/subscription-plans", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only manage your own organization" });
+      }
+      const { plans } = req.body;
+      if (!Array.isArray(plans)) {
+        return res.status(400).json({ message: "Plans must be an array" });
+      }
+      const planSchema = z.object({
+        stripeProductId: z.string().min(1),
+        stripePriceId: z.string().min(1),
+        name: z.string().min(1),
+        description: z.string().optional().default(""),
+        amountCents: z.number().int().min(0),
+        interval: z.string().min(1),
+        intervalCount: z.number().int().min(1).optional().default(1),
+      });
+      const validatedPlans = [];
+      for (const plan of plans) {
+        const parsed = planSchema.safeParse(plan);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid plan data", errors: parsed.error.errors });
+        }
+        validatedPlans.push(parsed.data);
+      }
+      await storage.deleteOrganizationSubscriptionPlansByOrg(req.params.id);
+      const created: any[] = [];
+      for (const plan of validatedPlans) {
+        const newPlan = await storage.createOrganizationSubscriptionPlan({
+          organizationId: req.params.id,
+          stripeProductId: plan.stripeProductId,
+          stripePriceId: plan.stripePriceId,
+          name: plan.name,
+          description: plan.description,
+          amountCents: plan.amountCents,
+          interval: plan.interval,
+          intervalCount: plan.intervalCount,
+          active: true,
+        });
+        created.push(newPlan);
+      }
+      res.json(created);
+    } catch (error) {
+      console.error("Error saving subscription plans:", error);
+      res.status(500).json({ message: "Failed to save subscription plans" });
+    }
+  });
+
+  app.delete("/api/organizations/:id/subscription-plans/:planId", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only manage your own organization" });
+      }
+      const deleted = await storage.deleteOrganizationSubscriptionPlan(req.params.planId);
+      if (!deleted) return res.status(404).json({ message: "Plan not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting subscription plan:", error);
+      res.status(500).json({ message: "Failed to delete subscription plan" });
     }
   });
 
