@@ -3005,6 +3005,7 @@ export async function registerRoutes(
           totalClients: clients.length,
           totalSessions,
           completedSessions,
+          redeemedSessions: coachRedemptions.length,
           freeSessionsPerformed,
           totalRevenueCents,
           coachEarningsCents,

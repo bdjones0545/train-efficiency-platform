@@ -64,6 +64,7 @@ type BusinessPlanData = {
     totalClients: number;
     totalSessions: number;
     completedSessions: number;
+    redeemedSessions: number;
     freeSessionsPerformed: number;
     totalRevenueCents: number;
     predictedMonthlyRevenueCents: number;
@@ -231,6 +232,7 @@ function getConsistencyScore(sessions: ClientSession[]): { label: string; color:
 export default function CoachBusinessPlanPage() {
   const { toast } = useToast();
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
+  const [sessionView, setSessionView] = useState<"scheduled" | "redeemed">("scheduled");
   const [revenuePeriod, setRevenuePeriod] = useState<TimePeriod>("monthly");
   const [revenueView, setRevenueView] = useState<RevenueView>("time");
   const [periodOffset, setPeriodOffset] = useState(0);
@@ -393,12 +395,15 @@ export default function CoachBusinessPlanPage() {
               </div>
               <p className="text-2xl font-bold">{plan.stats.totalClients}</p>
             </Card>
-            <Card className="p-4 space-y-1" data-testid="stat-total-sessions">
+            <Card className="p-4 space-y-1 cursor-pointer" data-testid="stat-total-sessions" onClick={() => setSessionView(sessionView === "scheduled" ? "redeemed" : "scheduled")}>
               <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
                 <Calendar className="h-4 w-4" />
-                Total Sessions
+                {sessionView === "scheduled" ? "Sessions Scheduled" : "Sessions Redeemed"}
               </div>
-              <p className="text-2xl font-bold">{plan.stats.totalSessions}</p>
+              <p className="text-2xl font-bold">
+                {sessionView === "scheduled" ? plan.stats.totalSessions : plan.stats.redeemedSessions}
+              </p>
+              <p className="text-xs text-muted-foreground">Tap to toggle</p>
             </Card>
             <Card className="p-4 space-y-1" data-testid="stat-free-sessions">
               <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
