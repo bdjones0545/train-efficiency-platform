@@ -38,6 +38,14 @@ interface Organization {
   facebookUrl: string | null;
 }
 
+function ensureUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 export default function OrgLandingPage() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
@@ -270,7 +278,7 @@ export default function OrgLandingPage() {
               <div className="flex items-center gap-3" data-testid="hero-social-links">
                 {org.websiteUrl && (
                   <a
-                    href={org.websiteUrl}
+                    href={ensureUrl(org.websiteUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -281,7 +289,7 @@ export default function OrgLandingPage() {
                 )}
                 {org.instagramUrl && (
                   <a
-                    href={org.instagramUrl}
+                    href={ensureUrl(org.instagramUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -292,7 +300,7 @@ export default function OrgLandingPage() {
                 )}
                 {org.facebookUrl && (
                   <a
-                    href={org.facebookUrl}
+                    href={ensureUrl(org.facebookUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -483,17 +491,17 @@ export default function OrgLandingPage() {
               {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
                 <div className="flex items-center gap-3">
                   {org.websiteUrl && (
-                    <a href={org.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-website">
+                    <a href={ensureUrl(org.websiteUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-website">
                       <Globe className="h-4 w-4" />
                     </a>
                   )}
                   {org.instagramUrl && (
-                    <a href={org.instagramUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-instagram">
+                    <a href={ensureUrl(org.instagramUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-instagram">
                       <SiInstagram className="h-4 w-4" />
                     </a>
                   )}
                   {org.facebookUrl && (
-                    <a href={org.facebookUrl} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-facebook">
+                    <a href={ensureUrl(org.facebookUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-facebook">
                       <SiFacebook className="h-4 w-4" />
                     </a>
                   )}
