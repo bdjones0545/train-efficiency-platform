@@ -214,10 +214,16 @@ export class WebhookHandlers {
 
       let orgB: OrgBranding | undefined;
       try {
-        const coachProf = await storage.getCoachProfileByEmail(paidQuote.coachEmail);
-        if (coachProf?.organizationId) {
-          const org = await storage.getOrganizationById(coachProf.organizationId);
+        const orgId = paidQuote.organizationId;
+        if (orgId) {
+          const org = await storage.getOrganizationById(orgId);
           if (org) orgB = { name: org.name, accentColor: org.primaryColor || undefined, ownerEmail: org.ownerEmail || undefined };
+        } else {
+          const coachProf = await storage.getCoachProfileByEmail(paidQuote.coachEmail);
+          if (coachProf?.organizationId) {
+            const org = await storage.getOrganizationById(coachProf.organizationId);
+            if (org) orgB = { name: org.name, accentColor: org.primaryColor || undefined, ownerEmail: org.ownerEmail || undefined };
+          }
         }
       } catch {}
       sendTeamQuoteEmail(
