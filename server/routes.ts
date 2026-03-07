@@ -2131,6 +2131,58 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/stripe-subscription-transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) {
+        return res.status(400).json({ message: "No organization found" });
+      }
+      const org = await storage.getOrganizationById(orgId);
+      if (!org?.subscriptionsEnabled) {
+        return res.json([]);
+      }
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(orgId);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.json([]);
+      }
+      const invoices = await stripe.invoices.list({
+        limit: 100,
+        status: 'paid',
+        expand: ['data.subscription', 'data.customer'],
+      });
+      const subscriptionInvoices = invoices.data
+        .filter(inv => inv.subscription)
+        .map(inv => {
+          const customer = inv.customer as Stripe.Customer | null;
+          const customerName = customer && typeof customer !== 'string' ? (customer.name || customer.email || 'Unknown') : 'Unknown';
+          const customerEmail = customer && typeof customer !== 'string' ? (customer.email || '') : '';
+          return {
+            id: inv.id,
+            amountCents: inv.amount_paid || 0,
+            currency: inv.currency,
+            status: inv.status,
+            customerName,
+            customerEmail,
+            description: inv.lines?.data?.[0]?.description || 'Subscription Payment',
+            periodStart: inv.period_start ? new Date(inv.period_start * 1000).toISOString() : null,
+            periodEnd: inv.period_end ? new Date(inv.period_end * 1000).toISOString() : null,
+            createdAt: inv.created ? new Date(inv.created * 1000).toISOString() : null,
+            invoiceUrl: inv.hosted_invoice_url || null,
+            subscriptionId: typeof inv.subscription === 'string' ? inv.subscription : inv.subscription?.id || null,
+          };
+        });
+      res.json(subscriptionInvoices);
+    } catch (error: any) {
+      console.error("Error fetching Stripe subscription transactions:", error);
+      res.status(500).json({ message: "Failed to fetch subscription transactions" });
+    }
+  });
+
   app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

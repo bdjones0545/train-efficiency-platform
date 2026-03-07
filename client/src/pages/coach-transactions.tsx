@@ -10,11 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus, TrendingUp, ChevronLeft, ChevronRight, CreditCard, ExternalLink, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, parseISO, startOfDay, startOfWeek, startOfMonth, startOfYear, endOfDay, endOfWeek, endOfMonth, endOfYear, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, addYears, subYears, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
+import type { Organization } from "@shared/schema";
 
 type RevenuePeriod = "daily" | "weekly" | "monthly" | "yearly";
 
@@ -41,6 +43,21 @@ interface UserBalance {
   balanceCents: number;
 }
 
+interface StripeSubscriptionTransaction {
+  id: string;
+  amountCents: number;
+  currency: string;
+  status: string | null;
+  customerName: string;
+  customerEmail: string;
+  description: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  createdAt: string | null;
+  invoiceUrl: string | null;
+  subscriptionId: string | null;
+}
+
 export default function CoachTransactionsPage() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -51,6 +68,28 @@ export default function CoachTransactionsPage() {
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "venmo">("cash");
   const [revenuePeriod, setRevenuePeriod] = useState<RevenuePeriod>("monthly");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [showSubscriptions, setShowSubscriptions] = useState(false);
+  const [subSearch, setSubSearch] = useState("");
+
+  const { data: adminProfile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = adminProfile?.organizationId;
+
+  const { data: orgData } = useQuery<Organization>({
+    queryKey: ["/api/organizations/by-id", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
+  const { data: subscriptionTxs, isLoading: subTxLoading } = useQuery<StripeSubscriptionTransaction[]>({
+    queryKey: ["/api/coach/stripe-subscription-transactions", orgId],
+    enabled: showSubscriptions && !!orgData?.subscriptionsEnabled,
+  });
 
   const { data: transactions, isLoading: txLoading } = useQuery<TransactionWithUser[]>({
     queryKey: ["/api/coach/transactions"],
@@ -347,10 +386,30 @@ export default function CoachTransactionsPage() {
         </Card>
       </div>
 
+      {orgData?.subscriptionsEnabled && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">Stripe Subscriptions</span>
+              <span className="text-xs text-muted-foreground">Pull subscription payments from Stripe</span>
+            </div>
+            <Switch
+              checked={showSubscriptions}
+              onCheckedChange={setShowSubscriptions}
+              data-testid="switch-show-subscriptions"
+            />
+          </div>
+        </Card>
+      )}
+
       <Tabs defaultValue="transactions">
         <TabsList>
           <TabsTrigger value="transactions" data-testid="tab-transactions">Transactions</TabsTrigger>
           <TabsTrigger value="balances" data-testid="tab-balances">User Balances</TabsTrigger>
+          {showSubscriptions && orgData?.subscriptionsEnabled && (
+            <TabsTrigger value="subscriptions" data-testid="tab-subscriptions">Subscriptions</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="transactions" className="space-y-4 mt-4">
@@ -526,6 +585,140 @@ export default function CoachTransactionsPage() {
             </p>
           )}
         </TabsContent>
+
+        {showSubscriptions && orgData?.subscriptionsEnabled && (
+          <TabsContent value="subscriptions" className="space-y-4 mt-4">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by customer name, email, or description..."
+                value={subSearch}
+                onChange={(e) => setSubSearch(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-subscriptions"
+              />
+            </div>
+
+            {subTxLoading && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading subscription payments from Stripe...</span>
+              </div>
+            )}
+
+            {!subTxLoading && (
+              <>
+                {(() => {
+                  const totalSubRevenue = (subscriptionTxs || []).reduce((sum, tx) => sum + tx.amountCents, 0);
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Card className="p-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CreditCard className="h-4 w-4 text-primary" />
+                          <span className="text-sm text-muted-foreground">Total Subscription Revenue</span>
+                        </div>
+                        <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-sub-total-revenue">
+                          ${(totalSubRevenue / 100).toFixed(2)}
+                        </p>
+                      </Card>
+                      <Card className="p-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CreditCard className="h-4 w-4 text-primary" />
+                          <span className="text-sm text-muted-foreground">Subscription Payments</span>
+                        </div>
+                        <p className="text-2xl font-bold" data-testid="text-sub-total-count">
+                          {(subscriptionTxs || []).length}
+                        </p>
+                      </Card>
+                    </div>
+                  );
+                })()}
+
+                <Card className="divide-y">
+                  {(() => {
+                    const filtered = (subscriptionTxs || []).filter(tx => {
+                      if (subSearch.length < 2) return true;
+                      const term = subSearch.toLowerCase();
+                      return (
+                        (tx.customerName || '').toLowerCase().includes(term) ||
+                        (tx.customerEmail || '').toLowerCase().includes(term) ||
+                        (tx.description || '').toLowerCase().includes(term)
+                      );
+                    });
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="p-8 text-center">
+                          <CreditCard className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">
+                            {(subscriptionTxs || []).length === 0
+                              ? "No subscription payments found in your Stripe account"
+                              : "No matching subscription payments"}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return filtered.map((tx) => (
+                      <div
+                        key={tx.id}
+                        className="flex items-center justify-between gap-4 p-4"
+                        data-testid={`row-subscription-tx-${tx.id}`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                            <CreditCard className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium truncate" data-testid={`text-sub-description-${tx.id}`}>
+                                {tx.description}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs text-muted-foreground" data-testid={`text-sub-customer-${tx.id}`}>
+                                {tx.customerName}
+                              </span>
+                              {tx.customerEmail && (
+                                <span className="text-xs text-muted-foreground">({tx.customerEmail})</span>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                {tx.createdAt ? format(parseISO(tx.createdAt), "MMM d, yyyy h:mm a") : ""}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 no-default-hover-elevate no-default-active-elevate">
+                            +${(tx.amountCents / 100).toFixed(2)}
+                          </Badge>
+                          {tx.invoiceUrl && (
+                            <a
+                              href={tx.invoiceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-muted-foreground hover:text-foreground"
+                              data-testid={`link-invoice-${tx.id}`}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </Card>
+                {(subscriptionTxs || []).length > 0 && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Showing {(subscriptionTxs || []).filter(tx => {
+                      if (subSearch.length < 2) return true;
+                      const term = subSearch.toLowerCase();
+                      return (tx.customerName || '').toLowerCase().includes(term) || (tx.customerEmail || '').toLowerCase().includes(term) || (tx.description || '').toLowerCase().includes(term);
+                    }).length} of {(subscriptionTxs || []).length} subscription payments
+                  </p>
+                )}
+              </>
+            )}
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={!!paymentUser} onOpenChange={(open) => { if (!open) setPaymentUser(null); }}>
