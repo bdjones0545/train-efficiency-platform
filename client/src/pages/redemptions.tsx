@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { DollarSign, Calendar, Clock, CheckCircle, Banknote, Users, TrendingUp } from "lucide-react";
+import { DollarSign, Calendar, Clock, CheckCircle, Banknote, Users, TrendingUp, XCircle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { BookingWithDetails, RedemptionWithDetails, CashoutWithDetails } from "@/lib/types";
 import type { Redemption, Cashout } from "@shared/schema";
@@ -37,6 +37,8 @@ const cashoutStatusColors: Record<string, string> = {
 };
 
 function RedemptionOverview() {
+  const { toast } = useToast();
+
   const { data: allRedemptions, isLoading: redemptionsLoading } = useQuery<AdminRedemption[]>({
     queryKey: ["/api/admin/redemptions"],
   });
@@ -55,6 +57,21 @@ function RedemptionOverview() {
       return res.json();
     },
     enabled: !!orgId,
+  });
+
+  const updateCashoutMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/admin/cashouts/${id}/status`, { status });
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      toast({ title: variables.status === "PAID" ? "Marked as Completed" : "Cashout Denied" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cashouts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/redemptions"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
   });
 
   if (redemptionsLoading || cashoutsLoading) {
@@ -142,13 +159,106 @@ function RedemptionOverview() {
       </div>
 
       {pendingCashouts > 0 && (
-        <Card className="p-4 border-yellow-500/30">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Banknote className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-            <span className="font-semibold text-sm">Pending Cash Out Requests:</span>
-            <span className="font-bold text-yellow-600 dark:text-yellow-400">${(pendingCashouts / 100).toFixed(2)}</span>
-          </div>
-        </Card>
+        <div className="space-y-3">
+          <h2 className="font-semibold text-lg flex items-center gap-2">
+            <Banknote className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+            Pending Cash Out Requests
+            <Badge className="bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 text-xs">
+              ${(pendingCashouts / 100).toFixed(2)} total
+            </Badge>
+          </h2>
+          {cashouts
+            .filter((c) => c.status === "REQUESTED")
+            .map((cashout) => (
+              <Card key={cashout.id} className="p-4 border-yellow-500/30" data-testid={`card-pending-cashout-${cashout.id}`}>
+                <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Banknote className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                      <span className="font-semibold text-sm">{cashout.coachName}</span>
+                      <span className="font-bold text-yellow-600 dark:text-yellow-400">
+                        ${(cashout.amountCents / 100).toFixed(2)}
+                      </span>
+                      <Badge className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-400">
+                        REQUESTED
+                      </Badge>
+                    </div>
+                    {cashout.requestedAt && (
+                      <p className="text-sm text-muted-foreground">
+                        Requested: {format(parseISO(cashout.requestedAt as unknown as string), "MMM d, yyyy 'at' h:mm a")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => updateCashoutMutation.mutate({ id: cashout.id, status: "PAID" })}
+                      disabled={updateCashoutMutation.isPending}
+                      data-testid={`button-mark-completed-${cashout.id}`}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      Mark Completed
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateCashoutMutation.mutate({ id: cashout.id, status: "DENIED" })}
+                      disabled={updateCashoutMutation.isPending}
+                      className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400 dark:text-red-400 dark:hover:text-red-300 dark:border-red-700 dark:hover:border-red-600"
+                      data-testid={`button-deny-cashout-${cashout.id}`}
+                    >
+                      <XCircle className="h-4 w-4 mr-1" />
+                      Deny
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+        </div>
+      )}
+
+      {cashouts.filter((c) => c.status === "PAID" || c.status === "DENIED").length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-semibold text-lg flex items-center gap-2">
+            <Banknote className="h-5 w-5" />
+            Cash Out History
+          </h2>
+          {cashouts
+            .filter((c) => c.status === "PAID" || c.status === "DENIED")
+            .sort((a, b) => {
+              const dateA = a.processedAt ? new Date(a.processedAt as unknown as string).getTime() : 0;
+              const dateB = b.processedAt ? new Date(b.processedAt as unknown as string).getTime() : 0;
+              return dateB - dateA;
+            })
+            .map((cashout) => (
+              <Card key={cashout.id} className="p-4" data-testid={`card-cashout-history-${cashout.id}`}>
+                <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Banknote className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-semibold text-sm">{cashout.coachName}</span>
+                      <span className="font-semibold text-sm">
+                        ${(cashout.amountCents / 100).toFixed(2)}
+                      </span>
+                      <Badge className={`text-xs ${cashoutStatusColors[cashout.status]}`}>
+                        {cashout.status}
+                      </Badge>
+                    </div>
+                    {cashout.requestedAt && (
+                      <p className="text-sm text-muted-foreground">
+                        Requested: {format(parseISO(cashout.requestedAt as unknown as string), "MMM d, yyyy 'at' h:mm a")}
+                      </p>
+                    )}
+                    {cashout.processedAt && (
+                      <p className="text-sm text-muted-foreground">
+                        Processed: {format(parseISO(cashout.processedAt as unknown as string), "MMM d, yyyy 'at' h:mm a")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+        </div>
       )}
 
       <div className="space-y-3">
