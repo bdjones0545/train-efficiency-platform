@@ -1301,16 +1301,6 @@ export async function registerRoutes(
       const start = new Date(startAt);
       const end = addMinutes(start, service.durationMin);
 
-      if (subscriptionPlanId) {
-        const clientSubs = await storage.getUserSubscriptions(resolvedClientId);
-        const activeSub = clientSubs.find(s => s.planId === subscriptionPlanId && s.status === "active");
-        if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
-          if (activeSub.sessionsRemaining <= 0) {
-            return res.status(400).json({ message: "This subscriber has used all their allocated sessions for this billing period" });
-          }
-        }
-      }
-
       const overlapping = await storage.getOverlappingBookings(coachId, start, end);
       if (overlapping.length > 0) {
         return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
@@ -1368,20 +1358,6 @@ export async function registerRoutes(
               participantName: name.trim(),
             });
           }
-        }
-      }
-
-      if (subscriptionPlanId) {
-        try {
-          const clientSubs = await storage.getUserSubscriptions(resolvedClientId);
-          const activeSub = clientSubs.find(s => s.planId === subscriptionPlanId && s.status === "active");
-          if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
-            await storage.updateUserSubscription(activeSub.id, {
-              sessionsRemaining: Math.max(0, activeSub.sessionsRemaining - 1),
-            });
-          }
-        } catch (e) {
-          console.error("Error decrementing session count:", e);
         }
       }
 
@@ -1869,6 +1845,20 @@ export async function registerRoutes(
         amountCents,
         payoutStatus: "PENDING",
       });
+
+      if (booking.subscriptionPlanId) {
+        try {
+          const clientSubs = await storage.getUserSubscriptions(booking.clientId);
+          const activeSub = clientSubs.find(s => s.planId === booking.subscriptionPlanId && (s.status === "active" || s.status === "past_due"));
+          if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
+            await storage.updateUserSubscription(activeSub.id, {
+              sessionsRemaining: Math.max(0, activeSub.sessionsRemaining - 1),
+            });
+          }
+        } catch (e) {
+          console.error("Error decrementing session count on redemption:", e);
+        }
+      }
 
       res.json(redemption);
     } catch (error) {
