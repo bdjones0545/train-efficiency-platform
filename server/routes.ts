@@ -1229,7 +1229,7 @@ export async function registerRoutes(
       const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
-      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription, ageRange, skillLevel, sport } = req.body;
+      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription, ageRange, skillLevel, sport, subscriptionPlanId } = req.body;
 
       if (!serviceId || !startAt) {
         return res.status(400).json({ message: "serviceId and startAt are required" });
@@ -1291,6 +1291,7 @@ export async function registerRoutes(
         skillLevel: isSemiPrivate ? (skillLevel || "") : "",
         sport: isSemiPrivate ? (sport || "") : "",
         teamQuoteProgramId: req.body.teamQuoteProgramId || null,
+        subscriptionPlanId: subscriptionPlanId || null,
       });
 
       if (isSemiPrivate) {

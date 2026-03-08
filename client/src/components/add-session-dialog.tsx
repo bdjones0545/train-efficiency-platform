@@ -15,7 +15,7 @@ import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
 import { Plus, CalendarIcon, Search, XCircle, MapPin, UserPlus, Trash2, Copy } from "lucide-react";
 import { format, addDays } from "date-fns";
-import type { Service, TeamQuote, Organization } from "@shared/schema";
+import type { Service, TeamQuote, Organization, OrganizationSubscriptionPlan } from "@shared/schema";
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
 
@@ -61,6 +61,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [repeatEndDate, setRepeatEndDate] = useState<string>("");
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [teamQuoteProgramId, setTeamQuoteProgramId] = useState<string>("");
+  const [subscriptionPlanId, setSubscriptionPlanId] = useState<string>("");
 
   useEffect(() => {
     if (initialDate) setSelectedDate(initialDate);
@@ -101,6 +102,11 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
       if (!res.ok) return [];
       return res.json();
     },
+  });
+
+  const { data: subscriptionPlans } = useQuery<OrganizationSubscriptionPlan[]>({
+    queryKey: ["/api/organizations", addSessionOrgId, "subscription-plans"],
+    enabled: !!addSessionOrgId && !!addSessionOrg?.subscriptionsEnabled,
   });
 
   const { data: searchResults } = useQuery<ClientSearchResult[]>({
@@ -215,6 +221,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setRepeatEndDate("");
     setSelectedDays([]);
     setTeamQuoteProgramId("");
+    setSubscriptionPlanId("");
   };
 
   const handleSubmit = async () => {
@@ -246,6 +253,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
       } catch (e) {}
     }
     const body: any = { serviceId, startAt: startAt.toISOString(), notes, location: finalLocation };
+    if (subscriptionPlanId && subscriptionPlanId !== "none") {
+      body.subscriptionPlanId = subscriptionPlanId;
+    }
     if (coachId) {
       body.coachId = coachId;
     }
@@ -446,6 +456,25 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
               </SelectContent>
             </Select>
           </div>
+
+          {addSessionOrg?.subscriptionsEnabled && subscriptionPlans && subscriptionPlans.length > 0 && !isSemiPrivate && !isTeamTraining && (
+            <div className="space-y-2">
+              <Label>Subscription Plan (optional)</Label>
+              <Select value={subscriptionPlanId} onValueChange={setSubscriptionPlanId}>
+                <SelectTrigger data-testid="select-subscription-plan">
+                  <SelectValue placeholder="No subscription" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" data-testid="option-plan-none">No subscription</SelectItem>
+                  {subscriptionPlans.filter(p => p.active).map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id} data-testid={`option-plan-${plan.id}`}>
+                      {plan.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {isSemiPrivate && (
             <div className="space-y-4">
