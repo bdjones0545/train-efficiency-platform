@@ -524,7 +524,13 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only access your own organization" });
       }
-      const { stripe } = await getOrgStripeClient(req.params.id);
+      let stripe: Stripe;
+      try {
+        const orgClient = await getOrgStripeClient(req.params.id);
+        stripe = orgClient.stripe;
+      } catch {
+        stripe = await getUncachableStripeClient();
+      }
       const products = await stripe.products.list({ active: true, limit: 100, expand: ['data.default_price'] });
       const subscriptionProducts: any[] = [];
       for (const product of products.data) {
@@ -2206,7 +2212,7 @@ export async function registerRoutes(
         const orgStripe = await getOrgStripeClient(orgId);
         stripe = orgStripe.stripe;
       } catch {
-        return res.json([]);
+        stripe = await getUncachableStripeClient();
       }
       const invoices = await stripe.invoices.list({
         limit: 100,
@@ -2806,7 +2812,7 @@ export async function registerRoutes(
         const orgStripe = await getOrgStripeClient(orgId);
         stripe = orgStripe.stripe;
       } catch {
-        return res.status(400).json({ message: "This organization has not connected a Stripe account yet. Please contact your admin." });
+        stripe = await getUncachableStripeClient();
       }
 
       const baseUrl = `${req.protocol}://${req.get("host")}`;
@@ -2858,7 +2864,9 @@ export async function registerRoutes(
       try {
         const orgStripe = await getOrgStripeClient(orgId);
         stripe = orgStripe.stripe;
-      } catch {}
+      } catch {
+        try { stripe = await getUncachableStripeClient(); } catch {}
+      }
 
       const enriched = [];
       for (const sub of subs) {
@@ -2921,7 +2929,7 @@ export async function registerRoutes(
         const orgStripe = await getOrgStripeClient(orgId);
         stripe = orgStripe.stripe;
       } catch {
-        return res.status(400).json({ message: "Stripe not configured" });
+        stripe = await getUncachableStripeClient();
       }
 
       const session = await stripe.checkout.sessions.retrieve(sessionId);
@@ -2976,7 +2984,7 @@ export async function registerRoutes(
         const orgStripe = await getOrgStripeClient(orgId);
         stripe = orgStripe.stripe;
       } catch {
-        return res.status(400).json({ message: "Stripe not configured" });
+        stripe = await getUncachableStripeClient();
       }
 
       const plans = await storage.getOrganizationSubscriptionPlans(orgId);
@@ -3058,7 +3066,9 @@ export async function registerRoutes(
           stripe = orgStripe.stripe;
           orgName = orgStripe.orgName;
         } catch {
-          return res.status(400).json({ message: "This organization has not connected a Stripe account yet. Please contact your admin." });
+          stripe = await getUncachableStripeClient();
+          const org = await storage.getOrganizationById(orgId);
+          if (org) orgName = org.name;
         }
       } else {
         stripe = await getUncachableStripeClient();
@@ -3498,9 +3508,15 @@ export async function registerRoutes(
       const coachOrg = coach.organizationId ? await storage.getOrganizationById(coach.organizationId) : null;
       if (coachOrg?.subscriptionsEnabled && coach.organizationId) {
         try {
-          const orgStripe = await getOrgStripeClient(coach.organizationId);
+          let subStripe: Stripe;
+          try {
+            const orgStripe = await getOrgStripeClient(coach.organizationId);
+            subStripe = orgStripe.stripe;
+          } catch {
+            subStripe = await getUncachableStripeClient();
+          }
           const allInvoices: Stripe.Invoice[] = [];
-          for await (const inv of orgStripe.stripe.invoices.list({
+          for await (const inv of subStripe.invoices.list({
             limit: 100,
             status: 'paid',
             expand: ['data.subscription'],
