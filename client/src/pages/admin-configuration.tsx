@@ -25,6 +25,7 @@ import {
   Check,
   Trophy,
   Clock,
+  Wallet,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -476,6 +477,20 @@ export default function AdminConfigurationPage() {
       value: payoutPercentage,
     });
   };
+
+  const toggleCoachTransactionsMutation = useMutation({
+    mutationFn: async (visible: boolean) => {
+      const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, { coachTransactionsVisible: visible });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
+      toast({ title: "Coach transactions visibility updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const toggleAthleticMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
@@ -1548,6 +1563,27 @@ export default function AdminConfigurationPage() {
               </Button>
             </div>
           )}
+        </Card>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
+          <Wallet className="h-5 w-5" />
+          Coach Transactions
+        </h2>
+        <Card className="p-4" data-testid="card-coach-transactions-settings">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Show Transactions in Sidebar</p>
+              <p className="text-xs text-muted-foreground">Control whether coaches can see the Transactions page in their sidebar navigation.</p>
+            </div>
+            <Switch
+              checked={orgData?.coachTransactionsVisible !== false}
+              onCheckedChange={(checked) => toggleCoachTransactionsMutation.mutate(checked)}
+              disabled={toggleCoachTransactionsMutation.isPending}
+              data-testid="switch-coach-transactions-visible"
+            />
+          </div>
         </Card>
       </section>
 

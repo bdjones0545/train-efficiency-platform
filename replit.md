@@ -33,7 +33,7 @@ The application uses a client-server architecture. The frontend is built with **
 -   **Location Management:** Sessions and coach profiles can specify locations.
 -   **Athletic Scheduling:** A multi-organizational, multi-program system allowing admins to create athletic programs with configurable teams per slot, training types, hours, and date range overrides. Programs are isolated and accessible via specific URLs.
 -   **Coach Toggle:** Admins/Coaches can switch between viewing/editing different coach schedules.
--   **Wallet & Transactions:** Coaches have a "Transactions" page detailing wallet credits, debits, and balances.
+-   **Wallet & Transactions:** Coaches have a "Transactions" page detailing wallet credits, debits, and balances. Admins can toggle whether coaches see the Transactions page in their sidebar via a `coachTransactionsVisible` setting on the `organizations` table (defaults to `true`), configurable in the admin Configuration page.
 -   **Subscription Management:** Organizations can enable Stripe subscriptions, import products, and track them. Clients can view and manage their subscriptions with defined cancellation policies ("end_of_period" or "immediate").
 -   **Subscription Scheduling:** Coaches can create recurring session schedules linked to subscription plans, auto-generating confirmed bookings. Group-type plans support additional configuration (max participants, age range, skill level) for public discovery.
 -   **Subscription Revenue Analytics:** Business Plan page includes subscription revenue from Stripe invoices and integrates it into revenue charts.

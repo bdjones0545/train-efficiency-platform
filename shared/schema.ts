@@ -36,6 +36,7 @@ export const organizations = pgTable("organizations", {
   subscriptionsEnabled: boolean("subscriptions_enabled").default(false),
   athleticStartHour: integer("athletic_start_hour"),
   athleticEndHour: integer("athletic_end_hour"),
+  coachTransactionsVisible: boolean("coach_transactions_visible").default(true),
   athleticEnabled: boolean("athletic_enabled").default(false),
   athleticProgramName: varchar("athletic_program_name").default(""),
   createdAt: timestamp("created_at").defaultNow(),

@@ -119,12 +119,14 @@ export function AppSidebar() {
 
   const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active) || [];
 
+  const coachTransactionsVisible = (organization as any)?.coachTransactionsVisible !== false;
+
   const coachItems = [
     { title: "Dashboard", url: "/coach", icon: LayoutDashboard },
     { title: "My Profile", url: "/coach/profile", icon: UserCog },
     { title: "Availability", url: "/coach/availability", icon: CalendarClock },
     { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign },
-    { title: "Transactions", url: "/coach/transactions", icon: Wallet },
+    ...(coachTransactionsVisible ? [{ title: "Transactions", url: "/coach/transactions", icon: Wallet }] : []),
     { title: "Users", url: "/coach/users", icon: Users },
     ...(athleticEnabled ? [{ title: activeAthleticPrograms.length === 1 ? activeAthleticPrograms[0]?.name || "Athletic" : "Athletic", url: "/coach/athletic", icon: Trophy }] : []),
     { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
