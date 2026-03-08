@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { users } from "@shared/models/auth";
-import { userProfiles, coachProfiles, services, organizations } from "@shared/schema";
+import { userProfiles, coachProfiles, services, organizations, athleticPrograms } from "@shared/schema";
 import { sql, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
@@ -28,6 +28,22 @@ async function ensurePlatformOrg() {
       await db.update(userProfiles).set({ organizationId: "org-est" }).where(eq(userProfiles.userId, userId));
       console.log(`User profile ${userId} assigned to org-est`);
     }
+  }
+
+  const [existingProgram] = await db.select().from(athleticPrograms).where(eq(athleticPrograms.id, "prog-blhs"));
+  if (!existingProgram) {
+    await db.insert(athleticPrograms).values({
+      id: "prog-blhs",
+      organizationId: "org-est",
+      name: "BLHS Athletic",
+      slug: "blhs-athletic",
+      maxTeamsPerSlot: 2,
+      trainingTypes: ["Strength", "Speed"],
+      startHour: 16,
+      endHour: 20,
+      active: true,
+    }).onConflictDoNothing();
+    console.log("BLHS Athletic program created for org-est.");
   }
 
   const { isNull } = await import("drizzle-orm");
