@@ -535,6 +535,7 @@ export class DatabaseStorage implements IStorage {
       or(eq(bookings.status, "CONFIRMED"), eq(bookings.status, "PENDING")),
       gte(bookings.startAt, new Date()),
       sql`${bookings.teamQuoteProgramId} IS NULL`,
+      sql`(${services.name} IS NULL OR LOWER(${services.name}) NOT LIKE '%team training%')`,
     ];
     if (organizationId) {
       conditions.push(eq(coachProfiles.organizationId, organizationId));
