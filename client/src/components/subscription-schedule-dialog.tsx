@@ -141,10 +141,6 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
       toast({ title: "Missing Client", description: "Please search and select a client.", variant: "destructive" });
       return;
     }
-    if (!serviceId) {
-      toast({ title: "Missing Service", description: "Please select a service type.", variant: "destructive" });
-      return;
-    }
     if (selectedDays.length === 0) {
       toast({ title: "Missing Days", description: "Please select at least one day of the week.", variant: "destructive" });
       return;
@@ -156,7 +152,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
     createMutation.mutate({
       subscriptionPlanId,
       clientId: selectedClientId,
-      serviceId,
+      ...(serviceId ? { serviceId } : {}),
       daysOfWeek: selectedDays,
       startTime,
       location: finalLocation,
@@ -300,12 +296,12 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
             )}
           </div>
 
-          {filteredServices.length > 1 ? (
+          {filteredServices.length > 1 && (
             <div className="space-y-2">
-              <Label>Service</Label>
+              <Label>Service (optional)</Label>
               <Select value={serviceId} onValueChange={setServiceId}>
                 <SelectTrigger data-testid="select-subscription-service">
-                  <SelectValue placeholder="Select a service" />
+                  <SelectValue placeholder="Auto-select based on plan" />
                 </SelectTrigger>
                 <SelectContent>
                   {filteredServices.map((s) => (
@@ -316,12 +312,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
                 </SelectContent>
               </Select>
             </div>
-          ) : selectedService ? (
-            <div className="space-y-1">
-              <Label className="text-muted-foreground text-xs">Service</Label>
-              <p className="text-sm" data-testid="text-auto-service">{selectedService.name} ({selectedService.durationMin} min)</p>
-            </div>
-          ) : null}
+          )}
 
           {(selectedService?.sessionType === "GROUP" || selectedPlan?.sessionType === "group") && (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
@@ -498,7 +489,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
             />
           </div>
 
-          {selectedPlan && selectedClientId && serviceId && selectedDays.length > 0 && (
+          {selectedPlan && selectedClientId && selectedDays.length > 0 && (
             <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
               <p className="text-sm font-medium">Schedule Summary</p>
               <p className="text-xs text-muted-foreground">
@@ -507,9 +498,11 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
               <p className="text-xs text-muted-foreground">
                 <strong>Client:</strong> {selectedClientName}
               </p>
-              <p className="text-xs text-muted-foreground">
-                <strong>Service:</strong> {selectedService?.name} ({selectedService?.durationMin} min)
-              </p>
+              {selectedService && (
+                <p className="text-xs text-muted-foreground">
+                  <strong>Service:</strong> {selectedService.name} ({selectedService.durationMin} min)
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 <strong>Days:</strong> {selectedDays.map(d => dayLabels[d].label).join(", ")} at{" "}
                 {(() => {

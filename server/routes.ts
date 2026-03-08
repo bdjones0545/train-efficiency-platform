@@ -4125,7 +4125,7 @@ export async function registerRoutes(
       const schema = z.object({
         subscriptionPlanId: z.string(),
         clientId: z.string(),
-        serviceId: z.string(),
+        serviceId: z.string().optional(),
         daysOfWeek: z.array(z.number().min(0).max(6)).min(1),
         startTime: z.string().regex(/^\d{2}:\d{2}$/),
         location: z.string().optional(),
@@ -4142,11 +4142,31 @@ export async function registerRoutes(
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
 
-      const { subscriptionPlanId, clientId, serviceId, daysOfWeek, startTime, location, notes, weeksToGenerate, maxParticipants, groupDescription, ageRange, skillLevel, sport } = parsed.data;
+      const { subscriptionPlanId, clientId, serviceId: providedServiceId, daysOfWeek, startTime, location, notes, weeksToGenerate, maxParticipants, groupDescription, ageRange, skillLevel, sport } = parsed.data;
 
       const plans = await storage.getOrganizationSubscriptionPlans(profile.organizationId);
       const plan = plans.find(p => p.id === subscriptionPlanId);
       if (!plan) return res.status(404).json({ message: "Subscription plan not found" });
+
+      let serviceId = providedServiceId;
+      if (!serviceId) {
+        const orgServices = await storage.getServicesByOrganization(profile.organizationId);
+        const activeServices = orgServices.filter(s => s.active);
+        const isGroupPlan = plan.sessionType === "group";
+        const matchingService = activeServices.find(s => {
+          if (isGroupPlan) {
+            return s.sessionType === "GROUP" || s.name.toLowerCase().includes("semi-private") || s.name.toLowerCase().includes("group");
+          }
+          return s.sessionType === "1_ON_1" && !s.name.toLowerCase().includes("semi-private") && !s.name.toLowerCase().includes("group") && !s.name.toLowerCase().includes("team training");
+        });
+        if (matchingService) {
+          serviceId = matchingService.id;
+        } else if (activeServices.length > 0) {
+          serviceId = activeServices[0].id;
+        } else {
+          return res.status(400).json({ message: "No active services available. Please create a service first." });
+        }
+      }
 
       const service = await storage.getService(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
