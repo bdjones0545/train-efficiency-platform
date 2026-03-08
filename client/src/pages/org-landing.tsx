@@ -190,6 +190,14 @@ export default function OrgLandingPage() {
             <a href="#features">
               <Button variant="ghost" size="sm" data-testid="link-org-features">Features</Button>
             </a>
+            {org.id === "org-est" && (
+              <a href="/athletic">
+                <Button variant="ghost" size="sm" data-testid="link-blhs-athletic">
+                  <Trophy className="h-4 w-4 mr-1" />
+                  BLHS Athletic
+                </Button>
+              </a>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -230,6 +238,14 @@ export default function OrgLandingPage() {
             <a href="#features" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start">Features</Button>
             </a>
+            {org.id === "org-est" && (
+              <a href="/athletic" onClick={() => setMobileMenuOpen(false)}>
+                <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-blhs-athletic-mobile">
+                  <Trophy className="h-4 w-4 mr-1" />
+                  BLHS Athletic
+                </Button>
+              </a>
+            )}
             <Button
               variant="outline"
               size="sm"
