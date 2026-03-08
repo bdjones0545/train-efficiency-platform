@@ -139,6 +139,8 @@ export default function AdminConfigurationPage() {
   const [editCoachActive, setEditCoachActive] = useState(true);
   const [editCoachPayout, setEditCoachPayout] = useState("");
 
+  const [payoutEditing, setPayoutEditing] = useState(false);
+
   const [athleticStartHour, setAthleticStartHour] = useState("16");
   const [athleticEndHour, setAthleticEndHour] = useState("20");
   const [athleticEditing, setAthleticEditing] = useState(false);
