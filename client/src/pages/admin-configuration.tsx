@@ -1093,6 +1093,29 @@ export default function AdminConfigurationPage() {
                           </Select>
                         </div>
                         <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">Session type:</span>
+                          <Select
+                            value={plan.sessionType || "personal"}
+                            onValueChange={async (value) => {
+                              try {
+                                await apiRequest("PATCH", `/api/organizations/${orgId}/subscription-plans/${plan.id}`, { sessionType: value });
+                                queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "subscription-plans"] });
+                                toast({ title: "Updated", description: `Session type set to ${value === "group" ? "Group (Open Sessions)" : "Personal"}` });
+                              } catch {
+                                toast({ title: "Error", description: "Failed to update session type", variant: "destructive" });
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-auto min-w-[180px]" data-testid={`select-session-type-${plan.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="personal">Personal</SelectItem>
+                              <SelectItem value="group">Group (Open Sessions)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground whitespace-nowrap">Coach pay/session:</span>
                           <div className="flex items-center gap-1">
                             <span className="text-xs text-muted-foreground">$</span>

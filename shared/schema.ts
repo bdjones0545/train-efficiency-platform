@@ -49,6 +49,7 @@ export const organizationSubscriptionPlans = pgTable("organization_subscription_
   intervalCount: integer("interval_count").default(1),
   cancellationPolicy: varchar("cancellation_policy").default("end_of_period"),
   coachPayPerSessionCents: integer("coach_pay_per_session_cents"),
+  sessionType: varchar("session_type").default("personal"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });

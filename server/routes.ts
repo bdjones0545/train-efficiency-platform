@@ -596,6 +596,7 @@ export async function registerRoutes(
         intervalCount: z.number().int().min(1).optional().default(1),
         cancellationPolicy: z.string().optional().default("end_of_period"),
         coachPayPerSessionCents: z.number().int().min(0).optional(),
+        sessionType: z.enum(["personal", "group"]).optional().default("personal"),
       });
       const validatedPlans = [];
       for (const plan of plans) {
@@ -619,6 +620,7 @@ export async function registerRoutes(
           intervalCount: plan.intervalCount,
           cancellationPolicy: plan.cancellationPolicy,
           coachPayPerSessionCents: plan.coachPayPerSessionCents ?? null,
+          sessionType: plan.sessionType,
           active: true,
         });
         created.push(newPlan);
@@ -637,7 +639,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only manage your own organization" });
       }
-      const { cancellationPolicy, coachPayPerSessionCents } = req.body;
+      const { cancellationPolicy, coachPayPerSessionCents, sessionType } = req.body;
       const updateData: any = {};
       if (cancellationPolicy) {
         if (!["end_of_period", "immediate"].includes(cancellationPolicy)) {
@@ -647,6 +649,12 @@ export async function registerRoutes(
       }
       if (coachPayPerSessionCents !== undefined) {
         updateData.coachPayPerSessionCents = coachPayPerSessionCents === null ? null : Math.max(0, Math.round(coachPayPerSessionCents));
+      }
+      if (sessionType !== undefined) {
+        if (!["personal", "group"].includes(sessionType)) {
+          return res.status(400).json({ message: "sessionType must be 'personal' or 'group'" });
+        }
+        updateData.sessionType = sessionType;
       }
       if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ message: "No valid fields to update" });
@@ -4157,7 +4165,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Coach does not belong to your organization" });
       }
 
-      const isSemiPrivate = service.sessionType === "GROUP";
+      const isSemiPrivate = plan.sessionType === "group" || service.sessionType === "GROUP";
       const effectiveMaxParticipants = isSemiPrivate ? (maxParticipants || 6) : null;
 
       const schedule = await storage.createSubscriptionSchedule({

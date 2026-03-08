@@ -151,7 +151,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
     }
 
     const finalLocation = location === "__custom__" ? customLocation.trim() : location;
-    const isGroup = selectedService?.sessionType === "GROUP";
+    const isGroup = selectedService?.sessionType === "GROUP" || selectedPlan?.sessionType === "group";
 
     createMutation.mutate({
       subscriptionPlanId,
@@ -299,7 +299,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
             </Select>
           </div>
 
-          {selectedService?.sessionType === "GROUP" && (
+          {(selectedService?.sessionType === "GROUP" || selectedPlan?.sessionType === "group") && (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
               <p className="text-sm font-medium text-amber-600 dark:text-amber-400">Group / Semi-Private Settings</p>
               <p className="text-xs text-muted-foreground">
@@ -498,7 +498,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
               <p className="text-xs text-muted-foreground">
                 <strong>Duration:</strong> {weeksToGenerate} weeks ({selectedDays.length * parseInt(weeksToGenerate || "8")} sessions max)
               </p>
-              {selectedService?.sessionType === "GROUP" && (
+              {(selectedService?.sessionType === "GROUP" || selectedPlan?.sessionType === "group") && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
                   <strong>Group:</strong> Up to {maxParticipants} participants — visible on Open Sessions
                 </p>
