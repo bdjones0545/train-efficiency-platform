@@ -4419,6 +4419,7 @@ export async function registerRoutes(
       let created = 0;
       let skipped = 0;
       const today = new Date();
+      const coachTz = coachProfile?.timezone || "America/New_York";
 
       for (let week = 0; week < weeksToGenerate; week++) {
         for (const dayOfWeek of daysOfWeek) {
@@ -4428,8 +4429,9 @@ export async function registerRoutes(
 
           const sessionDate = addDays(today, daysUntil);
           const [hours, minutes] = startTime.split(":").map(Number);
-          const startAt = new Date(sessionDate);
-          startAt.setHours(hours, minutes, 0, 0);
+          const localDate = new Date(sessionDate);
+          localDate.setHours(hours, minutes, 0, 0);
+          const startAt = fromZonedTime(localDate, coachTz);
           const endAt = addMinutes(startAt, service.durationMin);
 
           const overlapping = await storage.getOverlappingBookings(coachId, startAt, endAt);
@@ -4506,6 +4508,8 @@ export async function registerRoutes(
       let created = 0;
       let skipped = 0;
       const today = new Date();
+      const coachProfile = await storage.getCoachProfile(schedule.coachId);
+      const coachTz = coachProfile?.timezone || "America/New_York";
 
       for (let week = 0; week < weeks; week++) {
         for (const dayOfWeek of schedule.daysOfWeek) {
@@ -4515,8 +4519,9 @@ export async function registerRoutes(
 
           const sessionDate = addDays(today, daysUntil);
           const [hours, minutes] = schedule.startTime.split(":").map(Number);
-          const startAt = new Date(sessionDate);
-          startAt.setHours(hours, minutes, 0, 0);
+          const localDate = new Date(sessionDate);
+          localDate.setHours(hours, minutes, 0, 0);
+          const startAt = fromZonedTime(localDate, coachTz);
           const endAt = addMinutes(startAt, service.durationMin);
 
           const overlapping = await storage.getOverlappingBookings(schedule.coachId, startAt, endAt);
