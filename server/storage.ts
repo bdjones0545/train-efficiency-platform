@@ -533,6 +533,7 @@ export class DatabaseStorage implements IStorage {
       sql`${bookings.maxParticipants} IS NOT NULL`,
       or(eq(bookings.status, "CONFIRMED"), eq(bookings.status, "PENDING")),
       gte(bookings.startAt, new Date()),
+      sql`${bookings.teamQuoteProgramId} IS NULL`,
     ];
     if (organizationId) {
       conditions.push(eq(coachProfiles.organizationId, organizationId));
