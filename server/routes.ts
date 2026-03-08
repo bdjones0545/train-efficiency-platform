@@ -5,7 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, type OrgBranding } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, type OrgBranding } from "./email";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -1360,18 +1360,39 @@ export async function registerRoutes(
           const coachProfile = await storage.getCoachProfile(coachId);
           const tz = coachProfile?.timezone || "America/New_York";
           const orgB = await getOrgBranding(coachProfile?.organizationId);
+          const coachDisplayName = coachProfile?.user ? `${coachProfile.user.firstName} ${coachProfile.user.lastName}` : "your coach";
+
           if (clientUser?.email) {
-            sendBookingConfirmationToClient(
-              clientUser.email,
-              clientUser.firstName || "there",
-              coachProfile?.user ? `${coachProfile.user.firstName} ${coachProfile.user.lastName}` : "your coach",
-              service.name,
-              start,
-              end,
-              req.body.location || undefined,
-              tz,
-              orgB
-            ).catch(() => {});
+            const hasAccount = !!clientUser.passwordHash;
+
+            if (subscriptionPlanId && !hasAccount) {
+              const org = coachOrgId ? await storage.getOrganization(coachOrgId) : null;
+              const signUpUrl = org?.websiteUrl || "https://trainefficiency.com";
+              sendSubscriberSessionNotification(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachDisplayName,
+                service.name,
+                start,
+                end,
+                req.body.location || undefined,
+                signUpUrl,
+                tz,
+                orgB
+              ).catch(() => {});
+            } else {
+              sendBookingConfirmationToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachDisplayName,
+                service.name,
+                start,
+                end,
+                req.body.location || undefined,
+                tz,
+                orgB
+              ).catch(() => {});
+            }
           }
           const coachEmail = coachProfile?.email || coachProfile?.user?.email;
           if (coachEmail) {

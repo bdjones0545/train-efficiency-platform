@@ -511,6 +511,46 @@ export async function sendSubscriptionExpiredEmail(email: string, orgName: strin
   await sendEmail(email, subject, html, b.name);
 }
 
+export async function sendSubscriberSessionNotification(
+  email: string,
+  firstName: string,
+  coachName: string,
+  serviceName: string,
+  startAt: Date,
+  endAt: Date,
+  location?: string,
+  signUpUrl?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `A Session Has Been Scheduled for You — ${b.name}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
+  const locationLine = location ? line("Location", location) : '';
+
+  const ctaUrl = signUpUrl || `https://trainefficiency.com`;
+  const html = emailShell("Session Scheduled for You", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
+    ${para(`Your coach has scheduled a training session for you with <strong>${b.name}</strong>. Here are the details:`)}
+    ${detailBox([
+      line("Service", serviceName),
+      line("Coach", coachName),
+      line("Date", dateStr),
+      line("Time", timeStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("Want to manage your bookings, view your schedule, and book more sessions?")}
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="${ctaUrl}" style="display: inline-block; background: ${b.color}; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px;">Sign Up for ${b.name}</a>
+    </div>
+    ${para("Create an account to get the full experience — view upcoming sessions, book new ones, and stay connected with your coach.")}
+  `, org);
+  await sendEmail(email, subject, html, b.name);
+}
+
 export async function sendClientInviteEmail(
   email: string,
   firstName: string,
