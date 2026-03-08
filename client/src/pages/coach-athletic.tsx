@@ -20,35 +20,42 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AthleticBooking } from "@shared/schema";
 
-const START_HOUR = 16;
-const END_HOUR = 20;
 const SLOT_HEIGHT_PX = 120;
 const MAX_TEAMS_PER_SLOT = 2;
 
-const TIME_SLOTS = [
-  { id: "16:00", label: "4:00 PM", hour: 16 },
-  { id: "17:00", label: "5:00 PM", hour: 17 },
-  { id: "18:00", label: "6:00 PM", hour: 18 },
-  { id: "19:00", label: "7:00 PM", hour: 19 },
-];
-
 function formatHour(hour: number) {
   const suffix = hour >= 12 ? "PM" : "AM";
-  const h = hour > 12 ? hour - 12 : hour;
+  const h = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
   return `${h} ${suffix}`;
+}
+
+function buildTimeSlots(startHour: number, endHour: number) {
+  const slots = [];
+  for (let h = startHour; h < endHour; h++) {
+    slots.push({ id: `${h.toString().padStart(2, "0")}:00`, label: formatHour(h), hour: h });
+  }
+  return slots;
 }
 
 export default function CoachAthleticPage() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<typeof TIME_SLOTS[0] | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ id: string; label: string; hour: number } | null>(null);
   const [teamName, setTeamName] = useState("");
   const [trainingType, setTrainingType] = useState<"speed" | "strength">("strength");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
+
+  const { data: config } = useQuery<{ startHour: number; endHour: number }>({
+    queryKey: ["/api/athletic/config"],
+  });
+
+  const startHour = config?.startHour ?? 16;
+  const endHour = config?.endHour ?? 20;
+  const timeSlots = buildTimeSlots(startHour, endHour);
 
   const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
     queryKey: ["/api/athletic/bookings", dateStr],
@@ -95,7 +102,7 @@ export default function CoachAthleticPage() {
     return bookings?.filter((b) => b.timeSlot === slotId) || [];
   };
 
-  const handleSlotClick = (slot: typeof TIME_SLOTS[0]) => {
+  const handleSlotClick = (slot: { id: string; label: string; hour: number }) => {
     const slotBookings = getSlotBookings(slot.id);
     if (slotBookings.length >= MAX_TEAMS_PER_SLOT) return;
     setSelectedSlot(slot);
@@ -116,7 +123,7 @@ export default function CoachAthleticPage() {
   };
 
   const totalBooked = bookings?.length || 0;
-  const totalSlots = TIME_SLOTS.length * MAX_TEAMS_PER_SLOT;
+  const totalSlots = timeSlots.length * MAX_TEAMS_PER_SLOT;
   const slotsAvailable = totalSlots - totalBooked;
 
   return (
@@ -188,8 +195,8 @@ export default function CoachAthleticPage() {
       </div>
 
       <Card className="overflow-hidden" data-testid="calendar-timeline">
-        <div className="relative" style={{ height: `${TIME_SLOTS.length * SLOT_HEIGHT_PX}px` }}>
-          {TIME_SLOTS.map((slot, i) => {
+        <div className="relative" style={{ height: `${timeSlots.length * SLOT_HEIGHT_PX}px` }}>
+          {timeSlots.map((slot, i) => {
             const top = i * SLOT_HEIGHT_PX;
             const slotBookings = getSlotBookings(slot.id);
             const isFull = slotBookings.length >= MAX_TEAMS_PER_SLOT;

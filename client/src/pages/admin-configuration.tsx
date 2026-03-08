@@ -117,8 +117,8 @@ export default function AdminConfigurationPage() {
 
   const isEstOrg = orgId === "org-est";
 
-  const { data: athleticUsage } = useQuery<{ weekCount: number; monthCount: number; seasonCount: number; limits: any }>({
-    queryKey: ["/api/athletic/usage"],
+  const { data: athleticConfig } = useQuery<{ startHour: number; endHour: number }>({
+    queryKey: ["/api/athletic/config"],
     enabled: isEstOrg,
   });
 
@@ -134,11 +134,8 @@ export default function AdminConfigurationPage() {
   const [editCoachActive, setEditCoachActive] = useState(true);
   const [editCoachPayout, setEditCoachPayout] = useState("");
 
-  const [athleticHoursPerWeek, setAthleticHoursPerWeek] = useState("");
-  const [athleticHoursPerMonth, setAthleticHoursPerMonth] = useState("");
-  const [athleticHoursPerSeason, setAthleticHoursPerSeason] = useState("");
-  const [athleticSeasonStart, setAthleticSeasonStart] = useState("");
-  const [athleticSeasonEnd, setAthleticSeasonEnd] = useState("");
+  const [athleticStartHour, setAthleticStartHour] = useState("16");
+  const [athleticEndHour, setAthleticEndHour] = useState("20");
   const [athleticEditing, setAthleticEditing] = useState(false);
 
   const [showStripeProducts, setShowStripeProducts] = useState(false);
@@ -462,9 +459,9 @@ export default function AdminConfigurationPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Athletic settings updated" });
+      toast({ title: "Athletic hours updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/usage"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
       setAthleticEditing(false);
     },
     onError: (error: Error) => {
@@ -472,22 +469,28 @@ export default function AdminConfigurationPage() {
     },
   });
 
+  const formatHourLabel = (hour: number) => {
+    const suffix = hour >= 12 ? "PM" : "AM";
+    const h = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+    return `${h}:00 ${suffix}`;
+  };
+
   const startEditAthletic = () => {
-    setAthleticHoursPerWeek(orgData?.athleticHoursPerWeek?.toString() || "");
-    setAthleticHoursPerMonth(orgData?.athleticHoursPerMonth?.toString() || "");
-    setAthleticHoursPerSeason(orgData?.athleticHoursPerSeason?.toString() || "");
-    setAthleticSeasonStart(orgData?.athleticSeasonStartDate || "");
-    setAthleticSeasonEnd(orgData?.athleticSeasonEndDate || "");
+    setAthleticStartHour((athleticConfig?.startHour ?? 16).toString());
+    setAthleticEndHour((athleticConfig?.endHour ?? 20).toString());
     setAthleticEditing(true);
   };
 
   const saveAthleticSettings = () => {
+    const start = parseInt(athleticStartHour);
+    const end = parseInt(athleticEndHour);
+    if (isNaN(start) || isNaN(end) || start >= end || start < 0 || end > 24) {
+      toast({ title: "Invalid hours", description: "Start hour must be before end hour (0-24).", variant: "destructive" });
+      return;
+    }
     saveAthleticSettingsMutation.mutate({
-      athleticHoursPerWeek: athleticHoursPerWeek ? parseInt(athleticHoursPerWeek) : null,
-      athleticHoursPerMonth: athleticHoursPerMonth ? parseInt(athleticHoursPerMonth) : null,
-      athleticHoursPerSeason: athleticHoursPerSeason ? parseInt(athleticHoursPerSeason) : null,
-      athleticSeasonStartDate: athleticSeasonStart || null,
-      athleticSeasonEndDate: athleticSeasonEnd || null,
+      athleticStartHour: start,
+      athleticEndHour: end,
     });
   };
 
@@ -1373,96 +1376,41 @@ export default function AdminConfigurationPage() {
         <section>
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
             <Trophy className="h-5 w-5" />
-            BLHS Athletic Hour Limits
+            BLHS Athletic Available Hours
           </h2>
           <Card className="p-4 space-y-4" data-testid="card-athletic-settings">
             <p className="text-sm text-muted-foreground">
-              Set maximum hours teams can schedule per week, month, and season. Leave blank for unlimited.
+              Set the daily time window for BLHS Athletic scheduling. For example, 8 AM to 11 AM for summer hours.
             </p>
-
-            {athleticUsage && (
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-md border p-3 space-y-1">
-                  <p className="text-xs text-muted-foreground">This Week</p>
-                  <p className="text-lg font-bold" data-testid="text-athletic-week-usage">
-                    {athleticUsage.weekCount}{athleticUsage.limits.perWeek ? ` / ${athleticUsage.limits.perWeek}` : ""}
-                  </p>
-                </div>
-                <div className="rounded-md border p-3 space-y-1">
-                  <p className="text-xs text-muted-foreground">This Month</p>
-                  <p className="text-lg font-bold" data-testid="text-athletic-month-usage">
-                    {athleticUsage.monthCount}{athleticUsage.limits.perMonth ? ` / ${athleticUsage.limits.perMonth}` : ""}
-                  </p>
-                </div>
-                <div className="rounded-md border p-3 space-y-1">
-                  <p className="text-xs text-muted-foreground">This Season</p>
-                  <p className="text-lg font-bold" data-testid="text-athletic-season-usage">
-                    {athleticUsage.limits.seasonStart ? (
-                      <>{athleticUsage.seasonCount}{athleticUsage.limits.perSeason ? ` / ${athleticUsage.limits.perSeason}` : ""}</>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">No season set</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            )}
 
             {athleticEditing ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Hours per Week</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      placeholder="Unlimited"
-                      value={athleticHoursPerWeek}
-                      onChange={(e) => setAthleticHoursPerWeek(e.target.value)}
-                      data-testid="input-athletic-hours-week"
-                    />
+                    <Label className="text-xs">Start Hour</Label>
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={athleticStartHour}
+                      onChange={(e) => setAthleticStartHour(e.target.value)}
+                      data-testid="select-athletic-start-hour"
+                    >
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{formatHourLabel(i)}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Hours per Month</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      placeholder="Unlimited"
-                      value={athleticHoursPerMonth}
-                      onChange={(e) => setAthleticHoursPerMonth(e.target.value)}
-                      data-testid="input-athletic-hours-month"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Hours per Season</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      placeholder="Unlimited"
-                      value={athleticHoursPerSeason}
-                      onChange={(e) => setAthleticHoursPerSeason(e.target.value)}
-                      data-testid="input-athletic-hours-season"
-                    />
-                  </div>
-                </div>
-                <Separator />
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Season Start Date</Label>
-                    <Input
-                      type="date"
-                      value={athleticSeasonStart}
-                      onChange={(e) => setAthleticSeasonStart(e.target.value)}
-                      data-testid="input-athletic-season-start"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Season End Date</Label>
-                    <Input
-                      type="date"
-                      value={athleticSeasonEnd}
-                      onChange={(e) => setAthleticSeasonEnd(e.target.value)}
-                      data-testid="input-athletic-season-end"
-                    />
+                    <Label className="text-xs">End Hour</Label>
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={athleticEndHour}
+                      onChange={(e) => setAthleticEndHour(e.target.value)}
+                      data-testid="select-athletic-end-hour"
+                    >
+                      {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
+                        <option key={h} value={h}>{formatHourLabel(h === 24 ? 0 : h)}{h === 24 ? " (Midnight)" : ""}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1482,34 +1430,15 @@ export default function AdminConfigurationPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Per Week:</span>{" "}
-                    <span className="font-medium" data-testid="text-athletic-limit-week">
-                      {orgData?.athleticHoursPerWeek || "Unlimited"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Per Month:</span>{" "}
-                    <span className="font-medium" data-testid="text-athletic-limit-month">
-                      {orgData?.athleticHoursPerMonth || "Unlimited"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Per Season:</span>{" "}
-                    <span className="font-medium" data-testid="text-athletic-limit-season">
-                      {orgData?.athleticHoursPerSeason || "Unlimited"}
-                    </span>
-                  </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <span className="font-medium" data-testid="text-athletic-hours">
+                    {formatHourLabel(athleticConfig?.startHour ?? 16)} - {formatHourLabel(athleticConfig?.endHour ?? 20)}
+                  </span>
+                  <span className="text-muted-foreground">({(athleticConfig?.endHour ?? 20) - (athleticConfig?.startHour ?? 16)} hour slots)</span>
                 </div>
-                {(orgData?.athleticSeasonStartDate || orgData?.athleticSeasonEndDate) && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" />
-                    Season: {orgData?.athleticSeasonStartDate || "?"} to {orgData?.athleticSeasonEndDate || "?"}
-                  </p>
-                )}
                 <Button size="sm" variant="outline" onClick={startEditAthletic} data-testid="button-edit-athletic">
-                  <Pencil className="h-4 w-4 mr-1" /> Edit Limits
+                  <Pencil className="h-4 w-4 mr-1" /> Edit Hours
                 </Button>
               </div>
             )}

@@ -21,35 +21,41 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { AthleticBooking } from "@shared/schema";
 
-const START_HOUR = 16;
-const END_HOUR = 20;
-const TOTAL_HOURS = END_HOUR - START_HOUR;
 const SLOT_HEIGHT_PX = 120;
 const MAX_TEAMS_PER_SLOT = 2;
 
-const TIME_SLOTS = [
-  { id: "16:00", label: "4:00 PM", hour: 16 },
-  { id: "17:00", label: "5:00 PM", hour: 17 },
-  { id: "18:00", label: "6:00 PM", hour: 18 },
-  { id: "19:00", label: "7:00 PM", hour: 19 },
-];
-
 function formatHour(hour: number) {
   const suffix = hour >= 12 ? "PM" : "AM";
-  const h = hour > 12 ? hour - 12 : hour;
+  const h = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
   return `${h} ${suffix}`;
+}
+
+function buildTimeSlots(startHour: number, endHour: number) {
+  const slots = [];
+  for (let h = startHour; h < endHour; h++) {
+    slots.push({ id: `${h.toString().padStart(2, "0")}:00`, label: formatHour(h), hour: h });
+  }
+  return slots;
 }
 
 export default function AthleticSchedulingPage() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<typeof TIME_SLOTS[0] | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ id: string; label: string; hour: number } | null>(null);
   const [teamName, setTeamName] = useState("");
   const [trainingType, setTrainingType] = useState<"speed" | "strength">("strength");
   const { toast } = useToast();
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
+
+  const { data: config } = useQuery<{ startHour: number; endHour: number }>({
+    queryKey: ["/api/athletic/config"],
+  });
+
+  const startHour = config?.startHour ?? 16;
+  const endHour = config?.endHour ?? 20;
+  const timeSlots = buildTimeSlots(startHour, endHour);
 
   const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
     queryKey: ["/api/athletic/bookings", dateStr],
@@ -60,10 +66,6 @@ export default function AthleticSchedulingPage() {
     },
   });
 
-  const { data: usage } = useQuery<{ weekCount: number; monthCount: number; seasonCount: number; limits: { perWeek: number | null; perMonth: number | null; perSeason: number | null; seasonStart: string | null; seasonEnd: string | null } }>({
-    queryKey: ["/api/athletic/usage"],
-  });
-
   const bookMutation = useMutation({
     mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string }) => {
       const res = await apiRequest("POST", "/api/athletic/bookings", data);
@@ -71,7 +73,7 @@ export default function AthleticSchedulingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/usage"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
       setScheduleDialogOpen(false);
       setTeamName("");
       setTrainingType("strength");
@@ -90,7 +92,7 @@ export default function AthleticSchedulingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/usage"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
       toast({ title: "Session removed", description: "The scheduled session has been deleted." });
     },
     onError: (error: any) => {
@@ -102,7 +104,7 @@ export default function AthleticSchedulingPage() {
     return bookings?.filter(b => b.timeSlot === slotId) || [];
   };
 
-  const handleSlotClick = (slot: typeof TIME_SLOTS[0]) => {
+  const handleSlotClick = (slot: { id: string; label: string; hour: number }) => {
     const slotBookings = getSlotBookings(slot.id);
     if (slotBookings.length >= MAX_TEAMS_PER_SLOT) return;
     setSelectedSlot(slot);
@@ -123,7 +125,7 @@ export default function AthleticSchedulingPage() {
   };
 
   const totalBooked = bookings?.length || 0;
-  const slotsAvailable = TIME_SLOTS.filter(s => getSlotBookings(s.id).length < MAX_TEAMS_PER_SLOT).length;
+  const slotsAvailable = timeSlots.filter(s => getSlotBookings(s.id).length < MAX_TEAMS_PER_SLOT).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -153,7 +155,7 @@ export default function AthleticSchedulingPage() {
               <h1 className="text-2xl font-bold" data-testid="text-athletic-title">
                 BLHS Athletic Scheduling
               </h1>
-              <p className="text-muted-foreground mt-1">Daily calendar view — 4 PM to 8 PM</p>
+              <p className="text-muted-foreground mt-1">Daily calendar view — {formatHour(startHour)} to {formatHour(endHour)}</p>
             </div>
           </div>
 
@@ -214,7 +216,7 @@ export default function AthleticSchedulingPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card className="p-4 space-y-1">
               <p className="text-sm text-muted-foreground">Total Slots</p>
-              <p className="text-2xl font-bold" data-testid="text-total-slots">{TIME_SLOTS.length}</p>
+              <p className="text-2xl font-bold" data-testid="text-total-slots">{timeSlots.length}</p>
             </Card>
             <Card className="p-4 space-y-1">
               <p className="text-sm text-muted-foreground">Teams Booked</p>
@@ -230,48 +232,13 @@ export default function AthleticSchedulingPage() {
             </Card>
           </div>
 
-          {usage && (usage.limits.perWeek || usage.limits.perMonth || usage.limits.perSeason) && (
-            <Card className="p-4">
-              <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-primary" />
-                Hour Limits
-              </p>
-              <div className="flex flex-wrap gap-4 text-sm">
-                {usage.limits.perWeek && (
-                  <div data-testid="text-usage-week">
-                    <span className="text-muted-foreground">Week: </span>
-                    <span className={`font-semibold ${usage.weekCount >= usage.limits.perWeek ? "text-destructive" : ""}`}>
-                      {usage.weekCount} / {usage.limits.perWeek}
-                    </span>
-                  </div>
-                )}
-                {usage.limits.perMonth && (
-                  <div data-testid="text-usage-month">
-                    <span className="text-muted-foreground">Month: </span>
-                    <span className={`font-semibold ${usage.monthCount >= usage.limits.perMonth ? "text-destructive" : ""}`}>
-                      {usage.monthCount} / {usage.limits.perMonth}
-                    </span>
-                  </div>
-                )}
-                {usage.limits.perSeason && usage.limits.seasonStart && (
-                  <div data-testid="text-usage-season">
-                    <span className="text-muted-foreground">Season: </span>
-                    <span className={`font-semibold ${usage.seasonCount >= usage.limits.perSeason ? "text-destructive" : ""}`}>
-                      {usage.seasonCount} / {usage.limits.perSeason}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </Card>
-          )}
-
           <Card className="p-0 overflow-x-hidden overflow-y-auto" style={{ maxHeight: "70vh" }}>
             <div
               className="relative"
-              style={{ height: `${TOTAL_HOURS * SLOT_HEIGHT_PX}px` }}
+              style={{ height: `${timeSlots.length * SLOT_HEIGHT_PX}px` }}
               data-testid="calendar-timeline"
             >
-              {TIME_SLOTS.map((slot, i) => {
+              {timeSlots.map((slot, i) => {
                 const slotBookings = getSlotBookings(slot.id);
                 const isFull = slotBookings.length >= MAX_TEAMS_PER_SLOT;
                 const top = i * SLOT_HEIGHT_PX;
@@ -356,10 +323,10 @@ export default function AthleticSchedulingPage() {
 
               <div
                 className="absolute left-0 right-0 border-b border-border/50"
-                style={{ top: `${TOTAL_HOURS * SLOT_HEIGHT_PX}px` }}
+                style={{ top: `${timeSlots.length * SLOT_HEIGHT_PX}px` }}
               >
                 <span className="absolute left-2 top-1 text-xs text-muted-foreground font-medium">
-                  {formatHour(END_HOUR)}
+                  {formatHour(endHour)}
                 </span>
               </div>
             </div>
