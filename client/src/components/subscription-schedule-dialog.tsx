@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -195,6 +195,23 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
   const selectedPlan = plans?.find(p => p.id === subscriptionPlanId);
   const selectedService = services?.find(s => s.id === serviceId);
 
+  const filteredServices = services?.filter(s => {
+    if (!s.active) return false;
+    if (!selectedPlan) return true;
+    if (selectedPlan.sessionType === "group") {
+      return s.sessionType === "GROUP" || s.name.toLowerCase().includes("semi-private") || s.name.toLowerCase().includes("group");
+    }
+    return s.sessionType === "1_ON_1" && !s.name.toLowerCase().includes("semi-private") && !s.name.toLowerCase().includes("group") && !s.name.toLowerCase().includes("team training");
+  }) || [];
+
+  useEffect(() => {
+    if (filteredServices.length === 1) {
+      setServiceId(filteredServices[0].id);
+    } else if (filteredServices.length > 0 && !filteredServices.find(s => s.id === serviceId)) {
+      setServiceId(filteredServices[0].id);
+    }
+  }, [subscriptionPlanId, filteredServices.length]);
+
   const dayLabels = [
     { label: "Sun", value: 0 },
     { label: "Mon", value: 1 },
@@ -283,21 +300,28 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label>Service</Label>
-            <Select value={serviceId} onValueChange={setServiceId}>
-              <SelectTrigger data-testid="select-subscription-service">
-                <SelectValue placeholder="Select a service" />
-              </SelectTrigger>
-              <SelectContent>
-                {services?.filter(s => s.active).map((s) => (
-                  <SelectItem key={s.id} value={s.id} data-testid={`option-sub-service-${s.id}`}>
-                    {s.name} ({s.durationMin} min)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {filteredServices.length > 1 ? (
+            <div className="space-y-2">
+              <Label>Service</Label>
+              <Select value={serviceId} onValueChange={setServiceId}>
+                <SelectTrigger data-testid="select-subscription-service">
+                  <SelectValue placeholder="Select a service" />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredServices.map((s) => (
+                    <SelectItem key={s.id} value={s.id} data-testid={`option-sub-service-${s.id}`}>
+                      {s.name} ({s.durationMin} min)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : selectedService ? (
+            <div className="space-y-1">
+              <Label className="text-muted-foreground text-xs">Service</Label>
+              <p className="text-sm" data-testid="text-auto-service">{selectedService.name} ({selectedService.durationMin} min)</p>
+            </div>
+          ) : null}
 
           {(selectedService?.sessionType === "GROUP" || selectedPlan?.sessionType === "group") && (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
