@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,10 +19,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { AthleticBooking } from "@shared/schema";
+import type { AthleticBooking, AthleticProgram } from "@shared/schema";
 
 const SLOT_HEIGHT_PX = 120;
-const MAX_TEAMS_PER_SLOT = 2;
 
 function formatHour(hour: number) {
   const suffix = hour >= 12 ? "PM" : "AM";
@@ -38,9 +37,60 @@ function buildTimeSlots(startHour: number, endHour: number) {
   return slots;
 }
 
+function ProgramSelector({ org, programs }: { org: any; programs: AthleticProgram[] }) {
+  const backUrl = `/org/${org.slug}`;
+  const activePrograms = programs.filter((p: any) => p.active);
+
+  return (
+    <div className="min-h-screen bg-background">
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4 flex-wrap">
+          <a href={backUrl} className="flex items-center gap-2" data-testid="link-nav-home">
+            {org.logoUrl && <img src={org.logoUrl} alt={org.name} className="h-8 rounded-md" />}
+            <span className="font-semibold text-lg tracking-tight">{org.name}</span>
+          </a>
+          <a href={backUrl}>
+            <Button variant="ghost" size="sm" data-testid="link-back-home">
+              <ArrowLeft className="h-4 w-4 mr-1" /> Home
+            </Button>
+          </a>
+        </div>
+      </nav>
+      <main className="pt-24 pb-12 px-6">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <h1 className="text-2xl font-bold" data-testid="text-program-selector-title">Athletic Programs</h1>
+          <p className="text-muted-foreground">Select a program to view the schedule and book a time slot.</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {activePrograms.map((p: any) => (
+              <a key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`} data-testid={`link-program-${p.id}`}>
+                <Card className="p-6 hover:border-primary/50 transition-colors cursor-pointer space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-5 w-5 text-primary" />
+                    <h2 className="text-lg font-semibold">{p.name}</h2>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatHour(p.startHour)} - {formatHour(p.endHour)}</span>
+                    <span className="flex items-center gap-1"><Dumbbell className="h-3.5 w-3.5" /> {(p.trainingTypes || []).join(", ")}</span>
+                    <span>Max {p.maxTeamsPerSlot} teams/slot</span>
+                  </div>
+                </Card>
+              </a>
+            ))}
+          </div>
+          {activePrograms.length === 0 && (
+            <p className="text-muted-foreground text-center py-8">No active programs available at this time.</p>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export default function AthleticSchedulingPage() {
-  const params = useParams<{ slug?: string }>();
+  const params = useParams<{ slug?: string; programSlug?: string }>();
+  const [, navigate] = useLocation();
   const slug = params.slug || "efficiencystrength";
+  const programSlug = params.programSlug;
 
   const { data: org, isLoading: orgLoading } = useQuery<any>({
     queryKey: ["/api/organizations", slug],
@@ -52,52 +102,76 @@ export default function AthleticSchedulingPage() {
   });
 
   const orgId = org?.id;
-  const programName = org?.athleticProgramName || "Athletic Scheduling";
+
+  const { data: programs } = useQuery<AthleticProgram[]>({
+    queryKey: ["/api/athletic/programs", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/programs?orgId=${orgId}`);
+      return res.json();
+    },
+    enabled: !!orgId && org?.athleticEnabled,
+  });
+
+  const { data: program, isLoading: programLoading } = useQuery<AthleticProgram>({
+    queryKey: ["/api/athletic/programs/by-slug", orgId, programSlug],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/programs/by-slug/${orgId}/${programSlug}`);
+      if (!res.ok) throw new Error("Program not found");
+      return res.json();
+    },
+    enabled: !!orgId && !!programSlug,
+  });
+
+  const activePrograms = programs?.filter((p: any) => p.active) || [];
+  const resolvedProgram = programSlug ? program : (activePrograms.length === 1 ? activePrograms[0] : null);
+  const maxTeamsPerSlot = resolvedProgram?.maxTeamsPerSlot ?? 2;
+  const trainingTypes = resolvedProgram?.trainingTypes || ["Strength", "Speed"];
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ id: string; label: string; hour: number } | null>(null);
   const [teamName, setTeamName] = useState("");
-  const [trainingType, setTrainingType] = useState<"speed" | "strength">("strength");
+  const [trainingType, setTrainingType] = useState(trainingTypes[0] || "Strength");
   const { toast } = useToast();
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
+  const programId = resolvedProgram?.id;
 
-  const { data: config } = useQuery<{ startHour: number; endHour: number }>({
-    queryKey: ["/api/athletic/config", orgId, dateStr],
+  const { data: config } = useQuery<{ startHour: number; endHour: number; maxTeamsPerSlot: number; trainingTypes: string[] }>({
+    queryKey: ["/api/athletic/config", programId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/config?date=${dateStr}&orgId=${orgId}`);
+      const res = await fetch(`/api/athletic/config?date=${dateStr}&programId=${programId}`);
       if (!res.ok) throw new Error("Failed to load config");
       return res.json();
     },
-    enabled: !!orgId,
+    enabled: !!programId,
   });
 
-  const startHour = config?.startHour ?? 16;
-  const endHour = config?.endHour ?? 20;
+  const startHour = config?.startHour ?? resolvedProgram?.startHour ?? 16;
+  const endHour = config?.endHour ?? resolvedProgram?.endHour ?? 20;
   const timeSlots = buildTimeSlots(startHour, endHour);
 
   const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
-    queryKey: ["/api/athletic/bookings", orgId, dateStr],
+    queryKey: ["/api/athletic/bookings", programId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&orgId=${orgId}`);
+      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&programId=${programId}`);
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },
-    enabled: !!orgId,
+    enabled: !!programId,
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; organizationId: string }) => {
+    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; programId: string }) => {
       const res = await apiRequest("POST", "/api/athletic/bookings", data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", programId, dateStr] });
       setScheduleDialogOpen(false);
       setTeamName("");
-      setTrainingType("strength");
+      setTrainingType(trainingTypes[0] || "Strength");
       setSelectedSlot(null);
       toast({ title: "Scheduled!", description: "Your team has been booked for this time slot." });
     },
@@ -112,7 +186,7 @@ export default function AthleticSchedulingPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", programId, dateStr] });
       toast({ title: "Session removed", description: "The scheduled session has been deleted." });
     },
     onError: (error: any) => {
@@ -126,30 +200,30 @@ export default function AthleticSchedulingPage() {
 
   const handleSlotClick = (slot: { id: string; label: string; hour: number }) => {
     const slotBookings = getSlotBookings(slot.id);
-    if (slotBookings.length >= MAX_TEAMS_PER_SLOT) return;
+    if (slotBookings.length >= maxTeamsPerSlot) return;
     setSelectedSlot(slot);
     setTeamName("");
-    setTrainingType("strength");
+    setTrainingType(trainingTypes[0] || "Strength");
     setScheduleDialogOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSlot || !teamName.trim() || !orgId) return;
+    if (!selectedSlot || !teamName.trim() || !programId) return;
     bookMutation.mutate({
       date: dateStr,
       timeSlot: selectedSlot.id,
       teamName: teamName.trim(),
       trainingType,
-      organizationId: orgId,
+      programId,
     });
   };
 
   const totalBooked = bookings?.length || 0;
-  const slotsAvailable = timeSlots.filter(s => getSlotBookings(s.id).length < MAX_TEAMS_PER_SLOT).length;
-  const backUrl = slug ? `/org/${slug}` : "/";
+  const slotsAvailable = timeSlots.filter(s => getSlotBookings(s.id).length < maxTeamsPerSlot).length;
+  const backUrl = `/org/${slug}`;
 
-  if (orgLoading) {
+  if (orgLoading || programLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
@@ -173,6 +247,34 @@ export default function AthleticSchedulingPage() {
       </div>
     );
   }
+
+  if (!programSlug && activePrograms.length > 1) {
+    return <ProgramSelector org={org} programs={activePrograms} />;
+  }
+
+  if (!programSlug && activePrograms.length === 1) {
+    navigate(`/org/${slug}/athletic/${activePrograms[0].slug}`, { replace: true });
+    return null;
+  }
+
+  if (!resolvedProgram) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="p-8 text-center space-y-4">
+          <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto" />
+          <h2 className="text-xl font-semibold">Program Not Found</h2>
+          <p className="text-muted-foreground">The requested athletic program could not be found.</p>
+          <a href={backUrl}>
+            <Button variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-1" /> Go Back
+            </Button>
+          </a>
+        </Card>
+      </div>
+    );
+  }
+
+  const programName = resolvedProgram.name;
 
   return (
     <div className="min-h-screen bg-background">
@@ -277,7 +379,7 @@ export default function AthleticSchedulingPage() {
             </Card>
             <Card className="p-4 space-y-1">
               <p className="text-sm text-muted-foreground">Max Per Slot</p>
-              <p className="text-2xl font-bold" data-testid="text-max-per-slot">{MAX_TEAMS_PER_SLOT}</p>
+              <p className="text-2xl font-bold" data-testid="text-max-per-slot">{maxTeamsPerSlot}</p>
             </Card>
           </div>
 
@@ -289,7 +391,7 @@ export default function AthleticSchedulingPage() {
             >
               {timeSlots.map((slot, i) => {
                 const slotBookings = getSlotBookings(slot.id);
-                const isFull = slotBookings.length >= MAX_TEAMS_PER_SLOT;
+                const isFull = slotBookings.length >= maxTeamsPerSlot;
                 const top = i * SLOT_HEIGHT_PX;
 
                 return (
@@ -325,11 +427,7 @@ export default function AthleticSchedulingPage() {
                             {booking.teamName}
                           </span>
                           <Badge variant="secondary" className="flex-shrink-0" data-testid={`badge-training-type-${booking.id}`}>
-                            {booking.trainingType === "speed" ? (
-                              <><Zap className="h-3 w-3 mr-1" />Speed</>
-                            ) : (
-                              <><Dumbbell className="h-3 w-3 mr-1" />Strength</>
-                            )}
+                            {booking.trainingType}
                           </Badge>
                           <button
                             className="ml-auto flex-shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
@@ -402,7 +500,7 @@ export default function AthleticSchedulingPage() {
         setScheduleDialogOpen(open);
         if (!open) {
           setTeamName("");
-          setTrainingType("strength");
+          setTrainingType(trainingTypes[0] || "Strength");
           setSelectedSlot(null);
         }
       }}>
@@ -439,37 +537,25 @@ export default function AthleticSchedulingPage() {
               <label className="text-sm font-medium">
                 Training Type
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setTrainingType("speed")}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
-                    trainingType === "speed"
-                      ? "border-primary bg-primary/10"
-                      : "border-muted hover-elevate"
-                  }`}
-                  data-testid="button-training-speed"
-                >
-                  <Zap className={`h-6 w-6 ${trainingType === "speed" ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className={`text-sm font-medium ${trainingType === "speed" ? "text-primary" : "text-muted-foreground"}`}>
-                    Speed
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTrainingType("strength")}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
-                    trainingType === "strength"
-                      ? "border-primary bg-primary/10"
-                      : "border-muted hover-elevate"
-                  }`}
-                  data-testid="button-training-strength"
-                >
-                  <Dumbbell className={`h-6 w-6 ${trainingType === "strength" ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className={`text-sm font-medium ${trainingType === "strength" ? "text-primary" : "text-muted-foreground"}`}>
-                    Strength
-                  </span>
-                </button>
+              <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${Math.min(trainingTypes.length, 3)}, 1fr)` }}>
+                {trainingTypes.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setTrainingType(type)}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
+                      trainingType === type
+                        ? "border-primary bg-primary/10"
+                        : "border-muted hover-elevate"
+                    }`}
+                    data-testid={`button-training-${type.toLowerCase()}`}
+                  >
+                    <Dumbbell className={`h-6 w-6 ${trainingType === type ? "text-primary" : "text-muted-foreground"}`} />
+                    <span className={`text-sm font-medium ${trainingType === type ? "text-primary" : "text-muted-foreground"}`}>
+                      {type}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
             <Button

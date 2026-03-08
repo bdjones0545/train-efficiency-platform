@@ -209,9 +209,27 @@ export const redemptions = pgTable("redemptions", {
   amountCents: integer("amount_cents").notNull().default(0),
 });
 
+export const athleticPrograms = pgTable("athletic_programs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: varchar("name").notNull(),
+  slug: varchar("slug").notNull(),
+  maxTeamsPerSlot: integer("max_teams_per_slot").notNull().default(2),
+  trainingTypes: text("training_types").array().default(sql`'{"Strength","Speed"}'::text[]`),
+  startHour: integer("start_hour").notNull().default(16),
+  endHour: integer("end_hour").notNull().default(20),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAthleticProgramSchema = createInsertSchema(athleticPrograms).omit({ id: true, createdAt: true });
+export type AthleticProgram = typeof athleticPrograms.$inferSelect;
+export type InsertAthleticProgram = z.infer<typeof insertAthleticProgramSchema>;
+
 export const athleticHourSchedules = pgTable("athletic_hour_schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull(),
   label: varchar("label").notNull(),
   startDate: varchar("start_date").notNull(),
   endDate: varchar("end_date").notNull(),
@@ -227,6 +245,7 @@ export type InsertAthleticHourSchedule = z.infer<typeof insertAthleticHourSchedu
 export const athleticBookings = pgTable("athletic_bookings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull(),
   date: varchar("date").notNull(),
   timeSlot: varchar("time_slot").notNull(),
   teamName: varchar("team_name").notNull(),

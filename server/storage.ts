@@ -7,6 +7,7 @@ import {
   bookings,
   bookingParticipants,
   redemptions,
+  athleticPrograms,
   athleticBookings,
   athleticHourSchedules,
   cashouts,
@@ -26,6 +27,8 @@ import {
   type InsertBookingParticipant,
   type Redemption,
   type InsertRedemption,
+  type AthleticProgram,
+  type InsertAthleticProgram,
   type AthleticBooking,
   type InsertAthleticBooking,
   type AthleticHourSchedule,
@@ -110,13 +113,20 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   hasUsedFreeSession(userId: string): Promise<boolean>;
 
-  getAthleticBookings(date: string, organizationId: string): Promise<AthleticBooking[]>;
-  getAthleticBookingsInRange(startDate: string, endDate: string, organizationId: string): Promise<AthleticBooking[]>;
+  getAthleticPrograms(organizationId: string): Promise<AthleticProgram[]>;
+  getAthleticProgramById(id: string): Promise<AthleticProgram | undefined>;
+  getAthleticProgramBySlug(organizationId: string, slug: string): Promise<AthleticProgram | undefined>;
+  createAthleticProgram(program: InsertAthleticProgram): Promise<AthleticProgram>;
+  updateAthleticProgram(id: string, data: Partial<InsertAthleticProgram>): Promise<AthleticProgram | undefined>;
+  deleteAthleticProgram(id: string): Promise<void>;
+
+  getAthleticBookings(date: string, programId: string): Promise<AthleticBooking[]>;
+  getAthleticBookingsInRange(startDate: string, endDate: string, programId: string): Promise<AthleticBooking[]>;
   createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking>;
   deleteAthleticBooking(id: string): Promise<void>;
-  countAthleticBookingsForSlot(date: string, timeSlot: string, organizationId: string): Promise<number>;
+  countAthleticBookingsForSlot(date: string, timeSlot: string, programId: string): Promise<number>;
 
-  getAthleticHourSchedules(organizationId: string): Promise<AthleticHourSchedule[]>;
+  getAthleticHourSchedules(programId: string): Promise<AthleticHourSchedule[]>;
   getAthleticHourScheduleById(id: string): Promise<AthleticHourSchedule | undefined>;
   createAthleticHourSchedule(schedule: InsertAthleticHourSchedule): Promise<AthleticHourSchedule>;
   updateAthleticHourSchedule(id: string, data: Partial<InsertAthleticHourSchedule>): Promise<AthleticHourSchedule | undefined>;
@@ -679,13 +689,43 @@ export class DatabaseStorage implements IStorage {
     return existing.length > 0;
   }
 
-  async getAthleticBookings(date: string, organizationId: string): Promise<AthleticBooking[]> {
-    return db.select().from(athleticBookings).where(and(eq(athleticBookings.date, date), eq(athleticBookings.organizationId, organizationId)));
+  async getAthleticPrograms(organizationId: string): Promise<AthleticProgram[]> {
+    return db.select().from(athleticPrograms).where(eq(athleticPrograms.organizationId, organizationId)).orderBy(athleticPrograms.name);
   }
 
-  async getAthleticBookingsInRange(startDate: string, endDate: string, organizationId: string): Promise<AthleticBooking[]> {
+  async getAthleticProgramById(id: string): Promise<AthleticProgram | undefined> {
+    const [program] = await db.select().from(athleticPrograms).where(eq(athleticPrograms.id, id)).limit(1);
+    return program;
+  }
+
+  async getAthleticProgramBySlug(organizationId: string, slug: string): Promise<AthleticProgram | undefined> {
+    const [program] = await db.select().from(athleticPrograms).where(and(eq(athleticPrograms.organizationId, organizationId), eq(athleticPrograms.slug, slug))).limit(1);
+    return program;
+  }
+
+  async createAthleticProgram(program: InsertAthleticProgram): Promise<AthleticProgram> {
+    const [created] = await db.insert(athleticPrograms).values(program).returning();
+    return created;
+  }
+
+  async updateAthleticProgram(id: string, data: Partial<InsertAthleticProgram>): Promise<AthleticProgram | undefined> {
+    const [updated] = await db.update(athleticPrograms).set(data).where(eq(athleticPrograms.id, id)).returning();
+    return updated;
+  }
+
+  async deleteAthleticProgram(id: string): Promise<void> {
+    await db.delete(athleticHourSchedules).where(eq(athleticHourSchedules.programId, id));
+    await db.delete(athleticBookings).where(eq(athleticBookings.programId, id));
+    await db.delete(athleticPrograms).where(eq(athleticPrograms.id, id));
+  }
+
+  async getAthleticBookings(date: string, programId: string): Promise<AthleticBooking[]> {
+    return db.select().from(athleticBookings).where(and(eq(athleticBookings.date, date), eq(athleticBookings.programId, programId)));
+  }
+
+  async getAthleticBookingsInRange(startDate: string, endDate: string, programId: string): Promise<AthleticBooking[]> {
     return db.select().from(athleticBookings).where(
-      and(gte(athleticBookings.date, startDate), lte(athleticBookings.date, endDate), eq(athleticBookings.organizationId, organizationId))
+      and(gte(athleticBookings.date, startDate), lte(athleticBookings.date, endDate), eq(athleticBookings.programId, programId))
     );
   }
 
@@ -698,15 +738,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(athleticBookings).where(eq(athleticBookings.id, id));
   }
 
-  async countAthleticBookingsForSlot(date: string, timeSlot: string, organizationId: string): Promise<number> {
+  async countAthleticBookingsForSlot(date: string, timeSlot: string, programId: string): Promise<number> {
     const result = await db
       .select()
       .from(athleticBookings)
-      .where(and(eq(athleticBookings.date, date), eq(athleticBookings.timeSlot, timeSlot), eq(athleticBookings.organizationId, organizationId)));
+      .where(and(eq(athleticBookings.date, date), eq(athleticBookings.timeSlot, timeSlot), eq(athleticBookings.programId, programId)));
     return result.length;
   }
-  async getAthleticHourSchedules(organizationId: string): Promise<AthleticHourSchedule[]> {
-    return db.select().from(athleticHourSchedules).where(eq(athleticHourSchedules.organizationId, organizationId)).orderBy(desc(athleticHourSchedules.startDate));
+
+  async getAthleticHourSchedules(programId: string): Promise<AthleticHourSchedule[]> {
+    return db.select().from(athleticHourSchedules).where(eq(athleticHourSchedules.programId, programId)).orderBy(desc(athleticHourSchedules.startDate));
   }
 
   async getAthleticHourScheduleById(id: string): Promise<AthleticHourSchedule | undefined> {

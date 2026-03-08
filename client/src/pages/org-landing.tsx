@@ -70,6 +70,17 @@ export default function OrgLandingPage() {
     enabled: !!slug && !!org,
   });
 
+  const { data: athleticPrograms } = useQuery<any[]>({
+    queryKey: ["/api/athletic/programs", org?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/programs?orgId=${org?.id}`);
+      return res.json();
+    },
+    enabled: !!org?.id && org?.athleticEnabled === true,
+  });
+
+  const activeAthleticPrograms = athleticPrograms?.filter((p: any) => p.active) || [];
+
   const [coachModalOpen, setCoachModalOpen] = useState(false);
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
@@ -190,13 +201,24 @@ export default function OrgLandingPage() {
             <a href="#features">
               <Button variant="ghost" size="sm" data-testid="link-org-features">Features</Button>
             </a>
-            {org.athleticEnabled && (
-              <a href={`/org/${org.slug}/athletic`}>
-                <Button variant="ghost" size="sm" data-testid="link-blhs-athletic">
-                  <Trophy className="h-4 w-4 mr-1" />
-                  {org.athleticProgramName || "Athletic Scheduling"}
-                </Button>
-              </a>
+            {org.athleticEnabled && activeAthleticPrograms.length > 0 && (
+              activeAthleticPrograms.length === 1 ? (
+                <a href={`/org/${org.slug}/athletic/${activeAthleticPrograms[0].slug}`}>
+                  <Button variant="ghost" size="sm" data-testid="link-blhs-athletic">
+                    <Trophy className="h-4 w-4 mr-1" />
+                    {activeAthleticPrograms[0].name}
+                  </Button>
+                </a>
+              ) : (
+                activeAthleticPrograms.map((p: any) => (
+                  <a key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`}>
+                    <Button variant="ghost" size="sm" data-testid={`link-athletic-${p.id}`}>
+                      <Trophy className="h-4 w-4 mr-1" />
+                      {p.name}
+                    </Button>
+                  </a>
+                ))
+              )
             )}
             <Button
               variant="outline"
@@ -238,14 +260,14 @@ export default function OrgLandingPage() {
             <a href="#features" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start">Features</Button>
             </a>
-            {org.athleticEnabled && (
-              <a href={`/org/${org.slug}/athletic`} onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-blhs-athletic-mobile">
+            {org.athleticEnabled && activeAthleticPrograms.map((p: any) => (
+              <a key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`} onClick={() => setMobileMenuOpen(false)}>
+                <Button variant="ghost" size="sm" className="w-full justify-start" data-testid={`link-athletic-mobile-${p.id}`}>
                   <Trophy className="h-4 w-4 mr-1" />
-                  {org.athleticProgramName || "Athletic Scheduling"}
+                  {p.name}
                 </Button>
               </a>
-            )}
+            ))}
             <Button
               variant="outline"
               size="sm"

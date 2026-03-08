@@ -18,10 +18,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { AthleticBooking } from "@shared/schema";
+import type { AthleticBooking, AthleticProgram } from "@shared/schema";
 
 const SLOT_HEIGHT_PX = 120;
-const MAX_TEAMS_PER_SLOT = 2;
 
 function formatHour(hour: number) {
   const suffix = hour >= 12 ? "PM" : "AM";
@@ -43,8 +42,9 @@ export default function CoachAthleticPage() {
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ id: string; label: string; hour: number } | null>(null);
   const [teamName, setTeamName] = useState("");
-  const [trainingType, setTrainingType] = useState<"speed" | "strength">("strength");
+  const [trainingType, setTrainingType] = useState("Strength");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data: profile } = useQuery<{ organizationId?: string | null }>({
@@ -52,54 +52,65 @@ export default function CoachAthleticPage() {
   });
   const orgId = profile?.organizationId || "";
 
-  const { data: orgData } = useQuery<any>({
-    queryKey: ["/api/organizations/by-id", orgId],
+  const { data: programs } = useQuery<AthleticProgram[]>({
+    queryKey: ["/api/athletic/programs", orgId],
     queryFn: async () => {
-      const res = await fetch(`/api/organizations/by-id/${orgId}`);
-      if (!res.ok) throw new Error("Failed to fetch org");
+      const res = await fetch(`/api/athletic/programs?orgId=${orgId}`);
       return res.json();
     },
     enabled: !!orgId,
   });
 
-  const programName = orgData?.athleticProgramName || "Athletic Scheduling";
+  const activePrograms = programs?.filter((p) => p.active) || [];
+  const currentProgram = selectedProgramId
+    ? activePrograms.find((p) => p.id === selectedProgramId) || activePrograms[0]
+    : activePrograms[0];
+
+  if (currentProgram && selectedProgramId !== currentProgram.id) {
+    setSelectedProgramId(currentProgram.id);
+  }
+
+  const programId = currentProgram?.id;
+  const programName = currentProgram?.name || "Athletic Scheduling";
+  const maxTeamsPerSlot = currentProgram?.maxTeamsPerSlot ?? 2;
+  const trainingTypes = currentProgram?.trainingTypes || ["Strength", "Speed"];
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   const { data: config } = useQuery<{ startHour: number; endHour: number }>({
-    queryKey: ["/api/athletic/config", orgId, dateStr],
+    queryKey: ["/api/athletic/config", programId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/config?date=${dateStr}&orgId=${orgId}`);
+      const res = await fetch(`/api/athletic/config?date=${dateStr}&programId=${programId}`);
       if (!res.ok) throw new Error("Failed to load config");
       return res.json();
     },
-    enabled: !!orgId,
+    enabled: !!programId,
   });
 
-  const startHour = config?.startHour ?? 16;
-  const endHour = config?.endHour ?? 20;
+  const startHour = config?.startHour ?? currentProgram?.startHour ?? 16;
+  const endHour = config?.endHour ?? currentProgram?.endHour ?? 20;
   const timeSlots = buildTimeSlots(startHour, endHour);
 
   const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
-    queryKey: ["/api/athletic/bookings", orgId, dateStr],
+    queryKey: ["/api/athletic/bookings", programId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&orgId=${orgId}`);
+      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&programId=${programId}`);
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },
-    enabled: !!orgId,
+    enabled: !!programId,
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; organizationId: string }) => {
+    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; programId: string }) => {
       const res = await apiRequest("POST", "/api/athletic/bookings", data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", programId, dateStr] });
       setScheduleDialogOpen(false);
       setTeamName("");
-      setTrainingType("strength");
+      setTrainingType(trainingTypes[0] || "Strength");
       setSelectedSlot(null);
       toast({ title: "Team Added", description: "The team has been scheduled for this time slot." });
     },
@@ -113,7 +124,7 @@ export default function CoachAthleticPage() {
       await apiRequest("DELETE", `/api/athletic/bookings/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", programId, dateStr] });
       setDeleteConfirmId(null);
       toast({ title: "Removed", description: "The team booking has been removed." });
     },
@@ -128,27 +139,27 @@ export default function CoachAthleticPage() {
 
   const handleSlotClick = (slot: { id: string; label: string; hour: number }) => {
     const slotBookings = getSlotBookings(slot.id);
-    if (slotBookings.length >= MAX_TEAMS_PER_SLOT) return;
+    if (slotBookings.length >= maxTeamsPerSlot) return;
     setSelectedSlot(slot);
     setTeamName("");
-    setTrainingType("strength");
+    setTrainingType(trainingTypes[0] || "Strength");
     setScheduleDialogOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSlot || !teamName.trim() || !orgId) return;
+    if (!selectedSlot || !teamName.trim() || !programId) return;
     bookMutation.mutate({
       date: dateStr,
       timeSlot: selectedSlot.id,
       teamName: teamName.trim(),
       trainingType,
-      organizationId: orgId,
+      programId,
     });
   };
 
   const totalBooked = bookings?.length || 0;
-  const totalSlots = timeSlots.length * MAX_TEAMS_PER_SLOT;
+  const totalSlots = timeSlots.length * maxTeamsPerSlot;
   const slotsAvailable = totalSlots - totalBooked;
 
   return (
@@ -162,6 +173,22 @@ export default function CoachAthleticPage() {
           <p className="text-sm text-muted-foreground mt-1">Manage team training schedules</p>
         </div>
       </div>
+
+      {activePrograms.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {activePrograms.map((p) => (
+            <Button
+              key={p.id}
+              variant={selectedProgramId === p.id ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedProgramId(p.id)}
+              data-testid={`button-select-program-${p.id}`}
+            >
+              {p.name}
+            </Button>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2">
@@ -224,7 +251,7 @@ export default function CoachAthleticPage() {
           {timeSlots.map((slot, i) => {
             const top = i * SLOT_HEIGHT_PX;
             const slotBookings = getSlotBookings(slot.id);
-            const isFull = slotBookings.length >= MAX_TEAMS_PER_SLOT;
+            const isFull = slotBookings.length >= maxTeamsPerSlot;
 
             return (
               <div key={slot.id} className="absolute left-0 right-0" style={{ top: `${top}px`, height: `${SLOT_HEIGHT_PX}px` }}>
@@ -250,11 +277,7 @@ export default function CoachAthleticPage() {
                         {booking.teamName}
                       </span>
                       <Badge variant="secondary" className="flex-shrink-0">
-                        {booking.trainingType === "speed" ? (
-                          <><Zap className="h-3 w-3 mr-1" />Speed</>
-                        ) : (
-                          <><Dumbbell className="h-3 w-3 mr-1" />Strength</>
-                        )}
+                        {booking.trainingType}
                       </Badge>
                       <div className="ml-auto flex-shrink-0">
                         <Button
@@ -298,7 +321,7 @@ export default function CoachAthleticPage() {
         setScheduleDialogOpen(open);
         if (!open) {
           setTeamName("");
-          setTrainingType("strength");
+          setTrainingType(trainingTypes[0] || "Strength");
           setSelectedSlot(null);
         }
       }}>
@@ -335,37 +358,25 @@ export default function CoachAthleticPage() {
               <label className="text-sm font-medium">
                 Training Type
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setTrainingType("speed")}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
-                    trainingType === "speed"
-                      ? "border-primary bg-primary/10"
-                      : "border-muted hover-elevate"
-                  }`}
-                  data-testid="button-training-speed"
-                >
-                  <Zap className={`h-6 w-6 ${trainingType === "speed" ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className={`text-sm font-medium ${trainingType === "speed" ? "text-primary" : "text-muted-foreground"}`}>
-                    Speed
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTrainingType("strength")}
-                  className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
-                    trainingType === "strength"
-                      ? "border-primary bg-primary/10"
-                      : "border-muted hover-elevate"
-                  }`}
-                  data-testid="button-training-strength"
-                >
-                  <Dumbbell className={`h-6 w-6 ${trainingType === "strength" ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className={`text-sm font-medium ${trainingType === "strength" ? "text-primary" : "text-muted-foreground"}`}>
-                    Strength
-                  </span>
-                </button>
+              <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(trainingTypes.length, 3)}, 1fr)` }}>
+                {trainingTypes.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setTrainingType(type)}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-md border-2 transition-colors ${
+                      trainingType === type
+                        ? "border-primary bg-primary/10"
+                        : "border-muted hover-elevate"
+                    }`}
+                    data-testid={`button-training-${type.toLowerCase()}`}
+                  >
+                    <Dumbbell className={`h-6 w-6 ${trainingType === type ? "text-primary" : "text-muted-foreground"}`} />
+                    <span className={`text-sm font-medium ${trainingType === type ? "text-primary" : "text-muted-foreground"}`}>
+                      {type}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
             <Button

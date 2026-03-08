@@ -107,7 +107,17 @@ export function AppSidebar() {
   ];
 
   const athleticEnabled = (organization as any)?.athleticEnabled === true;
-  const athleticName = (organization as any)?.athleticProgramName || "Athletic Scheduling";
+
+  const { data: athleticProgramsSidebar } = useQuery<any[]>({
+    queryKey: ["/api/athletic/programs", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/programs?orgId=${orgId}`);
+      return res.json();
+    },
+    enabled: !!orgId && athleticEnabled,
+  });
+
+  const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active) || [];
 
   const coachItems = [
     { title: "Dashboard", url: "/coach", icon: LayoutDashboard },
@@ -116,7 +126,7 @@ export function AppSidebar() {
     { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign },
     { title: "Transactions", url: "/coach/transactions", icon: Wallet },
     { title: "Users", url: "/coach/users", icon: Users },
-    ...(athleticEnabled ? [{ title: athleticName, url: "/coach/athletic", icon: Trophy }] : []),
+    ...(athleticEnabled ? [{ title: activeAthleticPrograms.length === 1 ? activeAthleticPrograms[0]?.name || "Athletic" : "Athletic", url: "/coach/athletic", icon: Trophy }] : []),
     { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
   ];
 

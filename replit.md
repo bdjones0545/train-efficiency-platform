@@ -1,9 +1,7 @@
 # Train Efficiency Business Solutions
 
 ## Overview
-Train Efficiency Business Solutions is a multi-tenant, white-label scheduling platform designed for strength and conditioning coaching businesses. It allows business owners to create their own branded platform, managing coaches, clients, and sessions. The platform aims to streamline operations for coaching businesses, enhance client engagement through easy booking, and provide robust administrative tools for business management and growth. The existing Efficiency Strength Training LLC operates as the inaugural organization.
-
-The business vision is to become the leading scheduling and management solution for strength and conditioning professionals, empowering them to focus on coaching while the platform handles the complexities of scheduling, client management, and business analytics. Market potential lies in the growing demand for specialized coaching and the need for efficient, scalable business tools within this niche.
+Train Efficiency Business Solutions is a multi-tenant, white-label scheduling platform for strength and conditioning coaching businesses. It enables business owners to manage coaches, clients, and sessions under their own brand, streamlining operations, enhancing client engagement, and providing robust administrative tools. The platform aims to be the leading scheduling and management solution for strength and conditioning professionals, supporting their growth in a specialized coaching market.
 
 ## User Preferences
 I prefer iterative development with regular check-ins.
@@ -14,48 +12,45 @@ Do not make changes to the folder `node_modules`.
 Do not make changes to the file `.env`.
 
 ## System Architecture
-The application follows a client-server architecture. The frontend is built with **React, TypeScript, Tailwind CSS, and Shadcn UI** using Vite, providing a modern and responsive user interface. The backend is an **Express.js** application written in TypeScript, handling API requests, business logic, and database interactions. **PostgreSQL** serves as the primary database, managed with **Drizzle ORM**. Authentication is handled via **Replit Auth (OpenID Connect)** for clients and a custom email/password login system for coaches, leveraging `bcryptjs` for secure password hashing. Client-side routing is managed by **Wouter**.
+The application uses a client-server architecture. The frontend is built with **React, TypeScript, Tailwind CSS, and Shadcn UI** using Vite. The backend is an **Express.js** application (TypeScript) managing API requests and business logic, with **PostgreSQL** as the database, accessed via **Drizzle ORM**. Authentication uses **Replit Auth (OpenID Connect)** for clients and a custom email/password system (`bcryptjs`) for coaches. Client-side routing is handled by **Wouter**.
 
-**Key Architectural Decisions:**
-- **Multi-Tenancy:** Organizations are isolated via an `organization_id` on key tables (`coach_profiles`, `user_profiles`, `bookings`, `services`), allowing each business to have its own branded environment. New organizations register via a dedicated API endpoint, leading to a guided setup process for branding, services, and Stripe integration. Each organization has a dynamic landing page at `/org/{slug}`.
-- **Role-Based Access Control (RBAC):** Distinct roles (CLIENT, COACH, ADMIN) are implemented, with API endpoints and frontend features gated based on the user's assigned role, ensuring data security and appropriate access levels.
-- **UI/UX Design:** A dark mode theme is default, utilizing a vibrant green primary color consistent with the initial organization's branding. The Inter font is used throughout. Shadcn UI components provide a consistent and accessible design system.
-- **Dynamic Content:** The platform supports dynamic content for organization branding (logo, taglines, colors) and service offerings, allowing white-label customization.
-- **Payment Processing:** Integrates with Stripe for subscription management for organizations and individual session payments. Organizations can connect their own Stripe accounts for service payments, while platform subscriptions utilize the main platform's Stripe account.
-- **Notification System:** Utilizes SendGrid for email notifications, including subscription status changes, password resets, and inactivity reminders.
-- **AI Integration:** An AI Scheduling Assistant chatbot, powered by OpenAI's function calling capabilities, provides conversational interaction for clients and coaches, leveraging specific tools to manage schedules, bookings, and availability.
+**Core Architectural Decisions:**
+-   **Multi-Tenancy:** Each organization is isolated using an `organization_id` across key data tables, allowing for distinct branded environments and dynamic landing pages (`/org/{slug}`). New organizations undergo a guided setup.
+-   **Role-Based Access Control (RBAC):** Implements `CLIENT`, `COACH`, and `ADMIN` roles to secure API endpoints and frontend features.
+-   **UI/UX Design:** Features a dark mode theme with a vibrant green primary color, Inter font, and consistent design using Shadcn UI components.
+-   **Dynamic Content & White-Labeling:** Supports customization of organization branding (logo, taglines, colors) and service offerings.
+-   **Payment Processing:** Integrates with **Stripe** for organizational subscriptions and individual session payments. Organizations can connect their own Stripe accounts.
+-   **Notification System:** Uses **SendGrid** for various email notifications.
+-   **AI Integration:** An AI Scheduling Assistant chatbot, powered by **OpenAI's** function calling, assists with conversational scheduling and booking.
 
-**Feature Specifications:**
-- **Booking System:** Clients can browse coaches and services, view weekly calendar slots, and book sessions. Coaches manage their availability (recurring weekly blocks), view bookings, and redeem completed sessions. Overlap prevention is enforced.
-- **Session Types:** Supports 1:1, semi-private (2-6 participants), and team training sessions. Semi-private sessions feature join/leave functionality and configurable capacity, age range, and skill levels.
-- **Admin Tools:** Comprehensive admin dashboard for user management (including role assignment), service configuration, booking oversight, and CSV data export.
-- **Team Training Management:** Features for requesting team training quotes, generating monthly Stripe invoices for team contracts, and automating team user creation upon payment. This includes contract-linked session scheduling and coach payout calculations based on contract value. Team quotes are now organization-aware: invoices are created using each organization's own connected Stripe account (with fallback to the platform's default Stripe if the org hasn't connected one). The `team_quotes` table includes an `organizationId` column to track which org's Stripe was used.
-- **Email Color Customization:** Organizations can customize their email branding via the Admin Branding page (`/admin/branding`). The `emailPrimaryColor` (used for email header backgrounds, buttons, and detail box borders) and `emailSecondaryColor` (used for detail box backgrounds) fields on the `organizations` table allow per-org email styling. The branding page includes color pickers with hex input and a live email preview. Falls back to platform defaults (#16a34a green / #1a1a1a dark) when not set.
-- **Business Analytics (Coach-Specific):** A "Business Plan" page provides coaches with analytics including client lists, session history, consistency scoring, revenue predictions (based on client consistency), and revenue history.
-- **Client Import:** Admins can import client data via CSV, generating user accounts and sending invite emails for password creation.
-- **Location Management:** Sessions can be assigned preset or custom locations. Coach profiles also have a `location` field for display on coach cards.
-- **Athletic Scheduling (Multi-Org):** Any organization can enable athletic scheduling via a toggle in the admin Configuration page. Each org can set a custom program name (e.g., "BLHS Athletic", "Varsity Training"). When enabled, the athletic link appears on the org's landing page and in the sidebar for coaches. Three org-level fields: `athleticEnabled` (boolean), `athleticProgramName` (varchar), and default hours (`athleticStartHour`/`athleticEndHour`). Both `athletic_bookings` and `athletic_hour_schedules` tables have an `organizationId` column for multi-tenant isolation. The public athletic page is at `/org/:slug/athletic` (fetches org by slug, uses org branding). All athletic API endpoints accept `orgId` query param for reads, and admin write endpoints derive orgId from the authenticated user's profile. The `/api/athletic/config?date=YYYY-MM-DD&orgId=X` endpoint resolves correct hours for any given date and org. Date range schedules override default hours when a date falls within a schedule range.
-- **Coach Toggle:** Admins/Coaches can toggle between viewing/editing different coach schedules and availability.
-- **Wallet and Transactions:** A coach-specific "Transactions" page displays all wallet credits/debits and user balances.
-- **Subscription Management:** Organizations can enable subscriptions via a toggle in the Configuration page. When enabled, admins can connect to their Stripe account to browse and import recurring subscription products. Selected products are stored in the `organization_subscription_plans` table. The `organizations` table has a `subscriptionsEnabled` boolean field to gate this feature. On the Coach Transactions page, when subscriptions are enabled, a "Stripe Subscriptions" toggle appears that, when turned on, adds a "Subscriptions" tab showing paid subscription invoices pulled directly from the org's connected Stripe account, including customer details, amounts, descriptions, and invoice links.
-- **Subscription Scheduling:** When subscriptions are enabled, coaches see a "Schedule Subscription" button on the Coach Dashboard alongside the normal "Add Session" button. This opens a dedicated dialog for creating recurring session schedules tied to a subscription plan. Coaches select a subscription plan, search/select a client, pick a service type, choose training days of the week, set a start time and location, and specify how many weeks to generate sessions for. The system auto-creates confirmed bookings, skipping time conflicts. Schedules are stored in the `subscription_schedules` table (which includes group fields: `max_participants`, `group_description`, `age_range`, `skill_level`, `sport`) and can be used to generate additional sessions later via the `/api/coach/subscription-schedules/:id/generate-sessions` endpoint. When a GROUP-type service is selected or the plan's `sessionType` is "group", the dialog shows additional fields (max participants, description, sport, age range, skill level) and generated bookings have `maxParticipants` set so they automatically appear on the Open Sessions page for other clients to discover and join. Each subscription plan has a `sessionType` field ("personal" or "group") configurable in the Configuration page, which determines whether sessions created from that plan show up in Open Group Sessions.
-- **Subscription Revenue Analytics:** The Business Plan page includes subscription revenue as its own category, pulled from Stripe subscription invoices only when subscriptions are enabled. A dedicated "Subscription Revenue" stat card (amber-styled) appears below the main stats when there is subscription revenue. In the "Revenue by Source (Actual)" chart, Subscriptions appears as its own amber bar alongside Wallet, Venmo, and Cash. Both the `stats.subscriptionRevenueCents` and `actualRevenue.subscriptionCents` fields are returned from the business plan API.
-- **Client Subscription Checkout & Tracking:** Subscriptions are tracked locally in the `user_subscriptions` table, which stores userId, planId, stripeSubscriptionId, status, currentPeriodEnd, and cancelAtPeriodEnd. When a client subscribes via `POST /api/wallet/subscribe`, a pending record is created; on return from Stripe checkout, `POST /api/wallet/verify-subscription` confirms the session and activates the record with the Stripe subscription ID. The wallet page shows a "My Subscriptions" section with active subscriptions (plan name, price, status badge, next billing date, cancel button). Cancellation respects the plan's `cancellationPolicy` (either "end_of_period" or "immediate") set by the admin. Duplicate subscriptions to the same plan are prevented. `GET /api/wallet/my-subscriptions` syncs status with Stripe on each fetch. `GET /api/wallet/subscription-plans` shows available plans with "Subscribed" badges for already-subscribed plans. Coaches see an amber "Sub" badge on users with active subscriptions in the User Management list via `GET /api/coach/client-subscriptions`.
-- **Subscription Cancellation Policy:** The `organization_subscription_plans` table has a `cancellationPolicy` field (values: "end_of_period" or "immediate"). Admins can set this per plan in the Configuration page via a dropdown. When "end_of_period" is selected, cancellation sets `cancel_at_period_end` on the Stripe subscription; when "immediate", the Stripe subscription is canceled right away. The cancel confirmation dialog on the wallet page explains the policy to the client.
-- **Subscription Coach Payout (Per-Session Rate):** The `organization_subscription_plans` table has a `coachPayPerSessionCents` field — a flat dollar amount the coach earns per subscription session. Admins set this via a "Coach pay/session" input on each plan card in the Configuration page. Bookings created from subscription schedules are tagged with `subscriptionPlanId` on the `bookings` table. During redemption, if a booking has a `subscriptionPlanId` and the linked plan has `coachPayPerSessionCents` set, that flat rate is used instead of the normal percentage-based payout. If not set, the system falls back to the standard percentage-based payout calculation.
-- **Subscription Session Allocation:** Each subscription plan has a `sessionsPerWeek` field (1-7) configurable in the Configuration page. The `user_subscriptions` table tracks `sessionsRemaining` and `currentPeriodStart` per subscriber. When Stripe fires an `invoice.paid` webhook event for a subscription renewal (or initial payment), the system calculates total sessions for the billing period (sessionsPerWeek × weeks in the billing interval) and resets `sessionsRemaining` on the subscriber's record. When a coach redeems a completed subscription session, `sessionsRemaining` is decremented by 1 on the subscriber's record. Sessions are deducted at redemption time (not at booking time), so cancelled or no-show sessions don't count against the subscriber's allocation. The Add Session dialog shows a "X left" badge next to each subscriber in the list. The `handleSubscriptionRenewal` method in `webhookHandlers.ts` handles the reset on each billing cycle.
+**Key Feature Specifications:**
+-   **Booking System:** Clients can book 1:1, semi-private (2-6 participants), and team training sessions based on coach availability. Coaches manage availability and redeem sessions. Semi-private sessions include join/leave functionality and configurable attributes.
+-   **Admin Tools:** Dashboard for user management, service configuration, booking oversight, and CSV data export.
+-   **Team Training Management:** Features for requesting quotes, generating Stripe invoices for contracts, and automating user creation. Coach payouts are calculated based on contract value.
+-   **Email Customization:** Organizations can customize email primary and secondary colors via an admin branding page, with a live preview.
+-   **Business Analytics (Coach-Specific):** Coaches access a "Business Plan" page with client lists, session history, consistency scoring, and revenue predictions/history.
+-   **Client Import:** Admins can import client data via CSV, generating accounts and invite emails.
+-   **Location Management:** Sessions and coach profiles can specify locations.
+-   **Athletic Scheduling:** A multi-organizational, multi-program system allowing admins to create athletic programs with configurable teams per slot, training types, hours, and date range overrides. Programs are isolated and accessible via specific URLs.
+-   **Coach Toggle:** Admins/Coaches can switch between viewing/editing different coach schedules.
+-   **Wallet & Transactions:** Coaches have a "Transactions" page detailing wallet credits, debits, and balances.
+-   **Subscription Management:** Organizations can enable Stripe subscriptions, import products, and track them. Clients can view and manage their subscriptions with defined cancellation policies ("end_of_period" or "immediate").
+-   **Subscription Scheduling:** Coaches can create recurring session schedules linked to subscription plans, auto-generating confirmed bookings. Group-type plans support additional configuration (max participants, age range, skill level) for public discovery.
+-   **Subscription Revenue Analytics:** Business Plan page includes subscription revenue from Stripe invoices and integrates it into revenue charts.
+-   **Subscription Coach Payout:** Subscription plans define a flat `coachPayPerSessionCents`, which overrides percentage-based payouts for subscription-linked sessions upon redemption.
+-   **Subscription Session Allocation:** Plans define `sessionsPerWeek`. `sessionsRemaining` is tracked per subscriber and reset upon renewal via Stripe webhooks. Sessions are decremented upon redemption.
 
 ## External Dependencies
-- **PostgreSQL:** Primary relational database for all application data.
-- **Express.js:** Backend web framework.
-- **React:** Frontend JavaScript library.
-- **Tailwind CSS:** Utility-first CSS framework for styling.
-- **Shadcn UI:** Reusable UI components.
-- **Vite:** Frontend build tool.
-- **Wouter:** Lightweight client-side router.
-- **Drizzle ORM:** TypeScript ORM for PostgreSQL.
-- **Replit Auth (OpenID Connect):** External authentication provider for clients.
-- **Stripe:** Payment gateway for subscription management, session payments, and invoicing.
-- **bcryptjs:** Library for hashing passwords.
-- **SendGrid:** Email delivery service for notifications and transactional emails.
-- **OpenAI API:** Powers the AI Scheduling Assistant chatbot for natural language processing and function calling.
+-   **PostgreSQL:** Primary database.
+-   **Express.js:** Backend framework.
+-   **React:** Frontend library.
+-   **Tailwind CSS:** Styling framework.
+-   **Shadcn UI:** UI component library.
+-   **Vite:** Frontend build tool.
+-   **Wouter:** Client-side router.
+-   **Drizzle ORM:** TypeScript ORM.
+-   **Replit Auth (OpenID Connect):** Client authentication.
+-   **Stripe:** Payment gateway.
+-   **bcryptjs:** Password hashing.
+-   **SendGrid:** Email service.
+-   **OpenAI API:** AI chatbot integration.
