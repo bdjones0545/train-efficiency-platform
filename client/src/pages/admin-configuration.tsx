@@ -131,24 +131,11 @@ export default function AdminConfigurationPage() {
 
   const { data: savedPlans } = useQuery<OrganizationSubscriptionPlan[]>({
     queryKey: ["/api/organizations", orgId, "subscription-plans"],
-    queryFn: async () => {
-      const res = await fetch(`/api/organizations/${orgId}/subscription-plans`);
-      if (!res.ok) throw new Error("Failed to fetch plans");
-      return res.json();
-    },
     enabled: !!orgId,
   });
 
   const { data: stripeProducts, isLoading: stripeProductsLoading, refetch: refetchStripeProducts } = useQuery<StripeProduct[]>({
     queryKey: ["/api/organizations", orgId, "stripe-products"],
-    queryFn: async () => {
-      const res = await fetch(`/api/organizations/${orgId}/stripe-products`);
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to fetch products");
-      }
-      return res.json();
-    },
     enabled: false,
   });
 
