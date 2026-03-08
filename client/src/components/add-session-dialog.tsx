@@ -224,9 +224,11 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setSubscriptionPlanId("");
   };
 
+  const hasSubscriptionPlan = subscriptionPlanId && subscriptionPlanId !== "none";
+
   const handleSubmit = async () => {
-    if (!selectedDate || !serviceId || !startTime) {
-      toast({ title: "Missing Fields", description: "Please fill in date, time, and service.", variant: "destructive" });
+    if (!selectedDate || (!serviceId && !hasSubscriptionPlan) || !startTime) {
+      toast({ title: "Missing Fields", description: "Please fill in date, time, and service (or subscription plan).", variant: "destructive" });
       return;
     }
     const hasTeamContract = isTeamTraining && teamQuoteProgramId && teamQuoteProgramId !== "none";
@@ -252,8 +254,11 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
         queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", addSessionOrgId] });
       } catch (e) {}
     }
-    const body: any = { serviceId, startAt: startAt.toISOString(), notes, location: finalLocation };
-    if (subscriptionPlanId && subscriptionPlanId !== "none") {
+    const body: any = { startAt: startAt.toISOString(), notes, location: finalLocation };
+    if (serviceId) {
+      body.serviceId = serviceId;
+    }
+    if (hasSubscriptionPlan) {
       body.subscriptionPlanId = subscriptionPlanId;
     }
     if (coachId) {
@@ -441,34 +446,49 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
           <DialogTitle>Schedule a Session</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label>Service</Label>
-            <Select value={serviceId} onValueChange={setServiceId}>
-              <SelectTrigger data-testid="select-service">
-                <SelectValue placeholder="Select a service" />
-              </SelectTrigger>
-              <SelectContent>
-                {services?.filter(s => s.active).map((s) => (
-                  <SelectItem key={s.id} value={s.id} data-testid={`option-service-${s.id}`}>
-                    {s.name} ({s.durationMin} min)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {addSessionOrg?.subscriptionsEnabled && subscriptionPlans && subscriptionPlans.length > 0 && !isSemiPrivate && !isTeamTraining && (
+          {addSessionOrg?.subscriptionsEnabled && subscriptionPlans && subscriptionPlans.length > 0 ? (
             <div className="space-y-2">
-              <Label>Subscription Plan (optional)</Label>
-              <Select value={subscriptionPlanId} onValueChange={setSubscriptionPlanId}>
-                <SelectTrigger data-testid="select-subscription-plan">
-                  <SelectValue placeholder="No subscription" />
+              <Label>Service or Subscription</Label>
+              <Select
+                value={hasSubscriptionPlan ? `plan:${subscriptionPlanId}` : serviceId ? `svc:${serviceId}` : ""}
+                onValueChange={(val) => {
+                  if (val.startsWith("plan:")) {
+                    setSubscriptionPlanId(val.replace("plan:", ""));
+                    setServiceId("");
+                  } else if (val.startsWith("svc:")) {
+                    setServiceId(val.replace("svc:", ""));
+                    setSubscriptionPlanId("");
+                  }
+                }}
+              >
+                <SelectTrigger data-testid="select-service">
+                  <SelectValue placeholder="Select a service or subscription" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none" data-testid="option-plan-none">No subscription</SelectItem>
                   {subscriptionPlans.filter(p => p.active).map((plan) => (
-                    <SelectItem key={plan.id} value={plan.id} data-testid={`option-plan-${plan.id}`}>
-                      {plan.name}
+                    <SelectItem key={`plan-${plan.id}`} value={`plan:${plan.id}`} data-testid={`option-plan-${plan.id}`}>
+                      {plan.name} (Subscription)
+                    </SelectItem>
+                  ))}
+                  {services?.filter(s => s.active).map((s) => (
+                    <SelectItem key={`svc-${s.id}`} value={`svc:${s.id}`} data-testid={`option-service-${s.id}`}>
+                      {s.name} ({s.durationMin} min)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Service</Label>
+              <Select value={serviceId} onValueChange={setServiceId}>
+                <SelectTrigger data-testid="select-service">
+                  <SelectValue placeholder="Select a service" />
+                </SelectTrigger>
+                <SelectContent>
+                  {services?.filter(s => s.active).map((s) => (
+                    <SelectItem key={s.id} value={s.id} data-testid={`option-service-${s.id}`}>
+                      {s.name} ({s.durationMin} min)
                     </SelectItem>
                   ))}
                 </SelectContent>

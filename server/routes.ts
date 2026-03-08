@@ -1229,17 +1229,40 @@ export async function registerRoutes(
       const coachId = targetCoachId || await getCoachId(userId);
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
 
-      const { clientId, clientFirstName, clientLastName, serviceId, startAt, notes, maxParticipants, groupDescription, ageRange, skillLevel, sport, subscriptionPlanId } = req.body;
+      const { clientId, clientFirstName, clientLastName, serviceId: providedServiceId, startAt, notes, maxParticipants, groupDescription, ageRange, skillLevel, sport, subscriptionPlanId } = req.body;
 
-      if (!serviceId || !startAt) {
-        return res.status(400).json({ message: "serviceId and startAt are required" });
+      if (!startAt) {
+        return res.status(400).json({ message: "startAt is required" });
+      }
+      if (!providedServiceId && !subscriptionPlanId) {
+        return res.status(400).json({ message: "serviceId or subscriptionPlanId is required" });
+      }
+
+      const coachProfile = await storage.getUserProfile(userId);
+      const coachOrgId = coachProfile?.organizationId || null;
+
+      let serviceId = providedServiceId;
+      if (!serviceId && subscriptionPlanId && coachOrgId) {
+        const plans = await storage.getOrganizationSubscriptionPlans(coachOrgId);
+        const plan = plans.find(p => p.id === subscriptionPlanId);
+        const orgServices = await storage.getServicesByOrganization(coachOrgId);
+        const activeServices = orgServices.filter(s => s.active);
+        const isGroupPlan = plan?.sessionType === "group";
+        const matchingService = activeServices.find(s => {
+          if (isGroupPlan) {
+            return s.sessionType === "GROUP" || s.name.toLowerCase().includes("semi-private") || s.name.toLowerCase().includes("group");
+          }
+          return s.sessionType === "1_ON_1" && !s.name.toLowerCase().includes("semi-private") && !s.name.toLowerCase().includes("group") && !s.name.toLowerCase().includes("team training");
+        });
+        serviceId = matchingService?.id || activeServices[0]?.id;
+      }
+
+      if (!serviceId) {
+        return res.status(400).json({ message: "No matching service found" });
       }
 
       const service = await storage.getService(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
-
-      const coachProfile = await storage.getUserProfile(userId);
-      const coachOrgId = coachProfile?.organizationId || null;
 
       const isSemiPrivate = service.sessionType === "GROUP" || !!maxParticipants;
 
