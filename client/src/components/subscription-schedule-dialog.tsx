@@ -60,14 +60,6 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
 
   const { data: plans } = useQuery<OrganizationSubscriptionPlan[]>({
     queryKey: ["/api/organizations", orgId, "subscription-plans"],
-    queryFn: async () => {
-      const res = await fetch(`/api/organizations/${orgId}/subscription-plans`, {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) return [];
-      return res.json();
-    },
     enabled: !!orgId,
   });
 

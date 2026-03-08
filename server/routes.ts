@@ -560,7 +560,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/organizations/:id/subscription-plans", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+  app.get("/api/organizations/:id/subscription-plans", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const profile = await storage.getUserProfile(userId);
