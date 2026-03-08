@@ -1174,7 +1174,7 @@ export async function registerRoutes(
       const coachProfile = await storage.getCoachProfileByUserId(userId);
       if (!coachProfile) return res.status(404).json({ message: "Coach profile not found" });
 
-      const { bio, specialties, photoUrl, timezone } = req.body;
+      const { bio, specialties, photoUrl, timezone, location } = req.body;
       const updateData: Record<string, any> = {};
       if (bio !== undefined) updateData.bio = bio;
       if (specialties !== undefined) {
@@ -1185,6 +1185,7 @@ export async function registerRoutes(
       }
       if (photoUrl !== undefined) updateData.photoUrl = photoUrl;
       if (timezone !== undefined) updateData.timezone = timezone;
+      if (location !== undefined) updateData.location = location;
 
       const updated = await storage.updateCoachProfile(coachProfile.id, updateData);
       res.json(updated);

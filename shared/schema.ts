@@ -128,6 +128,7 @@ export const coachProfiles = pgTable("coach_profiles", {
   specialties: text("specialties").array().default(sql`'{}'::text[]`),
   photoUrl: text("photo_url"),
   timezone: varchar("timezone").default("America/New_York"),
+  location: text("location").default(""),
   isActive: boolean("is_active").default(true),
   payoutPercentage: integer("payout_percentage"),
   organizationId: varchar("organization_id"),

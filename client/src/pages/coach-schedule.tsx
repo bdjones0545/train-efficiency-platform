@@ -246,10 +246,10 @@ export default function CoachSchedulePage() {
             <h1 className="text-2xl font-serif font-bold" data-testid="text-coach-detail-name">
               {coach.user?.firstName} {coach.user?.lastName}
             </h1>
-            {coach.timezone && (
+            {(coach.location || coach.timezone) && (
               <p className="text-sm text-muted-foreground flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5" />
-                {coach.timezone.replace("_", " ")}
+                {coach.location || coach.timezone?.replace("_", " ")}
               </p>
             )}
             {coach.bio && <p className="text-sm text-muted-foreground leading-relaxed">{coach.bio}</p>}

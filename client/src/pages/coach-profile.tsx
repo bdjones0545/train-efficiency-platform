@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { useAuth } from "@/hooks/use-auth";
-import { Save, Plus, X, User } from "lucide-react";
+import { Save, Plus, X, User, MapPin } from "lucide-react";
 import type { CoachProfile } from "@shared/schema";
 
 export default function CoachProfilePage() {
@@ -27,6 +27,7 @@ export default function CoachProfilePage() {
   const [newSpecialty, setNewSpecialty] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [timezone, setTimezone] = useState("");
+  const [location, setLocation] = useState("");
 
   useEffect(() => {
     if (profile) {
@@ -34,6 +35,7 @@ export default function CoachProfilePage() {
       setSpecialties(profile.specialties || []);
       setPhotoUrl(profile.photoUrl || "");
       setTimezone(profile.timezone || "America/New_York");
+      setLocation(profile.location || "");
     }
   }, [profile]);
 
@@ -58,7 +60,7 @@ export default function CoachProfilePage() {
   });
 
   const handleSave = () => {
-    updateMutation.mutate({ bio, specialties, photoUrl: photoUrl || null, timezone });
+    updateMutation.mutate({ bio, specialties, photoUrl: photoUrl || null, timezone, location });
   };
 
   const addSpecialty = () => {
@@ -163,6 +165,19 @@ export default function CoachProfilePage() {
             </div>
 
             <div>
+              <label className="text-sm font-medium mb-1.5 block">Location</label>
+              <Input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g. Miami, FL"
+                data-testid="input-location"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Your city or area. This appears on your coach card.
+              </p>
+            </div>
+
+            <div>
               <label className="text-sm font-medium mb-1.5 block">Timezone</label>
               <Input
                 value={timezone}
@@ -198,6 +213,12 @@ export default function CoachProfilePage() {
                 <p className="font-semibold text-sm" data-testid="text-preview-name">
                   {user?.firstName} {user?.lastName}
                 </p>
+                {location && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-preview-location">
+                    <MapPin className="h-3 w-3" />
+                    {location}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">{timezone}</p>
               </div>
             </div>

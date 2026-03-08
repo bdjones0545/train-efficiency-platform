@@ -65,10 +65,10 @@ export default function CoachesPage() {
                   <h3 className="font-semibold" data-testid={`text-coach-name-${coach.id}`}>
                     {coach.user?.firstName} {coach.user?.lastName}
                   </h3>
-                  {coach.timezone && (
+                  {(coach.location || coach.timezone) && (
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
                       <MapPin className="h-3 w-3" />
-                      {coach.timezone.replace("_", " ")}
+                      {coach.location || coach.timezone?.replace("_", " ")}
                     </p>
                   )}
                 </div>
