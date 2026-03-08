@@ -109,6 +109,12 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     enabled: !!addSessionOrgId && !!addSessionOrg?.subscriptionsEnabled,
   });
 
+  type SubscriberEntry = { id: string; userId: string; planId: string; status: string; user: { firstName: string; lastName: string; email: string } | null; plan: { name: string } | null };
+  const { data: subscribers } = useQuery<SubscriberEntry[]>({
+    queryKey: ["/api/coach/client-subscriptions"],
+    enabled: !!addSessionOrg?.subscriptionsEnabled,
+  });
+
   const { data: searchResults } = useQuery<ClientSearchResult[]>({
     queryKey: ["/api/coach/clients/search", searchQuery],
     queryFn: async () => {
@@ -716,7 +722,57 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
           {!isSemiPrivate && !isTeamBHS && !(isTeamTraining && teamQuoteProgramId && teamQuoteProgramId !== "none") && (
             <div className="space-y-2">
               <Label>Client</Label>
-              {selectedClientId ? (
+              {hasSubscriptionPlan ? (
+                selectedClientId ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 text-sm border rounded-md p-2">
+                      {clientFirstName} {clientLastName}
+                    </div>
+                    <Button size="sm" variant="outline" onClick={clearSelectedClient} data-testid="button-clear-client">
+                      <XCircle className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Only active subscribers are shown</p>
+                    {(() => {
+                      const activeSubscribers = subscribers?.filter(s => s.status === "active" && s.user) || [];
+                      const planSubscribers = subscriptionPlanId
+                        ? activeSubscribers.filter(s => s.planId === subscriptionPlanId)
+                        : activeSubscribers;
+                      const displayList = planSubscribers.length > 0 ? planSubscribers : activeSubscribers;
+                      if (displayList.length === 0) {
+                        return <p className="text-xs text-muted-foreground italic">No active subscribers found</p>;
+                      }
+                      return (
+                        <div className="border rounded-md max-h-40 overflow-y-auto">
+                          {displayList.map((sub) => (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b last:border-b-0"
+                              onClick={() => {
+                                setSelectedClientId(sub.userId);
+                                setClientFirstName(sub.user?.firstName || "");
+                                setClientLastName(sub.user?.lastName || "");
+                              }}
+                              data-testid={`button-select-subscriber-${sub.userId}`}
+                            >
+                              <span className="font-medium">{sub.user?.firstName} {sub.user?.lastName}</span>
+                              {sub.user?.email && (
+                                <span className="text-xs text-muted-foreground ml-2">{sub.user.email}</span>
+                              )}
+                              {sub.plan && (
+                                <Badge variant="secondary" className="ml-2 text-xs">{sub.plan.name}</Badge>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )
+              ) : selectedClientId ? (
                 <div className="flex items-center gap-2">
                   <div className="flex-1 text-sm border rounded-md p-2">
                     {clientFirstName} {clientLastName}

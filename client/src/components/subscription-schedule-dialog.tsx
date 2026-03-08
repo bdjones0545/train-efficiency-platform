@@ -8,10 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Search, XCircle } from "lucide-react";
+import { RefreshCw, XCircle } from "lucide-react";
 import type { Service, OrganizationSubscriptionPlan, Organization } from "@shared/schema";
 
 type ClientSearchResult = { id: string; firstName: string | null; lastName: string | null; email: string | null };
@@ -27,8 +25,6 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
   const [subscriptionPlanId, setSubscriptionPlanId] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
   const [serviceId, setServiceId] = useState("");
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [startTime, setStartTime] = useState("09:00");
@@ -73,18 +69,9 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
     },
   });
 
-  const { data: searchResults } = useQuery<ClientSearchResult[]>({
-    queryKey: ["/api/coach/clients/search", searchQuery],
-    queryFn: async () => {
-      if (searchQuery.length < 2) return [];
-      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(searchQuery)}`, {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: searchQuery.length >= 2,
+  type SubscriberEntry = { id: string; userId: string; planId: string; status: string; user: { firstName: string; lastName: string; email: string } | null; plan: { name: string } | null };
+  const { data: subscribers } = useQuery<SubscriberEntry[]>({
+    queryKey: ["/api/coach/client-subscriptions"],
   });
 
   const createMutation = useMutation({
@@ -116,8 +103,6 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
     setSubscriptionPlanId("");
     setSelectedClientId(null);
     setSelectedClientName("");
-    setSearchQuery("");
-    setShowSearch(false);
     setServiceId("");
     setSelectedDays([]);
     setStartTime("09:00");
@@ -172,8 +157,6 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
   const selectClient = (client: ClientSearchResult) => {
     setSelectedClientId(client.id);
     setSelectedClientName(`${client.firstName || ""} ${client.lastName || ""}`.trim());
-    setShowSearch(false);
-    setSearchQuery("");
   };
 
   const clearClient = () => {
@@ -255,6 +238,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
 
           <div className="space-y-2">
             <Label>Client</Label>
+            <p className="text-xs text-muted-foreground">Only active subscribers are shown</p>
             {selectedClientId ? (
               <div className="flex items-center gap-2 border rounded-md px-3 py-2">
                 <span className="text-sm flex-1" data-testid="text-selected-client">{selectedClientName}</span>
@@ -264,34 +248,37 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search clients by name..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setShowSearch(true); }}
-                    className="pl-9"
-                    data-testid="input-client-search"
-                  />
-                </div>
-                {showSearch && searchResults && searchResults.length > 0 && (
-                  <div className="border rounded-md max-h-40 overflow-y-auto">
-                    {searchResults.map((client) => (
-                      <button
-                        key={client.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b last:border-b-0"
-                        onClick={() => selectClient(client)}
-                        data-testid={`option-client-${client.id}`}
-                      >
-                        <span className="font-medium">{client.firstName} {client.lastName}</span>
-                        {client.email && (
-                          <span className="text-xs text-muted-foreground ml-2">{client.email}</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {(() => {
+                  const activeSubscribers = subscribers?.filter(s => s.status === "active" && s.user) || [];
+                  const planSubscribers = subscriptionPlanId
+                    ? activeSubscribers.filter(s => s.planId === subscriptionPlanId)
+                    : activeSubscribers;
+                  const displayList = planSubscribers.length > 0 ? planSubscribers : activeSubscribers;
+                  if (displayList.length === 0) {
+                    return <p className="text-xs text-muted-foreground italic">No active subscribers found</p>;
+                  }
+                  return (
+                    <div className="border rounded-md max-h-40 overflow-y-auto">
+                      {displayList.map((sub) => (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b last:border-b-0"
+                          onClick={() => selectClient({ id: sub.userId, firstName: sub.user?.firstName || null, lastName: sub.user?.lastName || null, email: sub.user?.email || null })}
+                          data-testid={`option-subscriber-${sub.userId}`}
+                        >
+                          <span className="font-medium">{sub.user?.firstName} {sub.user?.lastName}</span>
+                          {sub.user?.email && (
+                            <span className="text-xs text-muted-foreground ml-2">{sub.user.email}</span>
+                          )}
+                          {sub.plan && (
+                            <span className="text-xs text-muted-foreground ml-2">({sub.plan.name})</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
