@@ -155,6 +155,7 @@ export interface IStorage {
   deleteOrganization(id: string): Promise<boolean>;
   getCoachProfilesByOrganization(orgId: string): Promise<(CoachProfile & { user?: User })[]>;
   getOrganizationSubscriptionPlans(orgId: string): Promise<OrganizationSubscriptionPlan[]>;
+  getOrganizationSubscriptionPlan(planId: string): Promise<OrganizationSubscriptionPlan | undefined>;
   createOrganizationSubscriptionPlan(data: InsertOrganizationSubscriptionPlan): Promise<OrganizationSubscriptionPlan>;
   deleteOrganizationSubscriptionPlan(id: string): Promise<boolean>;
   deleteOrganizationSubscriptionPlansByOrg(orgId: string): Promise<void>;
@@ -972,6 +973,11 @@ export class DatabaseStorage implements IStorage {
 
   async getOrganizationSubscriptionPlans(orgId: string): Promise<OrganizationSubscriptionPlan[]> {
     return db.select().from(organizationSubscriptionPlans).where(eq(organizationSubscriptionPlans.organizationId, orgId));
+  }
+
+  async getOrganizationSubscriptionPlan(planId: string): Promise<OrganizationSubscriptionPlan | undefined> {
+    const [plan] = await db.select().from(organizationSubscriptionPlans).where(eq(organizationSubscriptionPlans.id, planId));
+    return plan || undefined;
   }
 
   async createOrganizationSubscriptionPlan(data: InsertOrganizationSubscriptionPlan): Promise<OrganizationSubscriptionPlan> {

@@ -639,7 +639,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only manage your own organization" });
       }
-      const { cancellationPolicy, coachPayPerSessionCents, sessionType } = req.body;
+      const { cancellationPolicy, coachPayPerSessionCents, sessionType, sessionsPerWeek } = req.body;
       const updateData: any = {};
       if (cancellationPolicy) {
         if (!["end_of_period", "immediate"].includes(cancellationPolicy)) {
@@ -655,6 +655,13 @@ export async function registerRoutes(
           return res.status(400).json({ message: "sessionType must be 'personal' or 'group'" });
         }
         updateData.sessionType = sessionType;
+      }
+      if (sessionsPerWeek !== undefined) {
+        const spw = parseInt(sessionsPerWeek);
+        if (isNaN(spw) || spw < 1 || spw > 7) {
+          return res.status(400).json({ message: "sessionsPerWeek must be between 1 and 7" });
+        }
+        updateData.sessionsPerWeek = spw;
       }
       if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ message: "No valid fields to update" });
@@ -1294,6 +1301,16 @@ export async function registerRoutes(
       const start = new Date(startAt);
       const end = addMinutes(start, service.durationMin);
 
+      if (subscriptionPlanId) {
+        const clientSubs = await storage.getUserSubscriptions(resolvedClientId);
+        const activeSub = clientSubs.find(s => s.planId === subscriptionPlanId && s.status === "active");
+        if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
+          if (activeSub.sessionsRemaining <= 0) {
+            return res.status(400).json({ message: "This subscriber has used all their allocated sessions for this billing period" });
+          }
+        }
+      }
+
       const overlapping = await storage.getOverlappingBookings(coachId, start, end);
       if (overlapping.length > 0) {
         return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
@@ -1351,6 +1368,20 @@ export async function registerRoutes(
               participantName: name.trim(),
             });
           }
+        }
+      }
+
+      if (subscriptionPlanId) {
+        try {
+          const clientSubs = await storage.getUserSubscriptions(resolvedClientId);
+          const activeSub = clientSubs.find(s => s.planId === subscriptionPlanId && s.status === "active");
+          if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
+            await storage.updateUserSubscription(activeSub.id, {
+              sessionsRemaining: Math.max(0, activeSub.sessionsRemaining - 1),
+            });
+          }
+        } catch (e) {
+          console.error("Error decrementing session count:", e);
         }
       }
 
@@ -2951,6 +2982,7 @@ export async function registerRoutes(
             interval: plan.interval,
             intervalCount: plan.intervalCount,
             cancellationPolicy: plan.cancellationPolicy,
+            sessionsPerWeek: plan.sessionsPerWeek,
           },
         });
       }
@@ -3080,11 +3112,14 @@ export async function registerRoutes(
 
       const enriched = subs
         .filter(s => s.status !== "pending")
-        .map(s => ({
-          ...s,
-          plan: planMap.get(s.planId) ? { name: planMap.get(s.planId)!.name, amountCents: planMap.get(s.planId)!.amountCents, interval: planMap.get(s.planId)!.interval } : null,
-          user: usersData[s.userId] || null,
-        }));
+        .map(s => {
+          const plan = planMap.get(s.planId);
+          return {
+            ...s,
+            plan: plan ? { name: plan.name, amountCents: plan.amountCents, interval: plan.interval, sessionsPerWeek: plan.sessionsPerWeek } : null,
+            user: usersData[s.userId] || null,
+          };
+        });
 
       res.json(enriched);
     } catch (error) {

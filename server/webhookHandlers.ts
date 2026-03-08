@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { getStripeSync, getUncachableStripeClient } from './stripeClient';
 import { storage } from './storage';
+import { organizationSubscriptionPlans } from '@shared/schema';
 import { sendTeamQuoteEmail, sendSubscriptionExpiredEmail, type OrgBranding } from './email';
 
 async function getOrgStripeForQuote(organizationId: string | null): Promise<Stripe> {
@@ -36,6 +37,9 @@ export class WebhookHandlers {
         const invoice = event.data?.object;
         if (invoice?.id) {
           await WebhookHandlers.handleInvoicePaid(invoice.id);
+        }
+        if (invoice?.subscription) {
+          await WebhookHandlers.handleSubscriptionRenewal(invoice.subscription, invoice.period_start, invoice.period_end);
         }
       }
 
@@ -122,6 +126,38 @@ export class WebhookHandlers {
       }
     } catch (err) {
       console.error('Error handling subscription event:', err);
+    }
+  }
+
+  static async handleSubscriptionRenewal(stripeSubscriptionId: string, periodStart?: number, periodEnd?: number): Promise<void> {
+    try {
+      const userSub = await storage.getUserSubscriptionByStripeId(stripeSubscriptionId);
+      if (!userSub) return;
+
+      const plan = await storage.getOrganizationSubscriptionPlan(userSub.planId);
+      if (!plan) return;
+
+      const sessionsPerWeek = plan.sessionsPerWeek || 1;
+      const intervalWeeks = plan.interval === "year" ? 52 * (plan.intervalCount || 1)
+        : plan.interval === "month" ? 4 * (plan.intervalCount || 1)
+        : (plan.intervalCount || 1);
+      const totalSessions = sessionsPerWeek * intervalWeeks;
+
+      const updateData: any = {
+        sessionsRemaining: totalSessions,
+        status: "active",
+      };
+      if (periodStart) {
+        updateData.currentPeriodStart = new Date(periodStart * 1000);
+      }
+      if (periodEnd) {
+        updateData.currentPeriodEnd = new Date(periodEnd * 1000);
+      }
+
+      await storage.updateUserSubscription(userSub.id, updateData);
+      console.log(`Subscription ${stripeSubscriptionId} renewed: ${totalSessions} sessions allocated (${sessionsPerWeek}x/week)`);
+    } catch (err) {
+      console.error('Error handling subscription renewal:', err);
     }
   }
 

@@ -1116,6 +1116,34 @@ export default function AdminConfigurationPage() {
                           </Select>
                         </div>
                         <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">Sessions/week:</span>
+                          <Select
+                            value={String((plan as any).sessionsPerWeek || 1)}
+                            onValueChange={async (value) => {
+                              try {
+                                await apiRequest("PATCH", `/api/organizations/${orgId}/subscription-plans/${plan.id}`, { sessionsPerWeek: parseInt(value) });
+                                queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "subscription-plans"] });
+                                toast({ title: "Updated", description: `Sessions per week set to ${value}x` });
+                              } catch {
+                                toast({ title: "Error", description: "Failed to update sessions per week", variant: "destructive" });
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-auto min-w-[100px]" data-testid={`select-sessions-per-week-${plan.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">1x</SelectItem>
+                              <SelectItem value="2">2x</SelectItem>
+                              <SelectItem value="3">3x</SelectItem>
+                              <SelectItem value="4">4x</SelectItem>
+                              <SelectItem value="5">5x</SelectItem>
+                              <SelectItem value="6">6x</SelectItem>
+                              <SelectItem value="7">7x</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground whitespace-nowrap">Coach pay/session:</span>
                           <div className="flex items-center gap-1">
                             <span className="text-xs text-muted-foreground">$</span>

@@ -109,7 +109,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     enabled: !!addSessionOrgId && !!addSessionOrg?.subscriptionsEnabled,
   });
 
-  type SubscriberEntry = { id: string; userId: string; planId: string; status: string; user: { firstName: string; lastName: string; email: string } | null; plan: { name: string } | null };
+  type SubscriberEntry = { id: string; userId: string; planId: string; status: string; sessionsRemaining: number | null; user: { firstName: string; lastName: string; email: string } | null; plan: { name: string; sessionsPerWeek?: number | null } | null };
   const { data: subscribers } = useQuery<SubscriberEntry[]>({
     queryKey: ["/api/coach/client-subscriptions"],
     enabled: !!addSessionOrg?.subscriptionsEnabled,
@@ -764,6 +764,11 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                               )}
                               {sub.plan && (
                                 <Badge variant="secondary" className="ml-2 text-xs">{sub.plan.name}</Badge>
+                              )}
+                              {sub.sessionsRemaining !== null && sub.sessionsRemaining !== undefined && (
+                                <Badge variant={sub.sessionsRemaining > 0 ? "outline" : "destructive"} className="ml-1 text-xs">
+                                  {sub.sessionsRemaining} left
+                                </Badge>
                               )}
                             </button>
                           ))}

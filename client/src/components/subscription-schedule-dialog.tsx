@@ -69,7 +69,7 @@ export function SubscriptionScheduleDialog({ coachId, triggerButton }: Subscript
     },
   });
 
-  type SubscriberEntry = { id: string; userId: string; planId: string; status: string; user: { firstName: string; lastName: string; email: string } | null; plan: { name: string } | null };
+  type SubscriberEntry = { id: string; userId: string; planId: string; status: string; sessionsRemaining: number | null; user: { firstName: string; lastName: string; email: string } | null; plan: { name: string; sessionsPerWeek?: number | null } | null };
   const { data: subscribers } = useQuery<SubscriberEntry[]>({
     queryKey: ["/api/coach/client-subscriptions"],
   });
