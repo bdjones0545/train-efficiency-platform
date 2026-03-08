@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy, Menu, X } from "lucide-react";
+import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy, Menu, X, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
@@ -378,6 +378,11 @@ export default function EfficiencyStrengthPage() {
               <a href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-privacy-policy">Privacy Policy</a>
               <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms & Conditions</a>
             </div>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Mail className="h-4 w-4" />
+            <span>Contact Support:</span>
+            <a href="mailto:Bryan.jones@efficiencystrengthtraining.com" className="hover:text-foreground transition-colors underline" data-testid="link-contact-support">Bryan.jones@efficiencystrengthtraining.com</a>
           </div>
           <div className="text-xs text-muted-foreground text-center">
             <p>&copy; {new Date().getFullYear()} Efficiency Strength Training LLC. All rights reserved.</p>

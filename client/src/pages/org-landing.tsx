@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
-  UserPlus, Trophy, Menu, X, Globe,
+  UserPlus, Trophy, Menu, X, Globe, Mail,
 } from "lucide-react";
 import { SiInstagram, SiFacebook } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
@@ -548,6 +548,11 @@ export default function OrgLandingPage() {
               <a href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-privacy-policy">Privacy Policy</a>
               <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms & Conditions</a>
             </div>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Mail className="h-4 w-4" />
+            <span>Contact Support:</span>
+            <a href="mailto:Bryan.jones@efficiencystrengthtraining.com" className="hover:text-foreground transition-colors underline" data-testid="link-contact-support">Bryan.jones@efficiencystrengthtraining.com</a>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-muted-foreground">
             <p>&copy; {new Date().getFullYear()} {org.name}. All rights reserved.</p>

@@ -522,6 +522,11 @@ export default function LandingPage() {
               <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms & Conditions</a>
             </div>
           </div>
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Mail className="h-4 w-4" />
+            <span>Contact Support:</span>
+            <a href="mailto:Bryan.jones@efficiencystrengthtraining.com" className="hover:text-foreground transition-colors underline" data-testid="link-contact-support">Bryan.jones@efficiencystrengthtraining.com</a>
+          </div>
           <div className="text-xs text-muted-foreground text-center">
             <p>&copy; {new Date().getFullYear()} Train Efficiency Business Solutions. All rights reserved.</p>
           </div>
