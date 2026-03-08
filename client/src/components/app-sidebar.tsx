@@ -106,7 +106,8 @@ export function AppSidebar() {
     ...(role === "CLIENT" ? [{ title: "My Wallet", url: "/wallet", icon: Wallet }] : []),
   ];
 
-  const isEstOrg = profile?.organizationId === "org-est";
+  const athleticEnabled = (organization as any)?.athleticEnabled === true;
+  const athleticName = (organization as any)?.athleticProgramName || "Athletic Scheduling";
 
   const coachItems = [
     { title: "Dashboard", url: "/coach", icon: LayoutDashboard },
@@ -115,7 +116,7 @@ export function AppSidebar() {
     { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign },
     { title: "Transactions", url: "/coach/transactions", icon: Wallet },
     { title: "Users", url: "/coach/users", icon: Users },
-    ...(isEstOrg ? [{ title: "BLHS Athletic", url: "/coach/athletic", icon: Trophy }] : []),
+    ...(athleticEnabled ? [{ title: athleticName, url: "/coach/athletic", icon: Trophy }] : []),
     { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
   ];
 
@@ -126,7 +127,7 @@ export function AppSidebar() {
         <SidebarContent>
           <SidebarGroup>
             <div className="flex items-center gap-2 px-2 py-3">
-              {(organization?.logoUrl || isEstOrg) ? (
+              {organization?.logoUrl ? (
                 <img src={organization?.logoUrl || logoImg} alt={organization?.name || "Logo"} className="h-8 rounded-md object-contain" data-testid="img-sidebar-logo" />
               ) : orgLoading ? (
                 <div className="h-8 w-8 rounded-md bg-muted animate-pulse" />
@@ -136,7 +137,7 @@ export function AppSidebar() {
                 </div>
               )}
               <span className="font-semibold text-sm tracking-tight">
-                {organization?.name || (isEstOrg ? "Efficiency Strength Training" : orgLoading ? "Loading..." : "My Organization")}
+                {organization?.name || (orgLoading ? "Loading..." : "My Organization")}
               </span>
             </div>
           </SidebarGroup>

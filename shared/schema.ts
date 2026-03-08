@@ -36,6 +36,8 @@ export const organizations = pgTable("organizations", {
   subscriptionsEnabled: boolean("subscriptions_enabled").default(false),
   athleticStartHour: integer("athletic_start_hour"),
   athleticEndHour: integer("athletic_end_hour"),
+  athleticEnabled: boolean("athletic_enabled").default(false),
+  athleticProgramName: varchar("athletic_program_name").default(""),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -209,6 +211,7 @@ export const redemptions = pgTable("redemptions", {
 
 export const athleticHourSchedules = pgTable("athletic_hour_schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
   label: varchar("label").notNull(),
   startDate: varchar("start_date").notNull(),
   endDate: varchar("end_date").notNull(),
@@ -223,6 +226,7 @@ export type InsertAthleticHourSchedule = z.infer<typeof insertAthleticHourSchedu
 
 export const athleticBookings = pgTable("athletic_bookings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
   date: varchar("date").notNull(),
   timeSlot: varchar("time_slot").notNull(),
   teamName: varchar("team_name").notNull(),

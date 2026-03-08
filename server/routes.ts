@@ -470,7 +470,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour, athleticEnabled, athleticProgramName } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
@@ -492,6 +492,8 @@ export async function registerRoutes(
       if (stripeSecretKey !== undefined) updateData.stripeSecretKey = stripeSecretKey || null;
       if (stripePublishableKey !== undefined) updateData.stripePublishableKey = stripePublishableKey || null;
       if (subscriptionsEnabled !== undefined) updateData.subscriptionsEnabled = subscriptionsEnabled;
+      if (athleticEnabled !== undefined) updateData.athleticEnabled = athleticEnabled;
+      if (athleticProgramName !== undefined) updateData.athleticProgramName = athleticProgramName;
       if (athleticStartHour !== undefined || athleticEndHour !== undefined) {
         const start = athleticStartHour !== undefined ? athleticStartHour : undefined;
         const end = athleticEndHour !== undefined ? athleticEndHour : undefined;
@@ -2803,8 +2805,10 @@ export async function registerRoutes(
   app.get("/api/athletic/bookings", async (req, res) => {
     try {
       const date = req.query.date as string;
+      const orgId = req.query.orgId as string;
       if (!date) return res.status(400).json({ message: "date query param required" });
-      const list = await storage.getAthleticBookings(date);
+      if (!orgId) return res.status(400).json({ message: "orgId query param required" });
+      const list = await storage.getAthleticBookings(date, orgId);
       res.json(list);
     } catch (error) {
       console.error("Error fetching athletic bookings:", error);
@@ -2812,22 +2816,24 @@ export async function registerRoutes(
     }
   });
 
-  async function getAthleticHoursForDate(date: string): Promise<{ startHour: number; endHour: number }> {
-    const schedules = await storage.getAthleticHourSchedules();
+  async function getAthleticHoursForDate(date: string, orgId: string): Promise<{ startHour: number; endHour: number }> {
+    const schedules = await storage.getAthleticHourSchedules(orgId);
     for (const s of schedules) {
       if (date >= s.startDate && date <= s.endDate) {
         return { startHour: s.startHour, endHour: s.endHour };
       }
     }
-    const org = await storage.getOrganizationById("org-est");
+    const org = await storage.getOrganizationById(orgId);
     return { startHour: org?.athleticStartHour ?? 16, endHour: org?.athleticEndHour ?? 20 };
   }
 
   app.get("/api/athletic/config", async (req: any, res) => {
     try {
       const date = req.query.date as string | undefined;
-      const { startHour, endHour } = await getAthleticHoursForDate(date || new Date().toISOString().slice(0, 10));
-      const schedules = await storage.getAthleticHourSchedules();
+      const orgId = req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId query param required" });
+      const { startHour, endHour } = await getAthleticHoursForDate(date || new Date().toISOString().slice(0, 10), orgId);
+      const schedules = await storage.getAthleticHourSchedules(orgId);
       res.json({ startHour, endHour, schedules });
     } catch (error) {
       console.error("Error fetching athletic config:", error);
@@ -2835,19 +2841,24 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/athletic/schedules", async (_req: any, res) => {
+  app.get("/api/athletic/schedules", async (req: any, res) => {
     try {
-      const schedules = await storage.getAthleticHourSchedules();
+      const orgId = req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId query param required" });
+      const schedules = await storage.getAthleticHourSchedules(orgId);
       res.json(schedules);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch athletic schedules" });
     }
   });
 
-  app.post("/api/athletic/schedules", async (req: any, res) => {
+  app.post("/api/athletic/schedules", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
       const { insertAthleticHourScheduleSchema } = await import("@shared/schema");
-      const parsed = insertAthleticHourScheduleSchema.safeParse(req.body);
+      const parsed = insertAthleticHourScheduleSchema.omit({ organizationId: true }).safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten().fieldErrors });
       }
@@ -2858,15 +2869,24 @@ export async function registerRoutes(
       if (startDate > endDate) {
         return res.status(400).json({ message: "Start date must be before end date" });
       }
-      const schedule = await storage.createAthleticHourSchedule({ label, startDate, endDate, startHour, endHour });
+      const schedule = await storage.createAthleticHourSchedule({ organizationId: profile.organizationId, label, startDate, endDate, startHour, endHour });
       res.json(schedule);
     } catch (error) {
       res.status(500).json({ message: "Failed to create athletic schedule" });
     }
   });
 
-  app.patch("/api/athletic/schedules/:id", async (req: any, res) => {
+  app.patch("/api/athletic/schedules/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const existing = await storage.getAthleticHourScheduleById(req.params.id);
+      if (!existing || existing.organizationId !== profile.organizationId) {
+        return res.status(404).json({ message: "Schedule not found" });
+      }
+
       const { insertAthleticHourScheduleSchema } = await import("@shared/schema");
       const partial = insertAthleticHourScheduleSchema.partial().safeParse(req.body);
       if (!partial.success) {
@@ -2884,8 +2904,17 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/athletic/schedules/:id", async (req: any, res) => {
+  app.delete("/api/athletic/schedules/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const existing = await storage.getAthleticHourScheduleById(req.params.id);
+      if (!existing || existing.organizationId !== profile.organizationId) {
+        return res.status(404).json({ message: "Schedule not found" });
+      }
+
       await storage.deleteAthleticHourSchedule(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -2900,9 +2929,14 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten().fieldErrors });
       }
-      const { date, timeSlot, teamName, trainingType, bookedBy } = parsed.data;
+      const { date, timeSlot, teamName, trainingType, bookedBy, organizationId } = parsed.data;
+      if (!organizationId) return res.status(400).json({ message: "organizationId is required" });
 
-      const { startHour, endHour } = await getAthleticHoursForDate(date);
+      const bookingOrg = await storage.getOrganizationById(organizationId);
+      if (!bookingOrg) return res.status(404).json({ message: "Organization not found" });
+      if (!bookingOrg.athleticEnabled) return res.status(400).json({ message: "Athletic scheduling is not enabled for this organization" });
+
+      const { startHour, endHour } = await getAthleticHoursForDate(date, organizationId);
       const validSlots: string[] = [];
       for (let h = startHour; h < endHour; h++) {
         validSlots.push(`${h.toString().padStart(2, "0")}:00`);
@@ -2910,11 +2944,11 @@ export async function registerRoutes(
       if (!validSlots.includes(timeSlot)) {
         return res.status(400).json({ message: `Invalid time slot. Must be within the configured hours.` });
       }
-      const count = await storage.countAthleticBookingsForSlot(date, timeSlot);
+      const count = await storage.countAthleticBookingsForSlot(date, timeSlot, organizationId);
       if (count >= 2) {
         return res.status(409).json({ message: "This time slot is full (max 2 teams per hour)" });
       }
-      const booking = await storage.createAthleticBooking({ date, timeSlot, teamName, trainingType: trainingType || "strength", bookedBy: bookedBy || null });
+      const booking = await storage.createAthleticBooking({ organizationId, date, timeSlot, teamName, trainingType: trainingType || "strength", bookedBy: bookedBy || null });
       res.json(booking);
     } catch (error) {
       console.error("Error creating athletic booking:", error);

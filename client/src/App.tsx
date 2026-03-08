@@ -139,6 +139,7 @@ function AuthenticatedLayout() {
                   <Route path="/coaches" component={CoachesPage} />
                   <Route path="/coaches/:id" component={CoachSchedulePage} />
                   <Route path="/sessions" component={OpenSessionsPage} />
+                  <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/wallet" component={WalletPage} />
@@ -179,6 +180,7 @@ function PublicLayout() {
     <Switch>
       <Route path="/portal" component={ClientPortalPage} />
       <Route path="/sessions" component={OpenSessionsPublicPage} />
+      <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />

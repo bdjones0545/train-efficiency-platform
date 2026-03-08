@@ -190,11 +190,11 @@ export default function OrgLandingPage() {
             <a href="#features">
               <Button variant="ghost" size="sm" data-testid="link-org-features">Features</Button>
             </a>
-            {org.id === "org-est" && (
-              <a href="/athletic">
+            {org.athleticEnabled && (
+              <a href={`/org/${org.slug}/athletic`}>
                 <Button variant="ghost" size="sm" data-testid="link-blhs-athletic">
                   <Trophy className="h-4 w-4 mr-1" />
-                  BLHS Athletic
+                  {org.athleticProgramName || "Athletic Scheduling"}
                 </Button>
               </a>
             )}
@@ -238,11 +238,11 @@ export default function OrgLandingPage() {
             <a href="#features" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start">Features</Button>
             </a>
-            {org.id === "org-est" && (
-              <a href="/athletic" onClick={() => setMobileMenuOpen(false)}>
+            {org.athleticEnabled && (
+              <a href={`/org/${org.slug}/athletic`} onClick={() => setMobileMenuOpen(false)}>
                 <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-blhs-athletic-mobile">
                   <Trophy className="h-4 w-4 mr-1" />
-                  BLHS Athletic
+                  {org.athleticProgramName || "Athletic Scheduling"}
                 </Button>
               </a>
             )}

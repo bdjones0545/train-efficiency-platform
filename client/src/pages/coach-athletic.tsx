@@ -47,10 +47,33 @@ export default function CoachAthleticPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId || "";
+
+  const { data: orgData } = useQuery<any>({
+    queryKey: ["/api/organizations/by-id", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
+  const programName = orgData?.athleticProgramName || "Athletic Scheduling";
+
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   const { data: config } = useQuery<{ startHour: number; endHour: number }>({
-    queryKey: [`/api/athletic/config?date=${dateStr}`],
+    queryKey: ["/api/athletic/config", orgId, dateStr],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/config?date=${dateStr}&orgId=${orgId}`);
+      if (!res.ok) throw new Error("Failed to load config");
+      return res.json();
+    },
+    enabled: !!orgId,
   });
 
   const startHour = config?.startHour ?? 16;
@@ -58,21 +81,22 @@ export default function CoachAthleticPage() {
   const timeSlots = buildTimeSlots(startHour, endHour);
 
   const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
-    queryKey: ["/api/athletic/bookings", dateStr],
+    queryKey: ["/api/athletic/bookings", orgId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/bookings?date=${dateStr}`);
+      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&orgId=${orgId}`);
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },
+    enabled: !!orgId,
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string }) => {
+    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; organizationId: string }) => {
       const res = await apiRequest("POST", "/api/athletic/bookings", data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
       setScheduleDialogOpen(false);
       setTeamName("");
       setTrainingType("strength");
@@ -89,7 +113,7 @@ export default function CoachAthleticPage() {
       await apiRequest("DELETE", `/api/athletic/bookings/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
       setDeleteConfirmId(null);
       toast({ title: "Removed", description: "The team booking has been removed." });
     },
@@ -113,12 +137,13 @@ export default function CoachAthleticPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSlot || !teamName.trim()) return;
+    if (!selectedSlot || !teamName.trim() || !orgId) return;
     bookMutation.mutate({
       date: dateStr,
       timeSlot: selectedSlot.id,
       teamName: teamName.trim(),
       trainingType,
+      organizationId: orgId,
     });
   };
 
@@ -132,9 +157,9 @@ export default function CoachAthleticPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-coach-athletic-title">
             <Trophy className="h-6 w-6 text-primary" />
-            BLHS Athletic Scheduling
+            {programName}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage team training schedules for Bluffton High School</p>
+          <p className="text-sm text-muted-foreground mt-1">Manage team training schedules</p>
         </div>
       </div>
 

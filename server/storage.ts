@@ -110,13 +110,14 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   hasUsedFreeSession(userId: string): Promise<boolean>;
 
-  getAthleticBookings(date: string): Promise<AthleticBooking[]>;
-  getAthleticBookingsInRange(startDate: string, endDate: string): Promise<AthleticBooking[]>;
+  getAthleticBookings(date: string, organizationId: string): Promise<AthleticBooking[]>;
+  getAthleticBookingsInRange(startDate: string, endDate: string, organizationId: string): Promise<AthleticBooking[]>;
   createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking>;
   deleteAthleticBooking(id: string): Promise<void>;
-  countAthleticBookingsForSlot(date: string, timeSlot: string): Promise<number>;
+  countAthleticBookingsForSlot(date: string, timeSlot: string, organizationId: string): Promise<number>;
 
-  getAthleticHourSchedules(): Promise<AthleticHourSchedule[]>;
+  getAthleticHourSchedules(organizationId: string): Promise<AthleticHourSchedule[]>;
+  getAthleticHourScheduleById(id: string): Promise<AthleticHourSchedule | undefined>;
   createAthleticHourSchedule(schedule: InsertAthleticHourSchedule): Promise<AthleticHourSchedule>;
   updateAthleticHourSchedule(id: string, data: Partial<InsertAthleticHourSchedule>): Promise<AthleticHourSchedule | undefined>;
   deleteAthleticHourSchedule(id: string): Promise<void>;
@@ -678,13 +679,13 @@ export class DatabaseStorage implements IStorage {
     return existing.length > 0;
   }
 
-  async getAthleticBookings(date: string): Promise<AthleticBooking[]> {
-    return db.select().from(athleticBookings).where(eq(athleticBookings.date, date));
+  async getAthleticBookings(date: string, organizationId: string): Promise<AthleticBooking[]> {
+    return db.select().from(athleticBookings).where(and(eq(athleticBookings.date, date), eq(athleticBookings.organizationId, organizationId)));
   }
 
-  async getAthleticBookingsInRange(startDate: string, endDate: string): Promise<AthleticBooking[]> {
+  async getAthleticBookingsInRange(startDate: string, endDate: string, organizationId: string): Promise<AthleticBooking[]> {
     return db.select().from(athleticBookings).where(
-      and(gte(athleticBookings.date, startDate), lte(athleticBookings.date, endDate))
+      and(gte(athleticBookings.date, startDate), lte(athleticBookings.date, endDate), eq(athleticBookings.organizationId, organizationId))
     );
   }
 
@@ -697,15 +698,20 @@ export class DatabaseStorage implements IStorage {
     await db.delete(athleticBookings).where(eq(athleticBookings.id, id));
   }
 
-  async countAthleticBookingsForSlot(date: string, timeSlot: string): Promise<number> {
+  async countAthleticBookingsForSlot(date: string, timeSlot: string, organizationId: string): Promise<number> {
     const result = await db
       .select()
       .from(athleticBookings)
-      .where(and(eq(athleticBookings.date, date), eq(athleticBookings.timeSlot, timeSlot)));
+      .where(and(eq(athleticBookings.date, date), eq(athleticBookings.timeSlot, timeSlot), eq(athleticBookings.organizationId, organizationId)));
     return result.length;
   }
-  async getAthleticHourSchedules(): Promise<AthleticHourSchedule[]> {
-    return db.select().from(athleticHourSchedules).orderBy(desc(athleticHourSchedules.startDate));
+  async getAthleticHourSchedules(organizationId: string): Promise<AthleticHourSchedule[]> {
+    return db.select().from(athleticHourSchedules).where(eq(athleticHourSchedules.organizationId, organizationId)).orderBy(desc(athleticHourSchedules.startDate));
+  }
+
+  async getAthleticHourScheduleById(id: string): Promise<AthleticHourSchedule | undefined> {
+    const [schedule] = await db.select().from(athleticHourSchedules).where(eq(athleticHourSchedules.id, id)).limit(1);
+    return schedule;
   }
 
   async createAthleticHourSchedule(schedule: InsertAthleticHourSchedule): Promise<AthleticHourSchedule> {

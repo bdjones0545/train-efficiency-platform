@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,6 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { AthleticBooking } from "@shared/schema";
 
 const SLOT_HEIGHT_PX = 120;
@@ -39,6 +39,21 @@ function buildTimeSlots(startHour: number, endHour: number) {
 }
 
 export default function AthleticSchedulingPage() {
+  const params = useParams<{ slug?: string }>();
+  const slug = params.slug || "efficiencystrength";
+
+  const { data: org, isLoading: orgLoading } = useQuery<any>({
+    queryKey: ["/api/organizations", slug],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/${slug}`);
+      if (!res.ok) throw new Error("Organization not found");
+      return res.json();
+    },
+  });
+
+  const orgId = org?.id;
+  const programName = org?.athleticProgramName || "Athletic Scheduling";
+
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -50,7 +65,13 @@ export default function AthleticSchedulingPage() {
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   const { data: config } = useQuery<{ startHour: number; endHour: number }>({
-    queryKey: [`/api/athletic/config?date=${dateStr}`],
+    queryKey: ["/api/athletic/config", orgId, dateStr],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/config?date=${dateStr}&orgId=${orgId}`);
+      if (!res.ok) throw new Error("Failed to load config");
+      return res.json();
+    },
+    enabled: !!orgId,
   });
 
   const startHour = config?.startHour ?? 16;
@@ -58,22 +79,22 @@ export default function AthleticSchedulingPage() {
   const timeSlots = buildTimeSlots(startHour, endHour);
 
   const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
-    queryKey: ["/api/athletic/bookings", dateStr],
+    queryKey: ["/api/athletic/bookings", orgId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/bookings?date=${dateStr}`);
+      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&orgId=${orgId}`);
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },
+    enabled: !!orgId,
   });
 
   const bookMutation = useMutation({
-    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string }) => {
+    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; organizationId: string }) => {
       const res = await apiRequest("POST", "/api/athletic/bookings", data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
       setScheduleDialogOpen(false);
       setTeamName("");
       setTrainingType("strength");
@@ -91,8 +112,7 @@ export default function AthleticSchedulingPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", orgId, dateStr] });
       toast({ title: "Session removed", description: "The scheduled session has been deleted." });
     },
     onError: (error: any) => {
@@ -115,30 +135,59 @@ export default function AthleticSchedulingPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSlot || !teamName.trim()) return;
+    if (!selectedSlot || !teamName.trim() || !orgId) return;
     bookMutation.mutate({
       date: dateStr,
       timeSlot: selectedSlot.id,
       teamName: teamName.trim(),
       trainingType,
+      organizationId: orgId,
     });
   };
 
   const totalBooked = bookings?.length || 0;
   const slotsAvailable = timeSlots.filter(s => getSlotBookings(s.id).length < MAX_TEAMS_PER_SLOT).length;
+  const backUrl = slug ? `/org/${slug}` : "/";
+
+  if (orgLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!org || !org.athleticEnabled) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="p-8 text-center space-y-4">
+          <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto" />
+          <h2 className="text-xl font-semibold">Athletic Scheduling Not Available</h2>
+          <p className="text-muted-foreground">This organization does not have athletic scheduling enabled.</p>
+          <a href={backUrl}>
+            <Button variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-1" /> Go Back
+            </Button>
+          </a>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4 flex-wrap">
-          <a href="/" className="flex items-center gap-2" data-testid="link-nav-home">
-            <img src={logoImg} alt="EST Logo" className="h-8 rounded-md" data-testid="img-athletic-nav-logo" />
+          <a href={backUrl} className="flex items-center gap-2" data-testid="link-nav-home">
+            {org.logoUrl && (
+              <img src={org.logoUrl} alt={org.name} className="h-8 rounded-md" data-testid="img-athletic-nav-logo" />
+            )}
             <span className="font-semibold text-lg tracking-tight" data-testid="text-athletic-brand">
-              Efficiency Strength Training
+              {org.name}
             </span>
           </a>
           <div className="flex items-center gap-3">
-            <a href="/">
+            <a href={backUrl}>
               <Button variant="ghost" size="sm" data-testid="link-back-home">
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Home
@@ -153,7 +202,7 @@ export default function AthleticSchedulingPage() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl font-bold" data-testid="text-athletic-title">
-                BLHS Athletic Scheduling
+                {programName}
               </h1>
               <p className="text-muted-foreground mt-1">Daily calendar view — {formatHour(startHour)} to {formatHour(endHour)}</p>
             </div>

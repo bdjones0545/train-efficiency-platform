@@ -115,16 +115,18 @@ export default function AdminConfigurationPage() {
   const [editServiceActive, setEditServiceActive] = useState(true);
   const [editServiceType, setEditServiceType] = useState<"1_ON_1" | "GROUP">("1_ON_1");
 
-  const isEstOrg = orgId === "org-est";
+  const athleticEnabled = orgData?.athleticEnabled === true;
 
   const { data: athleticConfig } = useQuery<{ startHour: number; endHour: number; schedules: any[] }>({
-    queryKey: ["/api/athletic/config"],
-    enabled: isEstOrg,
+    queryKey: ["/api/athletic/config", orgId],
+    queryFn: () => fetch(`/api/athletic/config?orgId=${orgId}`).then(r => r.json()),
+    enabled: athleticEnabled && !!orgId,
   });
 
   const { data: athleticSchedules } = useQuery<any[]>({
-    queryKey: ["/api/athletic/schedules"],
-    enabled: isEstOrg,
+    queryKey: ["/api/athletic/schedules", orgId],
+    queryFn: () => fetch(`/api/athletic/schedules?orgId=${orgId}`).then(r => r.json()),
+    enabled: athleticEnabled && !!orgId,
   });
 
   const [payoutPercentage, setPayoutPercentage] = useState("");
@@ -475,7 +477,7 @@ export default function AdminConfigurationPage() {
     onSuccess: () => {
       toast({ title: "Default hours updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config", orgId] });
       setAthleticEditing(false);
     },
     onError: (error: Error) => {
@@ -490,8 +492,8 @@ export default function AdminConfigurationPage() {
     },
     onSuccess: () => {
       toast({ title: "Schedule added" });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/schedules"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/schedules", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config", orgId] });
       setAddingSchedule(false);
       setNewScheduleLabel("");
       setNewScheduleStartDate("");
@@ -511,8 +513,35 @@ export default function AdminConfigurationPage() {
     },
     onSuccess: () => {
       toast({ title: "Schedule removed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/schedules"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/schedules", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config", orgId] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleAthleticMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, { athleticEnabled: enabled });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const saveAthleticNameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, { athleticProgramName: name });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Program name updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1442,13 +1471,55 @@ export default function AdminConfigurationPage() {
         </Card>
       </section>
 
-      {isEstOrg && (
+      <section>
+        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
+          <Trophy className="h-5 w-5" />
+          Athletic Program
+        </h2>
+        <Card className="p-4 space-y-4" data-testid="card-athletic-settings">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable Athletic Scheduling</p>
+              <p className="text-xs text-muted-foreground">Allow teams to book athletic training time slots on your landing page.</p>
+            </div>
+            <Switch
+              checked={athleticEnabled}
+              onCheckedChange={(checked) => toggleAthleticMutation.mutate(checked)}
+              data-testid="switch-athletic-enabled"
+            />
+          </div>
+        </Card>
+      </section>
+
+      {athleticEnabled && (
         <section>
           <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
             <Trophy className="h-5 w-5" />
-            BLHS Athletic Available Hours
+            {orgData?.athleticProgramName || "Athletic"} Settings
           </h2>
-          <Card className="p-4 space-y-4" data-testid="card-athletic-settings">
+          <Card className="p-4 space-y-4" data-testid="card-athletic-config">
+            <div>
+              <p className="text-sm font-medium mb-1">Program Name</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                This name appears on your landing page and scheduling page (e.g., "BLHS Athletic", "Varsity Training").
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  className="max-w-xs"
+                  placeholder="e.g., BLHS Athletic"
+                  defaultValue={orgData?.athleticProgramName || ""}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim();
+                    if (val !== (orgData?.athleticProgramName || "")) {
+                      saveAthleticNameMutation.mutate(val);
+                    }
+                  }}
+                  data-testid="input-athletic-program-name"
+                />
+              </div>
+            </div>
+
+            <Separator />
             <div>
               <p className="text-sm font-medium mb-1">Default Hours</p>
               <p className="text-xs text-muted-foreground mb-2">
