@@ -3584,7 +3584,10 @@ export async function registerRoutes(
 
       let subscriptionRevenueCents = 0;
       const coachOrg = coach.organizationId ? await storage.getOrganizationById(coach.organizationId) : null;
-      if (coachOrg?.subscriptionsEnabled && coach.organizationId) {
+      const subscriptionsEnabled = !!(coachOrg?.subscriptionsEnabled);
+      let subscriberUsage: { userId: string; firstName: string; lastName: string; email: string | null; planName: string; sessionsPerWeek: number; sessionsRemaining: number | null; totalAllocated: number; currentPeriodStart: string | null; currentPeriodEnd: string | null; status: string }[] = [];
+
+      if (subscriptionsEnabled && coach.organizationId) {
         try {
           let subStripe: Stripe;
           try {
@@ -3607,6 +3610,40 @@ export async function registerRoutes(
         } catch {
           subscriptionRevenueCents = 0;
         }
+
+        try {
+          const orgSubs = await storage.getOrganizationUserSubscriptions(coach.organizationId);
+          const plans = await storage.getOrganizationSubscriptionPlans(coach.organizationId);
+          const planMap = new Map(plans.map(p => [p.id, p]));
+
+          for (const sub of orgSubs) {
+            if (sub.status === "pending") continue;
+            const plan = planMap.get(sub.planId);
+            if (!plan) continue;
+            const user = await storage.getUser(sub.userId);
+            const spw = plan.sessionsPerWeek || 1;
+            const intervalWeeks = plan.interval === "year" ? 52 * (plan.intervalCount || 1)
+              : plan.interval === "month" ? 4 * (plan.intervalCount || 1)
+              : (plan.intervalCount || 1);
+            const totalAllocated = spw * intervalWeeks;
+
+            subscriberUsage.push({
+              userId: sub.userId,
+              firstName: user?.firstName || "",
+              lastName: user?.lastName || "",
+              email: user?.email || null,
+              planName: plan.name,
+              sessionsPerWeek: spw,
+              sessionsRemaining: sub.sessionsRemaining,
+              totalAllocated,
+              currentPeriodStart: sub.currentPeriodStart?.toISOString() || null,
+              currentPeriodEnd: sub.currentPeriodEnd?.toISOString() || null,
+              status: sub.status,
+            });
+          }
+        } catch (e) {
+          console.error("Error fetching subscriber usage:", e);
+        }
       }
 
       res.json({
@@ -3617,6 +3654,8 @@ export async function registerRoutes(
           specialties: coach.specialties,
         },
         clients: clientsWithActual,
+        subscriptionsEnabled,
+        subscriberUsage,
         stats: {
           totalClients: clients.length,
           totalSessions,

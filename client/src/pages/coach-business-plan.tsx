@@ -52,6 +52,20 @@ type RevenueMonth = {
   revenueCents: number;
 };
 
+type SubscriberUsage = {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  planName: string;
+  sessionsPerWeek: number;
+  sessionsRemaining: number | null;
+  totalAllocated: number;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  status: string;
+};
+
 type BusinessPlanData = {
   coach: {
     id: string;
@@ -60,6 +74,8 @@ type BusinessPlanData = {
     specialties: string[] | null;
   };
   clients: BusinessPlanClient[];
+  subscriptionsEnabled?: boolean;
+  subscriberUsage?: SubscriberUsage[];
   stats: {
     totalClients: number;
     totalSessions: number;
@@ -447,6 +463,70 @@ export default function CoachBusinessPlanPage() {
                   <p className="text-2xl font-bold">${((plan.stats.subscriptionRevenueCents || 0) / 100).toFixed(0)}</p>
                 </div>
                 <p className="text-xs text-muted-foreground max-w-[200px] text-right">From Stripe subscription invoices</p>
+              </div>
+            </Card>
+          )}
+
+          {plan.subscriptionsEnabled && plan.subscriberUsage && plan.subscriberUsage.length > 0 && (
+            <Card className="p-5 space-y-4 border-amber-500/20" data-testid="card-subscriber-usage">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5 text-amber-500" />
+                <h2 className="font-semibold">Subscriber Session Usage</h2>
+                <Badge variant="secondary" className="text-xs">{plan.subscriberUsage.length} subscriber{plan.subscriberUsage.length !== 1 ? "s" : ""}</Badge>
+              </div>
+              <div className="space-y-2">
+                {plan.subscriberUsage.map((sub) => {
+                  const sessionsUsed = sub.sessionsRemaining !== null ? sub.totalAllocated - sub.sessionsRemaining : null;
+                  const usagePercent = sub.sessionsRemaining !== null && sub.totalAllocated > 0
+                    ? Math.round(((sub.totalAllocated - sub.sessionsRemaining) / sub.totalAllocated) * 100)
+                    : null;
+                  return (
+                    <div key={sub.userId} className="flex items-center gap-3 p-3 rounded-lg border bg-card" data-testid={`row-subscriber-${sub.userId}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">{sub.firstName} {sub.lastName}</span>
+                          <Badge variant="secondary" className="text-xs">{sub.planName}</Badge>
+                          <Badge variant={sub.status === "active" ? "default" : "destructive"} className="text-xs capitalize">{sub.status}</Badge>
+                        </div>
+                        {sub.email && <p className="text-xs text-muted-foreground mt-0.5">{sub.email}</p>}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {sub.sessionsPerWeek}x/week
+                          {sub.currentPeriodEnd && (
+                            <> · Renews {new Date(sub.currentPeriodEnd).toLocaleDateString()}</>
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        {sessionsUsed !== null ? (
+                          <>
+                            <p className="text-sm font-semibold">
+                              <span className={usagePercent !== null && usagePercent >= 100 ? "text-destructive" : usagePercent !== null && usagePercent >= 75 ? "text-amber-500" : ""}>{sessionsUsed}</span>
+                              <span className="text-muted-foreground font-normal"> / {sub.totalAllocated}</span>
+                            </p>
+                            <div className="w-24 h-1.5 bg-muted rounded-full mt-1">
+                              <div
+                                className={`h-full rounded-full transition-all ${usagePercent !== null && usagePercent >= 100 ? "bg-destructive" : usagePercent !== null && usagePercent >= 75 ? "bg-amber-500" : "bg-primary"}`}
+                                style={{ width: `${Math.min(usagePercent || 0, 100)}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">{sub.sessionsRemaining} remaining</p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Not yet allocated</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {plan.subscriptionsEnabled && (!plan.subscriberUsage || plan.subscriberUsage.length === 0) && (plan.stats.subscriptionRevenueCents || 0) > 0 && (
+            <Card className="p-4 border-amber-500/20" data-testid="card-subscriber-usage-empty">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <RefreshCw className="h-4 w-4 text-amber-500" />
+                <p className="text-sm">No active subscribers with session allocations</p>
               </div>
             </Card>
           )}
