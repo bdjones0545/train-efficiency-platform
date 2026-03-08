@@ -23,6 +23,8 @@ import {
   CreditCard,
   Loader2,
   Check,
+  Trophy,
+  Clock,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -113,8 +115,14 @@ export default function AdminConfigurationPage() {
   const [editServiceActive, setEditServiceActive] = useState(true);
   const [editServiceType, setEditServiceType] = useState<"1_ON_1" | "GROUP">("1_ON_1");
 
+  const isEstOrg = orgId === "org-est";
+
+  const { data: athleticUsage } = useQuery<{ weekCount: number; monthCount: number; seasonCount: number; limits: any }>({
+    queryKey: ["/api/athletic/usage"],
+    enabled: isEstOrg,
+  });
+
   const [payoutPercentage, setPayoutPercentage] = useState("");
-  const [payoutEditing, setPayoutEditing] = useState(false);
   const [newLocation, setNewLocation] = useState("");
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
 
@@ -125,6 +133,13 @@ export default function AdminConfigurationPage() {
   const [editCoachSpecialties, setEditCoachSpecialties] = useState("");
   const [editCoachActive, setEditCoachActive] = useState(true);
   const [editCoachPayout, setEditCoachPayout] = useState("");
+
+  const [athleticHoursPerWeek, setAthleticHoursPerWeek] = useState("");
+  const [athleticHoursPerMonth, setAthleticHoursPerMonth] = useState("");
+  const [athleticHoursPerSeason, setAthleticHoursPerSeason] = useState("");
+  const [athleticSeasonStart, setAthleticSeasonStart] = useState("");
+  const [athleticSeasonEnd, setAthleticSeasonEnd] = useState("");
+  const [athleticEditing, setAthleticEditing] = useState(false);
 
   const [showStripeProducts, setShowStripeProducts] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -438,6 +453,41 @@ export default function AdminConfigurationPage() {
     updateSettingMutation.mutate({
       key: "coach_payout_percentage",
       value: payoutPercentage,
+    });
+  };
+
+  const saveAthleticSettingsMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Athletic settings updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/usage"] });
+      setAthleticEditing(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const startEditAthletic = () => {
+    setAthleticHoursPerWeek(orgData?.athleticHoursPerWeek?.toString() || "");
+    setAthleticHoursPerMonth(orgData?.athleticHoursPerMonth?.toString() || "");
+    setAthleticHoursPerSeason(orgData?.athleticHoursPerSeason?.toString() || "");
+    setAthleticSeasonStart(orgData?.athleticSeasonStartDate || "");
+    setAthleticSeasonEnd(orgData?.athleticSeasonEndDate || "");
+    setAthleticEditing(true);
+  };
+
+  const saveAthleticSettings = () => {
+    saveAthleticSettingsMutation.mutate({
+      athleticHoursPerWeek: athleticHoursPerWeek ? parseInt(athleticHoursPerWeek) : null,
+      athleticHoursPerMonth: athleticHoursPerMonth ? parseInt(athleticHoursPerMonth) : null,
+      athleticHoursPerSeason: athleticHoursPerSeason ? parseInt(athleticHoursPerSeason) : null,
+      athleticSeasonStartDate: athleticSeasonStart || null,
+      athleticSeasonEndDate: athleticSeasonEnd || null,
     });
   };
 
@@ -1318,6 +1368,154 @@ export default function AdminConfigurationPage() {
           )}
         </Card>
       </section>
+
+      {isEstOrg && (
+        <section>
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
+            <Trophy className="h-5 w-5" />
+            BLHS Athletic Hour Limits
+          </h2>
+          <Card className="p-4 space-y-4" data-testid="card-athletic-settings">
+            <p className="text-sm text-muted-foreground">
+              Set maximum hours teams can schedule per week, month, and season. Leave blank for unlimited.
+            </p>
+
+            {athleticUsage && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-md border p-3 space-y-1">
+                  <p className="text-xs text-muted-foreground">This Week</p>
+                  <p className="text-lg font-bold" data-testid="text-athletic-week-usage">
+                    {athleticUsage.weekCount}{athleticUsage.limits.perWeek ? ` / ${athleticUsage.limits.perWeek}` : ""}
+                  </p>
+                </div>
+                <div className="rounded-md border p-3 space-y-1">
+                  <p className="text-xs text-muted-foreground">This Month</p>
+                  <p className="text-lg font-bold" data-testid="text-athletic-month-usage">
+                    {athleticUsage.monthCount}{athleticUsage.limits.perMonth ? ` / ${athleticUsage.limits.perMonth}` : ""}
+                  </p>
+                </div>
+                <div className="rounded-md border p-3 space-y-1">
+                  <p className="text-xs text-muted-foreground">This Season</p>
+                  <p className="text-lg font-bold" data-testid="text-athletic-season-usage">
+                    {athleticUsage.limits.seasonStart ? (
+                      <>{athleticUsage.seasonCount}{athleticUsage.limits.perSeason ? ` / ${athleticUsage.limits.perSeason}` : ""}</>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">No season set</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {athleticEditing ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hours per Week</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Unlimited"
+                      value={athleticHoursPerWeek}
+                      onChange={(e) => setAthleticHoursPerWeek(e.target.value)}
+                      data-testid="input-athletic-hours-week"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hours per Month</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Unlimited"
+                      value={athleticHoursPerMonth}
+                      onChange={(e) => setAthleticHoursPerMonth(e.target.value)}
+                      data-testid="input-athletic-hours-month"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Hours per Season</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Unlimited"
+                      value={athleticHoursPerSeason}
+                      onChange={(e) => setAthleticHoursPerSeason(e.target.value)}
+                      data-testid="input-athletic-hours-season"
+                    />
+                  </div>
+                </div>
+                <Separator />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Season Start Date</Label>
+                    <Input
+                      type="date"
+                      value={athleticSeasonStart}
+                      onChange={(e) => setAthleticSeasonStart(e.target.value)}
+                      data-testid="input-athletic-season-start"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Season End Date</Label>
+                    <Input
+                      type="date"
+                      value={athleticSeasonEnd}
+                      onChange={(e) => setAthleticSeasonEnd(e.target.value)}
+                      data-testid="input-athletic-season-end"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={saveAthleticSettingsMutation.isPending}
+                    onClick={saveAthleticSettings}
+                    data-testid="button-save-athletic"
+                  >
+                    <Save className="h-4 w-4 mr-1" />
+                    {saveAthleticSettingsMutation.isPending ? "Saving..." : "Save"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setAthleticEditing(false)} data-testid="button-cancel-athletic">
+                    <X className="h-4 w-4 mr-1" /> Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Per Week:</span>{" "}
+                    <span className="font-medium" data-testid="text-athletic-limit-week">
+                      {orgData?.athleticHoursPerWeek || "Unlimited"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Per Month:</span>{" "}
+                    <span className="font-medium" data-testid="text-athletic-limit-month">
+                      {orgData?.athleticHoursPerMonth || "Unlimited"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Per Season:</span>{" "}
+                    <span className="font-medium" data-testid="text-athletic-limit-season">
+                      {orgData?.athleticHoursPerSeason || "Unlimited"}
+                    </span>
+                  </div>
+                </div>
+                {(orgData?.athleticSeasonStartDate || orgData?.athleticSeasonEndDate) && (
+                  <p className="text-sm text-muted-foreground flex items-center gap-1">
+                    <Clock className="h-3.5 w-3.5" />
+                    Season: {orgData?.athleticSeasonStartDate || "?"} to {orgData?.athleticSeasonEndDate || "?"}
+                  </p>
+                )}
+                <Button size="sm" variant="outline" onClick={startEditAthletic} data-testid="button-edit-athletic">
+                  <Pencil className="h-4 w-4 mr-1" /> Edit Limits
+                </Button>
+              </div>
+            )}
+          </Card>
+        </section>
+      )}
     </div>
   );
 }

@@ -108,6 +108,7 @@ export interface IStorage {
   hasUsedFreeSession(userId: string): Promise<boolean>;
 
   getAthleticBookings(date: string): Promise<AthleticBooking[]>;
+  getAthleticBookingsInRange(startDate: string, endDate: string): Promise<AthleticBooking[]>;
   createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking>;
   deleteAthleticBooking(id: string): Promise<void>;
   countAthleticBookingsForSlot(date: string, timeSlot: string): Promise<number>;
@@ -671,6 +672,12 @@ export class DatabaseStorage implements IStorage {
 
   async getAthleticBookings(date: string): Promise<AthleticBooking[]> {
     return db.select().from(athleticBookings).where(eq(athleticBookings.date, date));
+  }
+
+  async getAthleticBookingsInRange(startDate: string, endDate: string): Promise<AthleticBooking[]> {
+    return db.select().from(athleticBookings).where(
+      and(gte(athleticBookings.date, startDate), lte(athleticBookings.date, endDate))
+    );
   }
 
   async createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking> {

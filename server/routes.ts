@@ -470,7 +470,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled, athleticHoursPerWeek, athleticHoursPerMonth, athleticHoursPerSeason, athleticSeasonStartDate, athleticSeasonEndDate } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
@@ -492,6 +492,11 @@ export async function registerRoutes(
       if (stripeSecretKey !== undefined) updateData.stripeSecretKey = stripeSecretKey || null;
       if (stripePublishableKey !== undefined) updateData.stripePublishableKey = stripePublishableKey || null;
       if (subscriptionsEnabled !== undefined) updateData.subscriptionsEnabled = subscriptionsEnabled;
+      if (athleticHoursPerWeek !== undefined) updateData.athleticHoursPerWeek = athleticHoursPerWeek;
+      if (athleticHoursPerMonth !== undefined) updateData.athleticHoursPerMonth = athleticHoursPerMonth;
+      if (athleticHoursPerSeason !== undefined) updateData.athleticHoursPerSeason = athleticHoursPerSeason;
+      if (athleticSeasonStartDate !== undefined) updateData.athleticSeasonStartDate = athleticSeasonStartDate;
+      if (athleticSeasonEndDate !== undefined) updateData.athleticSeasonEndDate = athleticSeasonEndDate;
 
       if (stripeSecretKey && (stripeSecretKey.startsWith("sk_") || stripeSecretKey.startsWith("rk_"))) {
         try {
@@ -2797,6 +2802,57 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/athletic/usage", async (_req: any, res) => {
+    try {
+      const org = await storage.getOrganizationById("org-est");
+      if (!org) return res.json({ weekCount: 0, monthCount: 0, seasonCount: 0, limits: {} });
+
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
+      const weekStartStr = weekStart.toISOString().slice(0, 10);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      const weekEndStr = weekEnd.toISOString().slice(0, 10);
+
+      const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const monthEndStr = monthEnd.toISOString().slice(0, 10);
+
+      const seasonStartStr = org.athleticSeasonStartDate || null;
+      const seasonEndStr = org.athleticSeasonEndDate || null;
+
+      const weekBookings = await storage.getAthleticBookingsInRange(weekStartStr, weekEndStr);
+      const weekCount = weekBookings.length;
+
+      const monthBookings = await storage.getAthleticBookingsInRange(monthStartStr, monthEndStr);
+      const monthCount = monthBookings.length;
+
+      let seasonCount = 0;
+      if (seasonStartStr && seasonEndStr) {
+        const seasonBookings = await storage.getAthleticBookingsInRange(seasonStartStr, seasonEndStr);
+        seasonCount = seasonBookings.length;
+      }
+
+      res.json({
+        weekCount,
+        monthCount,
+        seasonCount,
+        limits: {
+          perWeek: org.athleticHoursPerWeek || null,
+          perMonth: org.athleticHoursPerMonth || null,
+          perSeason: org.athleticHoursPerSeason || null,
+          seasonStart: seasonStartStr,
+          seasonEnd: seasonEndStr,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching athletic usage:", error);
+      res.status(500).json({ message: "Failed to fetch athletic usage" });
+    }
+  });
+
   app.post("/api/athletic/bookings", async (req: any, res) => {
     try {
       const { insertAthleticBookingSchema } = await import("@shared/schema");
@@ -2813,6 +2869,45 @@ export async function registerRoutes(
       if (count >= 2) {
         return res.status(409).json({ message: "This time slot is full (max 2 teams per hour)" });
       }
+
+      const org = await storage.getOrganizationById("org-est");
+      if (org) {
+        const bookingDate = new Date(date + "T12:00:00");
+
+        if (org.athleticHoursPerWeek) {
+          const dayOfWeek = bookingDate.getDay();
+          const weekStart = new Date(bookingDate);
+          weekStart.setDate(bookingDate.getDate() - ((dayOfWeek + 6) % 7));
+          const weekStartStr = weekStart.toISOString().slice(0, 10);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 6);
+          const weekEndStr = weekEnd.toISOString().slice(0, 10);
+          const weekBookings = await storage.getAthleticBookingsInRange(weekStartStr, weekEndStr);
+          if (weekBookings.length >= org.athleticHoursPerWeek) {
+            return res.status(409).json({ message: `Weekly limit reached (${org.athleticHoursPerWeek} hours per week)` });
+          }
+        }
+
+        if (org.athleticHoursPerMonth) {
+          const monthStartStr = `${bookingDate.getFullYear()}-${String(bookingDate.getMonth() + 1).padStart(2, "0")}-01`;
+          const monthEnd = new Date(bookingDate.getFullYear(), bookingDate.getMonth() + 1, 0);
+          const monthEndStr = monthEnd.toISOString().slice(0, 10);
+          const monthBookings = await storage.getAthleticBookingsInRange(monthStartStr, monthEndStr);
+          if (monthBookings.length >= org.athleticHoursPerMonth) {
+            return res.status(409).json({ message: `Monthly limit reached (${org.athleticHoursPerMonth} hours per month)` });
+          }
+        }
+
+        if (org.athleticHoursPerSeason && org.athleticSeasonStartDate && org.athleticSeasonEndDate) {
+          if (date >= org.athleticSeasonStartDate && date <= org.athleticSeasonEndDate) {
+            const seasonBookings = await storage.getAthleticBookingsInRange(org.athleticSeasonStartDate, org.athleticSeasonEndDate);
+            if (seasonBookings.length >= org.athleticHoursPerSeason) {
+              return res.status(409).json({ message: `Season limit reached (${org.athleticHoursPerSeason} hours per season)` });
+            }
+          }
+        }
+      }
+
       const booking = await storage.createAthleticBooking({ date, timeSlot, teamName, trainingType: trainingType || "strength", bookedBy: bookedBy || null });
       res.json(booking);
     } catch (error) {

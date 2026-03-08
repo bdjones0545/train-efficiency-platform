@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Clock, Users, Trophy, ArrowLeft, Zap, Dumbbell, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Users, Trophy, ArrowLeft, Zap, Dumbbell, X, AlertTriangle } from "lucide-react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -60,6 +60,10 @@ export default function AthleticSchedulingPage() {
     },
   });
 
+  const { data: usage } = useQuery<{ weekCount: number; monthCount: number; seasonCount: number; limits: { perWeek: number | null; perMonth: number | null; perSeason: number | null; seasonStart: string | null; seasonEnd: string | null } }>({
+    queryKey: ["/api/athletic/usage"],
+  });
+
   const bookMutation = useMutation({
     mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string }) => {
       const res = await apiRequest("POST", "/api/athletic/bookings", data);
@@ -67,6 +71,7 @@ export default function AthleticSchedulingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/usage"] });
       setScheduleDialogOpen(false);
       setTeamName("");
       setTrainingType("strength");
@@ -85,6 +90,7 @@ export default function AthleticSchedulingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", dateStr] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/usage"] });
       toast({ title: "Session removed", description: "The scheduled session has been deleted." });
     },
     onError: (error: any) => {
@@ -223,6 +229,41 @@ export default function AthleticSchedulingPage() {
               <p className="text-2xl font-bold" data-testid="text-max-per-slot">{MAX_TEAMS_PER_SLOT}</p>
             </Card>
           </div>
+
+          {usage && (usage.limits.perWeek || usage.limits.perMonth || usage.limits.perSeason) && (
+            <Card className="p-4">
+              <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-primary" />
+                Hour Limits
+              </p>
+              <div className="flex flex-wrap gap-4 text-sm">
+                {usage.limits.perWeek && (
+                  <div data-testid="text-usage-week">
+                    <span className="text-muted-foreground">Week: </span>
+                    <span className={`font-semibold ${usage.weekCount >= usage.limits.perWeek ? "text-destructive" : ""}`}>
+                      {usage.weekCount} / {usage.limits.perWeek}
+                    </span>
+                  </div>
+                )}
+                {usage.limits.perMonth && (
+                  <div data-testid="text-usage-month">
+                    <span className="text-muted-foreground">Month: </span>
+                    <span className={`font-semibold ${usage.monthCount >= usage.limits.perMonth ? "text-destructive" : ""}`}>
+                      {usage.monthCount} / {usage.limits.perMonth}
+                    </span>
+                  </div>
+                )}
+                {usage.limits.perSeason && usage.limits.seasonStart && (
+                  <div data-testid="text-usage-season">
+                    <span className="text-muted-foreground">Season: </span>
+                    <span className={`font-semibold ${usage.seasonCount >= usage.limits.perSeason ? "text-destructive" : ""}`}>
+                      {usage.seasonCount} / {usage.limits.perSeason}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
 
           <Card className="p-0 overflow-x-hidden overflow-y-auto" style={{ maxHeight: "70vh" }}>
             <div

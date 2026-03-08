@@ -34,6 +34,11 @@ export const organizations = pgTable("organizations", {
   trialEndsAt: timestamp("trial_ends_at"),
   subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
   subscriptionsEnabled: boolean("subscriptions_enabled").default(false),
+  athleticHoursPerWeek: integer("athletic_hours_per_week"),
+  athleticHoursPerMonth: integer("athletic_hours_per_month"),
+  athleticHoursPerSeason: integer("athletic_hours_per_season"),
+  athleticSeasonStartDate: varchar("athletic_season_start_date"),
+  athleticSeasonEndDate: varchar("athletic_season_end_date"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
