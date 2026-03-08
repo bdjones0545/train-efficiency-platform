@@ -189,8 +189,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   });
 
   const selectedServiceObj = services?.find(s => s.id === serviceId);
+  const selectedSubPlan = subscriptionPlans?.find(p => p.id === subscriptionPlanId);
   const groupNameKeywords = ["semi-private", "team training", "group", "partner training"];
-  const isSemiPrivate = selectedServiceObj?.sessionType === "GROUP" || (selectedServiceObj ? groupNameKeywords.some(kw => selectedServiceObj.name.toLowerCase().includes(kw)) : false);
+  const isSemiPrivate = selectedServiceObj?.sessionType === "GROUP" || (selectedServiceObj ? groupNameKeywords.some(kw => selectedServiceObj.name.toLowerCase().includes(kw)) : false) || (selectedSubPlan?.sessionType === "group");
   const isTeamTraining = selectedServiceObj?.name.toLowerCase().includes("team training") || false;
   const resolvedLoc = location === "__custom__" ? customLocation.trim() : location;
   const isTeamBHS = isTeamTraining && resolvedLoc.toLowerCase().includes("bluffton high");
