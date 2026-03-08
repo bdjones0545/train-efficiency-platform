@@ -2812,15 +2812,84 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/athletic/config", async (_req: any, res) => {
+  async function getAthleticHoursForDate(date: string): Promise<{ startHour: number; endHour: number }> {
+    const schedules = await storage.getAthleticHourSchedules();
+    for (const s of schedules) {
+      if (date >= s.startDate && date <= s.endDate) {
+        return { startHour: s.startHour, endHour: s.endHour };
+      }
+    }
+    const org = await storage.getOrganizationById("org-est");
+    return { startHour: org?.athleticStartHour ?? 16, endHour: org?.athleticEndHour ?? 20 };
+  }
+
+  app.get("/api/athletic/config", async (req: any, res) => {
     try {
-      const org = await storage.getOrganizationById("org-est");
-      const startHour = org?.athleticStartHour ?? 16;
-      const endHour = org?.athleticEndHour ?? 20;
-      res.json({ startHour, endHour });
+      const date = req.query.date as string | undefined;
+      const { startHour, endHour } = await getAthleticHoursForDate(date || new Date().toISOString().slice(0, 10));
+      const schedules = await storage.getAthleticHourSchedules();
+      res.json({ startHour, endHour, schedules });
     } catch (error) {
       console.error("Error fetching athletic config:", error);
       res.status(500).json({ message: "Failed to fetch athletic config" });
+    }
+  });
+
+  app.get("/api/athletic/schedules", async (_req: any, res) => {
+    try {
+      const schedules = await storage.getAthleticHourSchedules();
+      res.json(schedules);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch athletic schedules" });
+    }
+  });
+
+  app.post("/api/athletic/schedules", async (req: any, res) => {
+    try {
+      const { insertAthleticHourScheduleSchema } = await import("@shared/schema");
+      const parsed = insertAthleticHourScheduleSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten().fieldErrors });
+      }
+      const { label, startDate, endDate, startHour, endHour } = parsed.data;
+      if (startHour >= endHour || startHour < 0 || endHour > 24) {
+        return res.status(400).json({ message: "Start hour must be before end hour (0-24)" });
+      }
+      if (startDate > endDate) {
+        return res.status(400).json({ message: "Start date must be before end date" });
+      }
+      const schedule = await storage.createAthleticHourSchedule({ label, startDate, endDate, startHour, endHour });
+      res.json(schedule);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create athletic schedule" });
+    }
+  });
+
+  app.patch("/api/athletic/schedules/:id", async (req: any, res) => {
+    try {
+      const { insertAthleticHourScheduleSchema } = await import("@shared/schema");
+      const partial = insertAthleticHourScheduleSchema.partial().safeParse(req.body);
+      if (!partial.success) {
+        return res.status(400).json({ message: "Invalid data", errors: partial.error.flatten().fieldErrors });
+      }
+      const data = partial.data;
+      if (data.startHour !== undefined && data.endHour !== undefined && data.startHour >= data.endHour) {
+        return res.status(400).json({ message: "Start hour must be before end hour" });
+      }
+      const updated = await storage.updateAthleticHourSchedule(req.params.id, data);
+      if (!updated) return res.status(404).json({ message: "Schedule not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update athletic schedule" });
+    }
+  });
+
+  app.delete("/api/athletic/schedules/:id", async (req: any, res) => {
+    try {
+      await storage.deleteAthleticHourSchedule(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete athletic schedule" });
     }
   });
 
@@ -2833,9 +2902,7 @@ export async function registerRoutes(
       }
       const { date, timeSlot, teamName, trainingType, bookedBy } = parsed.data;
 
-      const org = await storage.getOrganizationById("org-est");
-      const startHour = org?.athleticStartHour ?? 16;
-      const endHour = org?.athleticEndHour ?? 20;
+      const { startHour, endHour } = await getAthleticHoursForDate(date);
       const validSlots: string[] = [];
       for (let h = startHour; h < endHour; h++) {
         validSlots.push(`${h.toString().padStart(2, "0")}:00`);

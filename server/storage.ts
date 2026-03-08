@@ -8,6 +8,7 @@ import {
   bookingParticipants,
   redemptions,
   athleticBookings,
+  athleticHourSchedules,
   cashouts,
   walletTransactions,
   appSettings,
@@ -27,6 +28,8 @@ import {
   type InsertRedemption,
   type AthleticBooking,
   type InsertAthleticBooking,
+  type AthleticHourSchedule,
+  type InsertAthleticHourSchedule,
   type Cashout,
   type InsertCashout,
   type WalletTransaction,
@@ -112,6 +115,11 @@ export interface IStorage {
   createAthleticBooking(booking: InsertAthleticBooking): Promise<AthleticBooking>;
   deleteAthleticBooking(id: string): Promise<void>;
   countAthleticBookingsForSlot(date: string, timeSlot: string): Promise<number>;
+
+  getAthleticHourSchedules(): Promise<AthleticHourSchedule[]>;
+  createAthleticHourSchedule(schedule: InsertAthleticHourSchedule): Promise<AthleticHourSchedule>;
+  updateAthleticHourSchedule(id: string, data: Partial<InsertAthleticHourSchedule>): Promise<AthleticHourSchedule | undefined>;
+  deleteAthleticHourSchedule(id: string): Promise<void>;
 
   getCoachCashouts(coachId: string): Promise<Cashout[]>;
   getAllCashouts(): Promise<Cashout[]>;
@@ -696,6 +704,24 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(athleticBookings.date, date), eq(athleticBookings.timeSlot, timeSlot)));
     return result.length;
   }
+  async getAthleticHourSchedules(): Promise<AthleticHourSchedule[]> {
+    return db.select().from(athleticHourSchedules).orderBy(desc(athleticHourSchedules.startDate));
+  }
+
+  async createAthleticHourSchedule(schedule: InsertAthleticHourSchedule): Promise<AthleticHourSchedule> {
+    const [created] = await db.insert(athleticHourSchedules).values(schedule).returning();
+    return created;
+  }
+
+  async updateAthleticHourSchedule(id: string, data: Partial<InsertAthleticHourSchedule>): Promise<AthleticHourSchedule | undefined> {
+    const [updated] = await db.update(athleticHourSchedules).set(data).where(eq(athleticHourSchedules.id, id)).returning();
+    return updated;
+  }
+
+  async deleteAthleticHourSchedule(id: string): Promise<void> {
+    await db.delete(athleticHourSchedules).where(eq(athleticHourSchedules.id, id));
+  }
+
   async getCoachCashouts(coachId: string): Promise<Cashout[]> {
     return db.select().from(cashouts).where(eq(cashouts.coachId, coachId)).orderBy(desc(cashouts.requestedAt));
   }

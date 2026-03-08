@@ -207,6 +207,20 @@ export const redemptions = pgTable("redemptions", {
   amountCents: integer("amount_cents").notNull().default(0),
 });
 
+export const athleticHourSchedules = pgTable("athletic_hour_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  label: varchar("label").notNull(),
+  startDate: varchar("start_date").notNull(),
+  endDate: varchar("end_date").notNull(),
+  startHour: integer("start_hour").notNull(),
+  endHour: integer("end_hour").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAthleticHourScheduleSchema = createInsertSchema(athleticHourSchedules).omit({ id: true, createdAt: true });
+export type AthleticHourSchedule = typeof athleticHourSchedules.$inferSelect;
+export type InsertAthleticHourSchedule = z.infer<typeof insertAthleticHourScheduleSchema>;
+
 export const athleticBookings = pgTable("athletic_bookings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   date: varchar("date").notNull(),

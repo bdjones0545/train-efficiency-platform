@@ -50,7 +50,7 @@ export default function CoachAthleticPage() {
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   const { data: config } = useQuery<{ startHour: number; endHour: number }>({
-    queryKey: ["/api/athletic/config"],
+    queryKey: [`/api/athletic/config?date=${dateStr}`],
   });
 
   const startHour = config?.startHour ?? 16;

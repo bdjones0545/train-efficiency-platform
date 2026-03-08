@@ -117,8 +117,13 @@ export default function AdminConfigurationPage() {
 
   const isEstOrg = orgId === "org-est";
 
-  const { data: athleticConfig } = useQuery<{ startHour: number; endHour: number }>({
+  const { data: athleticConfig } = useQuery<{ startHour: number; endHour: number; schedules: any[] }>({
     queryKey: ["/api/athletic/config"],
+    enabled: isEstOrg,
+  });
+
+  const { data: athleticSchedules } = useQuery<any[]>({
+    queryKey: ["/api/athletic/schedules"],
     enabled: isEstOrg,
   });
 
@@ -137,6 +142,13 @@ export default function AdminConfigurationPage() {
   const [athleticStartHour, setAthleticStartHour] = useState("16");
   const [athleticEndHour, setAthleticEndHour] = useState("20");
   const [athleticEditing, setAthleticEditing] = useState(false);
+
+  const [newScheduleLabel, setNewScheduleLabel] = useState("");
+  const [newScheduleStartDate, setNewScheduleStartDate] = useState("");
+  const [newScheduleEndDate, setNewScheduleEndDate] = useState("");
+  const [newScheduleStartHour, setNewScheduleStartHour] = useState("8");
+  const [newScheduleEndHour, setNewScheduleEndHour] = useState("11");
+  const [addingSchedule, setAddingSchedule] = useState(false);
 
   const [showStripeProducts, setShowStripeProducts] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -453,16 +465,52 @@ export default function AdminConfigurationPage() {
     });
   };
 
-  const saveAthleticSettingsMutation = useMutation({
+  const saveDefaultHoursMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, data);
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Athletic hours updated" });
+      toast({ title: "Default hours updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
       queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
       setAthleticEditing(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addScheduleMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/athletic/schedules", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule added" });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
+      setAddingSchedule(false);
+      setNewScheduleLabel("");
+      setNewScheduleStartDate("");
+      setNewScheduleEndDate("");
+      setNewScheduleStartHour("8");
+      setNewScheduleEndHour("11");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteScheduleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/athletic/schedules/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule removed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/config"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -488,9 +536,29 @@ export default function AdminConfigurationPage() {
       toast({ title: "Invalid hours", description: "Start hour must be before end hour (0-24).", variant: "destructive" });
       return;
     }
-    saveAthleticSettingsMutation.mutate({
+    saveDefaultHoursMutation.mutate({
       athleticStartHour: start,
       athleticEndHour: end,
+    });
+  };
+
+  const handleAddSchedule = () => {
+    const start = parseInt(newScheduleStartHour);
+    const end = parseInt(newScheduleEndHour);
+    if (!newScheduleLabel.trim() || !newScheduleStartDate || !newScheduleEndDate) {
+      toast({ title: "Missing fields", description: "Please fill in all fields.", variant: "destructive" });
+      return;
+    }
+    if (start >= end) {
+      toast({ title: "Invalid hours", description: "Start hour must be before end hour.", variant: "destructive" });
+      return;
+    }
+    addScheduleMutation.mutate({
+      label: newScheduleLabel.trim(),
+      startDate: newScheduleStartDate,
+      endDate: newScheduleEndDate,
+      startHour: start,
+      endHour: end,
     });
   };
 
@@ -1379,69 +1447,171 @@ export default function AdminConfigurationPage() {
             BLHS Athletic Available Hours
           </h2>
           <Card className="p-4 space-y-4" data-testid="card-athletic-settings">
-            <p className="text-sm text-muted-foreground">
-              Set the daily time window for BLHS Athletic scheduling. For example, 8 AM to 11 AM for summer hours.
-            </p>
-
-            {athleticEditing ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Start Hour</Label>
-                    <select
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      value={athleticStartHour}
-                      onChange={(e) => setAthleticStartHour(e.target.value)}
-                      data-testid="select-athletic-start-hour"
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={i}>{formatHourLabel(i)}</option>
-                      ))}
-                    </select>
+            <div>
+              <p className="text-sm font-medium mb-1">Default Hours</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Used when no date-specific schedule applies.
+              </p>
+              {athleticEditing ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Start Hour</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                        value={athleticStartHour}
+                        onChange={(e) => setAthleticStartHour(e.target.value)}
+                        data-testid="select-athletic-start-hour"
+                      >
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <option key={i} value={i}>{formatHourLabel(i)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">End Hour</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                        value={athleticEndHour}
+                        onChange={(e) => setAthleticEndHour(e.target.value)}
+                        data-testid="select-athletic-end-hour"
+                      >
+                        {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
+                          <option key={h} value={h}>{formatHourLabel(h === 24 ? 0 : h)}{h === 24 ? " (Midnight)" : ""}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">End Hour</Label>
-                    <select
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      value={athleticEndHour}
-                      onChange={(e) => setAthleticEndHour(e.target.value)}
-                      data-testid="select-athletic-end-hour"
-                    >
-                      {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
-                        <option key={h} value={h}>{formatHourLabel(h === 24 ? 0 : h)}{h === 24 ? " (Midnight)" : ""}</option>
-                      ))}
-                    </select>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" disabled={saveDefaultHoursMutation.isPending} onClick={saveAthleticSettings} data-testid="button-save-athletic">
+                      <Save className="h-4 w-4 mr-1" />
+                      {saveDefaultHoursMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setAthleticEditing(false)} data-testid="button-cancel-athletic">
+                      <X className="h-4 w-4 mr-1" /> Cancel
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    disabled={saveAthleticSettingsMutation.isPending}
-                    onClick={saveAthleticSettings}
-                    data-testid="button-save-athletic"
-                  >
-                    <Save className="h-4 w-4 mr-1" />
-                    {saveAthleticSettingsMutation.isPending ? "Saving..." : "Save"}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setAthleticEditing(false)} data-testid="button-cancel-athletic">
-                    <X className="h-4 w-4 mr-1" /> Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
+              ) : (
                 <div className="flex items-center gap-2 text-sm">
                   <Clock className="h-4 w-4 text-primary" />
                   <span className="font-medium" data-testid="text-athletic-hours">
                     {formatHourLabel(athleticConfig?.startHour ?? 16)} - {formatHourLabel(athleticConfig?.endHour ?? 20)}
                   </span>
-                  <span className="text-muted-foreground">({(athleticConfig?.endHour ?? 20) - (athleticConfig?.startHour ?? 16)} hour slots)</span>
+                  <Button size="sm" variant="ghost" className="ml-2 h-7" onClick={startEditAthletic} data-testid="button-edit-athletic">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-                <Button size="sm" variant="outline" onClick={startEditAthletic} data-testid="button-edit-athletic">
-                  <Pencil className="h-4 w-4 mr-1" /> Edit Hours
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <p className="text-sm font-medium mb-1">Date Range Schedules</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Add custom hours for specific date ranges (e.g., summer hours). These override the default hours.
+              </p>
+
+              {athleticSchedules && athleticSchedules.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {athleticSchedules.map((s: any) => (
+                    <div key={s.id} className="flex items-center justify-between rounded-md border p-3" data-testid={`schedule-row-${s.id}`}>
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-medium">{s.label}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {s.startDate} to {s.endDate} &middot; {formatHourLabel(s.startHour)} - {formatHourLabel(s.endHour)}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive h-7"
+                        onClick={() => deleteScheduleMutation.mutate(s.id)}
+                        data-testid={`button-delete-schedule-${s.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {addingSchedule ? (
+                <div className="space-y-3 rounded-md border p-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Label</Label>
+                    <Input
+                      placeholder="e.g., Summer Hours"
+                      value={newScheduleLabel}
+                      onChange={(e) => setNewScheduleLabel(e.target.value)}
+                      data-testid="input-schedule-label"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Start Date</Label>
+                      <Input
+                        type="date"
+                        value={newScheduleStartDate}
+                        onChange={(e) => setNewScheduleStartDate(e.target.value)}
+                        data-testid="input-schedule-start-date"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">End Date</Label>
+                      <Input
+                        type="date"
+                        value={newScheduleEndDate}
+                        onChange={(e) => setNewScheduleEndDate(e.target.value)}
+                        data-testid="input-schedule-end-date"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Start Hour</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                        value={newScheduleStartHour}
+                        onChange={(e) => setNewScheduleStartHour(e.target.value)}
+                        data-testid="select-schedule-start-hour"
+                      >
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <option key={i} value={i}>{formatHourLabel(i)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">End Hour</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                        value={newScheduleEndHour}
+                        onChange={(e) => setNewScheduleEndHour(e.target.value)}
+                        data-testid="select-schedule-end-hour"
+                      >
+                        {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
+                          <option key={h} value={h}>{formatHourLabel(h === 24 ? 0 : h)}{h === 24 ? " (Midnight)" : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" disabled={addScheduleMutation.isPending} onClick={handleAddSchedule} data-testid="button-save-schedule">
+                      <Save className="h-4 w-4 mr-1" />
+                      {addScheduleMutation.isPending ? "Adding..." : "Add Schedule"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setAddingSchedule(false)} data-testid="button-cancel-schedule">
+                      <X className="h-4 w-4 mr-1" /> Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => setAddingSchedule(true)} data-testid="button-add-schedule">
+                  <Plus className="h-4 w-4 mr-1" /> Add Date Range
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </Card>
         </section>
       )}
