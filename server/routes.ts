@@ -3592,20 +3592,37 @@ export async function registerRoutes(
 
       const stripeSubscriptionId = session.subscription as string;
       let currentPeriodEnd: Date | null = null;
+      let currentPeriodStart: Date | null = null;
       let status = "active";
+      let sessionsRemaining: number | null = null;
 
       if (stripeSubscriptionId) {
         try {
           const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+          currentPeriodStart = new Date(stripeSub.current_period_start * 1000);
           currentPeriodEnd = new Date(stripeSub.current_period_end * 1000);
           status = stripeSub.status;
+
+          // Initialize sessions remaining from the plan config
+          const plan = await storage.getOrganizationSubscriptionPlan(existing.planId);
+          if (plan) {
+            const spw = plan.sessionsPerWeek || 1;
+            const intervalWeeks = plan.interval === "year"
+              ? 52 * (plan.intervalCount || 1)
+              : plan.interval === "month"
+              ? 4 * (plan.intervalCount || 1)
+              : (plan.intervalCount || 1);
+            sessionsRemaining = spw * intervalWeeks;
+          }
         } catch {}
       }
 
       const updated = await storage.updateUserSubscription(existing.id, {
         stripeSubscriptionId,
         status,
+        currentPeriodStart,
         currentPeriodEnd,
+        ...(sessionsRemaining !== null ? { sessionsRemaining } : {}),
       });
 
       res.json({ subscription: updated });
