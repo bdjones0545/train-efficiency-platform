@@ -44,7 +44,9 @@ interface UserSubscriptionWithPlan {
   planId: string;
   stripeSubscriptionId: string | null;
   status: string;
+  currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
+  sessionsRemaining: number | null;
   cancelAtPeriodEnd: boolean | null;
   createdAt: string;
   plan: {
@@ -54,6 +56,7 @@ interface UserSubscriptionWithPlan {
     interval: string;
     intervalCount: number | null;
     cancellationPolicy: string | null;
+    sessionsPerWeek: number | null;
   };
 }
 
@@ -104,7 +107,7 @@ export default function WalletPage() {
     onSuccess: (data: { policy: string }) => {
       const msg = data.policy === "immediate"
         ? "Your subscription has been canceled immediately."
-        : "Your subscription will be canceled at the end of the current billing period.";
+        : "Your subscription will be canceled at the end of the current billing period. You keep access until then.";
       toast({ title: "Subscription Canceled", description: msg });
       queryClient.invalidateQueries({ queryKey: ["/api/wallet/my-subscriptions"] });
       setCancelDialogSub(null);
@@ -112,6 +115,20 @@ export default function WalletPage() {
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
       setCancelDialogSub(null);
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: async (subscriptionId: string) => {
+      const res = await apiRequest("POST", `/api/wallet/subscriptions/${subscriptionId}/reactivate`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Subscription Reactivated", description: "Your subscription will continue renewing automatically." });
+      queryClient.invalidateQueries({ queryKey: ["/api/wallet/my-subscriptions"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -265,40 +282,78 @@ export default function WalletPage() {
             <h2 className="text-lg font-semibold">My Subscriptions</h2>
           </div>
           <div className="space-y-3">
-            {mySubscriptions.map((sub) => (
-              <div
-                key={sub.id}
-                className="p-4 rounded-lg border border-border space-y-2"
-                data-testid={`card-my-subscription-${sub.id}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium" data-testid={`text-sub-name-${sub.id}`}>{sub.plan.name}</p>
-                    <Badge className="mt-1 bg-amber-500/15 text-amber-700 dark:text-amber-400 no-default-hover-elevate no-default-active-elevate">
-                      ${(sub.plan.amountCents / 100).toFixed(2)}/{sub.plan.interval}
-                    </Badge>
+            {mySubscriptions.map((sub) => {
+              const isActive = sub.status === "active" || sub.status === "trialing";
+              const periodEnd = sub.currentPeriodEnd ? format(parseISO(sub.currentPeriodEnd), "MMM d, yyyy") : null;
+              return (
+                <div
+                  key={sub.id}
+                  className="p-4 rounded-lg border border-border space-y-3"
+                  data-testid={`card-my-subscription-${sub.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="font-medium" data-testid={`text-sub-name-${sub.id}`}>{sub.plan.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        ${(sub.plan.amountCents / 100).toFixed(2)} / {sub.plan.interval}
+                      </p>
+                    </div>
+                    {getStatusBadge(sub)}
                   </div>
-                  {getStatusBadge(sub)}
+
+                  {isActive && (
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      {sub.sessionsRemaining !== null && sub.sessionsRemaining !== undefined && (
+                        <div className="rounded-md bg-muted/50 px-3 py-2">
+                          <p className="text-xs text-muted-foreground">Sessions remaining</p>
+                          <p className="font-semibold" data-testid={`text-sessions-remaining-${sub.id}`}>{sub.sessionsRemaining}</p>
+                        </div>
+                      )}
+                      {periodEnd && (
+                        <div className="rounded-md bg-muted/50 px-3 py-2">
+                          <p className="text-xs text-muted-foreground">
+                            {sub.cancelAtPeriodEnd ? "Access until" : "Next billing"}
+                          </p>
+                          <p className="font-semibold" data-testid={`text-period-end-${sub.id}`}>{periodEnd}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {isActive && !sub.cancelAtPeriodEnd && (
+                    <div className="pt-1 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-full justify-start"
+                        onClick={() => setCancelDialogSub(sub)}
+                        data-testid={`button-cancel-sub-${sub.id}`}
+                      >
+                        <XCircle className="h-3.5 w-3.5 mr-2" />
+                        Cancel at end of term
+                      </Button>
+                    </div>
+                  )}
+
+                  {isActive && sub.cancelAtPeriodEnd && (
+                    <div className="pt-1 border-t flex items-center justify-between gap-2">
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Cancels {periodEnd ? `on ${periodEnd}` : "at period end"} — no further charges
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => reactivateMutation.mutate(sub.id)}
+                        disabled={reactivateMutation.isPending}
+                        data-testid={`button-reactivate-sub-${sub.id}`}
+                      >
+                        {reactivateMutation.isPending ? "..." : "Keep Subscription"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                {sub.currentPeriodEnd && (sub.status === "active" || sub.status === "trialing") && (
-                  <p className="text-xs text-muted-foreground">
-                    {sub.cancelAtPeriodEnd ? "Access until" : "Next billing"}: {format(parseISO(sub.currentPeriodEnd), "MMM d, yyyy")}
-                  </p>
-                )}
-                {(sub.status === "active" || sub.status === "trialing") && !sub.cancelAtPeriodEnd && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setCancelDialogSub(sub)}
-                    data-testid={`button-cancel-sub-${sub.id}`}
-                  >
-                    <XCircle className="h-3.5 w-3.5 mr-1" />
-                    Cancel Subscription
-                  </Button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}

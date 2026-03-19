@@ -3678,6 +3678,38 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/wallet/subscriptions/:id/reactivate", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const subs = await storage.getUserSubscriptions(userId);
+      const subscription = subs.find(s => s.id === req.params.id);
+      if (!subscription) return res.status(404).json({ message: "Subscription not found" });
+      if (subscription.userId !== userId) return res.status(403).json({ message: "Forbidden" });
+      if (!subscription.cancelAtPeriodEnd) return res.status(400).json({ message: "Subscription is not scheduled for cancellation" });
+      if (!subscription.stripeSubscriptionId) return res.status(400).json({ message: "No Stripe subscription linked" });
+
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(orgId);
+        stripe = orgStripe.stripe;
+      } catch {
+        stripe = await getUncachableStripeClient();
+      }
+
+      await stripe.subscriptions.update(subscription.stripeSubscriptionId, { cancel_at_period_end: false });
+      await storage.updateUserSubscription(subscription.id, { cancelAtPeriodEnd: false });
+
+      res.json({ message: "Subscription reactivated" });
+    } catch (error) {
+      console.error("Error reactivating subscription:", error);
+      res.status(500).json({ message: "Failed to reactivate subscription" });
+    }
+  });
+
   app.get("/api/coach/client-subscriptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
