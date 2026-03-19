@@ -62,6 +62,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [teamQuoteProgramId, setTeamQuoteProgramId] = useState<string>("");
   const [subscriptionPlanId, setSubscriptionPlanId] = useState<string>("");
+  const [subscriptionAutoDetected, setSubscriptionAutoDetected] = useState(false);
 
   useEffect(() => {
     if (initialDate) setSelectedDate(initialDate);
@@ -229,6 +230,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setSelectedDays([]);
     setTeamQuoteProgramId("");
     setSubscriptionPlanId("");
+    setSubscriptionAutoDetected(false);
   };
 
   const hasSubscriptionPlan = subscriptionPlanId && subscriptionPlanId !== "none";
@@ -315,12 +317,24 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
     setClientLastName(client.lastName || "");
     setShowSearch(false);
     setSearchQuery("");
+    if (addSessionOrg?.subscriptionsEnabled && subscribers) {
+      const activeSub = subscribers.find(s => s.userId === client.id && s.status === "active");
+      if (activeSub) {
+        setSubscriptionPlanId(activeSub.planId);
+        setServiceId("");
+        setSubscriptionAutoDetected(true);
+      }
+    }
   };
 
   const clearSelectedClient = () => {
     setSelectedClientId(null);
     setClientFirstName("");
     setClientLastName("");
+    if (subscriptionAutoDetected) {
+      setSubscriptionPlanId("");
+      setSubscriptionAutoDetected(false);
+    }
   };
 
   const timeOptions: string[] = [];
@@ -453,54 +467,150 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
           <DialogTitle>Schedule a Session</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
-          {addSessionOrg?.subscriptionsEnabled && subscriptionPlans && subscriptionPlans.length > 0 ? (
+
+          {/* Client-first section: shown when subscriptions enabled and it's a personal session */}
+          {addSessionOrg?.subscriptionsEnabled && !isSemiPrivate && !isTeamTraining && (
             <div className="space-y-2">
-              <Label>Service or Subscription</Label>
-              <Select
-                value={hasSubscriptionPlan ? `plan:${subscriptionPlanId}` : serviceId ? `svc:${serviceId}` : ""}
-                onValueChange={(val) => {
-                  if (val.startsWith("plan:")) {
-                    setSubscriptionPlanId(val.replace("plan:", ""));
-                    setServiceId("");
-                  } else if (val.startsWith("svc:")) {
-                    setServiceId(val.replace("svc:", ""));
-                    setSubscriptionPlanId("");
-                  }
-                }}
-              >
-                <SelectTrigger data-testid="select-service">
-                  <SelectValue placeholder="Select a service or subscription" />
-                </SelectTrigger>
-                <SelectContent>
-                  {subscriptionPlans.filter(p => p.active).map((plan) => (
-                    <SelectItem key={`plan-${plan.id}`} value={`plan:${plan.id}`} data-testid={`option-plan-${plan.id}`}>
-                      {plan.name} (Subscription)
-                    </SelectItem>
-                  ))}
-                  {services?.filter(s => s.active).map((s) => (
-                    <SelectItem key={`svc-${s.id}`} value={`svc:${s.id}`} data-testid={`option-service-${s.id}`}>
-                      {s.name} ({s.durationMin} min)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Client</Label>
+              {selectedClientId ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 text-sm border rounded-md p-2">
+                      {clientFirstName} {clientLastName}
+                    </div>
+                    <Button size="sm" variant="outline" onClick={clearSelectedClient} data-testid="button-clear-client-top">
+                      <XCircle className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  {subscriptionAutoDetected && selectedSubPlan && (
+                    <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2" data-testid="subscription-auto-detected-badge">
+                      <Badge className="shrink-0 text-xs">Auto-detected</Badge>
+                      <span className="text-sm font-medium">{selectedSubPlan.name} subscription</span>
+                      <button
+                        type="button"
+                        className="ml-auto text-xs text-muted-foreground underline"
+                        onClick={() => { setSubscriptionAutoDetected(false); setSubscriptionPlanId(""); }}
+                        data-testid="button-change-subscription"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="First name"
+                      value={clientFirstName}
+                      onChange={(e) => setClientFirstName(e.target.value)}
+                      data-testid="input-client-first-name"
+                    />
+                    <Input
+                      placeholder="Last name"
+                      value={clientLastName}
+                      onChange={(e) => setClientLastName(e.target.value)}
+                      data-testid="input-client-last-name"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowSearch(!showSearch)}
+                    className="w-full"
+                    data-testid="button-search-clients"
+                  >
+                    <Search className="h-3.5 w-3.5 mr-1" />
+                    Search Existing Clients
+                  </Button>
+                  {showSearch && (
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Type to search..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        autoFocus
+                        data-testid="input-search-clients"
+                      />
+                      {searchResults && searchResults.length > 0 && (
+                        <div className="border rounded-md max-h-32 overflow-y-auto">
+                          {searchResults.map((client) => (
+                            <button
+                              key={client.id}
+                              className="w-full text-left px-3 py-2 text-sm hover-elevate"
+                              onClick={() => selectClient(client)}
+                              data-testid={`button-select-client-${client.id}`}
+                            >
+                              {client.firstName} {client.lastName}
+                              {client.email && <span className="text-muted-foreground ml-1">({client.email})</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {searchQuery.length >= 2 && searchResults && searchResults.length === 0 && (
+                        <p className="text-xs text-muted-foreground">No clients found. Enter a name above to create a new client.</p>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">Type a name above or search. If the client is on a subscription, it will be auto-detected.</p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>Service</Label>
-              <Select value={serviceId} onValueChange={setServiceId}>
-                <SelectTrigger data-testid="select-service">
-                  <SelectValue placeholder="Select a service" />
-                </SelectTrigger>
-                <SelectContent>
-                  {services?.filter(s => s.active).map((s) => (
-                    <SelectItem key={s.id} value={s.id} data-testid={`option-service-${s.id}`}>
-                      {s.name} ({s.durationMin} min)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          )}
+
+          {/* Service / Subscription dropdown — hidden when a subscription was auto-detected */}
+          {!subscriptionAutoDetected && (
+            addSessionOrg?.subscriptionsEnabled && subscriptionPlans && subscriptionPlans.length > 0 ? (
+              <div className="space-y-2">
+                <Label>Service or Subscription</Label>
+                <Select
+                  value={hasSubscriptionPlan ? `plan:${subscriptionPlanId}` : serviceId ? `svc:${serviceId}` : ""}
+                  onValueChange={(val) => {
+                    if (val.startsWith("plan:")) {
+                      setSubscriptionPlanId(val.replace("plan:", ""));
+                      setServiceId("");
+                      setSubscriptionAutoDetected(false);
+                    } else if (val.startsWith("svc:")) {
+                      setServiceId(val.replace("svc:", ""));
+                      setSubscriptionPlanId("");
+                      setSubscriptionAutoDetected(false);
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="select-service">
+                    <SelectValue placeholder="Select a service or subscription" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subscriptionPlans.filter(p => p.active).map((plan) => (
+                      <SelectItem key={`plan-${plan.id}`} value={`plan:${plan.id}`} data-testid={`option-plan-${plan.id}`}>
+                        {plan.name} (Subscription)
+                      </SelectItem>
+                    ))}
+                    {services?.filter(s => s.active).map((s) => (
+                      <SelectItem key={`svc-${s.id}`} value={`svc:${s.id}`} data-testid={`option-service-${s.id}`}>
+                        {s.name} ({s.durationMin} min)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : !addSessionOrg?.subscriptionsEnabled ? (
+              <div className="space-y-2">
+                <Label>Service</Label>
+                <Select value={serviceId} onValueChange={setServiceId}>
+                  <SelectTrigger data-testid="select-service">
+                    <SelectValue placeholder="Select a service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {services?.filter(s => s.active).map((s) => (
+                      <SelectItem key={s.id} value={s.id} data-testid={`option-service-${s.id}`}>
+                        {s.name} ({s.durationMin} min)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null
           )}
 
           {isSemiPrivate && (
@@ -719,7 +829,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
             </div>
           )}
 
-          {!isSemiPrivate && !isTeamBHS && !(isTeamTraining && teamQuoteProgramId && teamQuoteProgramId !== "none") && (
+          {!isSemiPrivate && !isTeamBHS && !(isTeamTraining && teamQuoteProgramId && teamQuoteProgramId !== "none") && (!addSessionOrg?.subscriptionsEnabled || (hasSubscriptionPlan && !subscriptionAutoDetected)) && (
             <div className="space-y-2">
               <Label>Client</Label>
               {hasSubscriptionPlan ? (
