@@ -551,29 +551,29 @@ export async function sendSubscriberSessionNotification(
   await sendEmail(email, subject, html, b.name);
 }
 
-export async function sendSubscriptionSignupEmail(
+export async function sendSubscriptionClaimEmail(
   email: string,
   firstName: string,
   planName: string,
   planPrice: string,
-  signupUrl: string,
+  claimUrl: string,
   org?: OrgBranding
 ) {
   const b = brand(org);
-  const subject = `You're Invited to Subscribe — ${planName} at ${b.name}`;
-  const html = emailShell(`Join ${b.name} — ${planName}`, `
+  const subject = `Complete Your ${planName} Account — ${b.name}`;
+  const html = emailShell(`Connect Your Subscription — ${b.name}`, `
     <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
-    ${para(`Your coach at <strong>${b.name}</strong> has invited you to subscribe to the <strong>${planName}</strong> plan.`)}
+    ${para(`You have an active <strong>${planName}</strong> subscription with <strong>${b.name}</strong>. Create your free platform account to manage your sessions, view your schedule, and connect with your coach.`)}
     ${detailBox([
       line("Plan", planName),
       line("Price", planPrice),
       line("Organization", b.name),
     ], b.color, b.secondaryColor)}
-    ${para("Ready to get started? Click below to complete your sign-up and activate your subscription.")}
+    ${para("Click below to create your account. Your existing subscription will be automatically linked — no new payment required.")}
     <div style="text-align: center; margin: 28px 0;">
-      <a href="${signupUrl}" style="display: inline-block; background: ${b.color}; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px;">Subscribe Now</a>
+      <a href="${claimUrl}" style="display: inline-block; background: ${b.color}; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px;">Create My Account</a>
     </div>
-    ${para("You'll be taken to a secure checkout page to enter your payment details. Your subscription will be active immediately after payment.")}
+    ${para("Already have an account? Use the same link to log in and your subscription will connect automatically.")}
   `, org);
   await sendEmail(email, subject, html, b.name);
 }

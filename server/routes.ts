@@ -5,7 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionSignupEmail, type OrgBranding } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, type OrgBranding } from "./email";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -728,10 +728,14 @@ export async function registerRoutes(
           eq(organizationSubscriptionPlans.organizationId, req.params.id)
         ));
       if (!plan) return res.status(404).json({ message: "Plan not found" });
+      if (!plan.stripePriceId) return res.status(400).json({ message: "This plan has no Stripe price ID configured" });
 
-      const clients = await storage.getClientUsersWithEmailByOrg(req.params.id);
-      if (clients.length === 0) {
-        return res.json({ sent: 0, message: "No active clients with email addresses found" });
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(req.params.id);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.status(400).json({ message: "Stripe is not connected for this organization. Add your Stripe keys in settings." });
       }
 
       const orgBranding = await getOrgBranding(req.params.id);
@@ -740,29 +744,247 @@ export async function registerRoutes(
         ? `every ${plan.intervalCount} ${plan.interval}s`
         : `per ${plan.interval}`;
       const planPrice = `$${(plan.amountCents / 100).toFixed(2)} ${intervalLabel}`;
-      const signupUrl = `${baseUrl}/subscribe/${plan.id}`;
+
+      // Fetch all active Stripe subscriptions for this price
+      const stripeSubscriptions: Stripe.Subscription[] = [];
+      let startingAfter: string | undefined;
+      while (true) {
+        const page = await stripe.subscriptions.list({
+          price: plan.stripePriceId,
+          status: "active",
+          limit: 100,
+          expand: ["data.customer"],
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        });
+        stripeSubscriptions.push(...page.data);
+        if (!page.has_more) break;
+        startingAfter = page.data[page.data.length - 1].id;
+      }
+
+      if (stripeSubscriptions.length === 0) {
+        return res.json({ sent: 0, total: 0, message: "No active Stripe subscribers found for this plan" });
+      }
 
       let sent = 0;
-      for (const client of clients) {
+      let skipped = 0;
+      for (const sub of stripeSubscriptions) {
         try {
-          await sendSubscriptionSignupEmail(
-            client.email,
-            client.firstName || "there",
+          // Check if this Stripe subscription is already linked on the platform
+          const existing = await storage.getUserSubscriptionByStripeId(sub.id);
+          if (existing) { skipped++; continue; }
+
+          const customer = sub.customer as Stripe.Customer;
+          if (!customer.email || customer.deleted) { skipped++; continue; }
+
+          const firstName = (customer.name || "").split(" ")[0] || "there";
+          const claimUrl = `${baseUrl}/claim-subscription?sub=${sub.id}&planId=${plan.id}`;
+
+          await sendSubscriptionClaimEmail(
+            customer.email,
+            firstName,
             plan.name,
             planPrice,
-            signupUrl,
+            claimUrl,
             orgBranding
           );
           sent++;
         } catch (err) {
-          console.error(`Failed to send subscription signup email to ${client.email}:`, err);
+          console.error(`Failed to send claim email for Stripe sub ${sub.id}:`, err);
         }
       }
 
-      res.json({ sent, total: clients.length, message: `Sent ${sent} of ${clients.length} emails successfully` });
+      res.json({ sent, total: stripeSubscriptions.length, skipped, message: `Sent ${sent} of ${stripeSubscriptions.length} emails (${skipped} already connected)` });
     } catch (error) {
       console.error("Error sending subscription signup emails:", error);
       res.status(500).json({ message: "Failed to send subscription signup emails" });
+    }
+  });
+
+  // Public: look up claim info for a Stripe subscription + plan
+  app.get("/api/public/claim-subscription-info", async (req: any, res) => {
+    try {
+      const { sub: stripeSubId, planId } = req.query as { sub?: string; planId?: string };
+      if (!stripeSubId || !planId) return res.status(400).json({ message: "Missing sub or planId" });
+
+      const [plan] = await db.select().from(organizationSubscriptionPlans)
+        .where(eq(organizationSubscriptionPlans.id, planId));
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(plan.organizationId);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.status(400).json({ message: "Stripe not connected for this organization" });
+      }
+
+      const stripeSub = await stripe.subscriptions.retrieve(stripeSubId, { expand: ["customer"] });
+      if (stripeSub.status !== "active" && stripeSub.status !== "trialing") {
+        return res.status(400).json({ message: "This subscription is not active" });
+      }
+
+      const customer = stripeSub.customer as Stripe.Customer;
+      const email = customer.email || "";
+      const maskedEmail = email.length > 3
+        ? email[0] + "*".repeat(email.indexOf("@") - 1) + email.slice(email.indexOf("@"))
+        : email;
+
+      const org = await storage.getOrganizationById(plan.organizationId);
+      const alreadyLinked = !!(await storage.getUserSubscriptionByStripeId(stripeSubId));
+
+      res.json({
+        planId: plan.id,
+        planName: plan.name,
+        orgName: org?.name || "Unknown",
+        orgPrimaryColor: org?.primaryColor || null,
+        maskedEmail,
+        alreadyLinked,
+      });
+    } catch (error: any) {
+      if (error?.type === "StripeInvalidRequestError") {
+        return res.status(404).json({ message: "Stripe subscription not found" });
+      }
+      console.error("Error fetching claim info:", error);
+      res.status(500).json({ message: "Failed to fetch subscription info" });
+    }
+  });
+
+  // Authenticated: link existing platform account to a Stripe subscription
+  app.post("/api/wallet/claim-subscription", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { stripeSubscriptionId, planId } = req.body;
+      if (!stripeSubscriptionId || !planId) return res.status(400).json({ message: "Missing stripeSubscriptionId or planId" });
+
+      const [plan] = await db.select().from(organizationSubscriptionPlans)
+        .where(eq(organizationSubscriptionPlans.id, planId));
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+      const existing = await storage.getUserSubscriptionByStripeId(stripeSubscriptionId);
+      if (existing) {
+        if (existing.userId === userId) return res.json({ success: true, message: "Already connected" });
+        return res.status(409).json({ message: "This subscription is already linked to another account" });
+      }
+
+      const alreadyOnPlan = await storage.getUserSubscriptionByPlan(userId, planId);
+      if (alreadyOnPlan) return res.status(409).json({ message: "You already have an active subscription for this plan" });
+
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(plan.organizationId);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.status(400).json({ message: "Stripe not connected for this organization" });
+      }
+
+      const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+      if (stripeSub.status !== "active" && stripeSub.status !== "trialing") {
+        return res.status(400).json({ message: "This Stripe subscription is not active" });
+      }
+
+      const sessionsPerWeek = plan.sessionsPerWeek || 1;
+      const intervalWeeks = plan.interval === "month"
+        ? 4 * (plan.intervalCount || 1)
+        : (plan.interval === "week" ? (plan.intervalCount || 1) : (plan.intervalCount || 1));
+      const totalAllocated = sessionsPerWeek * intervalWeeks;
+
+      await storage.createUserSubscription({
+        organizationId: plan.organizationId,
+        userId,
+        planId,
+        stripeSubscriptionId,
+        status: stripeSub.status,
+        currentPeriodStart: new Date(stripeSub.current_period_start * 1000),
+        currentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+        sessionsRemaining: totalAllocated,
+        cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error claiming subscription:", error);
+      res.status(500).json({ message: "Failed to link subscription" });
+    }
+  });
+
+  // Public: register a new account and immediately claim a Stripe subscription
+  app.post("/api/public/register-and-claim", async (req: any, res) => {
+    try {
+      const { email, password, firstName, lastName, stripeSubscriptionId, planId } = req.body;
+      if (!email || !password || !firstName || !lastName || !stripeSubscriptionId || !planId) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+      const [plan] = await db.select().from(organizationSubscriptionPlans)
+        .where(eq(organizationSubscriptionPlans.id, planId));
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+      const existing = await storage.getUserSubscriptionByStripeId(stripeSubscriptionId);
+      if (existing) return res.status(409).json({ message: "This subscription is already linked to an account" });
+
+      let stripe: Stripe;
+      try {
+        const orgStripe = await getOrgStripeClient(plan.organizationId);
+        stripe = orgStripe.stripe;
+      } catch {
+        return res.status(400).json({ message: "Stripe not connected for this organization" });
+      }
+
+      const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+      if (stripeSub.status !== "active" && stripeSub.status !== "trialing") {
+        return res.status(400).json({ message: "This Stripe subscription is not active" });
+      }
+
+      const existingUser = await storage.getUserByEmail(email.toLowerCase());
+      if (existingUser) return res.status(409).json({ message: "An account with this email already exists. Please log in instead." });
+
+      const hash = await bcrypt.hash(password, 10);
+      const { db: dbRef } = await import("./db");
+      const { users } = await import("@shared/models/auth");
+      const { userProfiles } = await import("@shared/schema");
+
+      const [created] = await dbRef.insert(users).values({
+        email: email.toLowerCase().trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        passwordHash: hash,
+        lastSignInAt: new Date(),
+      }).returning();
+
+      await dbRef.insert(userProfiles).values({
+        userId: created.id,
+        role: "CLIENT" as any,
+        organizationId: plan.organizationId,
+      });
+
+      const sessionsPerWeek = plan.sessionsPerWeek || 1;
+      const intervalWeeks = plan.interval === "month"
+        ? 4 * (plan.intervalCount || 1)
+        : (plan.intervalCount || 1);
+      const totalAllocated = sessionsPerWeek * intervalWeeks;
+
+      await storage.createUserSubscription({
+        organizationId: plan.organizationId,
+        userId: created.id,
+        planId,
+        stripeSubscriptionId,
+        status: stripeSub.status,
+        currentPeriodStart: new Date(stripeSub.current_period_start * 1000),
+        currentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+        sessionsRemaining: totalAllocated,
+        cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
+      });
+
+      const token = await createAuthToken(created.id);
+      getOrgBranding(plan.organizationId).then(orgB => {
+        sendWelcomeEmail(email.toLowerCase().trim(), firstName.trim(), orgB).catch(() => {});
+      });
+
+      res.json({ success: true, token });
+    } catch (error) {
+      console.error("Error in register-and-claim:", error);
+      res.status(500).json({ message: "Registration failed" });
     }
   });
 

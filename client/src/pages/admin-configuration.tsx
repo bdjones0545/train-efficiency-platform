@@ -1446,15 +1446,15 @@ export default function AdminConfigurationPage() {
                                 {sendSignupEmailsMutation.isPending && sendingEmailPlanId === plan.id ? (
                                   <><Loader2 className="h-3 w-3 mr-2 animate-spin" />Sending...</>
                                 ) : (
-                                  <><Mail className="h-3 w-3 mr-2" />Send Sign-up Email to Active Members</>
+                                  <><Mail className="h-3 w-3 mr-2" />Invite Stripe Subscribers to Join Platform</>
                                 )}
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Send Subscription Sign-up Emails</AlertDialogTitle>
+                                <AlertDialogTitle>Invite Existing Stripe Subscribers</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will send an email to all active members in your organization inviting them to subscribe to <strong>{plan.name}</strong>. The email includes a secure link to complete checkout on your connected Stripe account.
+                                  This will look up all active <strong>{plan.name}</strong> subscribers in your Stripe account and send each one an email to create their platform account. When they sign up, their existing Stripe subscription is automatically connected — no new payment required. Subscribers who are already connected will be skipped.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

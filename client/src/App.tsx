@@ -40,6 +40,7 @@ import TermsConditionsPage from "@/pages/terms-conditions";
 import CreatePasswordPage from "@/pages/create-password";
 import ClientPortalPage from "@/pages/client-portal";
 import SubscribePage from "@/pages/subscribe";
+import ClaimSubscriptionPage from "@/pages/claim-subscription";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
@@ -166,6 +167,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/stripe" component={AdminStripePage} />
                   <Route path="/admin/subscription" component={AdminSubscriptionPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
+                  <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />
                   <Route component={NotFound} />
                 </Switch>
@@ -189,6 +191,7 @@ function PublicLayout() {
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />
       <Route path="/subscribe/:planId" component={SubscribePage} />
+      <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
       <Route path="/create-password" component={CreatePasswordPage} />
       <Route path="/privacy" component={PrivacyPolicyPage} />
       <Route path="/terms" component={TermsConditionsPage} />
