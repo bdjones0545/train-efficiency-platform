@@ -26,6 +26,7 @@ import {
   Trophy,
   Clock,
   Wallet,
+  Mail,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -216,6 +217,22 @@ export default function AdminConfigurationPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/organizations", orgId, "subscription-plans"] });
     },
     onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const [sendingEmailPlanId, setSendingEmailPlanId] = useState<string | null>(null);
+  const sendSignupEmailsMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const res = await apiRequest("POST", `/api/organizations/${orgId}/subscription-plans/${planId}/send-signup-emails`, {});
+      return res.json();
+    },
+    onSuccess: (data, planId) => {
+      setSendingEmailPlanId(null);
+      toast({ title: "Emails sent", description: data.message });
+    },
+    onError: (error: Error) => {
+      setSendingEmailPlanId(null);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -1415,6 +1432,45 @@ export default function AdminConfigurationPage() {
                               }}
                             />
                           </div>
+                        </div>
+                        <div className="border-t pt-2">
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full text-xs"
+                                disabled={sendSignupEmailsMutation.isPending && sendingEmailPlanId === plan.id}
+                                data-testid={`button-send-signup-emails-${plan.id}`}
+                              >
+                                {sendSignupEmailsMutation.isPending && sendingEmailPlanId === plan.id ? (
+                                  <><Loader2 className="h-3 w-3 mr-2 animate-spin" />Sending...</>
+                                ) : (
+                                  <><Mail className="h-3 w-3 mr-2" />Send Sign-up Email to Active Members</>
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Send Subscription Sign-up Emails</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will send an email to all active members in your organization inviting them to subscribe to <strong>{plan.name}</strong>. The email includes a secure link to complete checkout on your connected Stripe account.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    setSendingEmailPlanId(plan.id);
+                                    sendSignupEmailsMutation.mutate(plan.id);
+                                  }}
+                                  data-testid={`button-confirm-send-emails-${plan.id}`}
+                                >
+                                  Send Emails
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </Card>
                     ))}

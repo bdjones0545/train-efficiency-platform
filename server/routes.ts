@@ -5,7 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, type OrgBranding } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionSignupEmail, type OrgBranding } from "./email";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -712,6 +712,115 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting subscription plan:", error);
       res.status(500).json({ message: "Failed to delete subscription plan" });
+    }
+  });
+
+  app.post("/api/organizations/:id/subscription-plans/:planId/send-signup-emails", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.organizationId !== req.params.id) {
+        return res.status(403).json({ message: "You can only manage your own organization" });
+      }
+      const [plan] = await db.select().from(organizationSubscriptionPlans)
+        .where(and(
+          eq(organizationSubscriptionPlans.id, req.params.planId),
+          eq(organizationSubscriptionPlans.organizationId, req.params.id)
+        ));
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+      const clients = await storage.getClientUsersWithEmailByOrg(req.params.id);
+      if (clients.length === 0) {
+        return res.json({ sent: 0, message: "No active clients with email addresses found" });
+      }
+
+      const orgBranding = await getOrgBranding(req.params.id);
+      const baseUrl = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const intervalLabel = plan.intervalCount && plan.intervalCount > 1
+        ? `every ${plan.intervalCount} ${plan.interval}s`
+        : `per ${plan.interval}`;
+      const planPrice = `$${(plan.amountCents / 100).toFixed(2)} ${intervalLabel}`;
+      const signupUrl = `${baseUrl}/subscribe/${plan.id}`;
+
+      let sent = 0;
+      for (const client of clients) {
+        try {
+          await sendSubscriptionSignupEmail(
+            client.email,
+            client.firstName || "there",
+            plan.name,
+            planPrice,
+            signupUrl,
+            orgBranding
+          );
+          sent++;
+        } catch (err) {
+          console.error(`Failed to send subscription signup email to ${client.email}:`, err);
+        }
+      }
+
+      res.json({ sent, total: clients.length, message: `Sent ${sent} of ${clients.length} emails successfully` });
+    } catch (error) {
+      console.error("Error sending subscription signup emails:", error);
+      res.status(500).json({ message: "Failed to send subscription signup emails" });
+    }
+  });
+
+  app.get("/api/public/subscription-plans/:planId", async (req: any, res) => {
+    try {
+      const [plan] = await db.select().from(organizationSubscriptionPlans)
+        .where(eq(organizationSubscriptionPlans.id, req.params.planId));
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+      const org = await storage.getOrganizationById(plan.organizationId);
+      res.json({
+        id: plan.id,
+        name: plan.name,
+        description: plan.description,
+        amountCents: plan.amountCents,
+        interval: plan.interval,
+        intervalCount: plan.intervalCount,
+        organizationId: plan.organizationId,
+        organizationName: org?.name || "Unknown",
+        orgPrimaryColor: org?.primaryColor || null,
+      });
+    } catch (error) {
+      console.error("Error fetching public subscription plan:", error);
+      res.status(500).json({ message: "Failed to fetch plan" });
+    }
+  });
+
+  app.post("/api/public/subscription-plans/:planId/checkout", async (req: any, res) => {
+    try {
+      const [plan] = await db.select().from(organizationSubscriptionPlans)
+        .where(eq(organizationSubscriptionPlans.id, req.params.planId));
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+      const { stripe } = await getOrgStripeClient(plan.organizationId);
+      const baseUrl = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const { customerEmail } = req.body;
+
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
+        mode: "subscription",
+        line_items: [{ price: plan.stripePriceId, quantity: 1 }],
+        success_url: `${baseUrl}/subscribe/${plan.id}?status=success`,
+        cancel_url: `${baseUrl}/subscribe/${plan.id}?status=canceled`,
+        metadata: {
+          planId: plan.id,
+          organizationId: plan.organizationId,
+        },
+      };
+      if (customerEmail) {
+        sessionParams.customer_email = customerEmail;
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionParams);
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Error creating subscription checkout:", error);
+      if (error.message?.includes("not connected")) {
+        return res.status(400).json({ message: "This organization has not connected a Stripe account" });
+      }
+      res.status(500).json({ message: "Failed to create checkout session" });
     }
   });
 

@@ -141,6 +141,7 @@ export interface IStorage {
   getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
   getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
   getUserIdsByOrganization(orgId: string): Promise<string[]>;
+  getClientUsersWithEmailByOrg(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string }[]>;
   getUserBalancesByOrganization(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
 
   getUserBalance(userId: string): Promise<number>;
@@ -892,6 +893,26 @@ export class DatabaseStorage implements IStorage {
       .from(userProfiles)
       .where(eq(userProfiles.organizationId, orgId));
     return profiles.map(p => p.userId);
+  }
+
+  async getClientUsersWithEmailByOrg(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string }[]> {
+    const result = await db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        role: userProfiles.role,
+      })
+      .from(userProfiles)
+      .innerJoin(users, eq(userProfiles.userId, users.id))
+      .where(and(
+        eq(userProfiles.organizationId, orgId),
+        eq(userProfiles.role, "CLIENT" as any),
+      ));
+    return result
+      .filter(r => r.email && r.email.trim() !== '')
+      .map(r => ({ id: r.id, firstName: r.firstName, lastName: r.lastName, email: r.email as string }));
   }
 
   async getUserBalancesByOrganization(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]> {
