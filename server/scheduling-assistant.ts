@@ -796,15 +796,86 @@ async function executeTool(
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can search clients." });
         }
-        const results = await storage.searchUsers(args.query);
-        if (results.length === 0) {
-          return JSON.stringify({ message: `No client found matching "${args.query}".` });
+
+        const clientQuery = (args.query ?? "").trim();
+        console.log(`[find_client] query="${clientQuery}" organizationId=${organizationId}`);
+
+        if (!organizationId) {
+          return JSON.stringify({ error: "No organization context. Cannot search clients." });
         }
-        return JSON.stringify(results.slice(0, 5).map(u => ({
+
+        // Primary: org-scoped search (joins userProfiles, filters by org, word-level ilike)
+        let results = await storage.searchClientsByOrg(clientQuery, organizationId);
+
+        console.log(`[find_client] org-scoped results count=${results.length}`, results.map(u => `${u.firstName} ${u.lastName}`));
+
+        // Fallback: if org-scoped returns nothing, try the unscoped search
+        if (results.length === 0) {
+          results = await storage.searchUsers(clientQuery);
+          console.log(`[find_client] fallback unscoped results count=${results.length}`);
+        }
+
+        if (results.length === 0) {
+          return JSON.stringify({
+            found: false,
+            message: `No client found matching "${clientQuery}". They may not be registered in this organization.`,
+          });
+        }
+
+        // Similarity scoring: rank results by how well they match the query
+        const queryLower = clientQuery.toLowerCase();
+        const queryWords = queryLower.split(/\s+/).filter(w => w.length > 0);
+
+        const scored = results.map(u => {
+          const fullName = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim().toLowerCase();
+          const firstName = (u.firstName ?? "").toLowerCase();
+          const lastName = (u.lastName ?? "").toLowerCase();
+          const email = (u.email ?? "").toLowerCase();
+
+          let score = 0;
+
+          // Exact full name match
+          if (fullName === queryLower) score += 100;
+          // Full name contains query
+          else if (fullName.includes(queryLower)) score += 60;
+          // Query contains full name
+          else if (queryLower.includes(fullName) && fullName.length > 0) score += 50;
+
+          // Per-word scoring
+          for (const word of queryWords) {
+            if (firstName === word) score += 30;
+            else if (firstName.includes(word)) score += 15;
+            if (lastName === word) score += 30;
+            else if (lastName.includes(word)) score += 15;
+            if (email.includes(word)) score += 5;
+          }
+
+          return { user: u, score };
+        });
+
+        scored.sort((a, b) => b.score - a.score);
+
+        const top = scored.slice(0, 5);
+        const best = top[0];
+        const highConfidence = best.score >= 60;
+
+        const mapped = top.map(({ user: u, score }) => ({
           id: u.id,
           name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim(),
           email: u.email,
-        })));
+          score,
+        }));
+
+        console.log(`[find_client] top matches:`, mapped);
+
+        return JSON.stringify({
+          found: true,
+          highConfidence,
+          matches: mapped,
+          message: highConfidence
+            ? `Found client: ${mapped[0].name}.`
+            : `Found ${mapped.length} possible match(es) for "${clientQuery}". Please confirm which client to use.`,
+        });
       }
 
       case "get_revenue_summary": {
@@ -1088,6 +1159,10 @@ You are a SUGGESTION-FIRST assistant. Before executing any booking action:
 ## Data Rules
 - Always use the org-scoped tools (get_org_schedule, find_inactive_clients, get_coach_utilization) for org-wide data
 - When a user mentions a client by name, use find_client first to get their ID
+- find_client returns: { found, highConfidence, matches: [{id, name, email, score}], message }
+  - If found=true and highConfidence=true: auto-select the first match and proceed (say "I found [name] in your client list")
+  - If found=true and highConfidence=false: show the top matches and ask which client to use
+  - If found=false: tell the user no client was found with that name
 - All data is scoped to this organization only`;
 
   if (userName) {
@@ -1110,7 +1185,7 @@ You are a SUGGESTION-FIRST assistant. Before executing any booking action:
 - **Book sessions**: use coach_create_session — but ONLY after presenting options and getting confirmation
 - **Reschedule bookings**: use reschedule_booking — ONLY after confirming new time with user
 - **Cancel bookings**: use cancel_booking — ONLY after restating what will be cancelled
-- **Find clients by name**: use find_client before booking if only a name is provided
+- **Find clients by name**: always use find_client before booking if only a name is provided. It searches within this org. If highConfidence=true, auto-select the top match. If highConfidence=false, present top matches and ask the user to confirm. Only say "not found" if found=false.
 - **Insights**: use find_inactive_clients, get_coach_utilization, identify_schedule_gaps — execute immediately
 
 ## Quick Action Handling

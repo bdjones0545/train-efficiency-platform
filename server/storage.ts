@@ -122,6 +122,7 @@ export interface IStorage {
   findOrCreateUserByName(firstName: string, lastName: string, organizationId?: string | null): Promise<User>;
   findOrCreateTeamUser(teamName: string, coachEmail: string, programId: string): Promise<User>;
   searchUsers(query: string): Promise<User[]>;
+  searchClientsByOrg(query: string, orgId: string): Promise<User[]>;
   getUserByEmail(email: string): Promise<User | undefined>;
   hasUsedFreeSession(userId: string): Promise<boolean>;
 
@@ -701,6 +702,52 @@ export class DatabaseStorage implements IStorage {
       .from(users)
       .where(or(ilike(users.firstName, q), ilike(users.lastName, q), ilike(users.email, q)))
       .limit(20);
+  }
+
+  async searchClientsByOrg(query: string, orgId: string): Promise<User[]> {
+    const words = query.trim().split(/\s+/).filter(w => w.length > 0);
+    if (words.length === 0) return [];
+
+    // Build per-word conditions: each word must match firstName, lastName, or email
+    const wordConditions = words.map(word => {
+      const q = `%${word}%`;
+      return or(
+        ilike(users.firstName, q),
+        ilike(users.lastName, q),
+        ilike(users.email, q)
+      );
+    });
+
+    // Join users with userProfiles scoped to the org, and apply word conditions
+    const result = await db
+      .selectDistinct({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        passwordHash: users.passwordHash,
+        profileImageUrl: users.profileImageUrl,
+        phone: users.phone,
+        notes: users.notes,
+        balanceCents: users.balanceCents,
+        stripeCustomerId: users.stripeCustomerId,
+        lastSignInAt: users.lastSignInAt,
+        weeklyReminderEnabled: users.weeklyReminderEnabled,
+        lastReminderSentAt: users.lastReminderSentAt,
+        passwordResetToken: users.passwordResetToken,
+        passwordResetTokenExpires: users.passwordResetTokenExpires,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
+      .from(users)
+      .innerJoin(userProfiles, eq(userProfiles.userId, users.id))
+      .where(and(
+        eq(userProfiles.organizationId, orgId),
+        ...wordConditions
+      ))
+      .limit(20);
+
+    return result;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
