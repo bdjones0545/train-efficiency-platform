@@ -1,0 +1,134 @@
+Update the TrainEfficiency inquiry email system so it is organization-admin configurable instead of hardcoded to a single email address.
+
+GOAL:
+Allow each organization to control where user scheduling/session inquiries are sent.
+
+This should support white-label and multi-organization usage.
+
+IMPORTANT:
+Do not hardcode Bryan.jones@efficiencystrengthtraining.com as the permanent destination.
+That can remain the default for the Efficiency Strength Training organization, but the system must support org-level configuration by admins.
+
+CORE REQUIREMENTS:
+
+1. ORGANIZATION-LEVEL CONTACT SETTINGS
+
+Add organization settings fields for inquiry routing, including:
+
+- schedulingInquiryEmail
+- schedulingInquiryName (optional)
+- generalSupportEmail (optional)
+- salesInquiryEmail (optional)
+- billingInquiryEmail (optional)
+- allowUserInquiryEmails (boolean)
+
+At minimum, implement:
+- schedulingInquiryEmail
+- schedulingInquiryName
+- allowUserInquiryEmails
+
+2. ADMIN SETTINGS UI
+
+In the organization admin settings area, add a section for Inquiry Contact Settings.
+
+Allow admins to:
+- set the scheduling inquiry email
+- set the contact display name
+- enable or disable user inquiry emails
+- save and update these settings
+
+UI examples:
+- Scheduling Inquiry Email
+- Scheduling Contact Name
+- Allow Users to Send Scheduling Inquiries
+
+3. DEFAULT ORG FALLBACK
+
+If the organization is Efficiency Strength Training, the default can be:
+- Bryan.jones@efficiencystrengthtraining.com
+- Bryan Jones
+
+But this must be editable by org admins.
+
+4. AGENT ORG-AWARE ROUTING
+
+When a user asks about:
+- scheduling
+- available times
+- sessions
+- getting started
+- booking help
+
+The agent should:
+- detect the inquiry intent
+- check the active organization’s settings
+- determine whether inquiry emails are enabled
+- route the email to that org’s schedulingInquiryEmail
+
+5. USER-FACING AGENT RESPONSES
+
+Responses should dynamically use the org’s configured contact name if available.
+
+Examples:
+- “Would you like me to send your inquiry to Bryan?”
+- “I can email Sarah, your organization’s scheduling contact, to help you find a time.”
+- “Want me to send this scheduling request to the team?”
+
+If no contact name is set, use:
+- “the scheduling team”
+- “the organization’s scheduling contact”
+
+6. EMAIL GENERATION
+
+When the user confirms, generate and send a structured email to the org’s configured schedulingInquiryEmail.
+
+Include:
+- user name if available
+- user email if available
+- inquiry type
+- user message
+- preferred time/session info if mentioned
+- org context
+
+7. DISABLED STATE
+
+If allowUserInquiryEmails is false, do not offer this feature to users.
+
+If no schedulingInquiryEmail is configured, either:
+- hide the option
+or
+- show a safe fallback message to admins only
+
+8. ROLE-AWARE BEHAVIOR
+
+For user/client-facing flows:
+- offer inquiry email option naturally when relevant
+
+For admin/coaches:
+- allow them to test or preview the inquiry flow
+- allow them to configure settings if they have admin access
+
+9. FUTURE-READY DESIGN
+
+Build this so later we can support:
+- different inquiry emails by department
+- different inquiry emails by location
+- multiple recipients
+- auto-response emails back to the user
+- CRM lead capture
+- notification logs
+
+10. EXPECTED EXPERIENCE
+
+User says:
+“Do you have any early morning sessions this week?”
+
+Agent checks org settings and replies:
+“I can send your scheduling request to Bryan so he can follow up with available times. Want me to send it?”
+
+For another organization:
+“I can send your inquiry to Sarah, your scheduling contact. Want me to send it?”
+
+IMPORTANT:
+This feature must feel native to each organization.
+It should support multi-tenant, white-label use cleanly and professionally.

@@ -40,6 +40,9 @@ export const organizations = pgTable("organizations", {
   athleticEnabled: boolean("athletic_enabled").default(false),
   athleticProgramName: varchar("athletic_program_name").default(""),
   automationLevel: integer("automation_level").default(1),
+  schedulingInquiryEmail: varchar("scheduling_inquiry_email"),
+  schedulingInquiryName: varchar("scheduling_inquiry_name"),
+  allowUserInquiryEmails: boolean("allow_user_inquiry_emails").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

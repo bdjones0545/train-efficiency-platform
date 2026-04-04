@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Service, Organization, OrganizationSubscriptionPlan } from "@shared/schema";
 import { MapPin } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -138,6 +138,19 @@ export default function AdminConfigurationPage() {
   const [editCoachPayout, setEditCoachPayout] = useState("");
 
   const [payoutEditing, setPayoutEditing] = useState(false);
+
+  const [inquiryEmail, setInquiryEmail] = useState("");
+  const [inquiryName, setInquiryName] = useState("");
+  const [allowInquiries, setAllowInquiries] = useState(true);
+  const [inquirySaved, setInquirySaved] = useState(false);
+
+  useEffect(() => {
+    if (orgData) {
+      setInquiryEmail((orgData as any).schedulingInquiryEmail ?? "");
+      setInquiryName((orgData as any).schedulingInquiryName ?? "");
+      setAllowInquiries((orgData as any).allowUserInquiryEmails !== false);
+    }
+  }, [orgData]);
 
   const [addingProgram, setAddingProgram] = useState(false);
   const [newProgramName, setNewProgramName] = useState("");
@@ -516,6 +529,26 @@ export default function AdminConfigurationPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const saveInquirySettingsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/organizations/${orgId}`, {
+        schedulingInquiryEmail: inquiryEmail.trim() || null,
+        schedulingInquiryName: inquiryName.trim() || null,
+        allowUserInquiryEmails: allowInquiries,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", orgId] });
+      setInquirySaved(true);
+      setTimeout(() => setInquirySaved(false), 2500);
+      toast({ title: "Inquiry settings saved" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1639,6 +1672,68 @@ export default function AdminConfigurationPage() {
               disabled={toggleCoachTransactionsMutation.isPending}
               data-testid="switch-coach-transactions-visible"
             />
+          </div>
+        </Card>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
+          <Mail className="h-5 w-5" />
+          Inquiry Contact Settings
+        </h2>
+        <Card className="p-4 space-y-5" data-testid="card-inquiry-settings">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Allow User Scheduling Inquiries</p>
+              <p className="text-xs text-muted-foreground">Let the AI assistant offer to email your scheduling contact when users ask about availability or booking.</p>
+            </div>
+            <Switch
+              checked={allowInquiries}
+              onCheckedChange={setAllowInquiries}
+              data-testid="switch-allow-inquiry-emails"
+            />
+          </div>
+          {allowInquiries && (
+            <div className="space-y-4 pt-1 border-t">
+              <div className="space-y-1.5">
+                <Label htmlFor="inquiry-email" className="text-sm">Scheduling Inquiry Email</Label>
+                <Input
+                  id="inquiry-email"
+                  placeholder="e.g. scheduling@yourgym.com"
+                  value={inquiryEmail}
+                  onChange={(e) => setInquiryEmail(e.target.value)}
+                  data-testid="input-inquiry-email"
+                />
+                <p className="text-xs text-muted-foreground">Where user inquiries will be sent. If blank, inquiry emails are disabled even if the toggle is on.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="inquiry-name" className="text-sm">Scheduling Contact Name</Label>
+                <Input
+                  id="inquiry-name"
+                  placeholder="e.g. Bryan or the Scheduling Team"
+                  value={inquiryName}
+                  onChange={(e) => setInquiryName(e.target.value)}
+                  data-testid="input-inquiry-name"
+                />
+                <p className="text-xs text-muted-foreground">The name the AI uses when offering to send an inquiry. E.g. "Want me to send this to Bryan?"</p>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => saveInquirySettingsMutation.mutate()}
+              disabled={saveInquirySettingsMutation.isPending}
+              data-testid="button-save-inquiry-settings"
+            >
+              {saveInquirySettingsMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</>
+              ) : inquirySaved ? (
+                <><Check className="h-4 w-4 mr-1" /> Saved</>
+              ) : (
+                <><Save className="h-4 w-4 mr-1" /> Save Settings</>
+              )}
+            </Button>
           </div>
         </Card>
       </section>

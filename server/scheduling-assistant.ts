@@ -5,6 +5,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import {
   sendBookingConfirmationToClient,
   sendBookingNotificationToCoach,
+  sendSchedulingInquiryEmail,
   type OrgBranding,
 } from "./email";
 
@@ -324,6 +325,20 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       name: "get_waitlist",
       description: "Get all clients currently on the scheduling waitlist for this organization (coach/admin only).",
       parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_scheduling_inquiry",
+      description: "Send a scheduling inquiry email to the organization's configured scheduling contact on behalf of the current user. Only use this if the org has allowUserInquiryEmails enabled. Always confirm with the user before sending.",
+      parameters: {
+        type: "object",
+        properties: {
+          message: { type: "string", description: "The user's inquiry message to forward" },
+        },
+        required: ["message"],
+      },
     },
   },
   {
@@ -1230,6 +1245,48 @@ async function executeTool(
         });
       }
 
+      case "send_scheduling_inquiry": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const org = await storage.getOrganizationById(organizationId);
+        if (!org) return JSON.stringify({ error: "Organization not found." });
+
+        if (!org.allowUserInquiryEmails) {
+          return JSON.stringify({ error: "Scheduling inquiries are not enabled for this organization." });
+        }
+        if (!org.schedulingInquiryEmail) {
+          return JSON.stringify({ error: "No scheduling contact email configured for this organization." });
+        }
+
+        const contactName = org.schedulingInquiryName || "the scheduling team";
+        const contactEmail = org.schedulingInquiryEmail;
+        const orgBranding = await getOrgBranding(organizationId);
+
+        let senderName: string | undefined;
+        let senderEmail: string | undefined;
+        if (userId) {
+          const senderUser = await storage.getUser(userId);
+          if (senderUser) {
+            senderName = `${senderUser.firstName ?? ""} ${senderUser.lastName ?? ""}`.trim() || undefined;
+            senderEmail = senderUser.email || undefined;
+          }
+        }
+
+        await sendSchedulingInquiryEmail(
+          contactEmail,
+          org.schedulingInquiryName || "Scheduling Team",
+          args.message,
+          senderName,
+          senderEmail,
+          orgBranding
+        );
+
+        console.log(`[send_scheduling_inquiry] Sent inquiry to ${contactEmail} from user ${userId}`);
+        return JSON.stringify({
+          success: true,
+          message: `Your inquiry has been sent to ${contactName}. They'll follow up with you soon.`,
+        });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -1356,7 +1413,17 @@ Role: CLIENT
 - Book sessions for yourself (use book_session — always confirm time before booking)
 - View and cancel your own bookings (use get_my_bookings, cancel_booking)
 
-Always show 2–3 time options before booking and confirm which one the client wants.`;
+Always show 2–3 time options before booking and confirm which one the client wants.
+
+## Scheduling Inquiries
+If the user asks about scheduling, available times, getting started, sessions, or booking help and you cannot directly satisfy their request, you may offer to send their inquiry to the organization's scheduling contact using send_scheduling_inquiry.
+
+Rules:
+- Only use send_scheduling_inquiry if the org supports it (it will return an error otherwise — silently fall back to a helpful message)
+- ALWAYS ask the user to confirm before sending ("Want me to send this to [contact name]?")
+- Use the org's configured schedulingInquiryName (e.g. "Bryan") when available, otherwise say "the scheduling team"
+- After sending, confirm: "Your inquiry has been sent to [name]. They'll follow up with you soon."
+- Never send without explicit user confirmation`;
   }
 
   return prompt;

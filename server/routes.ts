@@ -471,7 +471,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour, athleticEnabled, athleticProgramName, coachTransactionsVisible } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour, athleticEnabled, athleticProgramName, coachTransactionsVisible, schedulingInquiryEmail, schedulingInquiryName, allowUserInquiryEmails } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
@@ -495,6 +495,9 @@ export async function registerRoutes(
       if (subscriptionsEnabled !== undefined) updateData.subscriptionsEnabled = subscriptionsEnabled;
       if (coachTransactionsVisible !== undefined) updateData.coachTransactionsVisible = coachTransactionsVisible;
       if (athleticEnabled !== undefined) updateData.athleticEnabled = athleticEnabled;
+      if (schedulingInquiryEmail !== undefined) updateData.schedulingInquiryEmail = schedulingInquiryEmail || null;
+      if (schedulingInquiryName !== undefined) updateData.schedulingInquiryName = schedulingInquiryName || null;
+      if (allowUserInquiryEmails !== undefined) updateData.allowUserInquiryEmails = allowUserInquiryEmails;
       if (athleticProgramName !== undefined) updateData.athleticProgramName = athleticProgramName;
       if (athleticStartHour !== undefined || athleticEndHour !== undefined) {
         const start = athleticStartHour !== undefined ? athleticStartHour : undefined;

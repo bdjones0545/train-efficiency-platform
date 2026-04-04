@@ -602,3 +602,28 @@ export async function sendClientInviteEmail(
   `, org);
   await sendEmail(email, subject, html, b.name);
 }
+
+export async function sendSchedulingInquiryEmail(
+  toEmail: string,
+  toName: string,
+  userMessage: string,
+  userName?: string,
+  userEmail?: string,
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `New Scheduling Inquiry${userName ? ` — ${userName}` : ""}`;
+  const fromLine = userName ? line("From", `${userName}${userEmail ? ` (${userEmail})` : ""}`) : (userEmail ? line("Email", userEmail) : "");
+
+  const html = emailShell("New Scheduling Inquiry", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${toName},</p>
+    ${para("A user has submitted a scheduling inquiry through the AI assistant:")}
+    ${detailBox([
+      fromLine,
+      `<p style="font-size: 15px; margin: 8px 0 0;"><strong>Message:</strong></p>`,
+      `<p style="font-size: 15px; margin: 4px 0; white-space: pre-wrap;">${userMessage}</p>`,
+    ], b.color, b.secondaryColor)}
+    ${para("Please follow up with this user at your earliest convenience to discuss available times and next steps.")}
+  `, org);
+  await sendEmail(toEmail, subject, html, b.name);
+}
