@@ -1,0 +1,197 @@
+Build Phase 1 of the TrainEfficiency Scheduling Agent.
+
+IMPORTANT CONTEXT:
+This platform must be multi-tenant and organization-aware.
+
+Each organization should have its own isolated scheduling environment.
+All users, coaches, clients, schedules, session types, locations, and scheduling rules must belong to a specific organization.
+The scheduling agent must only operate inside the currently active organization context.
+
+PHASE 1 GOAL:
+Create the core scheduling architecture and organization-aware data structure that will support the future Scheduling Agent.
+
+Do not try to build every advanced AI feature yet.
+In Phase 1, focus on building the backend foundation, permissions structure, and base scheduling UI needed for future phases.
+
+CORE REQUIREMENTS:
+
+1. MULTI-TENANT ORGANIZATION STRUCTURE
+Build the platform so that:
+- each organization has its own account/workspace
+- all data is scoped to that organization
+- users can only access data for the organization they belong to
+- the scheduling system never mixes data between organizations
+
+Create database relationships for:
+- organizations
+- organization users
+- roles and permissions
+- coaches
+- clients
+- session types
+- bookings
+- availability
+- locations/facility spaces
+- resources if needed for future scheduling logic
+
+2. USER AND ROLE STRUCTURE
+Support users inside each organization with roles such as:
+- admin
+- coach
+- staff
+- client
+
+Phase 1 permissions:
+- Admin can view and manage everything in their org
+- Coach can view their own schedule and assigned clients
+- Staff can help manage scheduling based on org permissions
+- Client can only view and manage their own bookings if client-facing access is enabled
+
+Make sure all role checks are organization-specific.
+
+3. CORE SCHEDULING DATA MODELS
+Create the core data models for:
+- organization
+- user
+- organizationMembership
+- coach profile
+- client profile
+- session type
+- booking
+- recurring availability
+- blocked time/unavailable time
+- location or training zone
+- booking status
+
+Booking statuses should support:
+- scheduled
+- completed
+- canceled
+- no-show
+- rescheduled
+
+Session types should support examples like:
+- 1-on-1
+- semi-private
+- team training
+- assessment
+- recovery session
+
+Each session type should allow fields such as:
+- duration
+- capacity
+- assigned location type if needed
+- assigned coach if needed
+- active/inactive
+
+4. ORG-AWARE SCHEDULING LOGIC
+Build all scheduling queries and mutations so they always require organization context.
+
+Examples:
+- get bookings for this org
+- get coaches for this org
+- get clients for this org
+- get availability for this org
+- create booking only inside this org
+
+Do not allow cross-org access.
+
+5. BASE SCHEDULING UI
+Create the first version of a scheduling page for each organization.
+
+This page should include:
+- a calendar or schedule view
+- ability to filter by coach
+- ability to filter by client
+- ability to filter by session type
+- ability to filter by location
+- list of upcoming bookings
+- button to create a booking manually
+- button to cancel a booking
+- button to reschedule a booking
+
+The UI should feel clean, modern, and built for a coaching business.
+
+6. MANUAL BOOKING FLOW
+In Phase 1, implement the standard non-AI booking flow first.
+
+Allow an authorized org user to:
+- select organization context
+- choose a client
+- choose a coach
+- choose a session type
+- choose date/time
+- choose location if applicable
+- create the booking
+- edit the booking
+- cancel the booking
+- reschedule the booking
+
+Validate:
+- required fields
+- booking belongs to same org
+- selected coach belongs to same org
+- selected client belongs to same org
+- selected location belongs to same org
+
+7. COACH AVAILABILITY FOUNDATION
+Create the availability system for coaches inside each organization.
+
+Support:
+- recurring weekly availability
+- blocked time
+- unavailable dates
+- manual overrides
+
+This does not need full AI optimization yet.
+Just create a clean structure that future phases can use.
+
+8. SCHEDULING AGENT FOUNDATION
+Add the first backend foundation for the Scheduling Agent, but keep it simple in Phase 1.
+
+Create:
+- a Scheduling Agent page
+- a chat-style UI shell
+- a backend service layer that can read org-scoped scheduling data
+- placeholder actions for future capabilities like:
+  - find openings
+  - create booking
+  - reschedule booking
+  - cancel booking
+
+In Phase 1, the agent does not need to fully execute advanced reasoning.
+It just needs the proper architecture and org-aware data access layer so Phase 2 can expand it.
+
+9. SECURITY AND DATA ISOLATION
+This is critical:
+- every API route must validate organization membership
+- every query must be scoped to the organization
+- every mutation must be scoped to the organization
+- users must never be able to access another organization’s schedule or records
+
+10. FUTURE-PROOFING
+Build this in a modular way so later phases can support:
+- AI scheduling recommendations
+- waitlists
+- package/session redemption
+- facility capacity rules
+- revenue optimization
+- missed-session recovery
+- automated backfill suggestions
+- white-label organization deployments
+
+PHASE 1 DELIVERABLES:
+By the end of this phase, I should have:
+- org-aware scheduling database structure
+- org-scoped permissions
+- basic scheduling page
+- manual booking/reschedule/cancel flow
+- coach availability system
+- scheduling agent page shell
+- backend service layer for future AI actions
+
+IMPORTANT:
+Do not overcomplicate Phase 1 with advanced AI behavior yet.
+The priority is building the correct multi-tenant scheduling foundation so future phases can be layered on top without rebuilding everything.
+
+Build this cleanly, professionally, and with production-grade organization isolation.
