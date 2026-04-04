@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -39,6 +39,7 @@ export const organizations = pgTable("organizations", {
   coachTransactionsVisible: boolean("coach_transactions_visible").default(true),
   athleticEnabled: boolean("athletic_enabled").default(false),
   athleticProgramName: varchar("athletic_program_name").default(""),
+  automationLevel: integer("automation_level").default(1),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -384,6 +385,37 @@ export const cashoutsRelations = relations(cashouts, ({ one }) => ({
 export const walletTransactionsRelations = relations(walletTransactions, ({ one }) => ({
   user: one(users, { fields: [walletTransactions.userId], references: [users.id] }),
 }));
+
+export const waitlist = pgTable("waitlist", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  clientId: varchar("client_id").notNull().references(() => users.id),
+  coachId: varchar("coach_id"),
+  sessionType: varchar("session_type"),
+  preferredDays: integer("preferred_days").array(),
+  preferredTimeStart: varchar("preferred_time_start"),
+  preferredTimeEnd: varchar("preferred_time_end"),
+  notes: text("notes").default(""),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const agentActionLog = pgTable("agent_action_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  actionType: varchar("action_type").notNull(),
+  description: text("description").notNull(),
+  payload: jsonb("payload"),
+  executedAt: timestamp("executed_at").defaultNow(),
+  undone: boolean("undone").default(false),
+});
+
+export const insertWaitlistSchema = createInsertSchema(waitlist).omit({ id: true, createdAt: true });
+export const insertAgentActionLogSchema = createInsertSchema(agentActionLog).omit({ id: true, executedAt: true });
+
+export type Waitlist = typeof waitlist.$inferSelect;
+export type InsertWaitlist = z.infer<typeof insertWaitlistSchema>;
+export type AgentActionLog = typeof agentActionLog.$inferSelect;
+export type InsertAgentActionLog = z.infer<typeof insertAgentActionLogSchema>;
 
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true });
 export const insertCoachProfileSchema = createInsertSchema(coachProfiles).omit({ id: true });

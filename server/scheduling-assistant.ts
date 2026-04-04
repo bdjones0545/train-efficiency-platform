@@ -249,6 +249,55 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_operations_digest",
+      description: "Get a full operations intelligence digest for the organization: utilization metrics, open slots, inactive clients, waitlist count, revenue opportunity estimate, recent cancellations, and prioritized scheduling insights. Use this when the user asks for a summary, overview, or wants to see what needs attention.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_waitlist",
+      description: "Get all clients currently on the scheduling waitlist for this organization (coach/admin only).",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_to_waitlist",
+      description: "Add a client to the scheduling waitlist (coach/admin only). Use when a client wants to book but no time works for them.",
+      parameters: {
+        type: "object",
+        properties: {
+          clientId: { type: "string", description: "The client's user ID" },
+          coachId: { type: "string", description: "Preferred coach ID (optional)" },
+          sessionType: { type: "string", description: "Type of session requested (optional)" },
+          notes: { type: "string", description: "Any notes about preferences or constraints" },
+        },
+        required: ["clientId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "suggest_backfill",
+      description: "Find the best waitlist candidates to fill a recently cancelled session slot. Provide the cancelled booking's coach, service, and time — the tool will match waitlist clients with compatible preferences.",
+      parameters: {
+        type: "object",
+        properties: {
+          coachId: { type: "string", description: "Coach ID of the cancelled session" },
+          startAt: { type: "string", description: "Cancelled slot start time in ISO 8601 format" },
+          sessionType: { type: "string", description: "Type/service of the cancelled session (optional)" },
+        },
+        required: ["coachId", "startAt"],
+      },
+    },
+  },
 ];
 
 async function executeTool(
@@ -718,6 +767,99 @@ async function executeTool(
         })));
       }
 
+      case "get_operations_digest": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view the operations digest." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeOrgDigest } = await import("./scheduling-intelligence");
+        const digest = await computeOrgDigest(organizationId);
+        return JSON.stringify(digest);
+      }
+
+      case "get_waitlist": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view the waitlist." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const entries = await storage.getWaitlistByOrganization(organizationId);
+        if (entries.length === 0) return JSON.stringify({ message: "The waitlist is empty." });
+        return JSON.stringify(entries.map(e => ({
+          id: e.id,
+          client: e.client ? `${e.client.firstName ?? ""} ${e.client.lastName ?? ""}`.trim() : "Unknown",
+          clientId: e.clientId,
+          sessionType: e.sessionType,
+          notes: e.notes,
+          addedAt: e.createdAt,
+        })));
+      }
+
+      case "add_to_waitlist": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can add to the waitlist." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const entry = await storage.addToWaitlist({
+          organizationId,
+          clientId: args.clientId,
+          coachId: args.coachId ?? null,
+          sessionType: args.sessionType ?? null,
+          preferredDays: null,
+          preferredTimeStart: null,
+          preferredTimeEnd: null,
+          notes: args.notes ?? "",
+        });
+        await storage.logAgentAction({
+          organizationId,
+          actionType: "add_to_waitlist",
+          description: `Added client ${args.clientId} to waitlist${args.sessionType ? ` for ${args.sessionType}` : ""}`,
+          payload: args,
+          undone: false,
+        });
+        return JSON.stringify({ success: true, id: entry.id, message: "Client added to the waitlist." });
+      }
+
+      case "suggest_backfill": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can suggest backfill." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const slotTime = new Date(args.startAt);
+        const dayOfWeek = slotTime.getDay();
+        const hour = slotTime.getHours();
+        const waitlistClients = await storage.getWaitlistByOrganization(organizationId);
+        if (waitlistClients.length === 0) {
+          return JSON.stringify({ message: "No clients on the waitlist to suggest for backfill.", suggestions: [] });
+        }
+        const matches = waitlistClients.filter(e => {
+          if (args.coachId && e.coachId && e.coachId !== args.coachId) return false;
+          if (args.sessionType && e.sessionType && !e.sessionType.toLowerCase().includes(args.sessionType.toLowerCase())) return false;
+          if (e.preferredDays && !e.preferredDays.includes(dayOfWeek)) return false;
+          if (e.preferredTimeStart) {
+            const [ph, pm] = e.preferredTimeStart.split(":").map(Number);
+            if (hour < ph) return false;
+          }
+          if (e.preferredTimeEnd) {
+            const [eh, em] = e.preferredTimeEnd.split(":").map(Number);
+            if (hour >= eh) return false;
+          }
+          return true;
+        });
+        const suggestions = (matches.length > 0 ? matches : waitlistClients).slice(0, 3).map(e => ({
+          waitlistId: e.id,
+          client: e.client ? `${e.client.firstName ?? ""} ${e.client.lastName ?? ""}`.trim() : "Unknown",
+          clientId: e.clientId,
+          sessionType: e.sessionType,
+          notes: e.notes,
+          matchReason: matches.includes(e) ? "Preferences matched slot" : "No preference match — waitlist order",
+        }));
+        return JSON.stringify({
+          slot: format(slotTime, "EEEE, MMM d 'at' h:mm a"),
+          suggestions,
+          message: `Found ${suggestions.length} waitlist candidate${suggestions.length !== 1 ? "s" : ""} for this slot.`,
+        });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -739,11 +881,13 @@ Good: "I found 3 openings for next week. Want me to book one?"
 Avoid: "Query complete. Here are the available time slots as requested."
 
 ## Your Core Capabilities
+- Run operations intelligence digests — open slots, revenue opportunity, inactive clients, waitlist
 - Read and display organization schedules, bookings, and availability
 - Find open time slots and surface scheduling gaps
 - Identify clients who haven't booked recently
 - Show coach utilization and capacity
-- Suggest smart scheduling actions
+- Manage the scheduling waitlist (add clients, view waitlist, suggest backfills for cancelled slots)
+- Suggest smart scheduling actions and proactively surface opportunities
 - Create, cancel, and reschedule bookings (with confirmation)
 
 ## Co-Pilot Mode (Critical Rules)
@@ -798,7 +942,16 @@ If the user sends one of these phrases, respond as follows:
 - "Fill tomorrow" / "Fill this week" → Use identify_schedule_gaps to find gaps and summarize them
 - "Who hasn't booked?" / "Missing clients" → Call find_inactive_clients with sinceDaysAgo=7
 - "Show utilization" → Call get_coach_utilization for the current week
-- "Show schedule" / "This week's schedule" → Call get_org_schedule for the current week`;
+- "Show schedule" / "This week's schedule" → Call get_org_schedule for the current week
+- "Operations summary" / "Ops digest" / "What needs attention?" → Call get_operations_digest and present results in a clear, prioritized format
+- "Show waitlist" → Call get_waitlist
+- "Backfill" / "Who can fill this slot?" → Use suggest_backfill to find waitlist matches
+
+## Operations Digest Presentation
+When presenting get_operations_digest results, structure your response with:
+1. A brief headline metric (e.g., "X open slots this week — ~$Y in potential revenue")
+2. Key insights in priority order
+3. A short "suggested next step" based on the highest-priority insight`;
   } else {
     prompt += `
 Role: CLIENT

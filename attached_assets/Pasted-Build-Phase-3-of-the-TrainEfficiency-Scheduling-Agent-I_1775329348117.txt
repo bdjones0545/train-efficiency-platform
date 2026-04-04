@@ -1,0 +1,232 @@
+Build Phase 3 of the TrainEfficiency Scheduling Agent.
+
+IMPORTANT:
+Phase 1 created the organization-aware scheduling foundation.
+Phase 2 added natural language understanding, suggestions, and confirmation-based actions.
+
+Phase 3 introduces automation and proactive intelligence.
+
+The Scheduling Agent should now:
+- monitor scheduling data continuously
+- identify issues and opportunities automatically
+- take intelligent actions or suggest actions without being prompted
+- improve schedule utilization, client consistency, and revenue
+
+CORE GOAL:
+Transform the Scheduling Agent into a proactive operations assistant that actively helps run the business.
+
+---
+
+1. EVENT-DRIVEN AUTOMATION ENGINE
+
+Create a system that listens for key scheduling events:
+
+- booking created
+- booking canceled
+- booking rescheduled
+- coach becomes unavailable
+- client misses session (no-show)
+- time blocks remain unfilled
+- client inactivity (no bookings in X days)
+
+Trigger workflows based on these events.
+
+---
+
+2. AUTOMATED BACKFILL SYSTEM (HIGH PRIORITY)
+
+When a booking is canceled or a time slot becomes open:
+
+The agent should:
+- identify eligible clients (based on history, preferences, availability)
+- suggest replacements immediately
+- optionally auto-fill based on rules
+
+Example:
+"Sarah canceled her 9:00 AM slot. I found 3 clients who usually train mornings. Want me to offer this spot to them?"
+
+Optional automation mode:
+- auto-notify clients
+- auto-fill based on waitlist or preferences
+
+---
+
+3. CLIENT CONSISTENCY ENGINE
+
+Track client booking behavior and consistency.
+
+Detect:
+- clients who have not booked this week
+- clients falling off their normal schedule
+- clients with declining frequency
+
+Agent actions:
+- suggest follow-ups
+- recommend booking times
+- optionally trigger notifications
+
+Example:
+"5 clients have not booked this week. Want me to suggest times for them?"
+
+---
+
+4. COACH AVAILABILITY OPTIMIZATION
+
+Continuously analyze:
+- coach utilization
+- underbooked time blocks
+- overbooked periods
+
+Agent should:
+- recommend shifting sessions
+- suggest opening new session types
+- suggest consolidating semi-private groups
+
+Example:
+"Coach Alex has 3 open slots tomorrow morning. This is a good opportunity to fill with semi-private sessions."
+
+---
+
+5. SCHEDULE GAP DETECTION
+
+Identify:
+- empty blocks during high-value hours
+- inefficient spacing between sessions
+- missed revenue opportunities
+
+Agent should surface:
+- "Tuesday 5–7 PM is underutilized"
+- "There is a 90-minute gap between sessions that could fit another booking"
+
+---
+
+6. SMART NOTIFICATIONS SYSTEM
+
+Build a notification layer for:
+
+- admins
+- coaches
+- (future) clients
+
+Examples:
+- "You have 3 open slots tomorrow"
+- "2 clients missed sessions this week"
+- "Your schedule is only 60% full for Friday"
+
+Notifications should be:
+- actionable
+- concise
+- relevant
+
+---
+
+7. OPTIONAL AUTO-ACTION SETTINGS
+
+Allow organizations to enable automation levels:
+
+LEVEL 1:
+- suggestions only
+
+LEVEL 2:
+- suggestions + one-click actions
+
+LEVEL 3:
+- semi-automated (agent executes with minimal confirmation)
+
+LEVEL 4:
+- fully automated (agent fills slots, sends notifications, adjusts schedule within rules)
+
+Admins should control this.
+
+---
+
+8. WAITLIST + PRIORITY SYSTEM
+
+Add waitlist logic:
+
+- clients can be added to waitlists for specific session types or times
+- when a slot opens, agent prioritizes waitlisted clients
+- agent suggests best matches first
+
+---
+
+9. REVENUE-AWARE SCHEDULING
+
+Add a basic revenue layer:
+
+- track value per session type
+- identify high-value time blocks
+- recommend filling premium slots first
+
+Example:
+"Tuesday evening is a high-demand window. Filling this with semi-private sessions could increase revenue."
+
+---
+
+10. AGENT PROACTIVITY
+
+The agent should not wait for input.
+
+It should surface insights like:
+
+- "Here are 3 actions you can take today to improve your schedule"
+- "You have 6 open slots this week that could be filled"
+- "These clients are at risk of dropping off"
+
+Add a "Daily Operations Feed" to the UI.
+
+---
+
+11. UI ADDITIONS
+
+Enhance Scheduling Agent page with:
+
+- Operations Feed (daily recommendations)
+- Automation settings panel
+- Notifications center
+- Backfill suggestions panel
+- Client consistency dashboard
+- Coach utilization dashboard
+
+---
+
+12. SAFETY + GUARDRAILS
+
+Even with automation:
+
+- never violate organization boundaries
+- respect all scheduling rules
+- prevent double booking
+- log all automated actions
+- allow undo functionality
+
+---
+
+13. FUTURE-READY DESIGN
+
+Ensure compatibility for:
+- SMS/email automation
+- AI-generated follow-ups
+- Stripe/payment triggers
+- retention campaigns
+- wearable-based scheduling adjustments
+- enterprise-level analytics
+
+---
+
+PHASE 3 DELIVERABLES:
+
+By the end of Phase 3, the Scheduling Agent should:
+- detect scheduling issues automatically
+- suggest actions without being prompted
+- backfill open slots
+- identify inactive clients
+- improve coach utilization
+- provide actionable daily insights
+- optionally automate scheduling workflows
+
+IMPORTANT:
+This phase should make the product feel alive.
+
+The user should feel like:
+"The system is helping me run my business."

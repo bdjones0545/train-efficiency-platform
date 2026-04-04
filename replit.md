@@ -112,6 +112,58 @@ Phase 2 adds full intelligence to the Scheduling Agent — natural language unde
 - Scheduling-agent chat route was using `req.user.id` instead of `req.user.claims?.sub` (correct for JWT Bearer token auth flow)
 - Frontend was reading `localStorage.getItem("authToken")` instead of the correct key `"auth_token"` via `getAuthHeaders()`
 
+## Phase 3: Operations Intelligence Engine
+
+Phase 3 adds proactive ops intelligence, a waitlist system, agent action logging, automation level controls, and a redesigned 3-tab scheduling agent UI.
+
+### New DB Tables (Phase 3)
+- **`waitlist`** — Scheduling waitlist entries per org: clientId, coachId (preferred), sessionType, preferredDays/times, notes
+- **`agent_action_log`** — Audit log of all agent-executed actions: actionType, description, payload (jsonb), executedAt, undone flag
+- **`organizations.automation_level`** — INTEGER column (1=Co-Pilot, 2=Assisted, 3=Autonomous), default 1
+
+### New Storage Methods (Phase 3)
+- `getWaitlistByOrganization(orgId)` — Get all waitlist entries with client user data
+- `addToWaitlist(entry)` / `removeFromWaitlist(id)` — Waitlist CRUD
+- `logAgentAction(entry)` / `getAgentActionLog(orgId, limit)` / `undoAgentAction(id)` — Action log CRUD
+- `getOrgAutomationLevel(orgId)` / `setOrgAutomationLevel(orgId, level)` — Automation setting management
+
+### Operations Intelligence Engine (`server/scheduling-intelligence.ts`)
+A dedicated module that computes a full org ops digest:
+- Per-coach utilization (booked vs. available minutes, %)
+- Week-over-week open slot count and revenue opportunity estimate
+- Inactive client detection (no booking this week)
+- Recent cancellations for backfill targeting
+- Prioritized insight cards (high/medium/low priority) across categories: utilization, gaps, clients, revenue, waitlist, backfill
+
+### New Agent Tools (Phase 3)
+- `get_operations_digest` — Full ops intelligence summary (utilization, open slots, revenue, inactive clients, waitlist)
+- `get_waitlist` — View all clients on the scheduling waitlist
+- `add_to_waitlist` — Add a client to the waitlist with preferences
+- `suggest_backfill` — Match waitlist clients to an open cancellation slot based on preferences
+
+### New API Routes (Phase 3)
+- `GET /api/scheduling/operations-digest` — Full org ops digest (ADMIN/COACH/STAFF)
+- `GET/POST/DELETE /api/scheduling/waitlist` — Waitlist management
+- `GET /api/scheduling/agent-action-log` — Agent action history (with ?limit param)
+- `GET /api/scheduling/automation-level` — Get current org automation level
+- `PATCH /api/scheduling/automation-level` — Set automation level (ADMIN only)
+
+### UI Rebuild (Phase 3): 3-Tab Scheduling Agent
+- **Chat tab** — Streaming AI chat with updated quick actions ("Operations Summary" + others)
+- **Operations Feed tab** — Live dashboard showing:
+  - 4 headline metric cards: Booked This Week, Open Slots, Open Revenue Est., Waitlist count
+  - Prioritized insight cards with type badges (opportunity/warning/action/info) and action prompts
+  - Coach utilization bar chart (all coaches)
+  - Recent cancellations with Backfill button
+  - Waitlist viewer with remove functionality
+  - Agent activity log
+- **Settings tab** — Automation level selector (3 options with descriptions), save button, engine feature list, tool listing
+
+### Bug Fixes (Phase 3)
+- Scheduling/bookings routes now use `req.user.claims?.sub ?? req.user.id` (was `req.user.id` only — broke Bearer token auth)
+- Chat frontend now reads streaming `text/plain` response via `ReadableStream` reader (was calling `response.json()` on streaming response)
+- `Save Automation Level` button no longer disabled when selecting same level (allows explicit re-save)
+
 ## External Dependencies
 -   **PostgreSQL:** Primary database.
 -   **Express.js:** Backend framework.

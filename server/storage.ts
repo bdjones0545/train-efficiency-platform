@@ -15,6 +15,12 @@ import {
   appSettings,
   locations,
   blockedTimes,
+  waitlist,
+  agentActionLog,
+  type Waitlist,
+  type InsertWaitlist,
+  type AgentActionLog,
+  type InsertAgentActionLog,
   type UserProfile,
   type InsertUserProfile,
   type CoachProfile,
@@ -176,6 +182,17 @@ export interface IStorage {
   getBookingsByDateRangeForOrg(orgId: string, start: Date, end: Date): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]>;
   findClientsWithNoBookingsSince(orgId: string, since: Date): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; lastBookingDate: string | null }[]>;
   getCoachUtilizationForOrg(orgId: string, start: Date, end: Date): Promise<{ coachId: string; coachName: string; bookedMinutes: number; availableMinutes: number; utilizationPct: number }[]>;
+
+  getWaitlistByOrganization(orgId: string): Promise<(Waitlist & { client?: User })[]>;
+  addToWaitlist(entry: InsertWaitlist): Promise<Waitlist>;
+  removeFromWaitlist(id: string): Promise<boolean>;
+
+  logAgentAction(entry: InsertAgentActionLog): Promise<AgentActionLog>;
+  getAgentActionLog(orgId: string, limit?: number): Promise<AgentActionLog[]>;
+  undoAgentAction(id: string): Promise<boolean>;
+
+  getOrgAutomationLevel(orgId: string): Promise<number>;
+  setOrgAutomationLevel(orgId: string, level: number): Promise<void>;
 
   createTeamQuote(quote: InsertTeamQuote): Promise<TeamQuote>;
   getTeamQuotes(coachId: string): Promise<TeamQuote[]>;
@@ -1370,6 +1387,47 @@ export class DatabaseStorage implements IStorage {
     }
 
     return results;
+  }
+
+  async getWaitlistByOrganization(orgId: string): Promise<(Waitlist & { client?: User })[]> {
+    const entries = await db.select().from(waitlist).where(eq(waitlist.organizationId, orgId)).orderBy(desc(waitlist.createdAt));
+    const clientIds = [...new Set(entries.map(e => e.clientId))];
+    const clients = clientIds.length > 0 ? await db.select().from(users).where(inArray(users.id, clientIds)) : [];
+    const clientMap = new Map(clients.map(c => [c.id, c]));
+    return entries.map(e => ({ ...e, client: clientMap.get(e.clientId) }));
+  }
+
+  async addToWaitlist(entry: InsertWaitlist): Promise<Waitlist> {
+    const [row] = await db.insert(waitlist).values(entry).returning();
+    return row;
+  }
+
+  async removeFromWaitlist(id: string): Promise<boolean> {
+    const result = await db.delete(waitlist).where(eq(waitlist.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async logAgentAction(entry: InsertAgentActionLog): Promise<AgentActionLog> {
+    const [row] = await db.insert(agentActionLog).values(entry).returning();
+    return row;
+  }
+
+  async getAgentActionLog(orgId: string, limit = 50): Promise<AgentActionLog[]> {
+    return db.select().from(agentActionLog).where(eq(agentActionLog.organizationId, orgId)).orderBy(desc(agentActionLog.executedAt)).limit(limit);
+  }
+
+  async undoAgentAction(id: string): Promise<boolean> {
+    const result = await db.update(agentActionLog).set({ undone: true }).where(eq(agentActionLog.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getOrgAutomationLevel(orgId: string): Promise<number> {
+    const [org] = await db.select({ automationLevel: organizations.automationLevel }).from(organizations).where(eq(organizations.id, orgId));
+    return (org as any)?.automationLevel ?? 1;
+  }
+
+  async setOrgAutomationLevel(orgId: string, level: number): Promise<void> {
+    await db.execute(sql`UPDATE organizations SET automation_level = ${level} WHERE id = ${orgId}`);
   }
 }
 

@@ -5180,7 +5180,8 @@ export async function registerRoutes(
   // ===== ORG-SCOPED SCHEDULING BOOKINGS =====
   app.get("/api/scheduling/bookings", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {
-      const profile = await storage.getUserProfile(req.user.id);
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const orgBookings = await storage.getBookingsByOrganization(profile.organizationId);
       res.json(orgBookings);
@@ -5191,7 +5192,8 @@ export async function registerRoutes(
 
   app.post("/api/scheduling/bookings", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {
-      const profile = await storage.getUserProfile(req.user.id);
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const { clientId, coachId, serviceId, startAt, endAt, notes, location, locationId, maxParticipants } = req.body;
       if (!clientId || !coachId || !serviceId || !startAt || !endAt) {
@@ -5227,7 +5229,8 @@ export async function registerRoutes(
 
   app.patch("/api/scheduling/bookings/:id/status", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {
-      const profile = await storage.getUserProfile(req.user.id);
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const { status } = req.body;
       const booking = await storage.getBooking(req.params.id);
@@ -5241,7 +5244,8 @@ export async function registerRoutes(
 
   app.patch("/api/scheduling/bookings/:id", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {
-      const profile = await storage.getUserProfile(req.user.id);
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
@@ -5255,6 +5259,109 @@ export async function registerRoutes(
         ...(clientId && { clientId }),
       });
       res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== OPERATIONS DIGEST =====
+  app.get("/api/scheduling/operations-digest", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeOrgDigest } = await import("./scheduling-intelligence");
+      const digest = await computeOrgDigest(profile.organizationId);
+      res.json(digest);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== WAITLIST =====
+  app.get("/api/scheduling/waitlist", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const entries = await storage.getWaitlistByOrganization(profile.organizationId);
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/scheduling/waitlist", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { clientId, coachId, sessionType, preferredDays, preferredTimeStart, preferredTimeEnd, notes } = req.body;
+      if (!clientId) return res.status(400).json({ message: "clientId is required" });
+      const entry = await storage.addToWaitlist({
+        organizationId: profile.organizationId,
+        clientId,
+        coachId: coachId || null,
+        sessionType: sessionType || null,
+        preferredDays: preferredDays || null,
+        preferredTimeStart: preferredTimeStart || null,
+        preferredTimeEnd: preferredTimeEnd || null,
+        notes: notes || "",
+      });
+      res.json(entry);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/scheduling/waitlist/:id", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const removed = await storage.removeFromWaitlist(req.params.id);
+      if (!removed) return res.status(404).json({ message: "Not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== AGENT ACTION LOG =====
+  app.get("/api/scheduling/agent-action-log", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const log = await storage.getAgentActionLog(profile.organizationId, limit);
+      res.json(log);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== AUTOMATION LEVEL =====
+  app.get("/api/scheduling/automation-level", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const level = await storage.getOrgAutomationLevel(profile.organizationId);
+      res.json({ level });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/scheduling/automation-level", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { level } = req.body;
+      if (typeof level !== "number" || level < 1 || level > 3) {
+        return res.status(400).json({ message: "level must be 1, 2, or 3" });
+      }
+      await storage.setOrgAutomationLevel(profile.organizationId, level);
+      res.json({ level });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
