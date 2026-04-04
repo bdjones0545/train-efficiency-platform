@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,8 +14,6 @@ import {
   Bot,
   Send,
   User,
-  CalendarCheck,
-  Users,
   Clock,
   Sparkles,
   ChevronLeft,
@@ -29,6 +27,7 @@ import {
   CheckCircle2,
   XCircle,
   TrendingUp,
+  TrendingDown,
   AlertTriangle,
   Info,
   Zap,
@@ -38,11 +37,12 @@ import {
   MessageSquare,
   Activity,
   Trash2,
-  ChevronDown,
-  ChevronUp,
+  ArrowUpRight,
+  ArrowDownRight,
+  Users,
+  Package,
 } from "lucide-react";
 import { Link } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
 import { getAuthHeaders } from "@/lib/authToken";
 
 interface Message {
@@ -81,13 +81,7 @@ interface OpsDigest {
   waitlistCount: number;
   coaches: CoachDigest[];
   insights: OpsInsight[];
-  recentCancellations: {
-    id: string;
-    clientName: string;
-    coachName: string;
-    time: string;
-    service: string;
-  }[];
+  recentCancellations: { id: string; clientName: string; coachName: string; time: string; service: string }[];
 }
 
 interface WaitlistEntry {
@@ -101,13 +95,65 @@ interface WaitlistEntry {
   client?: { id: string; firstName: string | null; lastName: string | null; email: string | null };
 }
 
+interface RevenueSummary {
+  generatedAt: string;
+  totalRevenueCents: number;
+  last30dRevenueCents: number;
+  prior30dRevenueCents: number;
+  revenueGrowthPct: number;
+  mrr: number;
+  activeSubscribers: number;
+  avgLtvCents: number;
+  avgRevenuePerSessionCents: number;
+  totalSessions: number;
+  sessionsLast30d: number;
+  churnRiskCount: number;
+  sessionPackageAlertCount: number;
+  upsellOpportunityCount: number;
+  coachRevenues: { coachId: string; coachName: string; totalRevenueCents: number; sessionCount: number; avgRevenuePerSessionCents: number; activeClients: number }[];
+  timeBlockRevenues: { hour: number; label: string; totalRevenueCents: number; sessionCount: number }[];
+  topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
+}
+
+interface ChurnRisk {
+  clientId: string;
+  clientName: string;
+  email: string | null;
+  riskLevel: "high" | "medium";
+  signals: string[];
+  lastBookingDate: string | null;
+  daysSinceLastBooking: number;
+  suggestedAction: string;
+}
+
+interface UpsellOpportunity {
+  clientId: string;
+  clientName: string;
+  currentPattern: string;
+  opportunity: string;
+  estimatedRevenueLiftCents: number;
+  reasoning: string;
+  priority: "high" | "medium";
+}
+
+interface SessionPackageAlert {
+  clientId: string;
+  clientName: string;
+  email: string | null;
+  planName: string;
+  sessionsRemaining: number;
+  subscriptionStatus: string;
+  cancelAtPeriodEnd: boolean;
+  urgency: "critical" | "warning";
+}
+
 const QUICK_ACTIONS = [
+  { label: "Revenue Summary", icon: DollarSign, prompt: "Show me our revenue summary", color: "text-green-500" },
+  { label: "Growth Opportunities", icon: TrendingUp, prompt: "What are our growth opportunities?", color: "text-orange-500" },
+  { label: "Churn Risks", icon: AlertTriangle, prompt: "Who are our at-risk clients?", color: "text-red-500" },
   { label: "This Week's Schedule", icon: Calendar, prompt: "Show me this week's full schedule", color: "text-blue-500" },
-  { label: "Operations Summary", icon: Activity, prompt: "Give me an operations summary for this week", color: "text-orange-500" },
   { label: "Book a Session", icon: PlusCircle, prompt: "I need to book a session for a client", color: "text-primary" },
-  { label: "Find Open Slots", icon: Search, prompt: "Find open slots in the schedule", color: "text-green-500" },
-  { label: "Missing Clients", icon: UserX, prompt: "Who hasn't booked this week?", color: "text-red-500" },
-  { label: "Coach Utilization", icon: BarChart3, prompt: "Show me coach utilization for this week", color: "text-purple-500" },
+  { label: "Operations Summary", icon: Activity, prompt: "Give me an operations summary for this week", color: "text-purple-500" },
 ];
 
 function renderMarkdown(text: string): React.ReactNode[] {
@@ -128,49 +174,31 @@ function renderMarkdown(text: string): React.ReactNode[] {
   const renderInline = (raw: string): React.ReactNode => {
     const parts = raw.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
     return parts.map((part, i) => {
-      if (part.startsWith("**") && part.endsWith("**")) {
-        return <strong key={i}>{part.slice(2, -2)}</strong>;
-      }
-      if (part.startsWith("`") && part.endsWith("`")) {
-        return <code key={i} className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
-      }
+      if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+      if (part.startsWith("`") && part.endsWith("`")) return <code key={i} className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
       return part;
     });
   };
 
   for (const line of lines) {
-    if (!line.trim()) {
-      flushList();
-      nodes.push(<div key={keyIndex++} className="h-2" />);
-      continue;
-    }
+    if (!line.trim()) { flushList(); nodes.push(<div key={keyIndex++} className="h-2" />); continue; }
     const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
     if (headingMatch) {
       flushList();
       const level = headingMatch[1].length;
-      const content = headingMatch[2];
-      const cls = level === 1 ? "text-base font-bold mt-2 mb-1" : level === 2 ? "text-sm font-semibold mt-2 mb-1 text-foreground/90" : "text-sm font-medium mt-1 text-foreground/80";
-      nodes.push(<div key={keyIndex++} className={cls}>{renderInline(content)}</div>);
+      const cls = level === 1 ? "text-base font-bold mt-2 mb-1" : level === 2 ? "text-sm font-semibold mt-2 mb-1" : "text-sm font-medium mt-1 text-foreground/80";
+      nodes.push(<div key={keyIndex++} className={cls}>{renderInline(headingMatch[2])}</div>);
       continue;
     }
     const listMatch = line.match(/^[\-\*]\s+(.+)/);
-    if (listMatch) {
-      inList = true;
-      listItems.push(<li key={keyIndex++} className="text-sm leading-relaxed">{renderInline(listMatch[1])}</li>);
-      continue;
-    }
+    if (listMatch) { inList = true; listItems.push(<li key={keyIndex++} className="text-sm leading-relaxed">{renderInline(listMatch[1])}</li>); continue; }
     const numMatch = line.match(/^(\d+)\.\s+(.+)/);
     if (numMatch) {
       flushList();
       nodes.push(<div key={keyIndex++} className="flex gap-2 text-sm leading-relaxed my-0.5"><span className="font-semibold text-primary shrink-0">{numMatch[1]}.</span><span>{renderInline(numMatch[2])}</span></div>);
       continue;
     }
-    const hrMatch = line.match(/^---/);
-    if (hrMatch) {
-      flushList();
-      nodes.push(<Separator key={keyIndex++} className="my-2" />);
-      continue;
-    }
+    if (line.match(/^---/)) { flushList(); nodes.push(<Separator key={keyIndex++} className="my-2" />); continue; }
     flushList();
     nodes.push(<p key={keyIndex++} className="text-sm leading-relaxed">{renderInline(line)}</p>);
   }
@@ -178,54 +206,22 @@ function renderMarkdown(text: string): React.ReactNode[] {
   return nodes;
 }
 
-function InsightCard({ insight, onAction }: { insight: OpsInsight; onAction: (prompt: string) => void }) {
-  const iconMap = {
-    info: <Info className="h-4 w-4" />,
-    warning: <AlertTriangle className="h-4 w-4" />,
-    opportunity: <TrendingUp className="h-4 w-4" />,
-    action: <Zap className="h-4 w-4" />,
-  };
-  const colorMap = {
-    info: "border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30",
-    warning: "border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-950/30",
-    opportunity: "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30",
-    action: "border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/30",
-  };
-  const iconColorMap = {
-    info: "text-blue-500",
-    warning: "text-yellow-500",
-    opportunity: "text-green-500",
-    action: "text-orange-500",
-  };
-  const priorityBadge = {
-    high: <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">High</Badge>,
-    medium: <Badge className="text-[10px] px-1.5 py-0 h-4 bg-yellow-500">Medium</Badge>,
-    low: <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">Low</Badge>,
-  };
-
+function InsightCard({ insight, onAction }: { insight: OpsInsight; onAction: (p: string) => void }) {
+  const iconMap = { info: <Info className="h-4 w-4" />, warning: <AlertTriangle className="h-4 w-4" />, opportunity: <TrendingUp className="h-4 w-4" />, action: <Zap className="h-4 w-4" /> };
+  const colorMap = { info: "border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30", warning: "border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-950/30", opportunity: "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30", action: "border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/30" };
+  const iconColorMap = { info: "text-blue-500", warning: "text-yellow-500", opportunity: "text-green-500", action: "text-orange-500" };
+  const priorityBadge = { high: <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">High</Badge>, medium: <Badge className="text-[10px] px-1.5 py-0 h-4 bg-yellow-500">Medium</Badge>, low: <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">Low</Badge> };
   return (
     <div className={`rounded-lg border p-3 ${colorMap[insight.type]}`} data-testid={`insight-card-${insight.category}`}>
       <div className="flex items-start gap-2">
         <span className={`mt-0.5 shrink-0 ${iconColorMap[insight.type]}`}>{iconMap[insight.type]}</span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="text-sm font-medium leading-tight">{insight.title}</span>
-            {priorityBadge[insight.priority]}
-          </div>
+          <div className="flex items-center gap-2 flex-wrap mb-1"><span className="text-sm font-medium">{insight.title}</span>{priorityBadge[insight.priority]}</div>
           <p className="text-xs text-muted-foreground leading-relaxed">{insight.description}</p>
-          {insight.metric && (
-            <span className="inline-block mt-1 text-xs font-mono font-semibold text-foreground/70">{insight.metric}</span>
-          )}
+          {insight.metric && <span className="inline-block mt-1 text-xs font-mono font-semibold text-foreground/70">{insight.metric}</span>}
           {insight.actionLabel && insight.actionPrompt && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-2 h-7 text-xs px-2 hover:bg-background/80"
-              data-testid={`insight-action-${insight.category}`}
-              onClick={() => onAction(insight.actionPrompt!)}
-            >
-              <MessageSquare className="h-3 w-3 mr-1" />
-              {insight.actionLabel}
+            <Button variant="ghost" size="sm" className="mt-2 h-7 text-xs px-2" onClick={() => onAction(insight.actionPrompt!)} data-testid={`insight-action-${insight.category}`}>
+              <MessageSquare className="h-3 w-3 mr-1" />{insight.actionLabel}
             </Button>
           )}
         </div>
@@ -234,7 +230,21 @@ function InsightCard({ insight, onAction }: { insight: OpsInsight; onAction: (pr
   );
 }
 
-function CoachBar({ coach }: { coach: CoachDigest }) {
+function CoachBar({ coach, maxRevenue }: { coach: RevenueSummary["coachRevenues"][0]; maxRevenue: number }) {
+  const pct = maxRevenue > 0 ? (coach.totalRevenueCents / maxRevenue) * 100 : 0;
+  return (
+    <div className="flex items-center gap-3" data-testid={`revenue-coach-${coach.coachId}`}>
+      <span className="text-sm font-medium w-28 truncate shrink-0">{coach.coachName}</span>
+      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+        <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-mono text-muted-foreground w-16 text-right shrink-0">${(coach.totalRevenueCents / 100).toFixed(0)}</span>
+      <span className="text-xs text-muted-foreground w-14 text-right shrink-0">{coach.sessionCount} sessions</span>
+    </div>
+  );
+}
+
+function UtilizationBar({ coach }: { coach: CoachDigest }) {
   const pct = coach.utilizationPct;
   const barColor = pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-400";
   return (
@@ -249,8 +259,22 @@ function CoachBar({ coach }: { coach: CoachDigest }) {
   );
 }
 
+function TimeBlockBar({ block, maxRevenue }: { block: RevenueSummary["timeBlockRevenues"][0]; maxRevenue: number }) {
+  const pct = maxRevenue > 0 ? (block.totalRevenueCents / maxRevenue) * 100 : 0;
+  const isTop = pct >= 70;
+  return (
+    <div className="flex items-center gap-2" data-testid={`time-block-${block.hour}`}>
+      <span className="text-xs text-muted-foreground w-10 shrink-0 text-right">{block.label}</span>
+      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${isTop ? "bg-green-500" : "bg-blue-400"}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-mono text-muted-foreground w-12 text-right shrink-0">${(block.totalRevenueCents / 100).toFixed(0)}</span>
+    </div>
+  );
+}
+
 export default function SchedulingAgentPage() {
-  const [activeTab, setActiveTab] = useState<"chat" | "ops" | "settings">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "ops" | "revenue" | "settings">("chat");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -258,13 +282,35 @@ export default function SchedulingAgentPage() {
   const [automationLevel, setAutomationLevel] = useState<number>(1);
   const [savingLevel, setSavingLevel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const { user } = useAuth();
 
   const { data: digest, isLoading: digestLoading, refetch: refetchDigest } = useQuery<OpsDigest>({
     queryKey: ["/api/scheduling/operations-digest"],
     enabled: activeTab === "ops",
+    staleTime: 60 * 1000,
+  });
+
+  const { data: revenueSummary, isLoading: revenueLoading, refetch: refetchRevenue } = useQuery<RevenueSummary>({
+    queryKey: ["/api/scheduling/revenue-summary"],
+    enabled: activeTab === "revenue",
+    staleTime: 60 * 1000,
+  });
+
+  const { data: churnRisks, isLoading: churnLoading } = useQuery<ChurnRisk[]>({
+    queryKey: ["/api/scheduling/churn-risks"],
+    enabled: activeTab === "revenue",
+    staleTime: 60 * 1000,
+  });
+
+  const { data: upsellOpps, isLoading: upsellLoading } = useQuery<UpsellOpportunity[]>({
+    queryKey: ["/api/scheduling/upsell-opportunities"],
+    enabled: activeTab === "revenue",
+    staleTime: 60 * 1000,
+  });
+
+  const { data: packageAlerts, isLoading: packagesLoading } = useQuery<SessionPackageAlert[]>({
+    queryKey: ["/api/scheduling/session-packages"],
+    enabled: activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
@@ -273,7 +319,7 @@ export default function SchedulingAgentPage() {
     staleTime: 30 * 1000,
   });
 
-  const { data: actionLog, isLoading: actionLogLoading } = useQuery<any[]>({
+  const { data: actionLog } = useQuery<any[]>({
     queryKey: ["/api/scheduling/agent-action-log"],
     enabled: activeTab === "ops",
     staleTime: 30 * 1000,
@@ -284,17 +330,11 @@ export default function SchedulingAgentPage() {
     staleTime: 60 * 1000,
   });
 
-  useEffect(() => {
-    if (automationData?.level) setAutomationLevel(automationData.level);
-  }, [automationData]);
+  useEffect(() => { if (automationData?.level) setAutomationLevel(automationData.level); }, [automationData]);
 
   const removeFromWaitlist = useMutation({
-    mutationFn: (id: string) =>
-      apiRequest("DELETE", `/api/scheduling/waitlist/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/scheduling/waitlist"] });
-      toast({ title: "Removed from waitlist" });
-    },
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/scheduling/waitlist/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/scheduling/waitlist"] }); toast({ title: "Removed from waitlist" }); },
   });
 
   const saveAutomationLevel = async (level: number) => {
@@ -304,16 +344,11 @@ export default function SchedulingAgentPage() {
       setAutomationLevel(level);
       qc.invalidateQueries({ queryKey: ["/api/scheduling/automation-level"] });
       toast({ title: "Automation level updated" });
-    } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
-    } finally {
-      setSavingLevel(false);
-    }
+    } catch { toast({ title: "Failed to save", variant: "destructive" }); }
+    finally { setSavingLevel(false); }
   };
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
@@ -323,7 +358,6 @@ export default function SchedulingAgentPage() {
     const newMessages: Message[] = [...messages, { role: "user", content }];
     setMessages(newMessages);
     setIsLoading(true);
-
     try {
       const response = await fetch("/api/scheduling-agent/chat", {
         method: "POST",
@@ -334,11 +368,9 @@ export default function SchedulingAgentPage() {
         const err = await response.json().catch(() => ({ message: "Request failed" }));
         throw new Error(err.message);
       }
-
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let full = "";
-
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
@@ -350,7 +382,6 @@ export default function SchedulingAgentPage() {
       } else {
         full = await response.text();
       }
-
       setMessages([...newMessages, { role: "assistant", content: full }]);
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -366,17 +397,18 @@ export default function SchedulingAgentPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   const tabs = [
     { id: "chat", label: "Chat", icon: MessageSquare },
-    { id: "ops", label: "Operations Feed", icon: Activity },
+    { id: "ops", label: "Operations", icon: Activity },
+    { id: "revenue", label: "Revenue", icon: DollarSign },
     { id: "settings", label: "Settings", icon: Settings },
   ] as const;
+
+  const maxCoachRevenue = revenueSummary ? Math.max(...revenueSummary.coachRevenues.map(c => c.totalRevenueCents), 1) : 1;
+  const maxTimeBlockRevenue = revenueSummary ? Math.max(...revenueSummary.timeBlockRevenues.map(t => t.totalRevenueCents), 1) : 1;
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
@@ -395,40 +427,36 @@ export default function SchedulingAgentPage() {
             <div className="font-semibold text-sm leading-tight">TrainEfficiency Scheduling Agent</div>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
-              Ops Intelligence Engine Active
+              Revenue Intelligence Active · Phase 4
             </div>
           </div>
         </div>
-        {waitlist && waitlist.length > 0 && (
-          <Badge variant="secondary" className="text-xs" data-testid="waitlist-badge">
-            <ListOrdered className="h-3 w-3 mr-1" />
-            {waitlist.length} waitlist
-          </Badge>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {waitlist && waitlist.length > 0 && (
+            <Badge variant="secondary" className="text-xs" data-testid="waitlist-badge">
+              <ListOrdered className="h-3 w-3 mr-1" />{waitlist.length} waitlist
+            </Badge>
+          )}
+          {churnRisks && churnRisks.length > 0 && (
+            <Badge variant="destructive" className="text-xs" data-testid="churn-badge">
+              <AlertTriangle className="h-3 w-3 mr-1" />{churnRisks.length} at risk
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
       <div className="border-b bg-background shrink-0">
         <div className="flex px-4">
           {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              data-testid={`tab-${tab.id}`}
-              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <tab.icon className="h-3.5 w-3.5" />
-              {tab.label}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} data-testid={`tab-${tab.id}`}
+              className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              <tab.icon className="h-3.5 w-3.5" />{tab.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Tab Content */}
       <div className="flex-1 overflow-hidden">
 
         {/* ===== CHAT TAB ===== */}
@@ -441,20 +469,15 @@ export default function SchedulingAgentPage() {
                     <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
                       <Sparkles className="h-7 w-7 text-primary" />
                     </div>
-                    <h3 className="font-semibold text-base">Scheduling Agent</h3>
-                    <p className="text-sm text-muted-foreground max-w-xs">
-                      Your intelligent co-pilot for scheduling, backfill, and ops insights.
-                    </p>
+                    <h3 className="font-semibold text-base">Scheduling Agent — Phase 4</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs">Revenue intelligence, retention, and growth automation built in.</p>
                   </div>
                   {showQuickActions && (
                     <div className="grid grid-cols-2 gap-2 w-full max-w-md">
-                      {QUICK_ACTIONS.map((action) => (
-                        <button
-                          key={action.label}
-                          data-testid={`quick-action-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      {QUICK_ACTIONS.map(action => (
+                        <button key={action.label} data-testid={`quick-action-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
                           className="flex items-center gap-2 p-3 rounded-xl border bg-card hover:bg-accent transition-colors text-left"
-                          onClick={() => sendMessage(action.prompt)}
-                        >
+                          onClick={() => sendMessage(action.prompt)}>
                           <action.icon className={`h-4 w-4 shrink-0 ${action.color}`} />
                           <span className="text-xs font-medium leading-tight">{action.label}</span>
                         </button>
@@ -463,43 +486,23 @@ export default function SchedulingAgentPage() {
                   )}
                 </div>
               )}
-
               <div className="space-y-4">
                 {messages.map((message, i) => (
-                  <div
-                    key={i}
-                    className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                    data-testid={`message-${message.role}-${i}`}
-                  >
+                  <div key={i} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`} data-testid={`message-${message.role}-${i}`}>
                     {message.role === "assistant" && (
                       <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
                         <Bot className="h-3.5 w-3.5 text-primary" />
                       </div>
                     )}
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                        message.role === "user"
-                          ? "bg-primary text-primary-foreground rounded-br-sm"
-                          : "bg-muted rounded-bl-sm"
-                      }`}
-                    >
-                      {message.role === "assistant"
-                        ? <div className="space-y-1">{renderMarkdown(message.content)}</div>
-                        : <p className="text-sm leading-relaxed">{message.content}</p>
-                      }
+                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${message.role === "user" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
+                      {message.role === "assistant" ? <div className="space-y-1">{renderMarkdown(message.content)}</div> : <p className="text-sm leading-relaxed">{message.content}</p>}
                     </div>
-                    {message.role === "user" && (
-                      <div className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-1">
-                        <User className="h-3.5 w-3.5" />
-                      </div>
-                    )}
+                    {message.role === "user" && <div className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-1"><User className="h-3.5 w-3.5" /></div>}
                   </div>
                 ))}
                 {isLoading && (
                   <div className="flex gap-3 justify-start">
-                    <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                      <Bot className="h-3.5 w-3.5 text-primary" />
-                    </div>
+                    <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1"><Bot className="h-3.5 w-3.5 text-primary" /></div>
                     <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3">
                       <div className="flex gap-1 items-center h-5">
                         <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
@@ -512,26 +515,10 @@ export default function SchedulingAgentPage() {
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-
             <div className="border-t bg-background p-3 shrink-0">
               <div className="flex gap-2">
-                <Input
-                  ref={inputRef}
-                  data-testid="chat-input"
-                  placeholder="Ask about schedules, clients, or ops..."
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isLoading}
-                  className="flex-1"
-                />
-                <Button
-                  data-testid="send-message"
-                  onClick={() => sendMessage()}
-                  disabled={isLoading || !input.trim()}
-                  size="icon"
-                  className="shrink-0"
-                >
+                <Input ref={undefined} data-testid="chat-input" placeholder="Ask about revenue, retention, schedule, or growth..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={isLoading} className="flex-1" />
+                <Button data-testid="send-message" onClick={() => sendMessage()} disabled={isLoading || !input.trim()} size="icon" className="shrink-0">
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>
@@ -539,195 +526,94 @@ export default function SchedulingAgentPage() {
           </div>
         )}
 
-        {/* ===== OPERATIONS FEED TAB ===== */}
+        {/* ===== OPERATIONS TAB ===== */}
         {activeTab === "ops" && (
           <ScrollArea className="h-full">
             <div className="p-4 space-y-5 max-w-2xl mx-auto">
-
               {digestLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-24 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                </div>
+                <div className="space-y-3"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-20 w-full rounded-xl" /><Skeleton className="h-20 w-full rounded-xl" /></div>
               ) : digest ? (
                 <>
-                  {/* Hero metrics row */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <Card className="border-0 shadow-sm" data-testid="metric-bookings">
-                      <CardContent className="p-3">
-                        <div className="text-xs text-muted-foreground mb-1">Booked This Week</div>
-                        <div className="text-2xl font-bold">{digest.totalBookingsThisWeek}</div>
-                        <div className="text-xs text-muted-foreground">{digest.weekRange}</div>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-0 shadow-sm" data-testid="metric-open-slots">
-                      <CardContent className="p-3">
-                        <div className="text-xs text-muted-foreground mb-1">Open Slots</div>
-                        <div className="text-2xl font-bold text-orange-500">{digest.openSlotsThisWeek}</div>
-                        <div className="text-xs text-muted-foreground">this week</div>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-0 shadow-sm" data-testid="metric-revenue">
-                      <CardContent className="p-3">
-                        <div className="text-xs text-muted-foreground mb-1">Open Revenue Est.</div>
-                        <div className="text-2xl font-bold text-green-600">${digest.estimatedOpenRevenue.toLocaleString()}</div>
-                        <div className="text-xs text-muted-foreground">fillable</div>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-0 shadow-sm" data-testid="metric-waitlist">
-                      <CardContent className="p-3">
-                        <div className="text-xs text-muted-foreground mb-1">Waitlist</div>
-                        <div className="text-2xl font-bold text-blue-500">{digest.waitlistCount}</div>
-                        <div className="text-xs text-muted-foreground">clients waiting</div>
-                      </CardContent>
-                    </Card>
+                    {[
+                      { label: "Booked This Week", value: digest.totalBookingsThisWeek, sub: digest.weekRange, id: "metric-bookings", color: "" },
+                      { label: "Open Slots", value: digest.openSlotsThisWeek, sub: "this week", id: "metric-open-slots", color: "text-orange-500" },
+                      { label: "Open Revenue Est.", value: `$${digest.estimatedOpenRevenue.toLocaleString()}`, sub: "fillable", id: "metric-revenue", color: "text-green-600" },
+                      { label: "Waitlist", value: digest.waitlistCount, sub: "clients waiting", id: "metric-waitlist", color: "text-blue-500" },
+                    ].map(m => (
+                      <Card key={m.id} className="border-0 shadow-sm" data-testid={m.id}>
+                        <CardContent className="p-3">
+                          <div className="text-xs text-muted-foreground mb-1">{m.label}</div>
+                          <div className={`text-2xl font-bold ${m.color}`}>{m.value}</div>
+                          <div className="text-xs text-muted-foreground">{m.sub}</div>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-
-                  {/* Insights */}
                   {digest.insights.length > 0 && (
                     <div>
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-sm flex items-center gap-1.5">
-                          <Zap className="h-4 w-4 text-orange-500" />
-                          Insights & Actions
-                        </h3>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => refetchDigest()} data-testid="refresh-digest">
-                          <RefreshCw className="h-3 w-3 mr-1" />Refresh
-                        </Button>
+                        <h3 className="font-semibold text-sm flex items-center gap-1.5"><Zap className="h-4 w-4 text-orange-500" />Insights & Actions</h3>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => refetchDigest()} data-testid="refresh-digest"><RefreshCw className="h-3 w-3 mr-1" />Refresh</Button>
                       </div>
-                      <div className="space-y-2">
-                        {digest.insights.map((insight, i) => (
-                          <InsightCard key={i} insight={insight} onAction={handleOpsAction} />
-                        ))}
-                      </div>
+                      <div className="space-y-2">{digest.insights.map((insight, i) => <InsightCard key={i} insight={insight} onAction={handleOpsAction} />)}</div>
                     </div>
                   )}
-
-                  {/* Coach utilization bars */}
                   {digest.coaches.length > 0 && (
                     <div>
-                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5">
-                        <BarChart3 className="h-4 w-4 text-purple-500" />
-                        Coach Utilization
-                      </h3>
-                      <Card>
-                        <CardContent className="p-4 space-y-3">
-                          {digest.coaches.map(coach => (
-                            <CoachBar key={coach.coachId} coach={coach} />
-                          ))}
-                        </CardContent>
-                      </Card>
+                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><BarChart3 className="h-4 w-4 text-purple-500" />Coach Utilization</h3>
+                      <Card><CardContent className="p-4 space-y-3">{digest.coaches.map(c => <UtilizationBar key={c.coachId} coach={c} />)}</CardContent></Card>
                     </div>
                   )}
-
-                  {/* Recent cancellations */}
                   {digest.recentCancellations.length > 0 && (
                     <div>
-                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5">
-                        <XCircle className="h-4 w-4 text-red-500" />
-                        Recent Cancellations
-                      </h3>
-                      <div className="space-y-2">
-                        {digest.recentCancellations.map(c => (
-                          <Card key={c.id} className="border-red-100 dark:border-red-900/30">
-                            <CardContent className="p-3 flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-medium">{c.clientName}</div>
-                                <div className="text-xs text-muted-foreground">{c.time} · {c.service} with {c.coachName}</div>
-                              </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs shrink-0"
-                                data-testid={`backfill-${c.id}`}
-                                onClick={() => handleOpsAction(`Find waitlist clients to backfill this slot: ${c.service} with ${c.coachName} at ${c.time}`)}
-                              >
-                                Backfill
-                              </Button>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
+                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><XCircle className="h-4 w-4 text-red-500" />Recent Cancellations</h3>
+                      <div className="space-y-2">{digest.recentCancellations.map(c => (
+                        <Card key={c.id} className="border-red-100 dark:border-red-900/30">
+                          <CardContent className="p-3 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium">{c.clientName}</div>
+                              <div className="text-xs text-muted-foreground">{c.time} · {c.service} with {c.coachName}</div>
+                            </div>
+                            <Button variant="outline" size="sm" className="h-7 text-xs shrink-0" data-testid={`backfill-${c.id}`} onClick={() => handleOpsAction(`Find waitlist clients to backfill this slot: ${c.service} with ${c.coachName} at ${c.time}`)}>Backfill</Button>
+                          </CardContent>
+                        </Card>
+                      ))}</div>
                     </div>
                   )}
                 </>
               ) : null}
 
-              {/* Waitlist section */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-sm flex items-center gap-1.5">
-                    <ListOrdered className="h-4 w-4 text-blue-500" />
-                    Scheduling Waitlist
-                  </h3>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => refetchWaitlist()}
-                    data-testid="refresh-waitlist"
-                  >
-                    <RefreshCw className="h-3 w-3 mr-1" />Refresh
-                  </Button>
+                  <h3 className="font-semibold text-sm flex items-center gap-1.5"><ListOrdered className="h-4 w-4 text-blue-500" />Scheduling Waitlist</h3>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => refetchWaitlist()} data-testid="refresh-waitlist"><RefreshCw className="h-3 w-3 mr-1" />Refresh</Button>
                 </div>
-                {waitlistLoading ? (
-                  <Skeleton className="h-16 w-full rounded-xl" />
-                ) : !waitlist || waitlist.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-4 text-center text-sm text-muted-foreground">
-                      No clients on the waitlist
-                    </CardContent>
-                  </Card>
+                {waitlistLoading ? <Skeleton className="h-16 w-full rounded-xl" /> : !waitlist || waitlist.length === 0 ? (
+                  <Card><CardContent className="p-4 text-center text-sm text-muted-foreground">No clients on the waitlist</CardContent></Card>
                 ) : (
-                  <div className="space-y-2">
-                    {waitlist.map(entry => (
-                      <Card key={entry.id} data-testid={`waitlist-entry-${entry.id}`}>
-                        <CardContent className="p-3 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium">
-                              {entry.client
-                                ? `${entry.client.firstName ?? ""} ${entry.client.lastName ?? ""}`.trim() || entry.client.email
-                                : entry.clientId}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {entry.sessionType && <span>{entry.sessionType} · </span>}
-                              {entry.notes || "No preferences noted"}
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
-                            data-testid={`remove-waitlist-${entry.id}`}
-                            onClick={() => removeFromWaitlist.mutate(entry.id)}
-                            disabled={removeFromWaitlist.isPending}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                  <div className="space-y-2">{waitlist.map(entry => (
+                    <Card key={entry.id} data-testid={`waitlist-entry-${entry.id}`}>
+                      <CardContent className="p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{entry.client ? `${entry.client.firstName ?? ""} ${entry.client.lastName ?? ""}`.trim() || entry.client.email : entry.clientId}</div>
+                          <div className="text-xs text-muted-foreground">{entry.sessionType && <span>{entry.sessionType} · </span>}{entry.notes || "No preferences noted"}</div>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0" data-testid={`remove-waitlist-${entry.id}`} onClick={() => removeFromWaitlist.mutate(entry.id)} disabled={removeFromWaitlist.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      </CardContent>
+                    </Card>
+                  ))}</div>
                 )}
               </div>
 
-              {/* Agent action log */}
               {actionLog && actionLog.length > 0 && (
                 <div>
-                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5">
-                    <Clock className="h-4 w-4 text-gray-500" />
-                    Agent Activity Log
-                  </h3>
+                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Clock className="h-4 w-4 text-gray-500" />Agent Activity Log</h3>
                   <div className="space-y-1">
                     {actionLog.slice(0, 10).map((entry: any) => (
                       <div key={entry.id} className="flex items-start gap-2 text-xs py-1.5 border-b last:border-0" data-testid={`log-entry-${entry.id}`}>
-                        <span className="text-muted-foreground shrink-0 mt-0.5 font-mono">
-                          {entry.executedAt ? new Date(entry.executedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
-                        </span>
-                        <span className={`flex-1 leading-relaxed ${entry.undone ? "line-through text-muted-foreground" : ""}`}>
-                          {entry.description}
-                        </span>
+                        <span className="text-muted-foreground shrink-0 mt-0.5 font-mono">{entry.executedAt ? new Date(entry.executedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</span>
+                        <span className={`flex-1 leading-relaxed ${entry.undone ? "line-through text-muted-foreground" : ""}`}>{entry.description}</span>
                         {entry.undone && <Badge variant="outline" className="text-[10px] h-4">Undone</Badge>}
                       </div>
                     ))}
@@ -738,113 +624,286 @@ export default function SchedulingAgentPage() {
           </ScrollArea>
         )}
 
+        {/* ===== REVENUE TAB ===== */}
+        {activeTab === "revenue" && (
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-6 max-w-2xl mx-auto">
+
+              {/* Top metrics */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-sm flex items-center gap-1.5"><DollarSign className="h-4 w-4 text-green-500" />Revenue Intelligence</h3>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => refetchRevenue()} data-testid="refresh-revenue"><RefreshCw className="h-3 w-3 mr-1" />Refresh</Button>
+                </div>
+                {revenueLoading ? (
+                  <div className="space-y-3"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-20 w-full rounded-xl" /></div>
+                ) : revenueSummary ? (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <Card className="border-0 shadow-sm" data-testid="metric-total-revenue">
+                        <CardContent className="p-3">
+                          <div className="text-xs text-muted-foreground mb-1">Total Revenue</div>
+                          <div className="text-xl font-bold text-green-600">${(revenueSummary.totalRevenueCents / 100).toLocaleString()}</div>
+                          <div className="text-xs text-muted-foreground">all time</div>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-0 shadow-sm" data-testid="metric-last-30d">
+                        <CardContent className="p-3">
+                          <div className="text-xs text-muted-foreground mb-1">Last 30 Days</div>
+                          <div className="text-xl font-bold">${(revenueSummary.last30dRevenueCents / 100).toLocaleString()}</div>
+                          <div className={`text-xs flex items-center gap-0.5 ${revenueSummary.revenueGrowthPct >= 0 ? "text-green-500" : "text-red-500"}`}>
+                            {revenueSummary.revenueGrowthPct >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                            {Math.abs(revenueSummary.revenueGrowthPct)}% vs prior 30d
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-0 shadow-sm" data-testid="metric-mrr">
+                        <CardContent className="p-3">
+                          <div className="text-xs text-muted-foreground mb-1">MRR</div>
+                          <div className="text-xl font-bold text-blue-600">${(revenueSummary.mrr / 100).toLocaleString()}</div>
+                          <div className="text-xs text-muted-foreground">{revenueSummary.activeSubscribers} subscribers</div>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-0 shadow-sm" data-testid="metric-avg-ltv">
+                        <CardContent className="p-3">
+                          <div className="text-xs text-muted-foreground mb-1">Avg Client LTV</div>
+                          <div className="text-xl font-bold">${(revenueSummary.avgLtvCents / 100).toLocaleString()}</div>
+                          <div className="text-xs text-muted-foreground">{revenueSummary.totalSessions} total sessions</div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Alert pills */}
+                    {(revenueSummary.churnRiskCount > 0 || revenueSummary.sessionPackageAlertCount > 0 || revenueSummary.upsellOpportunityCount > 0) && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {revenueSummary.churnRiskCount > 0 && (
+                          <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-800 dark:text-red-400 hover:opacity-80 transition-opacity"
+                            data-testid="churn-risk-pill" onClick={() => document.getElementById("churn-section")?.scrollIntoView({ behavior: "smooth" })}>
+                            <AlertTriangle className="h-3 w-3" />{revenueSummary.churnRiskCount} churn risk{revenueSummary.churnRiskCount > 1 ? "s" : ""}
+                          </button>
+                        )}
+                        {revenueSummary.sessionPackageAlertCount > 0 && (
+                          <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-800 dark:text-orange-400 hover:opacity-80 transition-opacity"
+                            data-testid="package-alert-pill" onClick={() => document.getElementById("packages-section")?.scrollIntoView({ behavior: "smooth" })}>
+                            <Package className="h-3 w-3" />{revenueSummary.sessionPackageAlertCount} package alert{revenueSummary.sessionPackageAlertCount > 1 ? "s" : ""}
+                          </button>
+                        )}
+                        {revenueSummary.upsellOpportunityCount > 0 && (
+                          <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 hover:opacity-80 transition-opacity"
+                            data-testid="upsell-pill" onClick={() => document.getElementById("upsell-section")?.scrollIntoView({ behavior: "smooth" })}>
+                            <TrendingUp className="h-3 w-3" />{revenueSummary.upsellOpportunityCount} upsell opportunity{revenueSummary.upsellOpportunityCount > 1 ? "s" : ""}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </div>
+
+              {/* Revenue by Coach */}
+              {revenueSummary && revenueSummary.coachRevenues.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><BarChart3 className="h-4 w-4 text-green-500" />Revenue by Coach</h3>
+                  <Card>
+                    <CardContent className="p-4 space-y-3">
+                      {revenueSummary.coachRevenues.map(c => <CoachBar key={c.coachId} coach={c} maxRevenue={maxCoachRevenue} />)}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Top Clients */}
+              {revenueSummary && revenueSummary.topClients.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Users className="h-4 w-4 text-blue-500" />Top Clients by Revenue</h3>
+                  <div className="space-y-2">
+                    {revenueSummary.topClients.map((c, i) => (
+                      <Card key={c.clientId} data-testid={`top-client-${i}`}>
+                        <CardContent className="p-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs font-mono text-muted-foreground w-5 shrink-0">#{i + 1}</span>
+                            <span className="text-sm font-medium truncate">{c.clientName}</span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-xs text-muted-foreground">{c.sessionCount} sessions</span>
+                            <span className="text-sm font-semibold text-green-600">${(c.totalRevenueCents / 100).toLocaleString()}</span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Revenue by Time Block */}
+              {revenueSummary && revenueSummary.timeBlockRevenues.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Clock className="h-4 w-4 text-purple-500" />Revenue by Time Block (Last 30d)</h3>
+                  <Card>
+                    <CardContent className="p-4 space-y-2">
+                      {revenueSummary.timeBlockRevenues
+                        .sort((a, b) => a.hour - b.hour)
+                        .map(tb => <TimeBlockBar key={tb.hour} block={tb} maxRevenue={maxTimeBlockRevenue} />)}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Churn Risks */}
+              <div id="churn-section">
+                <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 text-red-500" />Churn Risks</h3>
+                {churnLoading ? <Skeleton className="h-20 w-full rounded-xl" /> : !churnRisks || churnRisks.length === 0 ? (
+                  <Card><CardContent className="p-4 flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-green-500" />No clients flagged as at-risk — great retention!</CardContent></Card>
+                ) : (
+                  <div className="space-y-2">
+                    {churnRisks.slice(0, 6).map(risk => (
+                      <Card key={risk.clientId} className={`border-${risk.riskLevel === "high" ? "red" : "yellow"}-200 dark:border-${risk.riskLevel === "high" ? "red" : "yellow"}-900/30`} data-testid={`churn-risk-${risk.clientId}`}>
+                        <CardContent className="p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-medium">{risk.clientName}</span>
+                                <Badge variant={risk.riskLevel === "high" ? "destructive" : "secondary"} className="text-[10px] h-4">{risk.riskLevel} risk</Badge>
+                              </div>
+                              <div className="space-y-0.5">
+                                {risk.signals.map((s, i) => <p key={i} className="text-xs text-muted-foreground">• {s}</p>)}
+                              </div>
+                              <p className="text-xs text-primary mt-1.5 font-medium">{risk.suggestedAction}</p>
+                            </div>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" data-testid={`churn-action-${risk.clientId}`}
+                              onClick={() => handleOpsAction(risk.suggestedAction)}>
+                              <MessageSquare className="h-3 w-3 mr-1" />Ask agent
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Session Package Alerts */}
+              <div id="packages-section">
+                <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Package className="h-4 w-4 text-orange-500" />Session Package Alerts</h3>
+                {packagesLoading ? <Skeleton className="h-16 w-full rounded-xl" /> : !packageAlerts || packageAlerts.length === 0 ? (
+                  <Card><CardContent className="p-4 flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-green-500" />All clients have healthy session balances</CardContent></Card>
+                ) : (
+                  <div className="space-y-2">
+                    {packageAlerts.map(alert => (
+                      <Card key={alert.clientId} className={`border-${alert.urgency === "critical" ? "red" : "orange"}-200 dark:border-${alert.urgency === "critical" ? "red" : "orange"}-900/30`} data-testid={`package-alert-${alert.clientId}`}>
+                        <CardContent className="p-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-sm font-medium">{alert.clientName}</span>
+                              <Badge variant={alert.urgency === "critical" ? "destructive" : "secondary"} className="text-[10px] h-4">{alert.urgency}</Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {alert.planName} · {alert.sessionsRemaining} session{alert.sessionsRemaining === 1 ? "" : "s"} remaining
+                              {alert.cancelAtPeriodEnd && " · Cancelling at period end"}
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" data-testid={`package-action-${alert.clientId}`}
+                            onClick={() => handleOpsAction(`Help me reach out to ${alert.clientName} about renewing their session package (${alert.sessionsRemaining} sessions remaining)`)}>
+                            <MessageSquare className="h-3 w-3 mr-1" />Reach out
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Upsell Opportunities */}
+              <div id="upsell-section">
+                <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-green-500" />Upsell Opportunities</h3>
+                {upsellLoading ? <Skeleton className="h-16 w-full rounded-xl" /> : !upsellOpps || upsellOpps.length === 0 ? (
+                  <Card><CardContent className="p-4 text-sm text-muted-foreground">No upsell opportunities detected from current booking patterns.</CardContent></Card>
+                ) : (
+                  <div className="space-y-2">
+                    {upsellOpps.map(opp => (
+                      <Card key={`${opp.clientId}-${opp.opportunity}`} data-testid={`upsell-${opp.clientId}`}>
+                        <CardContent className="p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-medium">{opp.clientName}</span>
+                                <Badge variant={opp.priority === "high" ? "default" : "secondary"} className="text-[10px] h-4">{opp.priority}</Badge>
+                                <span className="text-xs font-semibold text-green-600 ml-auto">+${(opp.estimatedRevenueLiftCents / 100).toFixed(0)}/mo</span>
+                              </div>
+                              <p className="text-xs font-medium text-foreground/80">{opp.opportunity}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{opp.reasoning}</p>
+                            </div>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0 mt-0.5" data-testid={`upsell-action-${opp.clientId}`}
+                              onClick={() => handleOpsAction(opp.reasoning)}>
+                              <MessageSquare className="h-3 w-3 mr-1" />Ask agent
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </ScrollArea>
+        )}
+
         {/* ===== SETTINGS TAB ===== */}
         {activeTab === "settings" && (
           <ScrollArea className="h-full">
             <div className="p-4 space-y-6 max-w-xl mx-auto">
-
               <div>
                 <h3 className="font-semibold text-sm mb-1">Automation Level</h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Controls how proactively the agent operates. Higher levels allow more autonomous action; lower levels require confirmation for all changes.
-                </p>
-
+                <p className="text-xs text-muted-foreground mb-4">Controls how proactively the agent operates for scheduling and revenue actions.</p>
                 <div className="space-y-3">
                   {[
-                    {
-                      level: 1,
-                      label: "Co-Pilot (Suggest Only)",
-                      description: "The agent suggests all actions and waits for explicit confirmation before executing any booking or schedule change.",
-                      icon: <MessageSquare className="h-4 w-4 text-blue-500" />,
-                    },
-                    {
-                      level: 2,
-                      label: "Assisted (Auto-Inform)",
-                      description: "The agent can execute low-risk actions (like schedule reads and waitlist adds) automatically and notifies you. Booking changes still require confirmation.",
-                      icon: <Zap className="h-4 w-4 text-yellow-500" />,
-                    },
-                    {
-                      level: 3,
-                      label: "Autonomous (Full Auto)",
-                      description: "The agent executes all routine scheduling actions automatically. Ideal for high-trust environments. Actions are logged and reviewable.",
-                      icon: <Bot className="h-4 w-4 text-green-500" />,
-                    },
+                    { level: 1, label: "Co-Pilot (Suggest Only)", description: "All actions require your explicit confirmation. Insights are surfaced on demand.", icon: <MessageSquare className="h-4 w-4 text-blue-500" /> },
+                    { level: 2, label: "Assisted (Auto-Inform)", description: "Low-risk actions (waitlist adds, package alerts) run automatically with notifications. Bookings still require confirmation.", icon: <Zap className="h-4 w-4 text-yellow-500" /> },
+                    { level: 3, label: "Autonomous (Full Auto)", description: "All routine scheduling and revenue actions execute automatically. Everything is logged and reviewable.", icon: <Bot className="h-4 w-4 text-green-500" /> },
                   ].map(option => (
-                    <button
-                      key={option.level}
-                      data-testid={`automation-level-${option.level}`}
-                      className={`w-full text-left rounded-xl border p-4 transition-colors ${
-                        automationLevel === option.level
-                          ? "border-primary bg-primary/5"
-                          : "hover:bg-accent"
-                      }`}
-                      onClick={() => setAutomationLevel(option.level)}
-                    >
+                    <button key={option.level} data-testid={`automation-level-${option.level}`}
+                      className={`w-full text-left rounded-xl border p-4 transition-colors ${automationLevel === option.level ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
+                      onClick={() => setAutomationLevel(option.level)}>
                       <div className="flex items-center gap-2 mb-1">
-                        {option.icon}
-                        <span className="font-medium text-sm">{option.label}</span>
-                        {automationLevel === option.level && (
-                          <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />
-                        )}
+                        {option.icon}<span className="font-medium text-sm">{option.label}</span>
+                        {automationLevel === option.level && <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />}
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">{option.description}</p>
                     </button>
                   ))}
                 </div>
-
-                <Button
-                  className="mt-4 w-full"
-                  data-testid="save-automation-level"
-                  onClick={() => saveAutomationLevel(automationLevel)}
-                  disabled={savingLevel}
-                >
-                  {savingLevel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Save Automation Level
+                <Button className="mt-4 w-full" data-testid="save-automation-level" onClick={() => saveAutomationLevel(automationLevel)} disabled={savingLevel}>
+                  {savingLevel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Save Automation Level
                 </Button>
               </div>
-
               <Separator />
-
               <div>
-                <h3 className="font-semibold text-sm mb-1">Ops Intelligence Engine</h3>
-                <p className="text-xs text-muted-foreground mb-3">
-                  The Operations Feed tab automatically analyzes your schedule and surfaces insights about utilization, revenue opportunity, inactive clients, and waitlist matches.
-                </p>
+                <h3 className="font-semibold text-sm mb-1">Phase 4: Revenue Intelligence Engine</h3>
+                <p className="text-xs text-muted-foreground mb-3">The Revenue tab now provides full business intelligence powered by your booking and subscription data.</p>
                 <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                    <span>Coach utilization tracking</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                    <span>Revenue opportunity estimation</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                    <span>Inactive client detection</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                    <span>Waitlist &amp; backfill matching</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                    <span>Agent action logging</span>
-                  </div>
+                  {[
+                    "Client LTV & total revenue tracking",
+                    "MRR calculation from active subscriptions",
+                    "Churn risk detection (frequency drop, inactivity)",
+                    "Session package balance alerts",
+                    "Upsell opportunity identification",
+                    "Revenue by coach and time block",
+                    "Month-over-month growth tracking",
+                  ].map(f => (
+                    <div key={f} className="flex items-center gap-2 text-xs"><CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" /><span>{f}</span></div>
+                  ))}
                 </div>
               </div>
-
               <Separator />
-
               <div>
-                <h3 className="font-semibold text-sm mb-1">New Tools Available</h3>
-                <p className="text-xs text-muted-foreground mb-3">The following tools have been added to the scheduling agent:</p>
+                <h3 className="font-semibold text-sm mb-1">Revenue Agent Tools (Phase 4)</h3>
                 <div className="space-y-2">
                   {[
-                    { name: "get_operations_digest", desc: "Full ops summary: utilization, gaps, revenue, clients" },
-                    { name: "get_waitlist", desc: "View all clients on the scheduling waitlist" },
-                    { name: "add_to_waitlist", desc: "Add a client to the waitlist when no slot works" },
-                    { name: "suggest_backfill", desc: "Match waitlist clients to open cancellation slots" },
+                    { name: "get_revenue_summary", desc: "Total revenue, MRR, LTV, growth trend, top coaches & clients" },
+                    { name: "get_churn_risks", desc: "At-risk clients with booking frequency signals and suggested actions" },
+                    { name: "get_upsell_opportunities", desc: "Clients ready for more sessions or service upgrades" },
+                    { name: "get_client_value", desc: "Full LTV breakdown for all clients in the org" },
+                    { name: "get_session_packages", desc: "Low-balance subscription clients needing renewal outreach" },
                   ].map(tool => (
                     <div key={tool.name} className="rounded-lg border p-3">
                       <div className="font-mono text-xs font-semibold text-primary mb-0.5">{tool.name}</div>

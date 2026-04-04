@@ -164,6 +164,51 @@ A dedicated module that computes a full org ops digest:
 - Chat frontend now reads streaming `text/plain` response via `ReadableStream` reader (was calling `response.json()` on streaming response)
 - `Save Automation Level` button no longer disabled when selecting same level (allows explicit re-save)
 
+## Phase 4: Revenue Intelligence Engine (Complete)
+
+Phase 4 adds a full Revenue Intelligence Engine to the Scheduling Agent — delivering LTV analytics, churn detection, upsell identification, and session package alerts.
+
+### New File: `server/revenue-intelligence.ts`
+Standalone revenue computation module with 5 exported functions:
+- **`computeRevenueSummary(orgId)`** — Total revenue, last-30d revenue, MRR from active subscriptions, avg LTV, revenue by coach, revenue by time block (best hours), top clients, growth %
+- **`computeChurnRisks(orgId)`** — At-risk clients based on inactivity (14+ days), session frequency drop, subscription cancellation signals, and low session balance
+- **`computeUpsellOpportunities(orgId)`** — Clients booking ~1x/week who could add a 2nd session; 1-on-1 clients who could move to semi-private
+- **`computeSessionPackageAlerts(orgId)`** — Clients with 0–2 sessions remaining on subscription plans or `cancelAtPeriodEnd: true`
+- **`computeClientLTVs(orgId)`** — Full LTV breakdown: total spend, session count, monthly avg spend, first/last session date, retention days, churn risk level
+
+### 5 New API Routes (in `server/routes.ts`)
+All require `ADMIN | COACH | STAFF` role:
+- `GET /api/scheduling/revenue-summary`
+- `GET /api/scheduling/churn-risks`
+- `GET /api/scheduling/upsell-opportunities`
+- `GET /api/scheduling/client-ltv`
+- `GET /api/scheduling/session-packages`
+
+### 5 New Agent Tools (in `server/scheduling-assistant.ts`)
+- **`get_revenue_summary`** — Full revenue snapshot for AI analysis
+- **`get_churn_risks`** — At-risk client list with signals and suggested actions
+- **`get_upsell_opportunities`** — Upgrade paths with estimated revenue lift
+- **`get_client_value`** — Full LTV data for all clients
+- **`get_session_packages`** — Session balance alerts for proactive renewal outreach
+
+### Updated System Prompt
+- New "Growth Mode" section with proactive revenue analysis instructions
+- Quick action handling for revenue prompts ("Show revenue", "Churn risks", "Growth opportunities", etc.)
+- Data presentation rules for dollar formatting and actionable insights
+
+### UI Rebuild (Phase 4): 4-Tab Scheduling Agent
+Added Revenue tab (4th tab) to `/scheduling/agent`:
+- **Revenue metric cards**: Total Revenue (all-time), Last 30d + growth %, MRR (from active subscriptions), Avg Client LTV
+- **Alert pills**: Clickable pills for churn risks, package alerts, upsell opportunities — scroll to relevant section
+- **Revenue by Coach**: Horizontal bar chart with revenue, session count per coach
+- **Top Clients**: Top 5 by all-time revenue with session count
+- **Revenue by Time Block**: Hourly revenue heatmap for last 30 days
+- **Churn Risks**: Per-client risk cards with signals, days since last booking, suggested action + "Ask agent" button
+- **Session Package Alerts**: Critical/warning cards for low-balance subscriptions with "Reach out" agent prompt
+- **Upsell Opportunities**: Actionable upgrade cards with estimated monthly revenue lift
+
+Also added Revenue/Growth quick actions to the Chat tab home screen.
+
 ## External Dependencies
 -   **PostgreSQL:** Primary database.
 -   **Express.js:** Backend framework.

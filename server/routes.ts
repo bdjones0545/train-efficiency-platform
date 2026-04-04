@@ -5367,6 +5367,72 @@ export async function registerRoutes(
     }
   });
 
+  // ===== REVENUE INTELLIGENCE =====
+  app.get("/api/scheduling/revenue-summary", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeRevenueSummary } = await import("./revenue-intelligence");
+      const summary = await computeRevenueSummary(profile.organizationId);
+      res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/scheduling/churn-risks", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeChurnRisks } = await import("./revenue-intelligence");
+      const risks = await computeChurnRisks(profile.organizationId);
+      res.json(risks);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/scheduling/upsell-opportunities", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeUpsellOpportunities } = await import("./revenue-intelligence");
+      const opps = await computeUpsellOpportunities(profile.organizationId);
+      res.json(opps);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/scheduling/client-ltv", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeClientLTVs } = await import("./revenue-intelligence");
+      const ltvs = await computeClientLTVs(profile.organizationId);
+      res.json(ltvs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/scheduling/session-packages", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeSessionPackageAlerts } = await import("./revenue-intelligence");
+      const alerts = await computeSessionPackageAlerts(profile.organizationId);
+      res.json(alerts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ===== SCHEDULING AGENT =====
   app.post("/api/scheduling-agent/chat", isAuthenticated, async (req: any, res) => {
     try {

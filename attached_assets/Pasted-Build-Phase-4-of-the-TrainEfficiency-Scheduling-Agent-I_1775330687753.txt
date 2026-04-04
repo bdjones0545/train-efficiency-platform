@@ -1,0 +1,235 @@
+Build Phase 4 of the TrainEfficiency Scheduling Agent.
+
+IMPORTANT:
+Phase 1 built the org-aware scheduling foundation.
+Phase 2 added intelligence and suggestions.
+Phase 3 added automation and proactive scheduling behavior.
+
+Phase 4 introduces revenue awareness, retention systems, and growth automation.
+
+The Scheduling Agent must now understand:
+- payments
+- client value
+- revenue per session
+- retention patterns
+- upsell opportunities
+
+CORE GOAL:
+Turn the Scheduling Agent into a revenue-generating and retention-driving system that actively grows the business.
+
+---
+
+1. STRIPE INTEGRATION (REVENUE FOUNDATION)
+
+Integrate Stripe deeply into the platform.
+
+Track:
+- subscriptions
+- one-time payments
+- session packages
+- remaining sessions
+- billing cycles
+- failed payments
+
+Each client should have:
+- payment status
+- plan type
+- active/inactive subscription
+- session/package balance
+- billing history
+
+---
+
+2. CLIENT LTV + VALUE TRACKING
+
+Create a client value model:
+
+Track:
+- total revenue per client
+- average spend per month
+- session frequency
+- lifetime value (LTV)
+- retention duration
+
+Agent should understand:
+- high-value clients
+- declining-value clients
+- new clients vs long-term clients
+
+---
+
+3. CHURN RISK DETECTION
+
+Detect when clients are likely to stop training.
+
+Signals:
+- reduced booking frequency
+- missed sessions
+- declining engagement
+- nearing end of package
+- canceled subscription
+
+Agent outputs:
+- "John has reduced his sessions by 50% this month"
+- "Sarah has not booked in 10 days and may be at risk of churn"
+
+---
+
+4. RETENTION ACTION ENGINE
+
+When churn risk is detected:
+
+Agent should:
+- suggest follow-ups
+- suggest scheduling recommendations
+- suggest offers or incentives
+- suggest coach outreach
+
+Examples:
+- "Want me to suggest times for Sarah this week?"
+- "John may benefit from a lower-body focus block to re-engage"
+
+---
+
+5. PACKAGE + SESSION MANAGEMENT
+
+Add intelligence around session packages:
+
+- track remaining sessions
+- detect low session balances
+- prompt renewals
+
+Agent outputs:
+- "Mike has 2 sessions left. Want to prompt renewal?"
+- "3 clients are about to run out of sessions this week"
+
+---
+
+6. UPSELL ENGINE
+
+Identify upsell opportunities:
+
+Examples:
+- move 1-on-1 → semi-private
+- add additional weekly sessions
+- upgrade subscription tier
+- add specialty sessions (speed, recovery, etc.)
+
+Agent outputs:
+- "Sarah is consistently booking 1x/week. Moving to 2x/week could improve results and revenue"
+- "This time block could support a higher-value semi-private session"
+
+---
+
+7. REVENUE PER TIME BLOCK
+
+Analyze revenue by:
+
+- day
+- time
+- coach
+- session type
+
+Agent should identify:
+- highest-value hours
+- underperforming hours
+
+Example:
+"Tuesday evenings generate 3x more revenue than mornings. Consider prioritizing premium sessions here."
+
+---
+
+8. PRICING + STRUCTURE INSIGHTS
+
+Agent should recommend:
+
+- pricing adjustments
+- session restructuring
+- schedule optimization for higher revenue
+
+Example:
+"Converting 3 underfilled 1-on-1 sessions into a semi-private block could increase revenue by 40%"
+
+---
+
+9. REVENUE DASHBOARD
+
+Add a new section:
+
+Revenue Intelligence Dashboard
+
+Include:
+- total revenue
+- MRR (monthly recurring revenue)
+- revenue per client
+- revenue per coach
+- revenue per time block
+- churn rate
+- retention rate
+- average client lifetime value
+
+---
+
+10. AUTOMATED REVENUE ACTIONS
+
+Connect revenue logic with automation (from Phase 3):
+
+Examples:
+- auto-notify when sessions are low
+- auto-suggest bookings when engagement drops
+- auto-surface upsell opportunities
+- auto-flag churn risks
+
+---
+
+11. AGENT PROACTIVITY (GROWTH MODE)
+
+The agent should now surface:
+
+- "Here are 3 ways to increase revenue this week"
+- "You have 5 clients at risk of churn"
+- "You have $1,200 in unbooked potential revenue this week"
+- "These time blocks are underperforming"
+
+---
+
+12. PERMISSIONS + CONTROL
+
+Admins:
+- full access to revenue + automation
+
+Coaches:
+- limited insights (their clients + schedule)
+
+Staff:
+- configurable access
+
+---
+
+13. FUTURE INTEGRATION READY
+
+Ensure compatibility with:
+- marketing automation
+- email/SMS outreach
+- affiliate systems
+- white-label reporting
+- corporate wellness reporting
+
+---
+
+PHASE 4 DELIVERABLES:
+
+By the end of Phase 4, the Scheduling Agent should:
+- understand payments and subscriptions
+- track client value and LTV
+- detect churn risks
+- suggest retention strategies
+- identify upsell opportunities
+- analyze revenue across the schedule
+- provide actionable growth insights
+- connect scheduling directly to revenue
+
+IMPORTANT:
+This phase should make the user feel like:
+
+"This platform helps me make more money and keep more clients."

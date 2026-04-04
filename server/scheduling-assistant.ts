@@ -260,6 +260,46 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_revenue_summary",
+      description: "Get a comprehensive revenue summary for the organization: total revenue, last-30-day revenue, month-over-month growth, MRR from subscriptions, average client LTV, revenue by coach, and revenue by time block (best hours). Use for revenue questions, growth analysis, or when the user asks about money/earnings.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_churn_risks",
+      description: "Identify clients at risk of churning based on signals: booking frequency drop, days since last session, subscription cancellation pending, or near-empty session balance. Returns a list of at-risk clients with signals and suggested actions.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_upsell_opportunities",
+      description: "Find clients who could be upgraded: clients booking 1x/week who could add a 2nd session, 1-on-1 clients who could join semi-private groups, etc. Returns actionable upsell opportunities with estimated revenue lift.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_client_value",
+      description: "Get detailed LTV, revenue, and engagement data for all clients in the organization. Includes total spend, session count, monthly average spend, subscription status, and churn risk level.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_session_packages",
+      description: "Get alerts for clients with low session balances on their subscription plans (0–2 sessions remaining) or subscriptions set to cancel at period end. Useful for proactive renewal outreach.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_waitlist",
       description: "Get all clients currently on the scheduling waitlist for this organization (coach/admin only).",
       parameters: { type: "object", properties: {} },
@@ -767,6 +807,144 @@ async function executeTool(
         })));
       }
 
+      case "get_revenue_summary": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view revenue data." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeRevenueSummary } = await import("./revenue-intelligence");
+        const summary = await computeRevenueSummary(organizationId);
+        return JSON.stringify({
+          totalRevenue: `$${(summary.totalRevenueCents / 100).toFixed(2)}`,
+          last30dRevenue: `$${(summary.last30dRevenueCents / 100).toFixed(2)}`,
+          revenueGrowthPct: summary.revenueGrowthPct,
+          mrr: `$${(summary.mrr / 100).toFixed(2)}`,
+          activeSubscribers: summary.activeSubscribers,
+          avgLtv: `$${(summary.avgLtvCents / 100).toFixed(2)}`,
+          avgRevenuePerSession: `$${(summary.avgRevenuePerSessionCents / 100).toFixed(2)}`,
+          totalSessions: summary.totalSessions,
+          sessionsLast30d: summary.sessionsLast30d,
+          churnRiskCount: summary.churnRiskCount,
+          upsellOpportunityCount: summary.upsellOpportunityCount,
+          sessionPackageAlertCount: summary.sessionPackageAlertCount,
+          topCoaches: summary.coachRevenues.slice(0, 3).map(c => ({
+            name: c.coachName,
+            revenue: `$${(c.totalRevenueCents / 100).toFixed(2)}`,
+            sessions: c.sessionCount,
+          })),
+          topClients: summary.topClients.slice(0, 3).map(c => ({
+            name: c.clientName,
+            revenue: `$${(c.totalRevenueCents / 100).toFixed(2)}`,
+            sessions: c.sessionCount,
+          })),
+          bestTimeBlocks: summary.timeBlockRevenues
+            .sort((a, b) => b.totalRevenueCents - a.totalRevenueCents)
+            .slice(0, 3)
+            .map(tb => ({ hour: tb.label, revenue: `$${(tb.totalRevenueCents / 100).toFixed(2)}`, sessions: tb.sessionCount })),
+        });
+      }
+
+      case "get_churn_risks": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view churn risks." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeChurnRisks } = await import("./revenue-intelligence");
+        const risks = await computeChurnRisks(organizationId);
+        if (risks.length === 0) return JSON.stringify({ message: "No clients currently flagged as churn risks. Great retention!" });
+        return JSON.stringify({
+          total: risks.length,
+          highRisk: risks.filter(r => r.riskLevel === "high").length,
+          clients: risks.slice(0, 8).map(r => ({
+            name: r.clientName,
+            riskLevel: r.riskLevel,
+            signals: r.signals,
+            daysSinceLastBooking: r.daysSinceLastBooking,
+            suggestedAction: r.suggestedAction,
+          })),
+        });
+      }
+
+      case "get_upsell_opportunities": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view upsell opportunities." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeUpsellOpportunities } = await import("./revenue-intelligence");
+        const opps = await computeUpsellOpportunities(organizationId);
+        if (opps.length === 0) return JSON.stringify({ message: "No upsell opportunities detected based on current booking patterns." });
+        const totalLift = opps.reduce((s, o) => s + o.estimatedRevenueLiftCents, 0);
+        return JSON.stringify({
+          total: opps.length,
+          estimatedTotalMonthlyLift: `$${(totalLift / 100).toFixed(2)}`,
+          opportunities: opps.slice(0, 6).map(o => ({
+            client: o.clientName,
+            currentPattern: o.currentPattern,
+            opportunity: o.opportunity,
+            estimatedLift: `$${(o.estimatedRevenueLiftCents / 100).toFixed(2)}/mo`,
+            reasoning: o.reasoning,
+            priority: o.priority,
+          })),
+        });
+      }
+
+      case "get_client_value": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view client LTV data." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeClientLTVs } = await import("./revenue-intelligence");
+        const ltvs = await computeClientLTVs(organizationId);
+        if (ltvs.length === 0) return JSON.stringify({ message: "No client revenue data found." });
+        const avgLtv = ltvs.reduce((s, c) => s + c.totalRevenueCents, 0) / ltvs.length;
+        return JSON.stringify({
+          totalClients: ltvs.length,
+          avgLtv: `$${(avgLtv / 100).toFixed(2)}`,
+          topClients: ltvs.slice(0, 5).map(c => ({
+            name: c.clientName,
+            totalRevenue: `$${(c.totalRevenueCents / 100).toFixed(2)}`,
+            sessions: c.sessionCount,
+            monthlyAvg: `$${(c.monthlyAvgSpendCents / 100).toFixed(2)}/mo`,
+            retention: `${c.retentionDays} days`,
+            churnRisk: c.churnRisk,
+            isSubscriber: c.isSubscriber,
+          })),
+          atRisk: ltvs.filter(c => c.churnRisk !== "none").map(c => ({
+            name: c.clientName,
+            totalRevenue: `$${(c.totalRevenueCents / 100).toFixed(2)}`,
+            churnRisk: c.churnRisk,
+            signals: c.churnSignals,
+          })).slice(0, 5),
+        });
+      }
+
+      case "get_session_packages": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view session package alerts." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeSessionPackageAlerts } = await import("./revenue-intelligence");
+        const alerts = await computeSessionPackageAlerts(organizationId);
+        if (alerts.length === 0) return JSON.stringify({ message: "All clients have healthy session balances — no package alerts at this time." });
+        return JSON.stringify({
+          total: alerts.length,
+          critical: alerts.filter(a => a.urgency === "critical").length,
+          alerts: alerts.slice(0, 8).map(a => ({
+            client: a.clientName,
+            plan: a.planName,
+            sessionsRemaining: a.sessionsRemaining,
+            cancelAtPeriodEnd: a.cancelAtPeriodEnd,
+            status: a.subscriptionStatus,
+            urgency: a.urgency,
+            action: a.cancelAtPeriodEnd
+              ? `Contact ${a.clientName} about renewing before subscription cancels`
+              : a.sessionsRemaining <= 0
+                ? `${a.clientName} has 0 sessions left — prompt renewal now`
+                : `${a.clientName} has ${a.sessionsRemaining} session${a.sessionsRemaining === 1 ? "" : "s"} remaining — send renewal reminder`,
+          })),
+        });
+      }
+
       case "get_operations_digest": {
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can view the operations digest." });
@@ -881,14 +1059,13 @@ Good: "I found 3 openings for next week. Want me to book one?"
 Avoid: "Query complete. Here are the available time slots as requested."
 
 ## Your Core Capabilities
-- Run operations intelligence digests — open slots, revenue opportunity, inactive clients, waitlist
-- Read and display organization schedules, bookings, and availability
-- Find open time slots and surface scheduling gaps
-- Identify clients who haven't booked recently
-- Show coach utilization and capacity
-- Manage the scheduling waitlist (add clients, view waitlist, suggest backfills for cancelled slots)
-- Suggest smart scheduling actions and proactively surface opportunities
-- Create, cancel, and reschedule bookings (with confirmation)
+- **Revenue Intelligence**: Analyze total revenue, MRR, per-client LTV, revenue by coach and time block, growth trends
+- **Retention & Churn**: Detect at-risk clients, flag booking frequency drops, surface subscription cancellation signals
+- **Growth & Upsell**: Identify clients ready for more sessions, semi-private upgrades, and session package renewals
+- **Session Packages**: Alert on clients with low or empty session balances and prompt renewal
+- **Operations**: Run ops intelligence digests — open slots, utilization, inactive clients, waitlist
+- **Schedule Management**: Read and display organization schedules, bookings, and availability
+- **Booking Actions**: Find open slots, create, cancel, and reschedule bookings (with confirmation)
 
 ## Co-Pilot Mode (Critical Rules)
 You are a SUGGESTION-FIRST assistant. Before executing any booking action:
@@ -946,6 +1123,27 @@ If the user sends one of these phrases, respond as follows:
 - "Operations summary" / "Ops digest" / "What needs attention?" → Call get_operations_digest and present results in a clear, prioritized format
 - "Show waitlist" → Call get_waitlist
 - "Backfill" / "Who can fill this slot?" → Use suggest_backfill to find waitlist matches
+- "Revenue summary" / "How much have we made?" / "Show revenue" → Call get_revenue_summary
+- "Churn risks" / "Who might leave?" / "At-risk clients" → Call get_churn_risks
+- "Upsell opportunities" / "Growth opportunities" → Call get_upsell_opportunities
+- "Session packages" / "Low sessions" / "Who's running out?" → Call get_session_packages
+- "Client value" / "LTV" / "Top clients" → Call get_client_value
+- "Growth mode" / "Grow revenue" / "How can we make more?" → Call get_revenue_summary and get_upsell_opportunities together, then present a combined growth plan
+
+## Growth Mode Proactivity
+When asked for a growth plan or revenue insights, proactively surface ALL of:
+1. Revenue trend (last 30 days vs prior 30 days)
+2. Churn risk count + most at-risk client
+3. Upsell opportunities with highest revenue lift
+4. Session package renewal alerts
+5. Best-performing time block (highest revenue per hour)
+6. One clear "next action" the user should take TODAY
+
+## Data Presentation Rules
+- Always format dollar amounts as "$X.XX" or "$X" (no cents if round)
+- Present churn risks with clear signals: "John hasn't booked in 18 days and his sessions dropped 60%"
+- Present upsell opportunities concisely: "Sarah is 1x/week — suggest moving to 2x for ~$280/mo more"
+- When surfacing revenue data, ALWAYS add a suggested action
 
 ## Operations Digest Presentation
 When presenting get_operations_digest results, structure your response with:
