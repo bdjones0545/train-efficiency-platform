@@ -1,0 +1,111 @@
+Fix the client lookup logic in the Scheduling Agent.
+
+CURRENT ISSUE:
+The agent is failing to find clients that clearly exist in the database when using natural language input.
+
+This is unacceptable for a scheduling assistant and breaks core functionality.
+
+---
+
+GOAL:
+Make client lookup intelligent, flexible, and reliable.
+
+---
+
+1. FUZZY CLIENT MATCHING
+
+Replace exact match queries with flexible search.
+
+Implement:
+- case-insensitive matching
+- partial name matching
+- fuzzy matching (similarity scoring)
+
+Examples:
+"Bonnie Kintzer"
+"bonnie kintzer"
+"Bonnie K"
+"Kintzer"
+
+All should return the correct client.
+
+---
+
+2. ENTITY RESOLUTION LAYER
+
+When the agent receives a name:
+
+- search clients in the current organization
+- return top matches ranked by similarity
+- if confidence is high → auto-select
+- if multiple matches → ask user to confirm
+
+Example:
+"I found Bonnie Kintzer in your client list. Do you want to book her?"
+
+---
+
+3. STRICT ORGANIZATION SCOPING
+
+Ensure client lookup always includes:
+- organizationId
+
+The agent must only search within the active organization.
+
+---
+
+4. UNIFIED DATA SOURCE
+
+Ensure the agent uses the SAME client query logic as the client list UI.
+
+There should not be separate logic paths.
+
+---
+
+5. FALLBACK LOGIC
+
+If no exact match:
+
+- run fuzzy search
+- return closest matches
+
+Example:
+"I couldn't find an exact match, but I found Bonnie Kintzer. Want to use this client?"
+
+---
+
+6. DEBUG LOGGING
+
+Add logs for:
+- client search query
+- organizationId used
+- results returned
+
+This will help diagnose future issues.
+
+---
+
+7. REMOVE "CLIENT NOT FOUND" AS DEFAULT
+
+The agent should ONLY say "client not found" if:
+- fuzzy search returns zero results
+
+Otherwise, always suggest matches.
+
+---
+
+EXPECTED RESULT:
+
+User input:
+"Schedule Bonnie Kintzer Monday at 7 AM"
+
+Agent response:
+"I found Bonnie Kintzer in your client list. You’re available Monday at 7:00 AM for a 60-minute session. Want me to book it?"
+
+---
+
+IMPORTANT:
+This is a core UX issue.
+The Scheduling Agent must feel intelligent and aware of the user's data.
+
+Do not allow strict matching to break scheduling functionality.
