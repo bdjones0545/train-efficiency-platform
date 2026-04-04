@@ -13,6 +13,8 @@ import {
   cashouts,
   walletTransactions,
   appSettings,
+  locations,
+  blockedTimes,
   type UserProfile,
   type InsertUserProfile,
   type CoachProfile,
@@ -42,6 +44,10 @@ import {
   type InsertTeamQuote,
   organizations,
   type Organization,
+  type Location,
+  type InsertLocation,
+  type BlockedTime,
+  type InsertBlockedTime,
   organizationSubscriptionPlans,
   type OrganizationSubscriptionPlan,
   type InsertOrganizationSubscriptionPlan,
@@ -154,6 +160,19 @@ export interface IStorage {
   updateLastSignIn(userId: string): Promise<void>;
   getInactiveUsersForReminder(sinceDays: number): Promise<User[]>;
   markReminderSent(userId: string): Promise<void>;
+
+  getLocationsByOrganization(orgId: string): Promise<Location[]>;
+  getLocation(id: string): Promise<Location | undefined>;
+  createLocation(location: InsertLocation): Promise<Location>;
+  updateLocation(id: string, data: Partial<InsertLocation>): Promise<Location | undefined>;
+  deleteLocation(id: string): Promise<boolean>;
+
+  getBlockedTimesByCoach(coachId: string): Promise<BlockedTime[]>;
+  getBlockedTimesByOrganization(orgId: string): Promise<BlockedTime[]>;
+  createBlockedTime(blockedTime: InsertBlockedTime): Promise<BlockedTime>;
+  deleteBlockedTime(id: string): Promise<boolean>;
+
+  getBookingsByOrganization(orgId: string): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]>;
 
   createTeamQuote(quote: InsertTeamQuote): Promise<TeamQuote>;
   getTeamQuotes(coachId: string): Promise<TeamQuote[]>;
@@ -1151,6 +1170,76 @@ export class DatabaseStorage implements IStorage {
 
   async getOrganizationUserSubscriptions(orgId: string): Promise<UserSubscription[]> {
     return db.select().from(userSubscriptions).where(eq(userSubscriptions.organizationId, orgId)).orderBy(desc(userSubscriptions.createdAt));
+  }
+
+  async getLocationsByOrganization(orgId: string): Promise<Location[]> {
+    return db.select().from(locations).where(eq(locations.organizationId, orgId)).orderBy(locations.name);
+  }
+
+  async getLocation(id: string): Promise<Location | undefined> {
+    const [loc] = await db.select().from(locations).where(eq(locations.id, id));
+    return loc;
+  }
+
+  async createLocation(location: InsertLocation): Promise<Location> {
+    const [loc] = await db.insert(locations).values(location).returning();
+    return loc;
+  }
+
+  async updateLocation(id: string, data: Partial<InsertLocation>): Promise<Location | undefined> {
+    const [loc] = await db.update(locations).set(data).where(eq(locations.id, id)).returning();
+    return loc;
+  }
+
+  async deleteLocation(id: string): Promise<boolean> {
+    const result = await db.delete(locations).where(eq(locations.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getBlockedTimesByCoach(coachId: string): Promise<BlockedTime[]> {
+    return db.select().from(blockedTimes).where(eq(blockedTimes.coachId, coachId)).orderBy(blockedTimes.startAt);
+  }
+
+  async getBlockedTimesByOrganization(orgId: string): Promise<BlockedTime[]> {
+    return db.select().from(blockedTimes).where(eq(blockedTimes.organizationId, orgId)).orderBy(blockedTimes.startAt);
+  }
+
+  async createBlockedTime(blockedTime: InsertBlockedTime): Promise<BlockedTime> {
+    const [bt] = await db.insert(blockedTimes).values(blockedTime).returning();
+    return bt;
+  }
+
+  async deleteBlockedTime(id: string): Promise<boolean> {
+    const result = await db.delete(blockedTimes).where(eq(blockedTimes.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getBookingsByOrganization(orgId: string): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]> {
+    const orgCoaches = await db.select().from(coachProfiles).where(eq(coachProfiles.organizationId, orgId));
+    const orgCoachIds = orgCoaches.map(c => c.id);
+    if (orgCoachIds.length === 0) return [];
+
+    const rows = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(users, eq(bookings.clientId, users.id))
+      .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+      .where(inArray(bookings.coachId, orgCoachIds))
+      .orderBy(desc(bookings.startAt));
+
+    const coachUserIds = [...new Set(rows.map(r => r.coach_profiles?.userId).filter(Boolean) as string[])];
+    const coachUsers = coachUserIds.length > 0
+      ? await db.select().from(users).where(inArray(users.id, coachUserIds))
+      : [];
+    const coachUserMap = new Map(coachUsers.map(u => [u.id, u]));
+
+    return rows.map(r => ({
+      ...r.bookings,
+      service: r.services ?? undefined,
+      client: r.users ?? undefined,
+      coach: r.coach_profiles ? { ...r.coach_profiles, user: coachUserMap.get(r.coach_profiles.userId)! } : undefined,
+    }));
   }
 }
 

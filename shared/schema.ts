@@ -112,8 +112,8 @@ export const insertSubscriptionScheduleSchema = createInsertSchema(subscriptionS
 export type SubscriptionSchedule = typeof subscriptionSchedules.$inferSelect;
 export type InsertSubscriptionSchedule = z.infer<typeof insertSubscriptionScheduleSchema>;
 
-export const roleEnum = pgEnum("user_role", ["CLIENT", "COACH", "ADMIN"]);
-export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"]);
+export const roleEnum = pgEnum("user_role", ["CLIENT", "COACH", "ADMIN", "STAFF"]);
+export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW", "RESCHEDULED"]);
 export const payoutStatusEnum = pgEnum("payout_status", ["PENDING", "SENT", "FAILED"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["WALLET", "VENMO", "CASH"]);
 
@@ -139,7 +139,7 @@ export const coachProfiles = pgTable("coach_profiles", {
   organizationId: varchar("organization_id"),
 });
 
-export const sessionTypeEnum = pgEnum("session_type", ["1_ON_1", "GROUP"]);
+export const sessionTypeEnum = pgEnum("session_type", ["1_ON_1", "GROUP", "SEMI_PRIVATE", "TEAM_TRAINING", "ASSESSMENT", "RECOVERY"]);
 
 export const services = pgTable("services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -171,11 +171,43 @@ export const availabilityBlocks = pgTable("availability_blocks", {
   location: text("location").default(""),
 });
 
+export const locations = pgTable("locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: varchar("name").notNull(),
+  description: text("description").default(""),
+  address: text("address").default(""),
+  capacity: integer("capacity"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertLocationSchema = createInsertSchema(locations).omit({ id: true, createdAt: true });
+export type Location = typeof locations.$inferSelect;
+export type InsertLocation = z.infer<typeof insertLocationSchema>;
+
+export const blockedTimes = pgTable("blocked_times", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coachId: varchar("coach_id").notNull().references(() => coachProfiles.id),
+  organizationId: varchar("organization_id").notNull(),
+  startAt: timestamp("start_at").notNull(),
+  endAt: timestamp("end_at").notNull(),
+  reason: text("reason").default(""),
+  isAllDay: boolean("is_all_day").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBlockedTimeSchema = createInsertSchema(blockedTimes).omit({ id: true, createdAt: true });
+export type BlockedTime = typeof blockedTimes.$inferSelect;
+export type InsertBlockedTime = z.infer<typeof insertBlockedTimeSchema>;
+
 export const bookings = pgTable("bookings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id"),
   clientId: varchar("client_id").notNull().references(() => users.id),
   coachId: varchar("coach_id").notNull().references(() => coachProfiles.id),
   serviceId: varchar("service_id").notNull().references(() => services.id),
+  locationId: varchar("location_id"),
   startAt: timestamp("start_at").notNull(),
   endAt: timestamp("end_at").notNull(),
   status: bookingStatusEnum("status").notNull().default("CONFIRMED"),

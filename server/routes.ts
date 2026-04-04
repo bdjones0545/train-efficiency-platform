@@ -14,6 +14,7 @@ import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
+import { handleAssistantMessage } from "./scheduling-assistant";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
 
@@ -5080,6 +5081,223 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Generate sessions error:", error);
       res.status(500).json({ message: "Failed to generate sessions" });
+    }
+  });
+
+  // ===== LOCATIONS (org-scoped) =====
+  app.get("/api/locations", isAuthenticated, async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const locs = await storage.getLocationsByOrganization(profile.organizationId);
+      res.json(locs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/locations", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { name, description, address, capacity } = req.body;
+      if (!name) return res.status(400).json({ message: "Name is required" });
+      const loc = await storage.createLocation({ organizationId: profile.organizationId, name, description: description || "", address: address || "", capacity: capacity || null, active: true });
+      res.json(loc);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/locations/:id", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const existing = await storage.getLocation(req.params.id);
+      if (!existing || existing.organizationId !== profile.organizationId) return res.status(404).json({ message: "Location not found" });
+      const updated = await storage.updateLocation(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/locations/:id", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const existing = await storage.getLocation(req.params.id);
+      if (!existing || existing.organizationId !== profile.organizationId) return res.status(404).json({ message: "Location not found" });
+      await storage.deleteLocation(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== BLOCKED TIMES (org-scoped) =====
+  app.get("/api/blocked-times", isAuthenticated, async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const coachProfile = await storage.getCoachProfileByUserId(req.user.id);
+      let bts;
+      if (coachProfile && profile.role === "COACH") {
+        bts = await storage.getBlockedTimesByCoach(coachProfile.id);
+      } else {
+        bts = await storage.getBlockedTimesByOrganization(profile.organizationId);
+      }
+      res.json(bts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/blocked-times", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { coachId, startAt, endAt, reason, isAllDay } = req.body;
+      if (!coachId || !startAt || !endAt) return res.status(400).json({ message: "coachId, startAt, endAt required" });
+      const bt = await storage.createBlockedTime({ coachId, organizationId: profile.organizationId, startAt: new Date(startAt), endAt: new Date(endAt), reason: reason || "", isAllDay: isAllDay || false });
+      res.json(bt);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/blocked-times/:id", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      await storage.deleteBlockedTime(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== ORG-SCOPED SCHEDULING BOOKINGS =====
+  app.get("/api/scheduling/bookings", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const orgBookings = await storage.getBookingsByOrganization(profile.organizationId);
+      res.json(orgBookings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/scheduling/bookings", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { clientId, coachId, serviceId, startAt, endAt, notes, location, locationId, maxParticipants } = req.body;
+      if (!clientId || !coachId || !serviceId || !startAt || !endAt) {
+        return res.status(400).json({ message: "clientId, coachId, serviceId, startAt, endAt are required" });
+      }
+      const coachProfile = await storage.getCoachProfile(coachId);
+      if (!coachProfile || coachProfile.organizationId !== profile.organizationId) {
+        return res.status(400).json({ message: "Coach does not belong to this organization" });
+      }
+      const service = await storage.getService(serviceId);
+      if (!service || service.organizationId !== profile.organizationId) {
+        return res.status(400).json({ message: "Service does not belong to this organization" });
+      }
+      const booking = await storage.createBooking({
+        organizationId: profile.organizationId,
+        clientId,
+        coachId,
+        serviceId,
+        locationId: locationId || null,
+        startAt: new Date(startAt),
+        endAt: new Date(endAt),
+        status: "CONFIRMED",
+        notes: notes || "",
+        location: location || "",
+        maxParticipants: maxParticipants || null,
+        groupDescription: "",
+      });
+      res.json(booking);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/scheduling/bookings/:id/status", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { status } = req.body;
+      const booking = await storage.getBooking(req.params.id);
+      if (!booking) return res.status(404).json({ message: "Booking not found" });
+      const updated = await storage.updateBookingStatus(req.params.id, status);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/scheduling/bookings/:id", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const booking = await storage.getBooking(req.params.id);
+      if (!booking) return res.status(404).json({ message: "Booking not found" });
+      const { startAt, endAt, notes, location, serviceId, clientId } = req.body;
+      const updated = await storage.updateBooking(req.params.id, {
+        ...(startAt && { startAt: new Date(startAt) }),
+        ...(endAt && { endAt: new Date(endAt) }),
+        ...(notes !== undefined && { notes }),
+        ...(location !== undefined && { location }),
+        ...(serviceId && { serviceId }),
+        ...(clientId && { clientId }),
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== SCHEDULING AGENT =====
+  app.post("/api/scheduling-agent/chat", isAuthenticated, async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { messages } = req.body;
+      if (!messages || !Array.isArray(messages)) return res.status(400).json({ message: "messages array required" });
+
+      const user = await storage.getUser(req.user.id);
+      const coachProfile = await storage.getCoachProfileByUserId(req.user.id);
+      const userName = user ? `${user.firstName} ${user.lastName}`.trim() : null;
+
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Transfer-Encoding", "chunked");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("X-Accel-Buffering", "no");
+
+      const stream = handleAssistantMessage(messages, req.user.id, profile.role, userName, coachProfile?.id || null, profile.organizationId || null);
+      for await (const chunk of stream) {
+        res.write(chunk);
+      }
+      res.end();
+    } catch (error: any) {
+      console.error("Scheduling agent error:", error);
+      if (!res.headersSent) res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/scheduling-agent/context", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const profile = await storage.getUserProfile(req.user.id);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const orgCoaches = (await storage.getCoachProfiles()).filter(c => c.organizationId === profile.organizationId);
+      const orgServices = await storage.getServicesByOrganization(profile.organizationId);
+      const orgLocations = await storage.getLocationsByOrganization(profile.organizationId);
+      res.json({ coaches: orgCoaches, services: orgServices, locations: orgLocations });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 

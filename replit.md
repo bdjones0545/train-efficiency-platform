@@ -16,7 +16,7 @@ The application uses a client-server architecture. The frontend is built with **
 
 **Core Architectural Decisions:**
 -   **Multi-Tenancy:** Each organization is isolated using an `organization_id` across key data tables, allowing for distinct branded environments and dynamic landing pages (`/org/{slug}`). New organizations undergo a guided setup.
--   **Role-Based Access Control (RBAC):** Implements `CLIENT`, `COACH`, and `ADMIN` roles to secure API endpoints and frontend features.
+-   **Role-Based Access Control (RBAC):** Implements `CLIENT`, `COACH`, `ADMIN`, and `STAFF` roles to secure API endpoints and frontend features.
 -   **UI/UX Design:** Features a dark mode theme with a vibrant green primary color, Inter font, and consistent design using Shadcn UI components.
 -   **Dynamic Content & White-Labeling:** Supports customization of organization branding (logo, taglines, colors) and service offerings.
 -   **Payment Processing:** Integrates with **Stripe** for organizational subscriptions and individual session payments. Organizations can connect their own Stripe accounts.
@@ -39,6 +39,43 @@ The application uses a client-server architecture. The frontend is built with **
 -   **Subscription Revenue Analytics:** Business Plan page includes subscription revenue from Stripe invoices and integrates it into revenue charts.
 -   **Subscription Coach Payout:** Subscription plans define a flat `coachPayPerSessionCents`, which overrides percentage-based payouts for subscription-linked sessions upon redemption.
 -   **Subscription Session Allocation:** Plans define `sessionsPerWeek`. `sessionsRemaining` is tracked per subscriber and reset upon renewal via Stripe webhooks. Sessions are decremented upon redemption.
+
+## Phase 1: TrainEfficiency Scheduling Agent Foundation
+
+Phase 1 builds the core scheduling architecture and org-aware data structures for the future Scheduling Agent.
+
+### Schema Extensions (Phase 1)
+- **Roles:** Added `STAFF` to the `user_role` enum
+- **Booking Statuses:** Added `RESCHEDULED` to the `booking_status` enum
+- **Session Types:** Extended `session_type` enum with `SEMI_PRIVATE`, `TEAM_TRAINING`, `ASSESSMENT`, `RECOVERY`
+- **`locations` table:** Org-scoped training zones/facilities with name, description, address, capacity, active fields
+- **`blocked_times` table:** Coach-specific unavailable dates/times linked to coach profile and org
+- **`bookings` enhancements:** Added `organization_id` and `location_id` columns for direct org-scoping
+
+### New API Routes (Phase 1)
+- `GET/POST/PATCH/DELETE /api/locations` — Org-scoped location management (ADMIN/COACH/STAFF only)
+- `GET/POST/DELETE /api/blocked-times` — Org-scoped blocked time management
+- `GET /api/scheduling/bookings` — Org-scoped booking list (all bookings filtered by org's coaches)
+- `POST /api/scheduling/bookings` — Create booking with org validation
+- `PATCH /api/scheduling/bookings/:id` — Update booking details
+- `PATCH /api/scheduling/bookings/:id/status` — Update booking status
+- `POST /api/scheduling-agent/chat` — Streaming scheduling agent chat (org-aware, SSE)
+- `GET /api/scheduling-agent/context` — Org coaching context (coaches, services, locations)
+
+### New Pages (Phase 1)
+- `/scheduling` — Main scheduling page with:
+  - List + Week calendar view toggle
+  - Filters: coach, status, session type, location, search
+  - Upcoming and past booking sections
+  - Create/cancel/reschedule/complete/no-show booking actions
+- `/scheduling/agent` — Scheduling Agent chat interface with:
+  - Streaming AI chat (GPT) with org-scoped context
+  - Suggested prompts for common scheduling tasks
+  - Real-time context sidebar (coaches, services, locations count)
+
+### Sidebar Navigation (Phase 1)
+- New "Scheduling" section in sidebar for ADMIN/COACH/STAFF roles
+- Links to /scheduling (Schedule) and /scheduling/agent (Scheduling Agent)
 
 ## External Dependencies
 -   **PostgreSQL:** Primary database.

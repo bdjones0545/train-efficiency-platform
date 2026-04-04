@@ -167,12 +167,16 @@ async function executeTool(
   name: string,
   args: any,
   userId: string | null,
-  userRole: string
+  userRole: string,
+  organizationId: string | null = null
 ): Promise<string> {
   try {
     switch (name) {
       case "list_coaches": {
-        const coaches = await storage.getCoachProfiles();
+        const allCoaches = await storage.getCoachProfiles();
+        const coaches = organizationId
+          ? allCoaches.filter(c => c.organizationId === organizationId)
+          : allCoaches;
         return JSON.stringify(coaches.map(c => ({
           id: c.id,
           name: `${c.user.firstName} ${c.user.lastName}`,
@@ -182,12 +186,15 @@ async function executeTool(
       }
 
       case "list_services": {
-        const services = await storage.getServices();
+        const services = organizationId
+          ? await storage.getServicesByOrganization(organizationId)
+          : await storage.getServices();
         return JSON.stringify(services.filter(s => s.active).map(s => ({
           id: s.id,
           name: s.name,
           durationMin: s.durationMin,
-          price: s.name.toLowerCase().includes("team training") ? "Quoted Price" : s.priceCents === 0 ? "FREE" : `$${(s.priceCents / 100).toFixed(2)}`,
+          sessionType: s.sessionType,
+          price: s.priceCents === 0 ? "FREE" : `$${(s.priceCents / 100).toFixed(2)}`,
         })));
       }
 
@@ -484,7 +491,8 @@ export function handleAssistantMessage(
   userId: string | null,
   userRole: string,
   userName: string | null,
-  coachId: string | null = null
+  coachId: string | null = null,
+  organizationId: string | null = null
 ): AsyncGenerator<string> {
   const systemPrompt = getSystemPrompt(userRole, userName, coachId);
 
@@ -562,7 +570,7 @@ export function handleAssistantMessage(
         try {
           parsedArgs = JSON.parse(tc.arguments);
         } catch {}
-        const result = await executeTool(tc.name, parsedArgs, userId, userRole);
+        const result = await executeTool(tc.name, parsedArgs, userId, userRole, organizationId);
         currentMessages.push({
           role: "tool",
           tool_call_id: tc.id,

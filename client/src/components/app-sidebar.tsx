@@ -45,6 +45,8 @@ import {
   CreditCard,
   Sparkles,
   Trash2,
+  Bot,
+  CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -171,6 +173,32 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+
+          {(role === "COACH" || role === "ADMIN" || role === "STAFF") && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Scheduling</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/scheduling"}>
+                      <Link href="/scheduling" onClick={handleNavClick} data-testid="nav-scheduling">
+                        <CalendarDays className="h-4 w-4" />
+                        <span>Schedule</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/scheduling/agent"}>
+                      <Link href="/scheduling/agent" onClick={handleNavClick} data-testid="nav-scheduling-agent">
+                        <Bot className="h-4 w-4" />
+                        <span>Scheduling Agent</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
 
           {(role === "COACH" || role === "ADMIN") && (
             <SidebarGroup>

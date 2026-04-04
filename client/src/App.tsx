@@ -41,6 +41,8 @@ import CreatePasswordPage from "@/pages/create-password";
 import ClientPortalPage from "@/pages/client-portal";
 import SubscribePage from "@/pages/subscribe";
 import ClaimSubscriptionPage from "@/pages/claim-subscription";
+import SchedulingPage from "@/pages/scheduling";
+import SchedulingAgentPage from "@/pages/scheduling-agent";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
@@ -161,6 +163,8 @@ function AuthenticatedLayout() {
                   <Route path="/org/:slug" component={OrgLandingPage} />
                   <Route path="/privacy" component={PrivacyPolicyPage} />
                   <Route path="/terms" component={TermsConditionsPage} />
+                  <Route path="/scheduling" component={SchedulingPage} />
+                  <Route path="/scheduling/agent" component={SchedulingAgentPage} />
                   <Route path="/admin" component={AdminDashboardPage} />
                   <Route path="/admin/configuration" component={AdminConfigurationPage} />
                   <Route path="/admin/branding" component={AdminBrandingPage} />
