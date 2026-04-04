@@ -2,6 +2,27 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import { addDays, startOfWeek, format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import {
+  sendBookingConfirmationToClient,
+  sendBookingNotificationToCoach,
+  type OrgBranding,
+} from "./email";
+
+async function getOrgBranding(orgId: string | null | undefined): Promise<OrgBranding | undefined> {
+  if (!orgId) return undefined;
+  try {
+    const org = await storage.getOrganizationById(orgId);
+    if (!org) return undefined;
+    return {
+      name: org.name,
+      emailPrimaryColor: org.emailPrimaryColor || undefined,
+      emailSecondaryColor: org.emailSecondaryColor || undefined,
+      ownerEmail: org.ownerEmail || undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -461,18 +482,69 @@ async function executeTool(
         }
 
         const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
+        const start = new Date(startAt);
+        const end = new Date(endAt);
         const booking = await storage.createBooking({
           clientId: userId,
           coachId,
           serviceId,
-          startAt: new Date(startAt),
-          endAt: new Date(endAt),
+          startAt: start,
+          endAt: end,
           status: "CONFIRMED",
           notes: "",
           location: "",
           maxParticipants: isSemiPrivate ? 6 : null,
           groupDescription: "",
         });
+
+        // Send confirmation emails to client and coach (non-blocking)
+        (async () => {
+          try {
+            const [clientUser, coachProfile, orgBranding] = await Promise.all([
+              storage.getUser(userId),
+              storage.getCoachProfile(coachId),
+              getOrgBranding(organizationId),
+            ]);
+            const tz = (coachProfile as any)?.timezone || "America/New_York";
+            const coachName = coachProfile?.user
+              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+              : "Your Coach";
+            const clientName = clientUser
+              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+              : "A client";
+
+            if (clientUser?.email) {
+              sendBookingConfirmationToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachName,
+                service.name,
+                start,
+                end,
+                undefined,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            }
+
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) {
+              sendBookingNotificationToCoach(
+                coachEmail,
+                coachProfile?.user?.firstName || "Coach",
+                clientName,
+                service.name,
+                start,
+                end,
+                undefined,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            }
+          } catch (err) {
+            console.error("[book_session] Email notification error:", err);
+          }
+        })();
 
         return JSON.stringify({ success: true, bookingId: booking.id, message: "Session booked successfully!" });
       }
@@ -602,6 +674,55 @@ async function executeTool(
           maxParticipants: isSemiPrivate ? 6 : null,
           groupDescription: "",
         });
+
+        // Send confirmation emails to client and coach (non-blocking)
+        (async () => {
+          try {
+            const [clientUser, coachProfile, orgBranding] = await Promise.all([
+              storage.getUser(resolvedClientId),
+              storage.getCoachProfile(coachId),
+              getOrgBranding(organizationId),
+            ]);
+            const tz = (coachProfile as any)?.timezone || "America/New_York";
+            const coachName = coachProfile?.user
+              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+              : "Your Coach";
+            const clientName = clientUser
+              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+              : "A client";
+
+            if (clientUser?.email) {
+              sendBookingConfirmationToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachName,
+                service.name,
+                start,
+                end,
+                location || undefined,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            }
+
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) {
+              sendBookingNotificationToCoach(
+                coachEmail,
+                coachProfile?.user?.firstName || "Coach",
+                clientName,
+                service.name,
+                start,
+                end,
+                location || undefined,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            }
+          } catch (err) {
+            console.error("[coach_create_session] Email notification error:", err);
+          }
+        })();
 
         return JSON.stringify({ success: true, bookingId: booking.id, message: "Session created successfully!" });
       }
