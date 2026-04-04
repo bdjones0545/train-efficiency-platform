@@ -147,13 +147,22 @@ interface SessionPackageAlert {
   urgency: "critical" | "warning";
 }
 
-const QUICK_ACTIONS = [
+const STAFF_QUICK_ACTIONS = [
   { label: "Revenue Summary", icon: DollarSign, prompt: "Show me our revenue summary", color: "text-green-500" },
   { label: "Growth Opportunities", icon: TrendingUp, prompt: "What are our growth opportunities?", color: "text-orange-500" },
   { label: "Churn Risks", icon: AlertTriangle, prompt: "Who are our at-risk clients?", color: "text-red-500" },
   { label: "This Week's Schedule", icon: Calendar, prompt: "Show me this week's full schedule", color: "text-blue-500" },
   { label: "Book a Session", icon: PlusCircle, prompt: "I need to book a session for a client", color: "text-primary" },
   { label: "Operations Summary", icon: Activity, prompt: "Give me an operations summary for this week", color: "text-purple-500" },
+];
+
+const CLIENT_QUICK_ACTIONS = [
+  { label: "Book a Session", icon: PlusCircle, prompt: "I'd like to book a training session", color: "text-primary" },
+  { label: "Available Times", icon: Clock, prompt: "What times are available this week?", color: "text-blue-500" },
+  { label: "My Bookings", icon: Calendar, prompt: "Show me my upcoming bookings", color: "text-purple-500" },
+  { label: "Browse Coaches", icon: Users, prompt: "Show me the coaches available", color: "text-orange-500" },
+  { label: "Cancel a Booking", icon: XCircle, prompt: "I need to cancel one of my bookings", color: "text-red-500" },
+  { label: "Get Help", icon: MessageSquare, prompt: "I have a question about scheduling", color: "text-muted-foreground" },
 ];
 
 function renderMarkdown(text: string): React.ReactNode[] {
@@ -284,6 +293,11 @@ export default function SchedulingAgentPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  const { data: profile } = useQuery<{ role?: string }>({ queryKey: ["/api/profile"] });
+  const userRole = profile?.role || "CLIENT";
+  const isStaff = userRole === "COACH" || userRole === "ADMIN" || userRole === "STAFF";
+  const QUICK_ACTIONS = isStaff ? STAFF_QUICK_ACTIONS : CLIENT_QUICK_ACTIONS;
+
   const { data: digest, isLoading: digestLoading, refetch: refetchDigest } = useQuery<OpsDigest>({
     queryKey: ["/api/scheduling/operations-digest"],
     enabled: activeTab === "ops",
@@ -402,9 +416,11 @@ export default function SchedulingAgentPage() {
 
   const tabs = [
     { id: "chat", label: "Chat", icon: MessageSquare },
-    { id: "ops", label: "Operations", icon: Activity },
-    { id: "revenue", label: "Revenue", icon: DollarSign },
-    { id: "settings", label: "Settings", icon: Settings },
+    ...(isStaff ? [
+      { id: "ops", label: "Operations", icon: Activity },
+      { id: "revenue", label: "Revenue", icon: DollarSign },
+      { id: "settings", label: "Settings", icon: Settings },
+    ] : []),
   ] as const;
 
   const maxCoachRevenue = revenueSummary ? Math.max(...revenueSummary.coachRevenues.map(c => c.totalRevenueCents), 1) : 1;
@@ -427,29 +443,31 @@ export default function SchedulingAgentPage() {
             <div className="font-semibold text-sm leading-tight">TrainEfficiency Scheduling Agent</div>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
-              Revenue Intelligence Active · Phase 4
+              {isStaff ? "Revenue Intelligence Active · Phase 4" : "Book sessions, check availability, and manage your schedule"}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {waitlist && waitlist.length > 0 && (
-            <Badge variant="secondary" className="text-xs" data-testid="waitlist-badge">
-              <ListOrdered className="h-3 w-3 mr-1" />{waitlist.length} waitlist
-            </Badge>
-          )}
-          {churnRisks && churnRisks.length > 0 && (
-            <Badge variant="destructive" className="text-xs" data-testid="churn-badge">
-              <AlertTriangle className="h-3 w-3 mr-1" />{churnRisks.length} at risk
-            </Badge>
-          )}
-        </div>
+        {isStaff && (
+          <div className="flex items-center gap-2 shrink-0">
+            {waitlist && waitlist.length > 0 && (
+              <Badge variant="secondary" className="text-xs" data-testid="waitlist-badge">
+                <ListOrdered className="h-3 w-3 mr-1" />{waitlist.length} waitlist
+              </Badge>
+            )}
+            {churnRisks && churnRisks.length > 0 && (
+              <Badge variant="destructive" className="text-xs" data-testid="churn-badge">
+                <AlertTriangle className="h-3 w-3 mr-1" />{churnRisks.length} at risk
+              </Badge>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
       <div className="border-b bg-background shrink-0">
         <div className="flex px-4">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} data-testid={`tab-${tab.id}`}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as "chat" | "ops" | "revenue" | "settings")} data-testid={`tab-${tab.id}`}
               className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               <tab.icon className="h-3.5 w-3.5" />{tab.label}
             </button>
@@ -469,8 +487,8 @@ export default function SchedulingAgentPage() {
                     <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
                       <Sparkles className="h-7 w-7 text-primary" />
                     </div>
-                    <h3 className="font-semibold text-base">Scheduling Agent — Phase 4</h3>
-                    <p className="text-sm text-muted-foreground max-w-xs">Revenue intelligence, retention, and growth automation built in.</p>
+                    <h3 className="font-semibold text-base">{isStaff ? "Scheduling Agent — Phase 4" : "Scheduling Assistant"}</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs">{isStaff ? "Revenue intelligence, retention, and growth automation built in." : "Book sessions, check availability, or ask anything about your schedule."}</p>
                   </div>
                   {showQuickActions && (
                     <div className="grid grid-cols-2 gap-2 w-full max-w-md">
