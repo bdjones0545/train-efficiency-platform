@@ -145,7 +145,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "coach_create_session",
-      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name.",
+      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name. Only use AFTER the user has confirmed a specific time.",
       parameters: {
         type: "object",
         properties: {
@@ -158,6 +158,94 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           location: { type: "string", description: "Session location (optional)" },
         },
         required: ["coachId", "serviceId", "startAt"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_org_schedule",
+      description: "Get all bookings for the organization within a date range (coach/admin only). Use to show the full schedule, check what's booked for a day or week, or understand overall capacity.",
+      parameters: {
+        type: "object",
+        properties: {
+          startDate: { type: "string", description: "Start date in YYYY-MM-DD format (defaults to today)" },
+          endDate: { type: "string", description: "End date in YYYY-MM-DD format (defaults to 7 days from start)" },
+          coachId: { type: "string", description: "Optional: filter results to a specific coach ID" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_inactive_clients",
+      description: "Find clients who have not had a confirmed/completed booking since a given date (coach/admin only). Use to identify who needs follow-up or re-engagement.",
+      parameters: {
+        type: "object",
+        properties: {
+          sinceDaysAgo: { type: "number", description: "How many days back to look. Clients with no booking in this window are returned. Defaults to 7." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_coach_utilization",
+      description: "Get utilization metrics for all coaches in the organization: how many minutes are booked vs available (coach/admin only). Useful for identifying coaches with capacity.",
+      parameters: {
+        type: "object",
+        properties: {
+          startDate: { type: "string", description: "Start date in YYYY-MM-DD format (defaults to Monday of the current week)" },
+          endDate: { type: "string", description: "End date in YYYY-MM-DD format (defaults to Sunday of the current week)" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "identify_schedule_gaps",
+      description: "Find open time blocks where no session is booked for a given coach (coach/admin only). Helps identify where the schedule can be filled.",
+      parameters: {
+        type: "object",
+        properties: {
+          coachId: { type: "string", description: "The coach ID to analyze" },
+          startDate: { type: "string", description: "Start date in YYYY-MM-DD format (defaults to today)" },
+          numDays: { type: "number", description: "Number of days to scan (default 7, max 14)" },
+        },
+        required: ["coachId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reschedule_booking",
+      description: "Reschedule an existing booking to a new time (coach/admin only). Only call this after the user has explicitly confirmed the new time.",
+      parameters: {
+        type: "object",
+        properties: {
+          bookingId: { type: "string", description: "The ID of the booking to reschedule" },
+          newStartAt: { type: "string", description: "New start time in ISO 8601 format" },
+          newEndAt: { type: "string", description: "New end time in ISO 8601 format" },
+        },
+        required: ["bookingId", "newStartAt", "newEndAt"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_client",
+      description: "Search for a client by name to get their user ID and details (coach/admin only). Use before booking or rescheduling when you only have a client's name.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Name to search (first name, last name, or partial name)" },
+        },
+        required: ["query"],
       },
     },
   },
@@ -429,6 +517,207 @@ async function executeTool(
         return JSON.stringify({ success: true, bookingId: booking.id, message: "Session created successfully!" });
       }
 
+      case "get_org_schedule": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view the org schedule." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context available." });
+
+        const startDate = args.startDate ? new Date(args.startDate) : new Date();
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = args.endDate ? new Date(args.endDate) : addDays(startDate, 7);
+        endDate.setHours(23, 59, 59, 999);
+
+        const orgBookings = await storage.getBookingsByDateRangeForOrg(organizationId, startDate, endDate);
+        const filtered = args.coachId
+          ? orgBookings.filter(b => b.coachId === args.coachId)
+          : orgBookings;
+
+        if (filtered.length === 0) {
+          return JSON.stringify({ message: "No bookings found in that date range.", count: 0 });
+        }
+
+        return JSON.stringify({
+          count: filtered.length,
+          bookings: filtered.map(b => ({
+            id: b.id,
+            client: b.client ? `${b.client.firstName} ${b.client.lastName}` : "Walk-in",
+            coach: b.coach?.user ? `${b.coach.user.firstName} ${b.coach.user.lastName}` : "Unknown Coach",
+            service: b.service?.name ?? "Unknown Service",
+            date: format(new Date(b.startAt), "EEEE, MMM d"),
+            time: `${format(new Date(b.startAt), "h:mm a")} - ${format(new Date(b.endAt), "h:mm a")}`,
+            status: b.status,
+          })),
+        });
+      }
+
+      case "find_inactive_clients": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view client activity." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context available." });
+
+        const sinceDaysAgo = args.sinceDaysAgo ?? 7;
+        const since = new Date();
+        since.setDate(since.getDate() - sinceDaysAgo);
+        since.setHours(0, 0, 0, 0);
+
+        const inactive = await storage.findClientsWithNoBookingsSince(organizationId, since);
+        if (inactive.length === 0) {
+          return JSON.stringify({ message: `All clients have had a booking in the last ${sinceDaysAgo} days.`, count: 0 });
+        }
+
+        return JSON.stringify({
+          count: inactive.length,
+          sinceDaysAgo,
+          clients: inactive.map(c => ({
+            id: c.id,
+            name: `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "Unknown",
+            email: c.email,
+            lastBookingDate: c.lastBookingDate,
+          })),
+        });
+      }
+
+      case "get_coach_utilization": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view utilization data." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context available." });
+
+        const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+        const startDate = args.startDate ? new Date(args.startDate) : weekStart;
+        const endDate = args.endDate ? new Date(args.endDate) : addDays(weekStart, 6);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+
+        const utilization = await storage.getCoachUtilizationForOrg(organizationId, startDate, endDate);
+        if (utilization.length === 0) {
+          return JSON.stringify({ message: "No coaches found for this organization." });
+        }
+
+        return JSON.stringify({
+          period: `${format(startDate, "MMM d")} – ${format(endDate, "MMM d, yyyy")}`,
+          coaches: utilization.map(u => ({
+            coachName: u.coachName,
+            bookedMinutes: u.bookedMinutes,
+            bookedHours: (u.bookedMinutes / 60).toFixed(1),
+            availableMinutes: u.availableMinutes,
+            availableHours: (u.availableMinutes / 60).toFixed(1),
+            utilizationPct: u.utilizationPct,
+            remainingMinutes: Math.max(0, u.availableMinutes - u.bookedMinutes),
+          })),
+        });
+      }
+
+      case "identify_schedule_gaps": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view schedule gaps." });
+        }
+        const { coachId, numDays = 7 } = args;
+        const timezone = "America/New_York";
+        const start = args.startDate ? new Date(args.startDate) : new Date();
+        const end = addDays(start, Math.min(numDays, 14));
+
+        const blocks = await storage.getAvailabilityBlocks(coachId);
+        const coachBookings = await storage.getCoachBookings(coachId);
+        const activeBookings = coachBookings.filter(b => b.status !== "CANCELLED");
+
+        const now = new Date();
+        const gaps: { date: string; openBlocks: string[] }[] = [];
+        let current = new Date(start);
+
+        while (current <= end) {
+          const zonedCurrent = toZonedTime(current, timezone);
+          const dayOfWeek = (zonedCurrent.getDay() + 6) % 7;
+          const dayBlocks = blocks.filter(b => b.dayOfWeek === dayOfWeek);
+          const dayStr = format(zonedCurrent, "EEEE, MMM d");
+          const openBlocks: string[] = [];
+
+          for (const block of dayBlocks) {
+            const [startH, startM] = block.startTime.split(":").map(Number);
+            const [endH, endM] = block.endTime.split(":").map(Number);
+
+            const localStart = new Date(zonedCurrent);
+            localStart.setHours(startH, startM, 0, 0);
+            const localEnd = new Date(zonedCurrent);
+            localEnd.setHours(endH, endM, 0, 0);
+
+            const blockStartUTC = fromZonedTime(localStart, timezone);
+            const blockEndUTC = fromZonedTime(localEnd, timezone);
+            if (blockEndUTC <= now) continue;
+
+            const bookedInBlock = activeBookings.filter(b => {
+              const bStart = new Date(b.startAt).getTime();
+              const bEnd = new Date(b.endAt).getTime();
+              return bStart < blockEndUTC.getTime() && bEnd > blockStartUTC.getTime();
+            });
+
+            const totalMins = (blockEndUTC.getTime() - blockStartUTC.getTime()) / 60000;
+            const bookedMins = bookedInBlock.reduce((sum, b) => {
+              return sum + (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000;
+            }, 0);
+            const freeMins = totalMins - bookedMins;
+
+            if (freeMins >= 30) {
+              const localStartZoned = toZonedTime(blockStartUTC, timezone);
+              const localEndZoned = toZonedTime(blockEndUTC, timezone);
+              openBlocks.push(
+                `${format(localStartZoned, "h:mm a")}–${format(localEndZoned, "h:mm a")} (~${Math.round(freeMins)} min free)`
+              );
+            }
+          }
+
+          if (openBlocks.length > 0) {
+            gaps.push({ date: dayStr, openBlocks });
+          }
+          current = addDays(current, 1);
+        }
+
+        if (gaps.length === 0) {
+          return JSON.stringify({ message: "No significant open blocks found in that range." });
+        }
+        return JSON.stringify({ gaps });
+      }
+
+      case "reschedule_booking": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can reschedule bookings." });
+        }
+        const { bookingId, newStartAt, newEndAt } = args;
+        const booking = await storage.getBooking(bookingId);
+        if (!booking) return JSON.stringify({ error: "Booking not found." });
+
+        const newStart = new Date(newStartAt);
+        const newEnd = new Date(newEndAt);
+        const overlapping = await storage.getOverlappingBookings(booking.coachId, newStart, newEnd, bookingId);
+        if (overlapping.length > 0) {
+          return JSON.stringify({ error: "That time slot overlaps with an existing booking. Please choose a different time." });
+        }
+
+        await storage.updateBooking(bookingId, { startAt: newStart, endAt: newEnd });
+        await storage.updateBookingStatus(bookingId, "RESCHEDULED");
+        return JSON.stringify({
+          success: true,
+          message: `Booking rescheduled to ${format(newStart, "EEEE, MMM d 'at' h:mm a")}.`,
+        });
+      }
+
+      case "find_client": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can search clients." });
+        }
+        const results = await storage.searchUsers(args.query);
+        if (results.length === 0) {
+          return JSON.stringify({ message: `No client found matching "${args.query}".` });
+        }
+        return JSON.stringify(results.slice(0, 5).map(u => ({
+          id: u.id,
+          name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim(),
+          email: u.email,
+        })));
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -439,48 +728,88 @@ async function executeTool(
 
 function getSystemPrompt(userRole: string, userName: string | null, coachId: string | null): string {
   const today = format(new Date(), "EEEE, MMMM d, yyyy");
-  let prompt = `You are the Efficiency Strength Training scheduling assistant. Today is ${today}.
-You help users find available training sessions, book appointments, and manage their schedules.
+  const isStaff = userRole === "COACH" || userRole === "ADMIN" || userRole === "STAFF";
 
-Key information about EST:
-- We offer 1:1 S&C Sessions (60 min - $70, 30 min - $40), Semi-Private Sessions ($35/person), Team Training (60 min or 30 min, quoted price), and a Free Intro Session (30 min, one per new client)
-- Sessions are with our coaches: Bryan Jones and Hunter Thaxton
-- We are located in the Bluffton/Hilton Head Island area of South Carolina
+  let prompt = `You are the TrainEfficiency Scheduling Agent — an intelligent scheduling co-pilot for a strength & conditioning coaching business. Today is ${today}. All times are Eastern Time.
 
-When helping users:
-- Be friendly, concise, and helpful
-- When showing available times, present them in a clear, readable format
-- Always confirm details before booking
-- If showing multiple time slots, limit to the most relevant 5-10 options unless asked for more
-- Use the user's timezone (Eastern Time) when displaying times
-- If a user asks about "next available" sessions, check the next 7 days`;
+## Your Personality
+You are professional, concise, and operationally sharp. You feel like a knowledgeable assistant who knows the business inside and out — not a chatbot. Avoid robotic filler phrases. Get to the point. Be helpful and direct.
+
+Good: "I found 3 openings for next week. Want me to book one?"
+Avoid: "Query complete. Here are the available time slots as requested."
+
+## Your Core Capabilities
+- Read and display organization schedules, bookings, and availability
+- Find open time slots and surface scheduling gaps
+- Identify clients who haven't booked recently
+- Show coach utilization and capacity
+- Suggest smart scheduling actions
+- Create, cancel, and reschedule bookings (with confirmation)
+
+## Co-Pilot Mode (Critical Rules)
+You are a SUGGESTION-FIRST assistant. Before executing any booking action:
+
+1. **For new bookings**: Always check availability first (use get_available_slots or get_org_schedule), then present 2–3 specific time options clearly numbered. Ask the user to pick one. Only book AFTER they confirm a specific option.
+   Example: "Here are 3 open times for Mike next week:
+   1. Tuesday at 9:00 AM with Coach Bryan
+   2. Wednesday at 2:00 PM with Coach Bryan  
+   3. Friday at 10:00 AM with Coach Hunter
+   Which works best? I'll get it booked."
+
+2. **For rescheduling**: First show the current booking details, then offer 2–3 alternative slots. Only reschedule after confirmation.
+
+3. **For cancellations**: Always confirm by restating what will be cancelled before doing it.
+
+4. **For availability/schedule changes**: These can be executed immediately without preview.
+
+5. **For insights (inactive clients, utilization, gaps)**: Execute immediately and present results clearly.
+
+## Data Rules
+- Always use the org-scoped tools (get_org_schedule, find_inactive_clients, get_coach_utilization) for org-wide data
+- When a user mentions a client by name, use find_client first to get their ID
+- All data is scoped to this organization only`;
 
   if (userName) {
-    prompt += `\n\nThe user's name is ${userName}.`;
+    prompt += `\n\n## Current User\nName: ${userName}`;
   }
 
-  if (userRole === "COACH" || userRole === "ADMIN") {
-    prompt += `\n\nThis user is a ${userRole}.`;
+  if (isStaff) {
+    prompt += `\nRole: ${userRole}`;
     if (coachId) {
-      prompt += ` Their coach ID is "${coachId}". When they ask to manage "my" schedule, availability, sessions, etc., use this coach ID automatically — do NOT ask them for their coach ID.`;
+      prompt += `\nCoach ID: ${coachId} — When they refer to "my" schedule, availability, or sessions, use this ID automatically without asking.`;
     }
     prompt += `
 
-As a coach/admin, they can do ALL of the following directly through this chat — act on their requests immediately without unnecessary confirmation:
-- View their own schedule for any day: use get_coach_schedule with their coach ID
-- Set their availability: use set_availability. When they say things like "open up Monday 9 to 5" or "I'm available Tuesday 2pm-6pm", just do it. Use 24-hour format internally (e.g. "9 AM to 5 PM" = startTime "09:00", endTime "17:00"). Days: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
-- View their current availability blocks: use get_availability
-- Remove availability blocks: use delete_availability
-- Create sessions for clients: use coach_create_session (can specify client by name for walk-ins)
-- View and manage any coach's schedule (not just their own)
+## Staff Capabilities (Full Access)
+- **View schedule**: use get_org_schedule for full org view, get_coach_schedule for a specific coach's day
+- **Availability management**: set_availability, get_availability, delete_availability — execute immediately when requested
+  - Days: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday
+  - Times in 24hr format: "9am–5pm" = startTime "09:00", endTime "17:00"
+  - If asked to set availability for multiple days (e.g. "Mon–Fri 9–5"), create all blocks at once
+- **Book sessions**: use coach_create_session — but ONLY after presenting options and getting confirmation
+- **Reschedule bookings**: use reschedule_booking — ONLY after confirming new time with user
+- **Cancel bookings**: use cancel_booking — ONLY after restating what will be cancelled
+- **Find clients by name**: use find_client before booking if only a name is provided
+- **Insights**: use find_inactive_clients, get_coach_utilization, identify_schedule_gaps — execute immediately
 
-Be proactive and efficient. If the coach says "open me up Monday through Friday 9-5", create 5 availability blocks (one for each day) without asking for confirmation for each one. Just do it and report what was done.`;
+## Quick Action Handling
+If the user sends one of these phrases, respond as follows:
+- "Find openings" / "Find open slots" → Ask which coach and time frame, then call identify_schedule_gaps
+- "Fill tomorrow" / "Fill this week" → Use identify_schedule_gaps to find gaps and summarize them
+- "Who hasn't booked?" / "Missing clients" → Call find_inactive_clients with sinceDaysAgo=7
+- "Show utilization" → Call get_coach_utilization for the current week
+- "Show schedule" / "This week's schedule" → Call get_org_schedule for the current week`;
   } else {
-    prompt += `\n\nThis user is a CLIENT. They can:
-- Browse coaches and services
-- View available time slots
-- Book sessions for themselves
-- View and cancel their own bookings`;
+    prompt += `
+Role: CLIENT
+
+## Client Capabilities
+- Browse available coaches and services (use list_coaches, list_services)
+- See available time slots (use get_available_slots)
+- Book sessions for yourself (use book_session — always confirm time before booking)
+- View and cancel your own bookings (use get_my_bookings, cancel_booking)
+
+Always show 2–3 time options before booking and confirm which one the client wants.`;
   }
 
   return prompt;

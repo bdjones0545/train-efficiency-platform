@@ -1,0 +1,232 @@
+Build Phase 2 of the TrainEfficiency Scheduling Agent.
+
+IMPORTANT:
+Phase 1 established the multi-tenant scheduling foundation with organization-aware data, roles, permissions, bookings, availability, and a scheduling UI.
+
+In Phase 2, we are adding intelligence to the Scheduling Agent.
+
+The agent must now be able to:
+- understand natural language scheduling requests
+- read organization-scoped scheduling data
+- generate intelligent suggestions
+- prepare actions for user confirmation
+
+Do NOT fully automate everything yet.
+This phase should function as an intelligent co-pilot that suggests actions before executing them.
+
+CORE GOAL:
+Allow users to interact with scheduling using natural language and receive intelligent, context-aware scheduling suggestions based on real data.
+
+---
+
+1. NATURAL LANGUAGE UNDERSTANDING
+
+The Scheduling Agent must interpret user input such as:
+
+- "Find open times for Sarah next week"
+- "Book Mike with Coach Alex on Thursday"
+- "Reschedule all Friday morning sessions"
+- "Who hasn't booked this week?"
+- "Fill tomorrow morning"
+- "Move John to the earliest available time"
+
+Convert these into structured intents such as:
+- findAvailability
+- createBooking
+- rescheduleBooking
+- cancelBooking
+- identifyGaps
+- identifyInactiveClients
+
+Build an intent parser layer that maps user input to:
+- intent type
+- entities (client, coach, time, session type, location)
+- constraints (earliest, next week, morning, etc.)
+
+---
+
+2. ORG-AWARE DATA READING
+
+The agent must be able to read scheduling data for the CURRENT organization only:
+
+- bookings
+- coach availability
+- client booking history
+- session types
+- locations/zones
+
+Examples:
+- get all bookings next week
+- get coach availability for a time range
+- find open slots based on availability + existing bookings
+- identify clients with no bookings in a time period
+
+All queries MUST be scoped to the active organization.
+
+---
+
+3. AVAILABILITY + OPEN SLOT ENGINE
+
+Build logic to calculate open slots based on:
+
+- coach availability
+- existing bookings
+- session duration
+- basic constraints (time window, day, etc.)
+
+Examples:
+- "next available slot"
+- "3 open times next week"
+- "morning availability tomorrow"
+
+Return clean, structured options:
+- date
+- time
+- coach
+- session type compatibility
+
+---
+
+4. SUGGESTION ENGINE (CO-PILOT MODE)
+
+The agent should NOT immediately execute actions.
+
+Instead, it should suggest:
+
+Example outputs:
+- "I found 3 available times for Sarah next week: Tuesday 9:00 AM, Wednesday 1:00 PM, Friday 10:30 AM."
+- "John has not booked this week. The closest available time is Thursday at 4:00 PM."
+- "Friday morning has 3 open slots that could be filled."
+
+For booking requests:
+- suggest 1–3 options before booking
+
+For rescheduling:
+- suggest alternative slots
+
+For gap detection:
+- highlight open time blocks
+
+---
+
+5. ACTION PREVIEW SYSTEM
+
+Before executing any action, the agent should generate a preview:
+
+Examples:
+- "Book Sarah with Coach Alex on Tuesday at 9:00 AM?"
+- "Reschedule 3 sessions from Friday morning to next available times?"
+- "Move John to Thursday at 4:00 PM?"
+
+User must confirm before execution.
+
+---
+
+6. LIGHT EXECUTION (CONFIRMATION-BASED)
+
+After confirmation, allow the agent to:
+
+- create booking
+- cancel booking
+- reschedule booking
+
+All actions must:
+- validate organization scope
+- validate coach/client existence
+- validate availability
+- prevent double booking
+
+---
+
+7. CLIENT + UTILIZATION INSIGHTS (BASIC)
+
+Add simple intelligence:
+
+- identify clients who have not booked this week
+- identify open schedule blocks
+- identify coaches with low utilization
+
+Example outputs:
+- "5 clients have not booked this week"
+- "Tuesday 8–10 AM is mostly open"
+- "Coach Alex has 40% availability remaining this week"
+
+---
+
+8. AGENT RESPONSE STYLE
+
+The agent should feel:
+- professional
+- concise
+- helpful
+- operationally intelligent
+
+Avoid robotic responses.
+
+Good example:
+"I found 3 openings for Sarah next week. Want me to book one?"
+
+Bad example:
+"Query complete. Returning availability results."
+
+---
+
+9. UI IMPROVEMENTS
+
+Enhance the Scheduling Agent page with:
+
+- chat interface
+- suggestion cards (click to confirm)
+- quick action buttons:
+  - Find Openings
+  - Book Session
+  - Reschedule
+  - Find Missing Clients
+  - Fill Schedule
+
+- preview/confirmation UI before execution
+
+---
+
+10. ERROR HANDLING
+
+Handle cases like:
+- client not found
+- coach not found
+- no availability
+- invalid time range
+
+Respond clearly:
+"I couldn't find availability for that request. Want me to expand the search?"
+
+---
+
+11. FUTURE COMPATIBILITY
+
+Structure the agent so it can later support:
+- automation (Phase 3)
+- revenue optimization
+- waitlists
+- package tracking
+- facility constraints
+- multi-location optimization
+
+---
+
+PHASE 2 DELIVERABLES:
+
+By the end of Phase 2, the Scheduling Agent should:
+- understand natural language scheduling requests
+- read organization-specific scheduling data
+- calculate availability and open slots
+- suggest bookings and schedule adjustments
+- allow confirmation-based execution
+- surface basic scheduling insights
+- feel like a real assistant, not a static UI
+
+IMPORTANT:
+Do not over-automate yet.
+Focus on intelligence + suggestions + controlled execution.
+
+This phase should feel like:
+"Talk to your schedule and get smart answers."

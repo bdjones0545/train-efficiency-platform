@@ -77,6 +77,41 @@ Phase 1 builds the core scheduling architecture and org-aware data structures fo
 - New "Scheduling" section in sidebar for ADMIN/COACH/STAFF roles
 - Links to /scheduling (Schedule) and /scheduling/agent (Scheduling Agent)
 
+## Phase 2: Intelligent Scheduling Agent (Co-Pilot Mode)
+
+Phase 2 adds full intelligence to the Scheduling Agent — natural language understanding, org-aware data reading, open slot calculation, insights, and confirmation-based execution.
+
+### New Storage Methods (Phase 2)
+- `getBookingsByDateRangeForOrg(orgId, start, end)` — org-wide bookings filtered by date range
+- `findClientsWithNoBookingsSince(orgId, since)` — inactive client detection
+- `getCoachUtilizationForOrg(orgId, start, end)` — per-coach booked vs. available minutes
+
+### New Agent Tools (Phase 2)
+- `get_org_schedule` — full org booking view for a date range (with optional coach filter)
+- `find_inactive_clients` — clients with no booking in the last N days
+- `get_coach_utilization` — utilization % per coach for a week or date range
+- `identify_schedule_gaps` — open time blocks per coach where sessions could be added
+- `reschedule_booking` — reschedule an existing booking to a new time (confirmation required)
+- `find_client` — search a client by name to get their user ID before booking
+
+### Co-Pilot System Prompt (Phase 2)
+- Agent **always suggests before executing** bookings and reschedules
+- Presents 2–3 numbered time options and waits for the user to choose
+- Executes availability changes and insights immediately
+- Professional, concise, operationally sharp tone (not robotic)
+- Quick Action phrases ("Find openings", "Fill schedule", "Who hasn't booked?") are recognized and handled
+
+### UI Enhancements (Phase 2)
+- **Quick Actions grid** — 6 preset buttons on the empty chat screen (This Week's Schedule, Find Open Slots, Book a Session, Reschedule, Missing Clients, Coach Utilization)
+- **Inline confirmation buttons** — "Yes, confirm" / "No, thanks" appear automatically when the agent presents options
+- **Markdown-aware message rendering** — numbered lists, bullet points, and **bold** text rendered natively in chat bubbles
+- **Refined sidebar** — "What I Can Do" capability list updated for Phase 2 tools
+- **Auth fix** — chat route now correctly uses `req.user.claims?.sub` for Bearer token auth; frontend uses `getAuthHeaders()` utility (was using wrong localStorage key)
+
+### Bug Fixes (Phase 2)
+- Scheduling-agent chat route was using `req.user.id` instead of `req.user.claims?.sub` (correct for JWT Bearer token auth flow)
+- Frontend was reading `localStorage.getItem("authToken")` instead of the correct key `"auth_token"` via `getAuthHeaders()`
+
 ## External Dependencies
 -   **PostgreSQL:** Primary database.
 -   **Express.js:** Backend framework.

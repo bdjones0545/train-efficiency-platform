@@ -5263,13 +5263,14 @@ export async function registerRoutes(
   // ===== SCHEDULING AGENT =====
   app.post("/api/scheduling-agent/chat", isAuthenticated, async (req: any, res) => {
     try {
-      const profile = await storage.getUserProfile(req.user.id);
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const { messages } = req.body;
       if (!messages || !Array.isArray(messages)) return res.status(400).json({ message: "messages array required" });
 
-      const user = await storage.getUser(req.user.id);
-      const coachProfile = await storage.getCoachProfileByUserId(req.user.id);
+      const user = await storage.getUser(userId);
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
       const userName = user ? `${user.firstName} ${user.lastName}`.trim() : null;
 
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -5277,7 +5278,7 @@ export async function registerRoutes(
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("X-Accel-Buffering", "no");
 
-      const stream = handleAssistantMessage(messages, req.user.id, profile.role, userName, coachProfile?.id || null, profile.organizationId || null);
+      const stream = handleAssistantMessage(messages, userId, profile.role, userName, coachProfile?.id || null, profile.organizationId || null);
       for await (const chunk of stream) {
         res.write(chunk);
       }
@@ -5290,7 +5291,8 @@ export async function registerRoutes(
 
   app.get("/api/scheduling-agent/context", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {
-      const profile = await storage.getUserProfile(req.user.id);
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const orgCoaches = (await storage.getCoachProfiles()).filter(c => c.organizationId === profile.organizationId);
       const orgServices = await storage.getServicesByOrganization(profile.organizationId);

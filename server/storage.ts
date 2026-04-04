@@ -173,6 +173,9 @@ export interface IStorage {
   deleteBlockedTime(id: string): Promise<boolean>;
 
   getBookingsByOrganization(orgId: string): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]>;
+  getBookingsByDateRangeForOrg(orgId: string, start: Date, end: Date): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]>;
+  findClientsWithNoBookingsSince(orgId: string, since: Date): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; lastBookingDate: string | null }[]>;
+  getCoachUtilizationForOrg(orgId: string, start: Date, end: Date): Promise<{ coachId: string; coachName: string; bookedMinutes: number; availableMinutes: number; utilizationPct: number }[]>;
 
   createTeamQuote(quote: InsertTeamQuote): Promise<TeamQuote>;
   getTeamQuotes(coachId: string): Promise<TeamQuote[]>;
@@ -1240,6 +1243,133 @@ export class DatabaseStorage implements IStorage {
       client: r.users ?? undefined,
       coach: r.coach_profiles ? { ...r.coach_profiles, user: coachUserMap.get(r.coach_profiles.userId)! } : undefined,
     }));
+  }
+
+  async getBookingsByDateRangeForOrg(
+    orgId: string,
+    start: Date,
+    end: Date
+  ): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]> {
+    const orgCoaches = await db.select().from(coachProfiles).where(eq(coachProfiles.organizationId, orgId));
+    const orgCoachIds = orgCoaches.map(c => c.id);
+    if (orgCoachIds.length === 0) return [];
+
+    const rows = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(users, eq(bookings.clientId, users.id))
+      .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+      .where(
+        and(
+          inArray(bookings.coachId, orgCoachIds),
+          gte(bookings.startAt, start),
+          lte(bookings.startAt, end)
+        )
+      )
+      .orderBy(bookings.startAt);
+
+    const coachUserIds = [...new Set(rows.map(r => r.coach_profiles?.userId).filter(Boolean) as string[])];
+    const coachUsers = coachUserIds.length > 0
+      ? await db.select().from(users).where(inArray(users.id, coachUserIds))
+      : [];
+    const coachUserMap = new Map(coachUsers.map(u => [u.id, u]));
+
+    return rows.map(r => ({
+      ...r.bookings,
+      service: r.services ?? undefined,
+      client: r.users ?? undefined,
+      coach: r.coach_profiles ? { ...r.coach_profiles, user: coachUserMap.get(r.coach_profiles.userId)! } : undefined,
+    }));
+  }
+
+  async findClientsWithNoBookingsSince(
+    orgId: string,
+    since: Date
+  ): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; lastBookingDate: string | null }[]> {
+    const orgCoaches = await db.select().from(coachProfiles).where(eq(coachProfiles.organizationId, orgId));
+    const orgCoachIds = orgCoaches.map(c => c.id);
+    if (orgCoachIds.length === 0) return [];
+
+    const allOrgBookings = await db
+      .select({ clientId: bookings.clientId, startAt: bookings.startAt })
+      .from(bookings)
+      .where(and(inArray(bookings.coachId, orgCoachIds), ne(bookings.status, "CANCELLED")));
+
+    const clientLastBooking = new Map<string, Date>();
+    for (const b of allOrgBookings) {
+      if (!b.clientId) continue;
+      const bDate = new Date(b.startAt);
+      const existing = clientLastBooking.get(b.clientId);
+      if (!existing || bDate > existing) clientLastBooking.set(b.clientId, bDate);
+    }
+
+    const inactiveClientIds = [...clientLastBooking.entries()]
+      .filter(([, lastDate]) => lastDate < since)
+      .map(([id]) => id);
+
+    if (inactiveClientIds.length === 0) return [];
+
+    const clientUsers = await db.select().from(users).where(inArray(users.id, inactiveClientIds));
+    return clientUsers.map(u => ({
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email,
+      lastBookingDate: clientLastBooking.get(u.id)?.toISOString().split("T")[0] ?? null,
+    }));
+  }
+
+  async getCoachUtilizationForOrg(
+    orgId: string,
+    start: Date,
+    end: Date
+  ): Promise<{ coachId: string; coachName: string; bookedMinutes: number; availableMinutes: number; utilizationPct: number }[]> {
+    const orgCoaches = await db.select().from(coachProfiles).where(eq(coachProfiles.organizationId, orgId));
+    if (orgCoaches.length === 0) return [];
+
+    const coachUserIds = orgCoaches.map(c => c.userId);
+    const coachUsers = await db.select().from(users).where(inArray(users.id, coachUserIds));
+    const coachUserMap = new Map(coachUsers.map(u => [u.id, u]));
+
+    const results = [];
+    const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+    for (const coach of orgCoaches) {
+      const coachUser = coachUserMap.get(coach.userId);
+      const coachName = coachUser ? `${coachUser.firstName} ${coachUser.lastName}` : "Unknown";
+
+      const coachBookings = await db
+        .select()
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.coachId, coach.id),
+            gte(bookings.startAt, start),
+            lte(bookings.startAt, end),
+            ne(bookings.status, "CANCELLED")
+          )
+        );
+
+      const bookedMinutes = coachBookings.reduce((sum, b) => {
+        const mins = (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000;
+        return sum + mins;
+      }, 0);
+
+      const blocks = await db.select().from(availabilityBlocks).where(eq(availabilityBlocks.coachId, coach.id));
+      let availableMinutes = 0;
+      for (const block of blocks) {
+        const [sh, sm] = block.startTime.split(":").map(Number);
+        const [eh, em] = block.endTime.split(":").map(Number);
+        const blockMins = (eh * 60 + em) - (sh * 60 + sm);
+        availableMinutes += blockMins * Math.ceil(totalDays / 7);
+      }
+
+      const utilizationPct = availableMinutes > 0 ? Math.round((bookedMinutes / availableMinutes) * 100) : 0;
+      results.push({ coachId: coach.id, coachName, bookedMinutes, availableMinutes, utilizationPct });
+    }
+
+    return results;
   }
 }
 
