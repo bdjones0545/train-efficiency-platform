@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
@@ -160,17 +160,16 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  const RESET_NEUTRAL_MSG = "If an account exists for that email, a password reset link has been sent.";
+  const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
   const resetRateLimitByIp = new Map<string, { count: number; resetAt: number }>();
   const resetRateLimitByEmail = new Map<string, { count: number; resetAt: number }>();
-  const RATE_WINDOW_MS = 15 * 60 * 1000;
-  const MAX_BY_IP = 10;
-  const MAX_BY_EMAIL = 5;
 
-  function checkRateLimit(map: Map<string, { count: number; resetAt: number }>, key: string, max: number): boolean {
+  function incrementRateLimit(map: Map<string, { count: number; resetAt: number }>, key: string, max: number): boolean {
     const now = Date.now();
     const entry = map.get(key);
     if (!entry || now > entry.resetAt) {
-      map.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+      map.set(key, { count: 1, resetAt: now + RESET_RATE_WINDOW_MS });
       return true;
     }
     if (entry.count >= max) return false;
@@ -178,25 +177,33 @@ export async function registerRoutes(
     return true;
   }
 
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  const MAX_TOKEN_LEN = 200;
+
+  storage.cleanupExpiredResetTokens().catch(() => {});
+
   app.post("/api/auth/forgot-password", async (req: any, res) => {
+    const NEUTRAL = { message: RESET_NEUTRAL_MSG };
     try {
       const { email } = req.body;
-      if (!email || typeof email !== "string") {
-        return res.status(400).json({ message: "Email is required" });
+      if (!email || typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
+        return res.status(400).json({ message: "A valid email address is required." });
       }
 
       const normalizedEmail = email.trim().toLowerCase();
       const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
 
-      if (!checkRateLimit(resetRateLimitByIp, ip, MAX_BY_IP) || !checkRateLimit(resetRateLimitByEmail, normalizedEmail, MAX_BY_EMAIL)) {
-        return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+      const ipOk = incrementRateLimit(resetRateLimitByIp, ip, 10);
+      const emailOk = incrementRateLimit(resetRateLimitByEmail, normalizedEmail, 5);
+      if (!ipOk || !emailOk) {
+        return res.json(NEUTRAL);
       }
 
       const coachProfile = await storage.getCoachProfileByEmail(normalizedEmail);
       const user = !coachProfile ? await storage.getUserByEmail(normalizedEmail) : null;
 
       if (!coachProfile && !user) {
-        return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+        return res.json(NEUTRAL);
       }
 
       await storage.invalidatePriorResetTokens(normalizedEmail);
@@ -218,45 +225,48 @@ export async function registerRoutes(
         : process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
       const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
 
-      await sendPasswordResetEmail(normalizedEmail, resetUrl);
+      sendPasswordResetEmail(normalizedEmail, resetUrl).catch((err) => {
+        console.error("Password reset email send failure:", err);
+      });
 
-      return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+      return res.json(NEUTRAL);
     } catch (error) {
       console.error("Forgot password error:", error);
-      return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+      return res.json({ message: RESET_NEUTRAL_MSG });
     }
   });
 
   app.get("/api/auth/validate-reset-token", async (req: any, res) => {
     try {
       const { token } = req.query;
-      if (!token || typeof token !== "string") {
-        return res.status(400).json({ valid: false, message: "Token is required" });
+      if (!token || typeof token !== "string" || token.length > MAX_TOKEN_LEN) {
+        return res.json({ valid: false });
       }
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
       const record = await storage.findValidResetToken(tokenHash);
-      if (!record) {
-        return res.json({ valid: false, message: "This reset link is invalid or has expired." });
-      }
-      return res.json({ valid: true });
+      return res.json({ valid: !!record });
     } catch (error) {
       console.error("Validate reset token error:", error);
-      return res.status(500).json({ valid: false, message: "Server error" });
+      return res.json({ valid: false });
     }
   });
 
   app.post("/api/auth/reset-password", async (req: any, res) => {
     try {
       const { token, password } = req.body;
-      if (!token || !password) {
-        return res.status(400).json({ message: "Token and password are required" });
+      if (!token || typeof token !== "string" || token.length > MAX_TOKEN_LEN) {
+        return res.status(400).json({ message: "Invalid request." });
+      }
+      if (!password || typeof password !== "string") {
+        return res.status(400).json({ message: "Password is required." });
       }
 
       const passwordSchema = z.string()
         .min(8, "Password must be at least 8 characters")
         .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
         .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-        .regex(/[0-9]/, "Password must contain at least one number");
+        .regex(/[0-9]/, "Password must contain at least one number")
+        .max(128, "Password must not exceed 128 characters");
 
       const validation = passwordSchema.safeParse(password);
       if (!validation.success) {
@@ -273,11 +283,21 @@ export async function registerRoutes(
 
       if (record.coachProfileId) {
         await storage.updateCoachProfilePassword(record.coachProfileId, newHash);
+        if (record.userId) {
+          const existingUser = await storage.getUser(record.userId);
+          if (existingUser?.passwordHash) {
+            await storage.updateUserPassword(record.userId, newHash);
+          }
+        }
       } else if (record.userId) {
         await storage.updateUserPassword(record.userId, newHash);
       }
 
       await storage.markResetTokenUsed(record.id);
+
+      if (record.userId) {
+        deleteAllUserAuthTokens(record.userId).catch(() => {});
+      }
 
       return res.json({ success: true, message: "Your password has been reset successfully. Please sign in." });
     } catch (error) {

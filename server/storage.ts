@@ -214,6 +214,7 @@ export interface IStorage {
   markResetTokenUsed(id: string): Promise<void>;
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
   updateCoachProfilePassword(coachProfileId: string, passwordHash: string): Promise<void>;
+  cleanupExpiredResetTokens(): Promise<void>;
 
   getAllOrganizations(): Promise<Organization[]>;
   getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
@@ -1517,8 +1518,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
-    const { users: usersTable } = await import("@shared/models/auth");
-    await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+    await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async cleanupExpiredResetTokens(): Promise<void> {
+    await db.delete(passwordResetTokens).where(
+      or(
+        lt(passwordResetTokens.expiresAt, new Date()),
+        and(
+          sql`${passwordResetTokens.usedAt} IS NOT NULL`,
+          lt(passwordResetTokens.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+        )
+      )
+    );
   }
 
   async updateCoachProfilePassword(coachProfileId: string, passwordHash: string): Promise<void> {

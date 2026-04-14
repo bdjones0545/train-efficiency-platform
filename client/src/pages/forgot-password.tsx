@@ -6,23 +6,38 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { apiRequest } from "@/lib/queryClient";
 import { ArrowLeft, Mail, CheckCircle2, Loader2 } from "lucide-react";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
+  const emailValid = EMAIL_REGEX.test(email.trim());
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!emailValid) return;
     setError("");
     setIsLoading(true);
 
     try {
       await apiRequest("POST", "/api/auth/forgot-password", { email: email.trim() });
       setSubmitted(true);
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err: any) {
+      try {
+        const msg = err?.message || "";
+        const match = msg.match(/^\d+: (.+)$/);
+        if (match) {
+          const parsed = JSON.parse(match[1]);
+          setError(parsed.message || "Something went wrong. Please try again.");
+        } else {
+          setError("Something went wrong. Please try again.");
+        }
+      } catch {
+        setError("Something went wrong. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -101,7 +116,7 @@ export default function ForgotPasswordPage() {
                   type="submit"
                   className="w-full"
                   size="lg"
-                  disabled={isLoading || !email.trim()}
+                  disabled={isLoading || !emailValid}
                   data-testid="button-forgot-submit"
                 >
                   {isLoading ? (

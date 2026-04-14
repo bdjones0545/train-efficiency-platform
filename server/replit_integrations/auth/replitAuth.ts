@@ -154,6 +154,10 @@ export async function deleteAuthToken(token: string): Promise<void> {
   await db.execute(sql`DELETE FROM auth_tokens WHERE token = ${token}`);
 }
 
+export async function deleteAllUserAuthTokens(userId: string): Promise<void> {
+  await db.execute(sql`DELETE FROM auth_tokens WHERE user_id = ${userId}`);
+}
+
 async function getUserIdFromToken(token: string): Promise<string | null> {
   const result = await db.execute(sql`
     SELECT user_id FROM auth_tokens
