@@ -38,6 +38,8 @@ import OrgLandingPage from "@/pages/org-landing";
 import PrivacyPolicyPage from "@/pages/privacy-policy";
 import TermsConditionsPage from "@/pages/terms-conditions";
 import CreatePasswordPage from "@/pages/create-password";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import ClientPortalPage from "@/pages/client-portal";
 import SubscribePage from "@/pages/subscribe";
 import ClaimSubscriptionPage from "@/pages/claim-subscription";
@@ -197,6 +199,8 @@ function PublicLayout() {
       <Route path="/subscribe/:planId" component={SubscribePage} />
       <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
       <Route path="/create-password" component={CreatePasswordPage} />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/privacy" component={PrivacyPolicyPage} />
       <Route path="/terms" component={TermsConditionsPage} />
       <Route><LandingPage /></Route>

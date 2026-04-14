@@ -5,7 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, type OrgBranding } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, type OrgBranding } from "./email";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -159,6 +159,132 @@ export async function registerRoutes(
 ): Promise<Server> {
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  const resetRateLimitByIp = new Map<string, { count: number; resetAt: number }>();
+  const resetRateLimitByEmail = new Map<string, { count: number; resetAt: number }>();
+  const RATE_WINDOW_MS = 15 * 60 * 1000;
+  const MAX_BY_IP = 10;
+  const MAX_BY_EMAIL = 5;
+
+  function checkRateLimit(map: Map<string, { count: number; resetAt: number }>, key: string, max: number): boolean {
+    const now = Date.now();
+    const entry = map.get(key);
+    if (!entry || now > entry.resetAt) {
+      map.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+      return true;
+    }
+    if (entry.count >= max) return false;
+    entry.count++;
+    return true;
+  }
+
+  app.post("/api/auth/forgot-password", async (req: any, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== "string") {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+
+      if (!checkRateLimit(resetRateLimitByIp, ip, MAX_BY_IP) || !checkRateLimit(resetRateLimitByEmail, normalizedEmail, MAX_BY_EMAIL)) {
+        return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+      }
+
+      const coachProfile = await storage.getCoachProfileByEmail(normalizedEmail);
+      const user = !coachProfile ? await storage.getUserByEmail(normalizedEmail) : null;
+
+      if (!coachProfile && !user) {
+        return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+      }
+
+      await storage.invalidatePriorResetTokens(normalizedEmail);
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      await storage.createPasswordResetToken({
+        email: normalizedEmail,
+        userId: coachProfile ? coachProfile.userId : user?.id,
+        coachProfileId: coachProfile?.id,
+        tokenHash,
+        expiresAt,
+      });
+
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+      const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
+
+      await sendPasswordResetEmail(normalizedEmail, resetUrl);
+
+      return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      return res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+    }
+  });
+
+  app.get("/api/auth/validate-reset-token", async (req: any, res) => {
+    try {
+      const { token } = req.query;
+      if (!token || typeof token !== "string") {
+        return res.status(400).json({ valid: false, message: "Token is required" });
+      }
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const record = await storage.findValidResetToken(tokenHash);
+      if (!record) {
+        return res.json({ valid: false, message: "This reset link is invalid or has expired." });
+      }
+      return res.json({ valid: true });
+    } catch (error) {
+      console.error("Validate reset token error:", error);
+      return res.status(500).json({ valid: false, message: "Server error" });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req: any, res) => {
+    try {
+      const { token, password } = req.body;
+      if (!token || !password) {
+        return res.status(400).json({ message: "Token and password are required" });
+      }
+
+      const passwordSchema = z.string()
+        .min(8, "Password must be at least 8 characters")
+        .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+        .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+        .regex(/[0-9]/, "Password must contain at least one number");
+
+      const validation = passwordSchema.safeParse(password);
+      if (!validation.success) {
+        return res.status(400).json({ message: validation.error.errors[0].message });
+      }
+
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const record = await storage.findValidResetToken(tokenHash);
+      if (!record) {
+        return res.status(400).json({ message: "This reset link is invalid or has expired." });
+      }
+
+      const newHash = await bcrypt.hash(password, 10);
+
+      if (record.coachProfileId) {
+        await storage.updateCoachProfilePassword(record.coachProfileId, newHash);
+      } else if (record.userId) {
+        await storage.updateUserPassword(record.userId, newHash);
+      }
+
+      await storage.markResetTokenUsed(record.id);
+
+      return res.json({ success: true, message: "Your password has been reset successfully. Please sign in." });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      return res.status(500).json({ message: "Server error. Please try again." });
+    }
+  });
 
   app.post("/api/coach/login", async (req: any, res) => {
     try {

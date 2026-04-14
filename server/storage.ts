@@ -65,8 +65,9 @@ import {
   type InsertUserSubscription,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
+import { passwordResetTokens } from "@shared/models/auth";
 import { db } from "./db";
-import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike, inArray, ne } from "drizzle-orm";
+import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike, inArray, ne, isNull } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -206,6 +207,13 @@ export interface IStorage {
   getSetting(key: string): Promise<string | undefined>;
   setSetting(key: string, value: string): Promise<void>;
   getAllSettings(): Promise<{ key: string; value: string }[]>;
+
+  createPasswordResetToken(data: { email: string; userId?: string; coachProfileId?: string; tokenHash: string; expiresAt: Date }): Promise<void>;
+  invalidatePriorResetTokens(email: string): Promise<void>;
+  findValidResetToken(tokenHash: string): Promise<import("@shared/models/auth").PasswordResetToken | undefined>;
+  markResetTokenUsed(id: string): Promise<void>;
+  updateUserPassword(userId: string, passwordHash: string): Promise<void>;
+  updateCoachProfilePassword(coachProfileId: string, passwordHash: string): Promise<void>;
 
   getAllOrganizations(): Promise<Organization[]>;
   getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
@@ -1475,6 +1483,46 @@ export class DatabaseStorage implements IStorage {
 
   async setOrgAutomationLevel(orgId: string, level: number): Promise<void> {
     await db.execute(sql`UPDATE organizations SET automation_level = ${level} WHERE id = ${orgId}`);
+  }
+
+  async createPasswordResetToken(data: { email: string; userId?: string; coachProfileId?: string; tokenHash: string; expiresAt: Date }): Promise<void> {
+    await db.insert(passwordResetTokens).values({
+      email: data.email.toLowerCase(),
+      userId: data.userId || null,
+      coachProfileId: data.coachProfileId || null,
+      tokenHash: data.tokenHash,
+      expiresAt: data.expiresAt,
+    });
+  }
+
+  async invalidatePriorResetTokens(email: string): Promise<void> {
+    await db.delete(passwordResetTokens).where(
+      and(eq(passwordResetTokens.email, email.toLowerCase()), isNull(passwordResetTokens.usedAt))
+    );
+  }
+
+  async findValidResetToken(tokenHash: string): Promise<import("@shared/models/auth").PasswordResetToken | undefined> {
+    const [token] = await db.select().from(passwordResetTokens).where(
+      and(
+        eq(passwordResetTokens.tokenHash, tokenHash),
+        isNull(passwordResetTokens.usedAt),
+        gt(passwordResetTokens.expiresAt, new Date())
+      )
+    );
+    return token || undefined;
+  }
+
+  async markResetTokenUsed(id: string): Promise<void> {
+    await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, id));
+  }
+
+  async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
+    const { users: usersTable } = await import("@shared/models/auth");
+    await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+  }
+
+  async updateCoachProfilePassword(coachProfileId: string, passwordHash: string): Promise<void> {
+    await db.update(coachProfiles).set({ passwordHash }).where(eq(coachProfiles.id, coachProfileId));
   }
 }
 

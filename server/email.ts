@@ -627,3 +627,19 @@ export async function sendSchedulingInquiryEmail(
   `, org);
   await sendEmail(toEmail, subject, html, b.name);
 }
+
+export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {
+  const subject = "Reset your TrainEfficiency password";
+  const html = emailShell("Reset Your Password", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi,</p>
+    ${para("We received a request to reset the password for your TrainEfficiency account. Click the button below to set a new password:")}
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="${resetUrl}" style="display: inline-block; background: #16a34a; color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-size: 16px; font-weight: 600;">Reset Password</a>
+    </div>
+    ${para("Or copy and paste this link into your browser:")}
+    <p style="font-size: 13px; color: #888; word-break: break-all; margin: 8px 0 16px;">${resetUrl}</p>
+    ${para("This link will expire in <strong>1 hour</strong>.")}
+    ${para("If you didn't request a password reset, you can safely ignore this email — your password will not be changed.")}
+  `);
+  await sendEmail(toEmail, subject, html, "Train Efficiency");
+}
