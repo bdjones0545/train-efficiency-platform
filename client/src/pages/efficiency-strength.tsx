@@ -423,7 +423,16 @@ export default function EfficiencyStrengthPage() {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="coach-password" className="text-sm font-medium">Password</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="coach-password" className="text-sm font-medium">Password</label>
+                <a
+                  href="/forgot-password"
+                  className="text-sm text-primary hover:underline underline-offset-4"
+                  data-testid="link-coach-forgot-password"
+                >
+                  Forgot password?
+                </a>
+              </div>
               <div className="relative">
                 <Input
                   id="coach-password"
@@ -520,7 +529,18 @@ export default function EfficiencyStrengthPage() {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="client-password" className="text-sm font-medium">Password</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="client-password" className="text-sm font-medium">Password</label>
+                {!isSignUp && (
+                  <a
+                    href="/forgot-password"
+                    className="text-sm text-primary hover:underline underline-offset-4"
+                    data-testid="link-client-forgot-password"
+                  >
+                    Forgot password?
+                  </a>
+                )}
+              </div>
               <div className="relative">
                 <Input
                   id="client-password"

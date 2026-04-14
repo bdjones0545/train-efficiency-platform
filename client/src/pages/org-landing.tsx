@@ -589,7 +589,16 @@ export default function OrgLandingPage() {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="org-coach-password" className="text-sm font-medium">Password</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="org-coach-password" className="text-sm font-medium">Password</label>
+                <a
+                  href="/forgot-password"
+                  className="text-sm text-primary hover:underline underline-offset-4"
+                  data-testid="link-org-coach-forgot-password"
+                >
+                  Forgot password?
+                </a>
+              </div>
               <div className="relative">
                 <Input
                   id="org-coach-password"
@@ -683,7 +692,18 @@ export default function OrgLandingPage() {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="org-client-password" className="text-sm font-medium">Password</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="org-client-password" className="text-sm font-medium">Password</label>
+                {!isSignUp && (
+                  <a
+                    href="/forgot-password"
+                    className="text-sm text-primary hover:underline underline-offset-4"
+                    data-testid="link-org-client-forgot-password"
+                  >
+                    Forgot password?
+                  </a>
+                )}
+              </div>
               <div className="relative">
                 <Input
                   id="org-client-password"
