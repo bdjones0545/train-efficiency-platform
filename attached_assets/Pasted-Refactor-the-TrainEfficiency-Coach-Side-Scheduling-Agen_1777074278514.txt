@@ -1,0 +1,212 @@
+Refactor the TrainEfficiency Coach-Side Scheduling Agent UI into a mobile-first action-driven layout.
+
+Current issue:
+The current mobile UI looks clean, but it behaves like a dashboard. Users must scroll before reaching the chat input or the most useful actions. The agent is now a goal-driven business operator, so the UI should lead with what the coach should do today.
+
+Do not change backend logic. Do not remove existing tools. This is a UI/UX refactor only.
+
+PRIMARY GOAL:
+On mobile, the user should understand the most important business action in under 5 seconds without scrolling.
+
+========================
+PHASE 1 — MOBILE-FIRST DEFAULT SCREEN
+========================
+
+Change the coach agent default view from a static button grid to a “Today Command Center.”
+
+At the top of the Chat tab, show:
+
+1. Compact status header:
+- TrainEfficiency Scheduling Agent
+- status pill: Revenue Intelligence Active
+- optional smaller text: Goal-Driven Operator
+
+Reduce vertical padding by 30–40%.
+Shrink the large center icon or remove it on mobile.
+
+2. Primary Action Card:
+Show one dynamic headline:
+- “You’re $X behind this week’s goal”
+- “X high-priority actions today”
+- “X open slots worth ~$Y”
+- “X clients need follow-up”
+
+Use the best available data from:
+- get_daily_action_queue
+- get_weekly_progress
+- get_strategic_recommendations
+
+If data is loading, show a clean skeleton.
+If no data exists, show:
+“Ask what needs attention today.”
+
+CTA button:
+- “View Today’s Actions”
+
+========================
+PHASE 2 — TOP 3 ACTIONS ABOVE THE FOLD
+========================
+
+Below the Primary Action Card, show a compact “Top Actions Today” section.
+
+Display the top 3 ROI-ranked actions from get_daily_action_queue.
+
+Each action card should include:
+- client name or action name
+- reason
+- expected revenue impact if available
+- urgency/status pill
+- recommended next action
+
+Example:
+Mike Torres
+Follow-up due — no response in 48h
+Expected: $70
+Button: Draft / Send / View
+
+For now, buttons can trigger the existing chat prompt if direct action handlers are not already connected.
+
+Examples:
+- Draft Message → sends prompt: “Draft the recommended message for Mike Torres”
+- View Slot Options → sends prompt: “Show options to fill Tuesday 7am”
+- Start Campaign → sends prompt: “Start the recommended campaign for Sarah”
+
+========================
+PHASE 3 — REPLACE 2x3 BUTTON GRID ON MOBILE
+========================
+
+On mobile only, replace the large 2-column grid with a vertical priority stack.
+
+Order:
+1. What Needs Attention
+2. Revenue Opportunities
+3. Churn Risks
+4. This Week’s Schedule
+5. Book a Session
+6. Operations Summary
+
+Each item should be a compact row card:
+- icon
+- title
+- one-line description
+- chevron or tap indicator
+
+Tap behavior:
+- use existing quick action behavior
+- send the same prompt that the old button sent
+
+Desktop/tablet can keep the grid if it looks good.
+Mobile should prioritize the vertical stack.
+
+========================
+PHASE 4 — COLLAPSIBLE SECTIONS
+========================
+
+Add collapsible sections under Top Actions:
+
+- Revenue
+- Growth
+- Churn
+- Schedule
+- Operations
+
+Default collapsed on mobile.
+Default expanded or grid-based on desktop if preferred.
+
+Each collapsed card should show a small preview:
+- Revenue: “This week vs last week”
+- Growth: “Top opportunity”
+- Churn: “At-risk clients”
+- Schedule: “Today / this week”
+- Operations: “What needs attention”
+
+This prevents long scroll depth.
+
+========================
+PHASE 5 — STICKY CHAT INPUT
+========================
+
+Make the chat input sticky at the bottom on mobile.
+
+Requirements:
+- Always visible without scrolling
+- Respect safe-area inset on iPhone
+- Avoid being hidden behind browser controls
+- Add bottom padding to content so last card is not covered
+- Keep send button visible and tappable
+
+Use CSS like:
+position: sticky or fixed depending on current layout
+bottom: env(safe-area-inset-bottom)
+
+Make sure it works inside the current Replit/mobile browser viewport.
+
+========================
+PHASE 6 — MOBILE SPACING AND VIEWPORT FIXES
+========================
+
+Fix mobile overflow and unnecessary scrolling.
+
+Audit:
+- container min-height
+- header height
+- tab bar height
+- padding top/bottom
+- card margins
+- any fixed height causing scroll
+
+Target:
+- primary action card and top 3 actions should be visible quickly
+- chat input should be visible without requiring full-page scroll
+- no horizontal overflow
+- tab labels should not get cut off
+
+If tabs overflow, make them horizontally scrollable with hidden scrollbar or shorten labels:
+- Chat
+- Ops
+- Revenue
+- Settings
+
+========================
+PHASE 7 — COPY UPDATES
+========================
+
+Replace static title copy:
+
+Current:
+“Scheduling Agent — Phase 4”
+“Revenue intelligence, retention, and growth automation built in.”
+
+New mobile copy:
+“Today’s Business Command Center”
+“Your highest-impact actions, ranked by goal and revenue.”
+
+Button/section labels:
+- Revenue Summary → Revenue
+- Growth Opportunities → Growth
+- Churn Risks → Retention Risks
+- This Week’s Schedule → Schedule
+- Operations Summary → Ops Summary
+
+========================
+PHASE 8 — VALIDATION
+========================
+
+Test on mobile viewport:
+
+1. Open coach scheduling agent.
+2. Confirm no unnecessary scroll is needed to see:
+   - main action card
+   - at least 2 top actions
+   - chat input
+3. Confirm old quick actions still work.
+4. Confirm desktop layout is not broken.
+5. Confirm tab bar does not overflow awkwardly.
+6. Confirm sticky input works on iPhone viewport.
+7. Confirm loading and empty states are clean.
+
+Return:
+- files changed
+- components created/modified
+- before/after behavior
+- any remaining issues
