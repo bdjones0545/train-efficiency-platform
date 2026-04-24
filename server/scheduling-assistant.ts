@@ -402,29 +402,42 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "get_revenue_forecast",
-      description: "Forecast projected end-of-month revenue based on: revenue already collected, future confirmed bookings, and subscription MRR. Use whenever the coach asks what they're projected to make, whether they're on track, or what they need to hit a target.",
-      parameters: { type: "object", properties: {} },
+      description: "Forecast projected end-of-month revenue based on: revenue already collected, future confirmed bookings, and subscription MRR. Use whenever the coach asks what they're projected to make, whether they're on track, or what they need to hit a revenue target. If a target dollar amount is provided, pass it as targetCents — the tool will compute exactly how many sessions are needed to close the gap. Never calculate this in response text.",
+      parameters: {
+        type: "object",
+        properties: {
+          targetCents: {
+            type: "number",
+            description: "Optional revenue target in cents (e.g. 1500000 for $15,000). When provided, the tool returns the gap and exact sessions needed. Do NOT compute this yourself — always pass it here.",
+          },
+        },
+      },
     },
   },
   {
     type: "function",
     function: {
       name: "preview_recurring_sessions",
-      description: "Preview a recurring session schedule without booking anything. Checks every date for conflicts and returns available vs conflicted dates. ALWAYS call this before create_confirmed_recurring_sessions. Use when a coach wants to book recurring sessions for a client.",
+      description: "Preview a recurring session schedule without booking anything. Checks every date for conflicts and returns available vs conflicted dates. ALWAYS call this before create_confirmed_recurring_sessions. For multi-day recurring (e.g. 'Monday and Thursday'), use the recurrenceDays array — a single tool call handles all days at once. Do NOT make separate preview calls per day.",
       parameters: {
         type: "object",
         properties: {
           clientId: { type: "string", description: "Client user ID" },
           coachId: { type: "string", description: "Coach ID" },
           serviceId: { type: "string", description: "Service ID" },
-          startDate: { type: "string", description: "Date of first session in YYYY-MM-DD format" },
+          startDate: { type: "string", description: "The week start date to begin scheduling from, in YYYY-MM-DD format. Occurrences are generated from the first matching day on or after this date." },
           startTime: { type: "string", description: "Session start time in HH:MM 24-hour format (e.g. '07:00')" },
           recurrencePattern: {
             type: "string",
             enum: ["weekly", "biweekly"],
-            description: "How often sessions repeat",
+            description: "How often sessions repeat. Use 'weekly' for Monday+Thursday patterns.",
           },
-          occurrences: { type: "number", description: "Total number of sessions to schedule" },
+          occurrences: { type: "number", description: "Total number of sessions per recurrence day. E.g. 6 weeks × 2 days = pass occurrences: 6 (tool generates 6 per day)." },
+          recurrenceDays: {
+            type: "array",
+            items: { type: "string", enum: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] },
+            description: "REQUIRED when booking multiple days per week (e.g. ['monday', 'thursday']). When provided, startDate/startTime is used as a reference week and occurrences are generated for each specified day. Omit for single-day recurring.",
+          },
         },
         required: ["clientId", "coachId", "serviceId", "startDate", "startTime", "recurrencePattern", "occurrences"],
       },
@@ -486,9 +499,37 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             type: "string",
             description: "Additional context: cancelled slot time for backfill, package name for renewal, specific upsell offer, etc.",
           },
+          targetSlot: {
+            type: "string",
+            description: "For backfill outreach: the specific open slot to fill, as a human-readable string (e.g. 'Tuesday at 7:00 AM'). When provided, the drafted messages reference this specific time.",
+          },
         },
         required: ["clientId", "reason", "goal"],
       },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_client_bookings",
+      description: "Get upcoming (and recent past) bookings for a specific client by their ID. Use any time a prompt references 'their session', 'next session', 'existing booking', or 'current schedule'. Never use get_org_schedule for client-specific queries.",
+      parameters: {
+        type: "object",
+        properties: {
+          clientId: { type: "string", description: "The client's user ID" },
+          lookAheadDays: { type: "number", description: "How many days ahead to look for upcoming sessions (default: 30)" },
+          includePast: { type: "boolean", description: "If true, also include recent past sessions from the last 30 days (default: false)" },
+        },
+        required: ["clientId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_weekly_business_recap",
+      description: "Generate a complete weekly business recap: revenue this week vs last week, sessions completed and cancelled, current capacity risks, growth opportunities, and 3 top next actions. Use for 'weekly recap', 'how was my week', 'week in review', or any end-of-week summary request.",
+      parameters: { type: "object", properties: {} },
     },
   },
 ];
@@ -695,6 +736,56 @@ async function executeTool(
           status: b.status,
           location: (b as any).location || "",
         })));
+      }
+
+      case "get_client_bookings": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view client bookings." });
+        }
+        const { clientId: lookupClientId, lookAheadDays = 30, includePast = false } = args;
+        if (!lookupClientId) return JSON.stringify({ error: "clientId is required." });
+
+        const allClientBookings = await storage.getBookings(lookupClientId);
+        const now = new Date();
+        const futureLimit = addDays(now, lookAheadDays);
+        const pastLimit = addDays(now, -30);
+
+        const upcoming = allClientBookings.filter(b => {
+          const t = new Date(b.startAt);
+          return t >= now && t <= futureLimit && b.status !== "CANCELLED";
+        });
+
+        const past = includePast
+          ? allClientBookings.filter(b => {
+              const t = new Date(b.startAt);
+              return t >= pastLimit && t < now && b.status !== "CANCELLED";
+            })
+          : [];
+
+        const fmt = (b: typeof allClientBookings[number]) => ({
+          bookingId: b.id,
+          service: b.service?.name ?? "Unknown Service",
+          coach: b.coach?.user ? `${b.coach.user.firstName} ${b.coach.user.lastName}` : "Unknown Coach",
+          coachId: b.coachId,
+          serviceId: b.serviceId,
+          date: format(new Date(b.startAt), "EEEE, MMM d"),
+          startTime: format(new Date(b.startAt), "h:mm a"),
+          endTime: format(new Date(b.endAt), "h:mm a"),
+          startAt: new Date(b.startAt).toISOString(),
+          endAt: new Date(b.endAt).toISOString(),
+          status: b.status,
+          location: (b as any).location || "",
+        });
+
+        if (upcoming.length === 0 && past.length === 0) {
+          return JSON.stringify({ message: "No bookings found for this client in the specified range.", upcoming: [], past: [] });
+        }
+
+        return JSON.stringify({
+          upcomingCount: upcoming.length,
+          upcoming: upcoming.map(fmt),
+          ...(includePast ? { pastCount: past.length, recentPast: past.map(fmt) } : {}),
+        });
       }
 
       case "cancel_booking": {
@@ -939,21 +1030,81 @@ async function executeTool(
         }
 
         const { getUtilizationStatus } = await import("./scheduling-intelligence");
+        const { differenceInMinutes: diffMins } = await import("date-fns");
+        const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+        const coachesWithDays = await Promise.all(utilization.map(async u => {
+          const statusInfo = getUtilizationStatus(u.utilizationPct, u.availableMinutes);
+          const blocks = await storage.getAvailabilityBlocks(u.coachId);
+          const coachAllBookings = await storage.getCoachBookings(u.coachId);
+          const weekBookings = coachAllBookings.filter(b => {
+            const t = new Date(b.startAt);
+            return t >= startDate && t <= endDate && b.status !== "CANCELLED";
+          });
+
+          const dailyBreakdown: {
+            date: string;
+            dayOfWeek: string;
+            availableHours: string;
+            bookedHours: string;
+            openHours: string;
+            utilizationPct: number;
+            statusLabel: string;
+          }[] = [];
+
+          let cursor = new Date(startDate);
+          while (cursor <= endDate) {
+            const dayOfWeek = (cursor.getDay() + 6) % 7;
+            const dateStr = format(cursor, "yyyy-MM-dd");
+            const dayBlocks = blocks.filter(b => b.dayOfWeek === dayOfWeek);
+
+            let availMins = 0;
+            for (const blk of dayBlocks) {
+              const [sh, sm] = blk.startTime.split(":").map(Number);
+              const [eh, em] = blk.endTime.split(":").map(Number);
+              availMins += (eh * 60 + em) - (sh * 60 + sm);
+            }
+
+            const dayBookings = weekBookings.filter(b => format(new Date(b.startAt), "yyyy-MM-dd") === dateStr);
+            const bookedMins = dayBookings.reduce((sum, b) => sum + diffMins(new Date(b.endAt), new Date(b.startAt)), 0);
+            const pct = availMins > 0 ? Math.min(100, Math.round((bookedMins / availMins) * 100)) : 0;
+            const dayStatus = getUtilizationStatus(pct, availMins);
+
+            dailyBreakdown.push({
+              date: format(cursor, "EEE, MMM d"),
+              dayOfWeek: DAY_NAMES[dayOfWeek],
+              availableHours: (availMins / 60).toFixed(1),
+              bookedHours: (bookedMins / 60).toFixed(1),
+              openHours: (Math.max(0, availMins - bookedMins) / 60).toFixed(1),
+              utilizationPct: pct,
+              statusLabel: dayStatus.statusLabel,
+            });
+
+            cursor = addDays(cursor, 1);
+          }
+
+          const overloadedDays = dailyBreakdown.filter(d => d.statusLabel === "overloaded" || d.statusLabel === "high_load");
+          const underbookedDays = dailyBreakdown.filter(d => d.statusLabel === "underbooked" && parseFloat(d.availableHours) > 0);
+
+          return {
+            coachName: u.coachName,
+            coachId: u.coachId,
+            bookedHours: (u.bookedMinutes / 60).toFixed(1),
+            availableHours: (u.availableMinutes / 60).toFixed(1),
+            utilizationPct: u.utilizationPct,
+            openHours: (Math.max(0, u.availableMinutes - u.bookedMinutes) / 60).toFixed(1),
+            statusLabel: statusInfo.statusLabel,
+            statusMessage: statusInfo.statusMessage,
+            recommendation: statusInfo.recommendation,
+            dailyBreakdown,
+            topOverloadedDays: overloadedDays.slice(0, 2).map(d => `${d.dayOfWeek} (${d.utilizationPct}%)`),
+            topUnderbookedDays: underbookedDays.slice(0, 2).map(d => `${d.dayOfWeek} (${d.openHours}h open)`),
+          };
+        }));
+
         return JSON.stringify({
           period: `${format(startDate, "MMM d")} – ${format(endDate, "MMM d, yyyy")}`,
-          coaches: utilization.map(u => {
-            const statusInfo = getUtilizationStatus(u.utilizationPct, u.availableMinutes);
-            return {
-              coachName: u.coachName,
-              bookedHours: (u.bookedMinutes / 60).toFixed(1),
-              availableHours: (u.availableMinutes / 60).toFixed(1),
-              utilizationPct: u.utilizationPct,
-              openHours: (Math.max(0, u.availableMinutes - u.bookedMinutes) / 60).toFixed(1),
-              statusLabel: statusInfo.statusLabel,
-              statusMessage: statusInfo.statusMessage,
-              recommendation: statusInfo.recommendation,
-            };
-          }),
+          coaches: coachesWithDays,
         });
       }
 
@@ -1284,6 +1435,80 @@ async function executeTool(
         return JSON.stringify(digest);
       }
 
+      case "get_weekly_business_recap": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view the business recap." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+
+        const now = new Date();
+        const wkStart = startOfWeek(now, { weekStartsOn: 1 });
+        const wkEnd = addDays(wkStart, 6);
+        wkEnd.setHours(23, 59, 59, 999);
+        const lwStart = addDays(wkStart, -7);
+        const lwEnd = addDays(wkStart, -1);
+        lwEnd.setHours(23, 59, 59, 999);
+
+        const { computeRevenueByPeriod, computeRevenueForecast, computeChurnRisks, computeUpsellOpportunities } = await import("./revenue-intelligence");
+        const { computeOrgDigest } = await import("./scheduling-intelligence");
+
+        const [revenueThisWeek, digest, churnRisks, upsellOps] = await Promise.all([
+          computeRevenueByPeriod(organizationId, wkStart, wkEnd, "Last week", lwStart, lwEnd),
+          computeOrgDigest(organizationId),
+          computeChurnRisks(organizationId),
+          computeUpsellOpportunities(organizationId),
+        ]);
+
+        const weekBookings = await storage.getBookingsByDateRangeForOrg(organizationId, wkStart, wkEnd);
+        const completed = weekBookings.filter(b => b.status === "COMPLETED").length;
+        const cancelled = weekBookings.filter(b => b.status === "CANCELLED").length;
+        const confirmed = weekBookings.filter(b => b.status === "CONFIRMED").length;
+
+        const overloadedCoaches = digest.coaches.filter(c => c.statusLabel === "overloaded" || c.statusLabel === "high_load");
+        const underbookedCoaches = digest.coaches.filter(c => c.statusLabel === "underbooked");
+        const highRiskClients = churnRisks.filter(c => c.riskLevel === "high");
+        const topUpsells = upsellOps.filter(u => u.priority === "high").slice(0, 3);
+
+        const revenueDir = revenueThisWeek.comparison?.direction ?? "flat";
+        const revenueDelta = revenueThisWeek.comparison
+          ? `${revenueDir === "up" ? "+" : ""}$${Math.abs(revenueThisWeek.comparison.deltaCents / 100).toFixed(0)} vs last week`
+          : "No prior week data";
+        const weekRevFmt = `$${(revenueThisWeek.totalRevenueCents / 100).toFixed(0)}`;
+
+        const nextActions: string[] = [];
+        if (highRiskClients.length > 0) nextActions.push(`Reach out to ${highRiskClients.length} high-risk client${highRiskClients.length !== 1 ? "s" : ""}: ${highRiskClients.slice(0, 2).map(c => c.clientName).join(", ")}`);
+        if (digest.openSlotsThisWeek > 0) nextActions.push(`Fill ${digest.openSlotsThisWeek} open slot${digest.openSlotsThisWeek !== 1 ? "s" : ""} (~$${digest.estimatedOpenRevenue.toLocaleString()} potential)`);
+        if (topUpsells.length > 0) nextActions.push(`Upsell ${topUpsells[0].clientName}: ${topUpsells[0].opportunity}`);
+        if (overloadedCoaches.length > 0 && nextActions.length < 3) nextActions.push(`Review ${overloadedCoaches[0].coachName}'s schedule — at or near overload capacity`);
+
+        return JSON.stringify({
+          weekOf: `${format(wkStart, "MMM d")} – ${format(wkEnd, "MMM d, yyyy")}`,
+          headline: {
+            revenueThisWeek: weekRevFmt,
+            vsLastWeek: revenueDelta,
+            direction: revenueDir,
+          },
+          whatHappened: {
+            sessionsCompleted: completed,
+            sessionsConfirmedUpcoming: confirmed,
+            cancellations: cancelled,
+            openSlots: digest.openSlotsThisWeek,
+            estimatedMissedRevenue: `$${digest.estimatedOpenRevenue.toLocaleString()}`,
+          },
+          risks: {
+            highRiskClients: highRiskClients.slice(0, 3).map(c => ({ name: c.clientName, signal: c.signals[0] ?? "", daysSince: c.daysSinceLastBooking })),
+            overloadedCoaches: overloadedCoaches.map(c => ({ name: c.coachName, pct: `${c.utilizationPct}%`, status: c.statusLabel })),
+          },
+          opportunities: {
+            upsellTargets: topUpsells.map(u => ({ client: u.clientName, opportunity: u.opportunity, estimatedLift: `$${(u.estimatedRevenueLiftCents / 100).toFixed(0)}/mo` })),
+            underbookedCoaches: underbookedCoaches.map(c => ({ name: c.coachName, openSlots: c.openSlots })),
+            waitlistCount: digest.waitlistCount,
+          },
+          nextActions: nextActions.slice(0, 3),
+          generatedAt: now.toISOString(),
+        });
+      }
+
       case "get_waitlist": {
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can view the waitlist." });
@@ -1511,7 +1736,8 @@ async function executeTool(
         }
         if (!organizationId) return JSON.stringify({ error: "No organization context." });
         const { computeRevenueForecast } = await import("./revenue-intelligence");
-        const forecast = await computeRevenueForecast(organizationId);
+        const targetCents = typeof args.targetCents === "number" ? args.targetCents : undefined;
+        const forecast = await computeRevenueForecast(organizationId, targetCents);
         return JSON.stringify({
           month: forecast.month,
           summary: forecast.summary,
@@ -1519,12 +1745,20 @@ async function executeTool(
           bookedFutureRevenue: `$${(forecast.bookedFutureRevenueCents / 100).toFixed(0)}`,
           subscriptionRevenue: `$${(forecast.mrrCents / 100).toFixed(0)}`,
           projectedTotal: `$${(forecast.projectedTotalCents / 100).toFixed(0)}`,
+          averageSessionValue: `$${(forecast.averageSessionValueCents / 100).toFixed(0)}`,
           runRateProjection: `$${(forecast.runRateCents / 100).toFixed(0)} (based on daily run rate)`,
           daysElapsed: forecast.daysElapsed,
           daysRemaining: forecast.daysRemaining,
           confidence: forecast.confidenceLevel,
           assumptions: forecast.assumptions,
           risks: forecast.risks.length > 0 ? forecast.risks : undefined,
+          ...(targetCents !== undefined ? {
+            target: `$${(targetCents / 100).toFixed(0)}`,
+            revenueGap: `$${((forecast.revenueGapCents ?? 0) / 100).toFixed(0)}`,
+            sessionsNeeded: forecast.sessionsNeededToHitTarget ?? 0,
+            sessionsPerDayNeeded: forecast.sessionsPerDayNeeded ?? 0,
+            targetSummary: forecast.targetSummary,
+          } : {}),
         });
       }
 
@@ -1532,7 +1766,7 @@ async function executeTool(
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can preview recurring sessions." });
         }
-        const { clientId, coachId, serviceId, startDate, startTime, recurrencePattern, occurrences } = args;
+        const { clientId, coachId, serviceId, startDate, startTime, recurrencePattern, occurrences, recurrenceDays } = args;
 
         const service = await storage.getService(serviceId);
         if (!service) return JSON.stringify({ error: "Service not found." });
@@ -1541,20 +1775,103 @@ async function executeTool(
         if (!coach) return JSON.stringify({ error: "Coach not found." });
 
         const [startHour, startMinute] = (startTime as string).split(":").map(Number);
+        const step = recurrencePattern === "biweekly" ? 14 : 7;
 
-        const base = new Date(startDate);
+        const DAY_JS_MAP: Record<string, number> = {
+          sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+          thursday: 4, friday: 5, saturday: 6,
+        };
+
+        // Helper: generate `occurrences` dates starting from the first matching weekday on or after `baseDate`
+        const generateDatesForDay = (dayName: string, baseDate: Date): Date[] => {
+          const targetDay = DAY_JS_MAP[dayName.toLowerCase()];
+          if (targetDay === undefined) return [];
+          const base = new Date(baseDate);
+          base.setHours(startHour, startMinute, 0, 0);
+          const currentDay = base.getDay();
+          const daysUntil = (targetDay - currentDay + 7) % 7;
+          let first = addDays(base, daysUntil);
+          first.setHours(startHour, startMinute, 0, 0);
+          const result: Date[] = [];
+          let cur = new Date(first);
+          for (let i = 0; i < occurrences; i++) {
+            result.push(new Date(cur));
+            cur = addDays(cur, step);
+          }
+          return result;
+        };
+
+        // Determine which days to schedule
+        const daysToSchedule: string[] = Array.isArray(recurrenceDays) && recurrenceDays.length > 0
+          ? (recurrenceDays as string[]).map((d: string) => d.toLowerCase())
+          : [];  // single-day mode uses startDate directly
+
+        const refDate = new Date(startDate);
+
+        type SlotResult = { startAt: string; endAt: string; dateLabel: string };
+        type ConflictResult = { dateLabel: string; reason: string };
+
+        if (daysToSchedule.length > 0) {
+          // Multi-day mode: generate and check per-day groups
+          const groupedAvailable: Record<string, SlotResult[]> = {};
+          const groupedConflicts: Record<string, ConflictResult[]> = {};
+          let totalDates = 0;
+          let totalAvailable = 0;
+          let totalConflicts = 0;
+
+          for (const dayName of daysToSchedule) {
+            const dates = generateDatesForDay(dayName, refDate);
+            const dayAvailable: SlotResult[] = [];
+            const dayConflicts: ConflictResult[] = [];
+
+            for (const date of dates) {
+              totalDates++;
+              const endAt = addMinutes(date, service.durationMin);
+              const dateLabel = format(date, "EEEE, MMM d 'at' h:mm a");
+              const overlapping = await storage.getOverlappingBookings(coachId, date, endAt);
+              if (overlapping.length > 0) {
+                dayConflicts.push({ dateLabel, reason: "Overlaps with an existing booking" });
+                totalConflicts++;
+              } else {
+                dayAvailable.push({ startAt: date.toISOString(), endAt: endAt.toISOString(), dateLabel });
+                totalAvailable++;
+              }
+            }
+            groupedAvailable[dayName] = dayAvailable;
+            groupedConflicts[dayName] = dayConflicts;
+          }
+
+          const allAvailableSlots: SlotResult[] = Object.values(groupedAvailable).flat();
+
+          return JSON.stringify({
+            service: service.name,
+            durationMin: service.durationMin,
+            pattern: `${recurrencePattern}, ${occurrences} sessions per day (${daysToSchedule.join(" + ")})`,
+            totalDates,
+            byDay: daysToSchedule.map(day => ({
+              day: day.charAt(0).toUpperCase() + day.slice(1),
+              available: groupedAvailable[day] ?? [],
+              conflicts: groupedConflicts[day] ?? [],
+            })),
+            allAvailableSlots,
+            summary: `${totalAvailable} of ${totalDates} dates are open${totalConflicts > 0 ? `, ${totalConflicts} conflict${totalConflicts !== 1 ? "s" : ""} found` : " with no conflicts"}.`,
+            instruction: "Present this multi-day plan to the coach. List available dates per day and flag conflicts. Ask them to confirm before booking. Pass allAvailableSlots to create_confirmed_recurring_sessions as confirmedSlots.",
+          });
+        }
+
+        // Single-day mode (original behavior)
+        const base = new Date(refDate);
         base.setHours(startHour, startMinute, 0, 0);
 
         const dates: Date[] = [];
-        let current = new Date(base);
-        const step = recurrencePattern === "biweekly" ? 14 : 7;
+        let cur = new Date(base);
         for (let i = 0; i < occurrences; i++) {
-          dates.push(new Date(current));
-          current = addDays(current, step);
+          dates.push(new Date(cur));
+          cur = addDays(cur, step);
         }
 
-        const available: { startAt: string; endAt: string; dateLabel: string }[] = [];
-        const conflicts: { dateLabel: string; reason: string }[] = [];
+        const available: SlotResult[] = [];
+        const conflicts: ConflictResult[] = [];
 
         for (const date of dates) {
           const endAt = addMinutes(date, service.durationMin);
@@ -1644,7 +1961,7 @@ async function executeTool(
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can draft outreach messages." });
         }
-        const { clientId, reason, goal, tone = "friendly", context = "" } = args;
+        const { clientId, reason, goal, tone = "friendly", context = "", targetSlot } = args;
 
         const clientUser = await storage.getUser(clientId);
         if (!clientUser) return JSON.stringify({ error: "Client not found." });
@@ -1687,17 +2004,20 @@ async function executeTool(
           check_in: "check in and reinforce the coaching relationship",
         };
 
-        const systemMsg = `You are a coaching business assistant. Write personalized, human-sounding outreach messages for a fitness coach reaching out to a client. Keep messages concise, warm, and direct. Do not use emojis. Do not be salesy. Keep the SMS under 155 characters. Return valid JSON only.`;
+        const systemMsg = `You are a coaching business assistant. Write personalized, human-sounding outreach messages for a fitness coach reaching out to a client. Keep messages concise, warm, and direct. Do not use emojis. Do not be salesy. Keep the SMS under 155 characters — count carefully, this is a hard limit. Return valid JSON only.`;
+
+        const slotLine = targetSlot ? `Open slot to fill: ${targetSlot} — the message must reference this specific time.` : "";
 
         const userMsg = `Draft an outreach message to a client named ${clientName}.
 Reason: ${reasonLabels[reason] || reason}
 Goal: ${goalLabels[goal] || goal}
 Tone: ${tone}
 ${sessionContext ? `Client session history: ${sessionContext}` : ""}
+${slotLine}
 ${context ? `Additional context: ${context}` : ""}
 
 Return a JSON object with exactly these keys:
-- "sms": short text message (under 155 chars, no emoji, first-person coach voice)
+- "sms": short text message (under 155 chars, no emoji, first-person coach voice${targetSlot ? `, must reference '${targetSlot}'` : ""})
 - "email_subject": clear, specific subject line
 - "email_body": 3-4 sentences, personal and direct
 - "reasoning": one sentence explaining the message approach`;
@@ -1823,56 +2143,92 @@ You have TWO revenue tools. Use the right one:
 - **get_revenue_summary** → Use for all-time/aggregate revenue, LTV, overall business health questions (not time-specific)
 
 - **get_revenue_forecast** → Use for forward-looking questions:
-  - "What am I projected to make this month?"
-  - "Am I on track?"
-  - "What do I need to hit $X this month?" → Run forecast, then calculate gap: target minus projected
+  - "What am I projected to make this month?" → call with no targetCents
+  - "Am I on track?" → call with no targetCents
+  - "What do I need to hit $15,000 this month?" → call with targetCents: 1500000 (NEVER compute the gap yourself — always pass it to the tool)
+  - The tool returns: projectedTotal, revenueGap, sessionsNeeded, sessionsPerDayNeeded, targetSummary — present these directly
+
+## Client Booking Lookup (CRITICAL)
+Use **get_client_bookings** whenever a prompt references a client's existing session:
+- "When is Sarah's next session?" → find_client → get_client_bookings(clientId, lookAheadDays: 30)
+- "Make David's current session recurring" → find_client → get_client_bookings(includePast: true) → identify session → run preview
+- "Reschedule John's next booking" → find_client → get_client_bookings → show the upcoming session → present alternatives
+- NEVER use get_org_schedule for client-specific session lookups
 
 ## Recurring Session Booking (CRITICAL — Two-Step Process)
-When a coach wants to book recurring sessions (e.g., "Book Sarah every Tuesday at 7am for 8 weeks"):
+When a coach wants to book recurring sessions:
 1. Use find_client to resolve client name → get clientId
 2. Identify the service (ask if unclear)
 3. Call **preview_recurring_sessions** — this checks all dates for conflicts WITHOUT booking anything
-4. Present the plan clearly: list all available dates, flag any conflicts
+   - Single day (e.g. "every Tuesday"): pass startDate as next occurrence of that day, no recurrenceDays
+   - Multiple days (e.g. "Monday and Thursday"): MUST use recurrenceDays: ["monday", "thursday"] — ONE tool call handles both days
+4. Present the plan clearly: list available dates, flag conflicts. For multi-day, show per-day breakdown.
 5. Ask the coach to confirm: "Ready to book these X sessions?"
-6. ONLY after confirmation → call **create_confirmed_recurring_sessions** with the available slots
-NEVER create recurring sessions without first showing the preview and getting explicit confirmation.
+6. ONLY after confirmation → call **create_confirmed_recurring_sessions** with the allAvailableSlots array from the preview
+NEVER split multi-day recurring into separate preview calls. NEVER create sessions without preview + confirmation.
 
 ## Outreach Drafting
 When the coach asks for outreach help, use **draft_client_outreach** to generate personalized messages:
 - "Draft messages for my churn risks" → call get_churn_risks, then draft_client_outreach for each high-risk client
 - "Who should I text today?" → call get_churn_risks + find_inactive_clients, list top targets, offer to draft
-- "Write a message to [name] to get them back" → find_client, then draft_client_outreach with reason: "inactive", goal: "rebook"
-- "Who can fill this cancellation and what should I send?" → suggest_backfill, then draft_client_outreach for top match with reason: "backfill", goal: "fill_cancellation"
+- "Write a message to [name] to get them back" → find_client, then draft_client_outreach(reason: "inactive", goal: "rebook")
+- "Who should I text to fill my Tuesday 7am slot?" → 
+    1. identify_schedule_gaps to confirm slot is open
+    2. get_waitlist + find_inactive_clients ranked by recency
+    3. draft_client_outreach for top 2–3 candidates with targetSlot: "Tuesday at 7:00 AM", reason: "backfill", goal: "fill_cancellation"
+    The drafted SMS MUST reference the specific time: "I have a 7am Tuesday spot open..."
+- "Who can fill this cancellation and what should I send?" → suggest_backfill → draft_client_outreach for top match with targetSlot set, reason: "backfill", goal: "fill_cancellation"
 - "Draft messages for upsell targets" → get_upsell_opportunities, then draft for top 2-3 clients
-After drafting: always present both the SMS and email versions. Remind the coach to review before sending.
+After drafting: always present both the SMS (ready to copy) and email versions. Remind the coach to review before sending.
 
 ## Utilization Overload Interpretation
-When presenting get_coach_utilization results, interpret the statusLabel:
-- overloaded (>90%): Flag as urgent warning — coach is at burnout risk. Suggest not accepting new clients.
-- high_load (80-90%): Caution — near capacity. Accept carefully.
-- healthy (45-80%): Good — room to grow. Note open hours.
-- underbooked (<45%): Opportunity — strong case for outreach and filling gaps.
-- no_availability: No blocks set — prompt them to configure availability.
+When presenting get_coach_utilization results, use BOTH the weekly summary AND the dailyBreakdown array:
+- For "what days are overloaded?" → look at dailyBreakdown for each coach, surface days where statusLabel is "overloaded" or "high_load"
+- For "which days have the most openings?" → surface days where openHours is highest across all coaches
+- For "where should I move sessions?" → identify days with high openHours and suggest moving from overloaded days
+- Use topOverloadedDays and topUnderbookedDays fields for quick summary
+Weekly status labels:
+- overloaded (>90%): Flag as urgent — burnout risk, do not add clients
+- high_load (80-90%): Near capacity — accept carefully
+- healthy (45-80%): Room to grow — note open hours
+- underbooked (<45%): Strong outreach opportunity
+- no_availability: No blocks set — prompt to configure availability
+
+## Weekly Business Recap
+Use **get_weekly_business_recap** when the coach asks for:
+- "Give me my weekly business recap" / "Weekly recap"
+- "How was my week?" / "Week in review"
+- Any end-of-week or weekly summary request
+Present using this exact structure:
+1. Headline: Revenue this week + delta vs last week (up/down with dollar amount)
+2. What happened: sessions completed, cancellations, open slots remaining
+3. Risks: high-risk clients (by name + signal), overloaded coaches
+4. Opportunities: top upsell targets, underbooked coaches, waitlist count
+5. Next 3 actions: specific, named, actionable
 
 ## Quick Action Handling
 If the user sends one of these phrases, respond as follows:
 - "Find openings" / "Find open slots" → Ask which coach and time frame, then call identify_schedule_gaps
 - "Fill tomorrow" / "Fill this week" → Use identify_schedule_gaps to find gaps and summarize them
 - "Who hasn't booked?" / "Missing clients" → Call find_inactive_clients with sinceDaysAgo=7
-- "Show utilization" → Call get_coach_utilization for the current week, interpret statusLabels
-- "What days are overloaded?" → Call get_coach_utilization, highlight coaches with statusLabel "overloaded" or "high_load"
+- "Show utilization" → Call get_coach_utilization for the current week, interpret statusLabels + dailyBreakdown
+- "What days are overloaded?" → Call get_coach_utilization, look at dailyBreakdown for days with high statusLabel
+- "Which days have the most openings?" → Call get_coach_utilization, surface days with highest openHours per day
 - "Which coaches are underbooked?" → Call get_coach_utilization, surface coaches with statusLabel "underbooked"
 - "Show schedule" / "This week's schedule" → Call get_org_schedule for the current week
 - "Operations summary" / "Ops digest" / "What needs attention?" → Call get_operations_digest and present results in a clear, prioritized format
+- "Weekly recap" / "How was my week?" / "Week in review" → Call get_weekly_business_recap
 - "Show waitlist" → Call get_waitlist
 - "Backfill" / "Who can fill this slot?" → Use suggest_backfill to find waitlist matches
 - "Revenue summary" / "How much have we made?" / "Show revenue" (no specific period) → Call get_revenue_summary
 - "What did I make this week?" / "How was last week?" → Call get_revenue_by_period with correct period
 - "Compare this week vs last week" → Call get_revenue_by_period with period: "this_week" and compare: true
-- "Projected revenue" / "Am I on track?" → Call get_revenue_forecast
+- "Projected revenue" / "Am I on track?" → Call get_revenue_forecast (no targetCents)
+- "What do I need to hit $X?" → Call get_revenue_forecast with targetCents set to that dollar value × 100
 - "Churn risks" / "Who might leave?" / "At-risk clients" → Call get_churn_risks
 - "Draft messages for churn risks" → get_churn_risks then draft_client_outreach for top clients
 - "Who should I text today?" → get_churn_risks + find_inactive_clients, then offer to draft messages
+- "Who should I text to fill [slot]?" → identify_schedule_gaps + waitlist/inactive + draft with targetSlot
 - "Upsell opportunities" / "Growth opportunities" → Call get_upsell_opportunities
 - "Session packages" / "Low sessions" / "Who's running out?" → Call get_session_packages
 - "Client value" / "LTV" / "Top clients" → Call get_client_value
@@ -1893,6 +2249,7 @@ When asked for a growth plan or revenue insights, proactively surface ALL of:
 - Present upsell opportunities concisely: "Sarah is 1x/week — suggest 2x for ~$280/mo more"
 - When surfacing revenue data, ALWAYS add a suggested action
 - When surfacing outreach drafts, show SMS first (ready to copy), then email
+- NEVER do arithmetic in your response text — always pass numbers to tools and present what the tool returns
 
 ## Operations Digest Presentation
 When presenting get_operations_digest results, structure your response with:

@@ -1,0 +1,216 @@
+You are upgrading the TrainEfficiency Coach-Side Scheduling Agent from a strong co-pilot into a true business operator.
+
+Use the post-upgrade audit findings as ground truth.
+
+Focus ONLY on the following high-impact gaps:
+1. Client booking lookup (critical missing primitive)
+2. Day-level utilization breakdown
+3. Multi-day recurring booking reliability
+4. Slot-specific outreach routing (backfill intelligence)
+5. Weekly business recap command
+6. Revenue gap → sessions required calculation (remove LLM math risk)
+
+Do not refactor existing working systems. Extend them safely.
+
+========================
+PHASE 1 — CLIENT BOOKINGS LOOKUP (CRITICAL)
+========================
+
+Problem:
+Agent cannot retrieve a specific client’s upcoming sessions.
+Blocks flows like:
+- “Make David’s session recurring”
+- “When is Sarah’s next session?”
+- “Reschedule John’s next booking”
+
+Solution:
+Create new tool: get_client_bookings
+
+Inputs:
+- clientId
+- optional date range (default: next 30 days)
+
+Returns:
+- list of upcoming bookings:
+  - bookingId
+  - date
+  - startTime
+  - endTime
+  - coachId
+  - serviceId
+  - location (if available)
+
+Agent behavior:
+- Must use this tool anytime a prompt references “their session”, “next session”, or “existing booking”
+- Must NOT rely on get_org_schedule for client-specific queries
+
+========================
+PHASE 2 — DAY-LEVEL UTILIZATION
+========================
+
+Problem:
+Utilization is weekly-only. Coaches think in days.
+
+Upgrade get_coach_utilization to include:
+
+For each coach:
+- weekly summary (existing)
+- daily breakdown array:
+  [
+    {
+      date,
+      bookedMinutes,
+      availableMinutes,
+      utilizationPercent,
+      statusLabel (use same thresholds)
+    }
+  ]
+
+Agent must now answer:
+- “What days are overloaded?”
+- “Which days have the most openings?”
+- “Where should I move sessions?”
+
+Output rules:
+- Always highlight top 1–2 overloaded days
+- Always highlight top 1–2 underbooked days
+- Always include recommendation
+
+========================
+PHASE 3 — MULTI-DAY RECURRING FIX
+========================
+
+Problem:
+“Monday + Thursday” recurring relies on model inference (not deterministic).
+
+Upgrade preview_recurring_sessions:
+
+Add support for:
+- recurrenceDays: array (e.g., ["monday", "thursday"])
+
+Behavior:
+- Single tool call generates ALL occurrences across multiple days
+- Returns:
+  - grouped by day
+  - available dates
+  - conflicted dates
+
+Agent rules:
+- If user specifies multiple days → MUST use recurrenceDays
+- Do NOT split into multiple preview calls anymore
+
+========================
+PHASE 4 — SLOT-SPECIFIC OUTREACH (BACKFILL INTELLIGENCE)
+========================
+
+Problem:
+“Who should I text to fill open slots?” returns generic churn outreach.
+
+Fix routing + context:
+
+New flow:
+1. identify_schedule_gaps (this week)
+2. get_waitlist
+3. find_inactive_clients
+4. Rank candidates by:
+   - past booking time similarity
+   - recency
+   - session type match
+
+Pass slot context into outreach tool:
+draft_client_outreach must now accept:
+- targetSlot (date + time)
+
+Message must include:
+- specific time reference:
+  “I have a 7am Tuesday spot open…”
+
+Agent must prioritize:
+- top 2–3 candidates per slot
+- not general outreach lists
+
+========================
+PHASE 5 — WEEKLY BUSINESS RECAP
+========================
+
+Problem:
+No unified “weekly recap” command.
+
+Create new agent flow (or tool wrapper):
+
+get_weekly_business_recap:
+
+Must combine:
+- get_revenue_by_period(this_week, compare: true)
+- get_operations_digest
+- schedule summary (sessions completed, open slots)
+
+Output structure:
+1. Headline:
+   - Revenue this week + delta vs last week
+2. What happened:
+   - sessions completed
+   - cancellations
+3. Current risks:
+   - churn risks
+   - overloaded coaches
+4. Opportunities:
+   - open slots
+   - upsell targets
+5. Next actions (max 3)
+
+Agent must route:
+- “weekly recap”
+- “how was my week”
+- “week in review”
+
+========================
+PHASE 6 — REVENUE GAP → SESSION CALCULATION
+========================
+
+Problem:
+LLM is doing arithmetic for:
+“What do I need to hit $15,000?”
+
+Fix:
+Move ALL math to deterministic logic.
+
+Enhance get_revenue_forecast to return:
+- projectedRevenue
+- averageSessionValue
+- sessionsNeededToHitTarget (if target provided)
+
+If target not provided:
+Agent asks:
+“What target should I calculate against?”
+
+If provided:
+Tool returns:
+- revenue gap
+- sessions needed
+- optional: sessions per day needed
+
+Agent must NEVER calculate this in text.
+
+========================
+PHASE 7 — VALIDATION
+========================
+
+Test these prompts:
+
+1. “When is Sarah’s next session?”
+2. “Make David’s current session recurring weekly”
+3. “What days are overloaded?”
+4. “Which days have the most openings?”
+5. “Schedule John Monday and Thursday for 6 weeks”
+6. “Who should I text to fill my Tuesday 7am slot?”
+7. “Give me my weekly business recap”
+8. “What do I need to hit $15,000 this month?”
+
+For each:
+- tool used
+- result
+- pass/fail
+- any gaps
+
+Return a clean summary.

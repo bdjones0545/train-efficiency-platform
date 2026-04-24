@@ -659,10 +659,16 @@ export interface RevenueForecast {
   mrrCents: number;
   projectedTotalCents: number;
   runRateCents: number;
+  averageSessionValueCents: number;
   confidenceLevel: "low" | "medium" | "high";
   assumptions: string[];
   risks: string[];
   summary: string;
+  targetCents?: number;
+  revenueGapCents?: number;
+  sessionsNeededToHitTarget?: number;
+  sessionsPerDayNeeded?: number;
+  targetSummary?: string;
 }
 
 async function getOrgBookingsForRange(orgId: string, startDate: Date, endDate: Date) {
@@ -763,7 +769,7 @@ export async function computeRevenueByPeriod(
   };
 }
 
-export async function computeRevenueForecast(orgId: string): Promise<RevenueForecast> {
+export async function computeRevenueForecast(orgId: string, targetCents?: number): Promise<RevenueForecast> {
   const now = new Date();
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
@@ -788,6 +794,7 @@ export async function computeRevenueForecast(orgId: string): Promise<RevenueFore
       mrrCents: 0,
       projectedTotalCents: 0,
       runRateCents: 0,
+      averageSessionValueCents: 0,
       confidenceLevel: "low",
       assumptions: ["No coaches found in organization"],
       risks: ["No data available for forecast"],
@@ -872,10 +879,31 @@ export async function computeRevenueForecast(orgId: string): Promise<RevenueFore
     risks.push("Early in month — fewer days elapsed reduces forecast accuracy");
   }
 
+  const averageSessionValueCents = pastRows.length > 0
+    ? Math.round(pastRows.reduce((s, b) => s + (b.priceCents ?? 0), 0) / pastRows.length)
+    : 0;
+
   const projFmt = `$${(projectedTotalCents / 100).toFixed(0)}`;
   const toDateFmt = `$${(revenueToDateCents / 100).toFixed(0)}`;
   const futureFmt = `$${(bookedFutureRevenueCents / 100).toFixed(0)}`;
   const summary = `${month}: ${toDateFmt} collected, ${futureFmt} in confirmed future bookings — projected total ${projFmt} by month-end (${confidenceLevel} confidence).`;
+
+  let revenueGapCents: number | undefined;
+  let sessionsNeededToHitTarget: number | undefined;
+  let sessionsPerDayNeeded: number | undefined;
+  let targetSummary: string | undefined;
+
+  if (targetCents !== undefined && targetCents > 0) {
+    revenueGapCents = Math.max(0, targetCents - projectedTotalCents);
+    if (revenueGapCents > 0 && averageSessionValueCents > 0) {
+      sessionsNeededToHitTarget = Math.ceil(revenueGapCents / averageSessionValueCents);
+      sessionsPerDayNeeded = daysRemaining > 0 ? Math.ceil(sessionsNeededToHitTarget / daysRemaining) : sessionsNeededToHitTarget;
+      targetSummary = `To reach $${(targetCents / 100).toFixed(0)}, you need $${(revenueGapCents / 100).toFixed(0)} more — that's ${sessionsNeededToHitTarget} additional session${sessionsNeededToHitTarget !== 1 ? "s" : ""} at your $${(averageSessionValueCents / 100).toFixed(0)} average rate (${sessionsPerDayNeeded}/day over ${daysRemaining} days remaining).`;
+    } else {
+      revenueGapCents = 0;
+      targetSummary = `You are already on track to reach $${(targetCents / 100).toFixed(0)} this month — projected at ${projFmt}.`;
+    }
+  }
 
   return {
     month,
@@ -887,9 +915,17 @@ export async function computeRevenueForecast(orgId: string): Promise<RevenueFore
     mrrCents: mrr,
     projectedTotalCents,
     runRateCents,
+    averageSessionValueCents,
     confidenceLevel,
     assumptions,
     risks,
     summary,
+    ...(targetCents !== undefined ? {
+      targetCents,
+      revenueGapCents,
+      sessionsNeededToHitTarget,
+      sessionsPerDayNeeded,
+      targetSummary,
+    } : {}),
   };
 }
