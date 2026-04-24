@@ -1,0 +1,155 @@
+You are upgrading the TrainEfficiency system into a strategic, self-optimizing business operator.
+
+Current state:
+- Closed-loop system with adaptive prioritization
+- Autonomous execution for safe actions
+- Time-based and message-based optimization
+- Campaign engine with outcome tracking
+
+Goal:
+Add CLIENT-LEVEL INTELLIGENCE, SEGMENTATION, and LONG-TERM VALUE OPTIMIZATION
+
+========================
+PHASE 1 — CLIENT RESPONSE PROFILE
+========================
+
+Create:
+compute_client_response_profile(clientId)
+
+Track per client:
+- preferred time of day (highest response rate)
+- preferred message type (short, friendly, urgency)
+- average touches before conversion
+- response rate
+- conversion rate
+- last 30-day trend
+
+Store:
+clientResponseProfile
+
+Agent rules:
+- personalize every outreach using this profile
+- override global best practices if client-specific data exists
+
+Example:
+“Sending this at 7am — Sarah responds best in the morning.”
+
+========================
+PHASE 2 — CLIENT SEGMENTATION
+========================
+
+Create:
+compute_client_segments
+
+Group clients into segments:
+
+Examples:
+- High value, low frequency
+- High churn risk, high recovery probability
+- Frequent responders
+- Low responders
+- High lifetime value
+- Inactive but historically consistent
+
+Each segment includes:
+- size
+- avg revenue
+- avg conversion rate
+- recommended strategy
+
+Agent must answer:
+- “What types of clients do I have?”
+- “Who should I focus on this week?”
+
+========================
+PHASE 3 — CLIENT-SPECIFIC ACTION SCORING
+========================
+
+Upgrade actionScore:
+
+Old:
+conversionRate × revenue × urgency
+
+New:
+clientAdjustedScore =
+(globalConversionRate × clientConversionModifier)
+× expectedRevenue
+× urgencyWeight
+
+Where:
+clientConversionModifier is derived from clientResponseProfile
+
+Example:
+- Mike converts 2× better than average → boost score
+- Sarah rarely responds → reduce score
+
+========================
+PHASE 4 — LIFETIME VALUE AWARE DECISIONS
+========================
+
+Create:
+compute_client_ltv_score(clientId)
+
+Factors:
+- total spend
+- frequency
+- retention duration
+- projected future value
+
+Agent rules:
+- prioritize high LTV clients for retention
+- delay aggressive upsells for fragile clients
+- favor re-engagement before monetization if churn risk is high
+
+Agent must explain:
+“Prioritizing Sarah because her lifetime value is high despite current inactivity.”
+
+========================
+PHASE 5 — STRATEGIC DECISION LAYER
+========================
+
+Create:
+get_strategic_recommendations
+
+Returns:
+- what to prioritize this week (retention vs growth)
+- which segments to focus on
+- what to reduce
+- where revenue is being lost
+- where biggest upside exists
+
+Agent must answer:
+- “What should I focus on this week?”
+- “Where am I losing money?”
+- “What’s my biggest opportunity?”
+
+========================
+PHASE 6 — VALIDATION
+========================
+
+Test:
+
+1. “Who responds best to messages?”
+2. “What’s the best way to reach Sarah?”
+3. “What types of clients do I have?”
+4. “Who should I focus on this week?”
+5. “Why are you prioritizing this client?”
+6. “What should I stop doing long-term?”
+7. “Where am I losing revenue?”
+
+For each:
+- confirm client-level data is used
+- confirm segmentation is applied
+- confirm LTV influences decisions
+
+========================
+FINAL RULE
+========================
+
+The system must evolve from:
+action optimization → decision optimization → strategy optimization
+
+It must:
+- understand individual behavior
+- group patterns across clients
+- optimize for long-term value, not just short-term revenue
