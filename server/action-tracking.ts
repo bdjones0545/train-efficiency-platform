@@ -11,6 +11,7 @@ import {
   computeSessionPackageAlerts,
 } from "./revenue-intelligence";
 import { getClientConversionModifier } from "./client-intelligence";
+import { getGoalPriorityWeights, getActionGoalDimension } from "./goal-tracking";
 
 export type { AgentAction };
 
@@ -597,6 +598,9 @@ export interface ScoredActionQueueItem extends ActionQueueItem {
   scoreBreakdown: string;
   profileReasoning: string;
   rank: number;
+  goalPriorityWeight: number;
+  goalContributionNote: string;
+  goalDimension: string;
 }
 
 export async function buildScoredDailyActionQueue(orgId: string): Promise<{
@@ -607,6 +611,8 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
   totalItems: number;
   profileUsed: boolean;
   performanceNote: string;
+  goalNote: string;
+  dominantGoal: string;
 }> {
   const [rawQueue, profile] = await Promise.all([
     buildDailyActionQueue(orgId),
@@ -639,6 +645,10 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
 
   const allItems = [...rawQueue.high, ...rawQueue.revenue, ...rawQueue.maintenance];
 
+  // Fetch goal weights once for all items
+  let goalWeights = { revenue: 1.0, sessions: 1.0, retention: 1.0, utilization: 1.0, dominantGoal: "balanced" as const, dominantGoalNote: "" };
+  try { goalWeights = await getGoalPriorityWeights(orgId); } catch { /* use defaults */ }
+
   const scoredRaw = await Promise.all(allItems.map(async (item) => {
     const subType = categorySubTypeMap[item.category] ?? "general";
     const perf = profileMap[subType];
@@ -661,7 +671,20 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
     }
 
     const clientAdjustedRate = globalConversionRate * clientConversionModifier;
-    const actionScore = Math.round(clientAdjustedRate * (expectedRevenue / 100) * urgencyWeight);
+
+    // Phase 2 (Goal): Goal-priority weight
+    const goalDimension = getActionGoalDimension(item.category, subType);
+    const goalPriorityWeight = goalWeights[goalDimension] ?? 1.0;
+    const goalAdjustedScore = Math.round(clientAdjustedRate * (expectedRevenue / 100) * urgencyWeight * goalPriorityWeight);
+
+    // Goal contribution note
+    let goalContributionNote = "";
+    const expectedContributionCents = Math.round(clientAdjustedRate * expectedRevenue);
+    if (goalPriorityWeight > 1.2) {
+      goalContributionNote = `Boosted ${goalPriorityWeight.toFixed(1)}× — you're behind your ${goalDimension} target | ~$${(expectedContributionCents / 100).toFixed(0)} contribution toward your weekly gap`;
+    } else if (expectedContributionCents > 0) {
+      goalContributionNote = `~$${(expectedContributionCents / 100).toFixed(0)} expected contribution toward weekly ${goalDimension} goal`;
+    }
 
     let profileReasoning = "";
     if (perf && perf.totalSent >= 3) {
@@ -675,10 +698,13 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
 
     return {
       ...item,
-      actionScore,
-      scoreBreakdown: `${Math.round(globalConversionRate * 100)}% global conv × ${clientConversionModifier.toFixed(2)} client modifier × $${(expectedRevenue / 100).toFixed(0)} × ${urgencyWeight}x urgency`,
+      actionScore: goalAdjustedScore,
+      scoreBreakdown: `${Math.round(globalConversionRate * 100)}% conv × ${clientConversionModifier.toFixed(2)} client × $${(expectedRevenue / 100).toFixed(0)} × ${urgencyWeight}x urgency × ${goalPriorityWeight.toFixed(1)}x goal`,
       profileReasoning,
       rank: 0,
+      goalPriorityWeight,
+      goalContributionNote,
+      goalDimension,
     };
   }));
 
@@ -701,6 +727,8 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
     totalItems: rawQueue.totalItems,
     profileUsed,
     performanceNote,
+    goalNote: goalWeights.dominantGoalNote || (goalWeights.dominantGoal === "balanced" ? "No active weekly targets — using balanced scoring." : ""),
+    dominantGoal: goalWeights.dominantGoal,
   };
 }
 

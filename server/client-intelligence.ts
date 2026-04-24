@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { agentActions, bookings, services, users, userSubscriptions, organizationSubscriptionPlans } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, ne } from "drizzle-orm";
 import { subDays, subMonths, format, differenceInDays, differenceInMonths } from "date-fns";
+import { getWeeklyProgress } from "./goal-tracking";
 
 // ============================================================
 // PHASE 1 — CLIENT RESPONSE PROFILE
@@ -693,6 +694,14 @@ export interface StrategicRecommendations {
   segmentFocus: string;
   segmentFocusReason: string;
   clientsToContactToday: { clientId: string; clientName: string; reason: string; urgency: "critical" | "high" | "medium" }[];
+  weeklyGoalStatus: {
+    overallStatus: string;
+    overallStatusLabel: string;
+    hasTargets: boolean;
+    summary: string;
+    agentNote: string;
+    topGap: { dimension: string; label: string; gapLabel: string; pctCompleteLabel: string; urgency: string } | null;
+  } | null;
   summary: string;
 }
 
@@ -700,9 +709,10 @@ export async function getStrategicRecommendations(orgId: string): Promise<Strate
   const now = new Date();
   const since30 = subDays(now, 30);
 
-  const [segmentation, allLtv] = await Promise.all([
+  const [segmentation, allLtv, weeklyProgress] = await Promise.all([
     computeClientSegments(orgId),
     computeAllClientLtvScores(orgId),
+    getWeeklyProgress(orgId).catch(() => null),
   ]);
 
   // Pull recent outreach performance
@@ -759,6 +769,17 @@ export async function getStrategicRecommendations(orgId: string): Promise<Strate
   if (hvlfSeg && hvlfSeg.size > 0) {
     topPriorityThisWeek.push(`Upsell ${hvlfSeg.size} high-value, low-frequency client${hvlfSeg.size !== 1 ? "s" : ""} — avg $${(hvlfSeg.avgRevenueCents / 100).toFixed(0)} each`);
   }
+  // Goal-based priorities (prepend if behind targets)
+  if (weeklyProgress && weeklyProgress.hasTargets) {
+    const behindGoals = weeklyProgress.progress.filter(p => p.status === "behind");
+    for (const g of behindGoals.slice(0, 2)) {
+      topPriorityThisWeek.unshift(`[GOAL ALERT] ${g.label}: ${g.pctCompleteLabel} of target — gap of ${g.gapLabel} with ${weeklyProgress.daysRemaining} day${weeklyProgress.daysRemaining !== 1 ? "s" : ""} left`);
+    }
+    if (weeklyProgress.overallStatus === "exceeded") {
+      topPriorityThisWeek.push(`All weekly targets exceeded — consider raising targets for next week`);
+    }
+  }
+
   if (topPriorityThisWeek.length === 0) {
     topPriorityThisWeek.push("Continue tracking outreach outcomes to unlock strategic recommendations");
   }
@@ -846,7 +867,10 @@ export async function getStrategicRecommendations(orgId: string): Promise<Strate
     }
   }
 
-  const summary = `${weekFocusLabel} week. ${topPriorityThisWeek.length} top priorities identified. ${highRiskClients.length} high-LTV clients at churn risk. Biggest upside: ${biggestUpside[0] ?? "build more data"}.`;
+  const goalStatusNote = weeklyProgress && weeklyProgress.hasTargets
+    ? ` Weekly goal status: ${weeklyProgress.overallStatusLabel}.`
+    : " No weekly targets set.";
+  const summary = `${weekFocusLabel} week. ${topPriorityThisWeek.length} top priorities identified. ${highRiskClients.length} high-LTV clients at churn risk. Biggest upside: ${biggestUpside[0] ?? "build more data"}.${goalStatusNote}`;
 
   return {
     generatedAt: format(now, "EEEE, MMMM d 'at' h:mm a"),
@@ -860,6 +884,20 @@ export async function getStrategicRecommendations(orgId: string): Promise<Strate
     segmentFocus: segmentation.topFocusSegment,
     segmentFocusReason: segmentation.topFocusReason,
     clientsToContactToday: clientsToContactToday.slice(0, 5),
+    weeklyGoalStatus: weeklyProgress ? {
+      overallStatus: weeklyProgress.overallStatus,
+      overallStatusLabel: weeklyProgress.overallStatusLabel,
+      hasTargets: weeklyProgress.hasTargets,
+      summary: weeklyProgress.summary,
+      agentNote: weeklyProgress.agentNote,
+      topGap: weeklyProgress.topGap ? {
+        dimension: weeklyProgress.topGap.dimension,
+        label: weeklyProgress.topGap.label,
+        gapLabel: weeklyProgress.topGap.gapLabel,
+        pctCompleteLabel: weeklyProgress.topGap.pctCompleteLabel,
+        urgency: weeklyProgress.topGap.urgency,
+      } : null,
+    } : null,
     summary,
   };
 }

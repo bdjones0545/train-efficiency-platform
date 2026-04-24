@@ -25,6 +25,11 @@ import {
   computeClientLtvScore,
   getStrategicRecommendations,
 } from "./client-intelligence";
+import {
+  setWeeklyTargets,
+  getWeeklyProgress,
+  getGoalPerformanceSummary,
+} from "./goal-tracking";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import {
   sendBookingConfirmationToClient,
@@ -728,6 +733,51 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "get_strategic_recommendations",
       description: "Return a full strategic decision layer for the week: what to focus on (retention vs growth vs reactivation), which client segments to prioritize, what to reduce, where revenue is being lost, and the biggest upside opportunities. Also returns a ranked list of specific clients to contact today. Use when the coach asks 'What should I focus on this week?', 'Where am I losing money?', 'What's my biggest opportunity?', 'What should I stop doing long-term?', 'Give me a strategic plan', 'Where should I invest my time?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_weekly_targets",
+      description: "Set or update weekly performance targets for the organization. Targets are used to prioritize the action queue — the agent automatically boosts actions that contribute to behind-target dimensions. Use when the coach says 'Set a revenue goal', 'I want to hit X sessions this week', 'Set a retention target', 'My goal this week is...', or 'Help me hit $X this week'.",
+      parameters: {
+        type: "object",
+        properties: {
+          revenueCents: {
+            type: "number",
+            description: "Target weekly revenue in cents (e.g. 500000 for $5,000). Omit if not setting a revenue target.",
+          },
+          sessions: {
+            type: "number",
+            description: "Target number of sessions booked this week. Omit if not setting a sessions target.",
+          },
+          retentionPct: {
+            type: "number",
+            description: "Target retention rate as a percentage (0-100). E.g. 80 means 80% of active clients should book this week. Omit if not setting a retention target.",
+          },
+          utilizationPct: {
+            type: "number",
+            description: "Target schedule utilization as a percentage (0-100). E.g. 75 means 75% of available slots should be filled. Omit if not setting a utilization target.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_weekly_progress",
+      description: "Get current progress toward this week's performance targets: revenue, sessions, retention, and utilization. Shows pct complete, gaps, on-track status, and projected end-of-week outcomes. Use when the coach asks 'How am I doing this week?', 'Am I on track?', 'What's my progress toward my goal?', 'How far behind am I?', 'Will I hit my target?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_goal_performance_summary",
+      description: "Return a full performance summary for the current week: targets vs actual results, which targets were achieved, top contributing action types, best strategy, and what to change next week. Use when the coach asks 'How did I do this week?', 'Did I hit my goals?', 'What worked best this week?', 'What should I do differently next week?', 'Give me a weekly recap'.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -2469,6 +2519,47 @@ Return a JSON object with exactly these keys:
         return JSON.stringify(strategic);
       }
 
+      case "set_weekly_targets": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can set weekly targets." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { revenueCents, sessions, retentionPct, utilizationPct } = args;
+        if (!revenueCents && !sessions && !retentionPct && !utilizationPct) {
+          return JSON.stringify({ error: "Please specify at least one target (revenueCents, sessions, retentionPct, or utilizationPct)." });
+        }
+        const saved = await setWeeklyTargets(organizationId, {
+          ...(revenueCents ? { revenueCents: Number(revenueCents) } : {}),
+          ...(sessions ? { sessions: Number(sessions) } : {}),
+          ...(retentionPct ? { retentionPct: Number(retentionPct) } : {}),
+          ...(utilizationPct ? { utilizationPct: Number(utilizationPct) } : {}),
+        });
+        return JSON.stringify({
+          success: true,
+          message: "Weekly targets saved. The action queue will now prioritize actions that help you hit these targets.",
+          targets: saved,
+          note: "These targets will automatically boost the scoring of actions that contribute to behind-target dimensions.",
+        });
+      }
+
+      case "get_weekly_progress": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access weekly progress." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const progress = await getWeeklyProgress(organizationId);
+        return JSON.stringify(progress);
+      }
+
+      case "get_goal_performance_summary": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access goal performance summaries." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const summary = await getGoalPerformanceSummary(organizationId);
+        return JSON.stringify(summary);
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -2808,6 +2899,9 @@ If the user sends one of these phrases, respond as follows:
 - "What types of clients do I have?" / "Who should I focus on this week?" / "How are my clients grouped?" → Call compute_client_segments
 - "What is [client]'s LTV?" / "Is [client] worth prioritizing?" / "What's [client]'s lifetime value?" → find_client then compute_client_ltv_score
 - "What should I focus on this week?" / "Where am I losing money?" / "What's my biggest opportunity?" / "Give me a strategic plan" / "What should I stop doing long-term?" → Call get_strategic_recommendations
+- "Set a revenue goal" / "I want to hit $X this week" / "Set my goals" / "Help me hit [target]" / "Set a session target" / "Set a retention/utilization goal" → Call set_weekly_targets
+- "How am I doing this week?" / "Am I on track?" / "What's my progress?" / "Will I hit my target?" / "How far behind am I?" → Call get_weekly_progress
+- "How did I do this week?" / "Did I hit my goals?" / "Weekly recap" / "What worked?" / "What should I do differently next week?" → Call get_goal_performance_summary
 
 ## Client Response Profile (compute_client_response_profile)
 Use **compute_client_response_profile** when the coach asks:
@@ -2844,12 +2938,47 @@ Use **get_strategic_recommendations** when the coach asks:
 - "Give me a strategic plan" / "What's the state of my business?"
 Present using this structure:
 1. **Week Focus**: weekFocusLabel + weekFocusReason (this week's theme)
-2. **Top Priorities**: topPriorityThisWeek list (numbered, specific)
-3. **Revenue at Risk**: whereLostRevenue (be specific with dollar amounts if available)
-4. **Biggest Upside**: biggestUpside (opportunity + estimated value)
-5. **Things to Reduce**: thingsToReduce (honest cuts)
-6. **Contact Today**: clientsToContactToday (named clients with urgency and reason)
+2. **Weekly Goal Status**: If weeklyGoalStatus.hasTargets=true, show overallStatusLabel + summary. If any topGap, lead with "[GOAL ALERT] {label}: {pctCompleteLabel} — {gapLabel} to close". If no targets, invite coach to set them.
+3. **Top Priorities**: topPriorityThisWeek list (numbered, specific — goal alerts appear first if present)
+4. **Revenue at Risk**: whereLostRevenue (be specific with dollar amounts if available)
+5. **Biggest Upside**: biggestUpside (opportunity + estimated value)
+6. **Things to Reduce**: thingsToReduce (honest cuts)
+7. **Contact Today**: clientsToContactToday (named clients with urgency and reason)
 ALWAYS end with a single recommended "next action in the next 30 minutes."
+
+## Weekly Targets (set_weekly_targets)
+Use **set_weekly_targets** when the coach says:
+- "Set a revenue goal" / "I want to hit $X this week" / "Help me hit [target] this week"
+- "I want to book X sessions this week" / "Set a retention target" / "My goal is X% utilization"
+- "Set my goals for this week" / "Update my targets"
+Convert natural language to the correct parameters:
+- "$5,000 revenue goal" → revenueCents: 500000
+- "20 sessions this week" → sessions: 20
+- "80% retention" → retentionPct: 80
+- "75% utilization" → utilizationPct: 75
+Always confirm what was saved. Explain: "These targets will now shape your action queue — I'll automatically prioritize actions that help you close the biggest gaps."
+If the coach mentions multiple targets, set them all in one call.
+
+## Weekly Progress (get_weekly_progress)
+Use **get_weekly_progress** when the coach asks:
+- "How am I doing this week?" / "Am I on track?" / "What's my progress toward my goal?"
+- "How far behind am I?" / "Will I hit my target?" / "What's left to close?"
+If hasTargets=false: Prompt to set targets — "You haven't set any weekly targets yet. Say 'Set a $5,000 revenue goal' to get started."
+If hasTargets=true: Present each goal with a progress bar in text:
+  - "Revenue: ▓▓▓▓▓░░░░░ 52% — $2,600 of $5,000 (gap: $2,400). Projected: $3,900 by end of week — AT RISK."
+  - Use urgency labels: critical → "🔴", high → "🟠", medium → "🟡", good/exceeded → "✅"
+Always surface agentNote: "I'm currently boosting upsell actions in your queue to help close the revenue gap."
+Always state daysRemaining: "4 days left this week."
+
+## Goal Performance Summary (get_goal_performance_summary)
+Use **get_goal_performance_summary** when the coach asks:
+- "How did I do this week?" / "Did I hit my goals?" / "Give me a weekly recap"
+- "What worked best this week?" / "What should I do differently next week?"
+Present using this structure:
+1. **Results**: For each target, show achieved ✅ or missed ❌, actual vs target, and % achieved
+2. **Top Strategy**: bestStrategy (what outreach type drove the most bookings)
+3. **Next Week**: whatToChangeNextWeek list (numbered, specific and actionable)
+End with an invitation: "Want to set new targets for next week?"
 
 ## Growth Mode Proactivity
 When asked for a growth plan or revenue insights, proactively surface ALL of:

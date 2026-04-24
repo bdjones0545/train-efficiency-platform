@@ -1,0 +1,155 @@
+You are upgrading the TrainEfficiency system into a goal-driven business operator.
+
+Current state:
+- Fully adaptive system with client-level intelligence
+- Autonomous execution (safe actions)
+- Strategic recommendations (segmentation + LTV)
+
+Goal:
+Introduce GOAL-ORIENTED OPTIMIZATION
+
+The system must:
+- define targets
+- track progress toward targets
+- adjust decisions dynamically to hit targets
+
+========================
+PHASE 1 — WEEKLY TARGET SYSTEM
+========================
+
+Create:
+set_weekly_targets
+
+Targets may include:
+- revenue target (e.g. $5,000/week)
+- sessions target (e.g. 60 sessions)
+- retention target (e.g. 90% active clients retained)
+- utilization target (e.g. 80% capacity)
+
+Store:
+weeklyTargets
+
+Create:
+get_weekly_progress
+
+Returns:
+- current progress vs target
+- gap remaining
+- % complete
+- projected outcome
+
+Agent must answer:
+- “Am I on track this week?”
+- “How far am I from my goal?”
+
+========================
+PHASE 2 — GOAL-AWARE DECISION ENGINE
+========================
+
+Modify action scoring:
+
+Add:
+goalPriorityWeight
+
+If revenue behind target:
+→ boost high-revenue actions (upsell, backfill)
+
+If retention dropping:
+→ boost churn recovery
+
+If utilization low:
+→ boost slot filling
+
+New score:
+goalAdjustedScore =
+clientAdjustedScore × goalPriorityWeight
+
+Agent must say:
+“Prioritizing this because you're behind your revenue target.”
+
+========================
+PHASE 3 — DYNAMIC STRATEGY ADJUSTMENT
+========================
+
+Update:
+get_strategic_recommendations
+
+Now must include:
+- current goal status
+- biggest gap (revenue / retention / utilization)
+- strategy shift recommendation
+
+Examples:
+- “You are behind revenue → focus on upsell + backfill”
+- “Retention is dropping → focus on churn recovery”
+- “Utilization is low → prioritize filling open slots”
+
+========================
+PHASE 4 — DAILY GOAL TRACKING
+========================
+
+Extend:
+get_daily_action_queue
+
+Add:
+- contribution toward weekly goals
+- expected impact per action
+
+Example:
+“This action contributes ~$70 toward your $500 weekly gap.”
+
+========================
+PHASE 5 — GOAL COMPLETION FEEDBACK
+========================
+
+Create:
+get_goal_performance_summary
+
+At end of week:
+- targets vs actual
+- what actions contributed most
+- what strategy worked best
+- what to change next week
+
+Agent must answer:
+- “Did I hit my goals?”
+- “What helped me hit (or miss) them?”
+
+========================
+PHASE 6 — AUTO-ADJUSTMENT
+========================
+
+If system detects:
+- falling behind targets
+
+Then:
+- increase automation intensity (within safety)
+- prioritize higher ROI actions
+- recommend more aggressive strategy
+
+========================
+PHASE 7 — VALIDATION
+========================
+
+Test:
+
+1. “Set a $5,000 weekly revenue goal”
+2. “Am I on track this week?”
+3. “What should I do to hit my goal?”
+4. “How far behind am I?”
+5. “What actions contribute most to my goal?”
+6. “Did I hit my goal this week?”
+7. “What should I change next week?”
+
+========================
+FINAL RULE
+========================
+
+The system must evolve from:
+strategy → execution → optimization
+
+into:
+GOAL → STRATEGY → EXECUTION → OPTIMIZATION
+
+Every action must now connect to a goal.
+Every recommendation must reflect goal progress.

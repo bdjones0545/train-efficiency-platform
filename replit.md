@@ -36,6 +36,14 @@ The application employs a client-server architecture. The frontend is developed 
     -   **Client LTV Scores** (`computeClientLtvScore`): Computes total spend, retention days, avg monthly spend, projected annual value, LTV tier (platinum/gold/silver/at_risk/new), and churn risk per client.
     -   **Strategic Recommendations** (`getStrategicRecommendations`): Combines segmentation + LTV data to recommend the week's focus (retention/growth/reactivation/balanced), top priorities, revenue at risk, biggest upside, things to reduce, and a ranked list of clients to contact today.
 -   **Client-Adjusted Action Scoring** (Phase 3): `buildScoredDailyActionQueue` now applies a `clientConversionModifier` per client, making action scores proportional to each individual client's historical response behavior rather than global averages only.
+-   **Goal-Oriented Optimization Engine:** A module (`server/goal-tracking.ts`) enables weekly performance target-setting and goal-driven action prioritization:
+    -   **Weekly Targets** (`setWeeklyTargets` / `getWeeklyTargets`): Coaches can set revenue, session count, retention rate, and utilization targets via the AI agent. Stored in `appSettings` under `weekly_targets_{orgId}`.
+    -   **Weekly Progress Tracking** (`getWeeklyProgress`): Real-time progress against targets — % complete, gap to close, projected end-of-week outcome, on-track/at-risk/behind/exceeded status per dimension with urgency level.
+    -   **Goal Priority Weights** (`getGoalPriorityWeights`): Computes per-dimension urgency multipliers (1.0–2.5×) based on how behind the org is on each target. Used in the scoring chain.
+    -   **Goal-Adjusted Action Scoring**: `buildScoredDailyActionQueue` now applies a `goalPriorityWeight` per action: `finalScore = globalConvRate × clientModifier × expectedRevenue × urgencyWeight × goalPriorityWeight`. Actions contributing to behind-target dimensions are automatically boosted.
+    -   **Goal Performance Summary** (`getGoalPerformanceSummary`): End-of-week recap showing target vs actual for each dimension, top contributing action types, best strategy, and what to change next week.
+    -   **Strategic Recommendations Integration**: `getStrategicRecommendations` now includes `weeklyGoalStatus` — goal alerts are prepended to `topPriorityThisWeek` when targets are behind, giving goal context to the weekly focus.
+    -   **Agent Tools**: Three new tools wired into the AI scheduling assistant — `set_weekly_targets`, `get_weekly_progress`, `get_goal_performance_summary` — with full system prompt guidance for natural language goal management.
 
 ## External Dependencies
 -   **PostgreSQL:** Database.
