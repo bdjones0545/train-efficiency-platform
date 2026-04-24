@@ -626,6 +626,10 @@ export async function getGoalPerformanceSummary(orgId: string): Promise<GoalPerf
       ? `All ${totalTargets} target${totalTargets !== 1 ? "s" : ""} achieved this week.`
       : `${achievedCount}/${totalTargets} target${totalTargets !== 1 ? "s" : ""} achieved. ${whatToChangeNextWeek[0] ?? ""}`;
 
+  const nextWeekCTA = totalTargets > 0
+    ? `Ready to set targets for next week? Just say "Set a $${((targets?.revenueCents ?? 500000) / 100).toFixed(0)} revenue goal" or tell me your target.`
+    : "No targets were set this week. Say 'Set a $5,000 revenue goal' to start tracking goal performance next week.";
+
   return {
     weekOf: `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`,
     targets,
@@ -637,5 +641,6 @@ export async function getGoalPerformanceSummary(orgId: string): Promise<GoalPerf
     achievedCount,
     totalTargets,
     summary,
+    nextWeekCTA,
   };
 }

@@ -2978,7 +2978,7 @@ Present using this structure:
 1. **Results**: For each target, show achieved ✅ or missed ❌, actual vs target, and % achieved
 2. **Top Strategy**: bestStrategy (what outreach type drove the most bookings)
 3. **Next Week**: whatToChangeNextWeek list (numbered, specific and actionable)
-End with an invitation: "Want to set new targets for next week?"
+4. **REQUIRED**: ALWAYS end your response by surfacing the nextWeekCTA field verbatim — this invites the coach to set targets for next week. Never skip this final line.
 
 ## Growth Mode Proactivity
 When asked for a growth plan or revenue insights, proactively surface ALL of:
