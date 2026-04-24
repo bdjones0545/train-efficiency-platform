@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { subDays, startOfMonth, endOfMonth, startOfDay, format, differenceInDays } from "date-fns";
+import { subDays, startOfMonth, endOfMonth, startOfDay, format, differenceInDays, getDaysInMonth } from "date-fns";
 import { db } from "./db";
 import {
   bookings,
@@ -628,4 +628,268 @@ export async function computeClientLTVs(orgId: string): Promise<ClientLTV[]> {
   });
 
   return ltvs.sort((a, b) => b.totalRevenueCents - a.totalRevenueCents);
+}
+
+// ─── Period Revenue & Forecasting ───────────────────────────────────────────
+
+export interface PeriodRevenueSummary {
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  totalRevenueCents: number;
+  sessionCount: number;
+  coachBreakdown: { coachName: string; revenueCents: number; sessions: number }[];
+  serviceBreakdown: { serviceName: string; revenueCents: number; sessions: number }[];
+  comparison?: {
+    priorPeriodLabel: string;
+    priorRevenueCents: number;
+    deltaCents: number;
+    deltaPct: number;
+    direction: "up" | "down" | "flat";
+  };
+}
+
+export interface RevenueForecast {
+  month: string;
+  daysElapsed: number;
+  daysRemaining: number;
+  daysInMonth: number;
+  revenueToDateCents: number;
+  bookedFutureRevenueCents: number;
+  mrrCents: number;
+  projectedTotalCents: number;
+  runRateCents: number;
+  confidenceLevel: "low" | "medium" | "high";
+  assumptions: string[];
+  risks: string[];
+  summary: string;
+}
+
+async function getOrgBookingsForRange(orgId: string, startDate: Date, endDate: Date) {
+  const coachIds = await getOrgCoachIds(orgId);
+  if (coachIds.length === 0) return [];
+
+  const rows = await db.select({
+    id: bookings.id,
+    clientId: bookings.clientId,
+    coachId: bookings.coachId,
+    serviceId: bookings.serviceId,
+    startAt: bookings.startAt,
+    status: bookings.status,
+    priceCents: services.priceCents,
+    serviceName: services.name,
+    coachFirstName: users.firstName,
+    coachLastName: users.lastName,
+  })
+    .from(bookings)
+    .leftJoin(services, eq(bookings.serviceId, services.id))
+    .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+    .leftJoin(users, eq(coachProfiles.userId, users.id))
+    .where(and(
+      inArray(bookings.coachId, coachIds),
+      inArray(bookings.status as any, ["CONFIRMED", "COMPLETED"]),
+      gte(bookings.startAt, startDate),
+      lte(bookings.startAt, endDate)
+    ));
+
+  return rows;
+}
+
+export async function computeRevenueByPeriod(
+  orgId: string,
+  startDate: Date,
+  endDate: Date,
+  comparePeriodLabel?: string,
+  compareStart?: Date,
+  compareEnd?: Date
+): Promise<PeriodRevenueSummary> {
+  const [periodBookings, compareBookings] = await Promise.all([
+    getOrgBookingsForRange(orgId, startDate, endDate),
+    (compareStart && compareEnd)
+      ? getOrgBookingsForRange(orgId, compareStart, compareEnd)
+      : Promise.resolve([]),
+  ]);
+
+  const totalRevenueCents = periodBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+
+  const coachMap = new Map<string, { name: string; revenue: number; sessions: number }>();
+  for (const b of periodBookings) {
+    const name = `${b.coachFirstName ?? ""} ${b.coachLastName ?? ""}`.trim() || "Unknown";
+    if (!coachMap.has(b.coachId)) coachMap.set(b.coachId, { name, revenue: 0, sessions: 0 });
+    const e = coachMap.get(b.coachId)!;
+    e.revenue += b.priceCents ?? 0;
+    e.sessions++;
+  }
+  const coachBreakdown = Array.from(coachMap.values())
+    .map(c => ({ coachName: c.name, revenueCents: c.revenue, sessions: c.sessions }))
+    .sort((a, b) => b.revenueCents - a.revenueCents);
+
+  const serviceMap = new Map<string, { revenue: number; sessions: number }>();
+  for (const b of periodBookings) {
+    const key = b.serviceName ?? "Unknown";
+    if (!serviceMap.has(key)) serviceMap.set(key, { revenue: 0, sessions: 0 });
+    serviceMap.get(key)!.revenue += b.priceCents ?? 0;
+    serviceMap.get(key)!.sessions++;
+  }
+  const serviceBreakdown = Array.from(serviceMap.entries())
+    .map(([name, d]) => ({ serviceName: name, revenueCents: d.revenue, sessions: d.sessions }))
+    .sort((a, b) => b.revenueCents - a.revenueCents);
+
+  let comparison: PeriodRevenueSummary["comparison"] | undefined;
+  if (compareStart && compareEnd && comparePeriodLabel) {
+    const priorRevenueCents = compareBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+    const deltaCents = totalRevenueCents - priorRevenueCents;
+    const deltaPct = priorRevenueCents > 0
+      ? Math.round((deltaCents / priorRevenueCents) * 100)
+      : totalRevenueCents > 0 ? 100 : 0;
+    comparison = {
+      priorPeriodLabel: comparePeriodLabel,
+      priorRevenueCents,
+      deltaCents,
+      deltaPct,
+      direction: deltaCents > 0 ? "up" : deltaCents < 0 ? "down" : "flat",
+    };
+  }
+
+  return {
+    periodLabel: `${format(startDate, "MMM d")} – ${format(endDate, "MMM d, yyyy")}`,
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    totalRevenueCents,
+    sessionCount: periodBookings.length,
+    coachBreakdown,
+    serviceBreakdown,
+    comparison,
+  };
+}
+
+export async function computeRevenueForecast(orgId: string): Promise<RevenueForecast> {
+  const now = new Date();
+  const monthStart = startOfMonth(now);
+  const monthEnd = endOfMonth(now);
+  const totalDaysInMonth = getDaysInMonth(now);
+  const daysElapsed = Math.max(1, differenceInDays(now, monthStart) + 1);
+  const daysRemaining = totalDaysInMonth - daysElapsed;
+  const month = format(now, "MMMM yyyy");
+
+  const coachIds = await getOrgCoachIds(orgId);
+
+  const assumptions: string[] = [];
+  const risks: string[] = [];
+
+  if (coachIds.length === 0) {
+    return {
+      month,
+      daysElapsed,
+      daysRemaining,
+      daysInMonth: totalDaysInMonth,
+      revenueToDateCents: 0,
+      bookedFutureRevenueCents: 0,
+      mrrCents: 0,
+      projectedTotalCents: 0,
+      runRateCents: 0,
+      confidenceLevel: "low",
+      assumptions: ["No coaches found in organization"],
+      risks: ["No data available for forecast"],
+      summary: "No revenue data available for this month.",
+    };
+  }
+
+  const [pastRows, futureRows, userSubs, subPlans] = await Promise.all([
+    db.select({ priceCents: services.priceCents })
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .where(and(
+        inArray(bookings.coachId, coachIds),
+        inArray(bookings.status as any, ["CONFIRMED", "COMPLETED"]),
+        gte(bookings.startAt, monthStart),
+        lte(bookings.startAt, now)
+      )),
+    db.select({ priceCents: services.priceCents })
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .where(and(
+        inArray(bookings.coachId, coachIds),
+        inArray(bookings.status as any, ["CONFIRMED"]),
+        gte(bookings.startAt, now),
+        lte(bookings.startAt, monthEnd)
+      )),
+    db.select().from(userSubscriptions).where(
+      and(eq(userSubscriptions.organizationId, orgId), eq(userSubscriptions.status, "active"))
+    ),
+    db.select().from(organizationSubscriptionPlans).where(
+      and(eq(organizationSubscriptionPlans.organizationId, orgId), eq(organizationSubscriptionPlans.active, true))
+    ),
+  ]);
+
+  const revenueToDateCents = pastRows.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+  const bookedFutureRevenueCents = futureRows.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+
+  const planMap = new Map(subPlans.map(p => [p.id, p]));
+  let mrr = 0;
+  for (const sub of userSubs) {
+    const plan = planMap.get(sub.planId);
+    if (plan) {
+      const monthly = plan.interval === "year"
+        ? Math.round(plan.amountCents / 12)
+        : plan.interval === "week"
+          ? plan.amountCents * 4
+          : plan.amountCents;
+      mrr += monthly;
+    }
+  }
+
+  const projectedTotalCents = revenueToDateCents + bookedFutureRevenueCents + mrr;
+  const runRateCents = daysElapsed > 0
+    ? Math.round((revenueToDateCents / daysElapsed) * totalDaysInMonth)
+    : 0;
+
+  let confidenceLevel: "low" | "medium" | "high" = "low";
+  if (daysElapsed >= 14 && pastRows.length >= 10) confidenceLevel = "high";
+  else if (daysElapsed >= 7 && pastRows.length >= 3) confidenceLevel = "medium";
+
+  if (pastRows.length > 0) {
+    assumptions.push(`${pastRows.length} sessions completed so far this month`);
+  }
+  if (futureRows.length > 0) {
+    assumptions.push(`${futureRows.length} future sessions already booked through month-end`);
+  }
+  if (mrr > 0) {
+    assumptions.push(`$${(mrr / 100).toFixed(0)}/mo MRR from ${userSubs.length} active subscriptions`);
+  }
+  if (daysElapsed > 0 && revenueToDateCents > 0) {
+    const dailyRate = (revenueToDateCents / 100 / daysElapsed).toFixed(0);
+    assumptions.push(`Daily session run rate: $${dailyRate}/day over ${daysElapsed} days elapsed`);
+  }
+
+  if (futureRows.length === 0) {
+    risks.push("No future sessions booked this month — forecast excludes unbooked session revenue");
+  }
+  if (mrr === 0 && pastRows.length < 5) {
+    risks.push("Limited session history and no subscriptions — low confidence");
+  }
+  if (daysElapsed < 7) {
+    risks.push("Early in month — fewer days elapsed reduces forecast accuracy");
+  }
+
+  const projFmt = `$${(projectedTotalCents / 100).toFixed(0)}`;
+  const toDateFmt = `$${(revenueToDateCents / 100).toFixed(0)}`;
+  const futureFmt = `$${(bookedFutureRevenueCents / 100).toFixed(0)}`;
+  const summary = `${month}: ${toDateFmt} collected, ${futureFmt} in confirmed future bookings — projected total ${projFmt} by month-end (${confidenceLevel} confidence).`;
+
+  return {
+    month,
+    daysElapsed,
+    daysRemaining,
+    daysInMonth: totalDaysInMonth,
+    revenueToDateCents,
+    bookedFutureRevenueCents,
+    mrrCents: mrr,
+    projectedTotalCents,
+    runRateCents,
+    confidenceLevel,
+    assumptions,
+    risks,
+    summary,
+  };
 }

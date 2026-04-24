@@ -15,6 +15,8 @@ export interface ScheduleInsight {
   actionPrompt?: string;
 }
 
+export type UtilizationStatus = "overloaded" | "high_load" | "healthy" | "underbooked" | "no_availability";
+
 export interface CoachDigest {
   coachId: string;
   coachName: string;
@@ -23,6 +25,49 @@ export interface CoachDigest {
   utilizationPct: number;
   openSlots: number;
   todayBookings: number;
+  statusLabel: UtilizationStatus;
+  statusMessage: string;
+  recommendation: string;
+}
+
+export function getUtilizationStatus(pct: number, availableMinutes: number): {
+  statusLabel: UtilizationStatus;
+  statusMessage: string;
+  recommendation: string;
+} {
+  if (availableMinutes === 0) {
+    return {
+      statusLabel: "no_availability",
+      statusMessage: "No availability blocks set",
+      recommendation: "Set availability blocks to start tracking utilization",
+    };
+  }
+  if (pct > 90) {
+    return {
+      statusLabel: "overloaded",
+      statusMessage: `At ${pct}% capacity — risk of burnout and client experience decline`,
+      recommendation: "Consider moving lower-priority sessions or adding capacity. Do not accept new clients this week.",
+    };
+  }
+  if (pct > 80) {
+    return {
+      statusLabel: "high_load",
+      statusMessage: `At ${pct}% capacity — healthy but limited room for additions`,
+      recommendation: "Accept new bookings with caution. Prioritize high-value clients for any remaining slots.",
+    };
+  }
+  if (pct >= 45) {
+    return {
+      statusLabel: "healthy",
+      statusMessage: `At ${pct}% — good balance of bookings and flexibility`,
+      recommendation: "Room to add 1–2 new clients or fill gaps with semi-private sessions.",
+    };
+  }
+  return {
+    statusLabel: "underbooked",
+    statusMessage: `At ${pct}% — significant capacity available`,
+    recommendation: "Focus on reactivating inactive clients and filling open slots. Good time for outreach.",
+  };
 }
 
 export interface OpsDigest {
@@ -112,6 +157,7 @@ export async function computeOrgDigest(orgId: string): Promise<OpsDigest> {
       : 0;
 
     const coachName = coach.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown";
+    const statusInfo = getUtilizationStatus(utilizationPct, availableMinutes);
 
     coachDigests.push({
       coachId: coach.id,
@@ -121,25 +167,48 @@ export async function computeOrgDigest(orgId: string): Promise<OpsDigest> {
       utilizationPct,
       openSlots: actualOpenSlots,
       todayBookings: todayBookings.length,
+      ...statusInfo,
     });
 
-    if (utilizationPct < 40 && availableMinutes > 0) {
+    if (statusInfo.statusLabel === "overloaded") {
+      insights.push({
+        type: "warning",
+        category: "utilization",
+        title: `${coachName} is overloaded this week`,
+        description: `At ${utilizationPct}% capacity — only ${actualOpenSlots} hour-slot${actualOpenSlots !== 1 ? "s" : ""} remaining. Risk of burnout and declining client experience.`,
+        metric: `${utilizationPct}% booked`,
+        priority: "high",
+        actionLabel: "Review schedule",
+        actionPrompt: `Show me ${coachName}'s schedule this week`,
+      });
+    } else if (statusInfo.statusLabel === "high_load") {
+      insights.push({
+        type: "info",
+        category: "utilization",
+        title: `${coachName} is near capacity`,
+        description: `At ${utilizationPct}% with ${actualOpenSlots} slot${actualOpenSlots !== 1 ? "s" : ""} remaining. Accept new bookings carefully.`,
+        metric: `${utilizationPct}% booked`,
+        priority: "medium",
+        actionLabel: "View availability",
+        actionPrompt: `Find schedule gaps for coach ${coachName}`,
+      });
+    } else if (statusInfo.statusLabel === "underbooked") {
       insights.push({
         type: "opportunity",
         category: "utilization",
         title: `${coachName} has significant capacity this week`,
-        description: `Currently at ${utilizationPct}% utilization with ~${actualOpenSlots} open hour-slots available. Great opportunity to fill with sessions or semi-private groups.`,
+        description: `At ${utilizationPct}% with ~${actualOpenSlots} open hour-slots. Strong opportunity to fill with new or reactivated clients.`,
         metric: `${utilizationPct}% booked`,
         priority: "high",
         actionLabel: "Find open slots",
         actionPrompt: `Show me open time slots for coach ${coachName} this week`,
       });
-    } else if (utilizationPct < 70 && availableMinutes > 0) {
+    } else if (statusInfo.statusLabel === "healthy" && availableMinutes > 0) {
       insights.push({
         type: "info",
         category: "utilization",
         title: `${coachName} has room to grow`,
-        description: `At ${utilizationPct}% this week with ${actualOpenSlots} open hour-slots remaining. Consider adding semi-private or group sessions.`,
+        description: `At ${utilizationPct}% with ${actualOpenSlots} slot${actualOpenSlots !== 1 ? "s" : ""} remaining. Consider adding semi-private or group sessions.`,
         metric: `${utilizationPct}% booked`,
         priority: "medium",
         actionLabel: "Check availability",

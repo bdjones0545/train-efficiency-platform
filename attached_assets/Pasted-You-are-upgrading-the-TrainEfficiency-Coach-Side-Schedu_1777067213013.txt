@@ -1,0 +1,211 @@
+You are upgrading the TrainEfficiency Coach-Side Scheduling Agent from a scheduler into a business operator.
+
+Use the audit findings below as the source of truth.
+
+PRIMARY GOAL:
+Fix the highest-impact gaps first:
+1. Weekly revenue slicing and week-over-week comparison
+2. Monthly revenue forecasting
+3. Recurring session scheduling through the agent
+4. Outreach message drafting for churn risks, inactive clients, and upsell opportunities
+5. Overload detection and coach utilization alerts
+
+Do not redesign the whole app. Make targeted, production-safe upgrades.
+
+========================
+PHASE 1 — REVENUE TIME RANGE FIX
+========================
+
+Current issue:
+get_revenue_summary only returns rolling 30-day data. Coaches ask:
+- “What did I make this week?”
+- “Compare this week vs last week”
+- “What am I projected to make this month?”
+
+Implement one of these:
+Option A: Add startDate and endDate params to get_revenue_summary
+Option B: Create a new get_revenue_by_period tool
+
+The tool must return:
+- total revenue for selected period
+- session revenue
+- subscription/MRR revenue if available
+- revenue by coach
+- revenue by service/session type
+- current period vs previous matching period
+- dollar delta
+- percentage delta
+
+The agent must correctly route:
+- “this week” → current calendar week
+- “last week” → previous calendar week
+- “this month” → current calendar month
+- “compare this week vs last week” → current week vs previous week
+
+Do not answer week-specific revenue questions with 30-day revenue anymore.
+
+========================
+PHASE 2 — MONTHLY REVENUE FORECASTING
+========================
+
+Create a revenue forecasting function/tool.
+
+It should estimate end-of-month revenue using:
+- revenue already collected this month
+- booked future sessions this month
+- active recurring/subscription revenue if available
+- historical average session value if needed
+- remaining days in month
+
+Return:
+- current month revenue so far
+- booked future revenue
+- projected end-of-month revenue
+- confidence level: low / medium / high
+- assumptions used
+- risks to forecast
+- simple coach-friendly explanation
+
+Agent should answer:
+“What am I projected to make this month?”
+“Am I on track this month?”
+“What do I need to hit $X this month?”
+
+========================
+PHASE 3 — RECURRING SESSION BOOKING
+========================
+
+Add agent-side recurring booking capability.
+
+Create a tool/function that can create multiple sessions from one command.
+
+Inputs:
+- clientId or client name
+- coachId
+- serviceId/session type
+- start date
+- start time
+- duration
+- recurrence pattern: weekly / biweekly / custom days
+- number of occurrences or end date
+- location if required
+
+Safety rules:
+- Always check availability before creating sessions
+- Detect conflicts
+- Return conflicted dates before booking
+- Require coach confirmation before final creation
+- If some dates are open and some are blocked, present partial booking options
+- Never silently create recurring sessions without confirmation
+
+Agent should handle:
+- “Book Sarah every Tuesday at 7am for 8 weeks”
+- “Schedule John twice a week on Monday and Thursday mornings”
+- “Make this a recurring weekly session”
+
+========================
+PHASE 4 — OUTREACH DRAFTING
+========================
+
+Add outreach message drafting inside the agent.
+
+The agent should draft messages for:
+- churn-risk clients
+- inactive clients
+- clients with low session balances
+- upsell opportunities
+- waitlist/backfill opportunities
+
+Create a function or internal agent flow:
+draft_client_outreach
+
+Inputs:
+- client
+- reason for outreach
+- tone: professional / friendly / direct
+- goal: rebook / upsell / refill package / confirm interest / fill cancellation
+- relevant client context
+
+Output:
+- short text message version
+- email version if email exists
+- reason this message was recommended
+
+Do not send automatically yet unless a send tool already exists and confirmation is added.
+
+Agent should answer:
+“Who should I text today?”
+“Draft messages for my churn risks”
+“Write a message to Sarah to get her back on the schedule”
+“Who can fill this cancellation and what should I send them?”
+
+========================
+PHASE 5 — OVERLOAD DETECTION
+========================
+
+Upgrade coach utilization from raw percentage to business insight.
+
+Define thresholds:
+- Underbooked: below 45%
+- Healthy: 45–80%
+- High load: 80–90%
+- Overloaded: above 90%
+
+For each coach, return:
+- utilization percentage
+- open slot count
+- booked hours
+- available hours
+- status label
+- risk message if overloaded
+- growth message if underbooked
+- recommendation
+
+Agent should answer:
+- “What days are overloaded?”
+- “Which coaches are underbooked?”
+- “Where should I move sessions?”
+- “Who has room for more clients?”
+
+========================
+PHASE 6 — ROUTING AND UX
+========================
+
+Update agent routing so the correct tools are used.
+
+Important:
+- Revenue questions with time windows must use time-range revenue tools
+- Forecast questions must use forecasting tool
+- Recurring booking language must not redirect to dashboard
+- Churn/growth questions should include optional outreach draft suggestions
+- Utilization questions should include overload/underbooked interpretation
+
+The agent should avoid generic answers. Every answer should include:
+- what the data shows
+- why it matters
+- recommended next action
+
+========================
+PHASE 7 — VALIDATION TESTS
+========================
+
+After implementation, test these prompts:
+
+1. “What did I make this week?”
+2. “Compare this week vs last week.”
+3. “What am I projected to make this month?”
+4. “What do I need to hit $15,000 this month?”
+5. “Book Sarah every Tuesday at 7am for 8 weeks.”
+6. “Schedule John twice a week on Monday and Thursday mornings.”
+7. “Draft messages for clients at risk of dropping off.”
+8. “Who should I text to fill open slots this week?”
+9. “What days are overloaded?”
+10. “Which coaches are underbooked?”
+
+For each test, report:
+- tool/function used
+- result
+- whether it passed
+- any remaining gap
+
+Return a clean implementation summary when complete.
