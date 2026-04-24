@@ -1,0 +1,204 @@
+You are upgrading the TrainEfficiency Coach-Side Scheduling Agent into a true closed-loop business operator.
+
+Current state:
+The agent can:
+- identify churn risks, inactive clients, and growth opportunities
+- draft outreach messages
+- schedule sessions safely
+- provide revenue forecasts and weekly recaps
+
+Gap:
+The system does NOT track outcomes or close the loop after actions.
+
+PRIMARY GOAL:
+Create a CLOSED LOOP SYSTEM where:
+Insight → Action → Outcome → Feedback → Optimization
+
+========================
+PHASE 1 — ACTION TRACKING SYSTEM
+========================
+
+Create a new system to track all agent-recommended and agent-executed actions.
+
+Create a new data model: ActionLogExtended
+
+Fields:
+- actionId
+- clientId
+- actionType (outreach, booking, upsell, backfill)
+- actionSubType (churn_recovery, fill_slot, upsell_session, etc.)
+- timestamp
+- relatedSlot (date/time if applicable)
+- messageContent (if outreach)
+- status (pending, sent, responded, booked, ignored, failed)
+- outcomeValue (revenue generated if booked)
+- followUpAt (timestamp for next action)
+
+Agent rules:
+- Every outreach draft or booking suggestion must create an action entry
+- If message is sent → update status to “sent”
+- If booking occurs → link bookingId and mark as “booked”
+
+========================
+PHASE 2 — OUTCOME DETECTION
+========================
+
+Create logic to automatically detect outcomes:
+
+1. Booking-based detection:
+- If a client books within X hours after outreach → mark action as “booked”
+- Attach bookingId and revenue
+
+2. Inactivity:
+- If no response within X hours → mark as “ignored”
+
+3. Manual update (optional fallback):
+- Allow agent to update action status manually if needed
+
+Agent must now answer:
+- “Did that outreach work?”
+- “Which messages converted?”
+- “Who didn’t respond?”
+
+========================
+PHASE 3 — FOLLOW-UP ENGINE
+========================
+
+Create automatic follow-up logic:
+
+Rules:
+- If status = sent AND no response after 24–48 hours → create follow-up action
+- If churn risk still exists after 7 days → escalate
+- If client ignored 2+ attempts → downgrade priority
+
+Create new tool/flow:
+generate_follow_up_actions
+
+Output:
+- clients needing follow-up
+- recommended message
+- urgency level
+
+Agent must answer:
+- “Who do I need to follow up with?”
+- “What should I send next?”
+
+========================
+PHASE 4 — DAILY ACTION QUEUE (OPERATOR CORE)
+========================
+
+Create a new command:
+
+get_daily_action_queue
+
+This is the MOST IMPORTANT feature.
+
+It must return a prioritized list of actions for today:
+
+Categories:
+1. High-priority:
+   - churn risks
+   - follow-ups due
+   - unfilled high-value slots (today/tomorrow)
+
+2. Revenue opportunities:
+   - upsell candidates
+   - underbooked days
+
+3. Maintenance:
+   - inactive clients
+   - low session balances
+
+Each item must include:
+- client name
+- reason
+- suggested action
+- pre-drafted message (if applicable)
+- expected revenue impact
+
+Agent must answer:
+- “What should I do today?”
+- “What’s my priority this morning?”
+
+========================
+PHASE 5 — PERFORMANCE ANALYTICS
+========================
+
+Create new insights:
+
+1. Outreach performance:
+- messages sent
+- response rate
+- booking conversion rate
+- revenue generated from outreach
+
+2. Slot fill rate:
+- % of open slots filled after detection
+- average time to fill
+
+3. Churn recovery:
+- % of churn-risk clients successfully rebooked
+
+4. Revenue attribution:
+- how much revenue came from agent-driven actions
+
+Create tool:
+get_operator_performance_metrics
+
+Agent must answer:
+- “How effective is my outreach?”
+- “How much revenue is coming from the agent?”
+
+========================
+PHASE 6 — PROACTIVE ALERT SYSTEM
+========================
+
+Move from reactive → proactive.
+
+Create daily digest trigger (can be cron-based):
+
+Send/Generate:
+- daily action queue
+- key risks
+- revenue update
+- top opportunity
+
+Agent behavior:
+- prioritize “push-style” responses:
+  “Here’s what needs your attention today…”
+
+========================
+PHASE 7 — VALIDATION
+========================
+
+Test:
+
+1. “What should I do today?”
+2. “Who do I need to follow up with?”
+3. “Did my outreach yesterday work?”
+4. “Which messages converted to bookings?”
+5. “How much revenue came from outreach?”
+6. “Who ignored my messages?”
+7. “What actions made me the most money this week?”
+
+For each:
+- tools used
+- whether outcomes are tracked
+- whether response is actionable
+
+Return structured summary.
+
+========================
+FINAL RULE
+========================
+
+The agent is no longer just an assistant.
+
+It is responsible for:
+- identifying opportunities
+- recommending actions
+- tracking outcomes
+- improving decisions over time
+
+Every insight must connect to an action.
+Every action must connect to an outcome.

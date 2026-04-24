@@ -412,13 +412,37 @@ export const agentActionLog = pgTable("agent_action_log", {
   undone: boolean("undone").default(false),
 });
 
+export const agentActionStatusEnum = pgEnum("agent_action_status", ["pending", "sent", "responded", "booked", "ignored", "failed"]);
+
+export const agentActions = pgTable("agent_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  clientId: varchar("client_id"),
+  coachId: varchar("coach_id"),
+  actionType: varchar("action_type").notNull(),
+  actionSubType: varchar("action_sub_type"),
+  createdAt: timestamp("created_at").defaultNow(),
+  relatedSlot: jsonb("related_slot"),
+  messageContent: jsonb("message_content"),
+  status: agentActionStatusEnum("status").default("pending"),
+  bookingId: varchar("booking_id"),
+  outcomeValueCents: integer("outcome_value_cents"),
+  followUpAt: timestamp("follow_up_at"),
+  followUpCount: integer("follow_up_count").default(0),
+  clientName: varchar("client_name"),
+  notes: text("notes"),
+});
+
 export const insertWaitlistSchema = createInsertSchema(waitlist).omit({ id: true, createdAt: true });
 export const insertAgentActionLogSchema = createInsertSchema(agentActionLog).omit({ id: true, executedAt: true });
+export const insertAgentActionSchema = createInsertSchema(agentActions).omit({ id: true, createdAt: true });
 
 export type Waitlist = typeof waitlist.$inferSelect;
 export type InsertWaitlist = z.infer<typeof insertWaitlistSchema>;
 export type AgentActionLog = typeof agentActionLog.$inferSelect;
 export type InsertAgentActionLog = z.infer<typeof insertAgentActionLogSchema>;
+export type AgentAction = typeof agentActions.$inferSelect;
+export type InsertAgentAction = z.infer<typeof insertAgentActionSchema>;
 
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true });
 export const insertCoachProfileSchema = createInsertSchema(coachProfiles).omit({ id: true });

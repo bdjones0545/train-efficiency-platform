@@ -121,6 +121,21 @@ app.use((req, res, next) => {
 (async () => {
   const { seedDatabase } = await import("./seed");
   await seedDatabase();
+
+  const { detectOutcomesForOrg } = await import("./action-tracking");
+  const { db: actionDb } = await import("./db");
+  const { organizations: orgsTable } = await import("@shared/schema");
+
+  const runOutcomeDetection = async () => {
+    try {
+      const orgs = await actionDb.select({ id: orgsTable.id }).from(orgsTable).limit(100);
+      for (const org of orgs) {
+        await detectOutcomesForOrg(org.id).catch(() => {});
+      }
+    } catch (_) {}
+  };
+
+  setInterval(runOutcomeDetection, 30 * 60 * 1000);
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
   await registerRoutes(httpServer, app);

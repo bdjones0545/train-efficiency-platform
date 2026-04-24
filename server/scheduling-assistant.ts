@@ -1,6 +1,12 @@
 import OpenAI from "openai";
 import { storage } from "./storage";
 import { addDays, startOfWeek, format, addMinutes, startOfMonth, endOfMonth } from "date-fns";
+import {
+  createAgentAction,
+  generateFollowUpActions,
+  buildDailyActionQueue,
+  getOperatorPerformanceMetrics,
+} from "./action-tracking";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import {
   sendBookingConfirmationToClient,
@@ -530,6 +536,38 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       name: "get_weekly_business_recap",
       description: "Generate a complete weekly business recap: revenue this week vs last week, sessions completed and cancelled, current capacity risks, growth opportunities, and 3 top next actions. Use for 'weekly recap', 'how was my week', 'week in review', or any end-of-week summary request.",
       parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_daily_action_queue",
+      description: "Return a prioritized list of actions for today, organized by priority tier: high-priority (churn risks, follow-ups due, unfilled slots), revenue opportunities (upsell targets, underbooked), and maintenance (low session packages, inactive clients). Use for 'what should I do today?', 'what's my priority this morning?', 'give me my to-do list', or any daily briefing request.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_follow_up_actions",
+      description: "Return a list of clients who need follow-up on outreach messages that were sent but not responded to. Includes urgency level and recommended follow-up message. Use for 'who do I need to follow up with?', 'who hasn't responded?', 'who ignored my messages?', 'did my outreach work?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_operator_performance_metrics",
+      description: "Return aggregate performance metrics for agent-driven outreach and bookings: messages sent, conversion rate, revenue attributed to outreach, best-converting message types, and top revenue-generating clients. Use for 'how effective is my outreach?', 'which messages converted?', 'how much revenue came from the agent?', 'what actions made me the most money?'",
+      parameters: {
+        type: "object",
+        properties: {
+          sinceDays: {
+            type: "number",
+            description: "Number of days to look back. Default 30. Use 7 for 'this week', 14 for 'last 2 weeks'.",
+          },
+        },
+      },
     },
   },
 ];
@@ -2037,7 +2075,7 @@ Return a JSON object with exactly these keys:
           drafts = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
         } catch (_) {}
 
-        return JSON.stringify({
+        const outreachResult = {
           client: clientName,
           email: email || "No email on file",
           lastSession: lastSessionInfo || "No session history found",
@@ -2047,7 +2085,58 @@ Return a JSON object with exactly these keys:
           emailSubject: drafts.email_subject || `Checking in — ${clientName}`,
           emailBody: drafts.email_body || "(Email draft unavailable)",
           reasoning: drafts.reasoning || "",
-        });
+        };
+
+        if (organizationId) {
+          createAgentAction({
+            organizationId,
+            clientId,
+            actionType: "outreach",
+            actionSubType: reason,
+            status: "pending",
+            clientName,
+            relatedSlot: targetSlot ? { label: targetSlot } : null,
+            messageContent: {
+              sms: outreachResult.sms,
+              emailSubject: outreachResult.emailSubject,
+              emailBody: outreachResult.emailBody,
+            },
+            followUpAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          }).catch(() => {});
+        }
+
+        return JSON.stringify(outreachResult);
+      }
+
+      case "get_daily_action_queue": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access the action queue." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const queue = await buildDailyActionQueue(organizationId);
+        return JSON.stringify(queue);
+      }
+
+      case "get_follow_up_actions": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access follow-up actions." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const followUps = await generateFollowUpActions(organizationId);
+        if (followUps.length === 0) {
+          return JSON.stringify({ message: "No follow-ups needed right now. All outreach has received a response or is within the 24-hour window.", items: [] });
+        }
+        return JSON.stringify({ count: followUps.length, items: followUps });
+      }
+
+      case "get_operator_performance_metrics": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access performance metrics." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const sinceDays = args.sinceDays ?? 30;
+        const metrics = await getOperatorPerformanceMetrics(organizationId, sinceDays);
+        return JSON.stringify(metrics);
       }
 
       default:
@@ -2206,6 +2295,44 @@ Present using this exact structure:
 4. Opportunities: top upsell targets, underbooked coaches, waitlist count
 5. Next 3 actions: specific, named, actionable
 
+## Action Tracking Rules (CRITICAL — Closed-Loop System)
+Every time you call **draft_client_outreach**, the system automatically records an action entry in the database. This powers the closed-loop follow-up system:
+- The entry starts with status: "pending" — the coach must mark it "sent" after actually sending the message
+- If the client books after the message → system auto-marks as "booked"
+- If no response after 48h → system auto-marks as "ignored"
+- get_follow_up_actions reads these entries to surface who needs follow-up
+- get_operator_performance_metrics reads them to compute conversion rates
+
+When a coach says "I sent that message" or "I texted [name]" → remind them the system will auto-detect if a booking comes in.
+When a coach asks "did it work?" → call get_follow_up_actions to show current outcome status.
+
+## Daily Action Queue (get_daily_action_queue — most important feature)
+Use **get_daily_action_queue** when the coach asks:
+- "What should I do today?" / "What's my priority this morning?"
+- "Give me my daily briefing" / "What needs my attention?"
+- "Where do I start?" (open-ended)
+Present the queue by tier:
+1. **High Priority** (churn risks, overdue follow-ups, open slots): address first, explain urgency
+2. **Revenue Opportunities** (upsells, underbooked coaches): quantify the revenue impact
+3. **Maintenance** (low package balances, inactive clients): defer if needed but flag
+For each item: name the client, explain why, state the action, show pre-drafted message if present.
+
+## Follow-Up Engine (get_follow_up_actions)
+Use **get_follow_up_actions** when the coach asks:
+- "Who do I need to follow up with?" / "Who hasn't responded?"
+- "Who ignored my messages?" / "Did that outreach work?"
+- "Who should I check back in with?"
+Present by urgency: critical first (7+ days, no response), then high (48h), then medium (24h).
+Include the recommended follow-up message. If follow-up count ≥ 2, flag as "close the loop — downgrade priority."
+
+## Performance Analytics (get_operator_performance_metrics)
+Use **get_operator_performance_metrics** when the coach asks:
+- "How effective is my outreach?" / "What's my conversion rate?"
+- "How much revenue came from the agent?" / "Which messages converted?"
+- "What actions made me the most money this week?"
+Present: sent count → conversion % → revenue attributed → best-converting type → top clients.
+Always end with the insights array from the tool. Never compute rates yourself.
+
 ## Quick Action Handling
 If the user sends one of these phrases, respond as follows:
 - "Find openings" / "Find open slots" → Ask which coach and time frame, then call identify_schedule_gaps
@@ -2225,6 +2352,11 @@ If the user sends one of these phrases, respond as follows:
 - "Compare this week vs last week" → Call get_revenue_by_period with period: "this_week" and compare: true
 - "Projected revenue" / "Am I on track?" → Call get_revenue_forecast (no targetCents)
 - "What do I need to hit $X?" → Call get_revenue_forecast with targetCents set to that dollar value × 100
+- "What should I do today?" / "What's my priority?" / "Daily briefing" → Call get_daily_action_queue
+- "Who do I need to follow up with?" / "Who hasn't responded?" → Call get_follow_up_actions
+- "Did my outreach work?" / "Who ignored my messages?" / "Which messages converted?" → Call get_follow_up_actions first (for status), then get_operator_performance_metrics (for aggregate)
+- "How effective is my outreach?" / "What's my conversion rate?" → Call get_operator_performance_metrics
+- "How much revenue came from the agent?" / "What actions made me money?" → Call get_operator_performance_metrics
 - "Churn risks" / "Who might leave?" / "At-risk clients" → Call get_churn_risks
 - "Draft messages for churn risks" → get_churn_risks then draft_client_outreach for top clients
 - "Who should I text today?" → get_churn_risks + find_inactive_clients, then offer to draft messages

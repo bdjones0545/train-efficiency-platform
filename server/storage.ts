@@ -17,10 +17,13 @@ import {
   blockedTimes,
   waitlist,
   agentActionLog,
+  agentActions,
   type Waitlist,
   type InsertWaitlist,
   type AgentActionLog,
   type InsertAgentActionLog,
+  type AgentAction,
+  type InsertAgentAction,
   type UserProfile,
   type InsertUserProfile,
   type CoachProfile,
@@ -192,6 +195,10 @@ export interface IStorage {
   logAgentAction(entry: InsertAgentActionLog): Promise<AgentActionLog>;
   getAgentActionLog(orgId: string, limit?: number): Promise<AgentActionLog[]>;
   undoAgentAction(id: string): Promise<boolean>;
+
+  createAgentAction(entry: InsertAgentAction): Promise<AgentAction>;
+  getAgentActions(orgId: string, opts?: { status?: string; clientId?: string; sinceDays?: number; limit?: number }): Promise<AgentAction[]>;
+  updateAgentAction(id: string, data: Partial<AgentAction>): Promise<AgentAction | undefined>;
 
   getOrgAutomationLevel(orgId: string): Promise<number>;
   setOrgAutomationLevel(orgId: string, level: number): Promise<void>;
@@ -1475,6 +1482,32 @@ export class DatabaseStorage implements IStorage {
   async undoAgentAction(id: string): Promise<boolean> {
     const result = await db.update(agentActionLog).set({ undone: true }).where(eq(agentActionLog.id, id)).returning();
     return result.length > 0;
+  }
+
+  async createAgentAction(entry: InsertAgentAction): Promise<AgentAction> {
+    const [row] = await db.insert(agentActions).values(entry).returning();
+    return row;
+  }
+
+  async getAgentActions(orgId: string, opts: { status?: string; clientId?: string; sinceDays?: number; limit?: number } = {}): Promise<AgentAction[]> {
+    const conditions: any[] = [eq(agentActions.organizationId, orgId)];
+    if (opts.status) conditions.push(eq(agentActions.status, opts.status as any));
+    if (opts.clientId) conditions.push(eq(agentActions.clientId, opts.clientId));
+    if (opts.sinceDays) {
+      const since = new Date(Date.now() - opts.sinceDays * 86400000);
+      conditions.push(gte(agentActions.createdAt, since));
+    }
+    return db
+      .select()
+      .from(agentActions)
+      .where(and(...conditions))
+      .orderBy(desc(agentActions.createdAt))
+      .limit(opts.limit ?? 100);
+  }
+
+  async updateAgentAction(id: string, data: Partial<AgentAction>): Promise<AgentAction | undefined> {
+    const [row] = await db.update(agentActions).set(data as any).where(eq(agentActions.id, id)).returning();
+    return row;
   }
 
   async getOrgAutomationLevel(orgId: string): Promise<number> {
