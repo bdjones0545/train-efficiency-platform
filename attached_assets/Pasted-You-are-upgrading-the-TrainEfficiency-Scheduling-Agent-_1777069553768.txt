@@ -1,0 +1,159 @@
+You are upgrading the TrainEfficiency Scheduling Agent into a self-optimizing business operator.
+
+Current state:
+The system is closed-loop:
+- actions are tracked
+- outcomes are detected
+- revenue is attributed
+
+Goal:
+Make the agent ADAPT, PRIORITIZE, and optionally ACT automatically based on performance.
+
+========================
+PHASE 1 — ADAPTIVE DECISION ENGINE
+========================
+
+Create a new system:
+
+compute_action_performance_profile
+
+For each actionSubType:
+- totalSent
+- totalBooked
+- conversionRate
+- avgRevenuePerAction
+- avgTimeToBook
+- last30DayTrend (improving / declining)
+
+Store this as:
+actionPerformanceProfile
+
+Agent rules:
+- When choosing between multiple actions:
+  → prioritize higher conversionRate AND higher avgRevenuePerAction
+
+Examples:
+- If backfill converts at 65% and churn_recovery at 20%:
+  → prioritize backfill for open slots
+
+- If upsell has high revenue but low conversion:
+  → use when no short-term slots exist
+
+Agent must explain:
+“Prioritizing X because it has the highest conversion rate (Y%) over the last 30 days.”
+
+========================
+PHASE 2 — SMART ACTION PRIORITIZATION
+========================
+
+Upgrade get_daily_action_queue:
+
+Ranking must now consider:
+- urgency (existing)
+- expected revenue
+- probability of conversion (from performance profile)
+
+Create a score:
+actionScore = (conversionRate * expectedRevenue) * urgencyWeight
+
+Return:
+- ranked list (not just grouped)
+- top 3 “highest ROI actions today”
+
+========================
+PHASE 3 — AUTONOMOUS MODE (OPTIONAL)
+========================
+
+Introduce agent setting:
+autoExecuteMode = OFF by default
+
+If ON:
+Agent can automatically:
+- send follow-up messages
+- send backfill outreach for open slots within next 24h
+- send package renewal reminders
+
+Restrictions:
+- NEVER send first-touch churn outreach automatically
+- NEVER book sessions automatically
+- ALWAYS log action + mark as auto-sent
+
+Add confirmation tier:
+- low-risk → auto-send allowed
+- medium-risk → require confirmation
+- high-risk → always manual
+
+========================
+PHASE 4 — REVENUE OPTIMIZATION ENGINE
+========================
+
+Create new tool:
+
+compute_revenue_optimization_plan
+
+Goal:
+Maximize next 7 days revenue.
+
+Inputs:
+- schedule gaps
+- client pool (churn, inactive, upsell candidates)
+- action performance profile
+- coach availability
+
+Output:
+- prioritized plan:
+  1. fill these exact slots first
+  2. contact these clients in this order
+  3. use this message type
+  4. estimated revenue gain
+
+Agent must answer:
+- “How do I make the most money this week?”
+- “What’s the best way to fill my schedule?”
+
+========================
+PHASE 5 — LEARNING FEEDBACK LOOP
+========================
+
+After each week:
+
+Update:
+- actionPerformanceProfile
+- conversion trends
+- best-performing time slots
+- best-performing message types
+
+Agent must surface:
+- “What worked best this week”
+- “What to do more of next week”
+
+========================
+PHASE 6 — VALIDATION
+========================
+
+Test:
+
+1. “What should I do today?” (must show ranked ROI-based actions)
+2. “Why are you prioritizing these?”
+3. “How do I make the most money this week?”
+4. “What outreach works best?”
+5. “What should I stop doing?”
+6. “Turn on auto mode”
+7. “What will you do automatically now?”
+
+For each:
+- confirm adaptive logic is used
+- confirm performance profile is referenced
+- confirm prioritization is no longer static
+
+========================
+FINAL RULE
+========================
+
+The agent must evolve from:
+reactive → proactive → adaptive
+
+It must:
+- learn what works
+- prioritize based on outcomes
+- continuously improve decisions

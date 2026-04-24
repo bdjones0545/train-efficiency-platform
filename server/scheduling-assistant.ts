@@ -5,7 +5,13 @@ import {
   createAgentAction,
   generateFollowUpActions,
   buildDailyActionQueue,
+  buildScoredDailyActionQueue,
   getOperatorPerformanceMetrics,
+  computeActionPerformanceProfile,
+  getAutoModeStatus,
+  setAutoMode,
+  computeRevenueOptimizationPlan,
+  getWeeklyLearningInsights,
 } from "./action-tracking";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import {
@@ -568,6 +574,52 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           },
         },
       },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_action_performance_profile",
+      description: "Return performance data for each outreach action type: conversion rate, average revenue per booking, 30-day trend (improving/declining/stable), and ROI score. Use for 'what outreach works best?', 'why are you prioritizing X?', 'which message type converts best?', 'what should I stop doing?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_auto_mode_status",
+      description: "Return the current autonomous mode level: what the agent is allowed to do automatically vs what requires manual coach input. Use for 'what will you do automatically?', 'what's auto mode?', 'what is the agent doing on its own?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_auto_mode",
+      description: "Set the autonomous mode level for the agent. Level 0=Manual (suggest only), 1=Suggest (default), 2=Semi-Auto (auto-draft follow-ups + backfill), 3=Full Operator (daily queue auto-populated). Use when the coach says 'turn on auto mode', 'enable auto mode', 'go to full operator mode', or specifies a level.",
+      parameters: {
+        type: "object",
+        properties: {
+          level: { type: "number", description: "0=Manual, 1=Suggest, 2=Semi-Auto, 3=Full Operator" },
+        },
+        required: ["level"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compute_revenue_optimization_plan",
+      description: "Build a prioritized 7-day revenue optimization plan: match open schedule slots to the highest-ROI client contacts based on historical conversion data. Returns slot-by-slot recommendations, client contact order, message types to use, and estimated achievable revenue. Use for 'how do I make the most money this week?', 'what's the best way to fill my schedule?', 'give me a revenue plan', 'maximize this week'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_weekly_learning_insights",
+      description: "Return what worked and what to improve based on this week's outreach data vs last week: best-performing action types, declining approaches, week-over-week conversion trend. Use for 'what worked best this week?', 'what should I stop doing?', 'what should I do more of?', 'how did I improve this week?'",
+      parameters: { type: "object", properties: {} },
     },
   },
 ];
@@ -2113,7 +2165,7 @@ Return a JSON object with exactly these keys:
           return JSON.stringify({ error: "Only coaches, admins, and staff can access the action queue." });
         }
         if (!organizationId) return JSON.stringify({ error: "No organization context." });
-        const queue = await buildDailyActionQueue(organizationId);
+        const queue = await buildScoredDailyActionQueue(organizationId);
         return JSON.stringify(queue);
       }
 
@@ -2137,6 +2189,52 @@ Return a JSON object with exactly these keys:
         const sinceDays = args.sinceDays ?? 30;
         const metrics = await getOperatorPerformanceMetrics(organizationId, sinceDays);
         return JSON.stringify(metrics);
+      }
+
+      case "get_action_performance_profile": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access the performance profile." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const profile = await computeActionPerformanceProfile(organizationId);
+        if (profile.length === 0) {
+          return JSON.stringify({ message: "No outreach data yet. Start drafting messages through the agent to build your performance profile.", profiles: [] });
+        }
+        return JSON.stringify({ profiles: profile, topPerformer: profile[0]?.subType ?? null, lowestPerformer: profile[profile.length - 1]?.subType ?? null });
+      }
+
+      case "get_auto_mode_status": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const status = await getAutoModeStatus(organizationId);
+        return JSON.stringify(status);
+      }
+
+      case "set_auto_mode": {
+        if (userRole !== "COACH" && userRole !== "ADMIN") {
+          return JSON.stringify({ error: "Only coaches and admins can change the auto mode setting." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const level = typeof args.level === "number" ? args.level : 1;
+        const newStatus = await setAutoMode(organizationId, level);
+        return JSON.stringify({ success: true, newMode: newStatus, message: `Auto mode set to ${newStatus.label}. ${newStatus.description}` });
+      }
+
+      case "compute_revenue_optimization_plan": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access the revenue optimization plan." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const plan = await computeRevenueOptimizationPlan(organizationId);
+        return JSON.stringify(plan);
+      }
+
+      case "get_weekly_learning_insights": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access learning insights." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const insights = await getWeeklyLearningInsights(organizationId);
+        return JSON.stringify(insights);
       }
 
       default:
@@ -2295,6 +2393,21 @@ Present using this exact structure:
 4. Opportunities: top upsell targets, underbooked coaches, waitlist count
 5. Next 3 actions: specific, named, actionable
 
+## Adaptive Decision Engine (CRITICAL — Performance-Based Prioritization)
+The agent is self-optimizing. Every tool call must reference the performance profile when prioritizing multiple options:
+- ALWAYS call **get_action_performance_profile** first when choosing between different outreach types to recommend
+- When the profile has reliable data (totalSent >= 3 for a subType): rank options by roiScore descending
+- When the profile lacks data: fall back to urgency-based ranking and say so explicitly
+- ALWAYS explain WHY you're prioritizing something: "Prioritizing backfill outreach because it converts at 65% — your strongest action type."
+- NEVER present options without ranking them and stating the reason for the ranking
+
+## Daily Action Queue — Ranked by ROI (Phase 2)
+The get_daily_action_queue now returns a ranked flat list (not just grouped) + topROI[3]:
+- Present the topROI items first as "Your top 3 actions by expected return"
+- Show scoreBreakdown when the coach asks "why are you prioritizing these?"
+- Show profileReasoning per item to explain the adaptive logic
+- Show performanceNote to acknowledge whether profile data was used or baseline was applied
+
 ## Action Tracking Rules (CRITICAL — Closed-Loop System)
 Every time you call **draft_client_outreach**, the system automatically records an action entry in the database. This powers the closed-loop follow-up system:
 - The entry starts with status: "pending" — the coach must mark it "sent" after actually sending the message
@@ -2333,6 +2446,39 @@ Use **get_operator_performance_metrics** when the coach asks:
 Present: sent count → conversion % → revenue attributed → best-converting type → top clients.
 Always end with the insights array from the tool. Never compute rates yourself.
 
+## Action Performance Profile (get_action_performance_profile)
+Use **get_action_performance_profile** when the coach asks:
+- "What outreach works best?" / "Which message type converts highest?"
+- "Why are you prioritizing X over Y?" → show roiScore breakdown + trend
+- "What should I stop doing?" → surface lowest roiScore + declining trend types
+- Called automatically before any multi-option recommendation (see Adaptive Decision Engine)
+Present each subType: conversionRateLabel, avgRevenueLabel, trend, reasoning. Lead with the top performer. End with a clear recommendation: "Lead with [X] — it's your highest-ROI action type right now."
+
+## Revenue Optimization Plan (compute_revenue_optimization_plan)
+Use **compute_revenue_optimization_plan** when the coach asks:
+- "How do I make the most money this week?" / "Give me a revenue plan"
+- "What's the best way to fill my schedule?" / "Maximize this week"
+Present: achievableRevenueLabel first (the realistic number), then top 3 slot assignments by priority rank (slot + recommended client + message type), then clientContactOrder (who to reach out to first and why), then topInsight.
+Always show: "Potential: $X / Achievable (adjusted for conversion): $Y" distinction.
+
+## Autonomous Mode (set_auto_mode / get_auto_mode_status)
+Use **get_auto_mode_status** when the coach asks:
+- "What will you do automatically?" / "What's auto mode?" / "What are you doing on your own?"
+Use **set_auto_mode** when the coach says:
+- "Turn on auto mode" / "Enable auto" → level 2 (Semi-Auto)
+- "Full operator mode" / "Full auto" → level 3
+- "Turn off auto mode" / "Go back to manual" → level 0 or 1
+- "Set auto mode to level [N]" → pass the level directly
+NEVER change auto mode without calling the tool. After setting, explain exactly what changed and what the agent will now do differently.
+NEVER forget the hard rules: even at level 3, the agent NEVER auto-books sessions and NEVER sends first-touch churn outreach automatically.
+
+## Learning Feedback Loop (get_weekly_learning_insights)
+Use **get_weekly_learning_insights** when the coach asks:
+- "What worked best this week?" / "What should I stop doing?"
+- "What should I do more of?" / "How did I improve this week?"
+- "What to do next week?"
+Present: whatWorked first (celebrate wins), then whatToDoMoreOf (actionable), then whatToStopOrReduce (honest cuts), then weekOverWeekNote (trend). Always end with a single next-week recommendation.
+
 ## Quick Action Handling
 If the user sends one of these phrases, respond as follows:
 - "Find openings" / "Find open slots" → Ask which coach and time frame, then call identify_schedule_gaps
@@ -2352,11 +2498,19 @@ If the user sends one of these phrases, respond as follows:
 - "Compare this week vs last week" → Call get_revenue_by_period with period: "this_week" and compare: true
 - "Projected revenue" / "Am I on track?" → Call get_revenue_forecast (no targetCents)
 - "What do I need to hit $X?" → Call get_revenue_forecast with targetCents set to that dollar value × 100
-- "What should I do today?" / "What's my priority?" / "Daily briefing" → Call get_daily_action_queue
+- "What should I do today?" / "What's my priority?" / "Daily briefing" → Call get_daily_action_queue (returns scored + ranked list)
+- "Why are you prioritizing these?" / "Why X over Y?" → Call get_action_performance_profile and show scoreBreakdown per item
 - "Who do I need to follow up with?" / "Who hasn't responded?" → Call get_follow_up_actions
 - "Did my outreach work?" / "Who ignored my messages?" / "Which messages converted?" → Call get_follow_up_actions first (for status), then get_operator_performance_metrics (for aggregate)
 - "How effective is my outreach?" / "What's my conversion rate?" → Call get_operator_performance_metrics
 - "How much revenue came from the agent?" / "What actions made me money?" → Call get_operator_performance_metrics
+- "What outreach works best?" / "What converts the most?" / "What should I stop doing?" → Call get_action_performance_profile
+- "How do I make the most money this week?" / "Revenue plan" / "Maximize this week" → Call compute_revenue_optimization_plan
+- "Turn on auto mode" / "Enable auto" → Call set_auto_mode(level: 2)
+- "Full operator mode" / "Full auto" → Call set_auto_mode(level: 3)
+- "Turn off auto mode" / "Manual mode" → Call set_auto_mode(level: 1)
+- "What will you do automatically?" / "What's auto mode?" → Call get_auto_mode_status
+- "What worked best this week?" / "What should I do more of?" / "What should I stop doing?" → Call get_weekly_learning_insights
 - "Churn risks" / "Who might leave?" / "At-risk clients" → Call get_churn_risks
 - "Draft messages for churn risks" → get_churn_risks then draft_client_outreach for top clients
 - "Who should I text today?" → get_churn_risks + find_inactive_clients, then offer to draft messages
