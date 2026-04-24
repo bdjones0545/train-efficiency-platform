@@ -431,11 +431,39 @@ export const agentActions = pgTable("agent_actions", {
   followUpCount: integer("follow_up_count").default(0),
   clientName: varchar("client_name"),
   notes: text("notes"),
+  autoSent: boolean("auto_sent").default(false),
+  autoReason: text("auto_reason"),
+  variationType: varchar("variation_type"),
+  scheduledFor: timestamp("scheduled_for"),
+  campaignId: varchar("campaign_id"),
+  campaignStep: integer("campaign_step"),
+});
+
+export const campaignStatusEnum = pgEnum("campaign_status", ["active", "paused", "completed", "stopped"]);
+
+export const campaigns = pgTable("campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  clientId: varchar("client_id").notNull(),
+  clientName: varchar("client_name"),
+  coachId: varchar("coach_id"),
+  campaignType: varchar("campaign_type").notNull(),
+  status: campaignStatusEnum("status").default("active"),
+  currentStep: integer("current_step").default(1),
+  totalSteps: integer("total_steps").notNull(),
+  nextActionAt: timestamp("next_action_at"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  stoppedReason: text("stopped_reason"),
+  revenueAttributedCents: integer("revenue_attributed_cents"),
+  relatedSlot: jsonb("related_slot"),
+  metadata: jsonb("metadata"),
 });
 
 export const insertWaitlistSchema = createInsertSchema(waitlist).omit({ id: true, createdAt: true });
 export const insertAgentActionLogSchema = createInsertSchema(agentActionLog).omit({ id: true, executedAt: true });
 export const insertAgentActionSchema = createInsertSchema(agentActions).omit({ id: true, createdAt: true });
+export const insertCampaignSchema = createInsertSchema(campaigns).omit({ id: true, startedAt: true });
 
 export type Waitlist = typeof waitlist.$inferSelect;
 export type InsertWaitlist = z.infer<typeof insertWaitlistSchema>;
@@ -443,6 +471,8 @@ export type AgentActionLog = typeof agentActionLog.$inferSelect;
 export type InsertAgentActionLog = z.infer<typeof insertAgentActionLogSchema>;
 export type AgentAction = typeof agentActions.$inferSelect;
 export type InsertAgentAction = z.infer<typeof insertAgentActionSchema>;
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true });
 export const insertCoachProfileSchema = createInsertSchema(coachProfiles).omit({ id: true });

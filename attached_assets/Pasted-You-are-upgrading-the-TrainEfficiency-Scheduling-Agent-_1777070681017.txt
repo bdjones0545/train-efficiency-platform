@@ -1,0 +1,229 @@
+You are upgrading the TrainEfficiency Scheduling Agent into a partially autonomous revenue engine.
+
+Current state:
+- Closed-loop system (actions → outcomes → learning)
+- Adaptive prioritization using performance profiles
+- ROI-based action scoring
+- Drafting and tracking are complete
+
+Goal:
+Introduce SAFE AUTONOMOUS EXECUTION + TIME-BASED OPTIMIZATION + MULTI-STEP CAMPAIGNS
+
+The system must:
+- increase revenue without daily input
+- remain safe and coach-controlled
+- continuously improve timing + messaging
+
+========================
+PHASE 1 — SAFE AUTO-SEND ENGINE
+========================
+
+Extend autoExecuteMode (levels 0–3):
+
+Level 0: OFF (manual)
+Level 1: Draft only (current)
+Level 2: Semi-auto (draft + suggest)
+Level 3: AUTO-SEND (new)
+
+At Level 3, allow automatic sending ONLY for:
+
+Allowed:
+- follow-up messages (after 24h+ no response)
+- backfill outreach for slots within next 24h
+- package renewal reminders
+
+Blocked:
+- first-touch churn outreach
+- upsell messages above $X threshold (configurable)
+- any booking creation
+
+Rules:
+- must check actionScore threshold before sending
+- must log as autoSent = true
+- must include “autoReason” (why it was sent automatically)
+
+Create:
+execute_auto_actions()
+
+Runs every 30–60 minutes:
+- scans eligible actions
+- filters by safety rules
+- executes send_client_message
+- updates action status to "sent_auto"
+
+========================
+PHASE 2 — TIME-BASED OPTIMIZATION
+========================
+
+Create system:
+compute_time_performance_profile
+
+For each actionSubType AND hour of day:
+- messages sent
+- responses
+- bookings
+- conversion rate by hour
+
+Store:
+timePerformanceProfile
+
+Agent rules:
+- When drafting or sending:
+  → prefer highest-converting time window
+
+Example:
+- Backfill converts best at 5–7pm → delay/send in that window
+
+Agent must say:
+“I’m scheduling this for 6pm — your highest conversion window for this type.”
+
+========================
+PHASE 3 — MESSAGE VARIATION LEARNING (A/B SYSTEM)
+========================
+
+Extend draft_client_outreach:
+
+Generate 2–3 variations:
+- short direct
+- friendly conversational
+- urgency-based
+
+Track:
+- variationType per action
+- conversion rate per variationType
+
+Create:
+messagePerformanceProfile
+
+Agent rules:
+- prioritize highest-performing variation
+- occasionally test new variations (exploration vs exploitation)
+
+========================
+PHASE 4 — MULTI-STEP CAMPAIGN ENGINE
+========================
+
+Create campaign system:
+
+campaignTemplates:
+- churn_recovery (3-step)
+- backfill_sequence (2-step)
+- upsell_sequence (3-step)
+- package_renewal (2-step)
+
+Each campaign:
+- step 1: initial message
+- step 2: follow-up after X hours
+- step 3: final attempt
+
+Create:
+start_campaign(clientId, campaignType)
+
+Tracks:
+- campaignId
+- currentStep
+- nextActionAt
+- status (active, completed, stopped)
+
+Engine:
+run_campaign_engine()
+
+Runs periodically:
+- checks due campaign steps
+- executes or drafts next message
+- stops if client books or responds
+
+========================
+PHASE 5 — REVENUE AUTOPILOT MODE
+========================
+
+Create new command:
+set_revenue_autopilot(level)
+
+Levels:
+0 = off
+1 = recommend only
+2 = auto-draft campaigns
+3 = auto-execute safe campaigns
+
+When enabled:
+System automatically:
+- starts campaigns for churn risks
+- runs backfill sequences for open slots
+- triggers follow-ups
+- applies time optimization
+
+Must always:
+- respect safety rules
+- log everything
+- allow manual override
+
+========================
+PHASE 6 — SMART THROTTLING & FATIGUE CONTROL
+========================
+
+Prevent over-messaging:
+
+Rules:
+- max 1 message per client per 24h
+- max 3 total attempts per campaign
+- cooldown after ignored campaigns (7 days)
+- reduce frequency for low-performing action types
+
+Agent must track:
+- clientMessageFrequency
+- ignoreRate per client
+
+If high ignore rate:
+→ reduce priority or pause outreach
+
+========================
+PHASE 7 — OPERATOR DASHBOARD OUTPUT
+========================
+
+Upgrade outputs to include:
+
+- “Auto actions executed today”
+- “Messages scheduled for optimal time”
+- “Campaigns currently running”
+- “Revenue generated autonomously”
+- “Top performing message type + time”
+
+Agent must answer:
+- “What did you do automatically today?”
+- “What’s running in the background?”
+- “How much revenue did you generate without me?”
+
+========================
+PHASE 8 — VALIDATION
+========================
+
+Test:
+
+1. Turn on auto mode level 3
+2. “What will you do automatically?”
+3. “What did you send today?”
+4. “What’s the best time to send messages?”
+5. “Start a churn recovery campaign for Sarah”
+6. “What campaigns are running?”
+7. “How much revenue did you generate automatically?”
+8. “Why did you send that message without asking me?”
+
+For each:
+- confirm safety rules applied
+- confirm time optimization used
+- confirm actions are logged + attributed
+
+========================
+FINAL RULE
+========================
+
+The system must:
+- act automatically ONLY when safe
+- optimize timing + messaging
+- run structured campaigns
+- continuously learn from results
+
+Never sacrifice control for automation.
+
+Automation must increase revenue WITHOUT increasing risk.

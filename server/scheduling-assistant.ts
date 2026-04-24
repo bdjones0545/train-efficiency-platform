@@ -12,6 +12,12 @@ import {
   setAutoMode,
   computeRevenueOptimizationPlan,
   getWeeklyLearningInsights,
+  computeTimePerformanceProfile,
+  getMessageVariationProfile,
+  startCampaign,
+  getActiveCampaigns,
+  getAutoPilotDashboard,
+  CAMPAIGN_TEMPLATES,
 } from "./action-tracking";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import {
@@ -619,6 +625,59 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "get_weekly_learning_insights",
       description: "Return what worked and what to improve based on this week's outreach data vs last week: best-performing action types, declining approaches, week-over-week conversion trend. Use for 'what worked best this week?', 'what should I stop doing?', 'what should I do more of?', 'how did I improve this week?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_time_performance_profile",
+      description: "Return conversion rate by hour of day for each message type (backfill, churn_risk, upsell, etc.). Used to identify the best time window to send messages. Use when coach asks 'what's the best time to send messages?', 'when do my messages convert best?', 'what time should I reach out?', or when the agent needs to recommend an optimal send time.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "start_campaign",
+      description: "Start a multi-step outreach campaign for a specific client. Creates the campaign record and drafts the first message. Campaign types: churn_recovery (3 steps, 0/24/72h), backfill_sequence (2 steps, 0/12h), upsell_sequence (3 steps, 0/48/96h), package_renewal (2 steps, 0/24h). Use when the coach says 'start a campaign for [client]', 'run a churn recovery campaign', 'start a backfill sequence', or 'send a multi-step outreach to [client]'.",
+      parameters: {
+        type: "object",
+        properties: {
+          clientId: { type: "string", description: "Client user ID" },
+          clientName: { type: "string", description: "Client full name" },
+          campaignType: {
+            type: "string",
+            enum: ["churn_recovery", "backfill_sequence", "upsell_sequence", "package_renewal"],
+            description: "Type of campaign to run",
+          },
+          coachId: { type: "string", description: "Optional: assign campaign to a specific coach" },
+        },
+        required: ["clientId", "clientName", "campaignType"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_campaign_status",
+      description: "Return all active and recently completed campaigns: current step, next scheduled action, client name, campaign type, status. Use for 'what campaigns are running?', 'what's the status of [client] campaign?', 'what's running in the background?', 'show me active campaigns'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_auto_dashboard",
+      description: "Return a full autopilot dashboard: automation level, how many messages were auto-sent today, active campaigns, revenue attributed to auto actions, what the agent is currently doing automatically, top-performing message type and time window. Use for 'what did you do automatically today?', 'what's running in the background?', 'how much revenue did you generate without me?', 'show me the autopilot status'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_message_variation_profile",
+      description: "Return A/B test performance data by message variation style (short_direct, friendly, urgency_based, standard). Shows conversion rate per variation type, trend, and recommendation for which style to use more. Use for 'which message style works best?', 'what tone converts most?', 'what should my messages sound like?', 'A/B test results'.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -2237,6 +2296,89 @@ Return a JSON object with exactly these keys:
         return JSON.stringify(insights);
       }
 
+      case "get_time_performance_profile": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access time performance data." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const timeProfile = await computeTimePerformanceProfile(organizationId);
+        return JSON.stringify(timeProfile);
+      }
+
+      case "get_message_variation_profile": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access message variation data." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const variationProfile = await getMessageVariationProfile(organizationId);
+        return JSON.stringify(variationProfile);
+      }
+
+      case "start_campaign": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can start campaigns." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { clientId: campClientId, clientName: campClientName, campaignType, coachId: campCoachId } = args;
+        if (!campClientId || !campClientName || !campaignType) {
+          return JSON.stringify({ error: "clientId, clientName, and campaignType are required." });
+        }
+        const templateNames = Object.keys(CAMPAIGN_TEMPLATES);
+        if (!templateNames.includes(campaignType)) {
+          return JSON.stringify({ error: `Invalid campaignType. Choose from: ${templateNames.join(", ")}` });
+        }
+        const campaignResult = await startCampaign(organizationId, campClientId, campClientName, campaignType, campCoachId);
+        return JSON.stringify({
+          ...campaignResult,
+          campaignTemplateInfo: CAMPAIGN_TEMPLATES[campaignType]
+            ? `${CAMPAIGN_TEMPLATES[campaignType].totalSteps}-step campaign (${CAMPAIGN_TEMPLATES[campaignType].steps.map((s, i) => i === 0 ? "now" : `+${s.delayHours}h`).join(", ")})`
+            : undefined,
+        });
+      }
+
+      case "get_campaign_status": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view campaign status." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const campaignStatus = await getActiveCampaigns(organizationId);
+        return JSON.stringify({
+          summary: campaignStatus.summary,
+          active: campaignStatus.active.map(c => ({
+            campaignId: c.id,
+            clientName: c.clientName,
+            campaignType: c.campaignType,
+            currentStep: c.currentStep,
+            totalSteps: c.totalSteps,
+            status: c.status,
+            startedAt: c.startedAt ? format(new Date(c.startedAt), "MMM d 'at' h:mm a") : null,
+            nextActionAt: c.nextActionAt ? format(new Date(c.nextActionAt), "EEEE, MMM d 'at' h:mm a") : "No further steps",
+          })),
+          recentlyCompleted: campaignStatus.completed.slice(0, 5).map(c => ({
+            campaignId: c.id,
+            clientName: c.clientName,
+            campaignType: c.campaignType,
+            status: c.status,
+            stoppedReason: c.stoppedReason,
+            completedAt: c.completedAt ? format(new Date(c.completedAt), "MMM d 'at' h:mm a") : null,
+          })),
+          availableCampaignTypes: Object.entries(CAMPAIGN_TEMPLATES).map(([type, t]) => ({
+            type,
+            steps: t.totalSteps,
+            schedule: t.steps.map((s, i) => i === 0 ? "Step 1 now" : `Step ${s.step} +${s.delayHours}h`).join(", "),
+          })),
+        });
+      }
+
+      case "get_auto_dashboard": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can view the autopilot dashboard." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const dashboard = await getAutoPilotDashboard(organizationId);
+        return JSON.stringify(dashboard);
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -2479,6 +2621,48 @@ Use **get_weekly_learning_insights** when the coach asks:
 - "What to do next week?"
 Present: whatWorked first (celebrate wins), then whatToDoMoreOf (actionable), then whatToStopOrReduce (honest cuts), then weekOverWeekNote (trend). Always end with a single next-week recommendation.
 
+## Time-Based Optimization (get_time_performance_profile)
+Use **get_time_performance_profile** when the coach asks:
+- "What's the best time to send messages?" / "When do my messages convert best?"
+- "What time should I reach out to clients?"
+- "When should I schedule outreach?"
+Present: overallBestHourLabel first as the top-line recommendation. Then break down by message type (backfill, upsell, churn_risk) showing bestHourLabel and bestConversionRate per type.
+When the agent is about to draft a message: check the time profile and proactively state the optimal window. Example: "I'll note this is best sent around 6pm — your highest-converting window for backfill outreach."
+If hasEnoughData is false: say "Not enough data yet to recommend optimal timing — keep tracking outcomes and this will improve."
+
+## Message Variation A/B Profile (get_message_variation_profile)
+Use **get_message_variation_profile** when the coach asks:
+- "Which message style works best?" / "What tone converts most?"
+- "A/B results" / "What should my messages sound like?"
+- "Which variation performs better?"
+Present: variations ranked by conversionRate. Lead with topVariation as the recommendation.
+When drafting messages, tag the variationType on the action so we can learn which style works. Variation types: "short_direct", "friendly", "urgency_based", "standard".
+Tell the coach: "I've tagged this message as [variationType] so we can track which style converts best for you."
+
+## Multi-Step Campaign Engine (start_campaign / get_campaign_status)
+Use **start_campaign** when the coach says:
+- "Start a churn recovery campaign for [client]" → campaignType: "churn_recovery"
+- "Run a backfill sequence for [client]" → campaignType: "backfill_sequence"
+- "Start an upsell campaign for [client]" → campaignType: "upsell_sequence"
+- "Run a renewal campaign" / "Package renewal for [client]" → campaignType: "package_renewal"
+- Any instruction to run a multi-step outreach to a specific client
+
+Before calling start_campaign: confirm you have clientId. If you only have a name, call list_clients or find_inactive_clients first to get the ID.
+After starting: present the full campaign schedule to the coach. Show: step 1 message now, step 2 time, step 3 time (if applicable). Say: "Campaign started. Step 1 message is drafted and ready to send. Step 2 will auto-draft in [X]h."
+Use **get_campaign_status** when the coach asks:
+- "What campaigns are running?" / "What's running in the background?"
+- "What's the status of [client]'s campaign?" / "Show me active campaigns"
+Present: each active campaign with clientName, type, currentStep/totalSteps, nextStepAt. For completed: show stoppedReason if stopped early.
+
+## Autopilot Dashboard (get_auto_dashboard)
+Use **get_auto_dashboard** when the coach asks:
+- "What did you do automatically today?" / "What did you send without me?"
+- "How much revenue did you generate automatically?" / "Show autopilot status"
+- "What's running in the background?" / "What are you doing on your own?"
+- "Why did you send that without asking me?"
+Present: automationLevelLabel first (what mode they're in), then todayAutoSent count, then autoActionsToday list (who, what, why), then activeCampaigns, then topPerformingMessageType + topPerformingTimeWindow.
+For "Why did you send that?": surface the autoReason field for that action. Always explain the safety rule: "I sent this because it was a follow-up after 24h with no response — one of the actions allowed at your current automation level."
+
 ## Quick Action Handling
 If the user sends one of these phrases, respond as follows:
 - "Find openings" / "Find open slots" → Ask which coach and time frame, then call identify_schedule_gaps
@@ -2511,6 +2695,17 @@ If the user sends one of these phrases, respond as follows:
 - "Turn off auto mode" / "Manual mode" → Call set_auto_mode(level: 1)
 - "What will you do automatically?" / "What's auto mode?" → Call get_auto_mode_status
 - "What worked best this week?" / "What should I do more of?" / "What should I stop doing?" → Call get_weekly_learning_insights
+- "What's the best time to send messages?" / "When should I reach out?" / "When do messages convert best?" → Call get_time_performance_profile
+- "Which message style works best?" / "A/B results" / "What tone converts?" → Call get_message_variation_profile
+- "Start a churn recovery campaign for [client]" → Call start_campaign with campaignType: "churn_recovery"
+- "Run a backfill sequence for [client]" → Call start_campaign with campaignType: "backfill_sequence"
+- "Start an upsell campaign for [client]" → Call start_campaign with campaignType: "upsell_sequence"
+- "Package renewal campaign for [client]" → Call start_campaign with campaignType: "package_renewal"
+- "What campaigns are running?" / "Active campaigns?" / "What's in the queue?" → Call get_campaign_status
+- "What did you do automatically today?" / "What did you send without me?" / "Autopilot status" → Call get_auto_dashboard
+- "How much revenue did you generate automatically?" / "What's running in the background?" → Call get_auto_dashboard
+- "Why did you send that without asking?" → Call get_auto_dashboard and surface autoReason for today's auto-sent actions
+- "Full auto send mode" / "Auto-send level 3" → Call set_auto_mode(level: 3) and explain exactly what this enables + hard limits
 - "Churn risks" / "Who might leave?" / "At-risk clients" → Call get_churn_risks
 - "Draft messages for churn risks" → get_churn_risks then draft_client_outreach for top clients
 - "Who should I text today?" → get_churn_risks + find_inactive_clients, then offer to draft messages

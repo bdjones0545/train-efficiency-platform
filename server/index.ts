@@ -122,7 +122,7 @@ app.use((req, res, next) => {
   const { seedDatabase } = await import("./seed");
   await seedDatabase();
 
-  const { detectOutcomesForOrg } = await import("./action-tracking");
+  const { detectOutcomesForOrg, executeAutoActions, runCampaignEngine } = await import("./action-tracking");
   const { db: actionDb } = await import("./db");
   const { organizations: orgsTable } = await import("@shared/schema");
 
@@ -135,7 +135,23 @@ app.use((req, res, next) => {
     } catch (_) {}
   };
 
+  const runAutoSendAndCampaigns = async () => {
+    try {
+      const orgs = await actionDb.select({ id: orgsTable.id, automationLevel: orgsTable.automationLevel }).from(orgsTable).limit(100);
+      for (const org of orgs) {
+        const level = org.automationLevel ?? 1;
+        if (level >= 2) {
+          await runCampaignEngine(org.id).catch(() => {});
+        }
+        if (level >= 3) {
+          await executeAutoActions(org.id).catch(() => {});
+        }
+      }
+    } catch (_) {}
+  };
+
   setInterval(runOutcomeDetection, 30 * 60 * 1000);
+  setInterval(runAutoSendAndCampaigns, 30 * 60 * 1000);
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
   await registerRoutes(httpServer, app);

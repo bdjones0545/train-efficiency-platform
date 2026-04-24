@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { storage } from "./storage";
-import { agentActions, bookings, services, users, coachProfiles, availabilityBlocks } from "@shared/schema";
-import type { AgentAction, InsertAgentAction } from "@shared/schema";
+import { agentActions, campaigns, bookings, services, users, coachProfiles, availabilityBlocks } from "@shared/schema";
+import type { AgentAction, InsertAgentAction, Campaign } from "@shared/schema";
 import { eq, and, inArray, gte, lte, lt, isNull, or, desc, sql, ne } from "drizzle-orm";
 import { subHours, subDays, addHours, format, startOfDay, endOfDay, addDays, differenceInDays } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -1032,5 +1032,745 @@ export async function getWeeklyLearningInsights(orgId: string): Promise<WeeklyLe
     worstActionType: worstProfile !== bestProfile ? worstProfile?.subType ?? null : null,
     conversionTrend,
     weekOverWeekNote,
+  };
+}
+
+// ============================================================
+// PHASE A: Time-Based Optimization
+// ============================================================
+
+export interface TimeSlotPerformance {
+  hour: number;
+  hourLabel: string;
+  messagesSent: number;
+  responses: number;
+  bookings: number;
+  conversionRate: number;
+  conversionRateLabel: string;
+}
+
+export interface TimePerformanceProfile {
+  bySubType: Record<string, {
+    subType: string;
+    bestHour: number | null;
+    bestHourLabel: string | null;
+    bestConversionRate: number;
+    slots: TimeSlotPerformance[];
+    recommendation: string;
+  }>;
+  overallBestHour: number | null;
+  overallBestHourLabel: string | null;
+  totalActionsAnalyzed: number;
+  hasEnoughData: boolean;
+  summary: string;
+}
+
+function formatHour(h: number): string {
+  if (h === 0) return "12 AM";
+  if (h < 12) return `${h} AM`;
+  if (h === 12) return "12 PM";
+  return `${h - 12} PM`;
+}
+
+export async function computeTimePerformanceProfile(orgId: string): Promise<TimePerformanceProfile> {
+  const since = subDays(new Date(), 90);
+  const actions = await db
+    .select()
+    .from(agentActions)
+    .where(
+      and(
+        eq(agentActions.organizationId, orgId),
+        gte(agentActions.createdAt, since),
+        eq(agentActions.actionType, "outreach"),
+      )
+    );
+
+  const subTypeHourMap: Record<string, Record<number, { sent: number; responded: number; booked: number }>> = {};
+
+  for (const action of actions) {
+    if (!action.createdAt) continue;
+    const hour = new Date(action.createdAt).getHours();
+    const subType = action.actionSubType ?? "general";
+    if (!subTypeHourMap[subType]) subTypeHourMap[subType] = {};
+    if (!subTypeHourMap[subType][hour]) subTypeHourMap[subType][hour] = { sent: 0, responded: 0, booked: 0 };
+    const st = action.status ?? "";
+    if (["sent", "responded", "booked", "ignored"].includes(st)) subTypeHourMap[subType][hour].sent++;
+    if (st === "responded") subTypeHourMap[subType][hour].responded++;
+    if (st === "booked") subTypeHourMap[subType][hour].booked++;
+  }
+
+  const bySubType: TimePerformanceProfile["bySubType"] = {};
+  let overallBestHour: number | null = null;
+  let overallBestRate = 0;
+
+  for (const [subType, hourData] of Object.entries(subTypeHourMap)) {
+    const slots: TimeSlotPerformance[] = [];
+    let bestHour: number | null = null;
+    let bestRate = 0;
+
+    for (const [hourStr, data] of Object.entries(hourData)) {
+      const hour = parseInt(hourStr);
+      const rate = data.sent >= 2 ? data.booked / data.sent : 0;
+      slots.push({
+        hour,
+        hourLabel: formatHour(hour),
+        messagesSent: data.sent,
+        responses: data.responded,
+        bookings: data.booked,
+        conversionRate: rate,
+        conversionRateLabel: data.sent >= 2 ? `${Math.round(rate * 100)}%` : "N/A",
+      });
+      if (data.sent >= 2 && rate > bestRate) { bestRate = rate; bestHour = hour; }
+    }
+
+    slots.sort((a, b) => a.hour - b.hour);
+    if (bestHour !== null && bestRate > overallBestRate) { overallBestRate = bestRate; overallBestHour = bestHour; }
+
+    bySubType[subType] = {
+      subType,
+      bestHour,
+      bestHourLabel: bestHour !== null ? formatHour(bestHour) : null,
+      bestConversionRate: bestRate,
+      slots,
+      recommendation: bestHour !== null
+        ? `Send ${subType} messages around ${formatHour(bestHour)} — your highest conversion window (${Math.round(bestRate * 100)}%).`
+        : "Not enough data yet. Need 2+ sends per time window.",
+    };
+  }
+
+  const hasEnoughData = actions.length >= 10;
+  return {
+    bySubType,
+    overallBestHour,
+    overallBestHourLabel: overallBestHour !== null ? formatHour(overallBestHour) : null,
+    totalActionsAnalyzed: actions.length,
+    hasEnoughData,
+    summary: hasEnoughData
+      ? overallBestHour !== null
+        ? `Best overall send time: ${formatHour(overallBestHour)} (highest conversion across all message types). ${actions.length} actions analyzed.`
+        : `${actions.length} actions analyzed — no single time window stands out yet. Need 2+ sends per hour.`
+      : `Only ${actions.length} actions on record. Send more messages and track outcomes to unlock time optimization.`,
+  };
+}
+
+// ============================================================
+// PHASE B: Throttle & Fatigue Control
+// ============================================================
+
+export interface ThrottleCheck {
+  allowed: boolean;
+  reason: string | null;
+  cooldownUntil?: Date;
+}
+
+export async function checkThrottleRules(
+  orgId: string,
+  clientId: string,
+  campaignId?: string
+): Promise<ThrottleCheck> {
+  const now = new Date();
+  const since24h = subHours(now, 24);
+  const since7d = subDays(now, 7);
+
+  const recentMessages = await db
+    .select({ id: agentActions.id })
+    .from(agentActions)
+    .where(
+      and(
+        eq(agentActions.organizationId, orgId),
+        eq(agentActions.clientId, clientId),
+        gte(agentActions.createdAt, since24h),
+        inArray(agentActions.status, ["sent", "responded", "booked"] as any)
+      )
+    )
+    .limit(1);
+
+  if (recentMessages.length > 0) {
+    return { allowed: false, reason: "Max 1 message per client per 24h — already sent within 24 hours." };
+  }
+
+  const last7dMessages = await db
+    .select({ status: agentActions.status })
+    .from(agentActions)
+    .where(
+      and(
+        eq(agentActions.organizationId, orgId),
+        eq(agentActions.clientId, clientId),
+        gte(agentActions.createdAt, since7d),
+      )
+    );
+
+  const sent7d = last7dMessages.filter(m => ["sent", "responded", "booked", "ignored"].includes(m.status ?? "")).length;
+  const ignored7d = last7dMessages.filter(m => m.status === "ignored").length;
+  const ignoreRate = sent7d > 0 ? ignored7d / sent7d : 0;
+
+  if (sent7d >= 3 && ignoreRate > 0.7) {
+    return {
+      allowed: false,
+      reason: `High ignore rate (${Math.round(ignoreRate * 100)}%) — pausing outreach for this client to avoid over-messaging.`,
+      cooldownUntil: addDays(now, 7),
+    };
+  }
+
+  if (campaignId) {
+    const campaignAttempts = await db
+      .select({ id: agentActions.id })
+      .from(agentActions)
+      .where(
+        and(
+          eq(agentActions.organizationId, orgId),
+          eq(agentActions.campaignId, campaignId),
+          inArray(agentActions.status, ["sent", "responded", "booked", "ignored"] as any)
+        )
+      );
+    if (campaignAttempts.length >= 3) {
+      return { allowed: false, reason: "Campaign max attempts (3) reached — stopping to avoid over-messaging." };
+    }
+  }
+
+  return { allowed: true, reason: null };
+}
+
+// ============================================================
+// PHASE C: Message Variation Profile (A/B System)
+// ============================================================
+
+export interface MessageVariationStats {
+  variationType: string;
+  totalSent: number;
+  booked: number;
+  conversionRate: number;
+  conversionRateLabel: string;
+  trend: "improving" | "declining" | "stable" | "insufficient_data";
+  recommendation: string;
+}
+
+export interface MessageVariationProfile {
+  variations: MessageVariationStats[];
+  topVariation: string | null;
+  hasEnoughData: boolean;
+  summary: string;
+}
+
+export async function getMessageVariationProfile(orgId: string): Promise<MessageVariationProfile> {
+  const since = subDays(new Date(), 60);
+  const twoWeeksAgo = subDays(new Date(), 14);
+
+  const actions = await db
+    .select()
+    .from(agentActions)
+    .where(
+      and(
+        eq(agentActions.organizationId, orgId),
+        gte(agentActions.createdAt, since),
+        eq(agentActions.actionType, "outreach"),
+      )
+    );
+
+  const variationMap: Record<string, { sent: number; booked: number; recentBooked: number; recentSent: number }> = {};
+
+  for (const action of actions) {
+    const varType = action.variationType ?? "standard";
+    if (!variationMap[varType]) variationMap[varType] = { sent: 0, booked: 0, recentBooked: 0, recentSent: 0 };
+    const status = action.status ?? "";
+    const isRecent = action.createdAt && new Date(action.createdAt) >= twoWeeksAgo;
+    if (["sent", "responded", "booked", "ignored"].includes(status)) {
+      variationMap[varType].sent++;
+      if (isRecent) variationMap[varType].recentSent++;
+    }
+    if (status === "booked") {
+      variationMap[varType].booked++;
+      if (isRecent) variationMap[varType].recentBooked++;
+    }
+  }
+
+  const variations: MessageVariationStats[] = [];
+  let topVariation: string | null = null;
+  let topRate = 0;
+
+  for (const [varType, data] of Object.entries(variationMap)) {
+    if (data.sent === 0) continue;
+    const rate = data.booked / data.sent;
+    const recentRate = data.recentSent >= 2 ? data.recentBooked / data.recentSent : null;
+    const oldSent = data.sent - data.recentSent;
+    const oldBooked = data.booked - data.recentBooked;
+    const oldRate = oldSent >= 2 ? oldBooked / oldSent : null;
+
+    let trend: MessageVariationStats["trend"] = "insufficient_data";
+    if (recentRate !== null && oldRate !== null) {
+      if (recentRate > oldRate + 0.05) trend = "improving";
+      else if (recentRate < oldRate - 0.05) trend = "declining";
+      else trend = "stable";
+    }
+
+    variations.push({
+      variationType: varType,
+      totalSent: data.sent,
+      booked: data.booked,
+      conversionRate: rate,
+      conversionRateLabel: data.sent >= 2 ? `${Math.round(rate * 100)}%` : "N/A",
+      trend,
+      recommendation: data.sent < 2
+        ? `Not enough data on "${varType}" — keep testing.`
+        : rate > 0.3
+          ? `"${varType}" is performing well at ${Math.round(rate * 100)}%. Use it more.`
+          : rate < 0.15
+            ? `"${varType}" is underperforming at ${Math.round(rate * 100)}%. Consider changing this style.`
+            : `"${varType}" is average at ${Math.round(rate * 100)}%. Keep testing.`,
+    });
+
+    if (data.sent >= 2 && rate > topRate) { topRate = rate; topVariation = varType; }
+  }
+
+  variations.sort((a, b) => b.conversionRate - a.conversionRate);
+  const hasEnoughData = variations.some(v => v.totalSent >= 3);
+
+  return {
+    variations,
+    topVariation,
+    hasEnoughData,
+    summary: hasEnoughData
+      ? topVariation
+        ? `Best message style: "${topVariation}" at ${Math.round(topRate * 100)}% conversion. Use this style first.`
+        : "Data available but no clear winner yet — keep testing variations."
+      : "Not enough variation data yet. Send messages tagged with variation types (short_direct, friendly, urgency) to build the profile.",
+  };
+}
+
+// ============================================================
+// PHASE D: Multi-Step Campaign Engine
+// ============================================================
+
+type CampaignStepTemplate = {
+  step: number;
+  delayHours: number;
+  messageSubType: string;
+  template: string;
+};
+
+type CampaignTemplateConfig = {
+  totalSteps: number;
+  steps: CampaignStepTemplate[];
+};
+
+export const CAMPAIGN_TEMPLATES: Record<string, CampaignTemplateConfig> = {
+  churn_recovery: {
+    totalSteps: 3,
+    steps: [
+      { step: 1, delayHours: 0, messageSubType: "churn_risk", template: "Hey {name}, just checking in — haven't seen you in a while. Everything going okay? I still have your usual time available." },
+      { step: 2, delayHours: 24, messageSubType: "churn_risk", template: "Hey {name}, I know life gets busy. Still have a spot open for you if you want to get back at it. No pressure." },
+      { step: 3, delayHours: 72, messageSubType: "churn_risk", template: "Hey {name}, last check-in from me. If you ever want to pick things back up, I'm here. Just reach out." },
+    ],
+  },
+  backfill_sequence: {
+    totalSteps: 2,
+    steps: [
+      { step: 1, delayHours: 0, messageSubType: "backfill", template: "Hey {name}, just had a spot open up that would be a great fit for your schedule. Interested?" },
+      { step: 2, delayHours: 12, messageSubType: "backfill", template: "Hey {name}, following up — that spot is still available. Let me know!" },
+    ],
+  },
+  upsell_sequence: {
+    totalSteps: 3,
+    steps: [
+      { step: 1, delayHours: 0, messageSubType: "upsell", template: "Hey {name}, based on the progress you've been making, I think adding a session could really accelerate your results. Want to chat about it?" },
+      { step: 2, delayHours: 48, messageSubType: "upsell", template: "Hey {name}, still thinking about adding to your schedule? Happy to answer any questions." },
+      { step: 3, delayHours: 96, messageSubType: "upsell", template: "Hey {name}, last time I'll bring this up — whenever you're ready, I'm here." },
+    ],
+  },
+  package_renewal: {
+    totalSteps: 2,
+    steps: [
+      { step: 1, delayHours: 0, messageSubType: "renewal", template: "Hey {name}, your current package is running low. Want to set up the next block so you don't lose your spot?" },
+      { step: 2, delayHours: 24, messageSubType: "renewal", template: "Hey {name}, following up on the renewal — happy to answer any questions. Don't want you to lose your time slot!" },
+    ],
+  },
+};
+
+export type CampaignRecord = Campaign;
+
+export async function startCampaign(
+  orgId: string,
+  clientId: string,
+  clientName: string,
+  campaignType: string,
+  coachId?: string,
+  metadata?: any
+): Promise<{ success: boolean; campaignId?: string; error?: string; firstMessage?: string; nextStepAt?: string }> {
+  const template = CAMPAIGN_TEMPLATES[campaignType];
+  if (!template) {
+    return { success: false, error: `Unknown campaign type: "${campaignType}". Valid types: ${Object.keys(CAMPAIGN_TEMPLATES).join(", ")}` };
+  }
+
+  const existing = await db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.organizationId, orgId),
+        eq(campaigns.clientId, clientId),
+        eq(campaigns.campaignType, campaignType),
+        eq(campaigns.status, "active"),
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    return { success: false, error: `A "${campaignType}" campaign is already active for ${clientName}. Use get_campaign_status to see the current step.` };
+  }
+
+  const throttle = await checkThrottleRules(orgId, clientId);
+  if (!throttle.allowed) {
+    return { success: false, error: `Cannot start campaign: ${throttle.reason}` };
+  }
+
+  const now = new Date();
+  const firstStep = template.steps[0];
+  const secondStep = template.steps[1];
+  const nextActionAt = secondStep ? addHours(now, secondStep.delayHours) : null;
+
+  const [campaign] = await db.insert(campaigns).values({
+    organizationId: orgId,
+    clientId,
+    clientName,
+    coachId: coachId ?? null,
+    campaignType,
+    status: "active",
+    currentStep: 1,
+    totalSteps: template.totalSteps,
+    nextActionAt,
+    metadata: metadata ?? null,
+  }).returning();
+
+  const firstName = clientName.split(" ")[0];
+  const firstMessage = firstStep.template.replace("{name}", firstName);
+
+  await db.insert(agentActions).values({
+    organizationId: orgId,
+    clientId,
+    clientName,
+    coachId: coachId ?? null,
+    actionType: "outreach",
+    actionSubType: firstStep.messageSubType,
+    messageContent: { sms: firstMessage, campaignStep: 1 },
+    status: "pending",
+    campaignId: campaign.id,
+    campaignStep: 1,
+  });
+
+  return {
+    success: true,
+    campaignId: campaign.id,
+    firstMessage,
+    nextStepAt: nextActionAt ? format(nextActionAt, "EEEE, MMM d 'at' h:mm a") : undefined,
+  };
+}
+
+export async function getActiveCampaigns(orgId: string): Promise<{
+  active: CampaignRecord[];
+  completed: CampaignRecord[];
+  summary: string;
+}> {
+  const allCampaigns = await db
+    .select()
+    .from(campaigns)
+    .where(eq(campaigns.organizationId, orgId))
+    .orderBy(desc(campaigns.startedAt))
+    .limit(50);
+
+  const active = allCampaigns.filter(c => c.status === "active");
+  const completed = allCampaigns.filter(c => c.status === "completed" || c.status === "stopped").slice(0, 10);
+
+  const campaignTypeSummary = active.length > 0
+    ? `: ${active.map(c => `${c.campaignType} for ${c.clientName ?? "unknown"} (step ${c.currentStep}/${c.totalSteps})`).join(", ")}`
+    : "";
+
+  return {
+    active,
+    completed,
+    summary: active.length === 0
+      ? "No campaigns currently running."
+      : `${active.length} campaign${active.length !== 1 ? "s" : ""} running${campaignTypeSummary}.`,
+  };
+}
+
+export async function runCampaignEngine(orgId: string): Promise<{ executed: number; drafted: number; completed: number }> {
+  const org = await storage.getOrganizationById(orgId);
+  const automationLevel = (org as any)?.automationLevel ?? 1;
+  if (automationLevel < 2) return { executed: 0, drafted: 0, completed: 0 };
+
+  const now = new Date();
+  const dueCampaigns = await db
+    .select()
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.organizationId, orgId),
+        eq(campaigns.status, "active"),
+        lte(campaigns.nextActionAt, now),
+      )
+    );
+
+  let executed = 0;
+  let drafted = 0;
+  let completedCount = 0;
+
+  for (const campaign of dueCampaigns) {
+    const template = CAMPAIGN_TEMPLATES[campaign.campaignType];
+    if (!template) continue;
+
+    const nextStepNum = (campaign.currentStep ?? 1) + 1;
+
+    if (nextStepNum > template.totalSteps) {
+      await db.update(campaigns).set({ status: "completed", completedAt: now }).where(eq(campaigns.id, campaign.id));
+      completedCount++;
+      continue;
+    }
+
+    const throttle = await checkThrottleRules(orgId, campaign.clientId, campaign.id);
+    if (!throttle.allowed) {
+      await db.update(campaigns).set({ status: "stopped", stoppedReason: throttle.reason }).where(eq(campaigns.id, campaign.id));
+      completedCount++;
+      continue;
+    }
+
+    const recentSuccess = await db
+      .select({ id: agentActions.id })
+      .from(agentActions)
+      .where(
+        and(
+          eq(agentActions.organizationId, orgId),
+          eq(agentActions.clientId, campaign.clientId),
+          inArray(agentActions.status, ["booked", "responded"] as any),
+          gte(agentActions.createdAt, campaign.startedAt ?? subDays(now, 30)),
+        )
+      )
+      .limit(1);
+
+    if (recentSuccess.length > 0) {
+      await db.update(campaigns).set({ status: "completed", stoppedReason: "Client booked or responded — campaign complete", completedAt: now }).where(eq(campaigns.id, campaign.id));
+      completedCount++;
+      continue;
+    }
+
+    const stepTemplate = template.steps[nextStepNum - 1];
+    if (!stepTemplate) continue;
+
+    const firstName = (campaign.clientName ?? "there").split(" ")[0];
+    const message = stepTemplate.template.replace("{name}", firstName);
+
+    const isLevel3 = automationLevel >= 3;
+    const isSafeForAutoSend = ["backfill", "renewal"].includes(stepTemplate.messageSubType) || nextStepNum > 1;
+    const canAutoSend = isLevel3 && isSafeForAutoSend;
+
+    await db.insert(agentActions).values({
+      organizationId: orgId,
+      clientId: campaign.clientId,
+      clientName: campaign.clientName,
+      coachId: campaign.coachId,
+      actionType: "outreach",
+      actionSubType: stepTemplate.messageSubType,
+      messageContent: { sms: message, campaignStep: nextStepNum },
+      status: canAutoSend ? "sent" : "pending",
+      autoSent: canAutoSend,
+      autoReason: canAutoSend ? `Campaign "${campaign.campaignType}" step ${nextStepNum}/${template.totalSteps} — auto-sent at level 3` : null,
+      campaignId: campaign.id,
+      campaignStep: nextStepNum,
+    });
+
+    const nextNextStep = template.steps[nextStepNum];
+    const nextActionAt = nextNextStep ? addHours(now, nextNextStep.delayHours) : null;
+    const isDone = nextStepNum >= template.totalSteps;
+
+    await db.update(campaigns).set({
+      currentStep: nextStepNum,
+      nextActionAt: nextActionAt ?? undefined,
+      status: isDone ? "completed" : "active",
+      completedAt: isDone ? now : undefined,
+    }).where(eq(campaigns.id, campaign.id));
+
+    if (canAutoSend) executed++;
+    else drafted++;
+  }
+
+  return { executed, drafted, completed: completedCount };
+}
+
+// ============================================================
+// PHASE E: Safe Auto-Send Engine (Level 3)
+// ============================================================
+
+export interface AutoActionResult {
+  type: "follow_up" | "backfill" | "renewal";
+  clientId: string;
+  clientName: string;
+  message: string;
+  autoReason: string;
+  actionId: string;
+}
+
+export async function executeAutoActions(orgId: string): Promise<{
+  sent: AutoActionResult[];
+  skipped: number;
+  skipReasons: string[];
+}> {
+  const org = await storage.getOrganizationById(orgId);
+  const automationLevel = (org as any)?.automationLevel ?? 1;
+  if (automationLevel < 3) return { sent: [], skipped: 0, skipReasons: [] };
+
+  const sent: AutoActionResult[] = [];
+  const skipReasons: string[] = [];
+  let skipped = 0;
+
+  const now = new Date();
+  const cutoff24h = subHours(now, 24);
+
+  const eligibleFollowUps = await db
+    .select()
+    .from(agentActions)
+    .where(
+      and(
+        eq(agentActions.organizationId, orgId),
+        eq(agentActions.status, "sent"),
+        lt(agentActions.createdAt, cutoff24h),
+        lte(agentActions.followUpCount, 0),
+      )
+    )
+    .limit(10);
+
+  for (const action of eligibleFollowUps) {
+    if (!action.clientId) continue;
+    const throttle = await checkThrottleRules(orgId, action.clientId);
+    if (!throttle.allowed) { skipped++; skipReasons.push(`${action.clientName}: ${throttle.reason}`); continue; }
+
+    const hoursSince = Math.floor((now.getTime() - new Date(action.createdAt!).getTime()) / 3600000);
+    const msg = `Hey ${(action.clientName ?? "there").split(" ")[0]}, just following up — still have that spot available. Let me know!`;
+
+    const [newAction] = await db.insert(agentActions).values({
+      organizationId: orgId,
+      clientId: action.clientId,
+      clientName: action.clientName,
+      coachId: action.coachId,
+      actionType: "outreach",
+      actionSubType: "follow_up",
+      messageContent: { sms: msg },
+      status: "sent",
+      autoSent: true,
+      autoReason: `Auto follow-up: no response after ${hoursSince}h — level 3 automation`,
+    }).returning();
+
+    await db.update(agentActions).set({ followUpCount: (action.followUpCount ?? 0) + 1 }).where(eq(agentActions.id, action.id));
+
+    sent.push({
+      type: "follow_up",
+      clientId: action.clientId,
+      clientName: action.clientName ?? "Unknown",
+      message: msg,
+      autoReason: `No response after ${hoursSince}h`,
+      actionId: newAction.id,
+    });
+  }
+
+  return { sent, skipped, skipReasons };
+}
+
+// ============================================================
+// PHASE F: Autopilot Dashboard
+// ============================================================
+
+export interface AutoPilotDashboard {
+  generatedAt: string;
+  automationLevel: number;
+  automationLevelLabel: string;
+  todayAutoSent: number;
+  todayAutoDrafted: number;
+  todayRevenueCents: number;
+  todayRevenueLabel: string;
+  activeCampaigns: number;
+  activeCampaignDetails: { clientName: string; campaignType: string; currentStep: number; totalSteps: number; nextStepAt: string | null }[];
+  autoActionsToday: { clientName: string; type: string; message: string; time: string; autoReason: string }[];
+  topPerformingMessageType: string | null;
+  topPerformingTimeWindow: string | null;
+  summary: string;
+  whatIsRunning: string[];
+}
+
+export async function getAutoPilotDashboard(orgId: string): Promise<AutoPilotDashboard> {
+  const now = new Date();
+  const todayStart = startOfDay(now);
+
+  const [org, todayActions, activeCampaignsData, timeProfile] = await Promise.all([
+    storage.getOrganizationById(orgId),
+    db.select().from(agentActions).where(
+      and(eq(agentActions.organizationId, orgId), gte(agentActions.createdAt, todayStart))
+    ),
+    getActiveCampaigns(orgId),
+    computeTimePerformanceProfile(orgId),
+  ]);
+
+  const automationLevel = (org as any)?.automationLevel ?? 1;
+  const levelLabels = ["Off", "Draft Only", "Semi-Auto", "Auto-Send"];
+  const automationLevelLabel = levelLabels[automationLevel] ?? "Unknown";
+
+  const autoSentToday = todayActions.filter(a => a.autoSent === true && a.status === "sent");
+  const autoDraftedToday = todayActions.filter(a => a.status === "pending" && a.campaignId != null);
+  const todayRevenueCents = todayActions.filter(a => a.status === "booked").reduce((s, a) => s + (a.outcomeValueCents ?? 0), 0);
+
+  const autoActionsToday = autoSentToday.slice(0, 10).map(a => ({
+    clientName: a.clientName ?? "Unknown",
+    type: a.actionSubType ?? a.actionType,
+    message: (a.messageContent as any)?.sms ?? "",
+    time: a.createdAt ? format(new Date(a.createdAt), "h:mm a") : "",
+    autoReason: a.autoReason ?? "Auto-sent",
+  }));
+
+  const activeCampaignDetails = activeCampaignsData.active.slice(0, 10).map(c => ({
+    clientName: c.clientName ?? "Unknown",
+    campaignType: c.campaignType,
+    currentStep: c.currentStep ?? 1,
+    totalSteps: c.totalSteps,
+    nextStepAt: c.nextActionAt ? format(new Date(c.nextActionAt), "EEEE, MMM d 'at' h:mm a") : null,
+  }));
+
+  const sortedByTime = Object.entries(timeProfile.bySubType).sort((a, b) => b[1].bestConversionRate - a[1].bestConversionRate);
+  const topPerformingMessageType = sortedByTime[0]?.[0] ?? null;
+
+  const whatIsRunning: string[] = [];
+  if (automationLevel >= 2) {
+    if (activeCampaignsData.active.length > 0) {
+      whatIsRunning.push(`${activeCampaignsData.active.length} campaign${activeCampaignsData.active.length !== 1 ? "s" : ""} running: ${activeCampaignsData.active.map(c => `${c.campaignType} (${c.clientName})`).join(", ")}`);
+    } else {
+      whatIsRunning.push("No campaigns active — use start_campaign to launch one.");
+    }
+    whatIsRunning.push("Auto-drafting follow-ups for sent actions with no response after 24h");
+  }
+  if (automationLevel >= 3) {
+    whatIsRunning.push("Auto-send ACTIVE: follow-up messages sent automatically after 24h no-response");
+    whatIsRunning.push("Campaign steps at level 3 are sent automatically (safe types: backfill, renewal, follow-ups)");
+    whatIsRunning.push("Hard blocks: NO auto-booking, NO first-touch churn outreach, NO upsell messages over threshold");
+  }
+
+  const summary = automationLevel === 0
+    ? "Automation is off. All actions require manual input."
+    : automationLevel === 1
+      ? "Draft-only mode. I create drafts but you send everything."
+      : automationLevel === 2
+        ? `Semi-auto. Auto-drafting campaigns + follow-ups. ${activeCampaignsData.active.length} campaign${activeCampaignsData.active.length !== 1 ? "s" : ""} running.`
+        : `Auto-send mode. ${autoSentToday.length} message${autoSentToday.length !== 1 ? "s" : ""} sent automatically today. $${(todayRevenueCents / 100).toFixed(0)} in revenue attributed to agent activity today.`;
+
+  return {
+    generatedAt: format(now, "EEEE, MMMM d 'at' h:mm a"),
+    automationLevel,
+    automationLevelLabel,
+    todayAutoSent: autoSentToday.length,
+    todayAutoDrafted: autoDraftedToday.length,
+    todayRevenueCents,
+    todayRevenueLabel: `$${(todayRevenueCents / 100).toFixed(0)}`,
+    activeCampaigns: activeCampaignsData.active.length,
+    activeCampaignDetails,
+    autoActionsToday,
+    topPerformingMessageType,
+    topPerformingTimeWindow: timeProfile.overallBestHourLabel,
+    summary,
+    whatIsRunning,
   };
 }
