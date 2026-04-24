@@ -10,6 +10,7 @@ import {
   computeUpsellOpportunities,
   computeSessionPackageAlerts,
 } from "./revenue-intelligence";
+import { getClientConversionModifier } from "./client-intelligence";
 
 export type { AgentAction };
 
@@ -637,13 +638,30 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
   };
 
   const allItems = [...rawQueue.high, ...rawQueue.revenue, ...rawQueue.maintenance];
-  const scored: ScoredActionQueueItem[] = allItems.map((item, i) => {
+
+  const scoredRaw = await Promise.all(allItems.map(async (item) => {
     const subType = categorySubTypeMap[item.category] ?? "general";
     const perf = profileMap[subType];
-    const conversionRate = perf && perf.totalSent >= 3 ? perf.conversionRate : 0.25;
+    const globalConversionRate = perf && perf.totalSent >= 3 ? perf.conversionRate : 0.25;
     const expectedRevenue = item.expectedRevenueCents ?? 7000;
     const urgencyWeight = urgencyWeights[item.urgencyLabel] ?? 1;
-    const actionScore = Math.round(conversionRate * (expectedRevenue / 100) * urgencyWeight);
+
+    // Phase 3: Client-adjusted scoring
+    let clientConversionModifier = 1.0;
+    let clientModifierNote = "";
+    if (item.clientId) {
+      try {
+        clientConversionModifier = await getClientConversionModifier(item.clientId, orgId);
+        if (clientConversionModifier > 1.2) {
+          clientModifierNote = ` | client converts ${clientConversionModifier.toFixed(1)}× above avg`;
+        } else if (clientConversionModifier < 0.7) {
+          clientModifierNote = ` | client converts ${clientConversionModifier.toFixed(1)}× below avg — lower priority`;
+        }
+      } catch { clientConversionModifier = 1.0; }
+    }
+
+    const clientAdjustedRate = globalConversionRate * clientConversionModifier;
+    const actionScore = Math.round(clientAdjustedRate * (expectedRevenue / 100) * urgencyWeight);
 
     let profileReasoning = "";
     if (perf && perf.totalSent >= 3) {
@@ -653,15 +671,18 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
     } else {
       profileReasoning = "No profile data yet — using 25% baseline";
     }
+    if (clientModifierNote) profileReasoning += clientModifierNote;
 
     return {
       ...item,
       actionScore,
-      scoreBreakdown: `${Math.round(conversionRate * 100)}% conv × $${(expectedRevenue / 100).toFixed(0)} × ${urgencyWeight}x urgency`,
+      scoreBreakdown: `${Math.round(globalConversionRate * 100)}% global conv × ${clientConversionModifier.toFixed(2)} client modifier × $${(expectedRevenue / 100).toFixed(0)} × ${urgencyWeight}x urgency`,
       profileReasoning,
       rank: 0,
     };
-  });
+  }));
+
+  const scored: ScoredActionQueueItem[] = scoredRaw;
 
   scored.sort((a, b) => b.actionScore - a.actionScore);
   scored.forEach((item, i) => { item.rank = i + 1; });

@@ -30,6 +30,12 @@ The application employs a client-server architecture. The frontend is developed 
 -   **Subscription Management:** Organizations can enable Stripe subscriptions, track products, and manage client subscriptions with defined cancellation policies. This includes recurring session schedules linked to subscription plans and specific payout rules for subscription-linked sessions.
 -   **Operations Intelligence Engine:** A module (`server/scheduling-intelligence.ts`) computes an organizational operations digest, including coach utilization, open slot revenue opportunities, inactive client detection, and prioritized insight cards.
 -   **Revenue Intelligence Engine:** A module (`server/revenue-intelligence.ts`) calculates comprehensive revenue analytics, including LTV, churn risks, upsell opportunities, and session package alerts.
+-   **Client Intelligence Engine:** A module (`server/client-intelligence.ts`) powers per-client behavioral profiling and strategic decision-making:
+    -   **Client Response Profiles** (`computeClientResponseProfile`): Per-client preferred send hour, preferred message type, average touches before conversion, response/conversion rates, 30-day trend, and a `clientConversionModifier` used to adjust action scores.
+    -   **Client Segmentation** (`computeClientSegments`): Groups all clients into strategic segments (High Value Low Frequency, High Churn Risk High Recovery, Frequent Responders, Low Responders, High LTV Active, Inactive Historically Consistent) with recommended strategy per segment.
+    -   **Client LTV Scores** (`computeClientLtvScore`): Computes total spend, retention days, avg monthly spend, projected annual value, LTV tier (platinum/gold/silver/at_risk/new), and churn risk per client.
+    -   **Strategic Recommendations** (`getStrategicRecommendations`): Combines segmentation + LTV data to recommend the week's focus (retention/growth/reactivation/balanced), top priorities, revenue at risk, biggest upside, things to reduce, and a ranked list of clients to contact today.
+-   **Client-Adjusted Action Scoring** (Phase 3): `buildScoredDailyActionQueue` now applies a `clientConversionModifier` per client, making action scores proportional to each individual client's historical response behavior rather than global averages only.
 
 ## External Dependencies
 -   **PostgreSQL:** Database.

@@ -19,6 +19,12 @@ import {
   getAutoPilotDashboard,
   CAMPAIGN_TEMPLATES,
 } from "./action-tracking";
+import {
+  computeClientResponseProfile,
+  computeClientSegments,
+  computeClientLtvScore,
+  getStrategicRecommendations,
+} from "./client-intelligence";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import {
   sendBookingConfirmationToClient,
@@ -678,6 +684,50 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "get_message_variation_profile",
       description: "Return A/B test performance data by message variation style (short_direct, friendly, urgency_based, standard). Shows conversion rate per variation type, trend, and recommendation for which style to use more. Use for 'which message style works best?', 'what tone converts most?', 'what should my messages sound like?', 'A/B test results'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compute_client_response_profile",
+      description: "Compute a detailed response profile for a specific client: their preferred send hour, preferred message type, average touches before conversion, response rate, conversion rate, 30-day trend, and a client conversion modifier. Use when the coach asks 'What's the best way to reach [client]?', 'How does [client] respond to outreach?', 'Who responds best to messages?', 'Why are you prioritizing this client?', or before drafting personalized outreach.",
+      parameters: {
+        type: "object",
+        properties: {
+          clientId: { type: "string", description: "The client's user ID" },
+        },
+        required: ["clientId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compute_client_segments",
+      description: "Segment all clients into strategic groups: high value low frequency, high churn risk with high recovery probability, frequent responders, low responders, high lifetime value (active), and inactive but historically consistent. Each segment includes size, avg revenue, avg conversion rate, and recommended strategy. Use when the coach asks 'What types of clients do I have?', 'Who should I focus on this week?', 'How are my clients grouped?', 'Who are my best clients?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compute_client_ltv_score",
+      description: "Compute lifetime value score for a specific client: total spend, session count, retention duration, avg monthly spend, projected annual value, LTV tier (platinum/gold/silver/at_risk/new), and churn risk. Use when the coach asks 'What is [client]'s lifetime value?', 'Is [client] worth prioritizing?', 'Why are you prioritizing [client]?', or for any LTV-related client question.",
+      parameters: {
+        type: "object",
+        properties: {
+          clientId: { type: "string", description: "The client's user ID" },
+        },
+        required: ["clientId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_strategic_recommendations",
+      description: "Return a full strategic decision layer for the week: what to focus on (retention vs growth vs reactivation), which client segments to prioritize, what to reduce, where revenue is being lost, and the biggest upside opportunities. Also returns a ranked list of specific clients to contact today. Use when the coach asks 'What should I focus on this week?', 'Where am I losing money?', 'What's my biggest opportunity?', 'What should I stop doing long-term?', 'Give me a strategic plan', 'Where should I invest my time?'",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -2379,6 +2429,46 @@ Return a JSON object with exactly these keys:
         return JSON.stringify(dashboard);
       }
 
+      case "compute_client_response_profile": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access client response profiles." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { clientId: crpClientId } = args;
+        if (!crpClientId) return JSON.stringify({ error: "clientId is required." });
+        const responseProfile = await computeClientResponseProfile(crpClientId, organizationId);
+        return JSON.stringify(responseProfile);
+      }
+
+      case "compute_client_segments": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access client segmentation." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const segmentation = await computeClientSegments(organizationId);
+        return JSON.stringify(segmentation);
+      }
+
+      case "compute_client_ltv_score": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access client LTV data." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { clientId: ltvClientId } = args;
+        if (!ltvClientId) return JSON.stringify({ error: "clientId is required." });
+        const ltvScore = await computeClientLtvScore(ltvClientId, organizationId);
+        return JSON.stringify(ltvScore);
+      }
+
+      case "get_strategic_recommendations": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can access strategic recommendations." });
+        }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const strategic = await getStrategicRecommendations(organizationId);
+        return JSON.stringify(strategic);
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -2714,6 +2804,52 @@ If the user sends one of these phrases, respond as follows:
 - "Session packages" / "Low sessions" / "Who's running out?" → Call get_session_packages
 - "Client value" / "LTV" / "Top clients" → Call get_client_value
 - "Growth mode" / "Grow revenue" / "How can we make more?" → Call get_revenue_by_period (this_week), get_revenue_forecast, and get_upsell_opportunities together, then present a unified growth plan
+- "What's the best way to reach [client]?" / "How does [client] respond?" / "Who responds best?" → Call compute_client_response_profile for the specific client
+- "What types of clients do I have?" / "Who should I focus on this week?" / "How are my clients grouped?" → Call compute_client_segments
+- "What is [client]'s LTV?" / "Is [client] worth prioritizing?" / "What's [client]'s lifetime value?" → find_client then compute_client_ltv_score
+- "What should I focus on this week?" / "Where am I losing money?" / "What's my biggest opportunity?" / "Give me a strategic plan" / "What should I stop doing long-term?" → Call get_strategic_recommendations
+
+## Client Response Profile (compute_client_response_profile)
+Use **compute_client_response_profile** when the coach asks:
+- "What's the best way to reach [client]?" / "How does [client] respond to messages?"
+- "Who responds best to messages?" → call for each top-priority client and compare
+- "Why are you prioritizing this client?" → surface their conversionRate and trend
+- Before drafting personalized outreach: check profile and state the optimal approach
+Present: preferredHourLabel ("Send this at 7am — Sarah responds best in the morning"), preferredMessageType, conversionRateLabel, trend30d, clientConversionModifier, reasoning.
+If hasEnoughData=false: say "Not enough outreach history for [client] — using global defaults. Send more tracked messages to build their profile."
+Always explain the modifier: "Mike's score is boosted 2× because he converts at double the average rate."
+
+## Client Segmentation (compute_client_segments)
+Use **compute_client_segments** when the coach asks:
+- "What types of clients do I have?" / "How are my clients grouped?"
+- "Who should I focus on this week?" → also call get_strategic_recommendations for a combined answer
+- "Who are my best clients?" / "What segments should I target?"
+Present each segment with: label, size, avgRevenueLabel, avgConversionRateLabel, recommendedStrategy.
+Lead with the topFocusSegment and topFocusReason. Then list all segments.
+For each segment, offer to show the member list or draft outreach for the top clients in that segment.
+
+## Client LTV Score (compute_client_ltv_score)
+Use **compute_client_ltv_score** when the coach asks:
+- "What's [client]'s lifetime value?" / "Is [client] worth prioritizing?"
+- "Why are you focusing on [client]?" → surface ltvTierLabel and projectedAnnualValueLabel
+- "Who are my most valuable clients?" → compute for top candidates and compare
+Present: ltvTierLabel first, then totalSpendLabel, projectedAnnualValueLabel, churnRisk.
+Example: "Sarah is a Platinum client — $4,200 in lifetime spend, projected $5,040/yr if retained. Churn risk: low. Worth protecting."
+If churnRisk is "high": flag as urgent — "Despite high LTV, Sarah is at high churn risk. Prioritize re-engagement now."
+
+## Strategic Recommendations (get_strategic_recommendations)
+Use **get_strategic_recommendations** when the coach asks:
+- "What should I focus on this week?" / "Where should I invest my time?"
+- "Where am I losing money?" / "What's my biggest opportunity?" / "What should I stop doing long-term?"
+- "Give me a strategic plan" / "What's the state of my business?"
+Present using this structure:
+1. **Week Focus**: weekFocusLabel + weekFocusReason (this week's theme)
+2. **Top Priorities**: topPriorityThisWeek list (numbered, specific)
+3. **Revenue at Risk**: whereLostRevenue (be specific with dollar amounts if available)
+4. **Biggest Upside**: biggestUpside (opportunity + estimated value)
+5. **Things to Reduce**: thingsToReduce (honest cuts)
+6. **Contact Today**: clientsToContactToday (named clients with urgency and reason)
+ALWAYS end with a single recommended "next action in the next 30 minutes."
 
 ## Growth Mode Proactivity
 When asked for a growth plan or revenue insights, proactively surface ALL of:
