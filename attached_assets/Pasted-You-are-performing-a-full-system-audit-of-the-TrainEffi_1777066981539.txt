@@ -1,0 +1,151 @@
+You are performing a full system audit of the TrainEfficiency Scheduling Agent (Coach-Side).
+
+Your goal is to map, test, and evaluate every capability of this agent across:
+
+1. Revenue Intelligence
+2. Growth Opportunities
+3. Churn Risk Detection
+4. Weekly Scheduling Intelligence
+5. Booking System
+6. Operations Summary
+
+
+========================
+PHASE 1 — CAPABILITY INVENTORY
+========================
+
+List EVERYTHING the agent can currently do.
+
+For each capability include:
+- Name
+- Description
+- Inputs required
+- Output format
+- Where it appears in the UI (button / chat / automation)
+- Type: Deterministic / AI / Hybrid
+
+Group under:
+- Revenue
+- Growth
+- Churn
+- Scheduling
+- Booking
+- Operations
+
+
+========================
+PHASE 2 — LIVE TEST SCENARIOS
+========================
+
+Simulate real coach usage. Run these exact scenarios and show outputs:
+
+REVENUE:
+- What did I make this week?
+- Compare this week vs last week
+- What’s my projected revenue this month?
+
+GROWTH:
+- Where can I make more money this week?
+- Who should I reach out to for sessions?
+- What are my empty high-value time slots?
+
+CHURN:
+- Who is at risk of dropping off?
+- Which clients haven’t booked recently?
+- Who reduced frequency?
+
+SCHEDULING:
+- What does my week look like?
+- Where do I have openings?
+- What days are overloaded?
+
+BOOKING:
+- Book John Tuesday at 7am
+- Find me a time for Sarah this week
+- Schedule a recurring client
+
+OPERATIONS:
+- Give me a business summary
+- What happened this week?
+- What needs my attention?
+
+
+========================
+PHASE 3 — FAILURE ANALYSIS
+========================
+
+For EACH scenario:
+- Did it succeed?
+- Was the output useful?
+- Was it generic or actionable?
+- What data was missing?
+- What logic failed?
+- What assumptions were wrong?
+
+Label issues as:
+- DATA GAP
+- LOGIC GAP
+- UX GAP
+- AI QUALITY ISSUE
+
+
+========================
+PHASE 4 — INTELLIGENCE SCORING
+========================
+
+Score each system from 1–10:
+
+- Revenue Intelligence
+- Growth Intelligence
+- Churn Detection
+- Scheduling Intelligence
+- Booking UX
+- Operations Insight
+
+Explain why each score was given.
+
+
+========================
+PHASE 5 — HIGH-IMPACT IMPROVEMENTS
+========================
+
+List improvements in this format:
+
+Improvement Name:
+- Problem:
+- Fix:
+- Impact:
+- Difficulty (Low / Medium / High)
+
+Prioritize based on:
+- Revenue impact
+- Retention impact
+- Ease of implementation
+
+
+========================
+PHASE 6 — MISSING CAPABILITIES
+========================
+
+List what SHOULD exist but does not.
+
+Examples:
+- Revenue forecasting
+- Churn scoring
+- Client reactivation system
+- Smart schedule optimization
+- Automated outreach
+
+
+========================
+PHASE 7 — FINAL VERDICT
+========================
+
+Answer clearly:
+
+1. What is this agent currently best at?
+2. Where does it fail?
+3. Is it a scheduler or a business operator?
+4. What 3 upgrades would make it elite?
+
+Output everything clean, structured, and brutally honest.
