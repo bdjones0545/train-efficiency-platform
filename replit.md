@@ -44,6 +44,17 @@ The application employs a client-server architecture. The frontend is developed 
     -   **Goal Performance Summary** (`getGoalPerformanceSummary`): End-of-week recap showing target vs actual for each dimension, top contributing action types, best strategy, and what to change next week.
     -   **Strategic Recommendations Integration**: `getStrategicRecommendations` now includes `weeklyGoalStatus` — goal alerts are prepended to `topPriorityThisWeek` when targets are behind, giving goal context to the weekly focus.
     -   **Agent Tools**: Three new tools wired into the AI scheduling assistant — `set_weekly_targets`, `get_weekly_progress`, `get_goal_performance_summary` — with full system prompt guidance for natural language goal management.
+-   **Global Coach Agent Launcher:** A floating Bot icon button (bottom-right, `z-50`, `52×52px`, safe-area-inset aware) mounts in `AuthenticatedLayout` via `CoachAgentLauncher` (`client/src/components/coach-agent-launcher.tsx`). It:
+    -   Renders only for `COACH`, `ADMIN`, and `STAFF` roles (hidden for CLIENT/public).
+    -   Hides automatically on the full agent page (`/scheduling/agent`) to avoid duplication.
+    -   Shows a meaningful badge (high-priority count, "!", or "$NNN" open revenue) sourced from the cached `/api/scheduling/operations-digest` — refreshed every 10 minutes. No badge if nothing actionable.
+    -   Pulses once (not constantly) when a new high-priority item appears.
+    -   Opens the agent as a right-side Sheet overlay: full-screen on mobile (`w-full h-[100dvh]`), fixed 460px wide on desktop — no route change.
+    -   Reuses `CoachSchedulingAgentPanel` (`client/src/components/coach-agent-panel.tsx`) in `mode="overlay"` with detected page context.
+    -   Detects the current route and sets `sourcePage` (`schedule | clients | revenue | settings | dashboard`) — passed to the panel to drive page-specific quick prompts.
+    -   Closing the overlay returns users exactly to where they were without any navigation.
+-   **CoachSchedulingAgentPanel** (`client/src/components/coach-agent-panel.tsx`): Shared agent UI component extracted from `scheduling-agent.tsx`. Accepts `mode: "full" | "overlay"` and `context?: AgentContext`. In overlay mode: shows context-aware header label ("Agent · Schedule"), context-specific quick prompts per page, and a close button. In full mode: renders identically to the original standalone page. The original `scheduling-agent.tsx` page now simply renders `<CoachSchedulingAgentPanel mode="full" />`.
+-   **Page-Specific Quick Prompts:** When opened from a specific page, the overlay shows tailored prompts: Schedule → fill openings/book/text; Clients → churn/follow-up/outreach; Revenue → goal tracking/money; Settings → automation mode/campaigns; Dashboard → daily priorities/recap.
 
 ## External Dependencies
 -   **PostgreSQL:** Database.
