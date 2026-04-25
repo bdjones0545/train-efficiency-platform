@@ -1,0 +1,296 @@
+PHASE 9 — REVENUE OPTIMIZATION ENGINE (TRAIN EFFICIENCY)
+
+Objective:
+Transform the system from passive reporting → active revenue-driving operator.
+The agent must now quantify lost revenue, rank recovery actions, and guide or execute high-ROI decisions daily.
+
+This phase builds on:
+- Session categories (paid, intro, internal, meeting, membership, package)
+- Revenue vs payout separation
+- Utilization tracking
+- Action scoring system
+- Goal tracking system
+
+====================================
+PHASE 9A — REVENUE QUALITY ENGINE
+====================================
+
+Create new function:
+
+computeRevenueQuality(orgId, dateRange)
+
+Returns:
+{
+  totalHours,
+  revenueHours,
+  nonRevenueHours,
+  revenueQualityScore, // 0–1
+  breakdown: {
+    paidHours,
+    introHours,
+    internalHours,
+    meetingHours,
+    membershipHours
+  },
+  estimatedRevenueLostCents,
+  insight
+}
+
+Rules:
+- paidHours = category = paid
+- introHours = category = intro
+- internalHours = category = internal
+- meetingHours = category = meeting
+- membershipHours = category = membership/package_redemption
+
+Revenue quality score:
+weightedHours = 
+  (paidHours × 1.0) +
+  (membershipHours × 0.7) +
+  (introHours × 0.3) +
+  (internalHours × 0.0) +
+  (meetingHours × 0.0)
+
+revenueQualityScore = weightedHours / totalHours
+
+estimatedRevenueLost:
+- compare nonRevenueHours vs avgRevenuePerHour
+- lost = nonRevenueHours × avgRevenuePerHour
+
+Agent output example:
+“You trained 8 hours today, but only 3.2 were revenue-generating. That’s $280 in lost opportunity.”
+
+====================================
+PHASE 9B — SESSION MIX ANALYSIS
+====================================
+
+Create:
+
+computeSessionMix(orgId, dateRange)
+
+Returns:
+{
+  totalSessions,
+  categoryBreakdown: {
+    paid,
+    intro,
+    internal,
+    meeting,
+    membership
+  },
+  percentageBreakdown,
+  insight
+}
+
+Agent should detect:
+- too many intros
+- too many internal hours
+- low paid session ratio
+
+Example:
+“40% of your sessions this week were non-revenue. That’s significantly reducing your earning potential.”
+
+====================================
+PHASE 9C — COACH PROFITABILITY ENGINE
+====================================
+
+Create:
+
+computeCoachProfitability(orgId, dateRange)
+
+Returns per coach:
+{
+  coachId,
+  coachName,
+  revenueCents,
+  payoutCents,
+  netCents,
+  marginPercent,
+  hoursWorked,
+  revenuePerHour,
+  payoutPerHour
+}
+
+Agent output:
+“Hunter generated $420 but cost $210 (50% margin).
+Bryan generated $300 but cost $300 (0% margin).”
+
+Add ranking:
+- highest margin coach
+- lowest margin coach
+
+====================================
+PHASE 9D — DAILY REVENUE PRESSURE SYSTEM
+====================================
+
+Create:
+
+computeDailyRevenuePressure(orgId)
+
+Returns:
+{
+  targetCents,
+  projectedCents,
+  gapCents,
+  urgencyLevel: low | medium | high | critical,
+  daysRemaining,
+  requiredDailyRevenue,
+  insight
+}
+
+Rules:
+- uses getWeeklyTargets + getWeeklyProgress
+- gap = target − projected
+
+Agent MUST open with:
+
+“You are behind target by $X today.”
+
+Then:
+
+Top 3 recovery actions:
+- fill open slots
+- upsell
+- reactivation
+
+====================================
+PHASE 9E — LOST REVENUE DETECTION
+====================================
+
+Create:
+
+computeLostRevenueOpportunities(orgId)
+
+Returns:
+{
+  openSlotsValue,
+  inactiveClientValue,
+  unconvertedIntrosValue,
+  totalRecoverableCents,
+  topOpportunities: []
+}
+
+Logic:
+- openSlotsValue = open slots × avg session value
+- inactiveClientValue = inactive clients × avg conversion
+- introConversionLoss = intros with no follow-up
+
+Agent example:
+“You have $980 in recoverable revenue sitting in open slots and inactive clients.”
+
+====================================
+PHASE 9F — AGENT ACTION PRIORITIZATION UPGRADE
+====================================
+
+Enhance scoring:
+
+existing:
+score = convRate × clientModifier × expectedRevenue × urgency × goalWeight
+
+add:
+× revenueQualityWeight
+× sessionMixWeight
+
+Rules:
+- prioritize actions that increase paid sessions
+- deprioritize actions that add non-revenue sessions
+
+====================================
+PHASE 9G — UI UPGRADE (MANDATORY)
+====================================
+
+Update dashboards to show:
+
+1. Revenue Quality Card
+- “Revenue Quality: 42%”
+- “$280 lost today”
+
+2. Session Mix Card
+- visual bar: paid vs non-revenue
+
+3. Revenue Pressure Card
+- “$312 behind target today”
+
+4. Coach Profitability Card
+- margin per coach
+
+5. Lost Revenue Card
+- “$980 recoverable this week”
+
+Replace passive labels:
+- “3 inactive clients”
+→ “3 inactive clients ($210 opportunity)”
+
+- “2 open slots”
+→ “2 open slots (~$97 lost if unfilled)”
+
+====================================
+PHASE 9H — AGENT BEHAVIOR UPDATE
+====================================
+
+Update system prompt:
+
+Agent must now:
+- quantify revenue impact in every response
+- prioritize revenue-generating actions
+- highlight lost opportunity, not just status
+- push user toward action
+
+New behaviors:
+
+When user opens app:
+Lead with:
+“You are behind target by $X today. Here are the 3 fastest ways to recover it.”
+
+When showing schedule:
+Highlight:
+- open slot value
+- revenue vs non-revenue time
+
+When recommending actions:
+Always include:
+- expected revenue impact
+- probability of success
+
+When reviewing week:
+Include:
+- revenue quality score
+- session mix
+- lost revenue
+
+====================================
+PHASE 9I — VALIDATION
+====================================
+
+Test:
+
+1. “How much revenue am I losing?”
+→ uses revenue quality + lost opportunities
+
+2. “What should I do today?”
+→ uses revenue pressure + prioritized actions
+
+3. “Which coach is most profitable?”
+→ uses profitability engine
+
+4. “Why am I not hitting my goal?”
+→ uses session mix + revenue quality
+
+5. “How do I make more money this week?”
+→ uses optimization plan + lost revenue
+
+6. Open app
+→ agent immediately shows revenue gap + actions
+
+====================================
+END STATE
+====================================
+
+System evolves from:
+tracking → analysis → recommendation → optimization
+
+Agent evolves from:
+assistant → operator → revenue driver
+
+The system must not just describe the business.
+It must actively push it toward higher revenue and better decisions.

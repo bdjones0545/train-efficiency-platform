@@ -675,7 +675,13 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
     // Phase 2 (Goal): Goal-priority weight
     const goalDimension = getActionGoalDimension(item.category, subType);
     const goalPriorityWeight = goalWeights[goalDimension] ?? 1.0;
-    const goalAdjustedScore = Math.round(clientAdjustedRate * (expectedRevenue / 100) * urgencyWeight * goalPriorityWeight);
+
+    // Phase 9F: Revenue quality weight — actions that directly add paid sessions get a boost
+    // This deprioritizes actions that would only add non-revenue sessions
+    const paidSessionSubTypes = ["backfill", "upsell", "low_sessions"];
+    const sessionMixWeight = paidSessionSubTypes.includes(subType) ? 1.2 : 1.0;
+
+    const finalScore = Math.round(clientAdjustedRate * (expectedRevenue / 100) * urgencyWeight * goalPriorityWeight * sessionMixWeight);
 
     // Goal contribution note
     let goalContributionNote = "";
@@ -695,11 +701,12 @@ export async function buildScoredDailyActionQueue(orgId: string): Promise<{
       profileReasoning = "No profile data yet — using 25% baseline";
     }
     if (clientModifierNote) profileReasoning += clientModifierNote;
+    if (sessionMixWeight > 1.0) profileReasoning += ` | revenue-generating action (${sessionMixWeight}× mix boost)`;
 
     return {
       ...item,
-      actionScore: goalAdjustedScore,
-      scoreBreakdown: `${Math.round(globalConversionRate * 100)}% conv × ${clientConversionModifier.toFixed(2)} client × $${(expectedRevenue / 100).toFixed(0)} × ${urgencyWeight}x urgency × ${goalPriorityWeight.toFixed(1)}x goal`,
+      actionScore: finalScore,
+      scoreBreakdown: `${Math.round(globalConversionRate * 100)}% conv × ${clientConversionModifier.toFixed(2)} client × $${(expectedRevenue / 100).toFixed(0)} × ${urgencyWeight}x urgency × ${goalPriorityWeight.toFixed(1)}x goal × ${sessionMixWeight}x mix`,
       profileReasoning,
       rank: 0,
       goalPriorityWeight,

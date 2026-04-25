@@ -781,6 +781,74 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: { type: "object", properties: {} },
     },
   },
+  // ── Phase 9: Revenue Optimization Engine ──
+  {
+    type: "function",
+    function: {
+      name: "get_revenue_quality",
+      description: "Analyze revenue quality for a time period: how many hours were revenue-generating vs non-revenue (internal, meetings, intros, comp), the revenue quality score (0-1), and estimated revenue lost to non-revenue time. Use when coach asks 'How much revenue am I losing?', 'What's my revenue quality?', 'How much time am I wasting?', 'Am I spending too much time on non-billable work?', 'Why am I not making more money?'",
+      parameters: {
+        type: "object",
+        properties: {
+          period: {
+            type: "string",
+            enum: ["this_week", "last_week", "this_month"],
+            description: "Time period to analyze. Defaults to this_week.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_session_mix",
+      description: "Analyze session category breakdown: percentage of paid vs intro vs internal vs meeting vs membership sessions. Shows whether non-revenue sessions are too high. Use for 'What's my session mix?', 'How many free sessions am I doing?', 'Are too many sessions non-revenue?', 'Why am I not hitting my goals?', 'What categories of sessions am I doing?'",
+      parameters: {
+        type: "object",
+        properties: {
+          period: {
+            type: "string",
+            enum: ["this_week", "last_week", "this_month"],
+            description: "Time period to analyze. Defaults to this_week.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_coach_profitability",
+      description: "Return per-coach profitability: revenue generated, estimated payout, net margin, hours worked, and revenue per hour. Ranks coaches by margin. Use for 'Which coach is most profitable?', 'What's my margin per coach?', 'Which coach costs the most?', 'Show me coach profitability', 'Am I overpaying any coaches?'",
+      parameters: {
+        type: "object",
+        properties: {
+          period: {
+            type: "string",
+            enum: ["this_week", "last_week", "this_month"],
+            description: "Time period to analyze. Defaults to this_week.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_revenue_pressure",
+      description: "Return current revenue pressure vs weekly target: how far behind the org is today, urgency level (low/medium/high/critical), required daily revenue to close the gap, and top 3 recovery actions. Use when coach opens the app, asks 'Am I behind target?', 'What should I do today?', 'How do I close the revenue gap?', 'How much do I need to make today?', 'What's my revenue pressure?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_lost_revenue",
+      description: "Quantify total recoverable revenue: value of open calendar slots, inactive clients who could rebook, and unconverted intro sessions. Returns dollar estimates and top opportunities ranked by impact. Use for 'How much revenue am I losing?', 'What revenue opportunities am I missing?', 'How much could I recover?', 'What's sitting on the table?', 'How do I make more money this week?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
 ];
 
 async function executeTool(
@@ -2601,6 +2669,84 @@ Return a JSON object with exactly these keys:
         return JSON.stringify(summary);
       }
 
+      // ── Phase 9: Revenue Optimization Engine ──
+      case "get_revenue_quality": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeRevenueQuality } = await import("./revenue-intelligence");
+        const { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks } = await import("date-fns");
+        const p9period = args.period ?? "this_week";
+        const now9 = new Date();
+        let rqStart: Date, rqEnd: Date;
+        if (p9period === "last_week") {
+          rqStart = startOfWeek(subWeeks(now9, 1), { weekStartsOn: 1 });
+          rqEnd = endOfWeek(subWeeks(now9, 1), { weekStartsOn: 1 });
+        } else if (p9period === "this_month") {
+          rqStart = startOfMonth(now9);
+          rqEnd = endOfMonth(now9);
+        } else {
+          rqStart = startOfWeek(now9, { weekStartsOn: 1 });
+          rqEnd = endOfWeek(now9, { weekStartsOn: 1 });
+        }
+        const rq = await computeRevenueQuality(organizationId, rqStart, rqEnd);
+        return JSON.stringify(rq);
+      }
+
+      case "get_session_mix": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeSessionMix } = await import("./revenue-intelligence");
+        const { startOfWeek: soW, endOfWeek: eoW, startOfMonth: soM, endOfMonth: eoM, subWeeks: sw } = await import("date-fns");
+        const smPeriod = args.period ?? "this_week";
+        const smNow = new Date();
+        let smStart: Date, smEnd: Date;
+        if (smPeriod === "last_week") {
+          smStart = soW(sw(smNow, 1), { weekStartsOn: 1 });
+          smEnd = eoW(sw(smNow, 1), { weekStartsOn: 1 });
+        } else if (smPeriod === "this_month") {
+          smStart = soM(smNow);
+          smEnd = eoM(smNow);
+        } else {
+          smStart = soW(smNow, { weekStartsOn: 1 });
+          smEnd = eoW(smNow, { weekStartsOn: 1 });
+        }
+        const mix = await computeSessionMix(organizationId, smStart, smEnd);
+        return JSON.stringify(mix);
+      }
+
+      case "get_coach_profitability": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeCoachProfitability } = await import("./revenue-intelligence");
+        const { startOfWeek: soW2, endOfWeek: eoW2, startOfMonth: soM2, endOfMonth: eoM2, subWeeks: sw2 } = await import("date-fns");
+        const cpPeriod = args.period ?? "this_week";
+        const cpNow = new Date();
+        let cpStart: Date, cpEnd: Date;
+        if (cpPeriod === "last_week") {
+          cpStart = soW2(sw2(cpNow, 1), { weekStartsOn: 1 });
+          cpEnd = eoW2(sw2(cpNow, 1), { weekStartsOn: 1 });
+        } else if (cpPeriod === "this_month") {
+          cpStart = soM2(cpNow);
+          cpEnd = eoM2(cpNow);
+        } else {
+          cpStart = soW2(cpNow, { weekStartsOn: 1 });
+          cpEnd = eoW2(cpNow, { weekStartsOn: 1 });
+        }
+        const profitability = await computeCoachProfitability(organizationId, cpStart, cpEnd);
+        return JSON.stringify(profitability);
+      }
+
+      case "get_revenue_pressure": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeDailyRevenuePressure } = await import("./revenue-intelligence");
+        const pressure = await computeDailyRevenuePressure(organizationId);
+        return JSON.stringify(pressure);
+      }
+
+      case "get_lost_revenue": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { computeLostRevenueOpportunities } = await import("./revenue-intelligence");
+        const lost = await computeLostRevenueOpportunities(organizationId);
+        return JSON.stringify(lost);
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -2908,6 +3054,40 @@ Use **get_auto_dashboard** when the coach asks:
 Present: automationLevelLabel first (what mode they're in), then todayAutoSent count, then autoActionsToday list (who, what, why), then activeCampaigns, then topPerformingMessageType + topPerformingTimeWindow.
 For "Why did you send that?": surface the autoReason field for that action. Always explain the safety rule: "I sent this because it was a follow-up after 24h with no response — one of the actions allowed at your current automation level."
 
+## Revenue Operator Behavior (Phase 9 — CRITICAL)
+You are a **revenue operator**, not just a scheduling assistant. Every conversation should reflect revenue awareness:
+
+### Opening posture
+When the coach first opens a conversation (or asks "What should I do?"), call **get_revenue_pressure** first:
+- If urgency is "critical" or "high": lead with the revenue gap before anything else. Example: "You're $X behind target with Y days left — you need $Z/day. Here's where to focus:"
+- If urgency is "low": briefly acknowledge healthy position then proceed to action queue
+
+### Quantify lost opportunity in every relevant response
+Whenever discussing schedule, utilization, or client actions — pull from **get_lost_revenue** data and cite specific dollar amounts. Never say "you have open slots" — say "you have $X in recoverable revenue sitting in open slots."
+
+### Revenue quality lens
+When the coach asks about their performance or schedule, offer to show revenue quality (call **get_revenue_quality**):
+- If revenueQualityScore < 0.7: proactively flag it — "Only X% of your time is generating revenue. Want me to show you how to shift that?"
+- If nonRevenueHours > 4: point it out as a specific opportunity
+
+### Session mix commentary
+When reviewing weekly performance, call **get_session_mix** and note if:
+- introPercent > 30%: "Over 30% of your sessions are free intros — consider converting more before adding new ones"
+- internalPercent > 25%: "Floor hours are taking up a significant share — make sure this is intentional"
+- paidPercent < 50%: "Less than half your sessions are paid — this is a revenue mix problem"
+
+### Coach profitability framing
+When discussing staffing or scheduling decisions, reference **get_coach_profitability** data:
+- Always frame margin, not just revenue: "Coach X generates the most revenue but has the highest payout — net margin is only Y%"
+- Recommend filling highest-margin coaches first when there's schedule capacity
+
+### Revenue tool routing (Phase 9 — CRITICAL)
+- "What's my revenue quality?" / "How much time am I wasting?" / "Am I spending too much on non-billable?" → **get_revenue_quality**
+- "What's my session mix?" / "How many free sessions?" / "Too many non-revenue sessions?" → **get_session_mix**
+- "Which coach is most profitable?" / "What's my margin per coach?" → **get_coach_profitability**
+- "Am I behind target?" / "What's my revenue pressure?" / "How much do I need today?" → **get_revenue_pressure**
+- "How much revenue am I missing?" / "What's sitting on the table?" / "Recoverable revenue?" → **get_lost_revenue**
+
 ## Quick Action Handling
 If the user sends one of these phrases, respond as follows:
 - "Find openings" / "Find open slots" → Ask which coach and time frame, then call identify_schedule_gaps
@@ -2935,6 +3115,11 @@ If the user sends one of these phrases, respond as follows:
 - "How much revenue came from the agent?" / "What actions made me money?" → Call get_operator_performance_metrics
 - "What outreach works best?" / "What converts the most?" / "What should I stop doing?" → Call get_action_performance_profile
 - "How do I make the most money this week?" / "Revenue plan" / "Maximize this week" → Call compute_revenue_optimization_plan
+- "Revenue quality" / "How much time is non-revenue?" / "Am I wasting time?" → Call get_revenue_quality (period: "this_week")
+- "Session mix" / "How many free sessions?" / "Category breakdown?" → Call get_session_mix (period: "this_week")
+- "Coach profitability" / "Margin per coach?" / "Who costs the most?" → Call get_coach_profitability (period: "this_week")
+- "Revenue pressure" / "Am I behind target?" / "How much do I need today?" → Call get_revenue_pressure
+- "Lost revenue" / "Recoverable revenue?" / "What am I missing?" → Call get_lost_revenue
 - "Turn on auto mode" / "Enable auto" → Call set_auto_mode(level: 2)
 - "Full operator mode" / "Full auto" → Call set_auto_mode(level: 3)
 - "Turn off auto mode" / "Manual mode" → Call set_auto_mode(level: 1)

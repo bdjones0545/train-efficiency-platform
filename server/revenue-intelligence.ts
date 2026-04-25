@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { subDays, startOfMonth, endOfMonth, startOfDay, format, differenceInDays, getDaysInMonth } from "date-fns";
+import { subDays, startOfMonth, endOfMonth, startOfDay, format, differenceInDays, getDaysInMonth, startOfWeek, endOfWeek, differenceInMinutes } from "date-fns";
 import { db } from "./db";
 import {
   bookings,
@@ -979,5 +979,550 @@ export async function computeRevenueForecast(orgId: string, targetCents?: number
       sessionsPerDayNeeded,
       targetSummary,
     } : {}),
+  };
+}
+
+// ============================================================
+// PHASE 9A — REVENUE QUALITY ENGINE
+// ============================================================
+
+export interface RevenueQuality {
+  period: string;
+  totalHours: number;
+  revenueHours: number;
+  nonRevenueHours: number;
+  revenueQualityScore: number;
+  breakdown: {
+    paidHours: number;
+    introHours: number;
+    internalHours: number;
+    meetingHours: number;
+    membershipHours: number;
+    compHours: number;
+  };
+  estimatedRevenueLostCents: number;
+  avgRevenuePerHourCents: number;
+  insight: string;
+}
+
+export async function computeRevenueQuality(
+  orgId: string,
+  startDate?: Date,
+  endDate?: Date
+): Promise<RevenueQuality> {
+  const now = new Date();
+  const start = startDate ?? startOfWeek(now, { weekStartsOn: 1 });
+  const end = endDate ?? endOfWeek(now, { weekStartsOn: 1 });
+  const periodLabel = `${format(start, "MMM d")} – ${format(end, "MMM d")}`;
+
+  const bkgs = await getOrgBookingsForRange(orgId, start, end);
+
+  const catHours: Record<string, number> = {
+    paid: 0, intro: 0, internal: 0, meeting: 0, membership: 0, package_redemption: 0, comp: 0,
+  };
+
+  let totalRevenueCents = 0;
+  let revenueSessionCount = 0;
+
+  for (const b of bkgs) {
+    const cat = (b.serviceCategory ?? "paid") as string;
+    const mins = b.endAt && b.startAt
+      ? differenceInMinutes(new Date(b.endAt), new Date(b.startAt))
+      : 60;
+    const hrs = mins / 60;
+    if (cat in catHours) catHours[cat] += hrs;
+    else catHours["paid"] += hrs;
+
+    if (b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0) {
+      totalRevenueCents += b.priceCents ?? 0;
+      revenueSessionCount++;
+    }
+  }
+
+  const paidHours = catHours["paid"];
+  const introHours = catHours["intro"];
+  const internalHours = catHours["internal"];
+  const meetingHours = catHours["meeting"];
+  const membershipHours = (catHours["membership"] ?? 0) + (catHours["package_redemption"] ?? 0);
+  const compHours = catHours["comp"] ?? 0;
+
+  const totalHours = Object.values(catHours).reduce((s, v) => s + v, 0);
+  const revenueHours = paidHours + membershipHours;
+  const nonRevenueHours = totalHours - revenueHours;
+
+  // Weighted quality score
+  const weightedHours =
+    paidHours * 1.0 +
+    membershipHours * 0.7 +
+    introHours * 0.3 +
+    internalHours * 0.0 +
+    meetingHours * 0.0 +
+    compHours * 0.0;
+
+  const revenueQualityScore = totalHours > 0 ? Math.round((weightedHours / totalHours) * 100) / 100 : 0;
+
+  const avgRevenuePerHourCents = revenueHours > 0 ? Math.round(totalRevenueCents / revenueHours) : 0;
+  const estimatedRevenueLostCents = Math.round(nonRevenueHours * avgRevenuePerHourCents);
+
+  let insight = "";
+  if (totalHours === 0) {
+    insight = "No sessions tracked in this period.";
+  } else {
+    const pct = Math.round(revenueQualityScore * 100);
+    const lost = (estimatedRevenueLostCents / 100).toFixed(0);
+    if (pct >= 80) {
+      insight = `Strong revenue quality at ${pct}%. Most time is being invested in revenue-generating sessions.`;
+    } else if (pct >= 50) {
+      insight = `Revenue quality is ${pct}%. You worked ${totalHours.toFixed(1)} hours but only ${revenueHours.toFixed(1)} were revenue-generating — ~$${lost} in estimated lost opportunity.`;
+    } else {
+      insight = `Low revenue quality at ${pct}%. ${nonRevenueHours.toFixed(1)} non-revenue hours represent ~$${lost} in lost opportunity this period. Consider converting internal/meeting time to paid sessions where possible.`;
+    }
+  }
+
+  return {
+    period: periodLabel,
+    totalHours: Math.round(totalHours * 10) / 10,
+    revenueHours: Math.round(revenueHours * 10) / 10,
+    nonRevenueHours: Math.round(nonRevenueHours * 10) / 10,
+    revenueQualityScore,
+    breakdown: {
+      paidHours: Math.round(paidHours * 10) / 10,
+      introHours: Math.round(introHours * 10) / 10,
+      internalHours: Math.round(internalHours * 10) / 10,
+      meetingHours: Math.round(meetingHours * 10) / 10,
+      membershipHours: Math.round(membershipHours * 10) / 10,
+      compHours: Math.round(compHours * 10) / 10,
+    },
+    estimatedRevenueLostCents,
+    avgRevenuePerHourCents,
+    insight,
+  };
+}
+
+// ============================================================
+// PHASE 9B — SESSION MIX ANALYSIS
+// ============================================================
+
+export interface SessionMix {
+  period: string;
+  totalSessions: number;
+  categoryBreakdown: Record<string, number>;
+  percentageBreakdown: Record<string, number>;
+  revenueRatio: number;
+  nonRevenueRatio: number;
+  insight: string;
+}
+
+export async function computeSessionMix(
+  orgId: string,
+  startDate?: Date,
+  endDate?: Date
+): Promise<SessionMix> {
+  const now = new Date();
+  const start = startDate ?? startOfWeek(now, { weekStartsOn: 1 });
+  const end = endDate ?? endOfWeek(now, { weekStartsOn: 1 });
+  const periodLabel = `${format(start, "MMM d")} – ${format(end, "MMM d")}`;
+
+  const bkgs = await getOrgBookingsForRange(orgId, start, end);
+
+  const cats: Record<string, number> = {};
+  for (const b of bkgs) {
+    const cat = (b.serviceCategory ?? "paid") as string;
+    cats[cat] = (cats[cat] ?? 0) + 1;
+  }
+
+  const total = bkgs.length;
+  const pctBreakdown: Record<string, number> = {};
+  for (const [cat, count] of Object.entries(cats)) {
+    pctBreakdown[cat] = total > 0 ? Math.round((count / total) * 100) : 0;
+  }
+
+  const revenueCategories = ["paid", "membership", "package_redemption"];
+  const revenueSessions = bkgs.filter(b => revenueCategories.includes((b.serviceCategory ?? "paid") as string)).length;
+  const revenueRatio = total > 0 ? revenueSessions / total : 0;
+  const nonRevenueRatio = 1 - revenueRatio;
+
+  let insight = "";
+  if (total === 0) {
+    insight = "No sessions recorded in this period.";
+  } else {
+    const nonRevPct = Math.round(nonRevenueRatio * 100);
+    const introPct = pctBreakdown["intro"] ?? 0;
+    const internalPct = pctBreakdown["internal"] ?? 0;
+    if (nonRevPct > 50) {
+      insight = `${nonRevPct}% of your sessions this period were non-revenue — significantly reducing your earning potential.`;
+      if (introPct > 20) insight += ` ${introPct}% were intros — consider following up to convert them to paid clients.`;
+      if (internalPct > 20) insight += ` ${internalPct}% were internal hours — consider reducing or shifting to client sessions.`;
+    } else if (nonRevPct > 25) {
+      insight = `${nonRevPct}% non-revenue sessions this period. Review intro conversion rates and internal time allocation.`;
+    } else {
+      insight = `Good session mix — ${Math.round(revenueRatio * 100)}% of sessions are revenue-generating.`;
+    }
+  }
+
+  return {
+    period: periodLabel,
+    totalSessions: total,
+    categoryBreakdown: cats,
+    percentageBreakdown: pctBreakdown,
+    revenueRatio: Math.round(revenueRatio * 100) / 100,
+    nonRevenueRatio: Math.round(nonRevenueRatio * 100) / 100,
+    insight,
+  };
+}
+
+// ============================================================
+// PHASE 9C — COACH PROFITABILITY ENGINE
+// ============================================================
+
+export interface CoachProfitabilityEntry {
+  coachId: string;
+  coachName: string;
+  revenueCents: number;
+  payoutCents: number;
+  netCents: number;
+  marginPercent: number;
+  sessionCount: number;
+  hoursWorked: number;
+  revenuePerHourCents: number;
+  payoutPerHourCents: number;
+}
+
+export interface CoachProfitabilityReport {
+  period: string;
+  coaches: CoachProfitabilityEntry[];
+  topMarginCoach: CoachProfitabilityEntry | null;
+  lowestMarginCoach: CoachProfitabilityEntry | null;
+  totalRevenueCents: number;
+  totalPayoutCents: number;
+  totalNetCents: number;
+  orgMarginPercent: number;
+  insight: string;
+}
+
+export async function computeCoachProfitability(
+  orgId: string,
+  startDate?: Date,
+  endDate?: Date
+): Promise<CoachProfitabilityReport> {
+  const now = new Date();
+  const start = startDate ?? startOfWeek(now, { weekStartsOn: 1 });
+  const end = endDate ?? endOfWeek(now, { weekStartsOn: 1 });
+  const periodLabel = `${format(start, "MMM d")} – ${format(end, "MMM d")}`;
+
+  const bkgs = await getOrgBookingsForRange(orgId, start, end);
+
+  const coachMap = new Map<string, {
+    name: string;
+    revenueCents: number;
+    payoutCents: number;
+    sessions: number;
+    hours: number;
+  }>();
+
+  for (const b of bkgs) {
+    const name = `${b.coachFirstName ?? ""} ${b.coachLastName ?? ""}`.trim() || "Unknown";
+    if (!coachMap.has(b.coachId)) {
+      coachMap.set(b.coachId, { name, revenueCents: 0, payoutCents: 0, sessions: 0, hours: 0 });
+    }
+    const entry = coachMap.get(b.coachId)!;
+    entry.sessions++;
+
+    const durationMins = b.endAt && b.startAt
+      ? differenceInMinutes(new Date(b.endAt), new Date(b.startAt))
+      : 60;
+    entry.hours += durationMins / 60;
+
+    if (b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0) {
+      entry.revenueCents += b.priceCents ?? 0;
+    }
+
+    // Estimate payout
+    const payoutType = b.payoutType ?? "percentage";
+    if (payoutType === "none") {
+      // no payout
+    } else if (payoutType === "fixed") {
+      entry.payoutCents += b.payoutValueCents ?? 0;
+    } else if (payoutType === "hourly") {
+      const hourlyRate = b.payoutValueCents ?? 0;
+      entry.payoutCents += Math.round(hourlyRate * (durationMins / 60));
+    } else {
+      // percentage
+      const pct = (b.payoutPercent ?? 50) / 100;
+      entry.payoutCents += Math.round((b.priceCents ?? 0) * pct);
+    }
+  }
+
+  const coaches: CoachProfitabilityEntry[] = Array.from(coachMap.entries()).map(([coachId, d]) => {
+    const netCents = d.revenueCents - d.payoutCents;
+    const marginPercent = d.revenueCents > 0 ? Math.round((netCents / d.revenueCents) * 100) : 0;
+    return {
+      coachId,
+      coachName: d.name,
+      revenueCents: d.revenueCents,
+      payoutCents: d.payoutCents,
+      netCents,
+      marginPercent,
+      sessionCount: d.sessions,
+      hoursWorked: Math.round(d.hours * 10) / 10,
+      revenuePerHourCents: d.hours > 0 ? Math.round(d.revenueCents / d.hours) : 0,
+      payoutPerHourCents: d.hours > 0 ? Math.round(d.payoutCents / d.hours) : 0,
+    };
+  }).sort((a, b) => b.revenueCents - a.revenueCents);
+
+  const totalRevenueCents = coaches.reduce((s, c) => s + c.revenueCents, 0);
+  const totalPayoutCents = coaches.reduce((s, c) => s + c.payoutCents, 0);
+  const totalNetCents = totalRevenueCents - totalPayoutCents;
+  const orgMarginPercent = totalRevenueCents > 0 ? Math.round((totalNetCents / totalRevenueCents) * 100) : 0;
+
+  const sorted = [...coaches].sort((a, b) => b.marginPercent - a.marginPercent);
+  const topMarginCoach = sorted[0] ?? null;
+  const lowestMarginCoach = sorted[sorted.length - 1] ?? null;
+
+  let insight = "";
+  if (coaches.length === 0) {
+    insight = "No coaching sessions in this period.";
+  } else if (coaches.length === 1) {
+    const c = coaches[0];
+    insight = `${c.coachName} generated $${(c.revenueCents / 100).toFixed(0)} with a ${c.marginPercent}% margin ($${(c.netCents / 100).toFixed(0)} net).`;
+  } else {
+    insight = `Org margin is ${orgMarginPercent}% ($${(totalNetCents / 100).toFixed(0)} net on $${(totalRevenueCents / 100).toFixed(0)} revenue). Highest margin: ${topMarginCoach?.coachName} at ${topMarginCoach?.marginPercent}%. Lowest: ${lowestMarginCoach?.coachName} at ${lowestMarginCoach?.marginPercent}%.`;
+  }
+
+  return {
+    period: periodLabel,
+    coaches,
+    topMarginCoach,
+    lowestMarginCoach,
+    totalRevenueCents,
+    totalPayoutCents,
+    totalNetCents,
+    orgMarginPercent,
+    insight,
+  };
+}
+
+// ============================================================
+// PHASE 9D — DAILY REVENUE PRESSURE
+// ============================================================
+
+export interface DailyRevenuePressure {
+  hasTargets: boolean;
+  targetCents: number;
+  currentCents: number;
+  projectedCents: number;
+  gapCents: number;
+  progressPct: number;
+  urgencyLevel: "none" | "low" | "medium" | "high" | "critical";
+  daysRemaining: number;
+  daysElapsed: number;
+  requiredDailyRevenueCents: number;
+  currentDailyPaceCents: number;
+  topRecoveryActions: { action: string; estimatedImpactCents: number; priority: number }[];
+  insight: string;
+}
+
+export async function computeDailyRevenuePressure(orgId: string): Promise<DailyRevenuePressure> {
+  const { getWeeklyTargets, getWeeklyProgress } = await import("./goal-tracking");
+
+  const [targets, progress] = await Promise.all([
+    getWeeklyTargets(orgId),
+    getWeeklyProgress(orgId),
+  ]);
+
+  if (!targets || !targets.revenueCents) {
+    return {
+      hasTargets: false,
+      targetCents: 0,
+      currentCents: 0,
+      projectedCents: 0,
+      gapCents: 0,
+      progressPct: 0,
+      urgencyLevel: "none",
+      daysRemaining: progress.daysRemaining,
+      daysElapsed: progress.daysElapsed,
+      requiredDailyRevenueCents: 0,
+      currentDailyPaceCents: 0,
+      topRecoveryActions: [],
+      insight: "No weekly revenue target set. Ask the agent to set a target — e.g. 'Set a $5,000 revenue goal this week'.",
+    };
+  }
+
+  const revenueGoal = progress.progress.find(p => p.dimension === "revenue");
+  const currentCents = revenueGoal?.current ?? 0;
+  const projectedCents = revenueGoal?.projected ?? 0;
+  const targetCents = targets.revenueCents;
+  const gapCents = Math.max(0, targetCents - projectedCents);
+  const progressPct = Math.round((currentCents / targetCents) * 100);
+  const daysElapsed = progress.daysElapsed;
+  const daysRemaining = progress.daysRemaining;
+
+  const currentDailyPaceCents = daysElapsed > 0 ? Math.round(currentCents / daysElapsed) : 0;
+  const requiredDailyRevenueCents = daysRemaining > 0 ? Math.round(gapCents / daysRemaining) : gapCents;
+
+  let urgencyLevel: DailyRevenuePressure["urgencyLevel"] = "low";
+  if (gapCents <= 0) {
+    urgencyLevel = "none";
+  } else if (progressPct >= 80) {
+    urgencyLevel = "low";
+  } else if (progressPct >= 60) {
+    urgencyLevel = "medium";
+  } else if (progressPct >= 40) {
+    urgencyLevel = "high";
+  } else {
+    urgencyLevel = "critical";
+  }
+
+  const topRecoveryActions: DailyRevenuePressure["topRecoveryActions"] = [
+    { action: "Fill open calendar slots with paid sessions", estimatedImpactCents: Math.round(requiredDailyRevenueCents * 0.6), priority: 1 },
+    { action: "Upsell existing clients to additional sessions", estimatedImpactCents: Math.round(requiredDailyRevenueCents * 0.25), priority: 2 },
+    { action: "Reach out to inactive clients for reactivation", estimatedImpactCents: Math.round(requiredDailyRevenueCents * 0.15), priority: 3 },
+  ];
+
+  let insight = "";
+  if (urgencyLevel === "none") {
+    insight = `On track! Projected to hit $${(projectedCents / 100).toFixed(0)} vs $${(targetCents / 100).toFixed(0)} target.`;
+  } else {
+    const gapLabel = `$${(gapCents / 100).toFixed(0)}`;
+    const dailyLabel = `$${(requiredDailyRevenueCents / 100).toFixed(0)}`;
+    insight = `You are behind target by ${gapLabel}. Need ${dailyLabel}/day over the next ${daysRemaining} day${daysRemaining !== 1 ? "s" : ""} to recover.`;
+  }
+
+  return {
+    hasTargets: true,
+    targetCents,
+    currentCents,
+    projectedCents,
+    gapCents,
+    progressPct,
+    urgencyLevel,
+    daysRemaining,
+    daysElapsed,
+    requiredDailyRevenueCents,
+    currentDailyPaceCents,
+    topRecoveryActions,
+    insight,
+  };
+}
+
+// ============================================================
+// PHASE 9E — LOST REVENUE OPPORTUNITIES
+// ============================================================
+
+export interface LostRevenueOpportunities {
+  openSlotsValueCents: number;
+  inactiveClientValueCents: number;
+  unconvertedIntrosValueCents: number;
+  totalRecoverableCents: number;
+  openSlotsCount: number;
+  inactiveClientCount: number;
+  unconvertedIntrosCount: number;
+  avgSessionValueCents: number;
+  topOpportunities: { type: string; valueCents: number; description: string; priority: "high" | "medium" }[];
+  insight: string;
+}
+
+export async function computeLostRevenueOpportunities(orgId: string): Promise<LostRevenueOpportunities> {
+  const now = new Date();
+  const thirtyDaysAgo = subDays(now, 30);
+  const sixtyDaysAgo = subDays(now, 60);
+  const thisWeekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const thisWeekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+  const [allBookings, { computeOrgDigest }] = await Promise.all([
+    getOrgBookingsWithService(orgId, sixtyDaysAgo),
+    import("./scheduling-intelligence"),
+  ]);
+
+  // Average session value from revenue-generating bookings in last 30 days
+  const recentRevBookings = allBookings.filter(
+    b => b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0 && new Date(b.startAt) >= thirtyDaysAgo
+  );
+  const avgSessionValueCents = recentRevBookings.length > 0
+    ? Math.round(recentRevBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0) / recentRevBookings.length)
+    : 7000; // fallback $70
+
+  // Open slots value — from ops digest
+  let openSlotsCount = 0;
+  let openSlotsValueCents = 0;
+  try {
+    const digest = await computeOrgDigest(orgId);
+    openSlotsCount = digest.openSlotsThisWeek;
+    openSlotsValueCents = Math.round(openSlotsCount * avgSessionValueCents);
+  } catch { /* use zeros */ }
+
+  // Inactive clients (no booking in 30 days) value
+  const clientIds = new Set(allBookings.map(b => b.clientId).filter(Boolean));
+  const recentClientIds = new Set(
+    allBookings.filter(b => new Date(b.startAt) >= thirtyDaysAgo && b.clientId).map(b => b.clientId)
+  );
+  const inactiveClientIds = [...clientIds].filter(id => !recentClientIds.has(id));
+  const inactiveClientCount = inactiveClientIds.length;
+  const avgConversionRate = 0.35; // industry average for inactive re-engagement
+  const inactiveClientValueCents = Math.round(inactiveClientCount * avgSessionValueCents * avgConversionRate);
+
+  // Unconverted intros — intro sessions where client never had a paid session after
+  const introBookings = allBookings.filter(
+    b => (b.serviceCategory ?? "paid") === "intro" && new Date(b.startAt) >= sixtyDaysAgo
+  );
+  const paidClientIds = new Set(
+    allBookings.filter(b => b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0).map(b => b.clientId)
+  );
+  const unconvertedIntros = introBookings.filter(b => !paidClientIds.has(b.clientId));
+  const unconvertedIntrosCount = unconvertedIntros.length;
+  const introConversionRate = 0.4; // estimated
+  const unconvertedIntrosValueCents = Math.round(unconvertedIntrosCount * avgSessionValueCents * introConversionRate);
+
+  const totalRecoverableCents = openSlotsValueCents + inactiveClientValueCents + unconvertedIntrosValueCents;
+
+  const topOpportunities: LostRevenueOpportunities["topOpportunities"] = [];
+  if (openSlotsCount > 0) {
+    topOpportunities.push({
+      type: "open_slots",
+      valueCents: openSlotsValueCents,
+      description: `${openSlotsCount} open slot${openSlotsCount !== 1 ? "s" : ""} this week (~$${(openSlotsValueCents / 100).toFixed(0)} if filled)`,
+      priority: "high",
+    });
+  }
+  if (unconvertedIntrosCount > 0) {
+    topOpportunities.push({
+      type: "unconverted_intros",
+      valueCents: unconvertedIntrosValueCents,
+      description: `${unconvertedIntrosCount} intro session${unconvertedIntrosCount !== 1 ? "s" : ""} never converted to paid (~$${(unconvertedIntrosValueCents / 100).toFixed(0)} potential)`,
+      priority: "high",
+    });
+  }
+  if (inactiveClientCount > 0) {
+    topOpportunities.push({
+      type: "inactive_clients",
+      valueCents: inactiveClientValueCents,
+      description: `${inactiveClientCount} inactive client${inactiveClientCount !== 1 ? "s" : ""} (~$${(inactiveClientValueCents / 100).toFixed(0)} re-engagement potential)`,
+      priority: "medium",
+    });
+  }
+
+  const totalLabel = `$${(totalRecoverableCents / 100).toFixed(0)}`;
+  let insight = "";
+  if (totalRecoverableCents === 0) {
+    insight = "No significant revenue recovery opportunities detected right now.";
+  } else {
+    const parts: string[] = [];
+    if (openSlotsCount > 0) parts.push(`${openSlotsCount} open slot${openSlotsCount !== 1 ? "s" : ""}`);
+    if (unconvertedIntrosCount > 0) parts.push(`${unconvertedIntrosCount} unconverted intro${unconvertedIntrosCount !== 1 ? "s" : ""}`);
+    if (inactiveClientCount > 0) parts.push(`${inactiveClientCount} inactive client${inactiveClientCount !== 1 ? "s" : ""}`);
+    insight = `You have ${totalLabel} in recoverable revenue sitting in ${parts.join(", ")}.`;
+  }
+
+  return {
+    openSlotsValueCents,
+    inactiveClientValueCents,
+    unconvertedIntrosValueCents,
+    totalRecoverableCents,
+    openSlotsCount,
+    inactiveClientCount,
+    unconvertedIntrosCount,
+    avgSessionValueCents,
+    topOpportunities,
+    insight,
   };
 }

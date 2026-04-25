@@ -5573,6 +5573,96 @@ export async function registerRoutes(
     }
   });
 
+  // Phase 9: Revenue Optimization Engine API routes
+  app.get("/api/scheduling/revenue-quality", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeRevenueQuality } = await import("./revenue-intelligence");
+      const { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks } = await import("date-fns");
+      const period = (req.query.period as string) ?? "this_week";
+      const now = new Date();
+      let start: Date, end: Date;
+      if (period === "last_week") {
+        start = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
+        end = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
+      } else if (period === "this_month") {
+        start = startOfMonth(now); end = endOfMonth(now);
+      } else {
+        start = startOfWeek(now, { weekStartsOn: 1 });
+        end = endOfWeek(now, { weekStartsOn: 1 });
+      }
+      res.json(await computeRevenueQuality(profile.organizationId, start, end));
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.get("/api/scheduling/session-mix", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeSessionMix } = await import("./revenue-intelligence");
+      const { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks } = await import("date-fns");
+      const period = (req.query.period as string) ?? "this_week";
+      const now = new Date();
+      let start: Date, end: Date;
+      if (period === "last_week") {
+        start = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
+        end = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
+      } else if (period === "this_month") {
+        start = startOfMonth(now); end = endOfMonth(now);
+      } else {
+        start = startOfWeek(now, { weekStartsOn: 1 });
+        end = endOfWeek(now, { weekStartsOn: 1 });
+      }
+      res.json(await computeSessionMix(profile.organizationId, start, end));
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.get("/api/scheduling/coach-profitability", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeCoachProfitability } = await import("./revenue-intelligence");
+      const { startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks } = await import("date-fns");
+      const period = (req.query.period as string) ?? "this_week";
+      const now = new Date();
+      let start: Date, end: Date;
+      if (period === "last_week") {
+        start = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
+        end = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
+      } else if (period === "this_month") {
+        start = startOfMonth(now); end = endOfMonth(now);
+      } else {
+        start = startOfWeek(now, { weekStartsOn: 1 });
+        end = endOfWeek(now, { weekStartsOn: 1 });
+      }
+      res.json(await computeCoachProfitability(profile.organizationId, start, end));
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.get("/api/scheduling/revenue-pressure", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeDailyRevenuePressure } = await import("./revenue-intelligence");
+      res.json(await computeDailyRevenuePressure(profile.organizationId));
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
+  app.get("/api/scheduling/lost-revenue", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeLostRevenueOpportunities } = await import("./revenue-intelligence");
+      res.json(await computeLostRevenueOpportunities(profile.organizationId));
+    } catch (error: any) { res.status(500).json({ message: error.message }); }
+  });
+
   app.get("/api/scheduling/churn-risks", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;

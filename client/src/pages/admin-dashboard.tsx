@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Users, Calendar, DollarSign, Plus, Download, Settings, Banknote, CheckCircle, XCircle, UserPlus } from "lucide-react";
+import { Users, Calendar, DollarSign, Plus, Download, Settings, Banknote, CheckCircle, XCircle, UserPlus, TrendingUp, AlertTriangle, BarChart2, Target, Zap } from "lucide-react";
 import { format, parseISO, subDays, subWeeks, subMonths, subYears, isAfter } from "date-fns";
 import { useState, useMemo } from "react";
 import type { CoachWithUser, BookingWithDetails, RedemptionWithDetails } from "@/lib/types";
@@ -49,6 +49,22 @@ export default function AdminDashboardPage() {
   const { data: allRedemptions } = useQuery<RedemptionWithDetails[]>({ queryKey: ["/api/admin/redemptions"] });
   const { data: allUsers } = useQuery<(User & { profile?: UserProfile })[]>({ queryKey: ["/api/admin/users"] });
   const { data: allCashouts } = useQuery<CashoutWithCoach[]>({ queryKey: ["/api/admin/cashouts"] });
+
+  const { data: revQuality, isLoading: revQualityLoading } = useQuery<any>({
+    queryKey: ["/api/scheduling/revenue-quality"],
+  });
+  const { data: sessionMix, isLoading: sessionMixLoading } = useQuery<any>({
+    queryKey: ["/api/scheduling/session-mix"],
+  });
+  const { data: coachProfitability, isLoading: coachProfLoading } = useQuery<any>({
+    queryKey: ["/api/scheduling/coach-profitability"],
+  });
+  const { data: revPressure, isLoading: revPressureLoading } = useQuery<any>({
+    queryKey: ["/api/scheduling/revenue-pressure"],
+  });
+  const { data: lostRevenue, isLoading: lostRevenueLoading } = useQuery<any>({
+    queryKey: ["/api/scheduling/lost-revenue"],
+  });
 
   const [newServiceName, setNewServiceName] = useState("");
   const [newServiceDesc, setNewServiceDesc] = useState("");
@@ -241,12 +257,13 @@ export default function AdminDashboardPage() {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
           <TabsTrigger value="services" data-testid="tab-services">Services</TabsTrigger>
           <TabsTrigger value="bookings" data-testid="tab-bookings">Bookings</TabsTrigger>
           <TabsTrigger value="redemptions" data-testid="tab-redemptions">Redemptions</TabsTrigger>
           <TabsTrigger value="cashouts" data-testid="tab-cashouts">Cashouts</TabsTrigger>
+          <TabsTrigger value="revenue-intelligence" data-testid="tab-revenue-intelligence">Revenue Intelligence</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-4 space-y-4">
@@ -613,6 +630,228 @@ export default function AdminDashboardPage() {
                 <p className="text-sm text-muted-foreground text-center py-4">No cashout requests yet</p>
               )}
             </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="revenue-intelligence" className="mt-4 space-y-6">
+          <h2 className="text-lg font-semibold">Revenue Intelligence — This Week</h2>
+
+          {/* Revenue Pressure */}
+          <Card className="p-5" data-testid="card-revenue-pressure">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              <h3 className="font-semibold">Revenue Pressure</h3>
+            </div>
+            {revPressureLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : revPressure ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge className={
+                    revPressure.urgencyLevel === "critical" ? "bg-red-500/15 text-red-700 dark:text-red-400" :
+                    revPressure.urgencyLevel === "high" ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" :
+                    revPressure.urgencyLevel === "medium" ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" :
+                    "bg-green-500/15 text-green-700 dark:text-green-400"
+                  } data-testid="badge-urgency-level">
+                    {revPressure.urgencyLevel?.toUpperCase()}
+                  </Badge>
+                  <span className="text-sm text-muted-foreground" data-testid="text-days-remaining">{revPressure.daysRemaining} days remaining in week</span>
+                </div>
+                <div className="grid grid-cols-3 gap-4 mt-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Target</p>
+                    <p className="font-semibold" data-testid="text-weekly-target">${((revPressure.weeklyTargetCents ?? 0) / 100).toFixed(0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Achieved</p>
+                    <p className="font-semibold" data-testid="text-achieved">${((revPressure.achievedCents ?? 0) / 100).toFixed(0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Gap</p>
+                    <p className="font-semibold text-red-600 dark:text-red-400" data-testid="text-gap">${((revPressure.gapCents ?? 0) / 100).toFixed(0)}</p>
+                  </div>
+                </div>
+                {revPressure.requiredDailyRevenueCents > 0 && (
+                  <p className="text-sm text-muted-foreground mt-1" data-testid="text-required-daily">
+                    Need <strong>${((revPressure.requiredDailyRevenueCents ?? 0) / 100).toFixed(0)}/day</strong> to close the gap
+                  </p>
+                )}
+                {revPressure.recoveryActions?.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Top Recovery Actions</p>
+                    <ul className="space-y-1">
+                      {revPressure.recoveryActions.map((a: string, i: number) => (
+                        <li key={i} className="text-sm text-foreground" data-testid={`text-recovery-action-${i}`}>• {a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No pressure data available</p>
+            )}
+          </Card>
+
+          {/* Lost Revenue */}
+          <Card className="p-5" data-testid="card-lost-revenue">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap className="h-5 w-5 text-yellow-500" />
+              <h3 className="font-semibold">Lost Revenue Opportunities</h3>
+            </div>
+            {lostRevenueLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : lostRevenue ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold text-foreground" data-testid="text-total-recoverable">${((lostRevenue.totalRecoverableCents ?? 0) / 100).toFixed(0)}</span>
+                  <span className="text-sm text-muted-foreground">recoverable this week</span>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Open Slots</p>
+                    <p className="font-semibold" data-testid="text-open-slots-value">${((lostRevenue.openSlotRevenueCents ?? 0) / 100).toFixed(0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Inactive Clients</p>
+                    <p className="font-semibold" data-testid="text-inactive-clients-value">${((lostRevenue.inactiveClientRevenueCents ?? 0) / 100).toFixed(0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Unconverted Intros</p>
+                    <p className="font-semibold" data-testid="text-intro-value">${((lostRevenue.unconvertedIntroRevenueCents ?? 0) / 100).toFixed(0)}</p>
+                  </div>
+                </div>
+                {lostRevenue.topOpportunities?.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Top Opportunities</p>
+                    <ul className="space-y-1">
+                      {lostRevenue.topOpportunities.slice(0, 3).map((o: any, i: number) => (
+                        <li key={i} className="text-sm text-foreground flex justify-between" data-testid={`text-opportunity-${i}`}>
+                          <span>{o.description}</span>
+                          <span className="font-medium text-green-600 dark:text-green-400">${((o.valueCents ?? 0) / 100).toFixed(0)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No lost revenue data available</p>
+            )}
+          </Card>
+
+          {/* Revenue Quality */}
+          <Card className="p-5" data-testid="card-revenue-quality">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="h-5 w-5 text-blue-500" />
+              <h3 className="font-semibold">Revenue Quality</h3>
+            </div>
+            {revQualityLoading ? (
+              <Skeleton className="h-20 w-full" />
+            ) : revQuality ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl font-bold" data-testid="text-quality-score">
+                    {Math.round((revQuality.revenueQualityScore ?? 0) * 100)}%
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium">Revenue Quality Score</p>
+                    <p className="text-xs text-muted-foreground">% of hours that generate revenue</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Revenue Hours</p>
+                    <p className="font-semibold" data-testid="text-revenue-hours">{(revQuality.revenueHours ?? 0).toFixed(1)}h</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Non-Revenue Hours</p>
+                    <p className="font-semibold" data-testid="text-non-revenue-hours">{(revQuality.nonRevenueHours ?? 0).toFixed(1)}h</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Revenue Lost</p>
+                    <p className="font-semibold text-red-600 dark:text-red-400" data-testid="text-revenue-lost">${((revQuality.estimatedRevenueLostCents ?? 0) / 100).toFixed(0)}</p>
+                  </div>
+                </div>
+                {(revQuality.revenueQualityScore ?? 0) < 0.7 && (
+                  <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 text-xs" data-testid="badge-low-quality">
+                    Below target — shift more sessions to paid
+                  </Badge>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No quality data available</p>
+            )}
+          </Card>
+
+          {/* Session Mix */}
+          <Card className="p-5" data-testid="card-session-mix">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart2 className="h-5 w-5 text-purple-500" />
+              <h3 className="font-semibold">Session Mix</h3>
+            </div>
+            {sessionMixLoading ? (
+              <Skeleton className="h-20 w-full" />
+            ) : sessionMix ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-3">
+                  {Object.entries(sessionMix.breakdown ?? {}).map(([category, data]: [string, any]) => (
+                    <div key={category} className="rounded-lg border p-3" data-testid={`card-mix-${category}`}>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{category}</p>
+                      <p className="text-lg font-bold" data-testid={`text-mix-pct-${category}`}>{data.percent?.toFixed(0) ?? 0}%</p>
+                      <p className="text-xs text-muted-foreground">{data.count ?? 0} sessions</p>
+                    </div>
+                  ))}
+                </div>
+                {(sessionMix.breakdown?.intro?.percent ?? 0) > 30 && (
+                  <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 text-xs" data-testid="badge-high-intro">
+                    High intro rate — convert more before adding new intros
+                  </Badge>
+                )}
+                {(sessionMix.breakdown?.paid?.percent ?? 100) < 50 && (
+                  <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 text-xs" data-testid="badge-low-paid">
+                    Less than 50% paid sessions — revenue mix concern
+                  </Badge>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No session mix data available</p>
+            )}
+          </Card>
+
+          {/* Coach Profitability */}
+          <Card className="p-5" data-testid="card-coach-profitability">
+            <div className="flex items-center gap-2 mb-3">
+              <Target className="h-5 w-5 text-green-500" />
+              <h3 className="font-semibold">Coach Profitability</h3>
+            </div>
+            {coachProfLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : coachProfitability?.coaches?.length > 0 ? (
+              <div className="space-y-3">
+                {coachProfitability.coaches.map((c: any) => (
+                  <div key={c.coachId} className="flex items-center justify-between border rounded-lg p-3" data-testid={`card-coach-prof-${c.coachId}`}>
+                    <div>
+                      <p className="font-medium text-sm" data-testid={`text-coach-name-${c.coachId}`}>{c.coachName}</p>
+                      <p className="text-xs text-muted-foreground">{(c.revenueHours ?? 0).toFixed(1)}h revenue · ${((c.estimatedPayoutCents ?? 0) / 100).toFixed(0)} payout</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold" data-testid={`text-coach-revenue-${c.coachId}`}>${((c.revenueCents ?? 0) / 100).toFixed(0)}</p>
+                      <Badge className={`text-xs ${(c.marginPercent ?? 0) >= 50 ? "bg-green-500/15 text-green-700 dark:text-green-400" : (c.marginPercent ?? 0) >= 30 ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400" : "bg-red-500/15 text-red-700 dark:text-red-400"}`} data-testid={`badge-margin-${c.coachId}`}>
+                        {(c.marginPercent ?? 0).toFixed(0)}% margin
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+                {coachProfitability.orgMarginPercent !== undefined && (
+                  <div className="border-t pt-2 flex justify-between text-sm" data-testid="text-org-margin">
+                    <span className="text-muted-foreground">Org avg margin</span>
+                    <span className="font-semibold">{(coachProfitability.orgMarginPercent ?? 0).toFixed(0)}%</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No profitability data available this week</p>
+            )}
           </Card>
         </TabsContent>
       </Tabs>
