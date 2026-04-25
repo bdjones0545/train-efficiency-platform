@@ -68,7 +68,7 @@ export default function SettingsPage() {
   const [prefsSaved, setPrefsSaved] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
-  const { orgId, isLoading: orgLoading, source: orgSource } = useActiveOrg();
+  const { orgId, isLoading: orgLoading } = useActiveOrg();
 
   const prefsUrl = orgId
     ? `/api/notification-preferences?orgId=${orgId}`
@@ -92,10 +92,6 @@ export default function SettingsPage() {
     // Only fetch once orgId is confirmed — avoids firing with null orgId
     enabled: !!orgId && !orgLoading,
   });
-
-  console.log("[Settings] orgId", orgId);
-  console.log("[Settings] orgLoading", orgLoading);
-  if (prefsError) console.log("[Settings] preferences error", prefsError);
 
   useEffect(() => {
     if (prefsData && localPrefs === null) {
@@ -166,18 +162,6 @@ export default function SettingsPage() {
           <p className="text-muted-foreground mt-1">Manage your notification preferences</p>
         </div>
       </div>
-
-      {import.meta.env.DEV && (
-        <Card className="border-dashed border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10">
-          <CardContent className="pt-4 pb-4 space-y-1 text-xs font-mono text-amber-800 dark:text-amber-300">
-            <p><strong>DEV</strong> orgId: {orgId ?? "null"}</p>
-            <p>orgSource: {orgSource ?? "none"}</p>
-            <p>orgLoading: {String(orgLoading)}</p>
-            <p>prefsEndpoint: {prefsUrl}</p>
-            <p>prefsStatus: {prefsError ? `error — ${(prefsError as Error).message}` : prefsData ? "loaded" : prefsLoading ? "loading..." : "idle"}</p>
-          </CardContent>
-        </Card>
-      )}
 
       {orgLoading || prefsLoading ? (
         <Card>
