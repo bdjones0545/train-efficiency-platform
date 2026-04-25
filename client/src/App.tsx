@@ -47,6 +47,7 @@ import ClaimSubscriptionPage from "@/pages/claim-subscription";
 import SchedulingPage from "@/pages/scheduling";
 import SchedulingAgentPage from "@/pages/scheduling-agent";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
+import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
@@ -188,6 +189,7 @@ function AuthenticatedLayout() {
         </div>
       </div>
       <CoachAgentLauncher />
+      <ClientAgentLauncher />
     </SidebarProvider>
   );
 }

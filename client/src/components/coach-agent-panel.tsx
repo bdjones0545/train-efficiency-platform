@@ -222,6 +222,27 @@ const PAGE_QUICK_PROMPTS: Record<SourcePage, { label: string; icon: any; prompt:
   ],
 };
 
+const CLIENT_PAGE_PROMPTS: Partial<Record<SourcePage, { label: string; icon: any; prompt: string; color: string; desc: string }[]>> = {
+  dashboard: [
+    { label: "Book a Session", icon: PlusCircle, prompt: "I'd like to book a training session", color: "text-primary", desc: "Add a new booking" },
+    { label: "My Upcoming Sessions", icon: Calendar, prompt: "Show me my upcoming bookings", color: "text-blue-500", desc: "Your upcoming sessions" },
+    { label: "Available Times", icon: Clock, prompt: "What times are available this week?", color: "text-green-500", desc: "Open slots this week" },
+    { label: "Reschedule", icon: RefreshCw, prompt: "I need to reschedule my next session", color: "text-orange-500", desc: "Move a booking" },
+  ],
+  schedule: [
+    { label: "What's Available?", icon: Clock, prompt: "What times are available this week?", color: "text-blue-500", desc: "Open slots" },
+    { label: "Reschedule My Session", icon: RefreshCw, prompt: "I need to reschedule my next session", color: "text-orange-500", desc: "Move a booking" },
+    { label: "Cancel a Booking", icon: XCircle, prompt: "I need to cancel one of my bookings", color: "text-red-500", desc: "Cancel a session" },
+    { label: "Book a Session", icon: PlusCircle, prompt: "I'd like to book a new training session", color: "text-primary", desc: "Add a new booking" },
+  ],
+  settings: [
+    { label: "My Upcoming Sessions", icon: Calendar, prompt: "Show me my upcoming bookings", color: "text-blue-500", desc: "Your upcoming sessions" },
+    { label: "Reschedule My Session", icon: RefreshCw, prompt: "I need to reschedule my next session", color: "text-orange-500", desc: "Move a booking" },
+    { label: "Available Times", icon: Clock, prompt: "What times are available this week?", color: "text-green-500", desc: "Open slots this week" },
+    { label: "Cancel a Booking", icon: XCircle, prompt: "I need to cancel one of my bookings", color: "text-red-500", desc: "Cancel a session" },
+  ],
+};
+
 function renderMarkdown(text: string): React.ReactNode[] {
   if (text.trim().startsWith("{")) {
     try {
@@ -429,9 +450,10 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const isAdmin = userRole === "ADMIN";
 
   const contextPrompts = context ? PAGE_QUICK_PROMPTS[context.sourcePage] : null;
+  const clientContextPrompts = !isStaff && mode === "overlay" && context ? CLIENT_PAGE_PROMPTS[context.sourcePage] ?? null : null;
   const QUICK_ACTIONS = isStaff
     ? (mode === "overlay" && contextPrompts ? contextPrompts : STAFF_QUICK_ACTIONS)
-    : CLIENT_QUICK_ACTIONS;
+    : (clientContextPrompts ?? CLIENT_QUICK_ACTIONS);
 
   const { data: digest, isLoading: digestLoading, refetch: refetchDigest } = useQuery<OpsDigest>({
     queryKey: ["/api/scheduling/operations-digest"],

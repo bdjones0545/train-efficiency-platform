@@ -1,0 +1,146 @@
+Implement global user-facing access to the Scheduling Agent across the app.
+
+Goal:
+Regular users/clients should always be able to access the Scheduling Agent from any page so they can book, reschedule, cancel, or ask about availability.
+
+Important:
+This is NOT the coach/admin revenue operator.
+Do not show revenue, payout, business intelligence, retention, churn, goals, or coach-only tools to regular users.
+
+========================
+PHASE 1 — USER-FACING AGENT LAUNCHER
+========================
+
+Create or adapt a global Scheduling Agent launcher for authenticated client/user pages.
+
+Visible for:
+- regular users/clients
+- members
+- athletes
+
+Hidden for:
+- unauthenticated public visitors
+- coach/admin pages if they already use the coach agent launcher
+
+Mount it in the shared authenticated user/client layout.
+
+========================
+PHASE 2 — USER AGENT SCOPE
+========================
+
+The user-facing Scheduling Agent can help with:
+
+Allowed:
+- book a session
+- view available times
+- reschedule my session
+- cancel my session
+- see my upcoming sessions
+- ask what services are available
+- ask which coach has openings
+- ask location/session duration questions
+
+Blocked:
+- revenue summaries
+- coach payout
+- business goals
+- retention/churn
+- client lists
+- other clients’ schedules
+- coach-only configuration
+- org media/admin settings
+
+========================
+PHASE 3 — OVERLAY BEHAVIOR
+========================
+
+When clicked:
+- open as a mobile full-screen sheet or desktop side drawer
+- do not navigate away from current page
+- preserve current route and scroll position
+- close returns user exactly where they were
+
+Use existing scheduling chat UI if possible, but enforce client-safe tool access.
+
+========================
+PHASE 4 — CONTEXT-AWARE PROMPTS
+========================
+
+Show user-safe prompts based on page:
+
+Dashboard/default:
+- Book a session
+- Show my upcoming sessions
+- Find available times this week
+- Reschedule my next session
+
+Schedule page:
+- What times are available?
+- Book with my coach
+- Reschedule my next session
+- Cancel my session
+
+Profile/account page:
+- Show my upcoming sessions
+- Update my scheduling preferences
+- Find my next appointment
+
+========================
+PHASE 5 — SAFETY AND PERMISSIONS
+========================
+
+Strict permission rules:
+- User can only see their own bookings
+- User can only cancel/reschedule their own bookings
+- User cannot access org-wide schedule
+- User cannot see other clients
+- User cannot access revenue/operator tools
+- User cannot create internal sessions, floor hours, meetings, or coach-only services
+- User can only book services where isBookableByClient = true
+
+========================
+PHASE 6 — BADGE
+========================
+
+Optional badge should be user-focused only:
+- upcoming session today
+- session needs confirmation
+- available openings
+- incomplete booking
+
+Do not show business/revenue badges.
+
+========================
+PHASE 7 — MOBILE UX
+========================
+
+Mobile:
+- floating button bottom-right
+- respects safe-area inset
+- does not cover bottom nav
+- overlay has fixed header and sticky input
+- keyboard does not hide send button
+
+========================
+PHASE 8 — VALIDATION
+========================
+
+Test:
+1. Client dashboard → launcher visible
+2. Client schedule page → launcher visible
+3. Client profile page → launcher visible
+4. Public landing page → launcher hidden unless logged-in user layout requires it
+5. Coach/admin pages → coach agent remains separate
+6. User opens agent → no route change
+7. User asks to book → only client-bookable services shown
+8. User asks revenue question → politely rejected
+9. User asks to see other clients → blocked
+10. User cancels/reschedules own session only
+11. Mobile overlay works with keyboard
+
+Return:
+- files changed
+- launcher component created/updated
+- role gating used
+- user-safe tools enforced
+- validation results

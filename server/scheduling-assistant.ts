@@ -1801,12 +1801,13 @@ async function executeTool(
         const pvReschedule = validatePendingAction(pendingReschedule, userId, "reschedule_booking", args);
         if (!pvReschedule.valid) return JSON.stringify({ error: pvReschedule.error });
         consumePendingAction(pendingActionId_reschedule);
-        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
-          return JSON.stringify({ error: "Only coaches, admins, and staff can reschedule bookings." });
-        }
         const { bookingId, newStartAt, newEndAt } = args;
         const booking = await storage.getBooking(bookingId);
         if (!booking) return JSON.stringify({ error: "Booking not found." });
+        const isBookingOwner = userId != null && booking.clientId === userId;
+        if (!isBookingOwner && userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "You can only reschedule your own bookings." });
+        }
 
         const newStart = new Date(newStartAt);
         const newEnd = new Date(newEndAt);
@@ -3601,9 +3602,11 @@ Role: CLIENT
 - Browse available coaches and services (use list_coaches, list_services)
 - See available time slots (use get_available_slots)
 - Book sessions for yourself (use book_session — always confirm time before booking)
-- View and cancel your own bookings (use get_my_bookings, cancel_booking)
+- View your own bookings (use get_my_bookings)
+- Cancel your own bookings (use cancel_booking — always confirm before cancelling)
+- Reschedule your own bookings (use reschedule_booking — always confirm the new time before rescheduling)
 
-Always show 2–3 time options before booking and confirm which one the client wants.
+Always show 2–3 time options before booking or rescheduling, and confirm which one the client wants before taking action.
 
 ## Scheduling Inquiries
 If the user asks about scheduling, available times, getting started, sessions, or booking help and you cannot directly satisfy their request, you may offer to send their inquiry to the organization's scheduling contact using send_scheduling_inquiry.
