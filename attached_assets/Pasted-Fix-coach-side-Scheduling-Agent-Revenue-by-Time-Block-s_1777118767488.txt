@@ -1,0 +1,139 @@
+Fix coach-side Scheduling Agent “Revenue by Time Block” so it uses the organization’s local timezone, not server/UTC/browser time.
+
+Current issue:
+Revenue by time block appears incorrect because bookings are being grouped by hour without respecting the org’s timezone.
+
+Goal:
+All revenue/time-block calculations must group bookings by the organization’s timezone.
+
+========================
+PHASE 1 — FIND TIME BLOCK LOGIC
+========================
+
+Locate the code that builds “Revenue by Time Block (Last 30d).”
+
+Likely areas:
+- revenue summary tool
+- revenue-intelligence.ts
+- scheduling-assistant.ts
+- get_revenue_summary
+- dashboard Revenue tab data mapping
+
+Find where booking startAt/startTime is converted into an hour label.
+
+========================
+PHASE 2 — ADD ORG TIMEZONE SOURCE
+========================
+
+Determine where org timezone is stored.
+
+Look for fields like:
+- organization.timezone
+- org.timezone
+- timezone_str
+- timeZone
+- settings.timezone
+
+If no org timezone exists:
+- add organization timezone setting
+- default to America/New_York temporarily only if no value exists
+- expose it in org configuration later if needed
+
+Do not use:
+- server timezone
+- browser timezone
+- UTC hour
+- raw Date.getHours()
+
+========================
+PHASE 3 — TIMEZONE-SAFE GROUPING
+========================
+
+When grouping bookings by hour:
+
+Use org timezone conversion before extracting hour.
+
+Preferred:
+- date-fns-tz if already installed
+- Intl.DateTimeFormat with timeZone if not
+
+Example logic:
+- booking.startAt is stored in UTC/ISO
+- convert startAt to org timezone
+- extract local hour in org timezone
+- group revenue under that hour
+
+Example:
+If org timezone = America/New_York:
+- 2026-04-24T14:30:00Z → 10 AM
+- group under 10 AM, not 2 PM UTC
+
+========================
+PHASE 4 — LABEL OUTPUT
+========================
+
+Return labels based on org local time:
+
+- 6 AM
+- 7 AM
+- 8 AM
+- etc.
+
+Also include:
+- timezone used
+- optional timezoneLabel
+
+Example response:
+{
+  revenueByTimeBlock: [
+    { hour: 10, label: "10 AM", revenueCents: 600 }
+  ],
+  timezone: "America/New_York"
+}
+
+========================
+PHASE 5 — APPLY CONSISTENTLY
+========================
+
+Audit all time-based revenue/ops grouping:
+
+- revenue by time block
+- best-performing hours
+- open slot values by hour
+- coach utilization daily/hour grouping if relevant
+- daily action queue slot labels
+- weekly recap time labels
+
+At minimum, fix Revenue by Time Block now.
+
+========================
+PHASE 6 — VALIDATION
+========================
+
+Create test cases:
+
+1. Org timezone = America/New_York
+2. Booking at 2026-04-24T14:00:00Z
+3. Revenue by time block should show 10 AM
+
+Also test:
+- booking at 2026-04-24T23:00:00Z shows 7 PM Eastern
+- no grouping under UTC hour unless org timezone is UTC
+- DST-safe dates still render correctly
+- dashboard display matches stored org timezone
+
+========================
+PHASE 7 — UI NOTE
+========================
+
+In the Revenue by Time Block card, optionally add subtle text:
+
+“Times shown in org timezone: America/New_York”
+
+Do not clutter the UI.
+
+Return:
+- files changed
+- timezone source used
+- grouping logic changed
+- validation results
