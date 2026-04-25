@@ -1461,7 +1461,8 @@ async function executeTool(
           return JSON.stringify({ error: "Only coaches, admins, and staff can view schedule gaps." });
         }
         const { coachId, numDays = 7 } = args;
-        const timezone = "America/New_York";
+        const coachProfileForTz = await storage.getCoachProfile(coachId);
+        const timezone = coachProfileForTz?.timezone || "America/New_York";
         const start = args.startDate ? new Date(args.startDate) : new Date();
         const end = addDays(start, Math.min(numDays, 14));
 
@@ -2381,7 +2382,7 @@ Return a JSON object with exactly these keys:
 - "reasoning": one sentence explaining the message approach`;
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-5-mini",
+          model: "gpt-5.1",
           messages: [
             { role: "system", content: systemMsg },
             { role: "user", content: userMsg },
@@ -3303,7 +3304,7 @@ export function handleAssistantMessage(
       maxIterations--;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
+        model: "gpt-5.1",
         messages: currentMessages,
         tools,
         max_completion_tokens: 8192,

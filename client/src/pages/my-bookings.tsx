@@ -1,9 +1,21 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
@@ -23,6 +35,8 @@ const statusColors: Record<string, string> = {
 
 export default function MyBookingsPage() {
   const { toast } = useToast();
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
   const { data: bookings, isLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/bookings"],
   });
@@ -39,12 +53,14 @@ export default function MyBookingsPage() {
       return res.json();
     },
     onSuccess: () => {
+      setCancellingId(null);
       toast({ title: "Booking Cancelled" });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
     },
     onError: (error: Error) => {
+      setCancellingId(null);
       if (isUnauthorizedError(error)) {
         toast({ title: "Unauthorized", description: "Logging in again...", variant: "destructive" });
         setTimeout(() => { window.location.href = "/"; }, 500);
@@ -103,16 +119,42 @@ export default function MyBookingsPage() {
           )}
         </div>
         {showCancel && booking.status === "CONFIRMED" && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => cancelMutation.mutate(booking.id)}
-            disabled={cancelMutation.isPending}
-            data-testid={`button-cancel-booking-${booking.id}`}
-          >
-            <X className="h-3.5 w-3.5 mr-1" />
-            Cancel
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={cancelMutation.isPending && cancellingId === booking.id}
+                data-testid={`button-cancel-booking-${booking.id}`}
+              >
+                <X className="h-3.5 w-3.5 mr-1" />
+                Cancel
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. Your session will be cancelled.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel data-testid={`button-keep-booking-${booking.id}`}>
+                  Keep Booking
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  data-testid={`button-confirm-cancel-${booking.id}`}
+                  onClick={() => {
+                    setCancellingId(booking.id);
+                    cancelMutation.mutate(booking.id);
+                  }}
+                >
+                  Yes, Cancel Session
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
     </Card>

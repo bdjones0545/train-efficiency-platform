@@ -430,6 +430,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
   const { data: waitlist, isLoading: waitlistLoading, refetch: refetchWaitlist } = useQuery<WaitlistEntry[]>({
     queryKey: ["/api/scheduling/waitlist"],
+    enabled: isStaff,
     staleTime: 30 * 1000,
   });
 
@@ -512,7 +513,10 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
       setMessages([...newMessages, { role: "assistant", content: full }]);
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
-      setMessages(m => m.slice(0, -1));
+      setMessages(prev => [
+        ...prev,
+        { role: "assistant", content: "Sorry, I couldn't process that request. Please try again." },
+      ]);
     } finally {
       setIsLoading(false);
     }
