@@ -1,0 +1,118 @@
+Fix the TrainEfficiency Scheduling Agent route so it always opens at the top of the page.
+
+Current issue:
+When pressing “Scheduling Agent” from the sidebar, the page opens scrolled near the bottom instead of starting at the top.
+
+Do not change backend logic. This is a navigation/scroll restoration bug.
+
+========================
+PHASE 1 — IDENTIFY SCROLL CONTAINER
+========================
+
+Find which element is actually scrolling on the Scheduling Agent page.
+
+Possible scroll containers:
+- window/document body
+- main app layout container
+- CoachSchedulingAgentPanel content container
+- Sheet/agent panel scroll container
+- custom div with overflow-y-auto
+
+Do not assume window.scrollTo alone is enough.
+
+========================
+PHASE 2 — RESET SCROLL ON ROUTE ENTRY
+========================
+
+When /scheduling/agent mounts, reset scroll to top.
+
+Implement scroll reset for:
+1. window.scrollTo(0, 0)
+2. the main scroll container if one exists
+3. the agent panel content scroll container if one exists
+
+Use useEffect on mount and/or location pathname change.
+
+Example behavior:
+When pathname === "/scheduling/agent":
+- reset page scroll
+- reset internal agent panel scroll
+- focus should remain normal
+- do not auto-focus the chat input
+
+========================
+PHASE 3 — PREVENT INPUT AUTO-SCROLL
+========================
+
+Check whether the chat input is being auto-focused on mount.
+
+If yes:
+- remove autoFocus on the input
+- do not focus the input automatically on mobile
+- only focus after user taps
+
+Reason:
+Mobile browsers may scroll to the focused input at the bottom, causing the route to open at the bottom.
+
+========================
+PHASE 4 — HANDLE LAYOUT TIMING
+========================
+
+Because the page uses fixed/sticky header and sticky bottom input, a single immediate scroll reset may happen too early.
+
+Add a safe delayed reset:
+- requestAnimationFrame
+- setTimeout 0–100ms if needed
+
+Example:
+useEffect(() => {
+  const reset = () => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    scrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  reset();
+  requestAnimationFrame(reset);
+  setTimeout(reset, 100);
+
+  return () => clearTimeout(...);
+}, [location.pathname]);
+
+========================
+PHASE 5 — SIDEBAR NAVIGATION BEHAVIOR
+========================
+
+Find the sidebar click handler or Link for “Scheduling Agent.”
+
+Ensure it does not preserve previous scroll state.
+
+If using a router Link:
+- optionally pass state: { resetScroll: true }
+- or rely on route-level scroll reset
+
+If using onClick:
+- navigate("/scheduling/agent")
+- then trigger scroll reset safely
+
+========================
+PHASE 6 — VALIDATION
+========================
+
+Test:
+
+1. Scroll to bottom of another page.
+2. Open sidebar.
+3. Tap Scheduling Agent.
+4. Confirm Scheduling Agent starts at the top.
+5. Scroll to bottom of Scheduling Agent.
+6. Leave page.
+7. Return to Scheduling Agent.
+8. Confirm it starts at the top again.
+9. Confirm chat input is not auto-focused.
+10. Confirm mobile and desktop behavior both work.
+
+Return:
+- files changed
+- scroll container identified
+- fix implemented
+- validation results
