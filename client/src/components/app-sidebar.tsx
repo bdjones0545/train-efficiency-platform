@@ -109,6 +109,7 @@ export function AppSidebar() {
     { title: "My Bookings", url: "/bookings", icon: Calendar },
     ...(role === "CLIENT" ? [{ title: "My Wallet", url: "/wallet", icon: Wallet }] : []),
     ...(role === "CLIENT" ? [{ title: "Scheduling Agent", url: "/scheduling/agent", icon: Bot }] : []),
+    ...(role === "CLIENT" ? [{ title: "Settings", url: "/settings", icon: Settings }] : []),
   ];
 
   const athleticEnabled = (organization as any)?.athleticEnabled === true;

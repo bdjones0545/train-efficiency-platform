@@ -1,0 +1,108 @@
+Add a Settings section for client users and move phone + notification management into it.
+
+Goal:
+Clients should have a clear, dedicated place to manage:
+- Phone number
+- Email preferences
+- SMS preferences
+
+-----------------------------------
+1. Sidebar update
+-----------------------------------
+
+In the client sidebar (non-coach view):
+
+Add a new item:
+- Label: "Settings"
+- Icon: gear/settings icon (use existing icon library)
+- Route: /settings
+
+Place it under:
+My Wallet
+
+-----------------------------------
+2. Create Settings page
+-----------------------------------
+
+Route:
+- /settings
+
+Structure:
+
+Section 1: Profile
+- Email (read-only)
+- Phone number (editable input)
+- Save button
+- Validation for phone
+
+Helper text:
+"Used for booking reminders and optional SMS notifications."
+
+-----------------------------------
+Section 2: Notifications
+
+Move the existing Notification UI from My Bookings here.
+
+Include:
+- Email preferences (all existing toggles)
+- SMS opt-in toggle
+- SMS category toggles (only visible if opted in)
+
+-----------------------------------
+3. Remove duplication
+-----------------------------------
+
+Remove the Notifications tab from My Bookings.
+
+My Bookings should only handle:
+- Upcoming
+- Past
+
+-----------------------------------
+4. API wiring
+-----------------------------------
+
+Ensure Settings page uses:
+- Existing profile update endpoint for phone
+- Existing preferences endpoint for notifications
+
+-----------------------------------
+5. UX improvements
+-----------------------------------
+
+- Show success toast after save
+- Show validation errors for invalid phone
+- Pre-fill current phone + preferences
+- Disable save button while saving
+
+-----------------------------------
+6. Edge cases
+-----------------------------------
+
+- If no phone:
+  Show:
+  "Add your phone number to enable SMS reminders."
+
+- If smsOptIn = false:
+  Hide SMS category toggles
+
+-----------------------------------
+7. Testing
+-----------------------------------
+
+- Phone saves and persists after refresh
+- Preferences save correctly
+- Sidebar navigation works
+- No regression in My Bookings
+- TypeScript/build passes
+
+-----------------------------------
+Expected result
+-----------------------------------
+
+Clients can easily:
+- Find Settings from sidebar
+- Add/edit phone number
+- Manage notifications
+
+This removes friction and makes SMS features actually usable.

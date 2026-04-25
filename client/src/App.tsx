@@ -48,6 +48,7 @@ import SchedulingPage from "@/pages/scheduling";
 import SchedulingAgentPage from "@/pages/scheduling-agent";
 import CommunicationHistoryPage from "@/pages/communication-history";
 import UnsubscribePage from "@/pages/unsubscribe";
+import SettingsPage from "@/pages/settings";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { Button } from "@/components/ui/button";
@@ -156,6 +157,7 @@ function AuthenticatedLayout() {
                   <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
+                  <Route path="/settings" component={SettingsPage} />
                   <Route path="/wallet" component={WalletPage} />
                   <Route path="/coach" component={CoachDashboardPage} />
                   <Route path="/coach/profile" component={CoachProfilePage} />
