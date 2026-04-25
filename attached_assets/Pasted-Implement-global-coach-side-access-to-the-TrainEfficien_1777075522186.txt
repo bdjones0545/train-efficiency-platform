@@ -1,0 +1,270 @@
+Implement global coach-side access to the TrainEfficiency Scheduling Agent in the best, least-intrusive way.
+
+Goal:
+Coaches/admins should be able to access the agent from any coach-side page without losing their current workflow.
+
+Do not change agent intelligence/backend logic unless required for UI mounting. This is primarily a global UI/navigation integration.
+
+========================
+PHASE 1 — MOUNT AGENT LAUNCHER IN COACH LAYOUT
+========================
+
+Find the highest shared layout component used by all authenticated coach/admin pages.
+
+Mount one global component there:
+
+CoachAgentLauncher
+
+Rules:
+- Shows only for coach/admin/owner roles
+- Hidden for clients/public/unauthenticated users
+- Available on:
+  - dashboard
+  - schedule
+  - clients
+  - revenue
+  - settings
+  - admin/coach tools
+- Does not duplicate if already on the agent page
+
+Use existing auth/role logic. Do not invent a new permission system.
+
+========================
+PHASE 2 — FLOATING LAUNCHER BUTTON
+========================
+
+Create a subtle floating launcher.
+
+Mobile:
+- bottom-right
+- above bottom nav / sticky inputs
+- respects env(safe-area-inset-bottom)
+- 48–56px tap target
+
+Desktop:
+- bottom-right or right rail
+- optional label: “Agent”
+
+Visual states:
+- idle: small agent icon
+- has opportunity: small badge
+- urgent: subtle one-time pulse, not constant animation
+
+Badge priority:
+1. High-priority actions count
+2. Follow-ups due
+3. Goal behind target
+4. Open revenue opportunity
+
+Keep badge meaningful. Do not show noisy notification counts.
+
+========================
+PHASE 3 — OPEN AS OVERLAY, NOT ROUTE CHANGE
+========================
+
+Preferred behavior:
+Clicking launcher opens the agent in-place.
+
+Mobile:
+- full-screen sheet/overlay
+- close button top-right
+- preserves current page behind it
+
+Desktop:
+- right-side drawer
+- width around 420–520px
+- close/minimize button
+
+Do not force navigation away from the current page unless overlay fails.
+
+The user should be able to:
+- open agent
+- ask/action something
+- close agent
+- remain exactly where they were
+
+========================
+PHASE 4 — REUSE EXISTING AGENT COMPONENT
+========================
+
+Do not rebuild the agent UI from scratch.
+
+Extract or reuse the existing coach scheduling agent chat component inside the overlay.
+
+If the current agent page is tightly coupled to route layout:
+- refactor shared agent UI into a reusable component:
+  CoachSchedulingAgentPanel
+
+Used by:
+- full agent page
+- global drawer/sheet
+
+Keep:
+- chat interface
+- sticky input
+- quick prompts
+- action cards if practical
+- existing tool routing
+
+========================
+PHASE 5 — CONTEXT-AWARE OPENING
+========================
+
+When the agent opens, pass current page context.
+
+Detect current route/page:
+- schedule page
+- clients page
+- revenue page
+- settings page
+- dashboard/default
+
+Provide context metadata to the panel:
+{
+  sourcePage: "schedule" | "clients" | "revenue" | "settings" | "dashboard",
+  sourcePath: currentPath,
+  openedAt: timestamp
+}
+
+Context should influence suggested prompts only.
+It should never override the user’s explicit message.
+
+========================
+PHASE 6 — PAGE-SPECIFIC QUICK PROMPTS
+========================
+
+Show contextual quick prompts when the drawer opens.
+
+Schedule page:
+- What needs attention today?
+- Where do I have openings?
+- Who should I text to fill open slots?
+- Book a session
+
+Clients page:
+- Who is at risk of dropping off?
+- Who should I follow up with?
+- Show inactive clients
+- Draft client outreach
+
+Revenue page:
+- Am I on track this week?
+- What did I make this week?
+- What do I need to hit my goal?
+- Where can I make more money?
+
+Dashboard/default:
+- What should I do today?
+- Show my weekly progress
+- Give me my weekly business recap
+- Draft my top outreach messages
+
+Settings page:
+- What automation mode is active?
+- What will you do automatically?
+- Show active campaigns
+- Show agent performance
+
+========================
+PHASE 7 — LIGHTWEIGHT BADGE DATA
+========================
+
+Add lightweight badge summary.
+
+Do not run expensive full agent calls constantly.
+
+Preferred:
+- create or reuse a lightweight endpoint/tool summary:
+  get_agent_badge_summary
+
+Returns:
+- highPriorityCount
+- followUpsDue
+- behindGoal boolean
+- opportunityValueCents
+- label
+
+Example labels:
+- “2”
+- “$210”
+- “Goal”
+- “!”
+
+Refresh:
+- on page load
+- when drawer closes
+- optional every 5–10 minutes
+
+If endpoint is not available yet, use existing cached operations/daily queue data only where already loaded.
+
+========================
+PHASE 8 — SAFE MOBILE BEHAVIOR
+========================
+
+Mobile overlay requirements:
+- 100dvh height
+- no double-scroll
+- header stays visible
+- chat input stays visible
+- keyboard does not hide send button
+- safe-area padding applied
+- close button reachable
+- launcher hidden while overlay is open
+
+If current page has a sticky bottom nav/input, launcher must sit above it.
+
+========================
+PHASE 9 — NON-INTRUSIVE PROACTIVITY
+========================
+
+Do not make the launcher annoying.
+
+Rules:
+- No constant pulsing
+- No repeated popups
+- No forced opening
+- No blocking modals
+- Badge only when meaningful
+- Pulse only once when a new urgent item appears
+
+Access should be global.
+Attention should be earned.
+
+========================
+PHASE 10 — VALIDATION
+========================
+
+Test these pages:
+
+1. Coach dashboard
+2. Schedule page
+3. Clients page
+4. Revenue page
+5. Settings page
+6. Admin/coach tools page if present
+7. Client-facing page
+8. Public page
+9. Existing full agent page
+
+Verify:
+- launcher visible only on coach/admin pages
+- hidden for client/public pages
+- opens overlay without route change
+- closes back to same page
+- page-specific quick prompts appear
+- badge displays meaningful summary
+- no duplicate launcher on full agent page
+- mobile safe-area works
+- keyboard does not break input
+- desktop drawer works
+- existing agent page still works
+
+Return:
+- files changed
+- shared layout used
+- launcher component created
+- reusable agent panel created/refactored
+- permission logic used
+- badge data source
+- desktop/mobile behavior
+- validation results
