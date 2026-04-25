@@ -1,0 +1,99 @@
+Audit whether the TrainEfficiency agent can send emails and SMS to users.
+
+Goal:
+Determine exactly what communication capabilities the agent currently has, what is wired, what is mocked, what is partially implemented, and what is missing.
+
+Audit scope:
+1. Search the codebase for email-related functionality:
+   - send email
+   - email service
+   - SMTP
+   - SendGrid
+   - Resend
+   - Postmark
+   - Nodemailer
+   - mailer
+   - welcome email
+   - booking confirmation email
+   - cancellation email
+   - scheduling inquiry email
+   - notification email
+
+2. Search the codebase for SMS-related functionality:
+   - SMS
+   - text message
+   - Twilio
+   - phone number
+   - send text
+   - notification service
+   - booking reminder SMS
+   - cancellation SMS
+   - confirmation SMS
+
+3. Search agent tool definitions and execution logic:
+   - Look for any tool schemas that allow the agent to send messages.
+   - Check if tools exist for:
+     - send_email
+     - send_sms
+     - send_notification
+     - contact_client
+     - notify_user
+     - send_scheduling_inquiry
+   - Confirm whether these tools actually execute real sends or only create pending actions / logs.
+
+4. Audit user/contact data availability:
+   - Confirm users have email fields.
+   - Confirm users have phone fields.
+   - Confirm whether phone numbers are validated/formatted.
+   - Confirm whether opt-in/consent exists for SMS.
+   - Confirm whether notification preferences exist.
+
+5. Audit booking/session workflow communication:
+   Check whether emails or SMS are sent for:
+   - New booking
+   - Booking cancellation
+   - Reschedule
+   - Coach-created session
+   - Recurring session creation
+   - Scheduling inquiry
+   - Payment/receipt
+   - Waitlist or availability changes
+   - High-risk notification alerts
+
+6. Audit background jobs/reminders:
+   - Check if cron jobs exist for reminders.
+   - Check if upcoming session reminders are sent.
+   - Check if missed payment or failed booking notifications are sent.
+   - Check if high-risk notifications trigger outbound communication.
+
+7. Identify whether the agent has permission gating:
+   - Does the agent require confirmation before sending?
+   - Does it create a pending action before sending?
+   - Does it show the message summary before sending?
+   - Does it prevent accidental spam?
+   - Does it log who initiated the send?
+
+8. Produce a clear report with sections:
+   A. Current Email Capability
+   B. Current SMS Capability
+   C. Agent Tool Access
+   D. Real Sends vs Mocked/Logged Sends
+   E. Missing Environment Variables
+   F. Missing Consent / Compliance Risks
+   G. Booking Workflow Gaps
+   H. Recommended Implementation Plan
+
+9. Specifically answer:
+   - Can the agent currently send emails to users?
+   - Can the agent currently send SMS/texts to users?
+   - If yes, through what provider?
+   - If no, what exact files/functions need to be added?
+   - Are sends automatic or confirmation-gated?
+   - Are sends logged?
+   - Are users’ phone/email fields available and reliable?
+
+10. Do not implement yet unless obvious broken imports or dead code are discovered.
+    This is an audit first.
+
+Expected output:
+A concise but complete audit summary showing whether the TrainEfficiency agent can actually send email and SMS today, plus the safest next implementation path.
