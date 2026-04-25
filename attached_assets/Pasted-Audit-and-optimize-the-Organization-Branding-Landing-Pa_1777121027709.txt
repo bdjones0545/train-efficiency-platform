@@ -1,0 +1,78 @@
+Audit and optimize the Organization Branding / Landing Page Settings “Social Links” section.
+
+Current issue:
+The Social Links section is too tall on mobile and takes up too much vertical space. It currently stacks Website, Instagram, and Facebook as large label + input rows. We need to add YouTube, TikTok, and Linktree while making the whole section more compact and polished.
+
+Goals:
+1. Add supported social links:
+   - Website
+   - Instagram
+   - Facebook
+   - YouTube
+   - TikTok
+   - Linktree
+
+2. Redesign the layout so it does NOT take up the whole page:
+   - Use a compact responsive grid.
+   - Mobile: 2 columns.
+   - Tablet/Desktop: 3 columns if space allows.
+   - Each field should be a compact card or compact input row.
+   - Remove the large vertical label/input spacing.
+
+3. Each social link field should show:
+   - Platform icon
+   - Platform name
+   - Compact input
+   - Placeholder example:
+     - Website: https://yourwebsite.com
+     - Instagram: instagram.com/yourhandle
+     - Facebook: facebook.com/yourpage
+     - YouTube: youtube.com/@yourchannel
+     - TikTok: tiktok.com/@yourhandle
+     - Linktree: linktr.ee/yourhandle
+
+4. Use existing icon system if available, preferably lucide-react or current icon library.
+   - Website: Globe
+   - Instagram: Instagram
+   - Facebook: Facebook icon if available, otherwise use a simple circle/icon fallback
+   - YouTube: Youtube
+   - TikTok: Music or similar fallback if no TikTok icon exists
+   - Linktree: Link or ExternalLink
+
+5. Make the section visually professional:
+   - Keep the “Social Links” heading.
+   - Keep helper text, but shorten it to:
+     “Add the links visitors should see on your landing page.”
+   - Put helper text directly under the heading, not at the bottom.
+   - Use tight spacing: smaller padding, smaller gaps, compact inputs.
+   - Make it feel like a SaaS dashboard, not a giant form.
+
+6. Preserve existing saved values and backend field names if they already exist.
+   - Do not break current Website / Instagram / Facebook saving.
+   - Add new fields for:
+     - youtubeUrl
+     - tiktokUrl
+     - linktreeUrl
+   - If the backend/schema/settings object uses different naming conventions, match the existing pattern.
+
+7. Add safe URL normalization on blur or before save:
+   - If the user enters a URL without https://, automatically prepend https://.
+   - Do not corrupt empty values.
+   - Do not double-prefix existing https:// or http://.
+   - For handles like @username, allow them but normalize where appropriate if the existing app already does this. Otherwise, keep simple URL normalization only.
+
+8. Make it mobile-first:
+   - No horizontal overflow.
+   - Inputs should not cut off awkwardly.
+   - Cards should fit cleanly in two columns on iPhone width.
+   - If two-column input fields are too cramped, use compact full-width rows on very small screens under 360px.
+
+9. After implementation:
+   - Run TypeScript/build checks.
+   - Confirm no existing organization landing page settings break.
+   - Confirm Website, Instagram, Facebook still load and save.
+   - Confirm YouTube, TikTok, and Linktree load and save.
+   - Confirm the section height is much smaller than before on mobile.
+
+Expected final UX:
+The Social Links section should display as a compact grid of six social fields, with icons and short placeholders, taking roughly half the vertical space of the old stacked form.
