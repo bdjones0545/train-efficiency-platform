@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
+
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
 export const sessions = pgTable(
@@ -33,6 +34,10 @@ export const users = pgTable("users", {
   passwordResetTokenExpires: timestamp("password_reset_token_expires"),
   unsubscribeToken: varchar("unsubscribe_token").unique(),
   notificationPreferences: jsonb("notification_preferences"),
+  smsOptIn: boolean("sms_opt_in").notNull().default(false),
+  smsOptInAt: timestamp("sms_opt_in_at"),
+  smsOptOutAt: timestamp("sms_opt_out_at"),
+  smsConsentSource: varchar("sms_consent_source"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

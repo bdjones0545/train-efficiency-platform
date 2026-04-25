@@ -1,0 +1,199 @@
+Implement Phase 6: Twilio SMS Infrastructure with Consent, Preferences, and Logging
+
+Goal:
+Add real SMS sending to TrainEfficiency safely, using Twilio, now that notification preferences and communication logs exist.
+
+Current state:
+- Email system is complete.
+- Notification preferences and unsubscribe system are complete.
+- Communication logs exist.
+- SMS drafts exist in draft_client_outreach, but no real SMS provider exists yet.
+- Phone persistence may still be incomplete and must be verified first.
+
+Scope:
+
+1. Verify phone persistence first:
+Audit user schema, Drizzle schema, auth model, forms, and API responses.
+
+Required:
+- users.phone exists in the actual database schema
+- phone is returned safely where needed
+- phone can be edited by users/coaches/admins if appropriate
+- phone is normalized to E.164 format when saved if possible
+
+If phone does not exist in the real Drizzle schema:
+- Add phone varchar column
+- Add migration
+- Wire phone into relevant user/profile/client forms
+
+2. Add SMS consent fields:
+Add to user schema:
+- smsOptIn boolean default false
+- smsOptInAt timestamp nullable
+- smsOptOutAt timestamp nullable
+
+Optional but recommended:
+- smsConsentSource text nullable
+Examples:
+- profile_settings
+- unsubscribe_preferences
+- coach_admin_entry
+
+3. Extend notificationPreferences:
+Add SMS-specific preferences without breaking email preferences.
+
+Recommended:
+{
+  email: {
+    bookingConfirmations: true,
+    cancellations: true,
+    reschedules: true,
+    reminders: true,
+    outreach: true,
+    marketing: false
+  },
+  sms: {
+    bookingConfirmations: false,
+    cancellations: false,
+    reschedules: false,
+    reminders: false,
+    outreach: false,
+    marketing: false
+  }
+}
+
+Migration requirement:
+If existing preferences are flat, migrate safely or support both old and new shapes during transition.
+
+4. Install and configure Twilio:
+- Install twilio package.
+- Add required env vars:
+  - TWILIO_ACCOUNT_SID
+  - TWILIO_AUTH_TOKEN
+  - TWILIO_PHONE_NUMBER
+
+Create:
+- server/sms.ts
+
+Export:
+- sendSms({ to, body, userId, orgId, type, bookingId, agentActionId })
+
+5. SMS sending rules:
+Before sending SMS:
+- Require phone exists
+- Require smsOptIn === true
+- Require relevant sms preference === true
+- Require valid normalized phone number
+- Never send SMS for marketing unless explicitly opted in
+
+If blocked:
+- Log communication_logs with channel = "sms", status = "skipped"
+- reason examples:
+  - missing_phone
+  - sms_not_opted_in
+  - sms_preference_disabled
+  - invalid_phone
+
+6. Communication log support:
+Extend communication_logs if needed:
+- channel should support "sms"
+- recipientPhone nullable
+- messageBody or bodyPreview nullable
+- provider = "twilio"
+- status supports sent, failed, skipped
+
+Do not store overly sensitive full content if unnecessary. A preview is enough.
+
+7. Add SMS email-equivalent functions:
+Create SMS templates for:
+- booking confirmation
+- cancellation
+- reschedule
+- 24-hour reminder
+- agent outreach
+
+Keep all SMS under 320 characters where practical.
+
+Examples:
+Booking reminder:
+"Reminder: Your [service] with [coach] is tomorrow at [time]. Reply to your coach if you need to make changes. — [Org]"
+
+8. Wire SMS into existing workflows:
+After email sends, optionally send SMS only when allowed.
+
+Add SMS to:
+- booking confirmation
+- cancellation
+- reschedule
+- 24-hour reminders
+- agent outreach send flow
+
+Do NOT add SMS to every email type yet.
+Do NOT add SMS to marketing.
+
+9. Agent-safe SMS outreach:
+Keep draft_client_outreach generating SMS text.
+
+Add new confirmation-gated tool:
+- send_drafted_outreach_sms
+
+Two-call handshake:
+Phase A:
+- Load pending draft
+- Show recipient phone, SMS preview, and opt-in status
+- requiresConfirmation: true
+- Do not send
+
+Phase B:
+- Require confirmed === true and exact pendingActionId / agentActionId
+- Validate ownership/org/client
+- Validate smsOptIn and SMS outreach preference
+- Send via Twilio
+- Mark or append agent action metadata as SMS sent
+- Log communication_logs
+
+Never allow arbitrary SMS sending from the agent.
+Only send SMS created by draft_client_outreach.
+
+10. UI updates:
+In Email Preferences / notification settings:
+- Add SMS section
+- Show clear consent language:
+  "I agree to receive SMS notifications from my coach or organization. Message and data rates may apply. I can opt out at any time."
+
+Users should be able to:
+- Add/edit phone number
+- Toggle SMS opt-in
+- Toggle SMS categories
+- Save preferences
+
+For coach/admin client profile:
+- Show phone number if available
+- Show SMS opt-in status
+- Do not allow coaches to silently opt users into SMS without clear consent tracking
+
+11. STOP handling:
+If fast and supported by current architecture:
+- Add inbound SMS webhook route for Twilio STOP/START
+- STOP sets smsOptIn = false and smsOptOutAt = now
+- START can re-enable only if desired
+- Log the opt-out event
+
+If webhook setup is too much for this phase, leave a clear TODO, but do not ignore consent.
+
+12. Testing:
+- TypeScript/build passes
+- Missing Twilio env vars do not crash app startup
+- SMS sends are skipped safely when env vars missing
+- Missing phone skips and logs
+- smsOptIn false skips and logs
+- sms preference false skips and logs
+- Valid opted-in user receives SMS
+- Communication History shows SMS logs
+- Agent SMS preview does not send
+- Agent SMS confirmed send sends only once
+- Sent SMS draft cannot be resent accidentally
+- Email behavior remains unchanged
+
+Expected result:
+TrainEfficiency can send real SMS through Twilio, but only to users who have a valid phone number, explicit SMS opt-in, and matching SMS preferences. All SMS sends, failures, and skips are logged in Communication History.
