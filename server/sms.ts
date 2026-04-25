@@ -112,41 +112,52 @@ export async function sendSms(params: {
   }
 
   if (ctx.recipientUserId) {
-    const user = await storage.getUser(ctx.recipientUserId);
-    if (user) {
-      // Phase 2: Dual-read — org-level prefs first, fallback to user-level
-      let effectiveSmsOptIn = user.smsOptIn;
-      let effectiveNotifPrefs = user.notificationPreferences as any;
+    // Phase 6: Org-only reads — org prefs are the source of truth
+    let effectiveSmsOptIn: boolean = false;
+    let effectiveNotifPrefs: any = null;
 
-      if (ctx.orgId) {
-        try {
-          const orgPrefs = await storage.getUserOrgPreferences(ctx.recipientUserId, ctx.orgId);
-          if (orgPrefs) {
-            effectiveSmsOptIn = orgPrefs.smsOptIn;
-            effectiveNotifPrefs = orgPrefs.notificationPreferences ?? effectiveNotifPrefs;
-          }
-        } catch (err) {
-          console.error('[SMS] Failed to load org prefs, falling back to user prefs:', err);
+    if (ctx.orgId) {
+      try {
+        const orgPrefs = await storage.getUserOrgPreferences(ctx.recipientUserId, ctx.orgId);
+        if (orgPrefs) {
+          effectiveSmsOptIn = orgPrefs.smsOptIn;
+          effectiveNotifPrefs = orgPrefs.notificationPreferences;
+        } else {
+          // Edge case: backfill missed this user — warn and fall back to user level
+          console.warn(`[SMS] No org prefs for user ${ctx.recipientUserId} in org ${ctx.orgId} — falling back to user level`);
+          const user = await storage.getUser(ctx.recipientUserId);
+          effectiveSmsOptIn = user?.smsOptIn ?? false;
+          effectiveNotifPrefs = user?.notificationPreferences as any;
         }
+      } catch (err) {
+        console.error('[SMS] Failed to load org prefs, falling back to user prefs:', err);
+        const user = await storage.getUser(ctx.recipientUserId);
+        effectiveSmsOptIn = user?.smsOptIn ?? false;
+        effectiveNotifPrefs = user?.notificationPreferences as any;
       }
+    } else {
+      // No org context — use user-level prefs directly
+      const user = await storage.getUser(ctx.recipientUserId);
+      effectiveSmsOptIn = user?.smsOptIn ?? false;
+      effectiveNotifPrefs = user?.notificationPreferences as any;
+    }
 
-      if (!effectiveSmsOptIn) {
-        const reason = 'sms_not_opted_in';
-        console.log(`[SMS] Skipped: ${reason} for ${normalizedPhone}`);
+    if (!effectiveSmsOptIn) {
+      const reason = 'sms_not_opted_in';
+      console.log(`[SMS] Skipped: ${reason} for ${normalizedPhone}`);
+      await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'skipped', provider: 'twilio', errorMessage: reason });
+      return { sent: false, skipped: reason };
+    }
+
+    const prefKey = SMS_TYPE_TO_PREF_KEY[ctx.type];
+    if (prefKey) {
+      const smsPrefs = effectiveNotifPrefs?.sms ?? DEFAULT_SMS_PREFS;
+      const enabled = smsPrefs[prefKey] ?? DEFAULT_SMS_PREFS[prefKey] ?? false;
+      if (!enabled) {
+        const reason = 'sms_preference_disabled';
+        console.log(`[SMS] Skipped: ${reason} (${prefKey}) for ${normalizedPhone}`);
         await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'skipped', provider: 'twilio', errorMessage: reason });
         return { sent: false, skipped: reason };
-      }
-
-      const prefKey = SMS_TYPE_TO_PREF_KEY[ctx.type];
-      if (prefKey) {
-        const smsPrefs = effectiveNotifPrefs?.sms ?? DEFAULT_SMS_PREFS;
-        const enabled = smsPrefs[prefKey] ?? DEFAULT_SMS_PREFS[prefKey] ?? false;
-        if (!enabled) {
-          const reason = 'sms_preference_disabled';
-          console.log(`[SMS] Skipped: ${reason} (${prefKey}) for ${normalizedPhone}`);
-          await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'skipped', provider: 'twilio', errorMessage: reason });
-          return { sent: false, skipped: reason };
-        }
       }
     }
   }

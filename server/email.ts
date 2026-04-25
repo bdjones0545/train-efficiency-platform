@@ -141,59 +141,67 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
 
   if (logCtx?.recipientUserId) {
     try {
-      const recipientUser = await storage.getUser(logCtx.recipientUserId);
-      if (recipientUser) {
-        // Phase 2: Dual-read — org-level prefs first, fallback to user-level
-        let rawPrefs = recipientUser.notificationPreferences as any;
+      // Phase 6: Org-only reads — org prefs are the source of truth
+      let rawPrefs: any = null;
+      if (logCtx.orgId) {
+        try {
+          const orgPrefs = await storage.getUserOrgPreferences(logCtx.recipientUserId, logCtx.orgId);
+          if (orgPrefs?.notificationPreferences) {
+            rawPrefs = orgPrefs.notificationPreferences;
+          } else if (!orgPrefs) {
+            // Edge case: backfill missed this user — warn and fall back to user level
+            console.warn(`[Email] No org prefs for user ${logCtx.recipientUserId} in org ${logCtx.orgId} — falling back to user level`);
+            const recipientUser = await storage.getUser(logCtx.recipientUserId);
+            rawPrefs = recipientUser?.notificationPreferences as any;
+          }
+        } catch (err) {
+          console.error('[Email] Failed to load org prefs, falling back to user prefs:', err);
+          const recipientUser = await storage.getUser(logCtx.recipientUserId);
+          rawPrefs = recipientUser?.notificationPreferences as any;
+        }
+      } else {
+        // No org context — use user-level prefs directly
+        const recipientUser = await storage.getUser(logCtx.recipientUserId);
+        rawPrefs = recipientUser?.notificationPreferences as any;
+      }
+      // Support both flat legacy shape and new nested { email: {...}, sms: {...} } shape
+      const emailPrefs: Record<string, boolean> = rawPrefs?.email ?? (rawPrefs && !rawPrefs.email && !rawPrefs.sms ? rawPrefs : DEFAULT_NOTIFICATION_PREFS);
+      const prefs = { ...DEFAULT_NOTIFICATION_PREFS, ...emailPrefs };
+      const prefKey = TYPE_TO_PREF_KEY[logCtx.type];
+      const effectivePref = prefKey !== undefined ? (prefs[prefKey] ?? DEFAULT_NOTIFICATION_PREFS[prefKey] ?? true) : true;
+
+      if (effectivePref === false) {
         if (logCtx.orgId) {
           try {
-            const orgPrefs = await storage.getUserOrgPreferences(logCtx.recipientUserId, logCtx.orgId);
-            if (orgPrefs?.notificationPreferences) {
-              rawPrefs = orgPrefs.notificationPreferences;
-            }
-          } catch (err) {
-            console.error('[Email] Failed to load org prefs, falling back to user prefs:', err);
+            await storage.createCommunicationLog({
+              orgId: logCtx.orgId,
+              userId: logCtx.userId,
+              coachId: logCtx.coachId,
+              bookingId: logCtx.bookingId,
+              agentActionId: logCtx.agentActionId,
+              type: logCtx.type,
+              channel: 'email',
+              recipientEmail: to,
+              subject,
+              status: 'skipped',
+              provider: 'sendgrid',
+              errorMessage: 'user_opt_out',
+            });
+          } catch (logErr) {
+            console.error('[CommLog] Failed to log skipped email:', logErr);
           }
         }
-        // Support both flat legacy shape and new nested { email: {...}, sms: {...} } shape
-        const emailPrefs: Record<string, boolean> = rawPrefs?.email ?? (rawPrefs && !rawPrefs.email && !rawPrefs.sms ? rawPrefs : DEFAULT_NOTIFICATION_PREFS);
-        const prefs = { ...DEFAULT_NOTIFICATION_PREFS, ...emailPrefs };
-        const prefKey = TYPE_TO_PREF_KEY[logCtx.type];
-        const effectivePref = prefKey !== undefined ? (prefs[prefKey] ?? DEFAULT_NOTIFICATION_PREFS[prefKey] ?? true) : true;
+        console.log(`[Email] Skipped "${subject}" to ${to} (opt-out: ${prefKey})`);
+        return;
+      }
 
-        if (effectivePref === false) {
-          if (logCtx.orgId) {
-            try {
-              await storage.createCommunicationLog({
-                orgId: logCtx.orgId,
-                userId: logCtx.userId,
-                coachId: logCtx.coachId,
-                bookingId: logCtx.bookingId,
-                agentActionId: logCtx.agentActionId,
-                type: logCtx.type,
-                channel: 'email',
-                recipientEmail: to,
-                subject,
-                status: 'skipped',
-                provider: 'sendgrid',
-                errorMessage: 'user_opt_out',
-              });
-            } catch (logErr) {
-              console.error('[CommLog] Failed to log skipped email:', logErr);
-            }
-          }
-          console.log(`[Email] Skipped "${subject}" to ${to} (opt-out: ${prefKey})`);
-          return;
-        }
-
-        try {
-          const token = await storage.ensureUnsubscribeToken(logCtx.recipientUserId);
-          const orgParam = logCtx.orgId ? `?orgId=${encodeURIComponent(logCtx.orgId)}` : '';
-          const unsubUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${token}${orgParam}`;
-          finalHtml = html + `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #333;"><p style="font-size:12px;color:#666;margin:0;font-family:Arial,sans-serif;"><a href="${unsubUrl}" style="color:#888;text-decoration:underline;">Manage email preferences</a></p></div>`;
-        } catch (tokenErr) {
-          console.error('[Email] Failed to generate unsubscribe token:', tokenErr);
-        }
+      try {
+        const token = await storage.ensureUnsubscribeToken(logCtx.recipientUserId);
+        const orgParam = logCtx.orgId ? `?orgId=${encodeURIComponent(logCtx.orgId)}` : '';
+        const unsubUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${token}${orgParam}`;
+        finalHtml = html + `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #333;"><p style="font-size:12px;color:#666;margin:0;font-family:Arial,sans-serif;"><a href="${unsubUrl}" style="color:#888;text-decoration:underline;">Manage email preferences</a></p></div>`;
+      } catch (tokenErr) {
+        console.error('[Email] Failed to generate unsubscribe token:', tokenErr);
       }
     } catch (prefErr) {
       console.error('[Email] Error checking notification preferences:', prefErr);
