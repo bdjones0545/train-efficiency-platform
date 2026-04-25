@@ -67,8 +67,29 @@ export default function SettingsPage() {
   const [prefsSaved, setPrefsSaved] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
+  // Get org context from profile (standard pattern throughout the app)
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId ?? null;
+
+  const prefsUrl = orgId
+    ? `/api/notification-preferences?orgId=${orgId}`
+    : "/api/notification-preferences";
+
   const { data: prefsData, isLoading: prefsLoading } = useQuery<PrefsResponse>({
-    queryKey: ["/api/notification-preferences"],
+    queryKey: ["/api/notification-preferences", orgId],
+    queryFn: async () => {
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch(prefsUrl, {
+        credentials: "include",
+        headers: authHeaders,
+      });
+      if (!res.ok) throw new Error("Failed to load preferences");
+      return res.json();
+    },
+    // Don't block on profile loading — attempt even without orgId as fallback
+    enabled: profile !== undefined,
   });
 
   useEffect(() => {
@@ -93,6 +114,8 @@ export default function SettingsPage() {
     },
     onSuccess: () => {
       setPhoneError(null);
+      // Invalidate with orgId so the correct cache entry is refreshed
+      queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences", orgId] });
       queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
       setPrefsSaved(true);
       toast({ title: "Preferences saved" });

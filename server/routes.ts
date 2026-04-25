@@ -6401,10 +6401,13 @@ export async function registerRoutes(
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
       const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId;
+      // Accept explicit orgId from query param; fall back to profile's org
+      const orgId = (req.query.orgId as string | undefined) || profile?.organizationId || null;
       const token = await storage.ensureUnsubscribeToken(userId);
 
-      // Phase 2/6: Dual-read — org-level prefs first, fallback to user-level
+      console.log(`[Settings] Fetching preferences for userId=${userId} orgId=${orgId ?? 'none'}`);
+
+      // Org-level prefs first, fallback to user-level
       let rawPrefs = user.notificationPreferences as any;
       let effectiveSmsOptIn = user.smsOptIn;
       let effectiveSmsOptInAt = user.smsOptInAt;
