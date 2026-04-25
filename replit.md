@@ -55,6 +55,17 @@ The application employs a client-server architecture. The frontend is developed 
     -   Closing the overlay returns users exactly to where they were without any navigation.
 -   **CoachSchedulingAgentPanel** (`client/src/components/coach-agent-panel.tsx`): Shared agent UI component extracted from `scheduling-agent.tsx`. Accepts `mode: "full" | "overlay"` and `context?: AgentContext`. In overlay mode: shows context-aware header label ("Agent · Schedule"), context-specific quick prompts per page, and a close button. In full mode: renders identically to the original standalone page. The original `scheduling-agent.tsx` page now simply renders `<CoachSchedulingAgentPanel mode="full" />`.
 -   **Page-Specific Quick Prompts:** When opened from a specific page, the overlay shows tailored prompts: Schedule → fill openings/book/text; Clients → churn/follow-up/outreach; Revenue → goal tracking/money; Settings → automation mode/campaigns; Dashboard → daily priorities/recap.
+-   **Session Category System (Training Options):** Each service (training option) now carries a `category` field (`paid`, `intro`, `internal`, `meeting`, `membership`, `package_redemption`, `comp`) plus 12 additional operational columns:
+    -   `countsTowardRevenue` / `revenueRecognition` — controls whether and when a session counts toward revenue totals
+    -   `payoutType` / `payoutValueCents` / `payoutPercent` / `coachPayWhenRedeemed` — independent coach payout logic (percentage, fixed, hourly, or none)
+    -   `countsTowardUtilization` / `blocksAvailability` / `countsTowardSessionCount` — operational scheduling flags
+    -   `requiresClient` / `isBookableByClient` / `isBookableByCoach` — booking access control
+    -   The admin Training Options UI now has a comprehensive multi-section form with Quick Templates, a live payout preview, category-aware default inference, and rich card badges per service
+    -   The booking API (`POST /api/bookings`) validates `isBookableByClient` and rejects restricted services with a 403
+    -   Coach-facing session pickers (add-session-dialog, scheduling page) filter by `isBookableByCoach`
+    -   Revenue functions (`computeRevenueSummary`, `computeRevenueByPeriod`) filter by `countsTowardRevenue`; utilization respects `countsTowardUtilization`
+    -   The AI agent system prompt includes a full Session Category System section with routing rules for accurate revenue vs utilization reporting
+    -   Payout calculations handled by `server/payout-calculator.ts` (`calculateCoachPayoutForBooking()`)
 
 ## External Dependencies
 -   **PostgreSQL:** Database.

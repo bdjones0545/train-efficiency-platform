@@ -1476,6 +1476,11 @@ export async function registerRoutes(
       const service = await storage.getService(serviceId);
       if (!service) return res.status(404).json({ message: "Service not found" });
 
+      // Validate client-facing bookability
+      if ((service as any).isBookableByClient === false) {
+        return res.status(403).json({ message: "This service is not available for client booking" });
+      }
+
       const coach = await storage.getCoachProfile(coachId);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
 
@@ -3024,7 +3029,13 @@ export async function registerRoutes(
 
   app.post("/api/admin/services", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const { name, description, durationMin, priceCents, sessionType } = req.body;
+      const {
+        name, description, durationMin, priceCents, sessionType,
+        category, countsTowardRevenue, revenueRecognition,
+        payoutType, payoutValueCents, payoutPercent, coachPayWhenRedeemed,
+        countsTowardUtilization, blocksAvailability, countsTowardSessionCount,
+        requiresClient, isBookableByClient, isBookableByCoach,
+      } = req.body;
       if (!name) return res.status(400).json({ message: "name required" });
       const userId = req.user.claims.sub;
       const profile = await storage.getUserProfile(userId);
@@ -3037,6 +3048,19 @@ export async function registerRoutes(
         active: true,
         sessionType: sessionType || "1_ON_1",
         organizationId: orgId,
+        category: category || "paid",
+        countsTowardRevenue: countsTowardRevenue !== undefined ? countsTowardRevenue : true,
+        revenueRecognition: revenueRecognition || "at_booking",
+        payoutType: payoutType || "percentage",
+        payoutValueCents: payoutValueCents ?? null,
+        payoutPercent: payoutPercent ?? null,
+        coachPayWhenRedeemed: coachPayWhenRedeemed || false,
+        countsTowardUtilization: countsTowardUtilization !== undefined ? countsTowardUtilization : true,
+        blocksAvailability: blocksAvailability !== undefined ? blocksAvailability : true,
+        countsTowardSessionCount: countsTowardSessionCount !== undefined ? countsTowardSessionCount : true,
+        requiresClient: requiresClient !== undefined ? requiresClient : true,
+        isBookableByClient: isBookableByClient !== undefined ? isBookableByClient : true,
+        isBookableByCoach: isBookableByCoach !== undefined ? isBookableByCoach : true,
       });
       res.json(service);
     } catch (error) {
@@ -3048,7 +3072,13 @@ export async function registerRoutes(
   app.patch("/api/admin/services/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { name, description, durationMin, priceCents, active, sessionType } = req.body;
+      const {
+        name, description, durationMin, priceCents, active, sessionType,
+        category, countsTowardRevenue, revenueRecognition,
+        payoutType, payoutValueCents, payoutPercent, coachPayWhenRedeemed,
+        countsTowardUtilization, blocksAvailability, countsTowardSessionCount,
+        requiresClient, isBookableByClient, isBookableByCoach,
+      } = req.body;
       const existing = await storage.getService(id);
       if (!existing) return res.status(404).json({ message: "Service not found" });
 
@@ -3058,6 +3088,19 @@ export async function registerRoutes(
       if (durationMin !== undefined) updateData.durationMin = durationMin;
       if (active !== undefined) updateData.active = active;
       if (sessionType !== undefined) updateData.sessionType = sessionType;
+      if (category !== undefined) updateData.category = category;
+      if (countsTowardRevenue !== undefined) updateData.countsTowardRevenue = countsTowardRevenue;
+      if (revenueRecognition !== undefined) updateData.revenueRecognition = revenueRecognition;
+      if (payoutType !== undefined) updateData.payoutType = payoutType;
+      if (payoutValueCents !== undefined) updateData.payoutValueCents = payoutValueCents;
+      if (payoutPercent !== undefined) updateData.payoutPercent = payoutPercent;
+      if (coachPayWhenRedeemed !== undefined) updateData.coachPayWhenRedeemed = coachPayWhenRedeemed;
+      if (countsTowardUtilization !== undefined) updateData.countsTowardUtilization = countsTowardUtilization;
+      if (blocksAvailability !== undefined) updateData.blocksAvailability = blocksAvailability;
+      if (countsTowardSessionCount !== undefined) updateData.countsTowardSessionCount = countsTowardSessionCount;
+      if (requiresClient !== undefined) updateData.requiresClient = requiresClient;
+      if (isBookableByClient !== undefined) updateData.isBookableByClient = isBookableByClient;
+      if (isBookableByCoach !== undefined) updateData.isBookableByCoach = isBookableByCoach;
 
       const priceChanged = priceCents !== undefined && priceCents !== existing.priceCents;
       if (priceCents !== undefined) updateData.priceCents = priceCents;

@@ -144,6 +144,9 @@ export const coachProfiles = pgTable("coach_profiles", {
 });
 
 export const sessionTypeEnum = pgEnum("session_type", ["1_ON_1", "GROUP", "SEMI_PRIVATE", "TEAM_TRAINING", "ASSESSMENT", "RECOVERY"]);
+export const serviceCategoryEnum = pgEnum("service_category", ["paid", "intro", "internal", "meeting", "membership", "package_redemption", "comp"]);
+export const revenueRecognitionEnum = pgEnum("revenue_recognition", ["at_booking", "at_purchase", "none"]);
+export const payoutTypeEnum = pgEnum("payout_type", ["percentage", "fixed", "hourly", "none"]);
 
 export const services = pgTable("services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -156,6 +159,19 @@ export const services = pgTable("services", {
   stripeProductId: varchar("stripe_product_id"),
   stripePriceId: varchar("stripe_price_id"),
   organizationId: varchar("organization_id"),
+  category: serviceCategoryEnum("category").default("paid"),
+  countsTowardRevenue: boolean("counts_toward_revenue").default(true),
+  revenueRecognition: revenueRecognitionEnum("revenue_recognition").default("at_booking"),
+  payoutType: payoutTypeEnum("payout_type").default("percentage"),
+  payoutValueCents: integer("payout_value_cents"),
+  payoutPercent: integer("payout_percent"),
+  coachPayWhenRedeemed: boolean("coach_pay_when_redeemed").default(false),
+  countsTowardUtilization: boolean("counts_toward_utilization").default(true),
+  blocksAvailability: boolean("blocks_availability").default(true),
+  countsTowardSessionCount: boolean("counts_toward_session_count").default(true),
+  requiresClient: boolean("requires_client").default(true),
+  isBookableByClient: boolean("is_bookable_by_client").default(true),
+  isBookableByCoach: boolean("is_bookable_by_coach").default(true),
 });
 
 export const appSettings = pgTable("app_settings", {

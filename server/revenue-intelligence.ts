@@ -126,10 +126,20 @@ async function getOrgBookingsWithService(orgId: string, since?: Date) {
     coachId: bookings.coachId,
     serviceId: bookings.serviceId,
     startAt: bookings.startAt,
+    endAt: bookings.endAt,
     status: bookings.status,
     priceCents: services.priceCents,
     serviceName: services.name,
     sessionType: services.sessionType,
+    serviceCategory: services.category,
+    countsTowardRevenue: services.countsTowardRevenue,
+    revenueRecognition: services.revenueRecognition,
+    payoutType: services.payoutType,
+    payoutValueCents: services.payoutValueCents,
+    payoutPercent: services.payoutPercent,
+    countsTowardUtilization: services.countsTowardUtilization,
+    countsTowardSessionCount: services.countsTowardSessionCount,
+    requiresClient: services.requiresClient,
   })
     .from(bookings)
     .leftJoin(services, eq(bookings.serviceId, services.id))
@@ -164,10 +174,12 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
 
   const coachMap = new Map(coachRows.map(c => [c.id, `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()]));
 
-  const last30d = allBookings.filter(b => new Date(b.startAt) >= thirtyDaysAgo);
-  const prior30d = allBookings.filter(b => new Date(b.startAt) >= sixtyDaysAgo && new Date(b.startAt) < thirtyDaysAgo);
+  // Only include revenue-generating bookings in financial calculations
+  const revenueBookings = allBookings.filter(b => b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0);
+  const last30d = revenueBookings.filter(b => new Date(b.startAt) >= thirtyDaysAgo);
+  const prior30d = revenueBookings.filter(b => new Date(b.startAt) >= sixtyDaysAgo && new Date(b.startAt) < thirtyDaysAgo);
 
-  const totalRevenueCents = allBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+  const totalRevenueCents = revenueBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
   const last30dRevenueCents = last30d.reduce((s, b) => s + (b.priceCents ?? 0), 0);
   const prior30dRevenueCents = prior30d.reduce((s, b) => s + (b.priceCents ?? 0), 0);
   const revenueGrowthPct = prior30dRevenueCents > 0
@@ -189,9 +201,9 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     }
   }
 
-  // Revenue by coach
+  // Revenue by coach (only revenue-generating bookings)
   const coachRevenueMap = new Map<string, { revenue: number; sessions: number; clients: Set<string> }>();
-  for (const b of allBookings) {
+  for (const b of revenueBookings) {
     if (!coachRevenueMap.has(b.coachId)) {
       coachRevenueMap.set(b.coachId, { revenue: 0, sessions: 0, clients: new Set() });
     }
@@ -268,7 +280,12 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
   const upsellOpportunities = await computeUpsellOpportunities(orgId);
 
   const totalSessions = allBookings.length;
-  const uniqueClients = new Set(allBookings.map(b => b.clientId)).size;
+  const revenueSessions = revenueBookings.length;
+  const nonRevenueSessions = totalSessions - revenueSessions;
+  const internalSessions = allBookings.filter(b =>
+    b.serviceCategory === "internal" || b.serviceCategory === "meeting"
+  ).length;
+  const uniqueClients = new Set(revenueBookings.map(b => b.clientId)).size;
   const avgLtvCents = uniqueClients > 0 ? Math.round(totalRevenueCents / uniqueClients) : 0;
 
   return {
@@ -281,7 +298,7 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     mrr,
     activeSubscribers: userSubs.length,
     avgLtvCents,
-    avgRevenuePerSessionCents: totalSessions > 0 ? Math.round(totalRevenueCents / totalSessions) : 0,
+    avgRevenuePerSessionCents: revenueSessions > 0 ? Math.round(totalRevenueCents / revenueSessions) : 0,
     totalSessions,
     sessionsLast30d: last30d.length,
     churnRiskCount: churnRisks.length,
@@ -638,6 +655,10 @@ export interface PeriodRevenueSummary {
   endDate: string;
   totalRevenueCents: number;
   sessionCount: number;
+  totalSessionCount?: number;
+  nonRevenueSessions?: number;
+  internalHours?: number;
+  categoryBreakdown?: { category: string; sessions: number; revenueCents: number }[];
   coachBreakdown: { coachName: string; revenueCents: number; sessions: number }[];
   serviceBreakdown: { serviceName: string; revenueCents: number; sessions: number }[];
   comparison?: {
@@ -681,9 +702,16 @@ async function getOrgBookingsForRange(orgId: string, startDate: Date, endDate: D
     coachId: bookings.coachId,
     serviceId: bookings.serviceId,
     startAt: bookings.startAt,
+    endAt: bookings.endAt,
     status: bookings.status,
     priceCents: services.priceCents,
     serviceName: services.name,
+    serviceCategory: services.category,
+    countsTowardRevenue: services.countsTowardRevenue,
+    countsTowardUtilization: services.countsTowardUtilization,
+    payoutType: services.payoutType,
+    payoutValueCents: services.payoutValueCents,
+    payoutPercent: services.payoutPercent,
     coachFirstName: users.firstName,
     coachLastName: users.lastName,
   })
@@ -716,10 +744,14 @@ export async function computeRevenueByPeriod(
       : Promise.resolve([]),
   ]);
 
-  const totalRevenueCents = periodBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+  // Only count revenue-generating bookings for financial totals
+  const revPeriodBookings = periodBookings.filter(b => b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0);
+  const revCompareBookings = compareBookings.filter(b => b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0);
+
+  const totalRevenueCents = revPeriodBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
 
   const coachMap = new Map<string, { name: string; revenue: number; sessions: number }>();
-  for (const b of periodBookings) {
+  for (const b of revPeriodBookings) {
     const name = `${b.coachFirstName ?? ""} ${b.coachLastName ?? ""}`.trim() || "Unknown";
     if (!coachMap.has(b.coachId)) coachMap.set(b.coachId, { name, revenue: 0, sessions: 0 });
     const e = coachMap.get(b.coachId)!;
@@ -731,7 +763,7 @@ export async function computeRevenueByPeriod(
     .sort((a, b) => b.revenueCents - a.revenueCents);
 
   const serviceMap = new Map<string, { revenue: number; sessions: number }>();
-  for (const b of periodBookings) {
+  for (const b of revPeriodBookings) {
     const key = b.serviceName ?? "Unknown";
     if (!serviceMap.has(key)) serviceMap.set(key, { revenue: 0, sessions: 0 });
     serviceMap.get(key)!.revenue += b.priceCents ?? 0;
@@ -741,9 +773,25 @@ export async function computeRevenueByPeriod(
     .map(([name, d]) => ({ serviceName: name, revenueCents: d.revenue, sessions: d.sessions }))
     .sort((a, b) => b.revenueCents - a.revenueCents);
 
+  // Category breakdown (all sessions, not just revenue)
+  const categoryCount = new Map<string, { sessions: number; revenueCents: number }>();
+  for (const b of periodBookings) {
+    const cat = b.serviceCategory ?? "paid";
+    if (!categoryCount.has(cat)) categoryCount.set(cat, { sessions: 0, revenueCents: 0 });
+    const e = categoryCount.get(cat)!;
+    e.sessions++;
+    if (b.countsTowardRevenue !== false) e.revenueCents += b.priceCents ?? 0;
+  }
+  const categoryBreakdown = Array.from(categoryCount.entries()).map(([category, d]) => ({ category, ...d }));
+
+  const nonRevenueSessions = periodBookings.filter(b => !b.countsTowardRevenue || (b.priceCents ?? 0) === 0).length;
+  const internalHours = periodBookings
+    .filter(b => b.serviceCategory === "internal" || b.serviceCategory === "meeting")
+    .reduce((s, b) => s + (b.endAt ? (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 3600000 : 0), 0);
+
   let comparison: PeriodRevenueSummary["comparison"] | undefined;
   if (compareStart && compareEnd && comparePeriodLabel) {
-    const priorRevenueCents = compareBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+    const priorRevenueCents = revCompareBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
     const deltaCents = totalRevenueCents - priorRevenueCents;
     const deltaPct = priorRevenueCents > 0
       ? Math.round((deltaCents / priorRevenueCents) * 100)
@@ -762,7 +810,11 @@ export async function computeRevenueByPeriod(
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
     totalRevenueCents,
-    sessionCount: periodBookings.length,
+    sessionCount: revPeriodBookings.length,
+    totalSessionCount: periodBookings.length,
+    nonRevenueSessions,
+    internalHours: Math.round(internalHours * 10) / 10,
+    categoryBreakdown,
     coachBreakdown,
     serviceBreakdown,
     comparison,

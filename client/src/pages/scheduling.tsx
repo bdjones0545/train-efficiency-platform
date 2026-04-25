@@ -684,9 +684,9 @@ export default function SchedulingPage() {
                   <SelectValue placeholder="Select service" />
                 </SelectTrigger>
                 <SelectContent>
-                  {services.filter(s => s.active).map(s => (
+                  {services.filter(s => s.active && (s as any).isBookableByCoach !== false).map(s => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.name} ({SESSION_TYPE_LABELS[s.sessionType || ""] || s.sessionType})
+                      {s.name} ({SESSION_TYPE_LABELS[s.sessionType || ""] || s.sessionType}{(s as any).category && (s as any).category !== "paid" ? ` · ${(s as any).category}` : ""})
                     </SelectItem>
                   ))}
                 </SelectContent>

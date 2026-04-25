@@ -1291,6 +1291,22 @@ async function executeTool(
             return t >= startDate && t <= endDate && b.status !== "CANCELLED";
           });
 
+          // Separate bookings by category for accurate utilization
+          const clientBookings = weekBookings.filter(b => {
+            const cat = (b.service as any)?.category;
+            return !cat || cat === "paid" || cat === "intro" || cat === "membership" || cat === "package_redemption" || cat === "comp";
+          });
+          const internalBookings = weekBookings.filter(b => (b.service as any)?.category === "internal");
+          const meetingBookings = weekBookings.filter(b => (b.service as any)?.category === "meeting");
+          // Utilization bookings: those where countsTowardUtilization is true (or unset, defaulting to true)
+          const utilizationBookings = weekBookings.filter(b => (b.service as any)?.countsTowardUtilization !== false);
+
+          const clientSessionHours = clientBookings.reduce((s, b) => s + diffMins(new Date(b.endAt), new Date(b.startAt)) / 60, 0);
+          const internalHours = internalBookings.reduce((s, b) => s + diffMins(new Date(b.endAt), new Date(b.startAt)) / 60, 0);
+          const meetingHours = meetingBookings.reduce((s, b) => s + diffMins(new Date(b.endAt), new Date(b.startAt)) / 60, 0);
+          const totalBlockedHours = weekBookings.reduce((s, b) => s + diffMins(new Date(b.endAt), new Date(b.startAt)) / 60, 0);
+          const utilizationMins = utilizationBookings.reduce((sum, b) => sum + diffMins(new Date(b.endAt), new Date(b.startAt)), 0);
+
           const dailyBreakdown: {
             date: string;
             dayOfWeek: string;
@@ -1314,7 +1330,7 @@ async function executeTool(
               availMins += (eh * 60 + em) - (sh * 60 + sm);
             }
 
-            const dayBookings = weekBookings.filter(b => format(new Date(b.startAt), "yyyy-MM-dd") === dateStr);
+            const dayBookings = utilizationBookings.filter(b => format(new Date(b.startAt), "yyyy-MM-dd") === dateStr);
             const bookedMins = dayBookings.reduce((sum, b) => sum + diffMins(new Date(b.endAt), new Date(b.startAt)), 0);
             const pct = availMins > 0 ? Math.min(100, Math.round((bookedMins / availMins) * 100)) : 0;
             const dayStatus = getUtilizationStatus(pct, availMins);
@@ -1332,19 +1348,34 @@ async function executeTool(
             cursor = addDays(cursor, 1);
           }
 
+          const adjustedUtilizationPct = u.availableMinutes > 0
+            ? Math.min(100, Math.round((utilizationMins / u.availableMinutes) * 100))
+            : u.utilizationPct;
+          const adjustedStatusInfo = getUtilizationStatus(adjustedUtilizationPct, u.availableMinutes);
+
           const overloadedDays = dailyBreakdown.filter(d => d.statusLabel === "overloaded" || d.statusLabel === "high_load");
           const underbookedDays = dailyBreakdown.filter(d => d.statusLabel === "underbooked" && parseFloat(d.availableHours) > 0);
 
           return {
             coachName: u.coachName,
             coachId: u.coachId,
-            bookedHours: (u.bookedMinutes / 60).toFixed(1),
+            bookedHours: (utilizationMins / 60).toFixed(1),
             availableHours: (u.availableMinutes / 60).toFixed(1),
-            utilizationPct: u.utilizationPct,
-            openHours: (Math.max(0, u.availableMinutes - u.bookedMinutes) / 60).toFixed(1),
-            statusLabel: statusInfo.statusLabel,
-            statusMessage: statusInfo.statusMessage,
-            recommendation: statusInfo.recommendation,
+            utilizationPct: adjustedUtilizationPct,
+            openHours: (Math.max(0, u.availableMinutes - utilizationMins) / 60).toFixed(1),
+            statusLabel: adjustedStatusInfo.statusLabel,
+            statusMessage: adjustedStatusInfo.statusMessage,
+            recommendation: adjustedStatusInfo.recommendation,
+            sessionBreakdown: {
+              clientSessionHours: clientSessionHours.toFixed(1),
+              internalHours: internalHours.toFixed(1),
+              meetingHours: meetingHours.toFixed(1),
+              totalBlockedHours: totalBlockedHours.toFixed(1),
+              paidSessionCount: clientBookings.filter(b => (b.service as any)?.category === "paid").length,
+              introSessionCount: clientBookings.filter(b => (b.service as any)?.category === "intro").length,
+              internalSessionCount: internalBookings.length,
+              meetingSessionCount: meetingBookings.length,
+            },
             dailyBreakdown,
             topOverloadedDays: overloadedDays.slice(0, 2).map(d => `${d.dayOfWeek} (${d.utilizationPct}%)`),
             topUnderbookedDays: underbookedDays.slice(0, 2).map(d => `${d.dayOfWeek} (${d.openHours}h open)`),
@@ -1958,7 +1989,16 @@ async function executeTool(
         return JSON.stringify({
           period: periodLabel,
           totalRevenue: `$${(summary.totalRevenueCents / 100).toFixed(2)}`,
+          paidSessionRevenue: `$${(summary.totalRevenueCents / 100).toFixed(2)}`,
           sessions: summary.sessionCount,
+          totalSessions: summary.totalSessionCount ?? summary.sessionCount,
+          nonRevenueSessions: summary.nonRevenueSessions ?? 0,
+          internalHours: summary.internalHours ?? 0,
+          categoryBreakdown: (summary.categoryBreakdown ?? []).map(c => ({
+            category: c.category,
+            sessions: c.sessions,
+            revenue: c.revenueCents > 0 ? `$${(c.revenueCents / 100).toFixed(2)}` : "$0",
+          })),
           byCoach: summary.coachBreakdown.map(c => ({
             coach: c.coachName,
             revenue: `$${(c.revenueCents / 100).toFixed(2)}`,
@@ -1976,6 +2016,7 @@ async function executeTool(
             changePct: `${summary.comparison.direction === "up" ? "+" : ""}${summary.comparison.deltaPct}%`,
             direction: summary.comparison.direction,
           } : null,
+          note: "Revenue totals exclude internal sessions, floor hours, meetings, and $0 non-revenue categories. Payout is calculated separately per coach and service payout settings.",
         });
       }
 
@@ -2657,6 +2698,29 @@ You have TWO revenue tools. Use the right one:
   - "Am I on track?" → call with no targetCents
   - "What do I need to hit $15,000 this month?" → call with targetCents: 1500000 (NEVER compute the gap yourself — always pass it to the tool)
   - The tool returns: projectedTotal, revenueGap, sessionsNeeded, sessionsPerDayNeeded, targetSummary — present these directly
+
+## Session Category System (CRITICAL — Revenue vs Payout Separation)
+Each training option (service) has a **category** that determines how it affects revenue, utilization, and coach compensation independently:
+
+| Category | Revenue? | Utilization? | Coach Paid? | Notes |
+|---|---|---|---|---|
+| **paid** | ✅ Yes | ✅ Yes | ✅ Yes (% or fixed) | Standard paid 1:1 or group session |
+| **intro** | ❌ No | ✅ Yes | ⚠️ Sometimes | Free intro — counts utilization, may still pay coach |
+| **internal** | ❌ No | ✅ Yes | ✅ Yes (hourly) | Floor hours, open gym supervision — pays coach by hour |
+| **meeting** | ❌ No | ❌ No | ❌ No | Admin meetings — no utilization, no payout |
+| **membership** | ❌ No (at booking) | ✅ Yes | ✅ Sometimes | Revenue recognized at purchase, coach paid when redeemed |
+| **package_redemption** | ❌ No (at booking) | ✅ Yes | ✅ Sometimes | Pre-purchased package — same as membership |
+| **comp** | ❌ No | ✅ Yes | ❌ No | Complimentary session — no revenue, no payout |
+
+**Key rules:**
+- Revenue figures ONLY count sessions where countsTowardRevenue=true (paid, membership/package at purchase)
+- Coach payout is SEPARATE from client revenue — a $0 comp session can still pay the coach
+- Internal (floor hours) sessions DO count toward utilization even though they generate no revenue
+- When reporting revenue: never include internal/meeting/comp/intro in revenue totals unless asked specifically
+- When reporting utilization: count ALL sessions (paid + internal + meeting + intro) unless told otherwise
+- When a coach asks "how many hours did I work?" count ALL client-facing + internal hours separately
+- get_revenue_by_period now returns categoryBreakdown — use it to distinguish revenue from non-revenue sessions
+- get_coach_utilization now returns sessionBreakdown with clientSessionHours/internalHours/meetingHours
 
 ## Client Booking Lookup (CRITICAL)
 Use **get_client_bookings** whenever a prompt references a client's existing session:

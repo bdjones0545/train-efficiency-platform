@@ -117,6 +117,35 @@ export default function AdminConfigurationPage() {
   const [editServiceActive, setEditServiceActive] = useState(true);
   const [editServiceType, setEditServiceType] = useState<"1_ON_1" | "GROUP">("1_ON_1");
 
+  // New fields for service category/revenue/payout/ops
+  const [newServiceCategory, setNewServiceCategory] = useState("paid");
+  const [newServiceCountsTowardRevenue, setNewServiceCountsTowardRevenue] = useState(true);
+  const [newServiceRevenueRecognition, setNewServiceRevenueRecognition] = useState("at_booking");
+  const [newServicePayoutType, setNewServicePayoutType] = useState("percentage");
+  const [newServicePayoutValue, setNewServicePayoutValue] = useState("");
+  const [newServicePayoutPercent, setNewServicePayoutPercent] = useState("");
+  const [newServiceCoachPayWhenRedeemed, setNewServiceCoachPayWhenRedeemed] = useState(false);
+  const [newServiceCountsTowardUtilization, setNewServiceCountsTowardUtilization] = useState(true);
+  const [newServiceBlocksAvailability, setNewServiceBlocksAvailability] = useState(true);
+  const [newServiceCountsTowardSessionCount, setNewServiceCountsTowardSessionCount] = useState(true);
+  const [newServiceRequiresClient, setNewServiceRequiresClient] = useState(true);
+  const [newServiceIsBookableByClient, setNewServiceIsBookableByClient] = useState(true);
+  const [newServiceIsBookableByCoach, setNewServiceIsBookableByCoach] = useState(true);
+
+  const [editServiceCategory, setEditServiceCategory] = useState("paid");
+  const [editServiceCountsTowardRevenue, setEditServiceCountsTowardRevenue] = useState(true);
+  const [editServiceRevenueRecognition, setEditServiceRevenueRecognition] = useState("at_booking");
+  const [editServicePayoutType, setEditServicePayoutType] = useState("percentage");
+  const [editServicePayoutValue, setEditServicePayoutValue] = useState("");
+  const [editServicePayoutPercent, setEditServicePayoutPercent] = useState("");
+  const [editServiceCoachPayWhenRedeemed, setEditServiceCoachPayWhenRedeemed] = useState(false);
+  const [editServiceCountsTowardUtilization, setEditServiceCountsTowardUtilization] = useState(true);
+  const [editServiceBlocksAvailability, setEditServiceBlocksAvailability] = useState(true);
+  const [editServiceCountsTowardSessionCount, setEditServiceCountsTowardSessionCount] = useState(true);
+  const [editServiceRequiresClient, setEditServiceRequiresClient] = useState(true);
+  const [editServiceIsBookableByClient, setEditServiceIsBookableByClient] = useState(true);
+  const [editServiceIsBookableByCoach, setEditServiceIsBookableByCoach] = useState(true);
+
   const athleticEnabled = orgData?.athleticEnabled === true;
 
   const { data: athleticPrograms } = useQuery<any[]>({
@@ -360,14 +389,80 @@ export default function AdminConfigurationPage() {
     setEditCoachDialogOpen(true);
   };
 
+  const applyServiceCategoryDefaults = (
+    category: string,
+    setters: {
+      setCountsTowardRevenue: (v: boolean) => void;
+      setRevenueRecognition: (v: string) => void;
+      setPayoutType: (v: string) => void;
+      setCountsTowardUtilization: (v: boolean) => void;
+      setBlocksAvailability: (v: boolean) => void;
+      setRequiresClient: (v: boolean) => void;
+      setIsBookableByClient: (v: boolean) => void;
+      setIsBookableByCoach: (v: boolean) => void;
+      setCoachPayWhenRedeemed: (v: boolean) => void;
+      setPrice?: (v: string) => void;
+    }
+  ) => {
+    const defaults: Record<string, any> = {
+      paid: { countsTowardRevenue: true, revenueRecognition: "at_booking", payoutType: "percentage", countsTowardUtilization: true, blocksAvailability: true, requiresClient: true, isBookableByClient: true, isBookableByCoach: true, coachPayWhenRedeemed: false },
+      intro: { countsTowardRevenue: false, revenueRecognition: "none", payoutType: "fixed", countsTowardUtilization: true, blocksAvailability: true, requiresClient: true, isBookableByClient: true, isBookableByCoach: true, coachPayWhenRedeemed: false, price: "0" },
+      internal: { countsTowardRevenue: false, revenueRecognition: "none", payoutType: "hourly", countsTowardUtilization: true, blocksAvailability: true, requiresClient: false, isBookableByClient: false, isBookableByCoach: true, coachPayWhenRedeemed: false, price: "0" },
+      meeting: { countsTowardRevenue: false, revenueRecognition: "none", payoutType: "none", countsTowardUtilization: false, blocksAvailability: true, requiresClient: false, isBookableByClient: false, isBookableByCoach: true, coachPayWhenRedeemed: false, price: "0" },
+      membership: { countsTowardRevenue: false, revenueRecognition: "at_purchase", payoutType: "percentage", countsTowardUtilization: true, blocksAvailability: true, requiresClient: true, isBookableByClient: true, isBookableByCoach: true, coachPayWhenRedeemed: true, price: "0" },
+      package_redemption: { countsTowardRevenue: false, revenueRecognition: "at_purchase", payoutType: "fixed", countsTowardUtilization: true, blocksAvailability: true, requiresClient: true, isBookableByClient: true, isBookableByCoach: true, coachPayWhenRedeemed: true, price: "0" },
+      comp: { countsTowardRevenue: false, revenueRecognition: "none", payoutType: "none", countsTowardUtilization: true, blocksAvailability: true, requiresClient: true, isBookableByClient: true, isBookableByCoach: true, coachPayWhenRedeemed: false, price: "0" },
+    };
+    const d = defaults[category] ?? defaults.paid;
+    setters.setCountsTowardRevenue(d.countsTowardRevenue);
+    setters.setRevenueRecognition(d.revenueRecognition);
+    setters.setPayoutType(d.payoutType);
+    setters.setCountsTowardUtilization(d.countsTowardUtilization);
+    setters.setBlocksAvailability(d.blocksAvailability);
+    setters.setRequiresClient(d.requiresClient);
+    setters.setIsBookableByClient(d.isBookableByClient);
+    setters.setIsBookableByCoach(d.isBookableByCoach);
+    setters.setCoachPayWhenRedeemed(d.coachPayWhenRedeemed);
+    if (d.price !== undefined && setters.setPrice) setters.setPrice(d.price);
+  };
+
+  const applyTemplate = (template: string) => {
+    const templates: Record<string, { category: string; price: string; payoutType: string; payoutValue?: string; payoutPercent?: string; sessionType?: string; name?: string; duration?: string }> = {
+      "paid_1on1": { category: "paid", price: "70", payoutType: "percentage", payoutPercent: "50", sessionType: "1_ON_1", name: "1-on-1 Session" },
+      "paid_group": { category: "paid", price: "30", payoutType: "percentage", payoutPercent: "50", sessionType: "GROUP", name: "Group Session" },
+      "free_intro": { category: "intro", price: "0", payoutType: "fixed", payoutValue: "20", name: "Free Intro Session", duration: "30" },
+      "floor_hours": { category: "internal", price: "0", payoutType: "hourly", payoutValue: "25", name: "Floor Hours", duration: "60" },
+      "meeting": { category: "meeting", price: "0", payoutType: "none", name: "Coach Meeting", duration: "30" },
+      "package_redemption": { category: "package_redemption", price: "0", payoutType: "fixed", payoutValue: "35", name: "Package Session" },
+      "comp": { category: "comp", price: "0", payoutType: "none", name: "Comp Session" },
+    };
+    const t = templates[template];
+    if (!t) return;
+    if (t.name) setNewServiceName(t.name);
+    if (t.duration) setNewServiceDuration(t.duration);
+    setNewServiceCategory(t.category);
+    setNewServicePrice(t.price);
+    setNewServicePayoutType(t.payoutType);
+    setNewServicePayoutValue(t.payoutValue ?? "");
+    setNewServicePayoutPercent(t.payoutPercent ?? "");
+    if (t.sessionType) setNewServiceType(t.sessionType as "1_ON_1" | "GROUP");
+    applyServiceCategoryDefaults(t.category, {
+      setCountsTowardRevenue: setNewServiceCountsTowardRevenue,
+      setRevenueRecognition: setNewServiceRevenueRecognition,
+      setPayoutType: setNewServicePayoutType,
+      setCountsTowardUtilization: setNewServiceCountsTowardUtilization,
+      setBlocksAvailability: setNewServiceBlocksAvailability,
+      setRequiresClient: setNewServiceRequiresClient,
+      setIsBookableByClient: setNewServiceIsBookableByClient,
+      setIsBookableByCoach: setNewServiceIsBookableByCoach,
+      setCoachPayWhenRedeemed: setNewServiceCoachPayWhenRedeemed,
+    });
+    // Override payout type from template
+    setNewServicePayoutType(t.payoutType);
+  };
+
   const createServiceMutation = useMutation({
-    mutationFn: async (data: {
-      name: string;
-      description: string;
-      durationMin: number;
-      priceCents: number;
-      sessionType: string;
-    }) => {
+    mutationFn: async (data: Record<string, any>) => {
       const res = await apiRequest("POST", "/api/admin/services", data);
       return res.json();
     },
@@ -379,7 +474,11 @@ export default function AdminConfigurationPage() {
       setNewServiceDesc("");
       setNewServiceType("1_ON_1");
       setNewServiceDuration("60");
-      setNewServicePrice("50");
+      setNewServicePrice("0");
+      setNewServiceCategory("paid");
+      setNewServicePayoutType("percentage");
+      setNewServicePayoutValue("");
+      setNewServicePayoutPercent("");
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -387,17 +486,7 @@ export default function AdminConfigurationPage() {
   });
 
   const updateServiceMutation = useMutation({
-    mutationFn: async ({
-      id,
-      ...data
-    }: {
-      id: string;
-      name: string;
-      description: string;
-      durationMin: number;
-      priceCents: number;
-      active: boolean;
-    }) => {
+    mutationFn: async ({ id, ...data }: Record<string, any>) => {
       const res = await apiRequest("PATCH", `/api/admin/services/${id}`, data);
       return res.json();
     },
@@ -434,6 +523,19 @@ export default function AdminConfigurationPage() {
     setEditServicePrice(String((service.priceCents || 0) / 100));
     setEditServiceActive(service.active ?? true);
     setEditServiceType((service.sessionType as "1_ON_1" | "GROUP") || "1_ON_1");
+    setEditServiceCategory((service as any).category || "paid");
+    setEditServiceCountsTowardRevenue((service as any).countsTowardRevenue !== false);
+    setEditServiceRevenueRecognition((service as any).revenueRecognition || "at_booking");
+    setEditServicePayoutType((service as any).payoutType || "percentage");
+    setEditServicePayoutValue(String((service as any).payoutValueCents !== null && (service as any).payoutValueCents !== undefined ? (service as any).payoutValueCents / 100 : ""));
+    setEditServicePayoutPercent(String((service as any).payoutPercent ?? ""));
+    setEditServiceCoachPayWhenRedeemed((service as any).coachPayWhenRedeemed || false);
+    setEditServiceCountsTowardUtilization((service as any).countsTowardUtilization !== false);
+    setEditServiceBlocksAvailability((service as any).blocksAvailability !== false);
+    setEditServiceCountsTowardSessionCount((service as any).countsTowardSessionCount !== false);
+    setEditServiceRequiresClient((service as any).requiresClient !== false);
+    setEditServiceIsBookableByClient((service as any).isBookableByClient !== false);
+    setEditServiceIsBookableByCoach((service as any).isBookableByCoach !== false);
   };
 
   const cancelEditService = () => {
@@ -450,6 +552,19 @@ export default function AdminConfigurationPage() {
       priceCents: Math.round(parseFloat(editServicePrice) * 100) || 0,
       active: editServiceActive,
       sessionType: editServiceType,
+      category: editServiceCategory,
+      countsTowardRevenue: editServiceCountsTowardRevenue,
+      revenueRecognition: editServiceRevenueRecognition,
+      payoutType: editServicePayoutType,
+      payoutValueCents: editServicePayoutValue ? Math.round(parseFloat(editServicePayoutValue) * 100) : null,
+      payoutPercent: editServicePayoutPercent ? parseInt(editServicePayoutPercent) : null,
+      coachPayWhenRedeemed: editServiceCoachPayWhenRedeemed,
+      countsTowardUtilization: editServiceCountsTowardUtilization,
+      blocksAvailability: editServiceBlocksAvailability,
+      countsTowardSessionCount: editServiceCountsTowardSessionCount,
+      requiresClient: editServiceRequiresClient,
+      isBookableByClient: editServiceIsBookableByClient,
+      isBookableByCoach: editServiceIsBookableByCoach,
     });
   };
 
@@ -1017,75 +1132,220 @@ export default function AdminConfigurationPage() {
                 <Plus className="h-4 w-4 mr-1" /> Add Option
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add Training Option</DialogTitle>
               </DialogHeader>
-              <div className="space-y-3 pt-2">
+              <div className="space-y-4 pt-2">
+                {/* Quick Templates */}
                 <div>
-                  <Label>Name</Label>
-                  <Input
-                    value={newServiceName}
-                    onChange={(e) => setNewServiceName(e.target.value)}
-                    placeholder="e.g. 1-on-1 Strength Training"
-                    data-testid="input-service-name"
-                  />
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <Textarea
-                    value={newServiceDesc}
-                    onChange={(e) => setNewServiceDesc(e.target.value)}
-                    rows={2}
-                    data-testid="input-service-description"
-                  />
-                </div>
-                <div>
-                  <Label>Session Type</Label>
-                  <Select value={newServiceType} onValueChange={(v) => setNewServiceType(v as "1_ON_1" | "GROUP")}>
-                    <SelectTrigger data-testid="select-new-service-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1_ON_1">1 on 1</SelectItem>
-                      <SelectItem value="GROUP">Group</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Duration (minutes)</Label>
-                    <Input
-                      type="number"
-                      value={newServiceDuration}
-                      onChange={(e) => setNewServiceDuration(e.target.value)}
-                      data-testid="input-service-duration"
-                    />
-                  </div>
-                  <div>
-                    <Label>Price ($)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={newServicePrice}
-                      onChange={(e) => setNewServicePrice(e.target.value)}
-                      data-testid="input-service-price"
-                    />
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wide">Quick Templates</Label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[
+                      { key: "paid_1on1", label: "Paid 1:1" },
+                      { key: "paid_group", label: "Paid Group" },
+                      { key: "free_intro", label: "Free Intro" },
+                      { key: "floor_hours", label: "Floor Hours" },
+                      { key: "meeting", label: "Meeting" },
+                      { key: "package_redemption", label: "Package Redemption" },
+                      { key: "comp", label: "Comp Session" },
+                    ].map(t => (
+                      <Button key={t.key} size="sm" variant="outline" className="text-xs h-7" onClick={() => applyTemplate(t.key)} data-testid={`button-template-${t.key}`}>
+                        {t.label}
+                      </Button>
+                    ))}
                   </div>
                 </div>
+
+                <Separator />
+
+                {/* Basic Info */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold">Basic Info</h3>
+                  <div>
+                    <Label>Name</Label>
+                    <Input value={newServiceName} onChange={(e) => setNewServiceName(e.target.value)} placeholder="e.g. 1-on-1 Strength Training" data-testid="input-service-name" />
+                  </div>
+                  <div>
+                    <Label>Description</Label>
+                    <Textarea value={newServiceDesc} onChange={(e) => setNewServiceDesc(e.target.value)} rows={2} data-testid="input-service-description" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Session Format</Label>
+                      <Select value={newServiceType} onValueChange={(v) => setNewServiceType(v as "1_ON_1" | "GROUP")}>
+                        <SelectTrigger data-testid="select-new-service-type"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1_ON_1">1 on 1</SelectItem>
+                          <SelectItem value="GROUP">Group</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Duration (minutes)</Label>
+                      <Input type="number" value={newServiceDuration} onChange={(e) => setNewServiceDuration(e.target.value)} data-testid="input-service-duration" />
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Business Type */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold">Business Type</h3>
+                  <div>
+                    <Label>Category</Label>
+                    <Select value={newServiceCategory} onValueChange={(v) => {
+                      setNewServiceCategory(v);
+                      applyServiceCategoryDefaults(v, {
+                        setCountsTowardRevenue: setNewServiceCountsTowardRevenue,
+                        setRevenueRecognition: setNewServiceRevenueRecognition,
+                        setPayoutType: setNewServicePayoutType,
+                        setCountsTowardUtilization: setNewServiceCountsTowardUtilization,
+                        setBlocksAvailability: setNewServiceBlocksAvailability,
+                        setRequiresClient: setNewServiceRequiresClient,
+                        setIsBookableByClient: setNewServiceIsBookableByClient,
+                        setIsBookableByCoach: setNewServiceIsBookableByCoach,
+                        setCoachPayWhenRedeemed: setNewServiceCoachPayWhenRedeemed,
+                        setPrice: setNewServicePrice,
+                      });
+                    }}>
+                      <SelectTrigger data-testid="select-new-service-category"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="paid">Paid Session</SelectItem>
+                        <SelectItem value="intro">Free Intro</SelectItem>
+                        <SelectItem value="internal">Floor Hours / Internal Time</SelectItem>
+                        <SelectItem value="meeting">Meeting</SelectItem>
+                        <SelectItem value="membership">Membership Redemption</SelectItem>
+                        <SelectItem value="package_redemption">Package Redemption</SelectItem>
+                        <SelectItem value="comp">Comp Session</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Revenue Section */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold">Revenue</h3>
+                  <p className="text-xs text-muted-foreground">Client price controls revenue. Coach payout controls compensation. A session can cost the client $0 and still pay the coach.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Client Price ($)</Label>
+                      <Input type="number" step="0.01" value={newServicePrice} onChange={(e) => setNewServicePrice(e.target.value)} data-testid="input-service-price"
+                        disabled={["internal", "meeting"].includes(newServiceCategory) && !newServiceCountsTowardRevenue} />
+                    </div>
+                    <div>
+                      <Label>Revenue Recognition</Label>
+                      <Select value={newServiceRevenueRecognition} onValueChange={setNewServiceRevenueRecognition}>
+                        <SelectTrigger data-testid="select-new-service-revenue-recognition"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="at_booking">At Booking</SelectItem>
+                          <SelectItem value="at_purchase">At Purchase</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Switch checked={newServiceCountsTowardRevenue} onCheckedChange={setNewServiceCountsTowardRevenue} data-testid="switch-new-service-counts-revenue" />
+                    <Label>Counts toward revenue</Label>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Payout Section */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold">Coach Payout</h3>
+                  <div>
+                    <Label>Payout Type</Label>
+                    <Select value={newServicePayoutType} onValueChange={setNewServicePayoutType}>
+                      <SelectTrigger data-testid="select-new-service-payout-type"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percentage">Percentage of revenue</SelectItem>
+                        <SelectItem value="fixed">Fixed amount</SelectItem>
+                        <SelectItem value="hourly">Hourly rate</SelectItem>
+                        <SelectItem value="none">No payout</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newServicePayoutType === "percentage" && (
+                    <div>
+                      <Label>Payout % (leave blank to use coach default)</Label>
+                      <Input type="number" placeholder="e.g. 50" value={newServicePayoutPercent} onChange={(e) => setNewServicePayoutPercent(e.target.value)} data-testid="input-new-service-payout-percent" />
+                    </div>
+                  )}
+                  {(newServicePayoutType === "fixed" || newServicePayoutType === "hourly") && (
+                    <div>
+                      <Label>{newServicePayoutType === "hourly" ? "Hourly Rate ($)" : "Fixed Amount ($)"}</Label>
+                      <Input type="number" step="0.01" placeholder="e.g. 25" value={newServicePayoutValue} onChange={(e) => setNewServicePayoutValue(e.target.value)} data-testid="input-new-service-payout-value" />
+                    </div>
+                  )}
+                  {/* Payout preview */}
+                  {newServicePayoutType !== "none" && (
+                    <div className="bg-muted rounded p-2 text-xs text-muted-foreground">
+                      {newServicePayoutType === "hourly" && newServicePayoutValue && `Coach earns $${newServicePayoutValue}/hr for this session type.`}
+                      {newServicePayoutType === "fixed" && newServicePayoutValue && `Coach earns $${newServicePayoutValue} when this session is completed.`}
+                      {newServicePayoutType === "percentage" && newServicePayoutPercent && newServicePrice && `Coach earns ${newServicePayoutPercent}% of $${newServicePrice} = $${(parseFloat(newServicePrice) * parseFloat(newServicePayoutPercent) / 100).toFixed(2)}.`}
+                      {newServicePayoutType === "percentage" && !newServicePayoutPercent && "Coach earns their default % of client price."}
+                    </div>
+                  )}
+                  {(newServiceCategory === "membership" || newServiceCategory === "package_redemption") && (
+                    <div className="flex items-center gap-3">
+                      <Switch checked={newServiceCoachPayWhenRedeemed} onCheckedChange={setNewServiceCoachPayWhenRedeemed} data-testid="switch-new-service-coach-pay-redeemed" />
+                      <Label>Pay coach when redeemed (even at $0 booking)</Label>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Operations Section */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold">Operations</h3>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { label: "Blocks calendar availability", value: newServiceBlocksAvailability, setter: setNewServiceBlocksAvailability, testId: "switch-new-blocks-availability" },
+                      { label: "Counts toward utilization", value: newServiceCountsTowardUtilization, setter: setNewServiceCountsTowardUtilization, testId: "switch-new-counts-utilization" },
+                      { label: "Counts toward session count", value: newServiceCountsTowardSessionCount, setter: setNewServiceCountsTowardSessionCount, testId: "switch-new-counts-session" },
+                      { label: "Requires a client", value: newServiceRequiresClient, setter: setNewServiceRequiresClient, testId: "switch-new-requires-client" },
+                      { label: "Bookable by client", value: newServiceIsBookableByClient, setter: setNewServiceIsBookableByClient, testId: "switch-new-bookable-client" },
+                      { label: "Bookable by coach", value: newServiceIsBookableByCoach, setter: setNewServiceIsBookableByCoach, testId: "switch-new-bookable-coach" },
+                    ].map(item => (
+                      <div key={item.testId} className="flex items-center gap-3">
+                        <Switch checked={item.value} onCheckedChange={item.setter} data-testid={item.testId} />
+                        <Label className="text-sm">{item.label}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <Button
                   className="w-full"
                   disabled={createServiceMutation.isPending}
                   data-testid="button-submit-service"
-                  onClick={() =>
-                    createServiceMutation.mutate({
-                      name: newServiceName,
-                      description: newServiceDesc,
-                      durationMin: parseInt(newServiceDuration) || 60,
-                      priceCents: Math.round(parseFloat(newServicePrice) * 100) || 0,
-                      sessionType: newServiceType,
-                    })
-                  }
+                  onClick={() => createServiceMutation.mutate({
+                    name: newServiceName,
+                    description: newServiceDesc,
+                    durationMin: parseInt(newServiceDuration) || 60,
+                    priceCents: Math.round(parseFloat(newServicePrice || "0") * 100),
+                    sessionType: newServiceType,
+                    category: newServiceCategory,
+                    countsTowardRevenue: newServiceCountsTowardRevenue,
+                    revenueRecognition: newServiceRevenueRecognition,
+                    payoutType: newServicePayoutType,
+                    payoutValueCents: newServicePayoutValue ? Math.round(parseFloat(newServicePayoutValue) * 100) : null,
+                    payoutPercent: newServicePayoutPercent ? parseInt(newServicePayoutPercent) : null,
+                    coachPayWhenRedeemed: newServiceCoachPayWhenRedeemed,
+                    countsTowardUtilization: newServiceCountsTowardUtilization,
+                    blocksAvailability: newServiceBlocksAvailability,
+                    countsTowardSessionCount: newServiceCountsTowardSessionCount,
+                    requiresClient: newServiceRequiresClient,
+                    isBookableByClient: newServiceIsBookableByClient,
+                    isBookableByCoach: newServiceIsBookableByCoach,
+                  })}
                 >
                   {createServiceMutation.isPending ? "Creating..." : "Create Training Option"}
                 </Button>
@@ -1099,87 +1359,139 @@ export default function AdminConfigurationPage() {
           {services?.map((service) => (
             <Card key={service.id} className="p-4" data-testid={`card-service-${service.id}`}>
               {editingServiceId === service.id ? (
-                <div className="space-y-3">
-                  <div>
-                    <Label>Name</Label>
-                    <Input
-                      value={editServiceName}
-                      onChange={(e) => setEditServiceName(e.target.value)}
-                      data-testid={`input-edit-service-name-${service.id}`}
-                    />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Name</Label>
+                      <Input value={editServiceName} onChange={(e) => setEditServiceName(e.target.value)} data-testid={`input-edit-service-name-${service.id}`} />
+                    </div>
+                    <div>
+                      <Label>Duration (minutes)</Label>
+                      <Input type="number" value={editServiceDuration} onChange={(e) => setEditServiceDuration(e.target.value)} data-testid={`input-edit-service-duration-${service.id}`} />
+                    </div>
                   </div>
                   <div>
                     <Label>Description</Label>
-                    <Textarea
-                      value={editServiceDesc}
-                      onChange={(e) => setEditServiceDesc(e.target.value)}
-                      rows={2}
-                      data-testid={`input-edit-service-desc-${service.id}`}
-                    />
-                  </div>
-                  <div>
-                    <Label>Session Type</Label>
-                    <Select value={editServiceType} onValueChange={(v) => setEditServiceType(v as "1_ON_1" | "GROUP")}>
-                      <SelectTrigger data-testid={`select-edit-service-type-${service.id}`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1_ON_1">1 on 1</SelectItem>
-                        <SelectItem value="GROUP">Group</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Textarea value={editServiceDesc} onChange={(e) => setEditServiceDesc(e.target.value)} rows={2} data-testid={`input-edit-service-desc-${service.id}`} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label>Duration (minutes)</Label>
-                      <Input
-                        type="number"
-                        value={editServiceDuration}
-                        onChange={(e) => setEditServiceDuration(e.target.value)}
-                        data-testid={`input-edit-service-duration-${service.id}`}
-                      />
+                      <Label>Session Format</Label>
+                      <Select value={editServiceType} onValueChange={(v) => setEditServiceType(v as "1_ON_1" | "GROUP")}>
+                        <SelectTrigger data-testid={`select-edit-service-type-${service.id}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1_ON_1">1 on 1</SelectItem>
+                          <SelectItem value="GROUP">Group</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div>
-                      <Label>Price ($)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={editServicePrice}
-                        onChange={(e) => setEditServicePrice(e.target.value)}
-                        data-testid={`input-edit-service-price-${service.id}`}
-                      />
+                      <Label>Category</Label>
+                      <Select value={editServiceCategory} onValueChange={(v) => {
+                        setEditServiceCategory(v);
+                        applyServiceCategoryDefaults(v, {
+                          setCountsTowardRevenue: setEditServiceCountsTowardRevenue,
+                          setRevenueRecognition: setEditServiceRevenueRecognition,
+                          setPayoutType: setEditServicePayoutType,
+                          setCountsTowardUtilization: setEditServiceCountsTowardUtilization,
+                          setBlocksAvailability: setEditServiceBlocksAvailability,
+                          setRequiresClient: setEditServiceRequiresClient,
+                          setIsBookableByClient: setEditServiceIsBookableByClient,
+                          setIsBookableByCoach: setEditServiceIsBookableByCoach,
+                          setCoachPayWhenRedeemed: setEditServiceCoachPayWhenRedeemed,
+                          setPrice: setEditServicePrice,
+                        });
+                      }}>
+                        <SelectTrigger data-testid={`select-edit-service-category-${service.id}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="paid">Paid Session</SelectItem>
+                          <SelectItem value="intro">Free Intro</SelectItem>
+                          <SelectItem value="internal">Floor Hours / Internal</SelectItem>
+                          <SelectItem value="meeting">Meeting</SelectItem>
+                          <SelectItem value="membership">Membership Redemption</SelectItem>
+                          <SelectItem value="package_redemption">Package Redemption</SelectItem>
+                          <SelectItem value="comp">Comp Session</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={editServiceActive}
-                      onCheckedChange={setEditServiceActive}
-                      data-testid={`switch-edit-service-active-${service.id}`}
-                    />
-                    <Label>Active</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Client Price ($)</Label>
+                      <Input type="number" step="0.01" value={editServicePrice} onChange={(e) => setEditServicePrice(e.target.value)} data-testid={`input-edit-service-price-${service.id}`} />
+                    </div>
+                    <div>
+                      <Label>Revenue Recognition</Label>
+                      <Select value={editServiceRevenueRecognition} onValueChange={setEditServiceRevenueRecognition}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="at_booking">At Booking</SelectItem>
+                          <SelectItem value="at_purchase">At Purchase</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Payout Type</Label>
+                      <Select value={editServicePayoutType} onValueChange={setEditServicePayoutType}>
+                        <SelectTrigger data-testid={`select-edit-service-payout-type-${service.id}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="percentage">Percentage</SelectItem>
+                          <SelectItem value="fixed">Fixed</SelectItem>
+                          <SelectItem value="hourly">Hourly</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      {editServicePayoutType === "percentage" && (
+                        <>
+                          <Label>Payout %</Label>
+                          <Input type="number" placeholder="Default" value={editServicePayoutPercent} onChange={(e) => setEditServicePayoutPercent(e.target.value)} />
+                        </>
+                      )}
+                      {(editServicePayoutType === "fixed" || editServicePayoutType === "hourly") && (
+                        <>
+                          <Label>{editServicePayoutType === "hourly" ? "Rate ($/hr)" : "Fixed ($)"}</Label>
+                          <Input type="number" step="0.01" value={editServicePayoutValue} onChange={(e) => setEditServicePayoutValue(e.target.value)} />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: "Counts toward revenue", value: editServiceCountsTowardRevenue, setter: setEditServiceCountsTowardRevenue },
+                      { label: "Counts toward utilization", value: editServiceCountsTowardUtilization, setter: setEditServiceCountsTowardUtilization },
+                      { label: "Blocks availability", value: editServiceBlocksAvailability, setter: setEditServiceBlocksAvailability },
+                      { label: "Requires client", value: editServiceRequiresClient, setter: setEditServiceRequiresClient },
+                      { label: "Client bookable", value: editServiceIsBookableByClient, setter: setEditServiceIsBookableByClient },
+                      { label: "Active", value: editServiceActive, setter: setEditServiceActive },
+                    ].map(item => (
+                      <div key={item.label} className="flex items-center gap-2">
+                        <Switch checked={item.value} onCheckedChange={item.setter} />
+                        <Label className="text-xs">{item.label}</Label>
+                      </div>
+                    ))}
                   </div>
                   <div className="flex items-center justify-between">
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button size="sm" variant="destructive" data-testid={`button-delete-service-${service.id}`}>
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
+                          <Trash2 className="h-4 w-4 mr-1" /> Delete
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete Training Option</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will permanently delete "{service.name}". If this option has existing bookings, it cannot be deleted — deactivate it instead. This action cannot be undone.
+                            This will permanently delete "{service.name}". If this option has existing bookings, it cannot be deleted — deactivate it instead.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel data-testid="button-cancel-delete-service">Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={() => deleteServiceMutation.mutate(service.id)}
-                            data-testid="button-confirm-delete-service"
-                          >
+                          <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteServiceMutation.mutate(service.id)} data-testid="button-confirm-delete-service">
                             {deleteServiceMutation.isPending ? "Deleting..." : "Delete"}
                           </AlertDialogAction>
                         </AlertDialogFooter>
@@ -1189,12 +1501,7 @@ export default function AdminConfigurationPage() {
                       <Button size="sm" variant="outline" onClick={cancelEditService} data-testid={`button-cancel-edit-${service.id}`}>
                         <X className="h-4 w-4 mr-1" /> Cancel
                       </Button>
-                      <Button
-                        size="sm"
-                        disabled={updateServiceMutation.isPending}
-                        onClick={saveEditService}
-                        data-testid={`button-save-service-${service.id}`}
-                      >
+                      <Button size="sm" disabled={updateServiceMutation.isPending} onClick={saveEditService} data-testid={`button-save-service-${service.id}`}>
                         <Save className="h-4 w-4 mr-1" />
                         {updateServiceMutation.isPending ? "Saving..." : "Save & Sync Stripe"}
                       </Button>
@@ -1202,33 +1509,55 @@ export default function AdminConfigurationPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium" data-testid={`text-service-name-${service.id}`}>{service.name}</p>
                     {service.description && (
-                      <p className="text-sm text-muted-foreground">{service.description}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{service.description}</p>
                     )}
-                    <div className="flex gap-2 mt-1">
-                      <Badge variant="secondary" className="text-xs">
-                        {service.sessionType === "GROUP" ? "Group" : "1 on 1"}
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {/* Category badge */}
+                      <Badge className={`text-xs ${
+                        (service as any).category === "paid" ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" :
+                        (service as any).category === "intro" ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" :
+                        (service as any).category === "internal" ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200" :
+                        (service as any).category === "meeting" ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" :
+                        (service as any).category === "membership" || (service as any).category === "package_redemption" ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200" :
+                        "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+                      }`} data-testid={`badge-category-${service.id}`}>
+                        {{ paid: "Paid", intro: "Intro", internal: "Internal", meeting: "Meeting", membership: "Membership", package_redemption: "Package", comp: "Comp" }[(service as any).category as string] ?? "Paid"}
                       </Badge>
-                      <Badge variant="secondary" className="text-xs">
-                        {service.durationMin} min
+                      {/* Duration */}
+                      <Badge variant="secondary" className="text-xs" data-testid={`badge-duration-${service.id}`}>{service.durationMin} min</Badge>
+                      {/* Price badge */}
+                      <Badge variant="secondary" className="text-xs" data-testid={`badge-price-${service.id}`}>
+                        {(service as any).revenueRecognition === "at_purchase" ? "Revenue at purchase" :
+                         (service.priceCents || 0) === 0 ? "$0 client price" :
+                         `$${((service.priceCents || 0) / 100).toFixed(0)} client price`}
                       </Badge>
-                      <Badge variant="secondary" className="text-xs">
-                        ${((service.priceCents || 0) / 100).toFixed(2)}
+                      {/* Payout badge */}
+                      <Badge variant="outline" className="text-xs" data-testid={`badge-payout-${service.id}`}>
+                        {(service as any).payoutType === "none" ? "No payout" :
+                         (service as any).payoutType === "fixed" ? `$${(((service as any).payoutValueCents ?? 0) / 100).toFixed(0)} fixed` :
+                         (service as any).payoutType === "hourly" ? `$${(((service as any).payoutValueCents ?? 0) / 100).toFixed(0)}/hr` :
+                         `${(service as any).payoutPercent ?? "?"}% payout`}
                       </Badge>
-                      <Badge variant={service.active ? "default" : "outline"} className="text-xs">
+                      {/* Operational badges */}
+                      {(service as any).requiresClient === false && (
+                        <Badge variant="outline" className="text-xs text-orange-600" data-testid={`badge-coach-only-${service.id}`}>Coach-only</Badge>
+                      )}
+                      {(service as any).isBookableByClient && (
+                        <Badge variant="outline" className="text-xs" data-testid={`badge-client-bookable-${service.id}`}>Client-bookable</Badge>
+                      )}
+                      {(service as any).countsTowardUtilization === false && (
+                        <Badge variant="outline" className="text-xs text-muted-foreground" data-testid={`badge-no-utilization-${service.id}`}>No utilization</Badge>
+                      )}
+                      <Badge variant={service.active ? "default" : "outline"} className="text-xs" data-testid={`badge-active-${service.id}`}>
                         {service.active ? "Active" : "Inactive"}
                       </Badge>
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => startEditService(service)}
-                    data-testid={`button-edit-service-${service.id}`}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => startEditService(service)} data-testid={`button-edit-service-${service.id}`}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                 </div>

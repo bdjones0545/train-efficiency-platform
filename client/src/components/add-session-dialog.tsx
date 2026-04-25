@@ -586,9 +586,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                         {plan.name} (Subscription)
                       </SelectItem>
                     ))}
-                    {services?.filter(s => s.active).map((s) => (
+                    {services?.filter(s => s.active && (s as any).isBookableByCoach !== false).map((s) => (
                       <SelectItem key={`svc-${s.id}`} value={`svc:${s.id}`} data-testid={`option-service-${s.id}`}>
-                        {s.name} ({s.durationMin} min)
+                        {s.name} ({s.durationMin} min{(s as any).category && (s as any).category !== "paid" ? ` · ${(s as any).category}` : ""})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -602,9 +602,9 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                     <SelectValue placeholder="Select a service" />
                   </SelectTrigger>
                   <SelectContent>
-                    {services?.filter(s => s.active).map((s) => (
+                    {services?.filter(s => s.active && (s as any).isBookableByCoach !== false).map((s) => (
                       <SelectItem key={s.id} value={s.id} data-testid={`option-service-${s.id}`}>
-                        {s.name} ({s.durationMin} min)
+                        {s.name} ({s.durationMin} min{(s as any).category && (s as any).category !== "paid" ? ` · ${(s as any).category}` : ""})
                       </SelectItem>
                     ))}
                   </SelectContent>
