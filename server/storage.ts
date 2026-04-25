@@ -72,6 +72,8 @@ import {
   type InsertUserSubscription,
   type OrganizationMedia,
   type InsertOrganizationMedia,
+  userOrgPreferences,
+  type UserOrgPreferences,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -278,6 +280,17 @@ export interface IStorage {
   ensureUnsubscribeToken(userId: string): Promise<string>;
   updateNotificationPreferences(userId: string, prefs: Record<string, any>): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
+
+  // Per-org preferences
+  getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined>;
+  upsertUserOrgPreferences(userId: string, orgId: string, data: {
+    smsOptIn?: boolean;
+    smsOptInAt?: Date | null;
+    smsOptOutAt?: Date | null;
+    notificationPreferences?: Record<string, any> | null;
+  }): Promise<UserOrgPreferences>;
+  ensureUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences>;
+  backfillUserOrgPreferences(): Promise<{ created: number; skipped: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1754,6 +1767,101 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     return updated || undefined;
+  }
+
+  // ─── Per-org preferences ────────────────────────────────────────────────────
+
+  async getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined> {
+    const [row] = await db
+      .select()
+      .from(userOrgPreferences)
+      .where(and(eq(userOrgPreferences.userId, userId), eq(userOrgPreferences.orgId, orgId)));
+    return row || undefined;
+  }
+
+  async upsertUserOrgPreferences(userId: string, orgId: string, data: {
+    smsOptIn?: boolean;
+    smsOptInAt?: Date | null;
+    smsOptOutAt?: Date | null;
+    notificationPreferences?: Record<string, any> | null;
+  }): Promise<UserOrgPreferences> {
+    const existing = await this.getUserOrgPreferences(userId, orgId);
+    if (existing) {
+      const [updated] = await db
+        .update(userOrgPreferences)
+        .set({ ...data, updatedAt: new Date() })
+        .where(and(eq(userOrgPreferences.userId, userId), eq(userOrgPreferences.orgId, orgId)))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(userOrgPreferences)
+        .values({ userId, orgId, smsOptIn: false, ...data })
+        .returning();
+      return created;
+    }
+  }
+
+  async ensureUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences> {
+    const existing = await this.getUserOrgPreferences(userId, orgId);
+    if (existing) return existing;
+    const user = await this.getUser(userId);
+    const [created] = await db
+      .insert(userOrgPreferences)
+      .values({
+        userId,
+        orgId,
+        smsOptIn: user?.smsOptIn ?? false,
+        notificationPreferences: (user?.notificationPreferences as Record<string, any>) ?? null,
+      })
+      .returning();
+    return created;
+  }
+
+  async backfillUserOrgPreferences(): Promise<{ created: number; skipped: number }> {
+    let created = 0;
+    let skipped = 0;
+
+    // Collect all (userId, orgId) pairs from all relationship tables
+    const pairs = new Map<string, Set<string>>(); // userId -> Set<orgId>
+
+    const addPair = (userId: string, orgId: string) => {
+      if (!userId || !orgId) return;
+      if (!pairs.has(userId)) pairs.set(userId, new Set());
+      pairs.get(userId)!.add(orgId);
+    };
+
+    const [profiles, coaches, bkgs, subs] = await Promise.all([
+      db.select({ userId: userProfiles.userId, orgId: userProfiles.organizationId }).from(userProfiles),
+      db.select({ userId: coachProfiles.userId, orgId: coachProfiles.organizationId }).from(coachProfiles),
+      db.select({ userId: bookings.clientId, orgId: bookings.organizationId }).from(bookings),
+      db.select({ userId: userSubscriptions.userId, orgId: userSubscriptions.organizationId }).from(userSubscriptions),
+    ]);
+
+    for (const r of profiles) if (r.userId && r.orgId) addPair(r.userId, r.orgId);
+    for (const r of coaches) if (r.userId && r.orgId) addPair(r.userId, r.orgId);
+    for (const r of bkgs) if (r.userId && r.orgId) addPair(r.userId, r.orgId);
+    for (const r of subs) if (r.userId && r.orgId) addPair(r.userId, r.orgId);
+
+    for (const [userId, orgIds] of pairs) {
+      const user = await this.getUser(userId);
+      for (const orgId of orgIds) {
+        const existing = await this.getUserOrgPreferences(userId, orgId);
+        if (existing) {
+          skipped++;
+          continue;
+        }
+        await db.insert(userOrgPreferences).values({
+          userId,
+          orgId,
+          smsOptIn: user?.smsOptIn ?? false,
+          notificationPreferences: (user?.notificationPreferences as Record<string, any>) ?? null,
+        });
+        created++;
+      }
+    }
+
+    return { created, skipped };
   }
 }
 

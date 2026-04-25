@@ -1,0 +1,195 @@
+Implement a SAFE migration from user-level SMS/preferences to org-level preferences (user_org_preferences) without breaking existing behavior.
+
+Goal:
+Move SMS consent and notification preferences from users → user_org_preferences (per org), using a zero-downtime, backward-compatible approach.
+
+IMPORTANT:
+Do NOT remove existing user-level fields yet.
+Follow: Add → Dual-read → Backfill → Switch writes → Switch reads → Cleanup.
+
+-----------------------------------
+PHASE 1 — Add table (non-breaking)
+-----------------------------------
+
+1) Create new table: user_org_preferences
+
+Fields:
+- id (pk)
+- userId (fk users.id, indexed)
+- orgId (fk orgs.id, indexed)
+- smsOptIn (boolean, default false)
+- smsOptInAt (timestamp nullable)
+- smsOptOutAt (timestamp nullable)
+- notificationPreferences (JSON, nullable)
+- createdAt
+- updatedAt
+
+Constraints:
+- Unique index on (userId, orgId)
+
+2) Run migration.
+
+3) Do NOT change any existing logic yet.
+
+-----------------------------------
+PHASE 2 — Dual-read (safe fallback)
+-----------------------------------
+
+Update ALL send paths (email + SMS) to read org-level first, then fallback:
+
+Pseudo:
+const orgPrefs = await getUserOrgPreferences(userId, orgId)
+
+const effectivePrefs = orgPrefs ?? {
+  smsOptIn: user.smsOptIn,
+  notificationPreferences: user.notificationPreferences
+}
+
+Then gate sends using effectivePrefs.
+
+Apply this in:
+- server/sms.ts (sendSms)
+- server/email.ts (where preferences are checked)
+- server/session-reminders.ts
+- scheduling-assistant tools (email + SMS outreach)
+- any booking routes that send notifications
+
+-----------------------------------
+PHASE 3 — Backfill existing users
+-----------------------------------
+
+Create a script or migration:
+
+For each user:
+- Find all orgIds they are associated with:
+  - bookings
+  - memberships
+  - coach relationships
+  - org ownership if applicable
+
+For each (userId, orgId):
+- If no user_org_preferences exists:
+  insert:
+    smsOptIn = user.smsOptIn ?? false
+    notificationPreferences = user.notificationPreferences ?? defaultPreferences
+
+Ensure:
+- No duplicates (respect unique index)
+- Safe for re-run (idempotent)
+
+-----------------------------------
+PHASE 4 — Write path switch
+-----------------------------------
+
+Update ALL preference update endpoints/UI to write to user_org_preferences instead of users.
+
+Examples:
+- PATCH /api/me/preferences
+- Notifications UI (My Bookings → Notifications)
+- Unsubscribe route
+
+Requirements:
+- All updates MUST include orgId
+- If row doesn’t exist → create it
+- Update:
+  smsOptIn, smsOptInAt, smsOptOutAt, notificationPreferences
+
+Keep user-level fields untouched for now.
+
+-----------------------------------
+PHASE 5 — Auto-create on first org interaction
+-----------------------------------
+
+Whenever a user interacts with an org (booking, join, etc.):
+
+Ensure:
+- user_org_preferences exists
+- If not → create with:
+  smsOptIn = false
+  notificationPreferences = defaults
+
+Implement in:
+- booking creation flow
+- invite acceptance
+- any org join logic
+
+-----------------------------------
+PHASE 6 — Switch reads to org-only
+-----------------------------------
+
+After verifying backfill + writes:
+
+Remove fallback:
+
+OLD:
+const effectivePrefs = orgPrefs ?? userPrefs
+
+NEW:
+const effectivePrefs = orgPrefs ?? {
+  smsOptIn: false,
+  notificationPreferences: defaultPreferences
+}
+
+Do NOT rely on user.smsOptIn anymore.
+
+-----------------------------------
+PHASE 7 — Unsubscribe route update
+-----------------------------------
+
+Update unsubscribe flow:
+
+Option A (simpler):
+/unsubscribe/:token?orgId=XYZ
+
+Option B:
+Encode orgId into token
+
+Behavior:
+- Load user via token
+- Load org prefs via orgId
+- Update that org’s preferences only
+
+-----------------------------------
+PHASE 8 — Logging validation
+-----------------------------------
+
+Ensure communication_logs:
+- Always include orgId
+- SMS + email respect org-level prefs
+- Skipped logs reflect correct reason (user_opt_out, org_opt_out, etc.)
+
+-----------------------------------
+PHASE 9 — Cleanup (ONLY after verification)
+-----------------------------------
+
+Once fully stable:
+
+Remove from users table:
+- smsOptIn
+- smsOptInAt
+- smsOptOutAt
+- notificationPreferences (if no longer used)
+
+-----------------------------------
+TESTING REQUIREMENTS
+-----------------------------------
+
+- Existing users still receive emails/SMS during migration
+- No duplicate preference rows
+- Backfill correctly populates org prefs
+- Updating preferences affects only that org
+- SMS/email sending respects org-level prefs
+- New org interactions create default prefs
+- Unsubscribe only affects one org
+- No runtime errors
+- TypeScript/build passes
+
+-----------------------------------
+EXPECTED RESULT
+-----------------------------------
+
+TrainEfficiency now supports:
+- Per-organization SMS consent
+- Per-organization notification preferences
+- Clean multi-tenant communication boundaries
+- Full backward compatibility during rollout

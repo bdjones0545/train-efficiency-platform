@@ -500,6 +500,16 @@ export async function registerRoutes(
     });
   });
 
+  app.post("/api/admin/backfill-org-prefs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const result = await storage.backfillUserOrgPreferences();
+      return res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("Backfill org prefs error:", err);
+      return res.status(500).json({ message: err.message || "Backfill failed" });
+    }
+  });
+
   app.post("/api/admin/import-csv", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { rows } = req.body;
@@ -1634,6 +1644,10 @@ export async function registerRoutes(
         skillLevel: isSemiPrivate ? (req.body.skillLevel || "") : "",
       });
 
+      if (coach.organizationId) {
+        storage.ensureUserOrgPreferences(userId, coach.organizationId).catch(() => {});
+      }
+
       if (isSemiPrivate) {
         const participantNames: string[] = req.body.participantNames || [];
         const filledNames = participantNames.filter((n: string) => n.trim());
@@ -2025,6 +2039,10 @@ export async function registerRoutes(
         teamQuoteProgramId: req.body.teamQuoteProgramId || null,
         subscriptionPlanId: subscriptionPlanId || null,
       });
+
+      if (resolvedClientId && coachOrgId) {
+        storage.ensureUserOrgPreferences(resolvedClientId, coachOrgId).catch(() => {});
+      }
 
       if (isSemiPrivate) {
         const participantsArr: Array<{ type: string; userId?: string; displayName: string }> = req.body.participants || [];
@@ -6309,7 +6327,23 @@ export async function registerRoutes(
     try {
       const user = await storage.getUserByUnsubscribeToken(req.params.token);
       if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
-      const rawPrefs = user.notificationPreferences as any;
+      const orgId = typeof req.query.orgId === "string" ? req.query.orgId : undefined;
+
+      // Phase 7: Read org-level prefs if orgId provided, fallback to user-level
+      let rawPrefs = user.notificationPreferences as any;
+      let smsOptIn = user.smsOptIn;
+      if (orgId) {
+        try {
+          const orgPrefs = await storage.getUserOrgPreferences(user.id, orgId);
+          if (orgPrefs) {
+            if (orgPrefs.notificationPreferences) rawPrefs = orgPrefs.notificationPreferences;
+            smsOptIn = orgPrefs.smsOptIn;
+          }
+        } catch (err) {
+          console.error('[Unsubscribe] Failed to load org prefs:', err);
+        }
+      }
+
       let emailPrefs: Record<string, boolean>;
       let smsPrefs: Record<string, boolean>;
       if (rawPrefs?.email || rawPrefs?.sms) {
@@ -6319,7 +6353,7 @@ export async function registerRoutes(
         emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs || {}) };
         smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE };
       }
-      res.json({ email: user.email, preferences: { email: emailPrefs, sms: smsPrefs } });
+      res.json({ email: user.email, preferences: { email: emailPrefs, sms: smsPrefs }, phone: user.phone, smsOptIn, orgId });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -6329,6 +6363,7 @@ export async function registerRoutes(
     try {
       const user = await storage.getUserByUnsubscribeToken(req.params.token);
       if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
+      const orgId = typeof req.query.orgId === "string" ? req.query.orgId : undefined;
       const incoming = req.body.preferences;
       if (!incoming || typeof incoming !== "object") return res.status(400).json({ message: "preferences object required" });
       const rawPrefs = user.notificationPreferences as any;
@@ -6344,7 +6379,16 @@ export async function registerRoutes(
       const mergedEmail = { ...DEFAULT_NOTIFICATION_PREFS, ...existingEmail, ...(incoming.email || incoming) };
       const mergedSms = { ...DEFAULT_SMS_PREFS_ROUTE, ...existingSms, ...(incoming.sms || {}) };
       const merged = { email: mergedEmail, sms: mergedSms };
+
+      // Phase 7: Write to org-level if orgId present, also write to user-level (backward compat)
       await storage.updateNotificationPreferences(user.id, merged);
+      if (orgId) {
+        try {
+          await storage.upsertUserOrgPreferences(user.id, orgId, { notificationPreferences: merged });
+        } catch (err) {
+          console.error('[Unsubscribe] Failed to write org prefs:', err);
+        }
+      }
       res.json({ success: true, preferences: merged });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -6356,8 +6400,28 @@ export async function registerRoutes(
       const userId = req.user.claims?.sub ?? req.user.id;
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
       const token = await storage.ensureUnsubscribeToken(userId);
-      const rawPrefs = user.notificationPreferences as any;
+
+      // Phase 2/6: Dual-read — org-level prefs first, fallback to user-level
+      let rawPrefs = user.notificationPreferences as any;
+      let effectiveSmsOptIn = user.smsOptIn;
+      let effectiveSmsOptInAt = user.smsOptInAt;
+
+      if (orgId) {
+        try {
+          const orgPrefs = await storage.getUserOrgPreferences(userId, orgId);
+          if (orgPrefs) {
+            if (orgPrefs.notificationPreferences) rawPrefs = orgPrefs.notificationPreferences;
+            effectiveSmsOptIn = orgPrefs.smsOptIn;
+            effectiveSmsOptInAt = orgPrefs.smsOptInAt ?? null;
+          }
+        } catch (err) {
+          console.error('[NotifPrefs] Failed to load org prefs:', err);
+        }
+      }
+
       // Normalize to nested shape
       let emailPrefs: Record<string, boolean>;
       let smsPrefs: Record<string, boolean>;
@@ -6373,8 +6437,9 @@ export async function registerRoutes(
         preferences: { email: emailPrefs, sms: smsPrefs },
         unsubscribeToken: token,
         phone: user.phone,
-        smsOptIn: user.smsOptIn,
-        smsOptInAt: user.smsOptInAt,
+        smsOptIn: effectiveSmsOptIn,
+        smsOptInAt: effectiveSmsOptInAt,
+        orgId,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -6386,6 +6451,8 @@ export async function registerRoutes(
       const userId = req.user.claims?.sub ?? req.user.id;
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
       const { preferences, phone, smsOptIn } = req.body;
       if (!preferences || typeof preferences !== "object") return res.status(400).json({ message: "preferences object required" });
 
@@ -6403,14 +6470,13 @@ export async function registerRoutes(
         }
       }
 
-      // Handle SMS opt-in change
-      if (smsOptIn !== undefined && typeof smsOptIn === "boolean") {
-        if (smsOptIn !== user.smsOptIn) {
-          await storage.updateUserSmsOptIn(userId, smsOptIn, 'notification_preferences');
-        }
+      // Handle SMS opt-in change — write to user-level (backward compat) AND org-level
+      const smsOptInChanged = smsOptIn !== undefined && typeof smsOptIn === "boolean";
+      if (smsOptInChanged && smsOptIn !== user.smsOptIn) {
+        await storage.updateUserSmsOptIn(userId, smsOptIn, 'notification_preferences');
       }
 
-      // Save preferences in nested shape
+      // Save preferences in nested shape — write to user-level (backward compat) AND org-level
       const rawPrefs = user.notificationPreferences as any;
       let existingEmail: Record<string, boolean>;
       let existingSms: Record<string, boolean>;
@@ -6425,6 +6491,22 @@ export async function registerRoutes(
       const mergedSms = { ...DEFAULT_SMS_PREFS_ROUTE, ...existingSms, ...(preferences.sms || {}) };
       const merged = { email: mergedEmail, sms: mergedSms };
       await storage.updateNotificationPreferences(userId, merged);
+
+      // Phase 4: Also write to org-level preferences
+      if (orgId) {
+        try {
+          const orgUpdate: Record<string, any> = { notificationPreferences: merged };
+          if (smsOptInChanged) {
+            orgUpdate.smsOptIn = smsOptIn;
+            orgUpdate.smsOptInAt = smsOptIn ? new Date() : null;
+            orgUpdate.smsOptOutAt = smsOptIn ? null : new Date();
+          }
+          await storage.upsertUserOrgPreferences(userId, orgId, orgUpdate);
+        } catch (err) {
+          console.error('[NotifPrefs] Failed to write org prefs:', err);
+        }
+      }
+
       res.json({ preferences: merged });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

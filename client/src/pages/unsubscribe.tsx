@@ -84,6 +84,10 @@ export default function UnsubscribePage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
 
+  // Extract orgId from URL query string
+  const orgId = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("orgId") ?? undefined;
+  const orgParam = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
+
   const [email, setEmail] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [hasSms, setHasSms] = useState(false);
@@ -94,7 +98,7 @@ export default function UnsubscribePage() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(`/api/unsubscribe/${token}`)
+    fetch(`/api/unsubscribe/${token}${orgParam}`)
       .then(async (r) => {
         if (!r.ok) {
           const data = await r.json().catch(() => ({}));
@@ -110,14 +114,14 @@ export default function UnsubscribePage() {
             email: { ...DEFAULT_EMAIL_PREFS, ...(raw.email || {}) },
             sms: { ...DEFAULT_SMS_PREFS, ...(raw.sms || {}) },
           });
-          const smsVals = Object.values({ ...DEFAULT_SMS_PREFS, ...(raw.sms || {}) });
-          setHasSms(smsVals.some(Boolean));
+          // Show SMS section if user has a phone number or smsOptIn, or has existing SMS prefs
+          setHasSms(!!(data.phone || data.smsOptIn || Object.values({ ...DEFAULT_SMS_PREFS, ...(raw.sms || {}) }).some(Boolean)));
         } else {
           setPrefs({
             email: { ...DEFAULT_EMAIL_PREFS, ...(raw || {}) },
             sms: { ...DEFAULT_SMS_PREFS },
           });
-          setHasSms(false);
+          setHasSms(!!(data.phone || data.smsOptIn));
         }
         setLoading(false);
       })
@@ -144,7 +148,7 @@ export default function UnsubscribePage() {
     setSaving(true);
     setSaved(false);
     try {
-      const r = await fetch(`/api/unsubscribe/${token}`, {
+      const r = await fetch(`/api/unsubscribe/${token}${orgParam}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preferences: prefs }),

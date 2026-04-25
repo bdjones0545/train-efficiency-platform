@@ -114,7 +114,23 @@ export async function sendSms(params: {
   if (ctx.recipientUserId) {
     const user = await storage.getUser(ctx.recipientUserId);
     if (user) {
-      if (!user.smsOptIn) {
+      // Phase 2: Dual-read — org-level prefs first, fallback to user-level
+      let effectiveSmsOptIn = user.smsOptIn;
+      let effectiveNotifPrefs = user.notificationPreferences as any;
+
+      if (ctx.orgId) {
+        try {
+          const orgPrefs = await storage.getUserOrgPreferences(ctx.recipientUserId, ctx.orgId);
+          if (orgPrefs) {
+            effectiveSmsOptIn = orgPrefs.smsOptIn;
+            effectiveNotifPrefs = orgPrefs.notificationPreferences ?? effectiveNotifPrefs;
+          }
+        } catch (err) {
+          console.error('[SMS] Failed to load org prefs, falling back to user prefs:', err);
+        }
+      }
+
+      if (!effectiveSmsOptIn) {
         const reason = 'sms_not_opted_in';
         console.log(`[SMS] Skipped: ${reason} for ${normalizedPhone}`);
         await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'skipped', provider: 'twilio', errorMessage: reason });
@@ -123,8 +139,7 @@ export async function sendSms(params: {
 
       const prefKey = SMS_TYPE_TO_PREF_KEY[ctx.type];
       if (prefKey) {
-        const rawPrefs = user.notificationPreferences as any;
-        const smsPrefs = rawPrefs?.sms ?? DEFAULT_SMS_PREFS;
+        const smsPrefs = effectiveNotifPrefs?.sms ?? DEFAULT_SMS_PREFS;
         const enabled = smsPrefs[prefKey] ?? DEFAULT_SMS_PREFS[prefKey] ?? false;
         if (!enabled) {
           const reason = 'sms_preference_disabled';

@@ -572,3 +572,22 @@ export const communicationLogs = pgTable("communication_logs", {
 export const insertCommunicationLogSchema = createInsertSchema(communicationLogs).omit({ id: true, createdAt: true, sentAt: true });
 export type CommunicationLog = typeof communicationLogs.$inferSelect;
 export type InsertCommunicationLog = z.infer<typeof insertCommunicationLogSchema>;
+
+// ─── Per-Organization User Notification Preferences ────────────────────────
+export const userOrgPreferences = pgTable("user_org_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  orgId: varchar("org_id").notNull(),
+  smsOptIn: boolean("sms_opt_in").notNull().default(false),
+  smsOptInAt: timestamp("sms_opt_in_at"),
+  smsOptOutAt: timestamp("sms_opt_out_at"),
+  notificationPreferences: jsonb("notification_preferences"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  userOrgUnique: uniqueIndex("user_org_prefs_unique").on(t.userId, t.orgId),
+}));
+
+export const insertUserOrgPreferencesSchema = createInsertSchema(userOrgPreferences).omit({ id: true, createdAt: true, updatedAt: true });
+export type UserOrgPreferences = typeof userOrgPreferences.$inferSelect;
+export type InsertUserOrgPreferences = z.infer<typeof insertUserOrgPreferencesSchema>;

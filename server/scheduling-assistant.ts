@@ -3118,7 +3118,15 @@ Return a JSON object with exactly these keys:
           if (!clientUser?.phone) {
             return JSON.stringify({ error: "Client has no phone number on file. Cannot send SMS." });
           }
-          if (!clientUser.smsOptIn) {
+          // Phase 8: Check org-level smsOptIn if organizationId available, fallback to user-level
+          let effectiveSmsOptIn = clientUser.smsOptIn;
+          if (organizationId) {
+            try {
+              const orgPrefs = await storage.getUserOrgPreferences(agentAction.clientId, organizationId);
+              if (orgPrefs) effectiveSmsOptIn = orgPrefs.smsOptIn;
+            } catch (e) { /* fallback to user-level */ }
+          }
+          if (!effectiveSmsOptIn) {
             return JSON.stringify({ error: "Client has not opted in to SMS. Cannot send SMS outreach." });
           }
           const mc = agentAction.messageContent as any;
