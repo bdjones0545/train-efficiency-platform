@@ -1944,6 +1944,8 @@ async function executeTool(
             .sort((a, b) => b.totalRevenueCents - a.totalRevenueCents)
             .slice(0, 3)
             .map(tb => ({ hour: tb.label, revenue: `$${(tb.totalRevenueCents / 100).toFixed(2)}`, sessions: tb.sessionCount })),
+          timezone: summary.timezone,
+          timezoneLabel: `Times shown in org timezone: ${summary.timezone}`,
         });
       }
 

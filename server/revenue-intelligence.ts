@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { subDays, startOfMonth, endOfMonth, startOfDay, format, differenceInDays, getDaysInMonth, startOfWeek, endOfWeek, differenceInMinutes } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
 import { db } from "./db";
 import {
   bookings,
@@ -9,6 +10,7 @@ import {
   coachProfiles,
   userSubscriptions,
   organizationSubscriptionPlans,
+  organizations,
 } from "@shared/schema";
 import { eq, and, inArray, gte, lte, sql, desc } from "drizzle-orm";
 
@@ -101,6 +103,7 @@ export interface RevenueSummary {
   coachRevenues: CoachRevenue[];
   timeBlockRevenues: TimeBlockRevenue[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
+  timezone: string;
 }
 
 async function getOrgCoachIds(orgId: string): Promise<string[]> {
@@ -152,6 +155,9 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
   const now = new Date();
   const thirtyDaysAgo = subDays(now, 30);
   const sixtyDaysAgo = subDays(now, 60);
+
+  const orgRow = await db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+  const orgTimezone = orgRow[0]?.timezone ?? "America/New_York";
 
   const [allBookings, coachRows, userSubs, subPlans] = await Promise.all([
     getOrgBookingsWithService(orgId),
@@ -224,10 +230,11 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     }))
     .sort((a, b) => b.totalRevenueCents - a.totalRevenueCents);
 
-  // Revenue by time block (hour of day)
+  // Revenue by time block (hour of day) — grouped in org's local timezone
   const hourMap = new Map<number, { revenue: number; sessions: number }>();
   for (const b of last30d) {
-    const hour = new Date(b.startAt).getHours();
+    const zonedDate = toZonedTime(new Date(b.startAt), orgTimezone);
+    const hour = zonedDate.getHours();
     if (!hourMap.has(hour)) hourMap.set(hour, { revenue: 0, sessions: 0 });
     hourMap.get(hour)!.revenue += b.priceCents ?? 0;
     hourMap.get(hour)!.sessions++;
@@ -307,6 +314,7 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     coachRevenues,
     timeBlockRevenues,
     topClients,
+    timezone: orgTimezone,
   };
 }
 

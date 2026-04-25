@@ -43,6 +43,7 @@ export const organizations = pgTable("organizations", {
   schedulingInquiryEmail: varchar("scheduling_inquiry_email"),
   schedulingInquiryName: varchar("scheduling_inquiry_name"),
   allowUserInquiryEmails: boolean("allow_user_inquiry_emails").default(true),
+  timezone: varchar("timezone").default("America/New_York"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

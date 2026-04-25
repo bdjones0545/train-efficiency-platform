@@ -117,6 +117,7 @@ interface RevenueSummary {
   coachRevenues: { coachId: string; coachName: string; totalRevenueCents: number; sessionCount: number; avgRevenuePerSessionCents: number; activeClients: number }[];
   timeBlockRevenues: { hour: number; label: string; totalRevenueCents: number; sessionCount: number }[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
+  timezone?: string;
 }
 
 interface ChurnRisk {
@@ -1474,7 +1475,10 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
                   {activeRevenueSummary.timeBlockRevenues.length > 0 && (
                     <div>
-                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Clock className="h-4 w-4 text-purple-500" />Revenue by Time Block (Last 30d)</h3>
+                      <h3 className="font-semibold text-sm mb-1 flex items-center gap-1.5"><Clock className="h-4 w-4 text-purple-500" />Revenue by Time Block (Last 30d)</h3>
+                      {activeRevenueSummary.timezone && (
+                        <p className="text-xs text-muted-foreground mb-2" data-testid="time-block-timezone-label">Times shown in org timezone: {activeRevenueSummary.timezone}</p>
+                      )}
                       <Card>
                         <CardContent className="p-4 space-y-2">
                           {activeRevenueSummary.timeBlockRevenues
