@@ -485,9 +485,9 @@ export default function SchedulingAgentPage() {
   }
 
   return (
-    <div className="flex flex-col" style={{ height: "calc(100vh - 4rem)" }}>
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="border-b bg-background/95 backdrop-blur px-3 py-2 flex items-center gap-2 shrink-0">
+      <div className="border-b bg-background/95 backdrop-blur px-3 py-2 flex items-center gap-2 shrink-0 z-10">
         <Link href="/scheduling">
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" data-testid="back-to-scheduling">
             <ChevronLeft className="h-4 w-4" />
@@ -538,13 +538,13 @@ export default function SchedulingAgentPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
 
         {/* ===== CHAT TAB ===== */}
         {activeTab === "chat" && (
-          <div className="flex flex-col h-full">
+          <div className="flex flex-col h-full min-h-0">
             {/* Scrollable content area */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
               <div className="px-3 py-3">
                 {messages.length === 0 ? (
                   <div className="flex flex-col gap-3">

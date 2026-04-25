@@ -1,0 +1,205 @@
+Fix the TrainEfficiency Coach-Side Scheduling Agent mobile layout so it behaves like a true command center.
+
+Current issue:
+The UI looks improved, but the top header/tabs and bottom chat input are still behaving too much like part of the scroll. On mobile, the agent should have:
+
+1. Fixed/sticky header always visible
+2. Fixed/sticky chat input always visible
+3. Only the middle content area scrolls
+
+Do not change backend logic. This is a layout/UX fix only.
+
+========================
+PHASE 1 — CREATE TRUE 3-ZONE LAYOUT
+========================
+
+Refactor the mobile page structure into:
+
+[Fixed Header + Tabs]
+[Scrollable Content Area]
+[Fixed Bottom Chat Input]
+
+Implementation requirements:
+- Header must stay visible while content scrolls
+- Tabs must stay attached to the header
+- Chat input must stay visible at bottom
+- Only the middle content should scroll
+- No full-page body scroll on mobile if possible
+
+Recommended structure:
+
+main container:
+- height: 100dvh
+- display: flex
+- flex-direction: column
+- overflow: hidden
+
+header:
+- flex-shrink: 0
+- position: sticky or fixed
+- top: 0
+- z-index: high
+- background: dark translucent/blur
+- border-bottom
+
+content:
+- flex: 1
+- overflow-y: auto
+- -webkit-overflow-scrolling: touch
+- padding-bottom enough to clear input
+
+input:
+- flex-shrink: 0
+- position: sticky or fixed at bottom
+- z-index: high
+- background: dark translucent/blur
+- padding-bottom: env(safe-area-inset-bottom)
+
+========================
+PHASE 2 — STICKY HEADER + TABS
+========================
+
+Combine these into one sticky/fixed header block:
+- back arrow
+- agent icon
+- TrainEfficiency Scheduling Agent title
+- Revenue Intelligence Active pill
+- alert badge if present
+- tabs: Chat / Ops / Revenue / Settings
+
+Rules:
+- The header and tabs should never scroll away on mobile
+- Header should have backdrop-blur and solid dark fallback
+- Add subtle bottom border
+- Keep height compact
+- Avoid clipping under the mobile browser chrome
+
+Mobile sizing:
+- Reduce vertical padding
+- Keep title single-line if possible
+- If title is too long, truncate with ellipsis
+- Keep the active status pill visible
+
+========================
+PHASE 3 — SCROLLABLE CONTENT ONLY
+========================
+
+Move all cards/sections into the middle scroll container:
+- Today Command Center
+- Top Actions Today
+- Priority stack rows
+- Collapsible sections
+
+Rules:
+- Content scrolls independently between header and input
+- First card should start below sticky header, not hidden behind it
+- Last card should never be covered by input
+- Add bottom spacer/padding equal to input height + safe area
+
+Fix any:
+- min-h-screen conflicts
+- h-screen conflicts
+- nested overflow containers
+- page-level scrolling
+- margins that create dead scroll
+
+========================
+PHASE 4 — FIXED/STICKY CHAT INPUT
+========================
+
+Make the chat input always visible on mobile.
+
+Requirements:
+- Bottom pinned
+- Send button always visible
+- Input never hidden behind Safari/Replit browser controls
+- Use env(safe-area-inset-bottom)
+- Add background blur and border-top
+- Input should remain tappable when keyboard opens
+
+Suggested CSS:
+- bottom: 0
+- padding-bottom: max(env(safe-area-inset-bottom), 12px)
+- position: sticky or fixed depending on current layout
+- z-index higher than content
+
+If using fixed:
+- ensure content container has padding-bottom matching input height
+
+If using flex:
+- make input bar flex-shrink-0 and content flex-1 overflow-y-auto
+
+Prefer flex layout if it works cleanly.
+
+========================
+PHASE 5 — REMOVE MOBILE DEAD SCROLL
+========================
+
+Audit mobile spacing.
+
+Reduce:
+- card vertical padding by 15–25%
+- gaps between row cards
+- top margin below tabs
+- large empty bottom areas
+
+Target:
+- Header + tabs visible
+- Chat input visible
+- At least 3 action/priority rows visible in the scroll area on iPhone viewport
+
+========================
+PHASE 6 — TAB BAR OVERFLOW FIX
+========================
+
+The tab row must stay usable on small screens.
+
+Rules:
+- horizontal scroll allowed
+- hide scrollbar
+- no awkward clipping
+- active tab underline stays aligned
+- labels can be shortened:
+  - Chat
+  - Ops
+  - Revenue
+  - Settings
+
+Tabs should remain in the fixed header area.
+
+========================
+PHASE 7 — KEYBOARD BEHAVIOR
+========================
+
+Test with mobile keyboard open.
+
+Requirements:
+- input remains visible
+- send button remains visible
+- content does not jump awkwardly
+- focused input scrolls into view if needed
+- no double-scroll behavior
+
+Use 100dvh instead of 100vh where appropriate.
+
+========================
+PHASE 8 — VALIDATION
+========================
+
+Test in mobile viewport and return results:
+
+1. Open coach scheduling agent on mobile.
+2. Confirm header stays visible while scrolling.
+3. Confirm tabs stay visible while scrolling.
+4. Confirm chat input stays visible while scrolling.
+5. Confirm only middle content scrolls.
+6. Confirm no horizontal overflow.
+7. Confirm last content card is not hidden behind input.
+8. Confirm keyboard does not break the layout.
+9. Confirm desktop layout is not broken.
+
+Return:
+- files changed
+- layout structure before/after
+- mobile validation notes
+- any remaining edge cases

@@ -123,6 +123,8 @@ function AuthenticatedLayout() {
     return <AdminSetupPage />;
   }
 
+  const isFullscreenPage = location === "/scheduling/agent";
+
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
@@ -130,15 +132,15 @@ function AuthenticatedLayout() {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
+      <div className="flex h-screen w-full overflow-hidden">
         <AppSidebar />
-        <div className="flex flex-col flex-1 min-w-0">
-          <header className="flex items-center justify-between gap-4 p-3 border-b sticky top-0 z-50 bg-background/80 backdrop-blur-md">
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          <header className="flex items-center justify-between gap-4 p-3 border-b sticky top-0 z-50 bg-background/80 backdrop-blur-md shrink-0">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <ThemeToggle />
           </header>
-          <main className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-5xl mx-auto">
+          <main className={`flex-1 min-h-0 ${isFullscreenPage ? "overflow-hidden" : "overflow-y-auto p-6"}`}>
+            <div className={isFullscreenPage ? "h-full" : "max-w-5xl mx-auto"}>
               <SubscriptionGate>
                 <Switch>
                   <Route path="/" component={CoachesPage} />
@@ -185,6 +187,7 @@ function AuthenticatedLayout() {
     </SidebarProvider>
   );
 }
+
 
 function PublicLayout() {
   return (
