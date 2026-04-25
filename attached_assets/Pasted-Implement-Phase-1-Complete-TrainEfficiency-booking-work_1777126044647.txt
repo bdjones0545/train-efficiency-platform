@@ -1,0 +1,81 @@
+Implement Phase 1: Complete TrainEfficiency booking workflow emails.
+
+Goal:
+Close the biggest communication gaps without adding SMS yet.
+
+Current state:
+Email is already real and functional through server/email.ts using SendGrid.
+Booking confirmation emails already send.
+Cancellation, reschedule, and recurring-session creation emails are missing.
+
+Scope:
+1. Add new transactional email functions in server/email.ts:
+   - sendBookingCancellationEmailToClient
+   - sendBookingCancellationEmailToCoach
+   - sendBookingRescheduleEmailToClient
+   - sendBookingRescheduleEmailToCoach
+   - sendRecurringSessionsCreatedEmailToClient
+   - sendRecurringSessionsCreatedEmailToCoach
+
+2. Match the existing email style:
+   - Use the same branding/layout helpers already used in server/email.ts.
+   - Keep tone professional and clear.
+   - Include session date, time, coach, client, location if available, session type, and org name if available.
+   - Include a clear CTA back to TrainEfficiency.
+
+3. Wire the emails into agent tool execution:
+   In server/scheduling-assistant.ts:
+   - cancel_booking should send cancellation emails after the booking is successfully canceled.
+   - reschedule_booking should send reschedule emails after the booking is successfully updated.
+   - create_confirmed_recurring_sessions should send recurring-session creation emails after all sessions are successfully created.
+
+4. Keep sends non-blocking:
+   - Do not allow email failure to break the booking action.
+   - Use try/catch or Promise.allSettled.
+   - Log failures clearly.
+
+5. Respect existing confirmation-gating:
+   - Do not change the two-call pendingActionId confirmation flow.
+   - Emails should only send after the confirmed action actually completes.
+   - Never send an email during the preview/pending phase.
+
+6. Include both parties:
+   Cancellation:
+   - Notify client.
+   - Notify coach/admin.
+
+   Reschedule:
+   - Notify client.
+   - Notify coach/admin.
+   - Include old time and new time if old booking data is available.
+
+   Recurring sessions:
+   - Notify client.
+   - Notify coach/admin.
+   - Include number of sessions created, first session date, last session date, and recurring pattern if available.
+
+7. Add safety guards:
+   - If recipient email is missing, skip that email and log why.
+   - If org name is missing, fall back to TrainEfficiency.
+   - If coach/client names are missing, use “your coach” or “client” fallbacks.
+
+8. Audit related direct booking routes:
+   Search for any non-agent routes that cancel, reschedule, or create recurring sessions.
+   If those workflows bypass scheduling-assistant.ts, wire the same email functions there too.
+
+9. Testing:
+   - Run TypeScript/build checks.
+   - Confirm booking still works.
+   - Confirm cancellation still works.
+   - Confirm reschedule still works.
+   - Confirm recurring session creation still works.
+   - Confirm emails are only sent after confirmed actions.
+   - Confirm failed email sends do not break the booking workflow.
+
+Expected result:
+TrainEfficiency should now send real email notifications for:
+- Booking cancellations
+- Booking reschedules
+- Recurring session creation
+
+This completes the biggest missing email communication gaps before SMS is added later.

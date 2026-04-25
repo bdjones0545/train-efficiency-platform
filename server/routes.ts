@@ -9,7 +9,7 @@ import express from "express";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, type OrgBranding } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, type OrgBranding } from "./email";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -1698,6 +1698,69 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateBookingStatus(bookingId, status);
+
+      // Send cancellation emails non-blocking when a booking is cancelled via this route
+      if (status === "CANCELLED") {
+        (async () => {
+          try {
+            const coachProfile = await storage.getCoachProfile(booking.coachId);
+            const [clientUser, service] = await Promise.all([
+              storage.getUser(booking.clientId),
+              storage.getService(booking.serviceId),
+            ]);
+            const userProfile = clientUser ? await storage.getUserProfile(clientUser.id) : null;
+            const orgId = userProfile?.organizationId || null;
+            const orgBranding = await getOrgBranding(orgId);
+            const tz = (coachProfile as any)?.timezone || "America/New_York";
+            const coachName = coachProfile?.user
+              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+              : "Your Coach";
+            const clientName = clientUser
+              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+              : "A client";
+            const serviceName = service?.name || "Training Session";
+            const startAt = new Date(booking.startAt);
+            const endAt = new Date(booking.endAt);
+            const location = (booking as any).location || undefined;
+
+            if (clientUser?.email) {
+              sendBookingCancellationEmailToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachName,
+                serviceName,
+                startAt,
+                endAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[PATCH /api/bookings/:id/status] Skipping client cancellation email — no email on file");
+            }
+
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) {
+              sendBookingCancellationEmailToCoach(
+                coachEmail,
+                coachProfile?.user?.firstName || "Coach",
+                clientName,
+                serviceName,
+                startAt,
+                endAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[PATCH /api/bookings/:id/status] Skipping coach cancellation email — no email on file");
+            }
+          } catch (err) {
+            console.error("[PATCH /api/bookings/:id/status] Cancellation email error:", err);
+          }
+        })();
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Error updating booking:", error);
@@ -2043,6 +2106,70 @@ export async function registerRoutes(
         currentStart = new Date(currentStart.getTime() + dayStep * 24 * 60 * 60 * 1000);
       }
 
+      // Send recurring session creation emails non-blocking
+      if (created.length > 0) {
+        (async () => {
+          try {
+            const coachProfile = await storage.getCoachProfile(targetCoachId);
+            const clientUser = await storage.getUser(sourceBooking.clientId);
+            const userProfile = clientUser ? await storage.getUserProfile(clientUser.id) : null;
+            const orgId = userProfile?.organizationId || null;
+            const orgBranding = await getOrgBranding(orgId);
+            const tz = (coachProfile as any)?.timezone || "America/New_York";
+            const coachName = coachProfile?.user
+              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+              : "Your Coach";
+            const clientName = clientUser
+              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+              : "A client";
+            const serviceName = service?.name || "Training Session";
+            const sortedCreated = [...created].sort((a, b) =>
+              new Date(a.startAt).getTime() - new Date(b.startAt).getTime()
+            );
+            const firstSessionAt = new Date(sortedCreated[0].startAt);
+            const lastSessionAt = new Date(sortedCreated[sortedCreated.length - 1].startAt);
+            const location = (sourceBooking as any).location || undefined;
+
+            if (clientUser?.email) {
+              sendRecurringSessionsCreatedEmailToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachName,
+                serviceName,
+                created.length,
+                firstSessionAt,
+                lastSessionAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[POST /api/coach/bookings/clone] Skipping client recurring email — no email on file");
+            }
+
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) {
+              sendRecurringSessionsCreatedEmailToCoach(
+                coachEmail,
+                coachProfile?.user?.firstName || "Coach",
+                clientName,
+                serviceName,
+                created.length,
+                firstSessionAt,
+                lastSessionAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[POST /api/coach/bookings/clone] Skipping coach recurring email — no email on file");
+            }
+          } catch (err) {
+            console.error("[POST /api/coach/bookings/clone] Recurring email error:", err);
+          }
+        })();
+      }
+
       res.json({ created: created.length, skipped: skipped.length, skippedDates: skipped, recurringGroupId: groupId });
     } catch (error) {
       console.error("Error cloning bookings:", error);
@@ -2127,6 +2254,73 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateBooking(bookingId, updateData);
+
+      // Send reschedule emails non-blocking when start time changes via this route
+      if (updateData.startAt) {
+        (async () => {
+          try {
+            const coachProfile = await storage.getCoachProfile(bookingCoachId);
+            const clientUser = await storage.getUser(existing.clientId);
+            const svc = await storage.getService(existing.serviceId);
+            const userProfile = clientUser ? await storage.getUserProfile(clientUser.id) : null;
+            const orgId = userProfile?.organizationId || null;
+            const orgBranding = await getOrgBranding(orgId);
+            const tz = (coachProfile as any)?.timezone || "America/New_York";
+            const coachName = coachProfile?.user
+              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+              : "Your Coach";
+            const clientName = clientUser
+              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+              : "A client";
+            const serviceName = svc?.name || "Training Session";
+            const oldStartAt = new Date(existing.startAt);
+            const oldEndAt = new Date(existing.endAt);
+            const newStartAt = new Date(updateData.startAt);
+            const newEndAt = new Date(updateData.endAt || existing.endAt);
+            const location = (updateData.location ?? (existing as any).location) || undefined;
+
+            if (clientUser?.email) {
+              sendBookingRescheduleEmailToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachName,
+                serviceName,
+                oldStartAt,
+                oldEndAt,
+                newStartAt,
+                newEndAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[PATCH /api/coach/bookings/:id] Skipping client reschedule email — no email on file");
+            }
+
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) {
+              sendBookingRescheduleEmailToCoach(
+                coachEmail,
+                coachProfile?.user?.firstName || "Coach",
+                clientName,
+                serviceName,
+                oldStartAt,
+                oldEndAt,
+                newStartAt,
+                newEndAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[PATCH /api/coach/bookings/:id] Skipping coach reschedule email — no email on file");
+            }
+          } catch (err) {
+            console.error("[PATCH /api/coach/bookings/:id] Reschedule email error:", err);
+          }
+        })();
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Error updating booking:", error);

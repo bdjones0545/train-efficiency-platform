@@ -628,6 +628,234 @@ export async function sendSchedulingInquiryEmail(
   await sendEmail(toEmail, subject, html, b.name);
 }
 
+export async function sendBookingCancellationEmailToClient(
+  clientEmail: string,
+  clientFirstName: string,
+  coachName: string,
+  serviceName: string,
+  startAt: Date,
+  endAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Session Cancelled — ${serviceName}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell("Session Cancelled", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+    ${para("Your upcoming training session has been cancelled. Here are the details of the cancelled session:")}
+    ${detailBox([
+      line("Service", serviceName),
+      line("Coach", coachName),
+      line("Date", dateStr),
+      line("Time", timeStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("If you'd like to rebook or have any questions, please log in to your account or reach out to your coach.")}
+  `, org);
+  await sendEmail(clientEmail, subject, html, b.name);
+}
+
+export async function sendBookingCancellationEmailToCoach(
+  coachEmail: string,
+  coachFirstName: string,
+  clientName: string,
+  serviceName: string,
+  startAt: Date,
+  endAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Session Cancelled — ${clientName}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell("Session Cancelled", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${coachFirstName},</p>
+    ${para(`A session on your schedule has been cancelled:`)}
+    ${detailBox([
+      line("Client", clientName),
+      line("Service", serviceName),
+      line("Date", dateStr),
+      line("Time", timeStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("This time slot is now open on your calendar. You can manage your schedule from your coach dashboard.")}
+  `, org);
+  await sendEmail(coachEmail, subject, html, b.name);
+}
+
+export async function sendBookingRescheduleEmailToClient(
+  clientEmail: string,
+  clientFirstName: string,
+  coachName: string,
+  serviceName: string,
+  oldStartAt: Date,
+  oldEndAt: Date,
+  newStartAt: Date,
+  newEndAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Session Rescheduled — ${serviceName}`;
+  const zonedOldStart = toZonedTime(oldStartAt, timezone);
+  const zonedOldEnd = toZonedTime(oldEndAt, timezone);
+  const zonedNewStart = toZonedTime(newStartAt, timezone);
+  const zonedNewEnd = toZonedTime(newEndAt, timezone);
+  const oldDateStr = format(zonedOldStart, "EEEE, MMMM d, yyyy");
+  const oldTimeStr = `${format(zonedOldStart, "h:mm a")} — ${format(zonedOldEnd, "h:mm a")}`;
+  const newDateStr = format(zonedNewStart, "EEEE, MMMM d, yyyy");
+  const newTimeStr = `${format(zonedNewStart, "h:mm a")} — ${format(zonedNewEnd, "h:mm a")}`;
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell("Session Rescheduled", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+    ${para("Your training session has been rescheduled. Here are the updated details:")}
+    ${detailBox([
+      line("Service", serviceName),
+      line("Coach", coachName),
+      `<p style="font-size: 14px; color: #888; margin: 8px 0 4px;">PREVIOUSLY</p>`,
+      line("Date", oldDateStr),
+      line("Time", oldTimeStr),
+      `<p style="font-size: 14px; color: #888; margin: 8px 0 4px;">NEW TIME</p>`,
+      line("Date", newDateStr),
+      line("Time", newTimeStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("If you have any questions about this change, please reach out to your coach or log in to your account.")}
+  `, org);
+  await sendEmail(clientEmail, subject, html, b.name);
+}
+
+export async function sendBookingRescheduleEmailToCoach(
+  coachEmail: string,
+  coachFirstName: string,
+  clientName: string,
+  serviceName: string,
+  oldStartAt: Date,
+  oldEndAt: Date,
+  newStartAt: Date,
+  newEndAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Session Rescheduled — ${clientName}`;
+  const zonedOldStart = toZonedTime(oldStartAt, timezone);
+  const zonedOldEnd = toZonedTime(oldEndAt, timezone);
+  const zonedNewStart = toZonedTime(newStartAt, timezone);
+  const zonedNewEnd = toZonedTime(newEndAt, timezone);
+  const oldDateStr = format(zonedOldStart, "EEEE, MMMM d, yyyy");
+  const oldTimeStr = `${format(zonedOldStart, "h:mm a")} — ${format(zonedOldEnd, "h:mm a")}`;
+  const newDateStr = format(zonedNewStart, "EEEE, MMMM d, yyyy");
+  const newTimeStr = `${format(zonedNewStart, "h:mm a")} — ${format(zonedNewEnd, "h:mm a")}`;
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell("Session Rescheduled", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${coachFirstName},</p>
+    ${para(`A session on your schedule has been rescheduled:`)}
+    ${detailBox([
+      line("Client", clientName),
+      line("Service", serviceName),
+      `<p style="font-size: 14px; color: #888; margin: 8px 0 4px;">PREVIOUSLY</p>`,
+      line("Date", oldDateStr),
+      line("Time", oldTimeStr),
+      `<p style="font-size: 14px; color: #888; margin: 8px 0 4px;">NEW TIME</p>`,
+      line("Date", newDateStr),
+      line("Time", newTimeStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("Your dashboard has been updated to reflect the new time.")}
+  `, org);
+  await sendEmail(coachEmail, subject, html, b.name);
+}
+
+export async function sendRecurringSessionsCreatedEmailToClient(
+  clientEmail: string,
+  clientFirstName: string,
+  coachName: string,
+  serviceName: string,
+  sessionCount: number,
+  firstSessionAt: Date,
+  lastSessionAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Recurring Sessions Confirmed — ${serviceName}`;
+  const zonedFirst = toZonedTime(firstSessionAt, timezone);
+  const zonedLast = toZonedTime(lastSessionAt, timezone);
+  const firstDateStr = format(zonedFirst, "EEEE, MMMM d, yyyy 'at' h:mm a");
+  const lastDateStr = format(zonedLast, "EEEE, MMMM d, yyyy 'at' h:mm a");
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell("Recurring Sessions Confirmed", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+    ${para(`Your coach has scheduled a recurring training program for you. Here's what's been booked:`)}
+    ${detailBox([
+      line("Service", serviceName),
+      line("Coach", coachName),
+      line("Sessions Booked", String(sessionCount)),
+      line("First Session", firstDateStr),
+      line("Last Session", lastDateStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("You can view all of your upcoming sessions by logging in to your account. See you on the schedule!")}
+  `, org);
+  await sendEmail(clientEmail, subject, html, b.name);
+}
+
+export async function sendRecurringSessionsCreatedEmailToCoach(
+  coachEmail: string,
+  coachFirstName: string,
+  clientName: string,
+  serviceName: string,
+  sessionCount: number,
+  firstSessionAt: Date,
+  lastSessionAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Recurring Sessions Created — ${clientName}`;
+  const zonedFirst = toZonedTime(firstSessionAt, timezone);
+  const zonedLast = toZonedTime(lastSessionAt, timezone);
+  const firstDateStr = format(zonedFirst, "EEEE, MMMM d, yyyy 'at' h:mm a");
+  const lastDateStr = format(zonedLast, "EEEE, MMMM d, yyyy 'at' h:mm a");
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell("Recurring Sessions Created", `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${coachFirstName},</p>
+    ${para(`A recurring session program has been added to your schedule:`)}
+    ${detailBox([
+      line("Client", clientName),
+      line("Service", serviceName),
+      line("Sessions Created", String(sessionCount)),
+      line("First Session", firstDateStr),
+      line("Last Session", lastDateStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("All sessions are now confirmed on your calendar. You can view and manage them from your coach dashboard.")}
+  `, org);
+  await sendEmail(coachEmail, subject, html, b.name);
+}
+
 export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {
   const subject = "Reset your TrainEfficiency password";
   const html = emailShell("Reset Your Password", `

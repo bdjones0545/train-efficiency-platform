@@ -36,6 +36,12 @@ import {
   sendBookingConfirmationToClient,
   sendBookingNotificationToCoach,
   sendSchedulingInquiryEmail,
+  sendBookingCancellationEmailToClient,
+  sendBookingCancellationEmailToCoach,
+  sendBookingRescheduleEmailToClient,
+  sendBookingRescheduleEmailToCoach,
+  sendRecurringSessionsCreatedEmailToClient,
+  sendRecurringSessionsCreatedEmailToCoach,
   type OrgBranding,
 } from "./email";
 
@@ -1323,6 +1329,65 @@ async function executeTool(
           return JSON.stringify({ error: "You can only cancel your own bookings." });
         }
         await storage.updateBookingStatus(args.bookingId, "CANCELLED");
+
+        // Send cancellation emails non-blocking
+        (async () => {
+          try {
+            const [clientUser, coachProfile, service, orgBranding] = await Promise.all([
+              storage.getUser(booking.clientId),
+              storage.getCoachProfile(booking.coachId),
+              storage.getService(booking.serviceId),
+              getOrgBranding(organizationId),
+            ]);
+            const tz = (coachProfile as any)?.timezone || "America/New_York";
+            const coachName = coachProfile?.user
+              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+              : "Your Coach";
+            const clientName = clientUser
+              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+              : "A client";
+            const serviceName = service?.name || "Training Session";
+            const startAt = new Date(booking.startAt);
+            const endAt = new Date(booking.endAt);
+            const location = (booking as any).location || undefined;
+
+            if (clientUser?.email) {
+              sendBookingCancellationEmailToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachName,
+                serviceName,
+                startAt,
+                endAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[cancel_booking] Skipping client cancellation email — no email on file");
+            }
+
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) {
+              sendBookingCancellationEmailToCoach(
+                coachEmail,
+                coachProfile?.user?.firstName || "Coach",
+                clientName,
+                serviceName,
+                startAt,
+                endAt,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[cancel_booking] Skipping coach cancellation email — no email on file");
+            }
+          } catch (err) {
+            console.error("[cancel_booking] Cancellation email notification error:", err);
+          }
+        })();
+
         return JSON.stringify({ success: true, message: "Booking has been cancelled." });
       }
 
@@ -1816,8 +1881,72 @@ async function executeTool(
           return JSON.stringify({ error: "That time slot overlaps with an existing booking. Please choose a different time." });
         }
 
+        const oldStartAt = new Date(booking.startAt);
+        const oldEndAt = new Date(booking.endAt);
+
         await storage.updateBooking(bookingId, { startAt: newStart, endAt: newEnd });
         await storage.updateBookingStatus(bookingId, "RESCHEDULED");
+
+        // Send reschedule emails non-blocking
+        (async () => {
+          try {
+            const [clientUser, coachProfile, service, orgBranding] = await Promise.all([
+              storage.getUser(booking.clientId),
+              storage.getCoachProfile(booking.coachId),
+              storage.getService(booking.serviceId),
+              getOrgBranding(organizationId),
+            ]);
+            const tz = (coachProfile as any)?.timezone || "America/New_York";
+            const coachName = coachProfile?.user
+              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+              : "Your Coach";
+            const clientName = clientUser
+              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+              : "A client";
+            const serviceName = service?.name || "Training Session";
+            const location = (booking as any).location || undefined;
+
+            if (clientUser?.email) {
+              sendBookingRescheduleEmailToClient(
+                clientUser.email,
+                clientUser.firstName || "there",
+                coachName,
+                serviceName,
+                oldStartAt,
+                oldEndAt,
+                newStart,
+                newEnd,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[reschedule_booking] Skipping client reschedule email — no email on file");
+            }
+
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) {
+              sendBookingRescheduleEmailToCoach(
+                coachEmail,
+                coachProfile?.user?.firstName || "Coach",
+                clientName,
+                serviceName,
+                oldStartAt,
+                oldEndAt,
+                newStart,
+                newEnd,
+                location,
+                tz,
+                orgBranding
+              ).catch(() => {});
+            } else {
+              console.log("[reschedule_booking] Skipping coach reschedule email — no email on file");
+            }
+          } catch (err) {
+            console.error("[reschedule_booking] Reschedule email notification error:", err);
+          }
+        })();
+
         return JSON.stringify({
           success: true,
           message: `Booking rescheduled to ${format(newStart, "EEEE, MMM d 'at' h:mm a")}.`,
@@ -2600,6 +2729,7 @@ async function executeTool(
 
         const isSemiPrivate = service.name.toLowerCase().includes("semi-private");
         const created: string[] = [];
+        const createdStartDates: Date[] = [];
         const failedDates: { dateLabel: string; reason: string }[] = [];
 
         for (const slot of (confirmedSlots as { startAt: string; endAt: string }[])) {
@@ -2625,9 +2755,70 @@ async function executeTool(
               groupDescription: "",
             });
             created.push(dateLabel);
+            createdStartDates.push(start);
           } catch (err: any) {
             failedDates.push({ dateLabel, reason: err.message || "Unknown error" });
           }
+        }
+
+        // Send recurring session creation emails non-blocking
+        if (created.length > 0) {
+          (async () => {
+            try {
+              const [clientUser, coachProfile, orgBranding] = await Promise.all([
+                storage.getUser(clientId),
+                storage.getCoachProfile(coachId),
+                getOrgBranding(organizationId),
+              ]);
+              const tz = (coachProfile as any)?.timezone || "America/New_York";
+              const coachName = coachProfile?.user
+                ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+                : "Your Coach";
+              const clientName = clientUser
+                ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+                : "A client";
+              const sortedDates = [...createdStartDates].sort((a, b) => a.getTime() - b.getTime());
+              const firstSessionAt = sortedDates[0];
+              const lastSessionAt = sortedDates[sortedDates.length - 1];
+
+              if (clientUser?.email) {
+                sendRecurringSessionsCreatedEmailToClient(
+                  clientUser.email,
+                  clientUser.firstName || "there",
+                  coachName,
+                  service.name,
+                  created.length,
+                  firstSessionAt,
+                  lastSessionAt,
+                  location || undefined,
+                  tz,
+                  orgBranding
+                ).catch(() => {});
+              } else {
+                console.log("[create_confirmed_recurring_sessions] Skipping client email — no email on file");
+              }
+
+              const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+              if (coachEmail) {
+                sendRecurringSessionsCreatedEmailToCoach(
+                  coachEmail,
+                  coachProfile?.user?.firstName || "Coach",
+                  clientName,
+                  service.name,
+                  created.length,
+                  firstSessionAt,
+                  lastSessionAt,
+                  location || undefined,
+                  tz,
+                  orgBranding
+                ).catch(() => {});
+              } else {
+                console.log("[create_confirmed_recurring_sessions] Skipping coach email — no email on file");
+              }
+            } catch (err) {
+              console.error("[create_confirmed_recurring_sessions] Recurring email notification error:", err);
+            }
+          })();
         }
 
         if (organizationId) {
