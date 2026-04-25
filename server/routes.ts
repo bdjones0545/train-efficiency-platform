@@ -1462,6 +1462,20 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/me/org-context", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const context = await storage.getOrgContextForUser(userId);
+      if (!context) {
+        return res.json({ orgId: null, source: null });
+      }
+      res.json(context);
+    } catch (err: any) {
+      console.error("[OrgContext] Error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.patch("/api/me/profile", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
@@ -6414,14 +6428,13 @@ export async function registerRoutes(
 
       if (orgId) {
         try {
-          const orgPrefs = await storage.getUserOrgPreferences(userId, orgId);
-          if (orgPrefs) {
-            if (orgPrefs.notificationPreferences) rawPrefs = orgPrefs.notificationPreferences;
-            effectiveSmsOptIn = orgPrefs.smsOptIn;
-            effectiveSmsOptInAt = orgPrefs.smsOptInAt ?? null;
-          }
+          // ensureUserOrgPreferences auto-creates a default row if one doesn't exist
+          const orgPrefs = await storage.ensureUserOrgPreferences(userId, orgId);
+          if (orgPrefs.notificationPreferences) rawPrefs = orgPrefs.notificationPreferences;
+          effectiveSmsOptIn = orgPrefs.smsOptIn;
+          effectiveSmsOptInAt = orgPrefs.smsOptInAt ?? null;
         } catch (err) {
-          console.error('[NotifPrefs] Failed to load org prefs:', err);
+          console.error('[NotifPrefs] Failed to load/create org prefs:', err);
         }
       }
 

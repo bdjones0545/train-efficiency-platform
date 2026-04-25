@@ -7,20 +7,34 @@ export type ActiveOrg = Omit<Organization, "stripeSecretKey"> & {
   ownerName: string | null;
 };
 
+interface OrgContext {
+  orgId: string | null;
+  source: "profile" | "booking" | "subscription" | "preferences" | null;
+}
+
 interface UseActiveOrgResult {
   orgId: string | null;
   org: ActiveOrg | undefined;
   isLoading: boolean;
+  source: OrgContext["source"];
 }
 
 export function useActiveOrg(): UseActiveOrgResult {
-  const { data: profile, isLoading: profileLoading } = useQuery<{
-    organizationId?: string | null;
-  }>({
-    queryKey: ["/api/profile"],
+  // Single call to derive orgId from profile → bookings → prefs rows
+  const { data: context, isLoading: contextLoading } = useQuery<OrgContext>({
+    queryKey: ["/api/me/org-context"],
+    queryFn: async () => {
+      const res = await fetch("/api/me/org-context", {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to load org context");
+      return res.json();
+    },
+    staleTime: 1000 * 60 * 5,
   });
 
-  const orgId = profile?.organizationId ?? null;
+  const orgId = context?.orgId ?? null;
 
   const { data: org, isLoading: orgLoading } = useQuery<ActiveOrg>({
     queryKey: ["/api/organizations/by-id", orgId],
@@ -33,11 +47,13 @@ export function useActiveOrg(): UseActiveOrgResult {
       return res.json();
     },
     enabled: !!orgId,
+    staleTime: 1000 * 60 * 5,
   });
 
   return {
     orgId,
     org,
-    isLoading: profileLoading || (!!orgId && orgLoading),
+    isLoading: contextLoading || (!!orgId && orgLoading),
+    source: context?.source ?? null,
   };
 }

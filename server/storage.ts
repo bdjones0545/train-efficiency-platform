@@ -282,6 +282,7 @@ export interface IStorage {
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
 
   // Per-org preferences
+  getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null>;
   getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined>;
   upsertUserOrgPreferences(userId: string, orgId: string, data: {
     smsOptIn?: boolean;
@@ -1770,6 +1771,40 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ─── Per-org preferences ────────────────────────────────────────────────────
+
+  async getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null> {
+    // 1. Check user profile (fastest — already indexed)
+    const [profile] = await db
+      .select({ organizationId: userProfiles.organizationId })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId));
+    if (profile?.organizationId) {
+      return { orgId: profile.organizationId, source: "profile" };
+    }
+
+    // 2. Check most recent booking
+    const [booking] = await db
+      .select({ organizationId: bookings.organizationId })
+      .from(bookings)
+      .where(and(eq(bookings.clientId, userId), sql`${bookings.organizationId} IS NOT NULL`))
+      .orderBy(desc(bookings.startAt))
+      .limit(1);
+    if (booking?.organizationId) {
+      return { orgId: booking.organizationId, source: "booking" };
+    }
+
+    // 3. Check existing user_org_preferences rows
+    const [prefRow] = await db
+      .select({ orgId: userOrgPreferences.orgId })
+      .from(userOrgPreferences)
+      .where(eq(userOrgPreferences.userId, userId))
+      .limit(1);
+    if (prefRow?.orgId) {
+      return { orgId: prefRow.orgId, source: "preferences" };
+    }
+
+    return null;
+  }
 
   async getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined> {
     const [row] = await db

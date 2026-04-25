@@ -1,0 +1,77 @@
+Fix the Settings page still showing “Unable to load preferences.”
+
+Current issue:
+The Settings page uses useActiveOrg(), but the page still fails to load preferences for client users.
+
+Goal:
+Make Settings load successfully for every authenticated client, even if org preferences are missing or org context is delayed.
+
+Audit and fix:
+
+1. In settings.tsx, inspect the preferences query.
+   It should NOT run until orgId exists.
+
+Correct behavior:
+enabled: !!orgId && !orgLoading
+
+The request must include:
+GET /api/me/preferences?orgId=${orgId}
+
+2. Add temporary frontend logging:
+console.log("[Settings] orgId", orgId)
+console.log("[Settings] orgLoading", orgLoading)
+console.log("[Settings] preferences error", error)
+
+3. Inspect the actual network request:
+Confirm it is not calling:
+GET /api/me/preferences
+without orgId.
+
+4. Backend endpoint fix:
+In the GET /api/me/preferences handler:
+
+- Require authenticated user
+- Read orgId from query
+- If orgId is missing, return a safe 400 with message "Missing orgId"
+- If orgId exists but user_org_preferences row is missing:
+  - create default preferences row using ensureUserOrgPreferences(userId, orgId)
+  - then return the default preferences
+- Do NOT throw an error just because the row is missing
+
+5. Confirm client/org association:
+If the logged-in client profile has organizationId, use that.
+If not, derive orgId from:
+- most recent booking
+- user subscription
+- org membership/profile
+- first org preference row
+
+6. Improve useActiveOrg():
+If /api/profile does not return organizationId for CLIENT users, update the hook to fallback:
+- GET /api/me/org-context
+or create this endpoint if needed.
+
+Endpoint should return:
+{
+  orgId,
+  org,
+  source: "profile" | "booking" | "subscription" | "preferences"
+}
+
+7. Settings page should handle loading states:
+- If orgLoading: show loading skeleton
+- If no orgId after loading: show "No organization found for this account"
+- If preferences row missing: auto-create and load defaults
+- Only show “Unable to load preferences” for real server errors
+
+8. Testing:
+- Test CLIENT user with orgId in profile
+- Test CLIENT user without orgId but with booking
+- Test CLIENT user with no preference row
+- Test CLIENT user with existing preference row
+- Refresh /settings directly
+- Navigate to /settings from sidebar
+- TypeScript/build passes
+
+Expected result:
+The Settings page should reliably load phone and notification preferences for client users instead of showing “Unable to load preferences.”

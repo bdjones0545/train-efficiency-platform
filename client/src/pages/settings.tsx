@@ -74,7 +74,11 @@ export default function SettingsPage() {
     ? `/api/notification-preferences?orgId=${orgId}`
     : "/api/notification-preferences";
 
-  const { data: prefsData, isLoading: prefsLoading } = useQuery<PrefsResponse>({
+  const {
+    data: prefsData,
+    isLoading: prefsLoading,
+    error: prefsError,
+  } = useQuery<PrefsResponse>({
     queryKey: ["/api/notification-preferences", orgId],
     queryFn: async () => {
       const authHeaders = await getAuthHeaders();
@@ -85,9 +89,13 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Failed to load preferences");
       return res.json();
     },
-    // Wait until org context is resolved (orgId known or confirmed absent)
-    enabled: !orgLoading,
+    // Only fetch once orgId is confirmed — avoids firing with null orgId
+    enabled: !!orgId && !orgLoading,
   });
+
+  console.log("[Settings] orgId", orgId);
+  console.log("[Settings] orgLoading", orgLoading);
+  if (prefsError) console.log("[Settings] preferences error", prefsError);
 
   useEffect(() => {
     if (prefsData && localPrefs === null) {
@@ -159,7 +167,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {prefsLoading ? (
+      {orgLoading || prefsLoading ? (
         <Card>
           <CardContent className="pt-6 space-y-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -171,6 +179,14 @@ export default function SettingsPage() {
                 <Skeleton className="h-6 w-11 rounded-full" />
               </div>
             ))}
+          </CardContent>
+        </Card>
+      ) : !orgId ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground" data-testid="text-no-org">
+              No organization found for this account. Contact your coach or administrator to get connected.
+            </p>
           </CardContent>
         </Card>
       ) : currentPrefs ? (
@@ -320,7 +336,9 @@ export default function SettingsPage() {
       ) : (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Unable to load preferences.</p>
+            <p className="text-sm text-muted-foreground" data-testid="text-prefs-error">
+              {prefsError instanceof Error ? prefsError.message : "Unable to load preferences. Please refresh the page."}
+            </p>
           </CardContent>
         </Card>
       )}
