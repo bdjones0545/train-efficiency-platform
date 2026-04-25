@@ -1,0 +1,337 @@
+Build a full organization media system for TrainEfficiency so each org landing page feels branded, personal, and media-rich.
+
+Goal:
+Organizations should be able to upload images/videos of their facility, training, athletes, coaches, and results, then display them on their public landing page.
+
+Do not break existing branding fields. Extend them.
+
+========================
+PHASE 1 — DATABASE MODEL
+========================
+
+Create a new table:
+
+organization_media
+
+Fields:
+- id
+- organizationId
+- mediaType: image | video
+- section:
+  - hero
+  - training_showcase
+  - facility
+  - coaches
+  - testimonials
+  - results
+- url
+- thumbnailUrl nullable
+- caption nullable
+- altText nullable
+- orderIndex integer
+- isActive boolean default true
+- uploadedBy nullable
+- createdAt
+- updatedAt
+
+Rules:
+- each org owns its media
+- public landing page only loads active media
+- orderIndex controls display order
+- section controls where it appears on landing page
+
+Run a safe migration.
+
+========================
+PHASE 2 — FILE UPLOAD STORAGE
+========================
+
+Add image/video upload support.
+
+Accepted files:
+- images: jpg, jpeg, png, webp
+- videos: mp4, mov, webm
+
+Limits:
+- images max 10MB
+- videos max 100MB
+- max 5 hero media items
+- max 20 training showcase items
+- max 20 facility items
+- max 10 coach/testimonial/result items per section
+
+Storage:
+- Use the app’s existing upload/storage system if one exists.
+- If no storage exists, implement a simple server upload route using multer and local/public uploads for now.
+- Store public URL in organization_media.url.
+
+For videos:
+- store uploaded video URL
+- generate/store thumbnail if simple support exists
+- if thumbnail generation is not available, use a placeholder video thumbnail
+
+========================
+PHASE 3 — API ROUTES
+========================
+
+Create secured org admin routes:
+
+GET /api/org/media
+- returns all media for authenticated user’s organization
+- grouped by section if convenient
+
+POST /api/org/media
+- uploads file
+- accepts section, caption, altText
+- creates organization_media row
+
+PATCH /api/org/media/:id
+- update section, caption, altText, orderIndex, isActive
+
+DELETE /api/org/media/:id
+- soft delete preferred: set isActive=false
+- hard delete file only if existing app patterns support it safely
+
+POST /api/org/media/reorder
+- accepts array of media IDs + orderIndex
+- updates order
+
+Create public route:
+
+GET /api/public/org/:slug/media
+- returns only active media for that organization
+- grouped by section
+- no private/admin data
+
+Security:
+- org admins/coaches can only manage their own org’s media
+- public route only exposes active media URLs and display metadata
+
+========================
+PHASE 4 — ADMIN BRANDING UI: MEDIA LIBRARY
+========================
+
+Add a new section to the Branding/Configuration page:
+
+“Media Library”
+
+UI should include:
+
+1. Section tabs:
+- Hero
+- Training Showcase
+- Facility
+- Coaches
+- Testimonials
+- Results
+
+2. Upload control:
+- drag/drop or file picker
+- supports image/video
+- section selector
+- caption field
+- alt text field
+
+3. Media cards:
+Each card shows:
+- thumbnail or image
+- media type badge
+- section badge
+- caption
+- active/inactive toggle
+- edit button
+- delete button
+- order indicator
+
+4. Reordering:
+- simple up/down buttons are acceptable
+- drag-and-drop if easy
+- order must reflect on landing page
+
+5. Limits:
+Show helpful warnings:
+- “Hero section supports up to 5 items.”
+- “Videos should be short and compressed for best mobile performance.”
+
+========================
+PHASE 5 — LANDING PAGE HERO INTEGRATION
+========================
+
+Update org public landing page.
+
+Hero behavior:
+
+If active hero media exists:
+- display hero media behind or above hero text
+- if first hero item is video:
+  - autoplay muted loop playsinline
+  - dark overlay for readability
+- if multiple hero items:
+  - show carousel/slideshow
+  - mobile-friendly swipe or auto-advance
+- if image:
+  - display responsive image with object-cover
+
+If no hero media:
+- keep current hero design unchanged
+
+Hero overlay:
+- org name/logo
+- tagline
+- CTA buttons remain visible
+- maintain text contrast
+
+Performance:
+- lazy load non-first hero media
+- avoid large layout shifts
+
+========================
+PHASE 6 — TRAINING SHOWCASE SECTION
+========================
+
+Add a public landing page section:
+
+“How We Train” or “Training Showcase”
+
+Display active training_showcase media.
+
+Mobile:
+- horizontal swipe carousel
+- cards with image/video thumbnail
+- caption under media
+
+Desktop:
+- responsive grid or carousel
+
+Click/tap:
+- opens fullscreen media viewer/modal
+- videos playable
+- images enlarged
+
+If no training media:
+- hide this section
+
+========================
+PHASE 7 — FACILITY SECTION
+========================
+
+Add section:
+
+“Our Facility” or “Where You’ll Train”
+
+Display active facility media.
+
+Purpose:
+- show gym, equipment, environment, atmosphere
+
+If no facility media:
+- hide section
+
+========================
+PHASE 8 — COACH MEDIA INTEGRATION
+========================
+
+If section = coaches:
+- show media near coach cards or in a “Meet the Coaches” media row
+
+If existing coach profiles do not support direct media association yet:
+- display coach media as a general coach showcase section for now
+
+Optional future:
+- add coachId nullable to organization_media
+
+Do not block this phase on coachId.
+
+========================
+PHASE 9 — TESTIMONIALS / RESULTS MEDIA
+========================
+
+If testimonials or results media exists:
+Add section:
+- “Client Results”
+- “Athlete Highlights”
+- “What Our Athletes Are Saying”
+
+Display captions prominently.
+
+If no media:
+- hide section
+
+========================
+PHASE 10 — MOBILE PERFORMANCE + UX
+========================
+
+Important:
+Landing page must remain fast on mobile.
+
+Rules:
+- use responsive image sizing
+- lazy load below-the-fold media
+- videos should not autoplay with sound
+- videos must be muted, looped, playsInline
+- show poster/thumbnail when possible
+- avoid loading every video at once
+- use horizontal scrolling sections on mobile
+
+Admin UI:
+- upload progress/loading states
+- errors for oversized/unsupported files
+- success toast after upload
+- clean empty states:
+  “Upload training videos or photos to make your landing page feel like your business.”
+
+========================
+PHASE 11 — AGENT AWARENESS
+========================
+
+Update the coach/admin agent prompt so it understands the media system.
+
+Agent should be able to answer:
+- “How do I make my landing page look more like my gym?”
+- “What media am I missing?”
+- “What should I upload first?”
+- “Why does my landing page feel generic?”
+
+Agent guidance:
+- recommend hero video first
+- recommend 3–5 training clips
+- recommend facility photos
+- recommend coach/personality media
+- explain that media improves trust and conversion
+
+If media API/tool access exists, agent can inspect counts by section.
+If not, agent should guide generally.
+
+========================
+PHASE 12 — VALIDATION
+========================
+
+Test admin:
+1. Upload image to Hero.
+2. Upload video to Hero.
+3. Upload image to Training Showcase.
+4. Upload image to Facility.
+5. Add captions and alt text.
+6. Toggle media inactive.
+7. Reorder media.
+8. Delete/soft-delete media.
+9. Confirm org isolation: another org cannot access/edit it.
+10. Confirm file size/type validation works.
+
+Test landing page:
+11. Hero media appears on public org page.
+12. Hero video autoplays muted loop playsinline.
+13. Hero text remains readable.
+14. Training showcase appears only if media exists.
+15. Facility section appears only if media exists.
+16. Inactive media does not appear publicly.
+17. Mobile page remains usable and not overly slow.
+18. Existing landing page still works if no media is uploaded.
+
+Return:
+- files changed
+- DB migration summary
+- API routes added
+- admin UI changes
+- landing page integration summary
+- validation results
