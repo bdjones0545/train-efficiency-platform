@@ -984,7 +984,25 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
           </div>
 
           <div className="space-y-2">
-            <Label>Start Time</Label>
+            <div className="flex items-center justify-between">
+              <Label>Start Time</Label>
+              {(() => {
+                const durationMin = selectedServiceObj?.durationMin || selectedSubPlan?.sessionsPerWeek ? null : 60;
+                const serviceDuration = selectedServiceObj?.durationMin;
+                if (!startTime || !serviceDuration) return null;
+                const [sh, sm] = startTime.split(":").map(Number);
+                const endTotalMin = sh * 60 + sm + serviceDuration;
+                const endH = Math.floor(endTotalMin / 60);
+                const endM = endTotalMin % 60;
+                const endD = new Date();
+                endD.setHours(endH, endM);
+                return (
+                  <span className="text-xs text-muted-foreground" data-testid="text-computed-end-time">
+                    ends {format(endD, "h:mm a")} · {serviceDuration} min
+                  </span>
+                );
+              })()}
+            </div>
             <Select value={startTime} onValueChange={setStartTime}>
               <SelectTrigger data-testid="select-time">
                 <SelectValue placeholder="Select time" />

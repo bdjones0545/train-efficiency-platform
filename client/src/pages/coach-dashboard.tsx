@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,9 @@ import {
   ArrowLeftRight,
   MapPin,
   RefreshCw,
+  Sunrise,
+  Sun,
+  Sunset,
 } from "lucide-react";
 import {
   format,
@@ -44,6 +47,7 @@ const END_HOUR = 22;
 const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
 const SLOT_HEIGHT_PX = 60;
 const PIXELS_PER_MINUTE = SLOT_HEIGHT_PX / 60;
+const HALF_SLOT_HEIGHT = SLOT_HEIGHT_PX / 2;
 
 function minutesSinceStart(hours: number, minutes: number) {
   return (hours - START_HOUR) * 60 + minutes;
@@ -53,6 +57,16 @@ function formatHour(hour: number) {
   const ampm = hour >= 12 ? "PM" : "AM";
   const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
   return `${h12} ${ampm}`;
+}
+
+function formatSlotLabel(hour: number, minute: number) {
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${h12}:${String(minute).padStart(2, "0")} ${ampm}`;
+}
+
+function timeStr(hour: number, minute: number) {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 const statusColors: Record<string, string> = {
@@ -233,6 +247,10 @@ export default function CoachDashboardPage() {
   const addSessionRef = useRef<HTMLButtonElement>(null);
   const [editBooking, setEditBooking] = useState<BookingWithDetails | null>(null);
   const [selectedCoachId, setSelectedCoachId] = useState<string>("");
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const [showStickyHeader, setShowStickyHeader] = useState(false);
+
+  const [quickPickerSlot, setQuickPickerSlot] = useState<{ hour: number; minute: number } | null>(null);
 
   const { data: profile } = useQuery<{ organizationId?: string | null }>({
     queryKey: ["/api/profile"],
@@ -347,9 +365,31 @@ export default function CoachDashboardPage() {
     pending: dayBookings.filter((b) => b.status === "PENDING").length,
   };
 
-  const handleSlotClick = useCallback((hour: number) => {
-    const timeStr = `${String(hour).padStart(2, "0")}:00`;
-    setSlotTime(timeStr);
+  const scrollToHour = useCallback((hour: number) => {
+    if (!calendarRef.current) return;
+    const offset = minutesSinceStart(hour, 0) * PIXELS_PER_MINUTE;
+    calendarRef.current.scrollTop = Math.max(0, offset - 20);
+  }, []);
+
+  const handleCalendarScroll = useCallback(() => {
+    if (!calendarRef.current) return;
+    setShowStickyHeader(calendarRef.current.scrollTop > 40);
+  }, []);
+
+  useEffect(() => {
+    const el = calendarRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", handleCalendarScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleCalendarScroll);
+  }, [handleCalendarScroll]);
+
+  const handleSlotClick = useCallback((hour: number, minute: number) => {
+    setQuickPickerSlot({ hour, minute });
+  }, []);
+
+  const handlePickerSelect = useCallback((time: string) => {
+    setSlotTime(time);
+    setQuickPickerSlot(null);
     setTimeout(() => addSessionRef.current?.click(), 0);
   }, []);
 
@@ -365,26 +405,42 @@ export default function CoachDashboardPage() {
     );
   }
 
-  const hours = [];
+  const slots: { hour: number; minute: number }[] = [];
   for (let h = START_HOUR; h < END_HOUR; h++) {
-    hours.push(h);
+    slots.push({ hour: h, minute: 0 });
+    slots.push({ hour: h, minute: 30 });
   }
+
+  const quickPickerOptions: { label: string; value: string }[] = quickPickerSlot
+    ? (() => {
+        const opts: { label: string; value: string }[] = [];
+        for (let i = 0; i < 4; i++) {
+          const totalMin = quickPickerSlot.hour * 60 + quickPickerSlot.minute + i * 15;
+          const h = Math.floor(totalMin / 60);
+          const m = totalMin % 60;
+          if (h >= END_HOUR) break;
+          opts.push({ label: formatSlotLabel(h, m), value: timeStr(h, m) });
+        }
+        return opts;
+      })()
+    : [];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+      {/* Title + action buttons */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-serif font-bold" data-testid="text-coach-dashboard-title">
             Coach Dashboard
           </h1>
           <p className="text-muted-foreground mt-1">Daily calendar view</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           {orgData?.subscriptionsEnabled && (
             <SubscriptionScheduleDialog
               coachId={activeCoachId}
               triggerButton={
-                <Button variant="outline" data-testid="button-schedule-subscription">
+                <Button variant="outline" className="w-full sm:w-auto" data-testid="button-schedule-subscription">
                   <RefreshCw className="h-4 w-4 mr-1" />
                   Schedule Subscription
                 </Button>
@@ -396,7 +452,7 @@ export default function CoachDashboardPage() {
             initialTime={slotTime}
             coachId={activeCoachId}
             triggerButton={
-              <Button ref={addSessionRef} data-testid="button-add-session">
+              <Button ref={addSessionRef} className="w-full sm:w-auto" data-testid="button-add-session">
                 <Plus className="h-4 w-4 mr-1" />
                 Add Session
               </Button>
@@ -405,6 +461,7 @@ export default function CoachDashboardPage() {
         </div>
       </div>
 
+      {/* Coach selector */}
       {coaches && coaches.length > 1 && (
         <Card className="p-3">
           <div className="flex items-center gap-3 flex-wrap">
@@ -435,6 +492,7 @@ export default function CoachDashboardPage() {
         </Card>
       )}
 
+      {/* Date navigation */}
       <div className="flex items-center gap-2 flex-wrap">
         <Button
           variant="outline"
@@ -446,9 +504,10 @@ export default function CoachDashboardPage() {
         </Button>
         <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" data-testid="button-date-picker">
-              <Calendar className="h-4 w-4 mr-2" />
-              {format(selectedDate, "EEEE, MMMM d, yyyy")}
+            <Button variant="outline" className="flex-1 sm:flex-none min-w-0 truncate" data-testid="button-date-picker">
+              <Calendar className="h-4 w-4 mr-2 shrink-0" />
+              <span className="truncate hidden sm:inline">{format(selectedDate, "EEEE, MMMM d, yyyy")}</span>
+              <span className="truncate sm:hidden">{format(selectedDate, "EEE, MMM d")}</span>
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
@@ -481,6 +540,42 @@ export default function CoachDashboardPage() {
         </Button>
       </div>
 
+      {/* Quick scroll controls */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">Jump to:</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs gap-1 px-2"
+          onClick={() => scrollToHour(6)}
+          data-testid="button-scroll-morning"
+        >
+          <Sunrise className="h-3 w-3" />
+          Morning
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs gap-1 px-2"
+          onClick={() => scrollToHour(12)}
+          data-testid="button-scroll-afternoon"
+        >
+          <Sun className="h-3 w-3" />
+          Afternoon
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs gap-1 px-2"
+          onClick={() => scrollToHour(16)}
+          data-testid="button-scroll-evening"
+        >
+          <Sunset className="h-3 w-3" />
+          Evening
+        </Button>
+      </div>
+
+      {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="p-3 text-center">
           <p className="text-2xl font-bold text-primary" data-testid="text-day-total">{dayStats.total}</p>
@@ -500,72 +595,166 @@ export default function CoachDashboardPage() {
         </Card>
       </div>
 
-      <Card className="p-0 overflow-x-hidden overflow-y-auto" style={{ maxHeight: "70vh" }}>
-        <div
-          className="relative"
-          style={{ height: `${TOTAL_MINUTES * PIXELS_PER_MINUTE}px` }}
-          data-testid="calendar-timeline"
-        >
-          {dayAvailability.map((block) => {
-            const [sh, sm] = block.startTime.split(":").map(Number);
-            const [eh, em] = block.endTime.split(":").map(Number);
-            const topMin = minutesSinceStart(sh, sm);
-            const endMin = minutesSinceStart(eh, em);
-            const top = topMin * PIXELS_PER_MINUTE;
-            const height = (endMin - topMin) * PIXELS_PER_MINUTE;
-            return (
-              <div
-                key={block.id}
-                className="absolute left-0 right-0 bg-primary/5 border-l-2 border-primary/20"
-                style={{ top: `${top}px`, height: `${height}px` }}
-                data-testid={`availability-block-${block.id}`}
-              />
-            );
-          })}
+      {/* Calendar card */}
+      <div className="relative">
+        {/* Sticky mini header */}
+        {showStickyHeader && (
+          <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-2 px-3 py-2 bg-background/95 backdrop-blur-sm border-b rounded-t-lg">
+            <div className="flex items-center gap-2 min-w-0">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-sm font-medium truncate">{format(selectedDate, "EEEE, MMM d")}</span>
+              {selectedCoachId && selectedCoachId !== myCoachProfile?.id && (
+                <span className="text-xs text-muted-foreground truncate hidden sm:inline">· {selectedCoachName}</span>
+              )}
+            </div>
+            <AddSessionDialog
+              initialDate={selectedDate}
+              initialTime={slotTime}
+              coachId={activeCoachId}
+              triggerButton={
+                <Button size="sm" className="h-7 text-xs shrink-0" data-testid="button-add-session-sticky">
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add
+                </Button>
+              }
+            />
+          </div>
+        )}
 
-          {hours.map((hour) => {
-            const top = minutesSinceStart(hour, 0) * PIXELS_PER_MINUTE;
-            return (
-              <div key={hour}>
-                <div className="absolute left-0 right-0 flex items-start" style={{ top: `${top}px` }}>
-                  <span className="w-14 text-right pr-2 text-[11px] text-muted-foreground -mt-1.5 select-none shrink-0">
-                    {formatHour(hour)}
-                  </span>
-                  <div className="flex-1 border-t border-border/40" />
-                </div>
+        <Card className="p-0 overflow-x-hidden overflow-y-auto" style={{ maxHeight: "70vh" }} ref={calendarRef}>
+          <div
+            className="relative"
+            style={{ height: `${TOTAL_MINUTES * PIXELS_PER_MINUTE}px` }}
+            data-testid="calendar-timeline"
+          >
+            {/* Availability background blocks */}
+            {dayAvailability.map((block) => {
+              const [sh, sm] = block.startTime.split(":").map(Number);
+              const [eh, em] = block.endTime.split(":").map(Number);
+              const topMin = minutesSinceStart(sh, sm);
+              const endMin = minutesSinceStart(eh, em);
+              const top = topMin * PIXELS_PER_MINUTE;
+              const height = (endMin - topMin) * PIXELS_PER_MINUTE;
+              return (
                 <div
-                  className="absolute left-16 right-2 cursor-pointer rounded-sm transition-colors hover:bg-primary/5"
-                  style={{ top: `${top}px`, height: `${SLOT_HEIGHT_PX}px`, zIndex: 1 }}
-                  onClick={() => handleSlotClick(hour)}
-                  data-testid={`slot-${String(hour).padStart(2, "0")}:00`}
-                >
-                  <div className="flex items-center justify-center h-full opacity-0 hover:opacity-100 transition-opacity">
-                    <Plus className="h-4 w-4 text-muted-foreground" />
+                  key={block.id}
+                  className="absolute left-0 right-0 bg-primary/5 border-l-2 border-primary/20"
+                  style={{ top: `${top}px`, height: `${height}px` }}
+                  data-testid={`availability-block-${block.id}`}
+                />
+              );
+            })}
+
+            {/* 30-minute time slots */}
+            {slots.map(({ hour, minute }) => {
+              const topMin = minutesSinceStart(hour, minute);
+              const top = topMin * PIXELS_PER_MINUTE;
+              const isFullHour = minute === 0;
+              const slotKey = `slot-${hour}-${minute}`;
+
+              return (
+                <div key={slotKey}>
+                  {/* Divider line */}
+                  <div
+                    className="absolute left-0 right-0 flex items-start pointer-events-none"
+                    style={{ top: `${top}px` }}
+                  >
+                    {isFullHour ? (
+                      <>
+                        <span className="w-14 text-right pr-2 text-[11px] text-muted-foreground -mt-1.5 select-none shrink-0">
+                          {formatHour(hour)}
+                        </span>
+                        <div className="flex-1 border-t border-border/50" />
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-14 text-right pr-2 text-[10px] text-muted-foreground/50 -mt-1 select-none shrink-0">
+                          :30
+                        </span>
+                        <div className="flex-1 border-t border-dashed border-border/25" />
+                      </>
+                    )}
+                  </div>
+
+                  {/* Clickable slot area */}
+                  <div
+                    className="absolute left-16 right-2 cursor-pointer rounded-sm transition-colors group hover:bg-primary/5 active:bg-primary/10"
+                    style={{ top: `${top}px`, height: `${HALF_SLOT_HEIGHT}px`, zIndex: 1 }}
+                    onClick={() => handleSlotClick(hour, minute)}
+                    data-testid={`slot-${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`}
+                  >
+                    <div className="flex items-center justify-center h-full opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
 
-          {dayBookings.map((booking) => (
-            <BookingBlock
-              key={booking.id}
-              booking={booking}
-              redeemedIds={redeemedIds}
-              onStatusChange={(id, status) => updateStatusMutation.mutate({ bookingId: id, status })}
-              onRedeem={(id) => redeemMutation.mutate(id)}
-              onEdit={(b) => setEditBooking(b)}
-              statusPending={updateStatusMutation.isPending}
-              redeemPending={redeemMutation.isPending}
-            />
-          ))}
+            {/* Bookings */}
+            {dayBookings.map((booking) => (
+              <BookingBlock
+                key={booking.id}
+                booking={booking}
+                redeemedIds={redeemedIds}
+                onStatusChange={(id, status) => updateStatusMutation.mutate({ bookingId: id, status })}
+                onRedeem={(id) => redeemMutation.mutate(id)}
+                onEdit={(b) => setEditBooking(b)}
+                statusPending={updateStatusMutation.isPending}
+                redeemPending={redeemMutation.isPending}
+              />
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* Quick time picker popover */}
+      {quickPickerSlot && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setQuickPickerSlot(null)}
+        >
+          <div
+            className="absolute bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              bottom: 0,
+            }}
+          >
+            <Card className="rounded-b-none sm:rounded-lg p-4 space-y-3 shadow-xl border sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:w-64 mx-auto max-w-sm w-full">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Choose start time</p>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground text-xs"
+                  onClick={() => setQuickPickerSlot(null)}
+                  data-testid="button-close-time-picker"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {quickPickerOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className="flex-1 min-w-[80px] py-2 px-3 rounded-md border text-sm font-medium bg-background hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                    onClick={() => handlePickerSelect(opt.value)}
+                    data-testid={`time-chip-${opt.value}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </Card>
+          </div>
         </div>
-      </Card>
+      )}
 
       {dayBookings.length === 0 && (
         <div className="text-center py-4">
           <p className="text-sm text-muted-foreground">
-            No sessions scheduled for {format(selectedDate, "EEEE, MMMM d")}. Click a time slot or use "Add Session" to schedule one.
+            No sessions scheduled for {format(selectedDate, "EEEE, MMMM d")}. Tap a time slot or use "Add Session" to schedule one.
           </p>
         </div>
       )}

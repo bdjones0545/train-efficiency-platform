@@ -98,7 +98,7 @@ export function CoachAgentLauncher() {
         style={{
           width: 52,
           height: 52,
-          bottom: `max(1.5rem, calc(env(safe-area-inset-bottom) + 1rem))`,
+          bottom: `max(5rem, calc(env(safe-area-inset-bottom) + 4.5rem))`,
           right: "1.25rem",
         }}
       >
