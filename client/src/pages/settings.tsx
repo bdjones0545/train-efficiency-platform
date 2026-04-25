@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
+import { useActiveOrg } from "@/hooks/use-active-org";
 import { Settings, CheckCircle, Shield, MessageSquare, Mail } from "lucide-react";
 
 interface ChannelPrefs {
@@ -67,11 +68,7 @@ export default function SettingsPage() {
   const [prefsSaved, setPrefsSaved] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
-  // Get org context from profile (standard pattern throughout the app)
-  const { data: profile } = useQuery<{ organizationId?: string | null }>({
-    queryKey: ["/api/profile"],
-  });
-  const orgId = profile?.organizationId ?? null;
+  const { orgId, isLoading: orgLoading } = useActiveOrg();
 
   const prefsUrl = orgId
     ? `/api/notification-preferences?orgId=${orgId}`
@@ -88,8 +85,8 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Failed to load preferences");
       return res.json();
     },
-    // Don't block on profile loading — attempt even without orgId as fallback
-    enabled: profile !== undefined,
+    // Wait until org context is resolved (orgId known or confirmed absent)
+    enabled: !orgLoading,
   });
 
   useEffect(() => {
