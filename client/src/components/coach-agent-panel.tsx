@@ -154,6 +154,97 @@ interface SessionPackageAlert {
 
 export type SourcePage = "schedule" | "clients" | "revenue" | "settings" | "dashboard" | "media";
 
+interface AgentAlert {
+  id: string;
+  icon: React.ElementType;
+  iconColor: string;
+  title: string;
+  reason: string;
+  urgency: "high" | "medium";
+  actionLabel: string;
+  actionTab: "chat" | "ops" | "revenue";
+  actionPrompt: string;
+}
+
+function getTopAgentAlerts(
+  digest: OpsDigest | undefined | null,
+  revenueSummary: RevenueSummary | undefined | null
+): AgentAlert[] {
+  const alerts: AgentAlert[] = [];
+
+  if (digest) {
+    for (const ins of digest.insights.filter(i => i.priority === "high")) {
+      alerts.push({
+        id: `insight-${ins.category}-${ins.title.slice(0, 20)}`,
+        icon: AlertTriangle,
+        iconColor: "text-red-500",
+        title: ins.title,
+        reason: ins.description,
+        urgency: "high",
+        actionLabel: ins.actionLabel ?? "View",
+        actionTab: "chat",
+        actionPrompt: ins.actionPrompt ?? ins.title,
+      });
+    }
+    if (digest.openSlotsThisWeek > 0) {
+      alerts.push({
+        id: "open-slots",
+        icon: Calendar,
+        iconColor: "text-orange-500",
+        title: `${digest.openSlotsThisWeek} open slots this week`,
+        reason: `~$${digest.estimatedOpenRevenue.toLocaleString()} in potential revenue`,
+        urgency: "medium",
+        actionLabel: "Fill Slots",
+        actionTab: "ops",
+        actionPrompt: "Find open slots and suggest clients to fill them",
+      });
+    }
+    if (digest.inactiveClientsCount > 0) {
+      alerts.push({
+        id: "inactive-clients",
+        icon: UserX,
+        iconColor: "text-amber-500",
+        title: `${digest.inactiveClientsCount} clients haven't booked recently`,
+        reason: "Consider a follow-up or booking offer",
+        urgency: "medium",
+        actionLabel: "View",
+        actionTab: "chat",
+        actionPrompt: "Who are our at-risk clients?",
+      });
+    }
+  }
+
+  if ((revenueSummary?.churnRiskCount ?? 0) > 0) {
+    alerts.push({
+      id: "churn-risks",
+      icon: TrendingDown,
+      iconColor: "text-red-500",
+      title: `${revenueSummary!.churnRiskCount} client${revenueSummary!.churnRiskCount > 1 ? "s" : ""} at churn risk`,
+      reason: "Recent drop in session activity detected",
+      urgency: "high",
+      actionLabel: "View",
+      actionTab: "revenue",
+      actionPrompt: "Show me clients at churn risk",
+    });
+  }
+
+  if ((revenueSummary?.sessionPackageAlertCount ?? 0) > 0) {
+    alerts.push({
+      id: "session-packages",
+      icon: Package,
+      iconColor: "text-amber-500",
+      title: `${revenueSummary!.sessionPackageAlertCount} session package${revenueSummary!.sessionPackageAlertCount > 1 ? "s" : ""} expiring`,
+      reason: "Clients may need renewal soon",
+      urgency: "medium",
+      actionLabel: "View",
+      actionTab: "revenue",
+      actionPrompt: "Show session package alerts",
+    });
+  }
+
+  return alerts.sort((a, b) => (a.urgency === "high" && b.urgency !== "high" ? -1 : b.urgency === "high" && a.urgency !== "high" ? 1 : 0));
+}
+
 export interface AgentContext {
   sourcePage: SourcePage;
   sourcePath: string;
@@ -513,8 +604,10 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const [automationLevel, setAutomationLevel] = useState<number>(1);
   const [savingLevel, setSavingLevel] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  const [alertDropdownOpen, setAlertDropdownOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const alertDropdownRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const { user, isLoading: authLoading } = useAuth();
@@ -636,6 +729,17 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     return () => vv.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    if (!alertDropdownOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (alertDropdownRef.current && !alertDropdownRef.current.contains(e.target as Node)) {
+        setAlertDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [alertDropdownOpen]);
+
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || isLoading) return;
@@ -732,6 +836,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
   const highPriorityInsights = activeDigest?.insights.filter(i => i.priority === "high") ?? [];
   const topActions = activeDigest?.insights.slice(0, 3) ?? [];
+  const topAgentAlerts = getTopAgentAlerts(activeDigest, activeRevenueSummary);
 
   function getPrimaryHeadline(): string {
     if (isDemo) return "12 open slots worth ~$840 (Demo)";
@@ -801,10 +906,79 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                 <ListOrdered className="h-3 w-3 mr-1" />{activeWaitlist.length}
               </Badge>
             )}
-            {activeDigest && activeDigest.insights.filter(i => i.priority === "high").length > 0 && (
-              <Badge variant="destructive" className="text-[11px] px-1.5" data-testid="churn-badge">
-                <AlertTriangle className="h-3 w-3 mr-1" />{activeDigest.insights.filter(i => i.priority === "high").length}
-              </Badge>
+            {topAgentAlerts.length > 0 && (
+              <div className="relative" ref={alertDropdownRef}>
+                <button
+                  aria-label="View high-priority alerts"
+                  data-testid="alert-badge-button"
+                  onClick={() => setAlertDropdownOpen(prev => !prev)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {topAgentAlerts.length}
+                </button>
+
+                {alertDropdownOpen && (
+                  <div
+                    className="absolute right-0 top-full mt-1.5 w-72 sm:w-80 rounded-xl border border-border bg-background shadow-lg z-50 overflow-hidden"
+                    data-testid="alert-dropdown"
+                  >
+                    <div className="px-3 py-2 border-b border-border bg-muted/40 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground">High-Priority Alerts</span>
+                      <button
+                        onClick={() => setAlertDropdownOpen(false)}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="Close alerts"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="divide-y divide-border">
+                      {topAgentAlerts.slice(0, 3).map(alert => {
+                        const Icon = alert.icon;
+                        return (
+                          <div
+                            key={alert.id}
+                            className="px-3 py-2.5 flex items-start gap-2.5"
+                            data-testid={`alert-row-${alert.id}`}
+                          >
+                            <div className={`mt-0.5 shrink-0 ${alert.iconColor}`}>
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-1.5">
+                                <p className="text-xs font-medium text-foreground leading-tight">{alert.title}</p>
+                                <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${alert.urgency === "high" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"}`}>
+                                  {alert.urgency === "high" ? "Urgent" : "Watch"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{alert.reason}</p>
+                              <button
+                                className="mt-1.5 text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5"
+                                data-testid={`alert-action-${alert.id}`}
+                                onClick={() => {
+                                  setAlertDropdownOpen(false);
+                                  setActiveTab(alert.actionTab);
+                                  setTimeout(() => sendMessage(alert.actionPrompt), 100);
+                                }}
+                              >
+                                {alert.actionLabel} <ChevronRight className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {topAgentAlerts.length === 0 && (
+                      <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                        No high-priority alerts right now.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}

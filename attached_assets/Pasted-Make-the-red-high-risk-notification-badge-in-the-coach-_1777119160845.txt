@@ -1,0 +1,114 @@
+Make the red high-risk notification badge in the coach Scheduling Agent header clickable.
+
+Current issue:
+The header shows a red alert badge like “3”, but it is not actionable.
+
+Goal:
+When the coach taps/clicks the red badge, show a dropdown/popover with the top 3 high-risk notifications.
+
+Requirements:
+
+1. Clickable Alert Badge
+- Make the red alert badge button-accessible.
+- Keep current visual style.
+- Add hover/tap state.
+- Add aria-label like “View high-priority alerts”.
+
+2. Dropdown / Popover
+On click, open a dropdown anchored to the badge.
+
+Mobile:
+- Use a small sheet/popover below the header if space allows.
+- If cramped, use a full-width dropdown panel under the header.
+
+Desktop:
+- Use popover/dropdown aligned right.
+
+3. Alert Content
+Show top 3 alerts from existing agent/ops data.
+
+Priority order:
+- high-priority action queue items
+- churn risks
+- overdue follow-ups
+- revenue goal behind target
+- urgent open slots
+- failed/expired pending actions if available
+
+Each alert row should include:
+- icon
+- title
+- short reason
+- urgency badge
+- action button or chevron
+
+Example:
+1. “17 clients haven’t booked this week”
+   “Consider follow-up or booking offer”
+   Button: “View”
+
+2. “Hunter has significant capacity”
+   “81 open hour-slots this week”
+   Button: “Fill Slots”
+
+3. “$4,978 potential revenue”
+   “103 open slots available”
+   Button: “View Revenue”
+
+4. Behavior on Row Click
+Clicking an alert should:
+- switch to the relevant tab if needed
+  - churn / clients / follow-up → Ops or Chat
+  - revenue gap → Revenue
+  - open slots → Ops or Chat
+- optionally send the relevant prompt to the agent:
+  - “Show my high-priority alerts”
+  - “Show inactive clients”
+  - “Find open slots”
+  - “Explain my revenue gap”
+
+Keep it simple:
+- First implementation can switch tab and populate/send the prompt.
+
+5. Empty State
+If no alerts:
+- Badge should be hidden OR show no dropdown.
+- Dropdown empty state:
+  “No high-priority alerts right now.”
+
+6. Data Source
+Use existing data already loaded if possible:
+- operations digest
+- daily action queue
+- revenue pressure
+- pending confirmations
+- alert count source currently driving the badge
+
+Avoid adding expensive polling.
+If needed, create a lightweight helper:
+getTopAgentAlerts(data): AgentAlert[]
+
+7. Mobile UX
+- Dropdown must not be hidden behind browser chrome.
+- Tapping outside closes it.
+- Close when row action is selected.
+- Keep header visible.
+- Do not block the chat input unnecessarily.
+
+8. Validation
+Test:
+- Badge appears when alert count > 0.
+- Tapping badge opens dropdown.
+- Dropdown shows up to 3 alerts.
+- Alert rows have correct titles/reasons/actions.
+- Tapping outside closes dropdown.
+- Tapping an alert performs the expected tab/prompt action.
+- Works on mobile and desktop.
+- No layout shift in header.
+- If alert count is 0, badge is hidden or inactive.
+
+Return:
+- files changed
+- alert data source used
+- dropdown behavior
+- mobile/desktop validation results
