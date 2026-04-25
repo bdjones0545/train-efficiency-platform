@@ -271,6 +271,8 @@ export default function OrgLandingPage() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -282,6 +284,8 @@ export default function OrgLandingPage() {
     setPassword("");
     setFirstName("");
     setLastName("");
+    setPhone("");
+    setSmsOptIn(false);
     setError("");
     setShowPassword(false);
   };
@@ -313,7 +317,7 @@ export default function OrgLandingPage() {
     try {
       const endpoint = isSignUp ? "/api/client/register" : "/api/client/login";
       const body = isSignUp
-        ? { email, password, firstName, lastName, organizationId: org?.id }
+        ? { email, password, firstName, lastName, organizationId: org?.id, phone: phone.trim() || undefined, smsOptIn }
         : { email, password };
       const res = await apiRequest("POST", endpoint, body);
       const data = await res.json();
@@ -1043,6 +1047,37 @@ export default function OrgLandingPage() {
                 </Button>
               </div>
             </div>
+            {isSignUp && (
+              <>
+                <div className="space-y-2">
+                  <label htmlFor="org-client-phone" className="text-sm font-medium">Phone Number <span className="text-muted-foreground font-normal">(optional)</span></label>
+                  <Input
+                    id="org-client-phone"
+                    type="tel"
+                    placeholder="+1 (555) 000-0000"
+                    value={phone}
+                    onChange={(e) => { setPhone(e.target.value); setError(""); }}
+                    data-testid="input-org-client-phone"
+                  />
+                  <p className="text-xs text-muted-foreground">Used for booking reminders and optional SMS notifications.</p>
+                </div>
+                {phone.trim() && (
+                  <div className="flex items-start gap-2.5 p-3 rounded-md border bg-muted/30">
+                    <input
+                      type="checkbox"
+                      id="org-sms-consent"
+                      checked={smsOptIn}
+                      onChange={(e) => setSmsOptIn(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 cursor-pointer"
+                      data-testid="checkbox-org-sms-consent"
+                    />
+                    <label htmlFor="org-sms-consent" className="text-xs text-muted-foreground cursor-pointer leading-relaxed">
+                      I agree to receive SMS notifications from my coach or organization. Message and data rates may apply. I can opt out at any time.
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
             {error && <p className="text-sm text-destructive" data-testid="text-org-client-auth-error">{error}</p>}
             <Button
               type="submit"

@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy, Menu, X, Mail } from "lucide-react";
+import { Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff, UserPlus, Trophy, Menu, X, Mail, Phone } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
@@ -35,6 +35,8 @@ export default function EfficiencyStrengthPage() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -46,6 +48,8 @@ export default function EfficiencyStrengthPage() {
     setPassword("");
     setFirstName("");
     setLastName("");
+    setPhone("");
+    setSmsOptIn(false);
     setError("");
     setShowPassword(false);
   };
@@ -79,7 +83,7 @@ export default function EfficiencyStrengthPage() {
     try {
       const endpoint = isSignUp ? "/api/client/register" : "/api/client/login";
       const body = isSignUp
-        ? { email, password, firstName, lastName, organizationId: "org-est" }
+        ? { email, password, firstName, lastName, organizationId: "org-est", phone: phone.trim() || undefined, smsOptIn }
         : { email, password };
 
       const res = await apiRequest("POST", endpoint, body);
@@ -565,6 +569,37 @@ export default function EfficiencyStrengthPage() {
                 </Button>
               </div>
             </div>
+            {isSignUp && (
+              <>
+                <div className="space-y-2">
+                  <label htmlFor="client-phone" className="text-sm font-medium">Phone Number <span className="text-muted-foreground font-normal">(optional)</span></label>
+                  <Input
+                    id="client-phone"
+                    type="tel"
+                    placeholder="+1 (555) 000-0000"
+                    value={phone}
+                    onChange={(e) => { setPhone(e.target.value); setError(""); }}
+                    data-testid="input-client-phone"
+                  />
+                  <p className="text-xs text-muted-foreground">Used for booking reminders and optional SMS notifications.</p>
+                </div>
+                {phone.trim() && (
+                  <div className="flex items-start gap-2.5 p-3 rounded-md border bg-muted/30">
+                    <input
+                      type="checkbox"
+                      id="sms-consent"
+                      checked={smsOptIn}
+                      onChange={(e) => setSmsOptIn(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 cursor-pointer"
+                      data-testid="checkbox-sms-consent"
+                    />
+                    <label htmlFor="sms-consent" className="text-xs text-muted-foreground cursor-pointer leading-relaxed">
+                      I agree to receive SMS notifications from my coach or organization. Message and data rates may apply. I can opt out at any time.
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
             {error && (
               <p className="text-sm text-destructive" data-testid="text-client-auth-error">{error}</p>
             )}

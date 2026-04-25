@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Calendar, Clock, X, Users, MapPin, CheckCircle, Shield, Bell, MessageSquare, Mail } from "lucide-react";
 import { format, parseISO, isPast } from "date-fns";
@@ -113,18 +114,34 @@ export default function MyBookingsPage() {
     }
   }, [prefsData, localPrefs]);
 
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+
   const prefsMutation = useMutation({
     mutationFn: async (payload: { preferences: NotificationPreferences; phone: string; smsOptIn: boolean }) => {
-      const res = await apiRequest("PATCH", "/api/notification-preferences", payload);
-      return res.json();
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch("/api/notification-preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to save preferences");
+      return data;
     },
     onSuccess: () => {
+      setPhoneError(null);
       queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
       setPrefsSaved(true);
       toast({ title: "Preferences saved" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to save preferences", variant: "destructive" });
+    onError: (err: Error) => {
+      const msg = err.message || "Failed to save preferences";
+      if (msg.toLowerCase().includes("phone") || msg.toLowerCase().includes("number")) {
+        setPhoneError(msg);
+      } else {
+        toast({ title: "Error", description: msg, variant: "destructive" });
+      }
     },
   });
 
@@ -357,9 +374,18 @@ export default function MyBookingsPage() {
                       type="tel"
                       placeholder="+1 (555) 000-0000"
                       value={localPhone}
-                      onChange={(e) => { setLocalPhone(e.target.value); setPrefsSaved(false); }}
+                      onChange={(e) => { setLocalPhone(e.target.value); setPrefsSaved(false); setPhoneError(null); }}
+                      className={phoneError ? "border-destructive" : ""}
                       data-testid="input-phone"
                     />
+                    {phoneError && (
+                      <p className="text-xs text-destructive" data-testid="text-phone-error">{phoneError}</p>
+                    )}
+                    {!localPhone && !prefsLoading && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="text-phone-nudge">
+                        Add your phone number to enable SMS reminders.
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-start justify-between gap-4 pt-1" data-testid="row-sms-opt-in">
                     <div className="flex-1">

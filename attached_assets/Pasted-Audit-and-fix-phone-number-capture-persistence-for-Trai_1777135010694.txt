@@ -1,0 +1,81 @@
+Audit and fix phone number capture/persistence for TrainEfficiency users.
+
+Goal:
+New users should be prompted to enter their phone number during signup, and existing users should have a clear way to add/edit their phone number and save it to the database.
+
+Current state:
+SMS infrastructure exists, but we need to make sure phone numbers are reliably collected, normalized, persisted, returned by APIs, and editable.
+
+Scope:
+
+1. Verify database schema:
+- Confirm users.phone exists in the actual Drizzle schema.
+- Confirm the database migration has been applied.
+- Confirm phone is nullable for existing users.
+- Confirm phone is returned safely by user/profile APIs where needed.
+
+2. New user signup:
+- Add phone number field to signup/registration form.
+- Make it required for new users only if that does not break invite/claim/subscriber flows.
+- Label clearly:
+  “Phone number”
+- Helper text:
+  “Used for booking reminders and optional SMS notifications.”
+- Normalize phone number before saving.
+- Prefer E.164 format when possible.
+- If phone is invalid, show a friendly validation message.
+
+3. Existing users:
+Add or verify a phone number input in the user profile / My Bookings Notifications tab.
+
+Requirements:
+- User can add a phone number.
+- User can edit an existing phone number.
+- Saving persists to users.phone in the database.
+- UI refreshes with saved value.
+- Show success confirmation.
+- Show validation error if invalid.
+
+4. API/backend:
+Add or verify an endpoint for updating phone:
+- PATCH /api/me/profile
+or existing profile update endpoint
+
+It should:
+- Require authentication.
+- Accept phone.
+- Normalize phone.
+- Save to users.phone.
+- Return updated user/profile data.
+- Never allow a user to update another user’s phone from a public route.
+
+5. SMS opt-in relationship:
+- Phone entry alone should NOT automatically enable SMS opt-in unless the signup form includes explicit SMS consent language.
+- If there is an SMS opt-in checkbox during signup, make it unchecked by default.
+- Consent text:
+  “I agree to receive SMS notifications from my coach or organization. Message and data rates may apply. I can opt out at any time.”
+
+6. Existing user onboarding nudge:
+If an existing user has no phone number:
+- Show a small prompt in Notifications:
+  “Add your phone number to enable SMS reminders.”
+- Do not block app usage.
+
+7. Admin/coach view:
+If coaches/admins can view client profiles:
+- Show whether a client has a phone number on file.
+- Show whether SMS opt-in is enabled.
+- Do not allow coaches/admins to silently opt a client into SMS without consent tracking.
+
+8. Testing:
+- New signup saves phone to database.
+- Existing user can add phone and refresh page without losing it.
+- Existing user can edit phone.
+- Invalid phone is rejected.
+- Blank phone is allowed only for existing users if intentionally clearing it.
+- SMS opt-in remains false unless explicitly checked.
+- Phone value appears in notification settings after save.
+- TypeScript/build checks pass.
+
+Expected result:
+Phone numbers are reliably captured for new users, editable by existing users, persisted in the database, and ready for SMS reminders/outreach without silently opting anyone into SMS.

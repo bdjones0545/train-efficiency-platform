@@ -410,7 +410,7 @@ export async function registerRoutes(
 
   app.post("/api/client/register", async (req: any, res) => {
     try {
-      const { email, password, firstName, lastName, organizationId } = req.body;
+      const { email, password, firstName, lastName, organizationId, phone, smsOptIn } = req.body;
       if (!email || !password || !firstName || !lastName) {
         return res.status(400).json({ message: "All fields are required" });
       }
@@ -423,6 +423,9 @@ export async function registerRoutes(
         return res.status(409).json({ message: "An account with this email already exists" });
       }
 
+      const { normalizePhone } = await import('./sms');
+      const normalizedPhone = phone ? (normalizePhone(phone.trim()) ?? null) : null;
+
       const hash = await bcrypt.hash(password, 10);
 
       const { db: dbRef } = await import("./db");
@@ -432,6 +435,10 @@ export async function registerRoutes(
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         passwordHash: hash,
+        phone: normalizedPhone,
+        smsOptIn: smsOptIn === true,
+        smsOptInAt: smsOptIn === true ? new Date() : null,
+        smsConsentSource: smsOptIn === true ? 'signup' : null,
         lastSignInAt: new Date(),
       }).returning();
       const user = created;
@@ -1138,6 +1145,10 @@ export async function registerRoutes(
       const existingUser = await storage.getUserByEmail(email.toLowerCase());
       if (existingUser) return res.status(409).json({ message: "An account with this email already exists. Please log in instead." });
 
+      const { normalizePhone: normPhone } = await import('./sms');
+      const { phone: regPhone, smsOptIn: regSmsOptIn } = req.body;
+      const normalizedRegPhone = regPhone ? (normPhone(regPhone.trim()) ?? null) : null;
+
       const hash = await bcrypt.hash(password, 10);
       const { db: dbRef } = await import("./db");
       const { users } = await import("@shared/models/auth");
@@ -1148,6 +1159,10 @@ export async function registerRoutes(
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         passwordHash: hash,
+        phone: normalizedRegPhone,
+        smsOptIn: regSmsOptIn === true,
+        smsOptInAt: regSmsOptIn === true ? new Date() : null,
+        smsConsentSource: regSmsOptIn === true ? 'signup' : null,
         lastSignInAt: new Date(),
       }).returning();
 
@@ -1434,6 +1449,33 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching profile:", error);
       res.status(500).json({ message: "Failed to fetch profile" });
+    }
+  });
+
+  app.patch("/api/me/profile", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const { firstName, lastName, phone } = req.body;
+
+      const updateData: { firstName?: string; lastName?: string; phone?: string | null } = {};
+      if (firstName !== undefined && typeof firstName === "string") updateData.firstName = firstName.trim();
+      if (lastName !== undefined && typeof lastName === "string") updateData.lastName = lastName.trim() || null as any;
+      if (phone !== undefined) {
+        const { normalizePhone } = await import('./sms');
+        if (phone === null || phone === "") {
+          updateData.phone = null;
+        } else {
+          const normalized = normalizePhone(phone.trim());
+          if (!normalized) return res.status(400).json({ message: "Invalid phone number. Please enter a 10-digit US number or include country code." });
+          updateData.phone = normalized;
+        }
+      }
+
+      await storage.updateUser(userId, updateData);
+      const user = await storage.getUser(userId);
+      res.json({ success: true, phone: user?.phone ?? null, firstName: user?.firstName, lastName: user?.lastName });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to update profile" });
     }
   });
 
@@ -6350,8 +6392,15 @@ export async function registerRoutes(
       // Handle phone update
       if (phone !== undefined) {
         const { normalizePhone } = await import('./sms');
-        const normalized = phone ? normalizePhone(phone) : null;
-        await storage.updateUser(userId, { phone: normalized ?? phone ?? null });
+        if (phone && phone.trim()) {
+          const normalized = normalizePhone(phone.trim());
+          if (!normalized) {
+            return res.status(400).json({ message: "Invalid phone number. Please enter a 10-digit US number or include a country code (e.g. +1 555 000 0000)." });
+          }
+          await storage.updateUser(userId, { phone: normalized });
+        } else {
+          await storage.updateUser(userId, { phone: null });
+        }
       }
 
       // Handle SMS opt-in change

@@ -32,6 +32,8 @@ export default function ClaimSubscriptionPage() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [done, setDone] = useState(false);
@@ -55,7 +57,7 @@ export default function ClaimSubscriptionPage() {
       const res = await fetch("/api/public/register-and-claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, firstName, lastName, stripeSubscriptionId: stripeSubId, planId }),
+        body: JSON.stringify({ email, password, firstName, lastName, stripeSubscriptionId: stripeSubId, planId, phone: phone.trim() || undefined, smsOptIn }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Registration failed");
@@ -224,6 +226,26 @@ export default function ClaimSubscriptionPage() {
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" data-testid="input-password" />
             </div>
+            <div className="space-y-1">
+              <Label htmlFor="phone">Phone Number <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+              <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" data-testid="input-phone" />
+              <p className="text-xs text-muted-foreground">Used for booking reminders and optional SMS notifications.</p>
+            </div>
+            {phone.trim() && (
+              <div className="flex items-start gap-2.5 p-3 rounded-md border bg-muted/30">
+                <input
+                  type="checkbox"
+                  id="claim-sms-consent"
+                  checked={smsOptIn}
+                  onChange={(e) => setSmsOptIn(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 cursor-pointer"
+                  data-testid="checkbox-claim-sms-consent"
+                />
+                <label htmlFor="claim-sms-consent" className="text-xs text-muted-foreground cursor-pointer leading-relaxed">
+                  I agree to receive SMS notifications from my coach or organization. Message and data rates may apply. I can opt out at any time.
+                </label>
+              </div>
+            )}
             <Button
               className="w-full"
               onClick={() => registerMutation.mutate()}

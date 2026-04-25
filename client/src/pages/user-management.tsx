@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw } from "lucide-react";
+import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw, MessageSquare } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { UserProfile, Booking, Service } from "@shared/schema";
 import type { User } from "@shared/models/auth";
@@ -807,6 +807,17 @@ export default function UserManagementPage() {
                   <p className="text-xs text-muted-foreground truncate">
                     {user.email || "No email"}
                   </p>
+                  {user.phone && (
+                    <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5" data-testid={`text-user-phone-${user.id}`}>
+                      <MessageSquare className="h-3 w-3 shrink-0" />
+                      {user.phone}
+                      {user.smsOptIn ? (
+                        <span className="text-green-600 dark:text-green-400 font-medium ml-0.5" data-testid={`badge-sms-opted-in-${user.id}`}>SMS on</span>
+                      ) : (
+                        <span className="text-muted-foreground/60 ml-0.5" data-testid={`badge-sms-opted-out-${user.id}`}>SMS off</span>
+                      )}
+                    </p>
+                  )}
                 </div>
                 {subscribedUserIds.has(user.id) && (
                   <Badge className="shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-xs no-default-hover-elevate no-default-active-elevate" data-testid={`badge-subscribed-${user.id}`}>
