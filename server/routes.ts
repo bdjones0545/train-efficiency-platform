@@ -18,6 +18,7 @@ import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
+import { startSessionReminderJob } from "./session-reminders";
 import { handleAssistantMessage } from "./scheduling-assistant";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
@@ -6171,6 +6172,7 @@ export async function registerRoutes(
   });
 
   startWeeklyReminderJob();
+  startSessionReminderJob();
 
   return httpServer;
 }

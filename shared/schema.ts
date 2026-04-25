@@ -247,6 +247,8 @@ export const bookings = pgTable("bookings", {
   paymentMethod: paymentMethodEnum("payment_method"),
   teamQuoteProgramId: varchar("team_quote_program_id"),
   subscriptionPlanId: varchar("subscription_plan_id"),
+  clientReminderSentAt: timestamp("client_reminder_sent_at"),
+  coachReminderSentAt: timestamp("coach_reminder_sent_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

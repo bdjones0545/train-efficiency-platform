@@ -628,6 +628,74 @@ export async function sendSchedulingInquiryEmail(
   await sendEmail(toEmail, subject, html, b.name);
 }
 
+export async function sendUpcomingSessionReminderEmailToClient(
+  clientEmail: string,
+  clientFirstName: string,
+  coachName: string,
+  serviceName: string,
+  startAt: Date,
+  endAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Reminder: Session Tomorrow — ${serviceName}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell(`Session Reminder — ${serviceName}`, `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+    ${para("This is a friendly reminder that you have a training session coming up tomorrow:")}
+    ${detailBox([
+      line("Service", serviceName),
+      line("Coach", coachName),
+      line("Date", dateStr),
+      line("Time", timeStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("We look forward to seeing you! If you need to make any changes, please log in to your account ahead of time.")}
+  `, org);
+  await sendEmail(clientEmail, subject, html, b.name);
+}
+
+export async function sendUpcomingSessionReminderEmailToCoach(
+  coachEmail: string,
+  coachFirstName: string,
+  clientName: string,
+  serviceName: string,
+  startAt: Date,
+  endAt: Date,
+  location?: string,
+  timezone: string = "America/New_York",
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const subject = `Reminder: Session Tomorrow — ${clientName}`;
+  const zonedStart = toZonedTime(startAt, timezone);
+  const zonedEnd = toZonedTime(endAt, timezone);
+  const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
+  const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
+  const locationLine = location ? line("Location", location) : '';
+
+  const html = emailShell(`Session Reminder — ${clientName}`, `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${coachFirstName},</p>
+    ${para("This is a reminder that you have a session on your schedule tomorrow:")}
+    ${detailBox([
+      line("Client", clientName),
+      line("Service", serviceName),
+      line("Date", dateStr),
+      line("Time", timeStr),
+      locationLine,
+    ], b.color, b.secondaryColor)}
+    ${para("You can view your full schedule and manage sessions from your coach dashboard.")}
+  `, org);
+  await sendEmail(coachEmail, subject, html, b.name);
+}
+
 export async function sendBookingCancellationEmailToClient(
   clientEmail: string,
   clientFirstName: string,

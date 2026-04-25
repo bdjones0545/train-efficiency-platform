@@ -1,0 +1,92 @@
+Implement Phase 2: Upcoming Session Reminder Emails for TrainEfficiency.
+
+Goal:
+Add automated reminder emails for upcoming sessions so clients and coaches receive reminders before scheduled bookings.
+
+Current state:
+SendGrid email is real and functional.
+Booking confirmations, cancellations, reschedules, and recurring-session creation emails are already wired.
+There is an existing pattern in server/weekly-reminder.ts for scheduled background email jobs.
+
+Scope:
+1. Add new email functions in server/email.ts:
+   - sendUpcomingSessionReminderEmailToClient
+   - sendUpcomingSessionReminderEmailToCoach
+
+2. Reminder content should include:
+   - Client name
+   - Coach name
+   - Organization name
+   - Session/service name
+   - Date
+   - Time
+   - Location if available
+   - CTA back to TrainEfficiency
+   - Professional reminder copy
+
+3. Add a new background job:
+   Create something like:
+   - server/session-reminders.ts
+
+   It should:
+   - Run automatically on a schedule using the existing cron/job pattern.
+   - Query confirmed/upcoming bookings.
+   - Send reminders for sessions starting in roughly the next 24 hours.
+   - Avoid sending duplicate reminders.
+
+4. Add duplicate protection:
+   Use one of these approaches:
+   - Add reminderSentAt column to bookings
+   - Or add a booking_notifications table
+   - Or add a lightweight sent-email log table if one already exists
+
+   Preferred:
+   Add a bookingReminderSentAt timestamp column to the bookings table if this fits the existing schema.
+
+5. Reminder eligibility:
+   Send reminders only when:
+   - Booking is confirmed/active.
+   - Session starts within the next 24 hours.
+   - Session has not already received a 24-hour reminder.
+   - Recipient email exists.
+
+   Do not send reminders for:
+   - Cancelled bookings
+   - Past bookings
+   - Already-reminded bookings
+
+6. Make sends non-blocking and safe:
+   - Email failure should not crash the job.
+   - Log failures clearly.
+   - Mark reminder as sent only after successful send if possible.
+   - If sending to client succeeds but coach fails, do not resend the client repeatedly forever. Track client/coach separately if needed.
+
+7. Preferred duplicate tracking:
+   If simple enough, use:
+   - clientReminderSentAt
+   - coachReminderSentAt
+
+   This is safer than one shared reminderSentAt because client and coach sends can fail independently.
+
+8. Wire the job into server startup:
+   - Import and start the reminder job wherever weekly-reminder.ts is started.
+   - Make sure it does not start multiple times in dev/hot reload if the existing app has that issue.
+
+9. Timezone:
+   - Use the booking/session stored startAt time as source of truth.
+   - Display formatted time using the organization timezone if available.
+   - Otherwise fall back to the server/user default.
+   - Do not hardcode EST unless the existing app already does that everywhere.
+
+10. Testing:
+   - Run TypeScript/build checks.
+   - Confirm the job starts.
+   - Confirm it finds bookings in the next 24 hours.
+   - Confirm it skips cancelled/past bookings.
+   - Confirm it skips bookings already reminded.
+   - Confirm failed email does not break the job.
+   - Confirm reminder columns or notification logs update correctly.
+   - Confirm no duplicate reminder emails are sent on repeated job runs.
+
+Expected result:
+TrainEfficiency should automatically send 24-hour upcoming session reminder emails to clients and coaches, with duplicate protection and safe failure handling.

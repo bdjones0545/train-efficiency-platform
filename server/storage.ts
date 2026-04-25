@@ -175,6 +175,10 @@ export interface IStorage {
   getInactiveUsersForReminder(sinceDays: number): Promise<User[]>;
   markReminderSent(userId: string): Promise<void>;
 
+  getUpcomingBookingsForReminder(windowStartMs: number, windowEndMs: number): Promise<Booking[]>;
+  markClientReminderSent(bookingId: string): Promise<void>;
+  markCoachReminderSent(bookingId: string): Promise<void>;
+
   getLocationsByOrganization(orgId: string): Promise<Location[]>;
   getLocation(id: string): Promise<Location | undefined>;
   createLocation(location: InsertLocation): Promise<Location>;
@@ -1064,6 +1068,40 @@ export class DatabaseStorage implements IStorage {
 
   async markReminderSent(userId: string): Promise<void> {
     await db.update(users).set({ lastReminderSentAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async getUpcomingBookingsForReminder(
+    windowStartMs: number,
+    windowEndMs: number
+  ): Promise<Booking[]> {
+    const windowStart = new Date(windowStartMs);
+    const windowEnd = new Date(windowEndMs);
+
+    return db
+      .select()
+      .from(bookings)
+      .where(
+        and(
+          gte(bookings.startAt, windowStart),
+          lte(bookings.startAt, windowEnd),
+          eq(bookings.status, "CONFIRMED")
+        )
+      )
+      .orderBy(bookings.startAt);
+  }
+
+  async markClientReminderSent(bookingId: string): Promise<void> {
+    await db
+      .update(bookings)
+      .set({ clientReminderSentAt: new Date() })
+      .where(eq(bookings.id, bookingId));
+  }
+
+  async markCoachReminderSent(bookingId: string): Promise<void> {
+    await db
+      .update(bookings)
+      .set({ coachReminderSentAt: new Date() })
+      .where(eq(bookings.id, bookingId));
   }
 
   async createTeamQuote(quote: InsertTeamQuote): Promise<TeamQuote> {
