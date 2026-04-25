@@ -1,0 +1,163 @@
+Upgrade the TrainEfficiency Coach Dashboard calendar UI so coaches can schedule sessions at precise times like 10:30 AM without manually typing the time.
+
+Do not change backend scheduling rules unless needed to pass selected startTime/endTime. This is primarily a calendar UI/UX improvement.
+
+========================
+PHASE 1 — ADD 15/30 MINUTE SLOT SELECTION
+========================
+
+Current issue:
+The calendar only exposes large hour windows, so tapping 10 AM makes it hard to schedule 10:30 AM.
+
+Update the daily calendar grid to support selectable time increments.
+
+Preferred:
+- 30-minute visible slots by default
+- Optional 15-minute precision if service duration or settings require it
+
+Examples:
+- 10:00
+- 10:30
+- 11:00
+- 11:30
+
+When a coach taps 10:30:
+- open Add Session modal
+- prefill start time = 10:30 AM
+- prefill end time based on selected service duration
+- preserve selected coach/date
+
+========================
+PHASE 2 — TAP + DRAG BEHAVIOR
+========================
+
+Support mobile-friendly selection:
+
+Tap:
+- single tap on a slot selects that start time
+
+Long press or drag:
+- optional stretch selection to choose custom duration
+- example: drag from 10:30 to 11:30 creates 60-minute block
+
+If drag is too much for now, skip it and implement reliable tap selection first.
+
+========================
+PHASE 3 — IMPROVE EMPTY SLOT VISUALS
+========================
+
+Show subtle clickable half-hour rows.
+
+Current calendar feels like large empty blocks.
+
+Improve:
+- show faint divider lines at 30-minute intervals
+- make available ranges lightly tinted
+- show a small plus icon on hover/tap-ready slots
+- on mobile, show plus icon centered in available open blocks
+
+Important:
+Do not make the UI cluttered.
+The coach should immediately know:
+“This is an available time I can tap.”
+
+========================
+PHASE 4 — QUICK TIME PICKER AFTER TAP
+========================
+
+If the coach taps an hour block instead of a precise slot, show quick options:
+
+Example after tapping 10 AM:
+- 10:00
+- 10:15
+- 10:30
+- 10:45
+
+This solves precision without requiring a dense grid.
+
+Mobile UX:
+- bottom sheet with time chips
+- title: “Choose start time”
+- then open Add Session modal with that time
+
+========================
+PHASE 5 — FLOATING AGENT DOES NOT COVER CALENDAR ACTIONS
+========================
+
+Current issue:
+The agent launcher may overlap lower calendar slots.
+
+Adjust:
+- move launcher slightly above bottom browser controls
+- avoid covering active calendar slots
+- if on calendar page, offset launcher upward or make it collapsible
+- ensure plus/tap areas near bottom remain usable
+
+========================
+PHASE 6 — MOBILE DASHBOARD POLISH
+========================
+
+Improve mobile dashboard readability:
+
+1. Make the top action buttons stack better on small screens:
+- Schedule Subscription
+- Add Session
+
+Use full-width stacked buttons on narrow mobile if needed.
+
+2. Make date navigation more compact:
+- previous
+- current date
+- next
+
+3. Add quick controls above calendar:
+- Today
+- Morning
+- Afternoon
+- Evening
+
+Tapping Morning scrolls calendar to 6 AM.
+Afternoon scrolls to 12 PM.
+Evening scrolls to 4 PM.
+
+4. Add sticky mini date header while scrolling calendar:
+- “Friday, Apr 24”
+- selected coach
+- Add Session button
+
+========================
+PHASE 7 — SERVICE DURATION AWARENESS
+========================
+
+When selecting a start time:
+- if service is known, calculate end time from service duration
+- if service is unknown, default to 60 minutes
+- allow editing in modal
+
+Examples:
+- 10:30 + 60 min → 11:30
+- 10:30 + 30 min → 11:00
+
+========================
+PHASE 8 — VALIDATION
+========================
+
+Test:
+
+1. Tap 10:30 AM on calendar.
+2. Add Session modal opens with 10:30 AM prefilled.
+3. End time defaults correctly.
+4. Tap 10 AM and choose 10:30 from quick time picker.
+5. Calendar still works on desktop.
+6. Mobile does not require manual time typing.
+7. Agent launcher does not cover calendar slots.
+8. Existing bookings still display correctly.
+9. Availability blocks still display correctly.
+10. Date navigation still works.
+
+Return:
+- files changed
+- calendar component modified
+- slot increment used
+- mobile behavior
+- validation results
