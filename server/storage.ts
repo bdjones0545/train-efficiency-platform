@@ -79,6 +79,7 @@ import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
 import { db } from "./db";
 import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike, inArray, ne, isNull } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -1756,7 +1757,7 @@ export class DatabaseStorage implements IStorage {
   async ensureUnsubscribeToken(userId: string): Promise<string> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (user?.unsubscribeToken) return user.unsubscribeToken;
-    const token = require('crypto').randomUUID();
+    const token = randomUUID();
     await db.update(users).set({ unsubscribeToken: token }).where(eq(users.id, userId));
     return token;
   }

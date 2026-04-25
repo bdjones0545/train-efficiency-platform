@@ -6412,53 +6412,61 @@ export async function registerRoutes(
   app.get("/api/notification-preferences", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
+      console.log(`[Preferences] userId=${userId}`);
+
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
+
       const profile = await storage.getUserProfile(userId);
       // Accept explicit orgId from query param; fall back to profile's org
       const orgId = (req.query.orgId as string | undefined) || profile?.organizationId || null;
+      console.log(`[Preferences] orgId=${orgId ?? 'none'}`);
+
       const token = await storage.ensureUnsubscribeToken(userId);
 
-      console.log(`[Settings] Fetching preferences for userId=${userId} orgId=${orgId ?? 'none'}`);
-
-      // Org-level prefs first, fallback to user-level
+      // Org-level prefs: auto-create row if missing, then read
       let rawPrefs = user.notificationPreferences as any;
       let effectiveSmsOptIn = user.smsOptIn;
       let effectiveSmsOptInAt = user.smsOptInAt;
 
       if (orgId) {
         try {
-          // ensureUserOrgPreferences auto-creates a default row if one doesn't exist
           const orgPrefs = await storage.ensureUserOrgPreferences(userId, orgId);
+          console.log(`[Preferences] createdOrLoaded row userId=${userId} orgId=${orgId} smsOptIn=${orgPrefs.smsOptIn}`);
           if (orgPrefs.notificationPreferences) rawPrefs = orgPrefs.notificationPreferences;
           effectiveSmsOptIn = orgPrefs.smsOptIn;
           effectiveSmsOptInAt = orgPrefs.smsOptInAt ?? null;
-        } catch (err) {
-          console.error('[NotifPrefs] Failed to load/create org prefs:', err);
+        } catch (err: any) {
+          console.error('[Preferences] Failed to load/create org prefs:', err?.stack ?? err);
         }
       }
 
-      // Normalize to nested shape
+      // Normalize: handle both nested { email, sms } and legacy flat shapes
       let emailPrefs: Record<string, boolean>;
       let smsPrefs: Record<string, boolean>;
-      if (rawPrefs?.email || rawPrefs?.sms) {
+      if (rawPrefs && (rawPrefs.email || rawPrefs.sms)) {
         emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs.email || {}) };
         smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE, ...(rawPrefs.sms || {}) };
+      } else if (rawPrefs && typeof rawPrefs === 'object') {
+        // Legacy flat shape — treat all keys as email prefs
+        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...rawPrefs };
+        smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE };
       } else {
-        // Legacy flat shape — treat as email prefs
-        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs || {}) };
+        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS };
         smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE };
       }
+
       res.json({
         preferences: { email: emailPrefs, sms: smsPrefs },
         unsubscribeToken: token,
-        phone: user.phone,
-        smsOptIn: effectiveSmsOptIn,
-        smsOptInAt: effectiveSmsOptInAt,
+        phone: user.phone ?? null,
+        smsOptIn: effectiveSmsOptIn ?? false,
+        smsOptInAt: effectiveSmsOptInAt ?? null,
         orgId,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error('[Preferences] Unexpected error:', err?.stack ?? err);
+      res.status(500).json({ message: err.message ?? "Failed to load preferences" });
     }
   });
 

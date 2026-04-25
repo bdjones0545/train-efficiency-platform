@@ -1,0 +1,122 @@
+Debug and fix Settings page “Failed to load preferences” after org-context fix.
+
+Current state:
+- /api/me/org-context now exists
+- useActiveOrg() resolves orgId from profile/bookings/preferences
+- Settings still shows “Failed to load preferences”
+
+Likely issue:
+The Settings page is now reaching the preferences API, but the preferences endpoint is returning a server error, wrong shape, auth mismatch, or wrong route path.
+
+Audit and fix:
+
+1. Inspect browser/network logs for Settings page:
+Confirm exact failing request:
+- URL
+- status code
+- response body
+
+Specifically check whether frontend calls:
+- /api/me/preferences?orgId=...
+or
+- /api/notification-preferences?orgId=...
+
+Then make frontend and backend use ONE consistent route.
+
+2. In settings.tsx:
+Find the preferences query function.
+Make sure it:
+- includes credentials/auth headers exactly like other authenticated client pages
+- uses the correct route
+- passes orgId
+- handles nested response shapes safely
+
+Expected request:
+GET /api/notification-preferences?orgId=${orgId}
+
+or if existing app uses /api/me/preferences, standardize both frontend/backend.
+
+3. Backend endpoint:
+Open the matching GET preferences route.
+
+It must:
+- require authenticated user
+- read orgId from req.query.orgId
+- call ensureUserOrgPreferences(userId, orgId)
+- return 200 even when row was missing
+- return normalized nested preferences shape
+
+Return shape should be stable:
+
+{
+  phone: user.phone ?? "",
+  smsOptIn: orgPrefs.smsOptIn ?? false,
+  notificationPreferences: {
+    email: {
+      bookingConfirmations: true,
+      cancellations: true,
+      reschedules: true,
+      reminders: true,
+      outreach: true,
+      marketing: false
+    },
+    sms: {
+      bookingConfirmations: false,
+      cancellations: false,
+      reschedules: false,
+      reminders: false,
+      outreach: false,
+      marketing: false
+    }
+  }
+}
+
+4. Add defensive migration normalization:
+If orgPrefs.notificationPreferences is still old/flat shape, convert it to nested shape before returning.
+
+Example:
+Old:
+{
+  bookingConfirmations: true,
+  reminders: true
+}
+
+New:
+{
+  email: { bookingConfirmations: true, reminders: true, ... },
+  sms: { bookingConfirmations: false, reminders: false, ... }
+}
+
+5. Add backend try/catch logging:
+Log:
+[Preferences] userId
+[Preferences] orgId
+[Preferences] createdOrLoaded row
+[Preferences] error stack
+
+But do not expose stack trace to client.
+
+6. Fix frontend parsing:
+settings.tsx should not assume prefsData.notificationPreferences.email always exists.
+Use defaults when missing.
+
+7. Add a temporary debug card only in development:
+Show:
+- orgId
+- org source
+- preferences endpoint status/error
+
+Remove or hide behind import.meta.env.DEV.
+
+8. Testing:
+- Directly hit preferences endpoint while authenticated
+- Confirm 200 response
+- Confirm settings page renders full form
+- Confirm phone value appears
+- Confirm email toggles appear
+- Confirm SMS opt-in appears
+- Confirm save works
+- Refresh page and confirm saved values persist
+
+Expected result:
+Settings page renders the phone + notification form instead of “Failed to load preferences.”
