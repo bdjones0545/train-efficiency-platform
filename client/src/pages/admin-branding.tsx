@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, Image, Link2, Type, ExternalLink, Globe, Mail, Music } from "lucide-react";
+import { Save, Image, Link2, Type, ExternalLink, Globe, Mail, Music, Share2 } from "lucide-react";
 import { SiInstagram, SiFacebook, SiYoutube, SiTiktok } from "react-icons/si";
 import type { Organization } from "@shared/schema";
 
@@ -42,6 +42,7 @@ export default function AdminBrandingPage() {
   const [linktreeUrl, setLinktreeUrl] = useState("");
   const [emailPrimaryColor, setEmailPrimaryColor] = useState("");
   const [emailSecondaryColor, setEmailSecondaryColor] = useState("");
+  const [socialPreviewImageUrl, setSocialPreviewImageUrl] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export default function AdminBrandingPage() {
       setLinktreeUrl(org.linktreeUrl || "");
       setEmailPrimaryColor(org.emailPrimaryColor || "");
       setEmailSecondaryColor(org.emailSecondaryColor || "");
+      setSocialPreviewImageUrl((org as any).socialPreviewImageUrl || "");
       setHasChanges(false);
     }
   }, [org]);
@@ -117,6 +119,7 @@ export default function AdminBrandingPage() {
       linktreeUrl: linktreeUrl || null,
       emailPrimaryColor: emailPrimaryColor || null,
       emailSecondaryColor: emailSecondaryColor || null,
+      socialPreviewImageUrl: socialPreviewImageUrl || null,
     };
   };
 
@@ -236,6 +239,47 @@ export default function AdminBrandingPage() {
                 />
               </div>
               <span className="text-sm text-muted-foreground">Preview</span>
+            </div>
+          )}
+        </Card>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Share2 className="h-5 w-5" />
+          Social Preview Image
+        </h2>
+        <Card className="p-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            When your landing page is shared on iMessage, Facebook, LinkedIn, or X, this image appears in the link preview card. For best results, use a 1200×630px image.
+          </p>
+          <div className="space-y-2">
+            <Label>Social Preview Image URL</Label>
+            <Input
+              value={socialPreviewImageUrl}
+              onChange={(e) => { setSocialPreviewImageUrl(e.target.value); markChanged(); }}
+              placeholder="https://example.com/your-preview-image.png"
+              data-testid="input-social-preview-image-url"
+            />
+            <p className="text-xs text-muted-foreground">
+              Must be a full URL starting with https://. Falls back to your logo, then the default TrainEfficiency preview.
+            </p>
+          </div>
+          {socialPreviewImageUrl && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Preview</p>
+              <div className="rounded-lg border overflow-hidden max-w-sm">
+                <img
+                  src={socialPreviewImageUrl}
+                  alt="Social preview"
+                  className="w-full h-auto object-cover"
+                  style={{ aspectRatio: "1200/630" }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  data-testid="img-social-preview"
+                />
+              </div>
             </div>
           )}
         </Card>

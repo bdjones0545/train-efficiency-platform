@@ -659,7 +659,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, youtubeUrl, tiktokUrl, linktreeUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour, athleticEnabled, athleticProgramName, coachTransactionsVisible, schedulingInquiryEmail, schedulingInquiryName, allowUserInquiryEmails } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, youtubeUrl, tiktokUrl, linktreeUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour, athleticEnabled, athleticProgramName, coachTransactionsVisible, schedulingInquiryEmail, schedulingInquiryName, allowUserInquiryEmails, socialPreviewImageUrl } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
@@ -690,6 +690,7 @@ export async function registerRoutes(
       if (schedulingInquiryName !== undefined) updateData.schedulingInquiryName = schedulingInquiryName || null;
       if (allowUserInquiryEmails !== undefined) updateData.allowUserInquiryEmails = allowUserInquiryEmails;
       if (athleticProgramName !== undefined) updateData.athleticProgramName = athleticProgramName;
+      if (socialPreviewImageUrl !== undefined) updateData.socialPreviewImageUrl = socialPreviewImageUrl || null;
       if (athleticStartHour !== undefined || athleticEndHour !== undefined) {
         const start = athleticStartHour !== undefined ? athleticStartHour : undefined;
         const end = athleticEndHour !== undefined ? athleticEndHour : undefined;

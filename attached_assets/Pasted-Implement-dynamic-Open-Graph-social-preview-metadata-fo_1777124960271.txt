@@ -1,0 +1,119 @@
+Implement dynamic Open Graph / social preview metadata for organization landing pages.
+
+Current issue:
+When a TrainEfficiency link is shared, it may only show the raw link or only the default TrainEfficiency preview. Organization landing pages need to show each org’s own brand, name, and description when shared.
+
+Goal:
+Main TrainEfficiency links use default TrainEfficiency preview metadata.
+Organization landing page links use that organization’s branding and content.
+
+Expected behavior:
+1. Sharing https://trainefficiency.com should show:
+   - Title: TrainEfficiency | Coaching, Scheduling & Performance Management
+   - Description: Build your coaching business with smarter scheduling, athlete management, team training, payments, and performance tools in one platform.
+   - Image: default TrainEfficiency 1200x630 social preview image
+
+2. Sharing an org page like:
+   https://trainefficiency.com/org/efficiency-strength-training
+
+   Should show:
+   - og:title = organization name
+   - og:description = organization tagline, secondary tagline, landing page description, or fallback description
+   - og:image = organization social preview image, organization logo, or TrainEfficiency fallback image
+   - og:url = exact org landing page URL
+   - og:type = website
+   - og:site_name = TrainEfficiency
+
+Implementation requirements:
+
+1. Add or confirm organization branding fields:
+   - name
+   - slug
+   - logoUrl
+   - primaryColor
+   - tagline
+   - secondaryTagline
+   - description
+   - socialPreviewImageUrl
+
+If some fields already exist under different names, use the existing schema names instead of duplicating.
+
+2. Add support for org-specific preview image priority:
+   Use this order:
+   - org.socialPreviewImageUrl
+   - org.logoUrl
+   - default TrainEfficiency social preview image
+
+3. Make sure all Open Graph image URLs are absolute:
+   Correct:
+   https://trainefficiency.com/uploads/org-preview.png
+
+   Incorrect:
+   /uploads/org-preview.png
+
+4. Add server-side metadata injection:
+   Social platforms scrape the initial HTML, so React-only metadata is not enough.
+
+   In the Express/server route that serves the React app:
+   - Detect whether the request path is an org landing page.
+   - Extract the org slug from the URL.
+   - Query the organization by slug.
+   - Build metadata from that org.
+   - Inject meta tags into index.html before sending the response.
+
+5. Required meta tags:
+   For every page response, inject:
+
+   - title
+   - meta name="description"
+   - meta property="og:title"
+   - meta property="og:description"
+   - meta property="og:image"
+   - meta property="og:url"
+   - meta property="og:type"
+   - meta property="og:site_name"
+   - meta name="twitter:card"
+   - meta name="twitter:title"
+   - meta name="twitter:description"
+   - meta name="twitter:image"
+
+6. Twitter card:
+   Use:
+   twitter:card = summary_large_image
+
+7. Fallback copy:
+   If an org has missing fields, use:
+   Title:
+   [Org Name] | Powered by TrainEfficiency
+
+   Description:
+   Book sessions, view training options, and connect with [Org Name] through their TrainEfficiency landing page.
+
+   If org name is missing:
+   Title:
+   TrainEfficiency | Coaching, Scheduling & Performance Management
+
+8. Add cache busting for preview images:
+   If needed, append a version query:
+   ?v=1
+
+   Example:
+   https://trainefficiency.com/social-preview.png?v=1
+
+9. Security / escaping:
+   Escape all injected text values to prevent malformed HTML or injection.
+   Do not inject raw untrusted org text directly into HTML.
+
+10. Testing:
+   After implementation, verify:
+   - View-source for trainefficiency.com contains default OG tags.
+   - View-source for an org page contains that org’s OG tags.
+   - Org page og:url matches the exact shared URL.
+   - Org image URL is absolute.
+   - Missing org data falls back safely.
+   - Main app still loads normally.
+   - No Vite/React route breaks.
+   - TypeScript/build passes.
+
+Expected result:
+When an organization shares its TrainEfficiency landing page, the preview card should show that organization’s name, description, and brand image instead of only the raw URL or generic TrainEfficiency branding.
