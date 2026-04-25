@@ -107,7 +107,7 @@ export function AppSidebar() {
     { title: "Team Training", url: "/team-training", icon: Dumbbell },
     { title: "My Bookings", url: "/bookings", icon: Calendar },
     ...(role === "CLIENT" ? [{ title: "My Wallet", url: "/wallet", icon: Wallet }] : []),
-    { title: "Scheduling Agent", url: "/scheduling/agent", icon: Bot },
+    ...(role === "CLIENT" ? [{ title: "Scheduling Agent", url: "/scheduling/agent", icon: Bot }] : []),
   ];
 
   const athleticEnabled = (organization as any)?.athleticEnabled === true;
