@@ -21,6 +21,7 @@ import CoachProfilePage from "@/pages/coach-profile";
 import AdminDashboardPage from "@/pages/admin-dashboard";
 import AdminConfigurationPage from "@/pages/admin-configuration";
 import AdminBrandingPage from "@/pages/admin-branding";
+import AdminMediaPage from "@/pages/admin-media";
 import AdminStripePage from "@/pages/admin-stripe";
 import AdminSubscriptionPage from "@/pages/admin-subscription";
 import AdminSetupPage from "@/pages/admin-setup";
@@ -173,6 +174,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin" component={AdminDashboardPage} />
                   <Route path="/admin/configuration" component={AdminConfigurationPage} />
                   <Route path="/admin/branding" component={AdminBrandingPage} />
+                  <Route path="/admin/media" component={AdminMediaPage} />
                   <Route path="/admin/stripe" component={AdminStripePage} />
                   <Route path="/admin/subscription" component={AdminSubscriptionPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />

@@ -476,6 +476,29 @@ export const campaigns = pgTable("campaigns", {
   metadata: jsonb("metadata"),
 });
 
+export const mediaSectionEnum = pgEnum("media_section", ["hero", "training_showcase", "facility", "coaches", "testimonials", "results"]);
+export const mediaTypeEnum = pgEnum("media_type", ["image", "video"]);
+
+export const organizationMedia = pgTable("organization_media", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  mediaType: mediaTypeEnum("media_type").notNull().default("image"),
+  section: mediaSectionEnum("section").notNull().default("hero"),
+  url: text("url").notNull(),
+  thumbnailUrl: text("thumbnail_url"),
+  caption: text("caption"),
+  altText: text("alt_text"),
+  orderIndex: integer("order_index").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  uploadedBy: varchar("uploaded_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrganizationMediaSchema = createInsertSchema(organizationMedia).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrganizationMedia = typeof organizationMedia.$inferSelect;
+export type InsertOrganizationMedia = z.infer<typeof insertOrganizationMediaSchema>;
+
 export const insertWaitlistSchema = createInsertSchema(waitlist).omit({ id: true, createdAt: true });
 export const insertAgentActionLogSchema = createInsertSchema(agentActionLog).omit({ id: true, executedAt: true });
 export const insertAgentActionSchema = createInsertSchema(agentActions).omit({ id: true, createdAt: true });

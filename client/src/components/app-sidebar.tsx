@@ -47,6 +47,7 @@ import {
   Trash2,
   Bot,
   CalendarDays,
+  ImagePlay,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -257,6 +258,14 @@ export function AppSidebar() {
                       <Link href="/admin/branding" onClick={handleNavClick} data-testid="nav-branding">
                         <Paintbrush className="h-4 w-4" />
                         <span>Branding</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/media"}>
+                      <Link href="/admin/media" onClick={handleNavClick} data-testid="nav-media">
+                        <ImagePlay className="h-4 w-4" />
+                        <span>Media Library</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

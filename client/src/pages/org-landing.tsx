@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
-  UserPlus, Trophy, Menu, X, Globe, Mail,
+  UserPlus, Trophy, Menu, X, Globe, Mail, ChevronLeft, ChevronRight, Play, Quote,
 } from "lucide-react";
 import { SiInstagram, SiFacebook } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,171 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CoachWithUser } from "@/lib/types";
+
+interface OrgMedia {
+  id: string;
+  mediaType: "image" | "video";
+  section: string;
+  url: string;
+  thumbnailUrl: string | null;
+  caption: string | null;
+  altText: string | null;
+  orderIndex: number;
+  isActive: boolean;
+}
+
+function MediaCarousel({ items }: { items: OrgMedia[] }) {
+  const [current, setCurrent] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (items[current]?.mediaType === "video" && videoRef.current) {
+      videoRef.current.load();
+      videoRef.current.play().catch(() => {});
+    }
+  }, [current, items]);
+
+  if (items.length === 0) return null;
+
+  const prev = () => setCurrent(i => (i - 1 + items.length) % items.length);
+  const next = () => setCurrent(i => (i + 1) % items.length);
+  const item = items[current];
+
+  return (
+    <div className="relative w-full h-full" data-testid="hero-media-carousel">
+      {item.mediaType === "video" ? (
+        <video
+          ref={videoRef}
+          key={item.url}
+          src={item.url}
+          className="w-full h-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          data-testid="hero-video"
+        />
+      ) : (
+        <img
+          src={item.url}
+          alt={item.altText || item.caption || "Hero media"}
+          className="w-full h-full object-cover"
+          data-testid="hero-image"
+        />
+      )}
+      {items.length > 1 && (
+        <>
+          <button
+            onClick={prev}
+            className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 text-white p-1.5 hover:bg-black/60 transition"
+            data-testid="button-carousel-prev"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            onClick={next}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 text-white p-1.5 hover:bg-black/60 transition"
+            data-testid="button-carousel-next"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+            {items.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrent(i)}
+                className={`w-1.5 h-1.5 rounded-full transition ${i === current ? "bg-white" : "bg-white/40"}`}
+                data-testid={`carousel-dot-${i}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MediaGrid({ items, onOpen }: { items: OrgMedia[]; onOpen: (item: OrgMedia) => void }) {
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-3 md:overflow-visible md:pb-0">
+      {items.map(item => (
+        <div
+          key={item.id}
+          className="min-w-[80vw] md:min-w-0 snap-start rounded-lg overflow-hidden cursor-pointer relative group bg-black/5"
+          onClick={() => onOpen(item)}
+          data-testid={`media-grid-item-${item.id}`}
+        >
+          <div className="aspect-video">
+            {item.mediaType === "image" ? (
+              <img
+                src={item.url}
+                alt={item.altText || item.caption || "Media"}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full h-full bg-black flex items-center justify-center relative">
+                <video
+                  src={item.url}
+                  className="w-full h-full object-cover"
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/20 transition">
+                  <div className="rounded-full bg-white/20 p-3">
+                    <Play className="h-6 w-6 text-white" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {item.caption && (
+            <div className="p-3 bg-card">
+              <p className="text-sm text-muted-foreground">{item.caption}</p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MediaViewer({ item, onClose }: { item: OrgMedia | null; onClose: () => void }) {
+  if (!item) return null;
+  return (
+    <Dialog open onOpenChange={() => onClose()}>
+      <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black" data-testid="modal-media-viewer">
+        <DialogHeader className="sr-only">
+          <DialogTitle>{item.caption || "Media"}</DialogTitle>
+        </DialogHeader>
+        {item.mediaType === "video" ? (
+          <video
+            src={item.url}
+            className="w-full max-h-[80vh] object-contain"
+            controls
+            autoPlay
+            muted
+            playsInline
+            data-testid="modal-media-video"
+          />
+        ) : (
+          <img
+            src={item.url}
+            alt={item.altText || item.caption || "Media"}
+            className="w-full max-h-[80vh] object-contain"
+            data-testid="modal-media-image"
+          />
+        )}
+        {item.caption && (
+          <div className="p-4 bg-black/80">
+            <p className="text-sm text-white/80 text-center">{item.caption}</p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 interface Organization {
   id: string;
@@ -81,6 +246,24 @@ export default function OrgLandingPage() {
 
   const activeAthleticPrograms = athleticPrograms?.filter((p: any) => p.active) || [];
 
+  const { data: mediaData } = useQuery<{ media: OrgMedia[]; grouped: Record<string, OrgMedia[]> }>({
+    queryKey: ["/api/public/org", slug, "media"],
+    queryFn: async () => {
+      const res = await fetch(`/api/public/org/${slug}/media`);
+      if (!res.ok) return { media: [], grouped: {} };
+      return res.json();
+    },
+    enabled: !!slug,
+  });
+
+  const heroMedia = (mediaData?.grouped?.["hero"] || []).filter(m => m.isActive);
+  const trainingMedia = (mediaData?.grouped?.["training_showcase"] || []).filter(m => m.isActive);
+  const facilityMedia = (mediaData?.grouped?.["facility"] || []).filter(m => m.isActive);
+  const coachesMedia = (mediaData?.grouped?.["coaches"] || []).filter(m => m.isActive);
+  const testimonialsMedia = (mediaData?.grouped?.["testimonials"] || []).filter(m => m.isActive);
+  const resultsMedia = (mediaData?.grouped?.["results"] || []).filter(m => m.isActive);
+
+  const [selectedMedia, setSelectedMedia] = useState<OrgMedia | null>(null);
   const [coachModalOpen, setCoachModalOpen] = useState(false);
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
@@ -296,21 +479,32 @@ export default function OrgLandingPage() {
         )}
       </nav>
 
-      <section className="relative pt-32 pb-20 px-6 overflow-hidden">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={
-            org.primaryColor
-              ? {
-                  background: `linear-gradient(135deg, ${org.primaryColor}14 0%, transparent 50%, ${org.secondaryColor || org.primaryColor}0a 100%)`,
-                }
-              : undefined
-          }
-        />
-        {!org.primaryColor && (
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/4 pointer-events-none" />
+      <section className="relative pt-32 pb-20 px-6 overflow-hidden min-h-[70vh] flex items-center" data-testid="section-hero">
+        {heroMedia.length > 0 ? (
+          <>
+            <div className="absolute inset-0 pointer-events-none overflow-hidden" data-testid="hero-media-bg">
+              <MediaCarousel items={heroMedia} />
+            </div>
+            <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+          </>
+        ) : (
+          <>
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={
+                org.primaryColor
+                  ? {
+                      background: `linear-gradient(135deg, ${org.primaryColor}14 0%, transparent 50%, ${org.secondaryColor || org.primaryColor}0a 100%)`,
+                    }
+                  : undefined
+              }
+            />
+            {!org.primaryColor && (
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/4 pointer-events-none" />
+            )}
+          </>
         )}
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center relative">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center relative w-full">
           <div className="space-y-6">
             {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
               <div className="flex items-center gap-3" data-testid="hero-social-links">
@@ -319,7 +513,7 @@ export default function OrgLandingPage() {
                     href={ensureUrl(org.websiteUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
                     data-testid="link-hero-website"
                   >
                     <Globe className="h-4 w-4" />
@@ -330,7 +524,7 @@ export default function OrgLandingPage() {
                     href={ensureUrl(org.instagramUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
                     data-testid="link-hero-instagram"
                   >
                     <SiInstagram className="h-4 w-4" />
@@ -341,7 +535,7 @@ export default function OrgLandingPage() {
                     href={ensureUrl(org.facebookUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
                     data-testid="link-hero-facebook"
                   >
                     <SiFacebook className="h-4 w-4" />
@@ -352,7 +546,9 @@ export default function OrgLandingPage() {
             <div
               className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium"
               style={
-                org.primaryColor
+                heroMedia.length > 0
+                  ? { backgroundColor: "rgba(255,255,255,0.15)", color: "#fff" }
+                  : org.primaryColor
                   ? { backgroundColor: `${org.primaryColor}1a`, color: org.primaryColor }
                   : undefined
               }
@@ -360,13 +556,19 @@ export default function OrgLandingPage() {
               <Zap className="h-3.5 w-3.5" />
               {org.tagline || "Elevate Your Game"}
             </div>
-            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight" data-testid="text-org-hero-heading">
+            <h1
+              className={`text-4xl sm:text-5xl font-bold tracking-tight leading-tight ${heroMedia.length > 0 ? "text-white" : ""}`}
+              data-testid="text-org-hero-heading"
+            >
               Welcome to{" "}
-              <span style={org.primaryColor ? { color: org.primaryColor } : undefined} className={!org.primaryColor ? "text-primary" : ""}>
+              <span
+                style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined}
+                className={heroMedia.length > 0 ? "text-white" : !org.primaryColor ? "text-primary" : ""}
+              >
                 {org.name}
               </span>
             </h1>
-            <p className="text-lg text-muted-foreground leading-relaxed max-w-lg">
+            <p className={`text-lg leading-relaxed max-w-lg ${heroMedia.length > 0 ? "text-white/85" : "text-muted-foreground"}`}>
               {org.tagline2 || "Book sessions with our expert coaches, manage your training schedule, and take your athletic performance to the next level."}
             </p>
             <div className="flex flex-wrap items-center gap-3">
@@ -375,7 +577,9 @@ export default function OrgLandingPage() {
                 onClick={() => openClientModal(true)}
                 data-testid="button-org-hero-cta"
                 style={
-                  org.primaryColor
+                  heroMedia.length > 0
+                    ? { backgroundColor: org.primaryColor || "hsl(var(--primary))", borderColor: org.primaryColor || undefined }
+                    : org.primaryColor
                     ? { backgroundColor: org.primaryColor, borderColor: org.primaryColor }
                     : undefined
                 }
@@ -384,19 +588,19 @@ export default function OrgLandingPage() {
                 Book a Session
               </Button>
             </div>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2">
+            <div className={`flex items-center gap-4 text-sm pt-2 ${heroMedia.length > 0 ? "text-white/70" : "text-muted-foreground"}`}>
               <span className="flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5" style={org.primaryColor ? { color: org.primaryColor } : undefined} />
+                <Shield className="h-3.5 w-3.5" style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined} />
                 Free to browse
               </span>
               <span className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5" style={org.primaryColor ? { color: org.primaryColor } : undefined} />
+                <Clock className="h-3.5 w-3.5" style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined} />
                 Instant booking
               </span>
             </div>
           </div>
 
-          {org.logoUrl && (
+          {org.logoUrl && heroMedia.length === 0 && (
             <div className="relative hidden lg:flex items-center justify-center">
               <div className="relative">
                 <div className="absolute -inset-4 bg-primary/10 rounded-md blur-2xl" />
@@ -515,6 +719,106 @@ export default function OrgLandingPage() {
           </div>
         </section>
       )}
+
+      {trainingMedia.length > 0 && (
+        <section className="py-20 px-6 bg-card/30" data-testid="section-training-showcase">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12 space-y-3">
+              <h2 className="text-3xl font-bold" data-testid="text-training-heading">How We Train</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                See our training philosophy in action.
+              </p>
+            </div>
+            <MediaGrid items={trainingMedia} onOpen={setSelectedMedia} />
+          </div>
+        </section>
+      )}
+
+      {facilityMedia.length > 0 && (
+        <section className="py-20 px-6" data-testid="section-facility">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12 space-y-3">
+              <h2 className="text-3xl font-bold" data-testid="text-facility-heading">Where You'll Train</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                A facility built for performance. Come see what we've built for you.
+              </p>
+            </div>
+            <MediaGrid items={facilityMedia} onOpen={setSelectedMedia} />
+          </div>
+        </section>
+      )}
+
+      {coachesMedia.length > 0 && (
+        <section className="py-20 px-6 bg-card/30" data-testid="section-coaches-media">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12 space-y-3">
+              <h2 className="text-3xl font-bold" data-testid="text-coaches-media-heading">Our Coaching Team</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                The people behind your progress.
+              </p>
+            </div>
+            <MediaGrid items={coachesMedia} onOpen={setSelectedMedia} />
+          </div>
+        </section>
+      )}
+
+      {testimonialsMedia.length > 0 && (
+        <section className="py-20 px-6" data-testid="section-testimonials">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12 space-y-3">
+              <h2 className="text-3xl font-bold" data-testid="text-testimonials-heading">What Our Athletes Are Saying</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Real results from real athletes.
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {testimonialsMedia.map(item => (
+                <Card
+                  key={item.id}
+                  className="p-6 space-y-4 cursor-pointer hover-elevate"
+                  onClick={() => setSelectedMedia(item)}
+                  data-testid={`card-testimonial-${item.id}`}
+                >
+                  <div className="aspect-video rounded-md overflow-hidden bg-muted">
+                    {item.mediaType === "image" ? (
+                      <img src={item.url} alt={item.altText || ""} className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-full bg-black flex items-center justify-center relative">
+                        <video src={item.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Play className="h-8 w-8 text-white" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {item.caption && (
+                    <div className="flex gap-2">
+                      <Quote className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                      <p className="text-sm text-muted-foreground italic leading-relaxed">{item.caption}</p>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {resultsMedia.length > 0 && (
+        <section className="py-20 px-6 bg-card/30" data-testid="section-results">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12 space-y-3">
+              <h2 className="text-3xl font-bold" data-testid="text-results-heading">Athlete Highlights</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Client results and success stories.
+              </p>
+            </div>
+            <MediaGrid items={resultsMedia} onOpen={setSelectedMedia} />
+          </div>
+        </section>
+      )}
+
+      <MediaViewer item={selectedMedia} onClose={() => setSelectedMedia(null)} />
 
       <footer className="py-8 px-6 border-t">
         <div className="max-w-6xl mx-auto space-y-4">

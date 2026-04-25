@@ -18,6 +18,7 @@ import {
   waitlist,
   agentActionLog,
   agentActions,
+  organizationMedia,
   type Waitlist,
   type InsertWaitlist,
   type AgentActionLog,
@@ -66,6 +67,8 @@ import {
   userSubscriptions,
   type UserSubscription,
   type InsertUserSubscription,
+  type OrganizationMedia,
+  type InsertOrganizationMedia,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -247,6 +250,15 @@ export interface IStorage {
   createUserSubscription(data: InsertUserSubscription): Promise<UserSubscription>;
   updateUserSubscription(id: string, data: Partial<UserSubscription>): Promise<UserSubscription | undefined>;
   getOrganizationUserSubscriptions(orgId: string): Promise<UserSubscription[]>;
+
+  getOrgMedia(orgId: string): Promise<OrganizationMedia[]>;
+  getOrgMediaBySection(orgId: string, section: string): Promise<OrganizationMedia[]>;
+  getPublicOrgMedia(orgId: string): Promise<OrganizationMedia[]>;
+  createOrgMedia(data: InsertOrganizationMedia): Promise<OrganizationMedia>;
+  updateOrgMedia(id: string, data: Partial<OrganizationMedia>): Promise<OrganizationMedia | undefined>;
+  deleteOrgMedia(id: string): Promise<boolean>;
+  reorderOrgMedia(updates: { id: string; orderIndex: number }[]): Promise<void>;
+  getOrgMediaById(id: string): Promise<OrganizationMedia | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1568,6 +1580,51 @@ export class DatabaseStorage implements IStorage {
 
   async updateCoachProfilePassword(coachProfileId: string, passwordHash: string): Promise<void> {
     await db.update(coachProfiles).set({ passwordHash }).where(eq(coachProfiles.id, coachProfileId));
+  }
+
+  async getOrgMedia(orgId: string): Promise<OrganizationMedia[]> {
+    return db.select().from(organizationMedia)
+      .where(eq(organizationMedia.organizationId, orgId))
+      .orderBy(organizationMedia.section, organizationMedia.orderIndex);
+  }
+
+  async getOrgMediaBySection(orgId: string, section: string): Promise<OrganizationMedia[]> {
+    return db.select().from(organizationMedia)
+      .where(and(eq(organizationMedia.organizationId, orgId), eq(organizationMedia.section, section as any)))
+      .orderBy(organizationMedia.orderIndex);
+  }
+
+  async getPublicOrgMedia(orgId: string): Promise<OrganizationMedia[]> {
+    return db.select().from(organizationMedia)
+      .where(and(eq(organizationMedia.organizationId, orgId), eq(organizationMedia.isActive, true)))
+      .orderBy(organizationMedia.section, organizationMedia.orderIndex);
+  }
+
+  async createOrgMedia(data: InsertOrganizationMedia): Promise<OrganizationMedia> {
+    const [created] = await db.insert(organizationMedia).values(data).returning();
+    return created;
+  }
+
+  async updateOrgMedia(id: string, data: Partial<OrganizationMedia>): Promise<OrganizationMedia | undefined> {
+    const updateData = { ...data, updatedAt: new Date() };
+    const [updated] = await db.update(organizationMedia).set(updateData).where(eq(organizationMedia.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteOrgMedia(id: string): Promise<boolean> {
+    const result = await db.delete(organizationMedia).where(eq(organizationMedia.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async reorderOrgMedia(updates: { id: string; orderIndex: number }[]): Promise<void> {
+    for (const u of updates) {
+      await db.update(organizationMedia).set({ orderIndex: u.orderIndex, updatedAt: new Date() }).where(eq(organizationMedia.id, u.id));
+    }
+  }
+
+  async getOrgMediaById(id: string): Promise<OrganizationMedia | undefined> {
+    const [item] = await db.select().from(organizationMedia).where(eq(organizationMedia.id, id));
+    return item || undefined;
   }
 }
 

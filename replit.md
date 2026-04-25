@@ -66,6 +66,12 @@ The application employs a client-server architecture. The frontend is developed 
     -   Revenue functions (`computeRevenueSummary`, `computeRevenueByPeriod`) filter by `countsTowardRevenue`; utilization respects `countsTowardUtilization`
     -   The AI agent system prompt includes a full Session Category System section with routing rules for accurate revenue vs utilization reporting
     -   Payout calculations handled by `server/payout-calculator.ts` (`calculateCoachPayoutForBooking()`)
+-   **Organization Media System:** A full multi-tenant media library allowing each org to upload and display images/videos across their public landing page.
+    -   **Database:** `organization_media` table with fields: `id`, `organizationId`, `mediaType` (image/video), `section` (hero/training_showcase/facility/coaches/testimonials/results), `url`, `thumbnailUrl`, `caption`, `altText`, `orderIndex`, `isActive`, `uploadedBy`, `createdAt`, `updatedAt`.
+    -   **File Uploads:** Multer disk storage to `public/uploads/`, served via `/uploads` static route. Validates file type (jpg/jpeg/png/gif/webp/mp4/mov/webm) and size limits (images: 10MB, videos: 100MB). Section limits enforced (hero: 3, training_showcase: 12, facility: 12, coaches: 20, testimonials: 20, results: 20).
+    -   **API Routes:** `GET /api/org/media`, `POST /api/org/media` (upload), `PATCH /api/org/media/:id`, `DELETE /api/org/media/:id`, `POST /api/org/media/reorder`, `GET /api/public/org/:slug/media` (public).
+    -   **Admin Media Library:** `/admin/media` page (`client/src/pages/admin-media.tsx`) with tabbed interface per section, drag-and-drop upload area, media cards with toggle/edit/delete actions, upload progress, empty states, and section limits display.
+    -   **Public Landing Page Integration:** Hero media displays as a fullscreen background carousel with dark overlay and white text. Training showcase, facility, coaches, testimonials, and results sections render as `MediaGrid` or testimonial cards, only appearing when active media exists. A `MediaViewer` lightbox opens on click. All sections in `client/src/pages/org-landing.tsx` with helper components `MediaCarousel`, `MediaGrid`, `MediaViewer`.
 
 ## External Dependencies
 -   **PostgreSQL:** Database.

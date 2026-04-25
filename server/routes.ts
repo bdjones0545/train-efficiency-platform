@@ -2,6 +2,10 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import express from "express";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
@@ -153,12 +157,50 @@ function generateTimeSlots(
   return days;
 }
 
+const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
+const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+
+const mediaStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    cb(null, `${unique}${ext}`);
+  },
+});
+
+const mediaUpload = multer({
+  storage: mediaStorage,
+  limits: { fileSize: VIDEO_MAX_BYTES },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error(`Unsupported file type: ${file.mimetype}`));
+  },
+});
+
+const SECTION_LIMITS: Record<string, number> = {
+  hero: 5,
+  training_showcase: 20,
+  facility: 20,
+  coaches: 10,
+  testimonials: 10,
+  results: 10,
+};
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  app.use("/uploads", express.static(UPLOADS_DIR));
 
   const RESET_NEUTRAL_MSG = "If an account exists for that email, a password reset link has been sent.";
   const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -5755,6 +5797,165 @@ export async function registerRoutes(
       res.json({ coaches: orgCoaches, services: orgServices, locations: orgLocations });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== ORGANIZATION MEDIA =====
+
+  app.get("/api/org/media", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const media = await storage.getOrgMedia(profile.organizationId);
+      const grouped: Record<string, typeof media> = {};
+      for (const item of media) {
+        if (!grouped[item.section]) grouped[item.section] = [];
+        grouped[item.section].push(item);
+      }
+      res.json({ media, grouped });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/org/media", isAuthenticated, requireRole("ADMIN", "COACH"), mediaUpload.single("file"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      const { section = "hero", caption, altText } = req.body;
+      const validSections = ["hero", "training_showcase", "facility", "coaches", "testimonials", "results"];
+      if (!validSections.includes(section)) return res.status(400).json({ message: "Invalid section" });
+
+      const isImage = ALLOWED_IMAGE_TYPES.includes(req.file.mimetype);
+      const isVideo = ALLOWED_VIDEO_TYPES.includes(req.file.mimetype);
+      if (isImage && req.file.size > IMAGE_MAX_BYTES) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: "Image exceeds 10MB limit" });
+      }
+      if (!isImage && !isVideo) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: "Unsupported file type" });
+      }
+
+      const limit = SECTION_LIMITS[section] ?? 10;
+      const existing = await storage.getOrgMediaBySection(profile.organizationId, section);
+      if (existing.length >= limit) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: `Section "${section}" supports up to ${limit} items` });
+      }
+
+      const fileUrl = `/uploads/${req.file.filename}`;
+      const mediaType = isImage ? "image" : "video";
+      const maxOrder = existing.reduce((m, i) => Math.max(m, i.orderIndex), -1);
+
+      const created = await storage.createOrgMedia({
+        organizationId: profile.organizationId,
+        mediaType: mediaType as any,
+        section: section as any,
+        url: fileUrl,
+        thumbnailUrl: null,
+        caption: caption || null,
+        altText: altText || null,
+        orderIndex: maxOrder + 1,
+        isActive: true,
+        uploadedBy: userId,
+      });
+
+      res.status(201).json(created);
+    } catch (err: any) {
+      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/org/media/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const item = await storage.getOrgMediaById(req.params.id);
+      if (!item) return res.status(404).json({ message: "Not found" });
+      if (item.organizationId !== profile.organizationId) return res.status(403).json({ message: "Forbidden" });
+
+      const { section, caption, altText, orderIndex, isActive } = req.body;
+      const updateData: any = {};
+      if (section !== undefined) updateData.section = section;
+      if (caption !== undefined) updateData.caption = caption;
+      if (altText !== undefined) updateData.altText = altText;
+      if (orderIndex !== undefined) updateData.orderIndex = orderIndex;
+      if (isActive !== undefined) updateData.isActive = isActive;
+
+      const updated = await storage.updateOrgMedia(req.params.id, updateData);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/org/media/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const item = await storage.getOrgMediaById(req.params.id);
+      if (!item) return res.status(404).json({ message: "Not found" });
+      if (item.organizationId !== profile.organizationId) return res.status(403).json({ message: "Forbidden" });
+
+      await storage.deleteOrgMedia(req.params.id);
+
+      if (item.url?.startsWith("/uploads/")) {
+        const filePath = path.join(UPLOADS_DIR, path.basename(item.url));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/org/media/reorder", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const { updates } = req.body;
+      if (!Array.isArray(updates)) return res.status(400).json({ message: "updates array required" });
+
+      for (const u of updates) {
+        const item = await storage.getOrgMediaById(u.id);
+        if (!item || item.organizationId !== profile.organizationId) return res.status(403).json({ message: "Forbidden" });
+      }
+
+      await storage.reorderOrgMedia(updates);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/public/org/:slug/media", async (req, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.slug);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const media = await storage.getPublicOrgMedia(org.id);
+      const grouped: Record<string, typeof media> = {};
+      for (const item of media) {
+        if (!grouped[item.section]) grouped[item.section] = [];
+        grouped[item.section].push(item);
+      }
+      res.json({ media, grouped });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
