@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { getAuthHeaders } from "@/lib/authToken";
+import { useAuth } from "@/hooks/use-auth";
 
 export interface Message {
   role: "user" | "assistant";
@@ -242,6 +243,77 @@ const CLIENT_PAGE_PROMPTS: Partial<Record<SourcePage, { label: string; icon: any
     { label: "Cancel a Booking", icon: XCircle, prompt: "I need to cancel one of my bookings", color: "text-red-500", desc: "Cancel a session" },
   ],
 };
+
+const DEMO_OPS_DIGEST: OpsDigest = {
+  generatedAt: new Date().toISOString(),
+  weekRange: "Sample Week",
+  totalBookingsThisWeek: 18,
+  openSlotsThisWeek: 12,
+  estimatedOpenRevenue: 840,
+  inactiveClientsCount: 3,
+  waitlistCount: 3,
+  coaches: [
+    { coachId: "demo-1", coachName: "Coach Alex", bookedMinutes: 480, availableMinutes: 600, utilizationPct: 80, openSlots: 4, todayBookings: 5 },
+    { coachId: "demo-2", coachName: "Coach Riley", bookedMinutes: 360, availableMinutes: 600, utilizationPct: 60, openSlots: 8, todayBookings: 3 },
+  ],
+  insights: [
+    { type: "opportunity", category: "open-slots", title: "12 open slots this week", description: "Fill available time to capture ~$840 in revenue.", priority: "high", actionLabel: "View opportunities", actionPrompt: "How can I fill my open slots?" },
+    { type: "warning", category: "churn", title: "2 at-risk clients", description: "Sample Client A and Sample Client B haven't booked recently.", priority: "medium", actionLabel: "View risks", actionPrompt: "Who are my at-risk clients?" },
+  ],
+  recentCancellations: [],
+};
+
+const DEMO_REVENUE_SUMMARY: RevenueSummary = {
+  generatedAt: new Date().toISOString(),
+  totalRevenueCents: 425000,
+  last30dRevenueCents: 425000,
+  prior30dRevenueCents: 390000,
+  revenueGrowthPct: 8.97,
+  mrr: 60000,
+  activeSubscribers: 12,
+  avgLtvCents: 125000,
+  avgRevenuePerSessionCents: 6500,
+  totalSessions: 65,
+  sessionsLast30d: 65,
+  churnRiskCount: 2,
+  sessionPackageAlertCount: 1,
+  upsellOpportunityCount: 4,
+  coachRevenues: [
+    { coachId: "demo-1", coachName: "Coach Alex", totalRevenueCents: 260000, sessionCount: 40, avgRevenuePerSessionCents: 6500, activeClients: 8 },
+    { coachId: "demo-2", coachName: "Coach Riley", totalRevenueCents: 165000, sessionCount: 25, avgRevenuePerSessionCents: 6600, activeClients: 6 },
+  ],
+  timeBlockRevenues: [
+    { hour: 7, label: "7 AM", totalRevenueCents: 80000, sessionCount: 12 },
+    { hour: 9, label: "9 AM", totalRevenueCents: 130000, sessionCount: 20 },
+    { hour: 12, label: "12 PM", totalRevenueCents: 90000, sessionCount: 14 },
+    { hour: 17, label: "5 PM", totalRevenueCents: 125000, sessionCount: 19 },
+  ],
+  topClients: [
+    { clientId: "demo-c1", clientName: "Sample Client A", totalRevenueCents: 78000, sessionCount: 12 },
+    { clientId: "demo-c2", clientName: "Sample Client B", totalRevenueCents: 65000, sessionCount: 10 },
+    { clientId: "demo-c3", clientName: "Sample Client C", totalRevenueCents: 52000, sessionCount: 8 },
+  ],
+};
+
+const DEMO_CHURN_RISKS: ChurnRisk[] = [
+  { clientId: "demo-c1", clientName: "Sample Client A", email: null, riskLevel: "high", signals: ["No booking in 30 days"], lastBookingDate: null, daysSinceLastBooking: 30, suggestedAction: "Send a re-engagement message" },
+  { clientId: "demo-c2", clientName: "Sample Client B", email: null, riskLevel: "medium", signals: ["Booking frequency dropped"], lastBookingDate: null, daysSinceLastBooking: 21, suggestedAction: "Offer a check-in call" },
+];
+
+const DEMO_UPSELL_OPPS: UpsellOpportunity[] = [
+  { clientId: "demo-c3", clientName: "Sample Client C", currentPattern: "1x/week", opportunity: "Move to 2x/week package", estimatedRevenueLiftCents: 26000, reasoning: "Strong attendance history", priority: "high" },
+  { clientId: "demo-c4", clientName: "Sample Client D", currentPattern: "Drop-in", opportunity: "Monthly subscription", estimatedRevenueLiftCents: 18000, reasoning: "Books consistently", priority: "medium" },
+];
+
+const DEMO_WAITLIST: WaitlistEntry[] = [
+  { id: "demo-w1", clientId: "demo-c5", organizationId: "demo", coachId: null, sessionType: "Strength Training", notes: "Flexible on timing", createdAt: null, client: { id: "demo-c5", firstName: "Sample", lastName: "Waitlist A", email: null } },
+  { id: "demo-w2", clientId: "demo-c6", organizationId: "demo", coachId: null, sessionType: "Speed Training", notes: null, createdAt: null, client: { id: "demo-c6", firstName: "Sample", lastName: "Waitlist B", email: null } },
+  { id: "demo-w3", clientId: "demo-c7", organizationId: "demo", coachId: null, sessionType: null, notes: null, createdAt: null, client: { id: "demo-c7", firstName: "Sample", lastName: "Waitlist C", email: null } },
+];
+
+const DEMO_PACKAGE_ALERTS: SessionPackageAlert[] = [
+  { clientId: "demo-c8", clientName: "Sample Client E", email: null, planName: "10-Session Pack", sessionsRemaining: 1, subscriptionStatus: "active", cancelAtPeriodEnd: false, urgency: "critical" },
+];
 
 function renderMarkdown(text: string): React.ReactNode[] {
   if (text.trim().startsWith("{")) {
@@ -444,10 +516,14 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  const { user, isLoading: authLoading } = useAuth();
+  const isAuthenticated = !!user;
+
   const { data: profile, isLoading: profileLoading } = useQuery<{ role?: string }>({ queryKey: ["/api/profile"] });
   const userRole = profile?.role || "CLIENT";
-  const isStaff = userRole === "COACH" || userRole === "ADMIN" || userRole === "STAFF";
-  const isAdmin = userRole === "ADMIN";
+  const isStaff = isAuthenticated && (userRole === "COACH" || userRole === "ADMIN" || userRole === "STAFF");
+  const isAdmin = isAuthenticated && userRole === "ADMIN";
+  const isDemo = !isAuthenticated && !authLoading;
 
   const contextPrompts = context ? PAGE_QUICK_PROMPTS[context.sourcePage] : null;
   const clientContextPrompts = !isStaff && mode === "overlay" && context ? CLIENT_PAGE_PROMPTS[context.sourcePage] ?? null : null;
@@ -457,52 +533,66 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
   const { data: digest, isLoading: digestLoading, refetch: refetchDigest } = useQuery<OpsDigest>({
     queryKey: ["/api/scheduling/operations-digest"],
-    enabled: isStaff,
+    enabled: isAuthenticated && isStaff,
     staleTime: 60 * 1000,
   });
 
   const { data: revenueSummary, isLoading: revenueLoading, refetch: refetchRevenue } = useQuery<RevenueSummary>({
     queryKey: ["/api/scheduling/revenue-summary"],
-    enabled: isStaff && activeTab === "revenue",
+    enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: churnRisks, isLoading: churnLoading } = useQuery<ChurnRisk[]>({
     queryKey: ["/api/scheduling/churn-risks"],
-    enabled: isStaff && activeTab === "revenue",
+    enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: upsellOpps, isLoading: upsellLoading } = useQuery<UpsellOpportunity[]>({
     queryKey: ["/api/scheduling/upsell-opportunities"],
-    enabled: isStaff && activeTab === "revenue",
+    enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: packageAlerts, isLoading: packagesLoading } = useQuery<SessionPackageAlert[]>({
     queryKey: ["/api/scheduling/session-packages"],
-    enabled: isStaff && activeTab === "revenue",
+    enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: waitlist, isLoading: waitlistLoading, refetch: refetchWaitlist } = useQuery<WaitlistEntry[]>({
     queryKey: ["/api/scheduling/waitlist"],
-    enabled: isStaff,
+    enabled: isAuthenticated && isStaff,
     staleTime: 30 * 1000,
   });
 
   const { data: actionLog } = useQuery<any[]>({
     queryKey: ["/api/scheduling/agent-action-log"],
-    enabled: isStaff && activeTab === "ops",
+    enabled: isAuthenticated && isStaff && activeTab === "ops",
     staleTime: 30 * 1000,
   });
 
   const { data: automationData } = useQuery<{ level: number }>({
     queryKey: ["/api/scheduling/automation-level"],
+    enabled: isAuthenticated && isStaff,
     staleTime: 60 * 1000,
   });
 
   useEffect(() => { if (automationData?.level) setAutomationLevel(automationData.level); }, [automationData]);
+
+  useEffect(() => {
+    if (!isAuthenticated && !authLoading) {
+      qc.removeQueries({ queryKey: ["/api/scheduling/operations-digest"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/revenue-summary"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/churn-risks"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/upsell-opportunities"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/session-packages"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/waitlist"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/agent-action-log"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/automation-level"] });
+    }
+  }, [isAuthenticated, authLoading]);
 
   const removeFromWaitlist = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/scheduling/waitlist/${id}`),
@@ -548,6 +638,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || isLoading) return;
+    if (isDemo) return;
     setInput("");
     setShowQuickActions(false);
     setPendingConfirmation(null);
@@ -606,7 +697,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     } finally {
       setIsLoading(false);
     }
-  }, [input, messages, isLoading, toast]);
+  }, [input, messages, isLoading, toast, isDemo]);
 
   const handleOpsAction = (prompt: string) => {
     setActiveTab("chat");
@@ -619,20 +710,30 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
   const tabs = [
     { id: "chat", label: "Chat", icon: MessageSquare },
+    ...(isStaff || isDemo ? [
+      { id: "ops", label: isDemo ? "Ops (Demo)" : "Ops", icon: Activity },
+      { id: "revenue", label: isDemo ? "Revenue (Demo)" : "Revenue", icon: DollarSign },
+    ] : []),
     ...(isStaff ? [
-      { id: "ops", label: "Ops", icon: Activity },
-      { id: "revenue", label: "Revenue", icon: DollarSign },
       { id: "settings", label: "Settings", icon: Settings },
     ] : []),
   ] as const;
 
-  const maxCoachRevenue = revenueSummary ? Math.max(...revenueSummary.coachRevenues.map(c => c.totalRevenueCents), 1) : 1;
-  const maxTimeBlockRevenue = revenueSummary ? Math.max(...revenueSummary.timeBlockRevenues.map(t => t.totalRevenueCents), 1) : 1;
+  const activeRevenueSummary = isDemo ? DEMO_REVENUE_SUMMARY : revenueSummary;
+  const activeDigest = isDemo ? DEMO_OPS_DIGEST : digest;
+  const activeChurnRisks = isDemo ? DEMO_CHURN_RISKS : churnRisks;
+  const activeUpsellOpps = isDemo ? DEMO_UPSELL_OPPS : upsellOpps;
+  const activePackageAlerts = isDemo ? DEMO_PACKAGE_ALERTS : packageAlerts;
+  const activeWaitlist = isDemo ? DEMO_WAITLIST : waitlist;
 
-  const highPriorityInsights = digest?.insights.filter(i => i.priority === "high") ?? [];
-  const topActions = digest?.insights.slice(0, 3) ?? [];
+  const maxCoachRevenue = activeRevenueSummary ? Math.max(...activeRevenueSummary.coachRevenues.map(c => c.totalRevenueCents), 1) : 1;
+  const maxTimeBlockRevenue = activeRevenueSummary ? Math.max(...activeRevenueSummary.timeBlockRevenues.map(t => t.totalRevenueCents), 1) : 1;
+
+  const highPriorityInsights = activeDigest?.insights.filter(i => i.priority === "high") ?? [];
+  const topActions = activeDigest?.insights.slice(0, 3) ?? [];
 
   function getPrimaryHeadline(): string {
+    if (isDemo) return "12 open slots worth ~$840 (Demo)";
     if (!digest && !revenueSummary) return "Ask what needs attention today.";
     if (digest && digest.openSlotsThisWeek > 0) {
       return `${digest.openSlotsThisWeek} open slots worth ~$${digest.estimatedOpenRevenue.toLocaleString()}`;
@@ -687,16 +788,21 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
             </div>
           </div>
         </div>
+        {isDemo && (
+          <Badge variant="secondary" className="text-[11px] px-2 bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-700 shrink-0" data-testid="demo-mode-badge">
+            Demo Mode
+          </Badge>
+        )}
         {isStaff && (
           <div className="flex items-center gap-1.5 shrink-0">
-            {waitlist && waitlist.length > 0 && (
+            {activeWaitlist && activeWaitlist.length > 0 && (
               <Badge variant="secondary" className="text-[11px] px-1.5" data-testid="waitlist-badge">
-                <ListOrdered className="h-3 w-3 mr-1" />{waitlist.length}
+                <ListOrdered className="h-3 w-3 mr-1" />{activeWaitlist.length}
               </Badge>
             )}
-            {digest && digest.insights.filter(i => i.priority === "high").length > 0 && (
+            {activeDigest && activeDigest.insights.filter(i => i.priority === "high").length > 0 && (
               <Badge variant="destructive" className="text-[11px] px-1.5" data-testid="churn-badge">
-                <AlertTriangle className="h-3 w-3 mr-1" />{digest.insights.filter(i => i.priority === "high").length}
+                <AlertTriangle className="h-3 w-3 mr-1" />{activeDigest.insights.filter(i => i.priority === "high").length}
               </Badge>
             )}
           </div>
@@ -736,16 +842,32 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                         <Skeleton className="h-10 w-full rounded-xl" />
                         <Skeleton className="h-10 w-full rounded-xl" />
                       </div>
-                    ) : isStaff ? (
+                    ) : isStaff || isDemo ? (
                       <>
+                        {/* Demo Mode sign-in prompt */}
+                        {isDemo && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20 px-4 py-3 flex items-start gap-2.5" data-testid="demo-signin-prompt">
+                            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Demo Mode — Sample Data Only</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">Sign in to view your real scheduling and revenue metrics. No real client, coach, or business data is shown here.</p>
+                              <Link href="/auth">
+                                <Button size="sm" variant="outline" className="mt-2 h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-400" data-testid="demo-signin-button">
+                                  Sign in to get started
+                                </Button>
+                              </Link>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Command Center Card — only in full mode or when no context */}
                         {(mode === "full" || !context) && (
                           <div className="rounded-2xl border bg-primary/5 p-4" data-testid="command-center-card">
                             <div className="flex items-center gap-2 mb-3">
                               <Sparkles className="h-4 w-4 text-primary shrink-0" />
                               <div>
-                                <div className="text-xs font-semibold text-primary">Today's Business Command Center</div>
-                                <div className="text-[11px] text-muted-foreground">Your highest-impact actions, ranked by goal and revenue.</div>
+                                <div className="text-xs font-semibold text-primary">{isDemo ? "Sample Business Command Center" : "Today's Business Command Center"}</div>
+                                <div className="text-[11px] text-muted-foreground">{isDemo ? "Sign in to see your real metrics." : "Your highest-impact actions, ranked by goal and revenue."}</div>
                               </div>
                             </div>
                             {digestLoading ? (
@@ -768,7 +890,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                         )}
 
                         {/* Overlay compact headline */}
-                        {mode === "overlay" && context && digest && !digestLoading && (
+                        {mode === "overlay" && context && (activeDigest || isDemo) && !digestLoading && (
                           <div className="rounded-xl border bg-primary/5 px-3 py-2.5 flex items-center gap-2" data-testid="overlay-headline">
                             <Sparkles className="h-4 w-4 text-primary shrink-0" />
                             <span className="text-sm font-medium text-primary leading-tight">{getPrimaryHeadline()}</span>
@@ -847,30 +969,32 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                         )}
 
                         {/* Collapsible sections — only in full mode */}
-                        {mode === "full" && digest && (
+                        {mode === "full" && activeDigest && (
                           <div className="space-y-2 mt-1" data-testid="collapsible-sections">
                             <CollapsibleSection
                               title="Revenue"
                               icon={<DollarSign className="h-4 w-4 text-green-500" />}
-                              preview={digest ? `~$${digest.estimatedOpenRevenue.toLocaleString()} open revenue this week` : "Loading..."}
+                              preview={`~$${activeDigest.estimatedOpenRevenue.toLocaleString()} open revenue this week`}
                             >
                               <div className="space-y-2 pt-1">
                                 <div className="text-xs text-muted-foreground">Open slot revenue potential this week</div>
-                                <div className="text-2xl font-bold text-green-600">${digest.estimatedOpenRevenue.toLocaleString()}</div>
-                                <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Show me our revenue summary")}>
-                                  Full Revenue Summary
-                                </Button>
+                                <div className="text-2xl font-bold text-green-600">${activeDigest.estimatedOpenRevenue.toLocaleString()}</div>
+                                {!isDemo && (
+                                  <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Show me our revenue summary")}>
+                                    Full Revenue Summary
+                                  </Button>
+                                )}
                               </div>
                             </CollapsibleSection>
 
                             <CollapsibleSection
                               title="Growth"
                               icon={<TrendingUp className="h-4 w-4 text-orange-500" />}
-                              preview={digest.insights.find(i => i.type === "opportunity")?.title ?? "View growth opportunities"}
+                              preview={activeDigest.insights.find(i => i.type === "opportunity")?.title ?? "View growth opportunities"}
                             >
                               <div className="space-y-2 pt-1">
-                                {digest.insights.filter(i => i.type === "opportunity").length > 0
-                                  ? digest.insights.filter(i => i.type === "opportunity").map((ins, i) => (
+                                {activeDigest.insights.filter(i => i.type === "opportunity").length > 0
+                                  ? activeDigest.insights.filter(i => i.type === "opportunity").map((ins, i) => (
                                     <div key={i} className="text-xs">
                                       <div className="font-medium">{ins.title}</div>
                                       <div className="text-muted-foreground">{ins.description}</div>
@@ -878,66 +1002,74 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                                   ))
                                   : <div className="text-xs text-muted-foreground">No growth signals detected yet.</div>
                                 }
-                                <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("What are our growth opportunities?")}>
-                                  Ask Agent
-                                </Button>
+                                {!isDemo && (
+                                  <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("What are our growth opportunities?")}>
+                                    Ask Agent
+                                  </Button>
+                                )}
                               </div>
                             </CollapsibleSection>
 
                             <CollapsibleSection
                               title="Retention Risks"
                               icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
-                              preview={digest.inactiveClientsCount > 0 ? `${digest.inactiveClientsCount} inactive clients` : "No at-risk clients detected"}
+                              preview={activeDigest.inactiveClientsCount > 0 ? `${activeDigest.inactiveClientsCount} inactive clients` : "No at-risk clients detected"}
                             >
                               <div className="space-y-2 pt-1">
                                 <div className="text-xs text-muted-foreground">
-                                  {digest.inactiveClientsCount > 0
-                                    ? `${digest.inactiveClientsCount} clients have not booked recently.`
+                                  {activeDigest.inactiveClientsCount > 0
+                                    ? `${activeDigest.inactiveClientsCount} clients have not booked recently.`
                                     : "Retention looks healthy — no churn signals detected."}
                                 </div>
-                                <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Who are our at-risk clients?")}>
-                                  View At-Risk Clients
-                                </Button>
+                                {!isDemo && (
+                                  <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Who are our at-risk clients?")}>
+                                    View At-Risk Clients
+                                  </Button>
+                                )}
                               </div>
                             </CollapsibleSection>
 
                             <CollapsibleSection
                               title="Schedule"
                               icon={<Calendar className="h-4 w-4 text-blue-500" />}
-                              preview={`${digest.totalBookingsThisWeek} bookings · ${digest.openSlotsThisWeek} open slots`}
+                              preview={`${activeDigest.totalBookingsThisWeek} bookings · ${activeDigest.openSlotsThisWeek} open slots`}
                             >
                               <div className="space-y-2 pt-1">
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="rounded-lg border p-2 text-center">
-                                    <div className="text-lg font-bold">{digest.totalBookingsThisWeek}</div>
+                                    <div className="text-lg font-bold">{activeDigest.totalBookingsThisWeek}</div>
                                     <div className="text-[11px] text-muted-foreground">Bookings</div>
                                   </div>
                                   <div className="rounded-lg border p-2 text-center">
-                                    <div className="text-lg font-bold text-orange-500">{digest.openSlotsThisWeek}</div>
+                                    <div className="text-lg font-bold text-orange-500">{activeDigest.openSlotsThisWeek}</div>
                                     <div className="text-[11px] text-muted-foreground">Open Slots</div>
                                   </div>
                                 </div>
-                                <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Show me this week's full schedule")}>
-                                  Full Schedule
-                                </Button>
+                                {!isDemo && (
+                                  <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Show me this week's full schedule")}>
+                                    Full Schedule
+                                  </Button>
+                                )}
                               </div>
                             </CollapsibleSection>
 
                             <CollapsibleSection
                               title="Ops Summary"
                               icon={<Activity className="h-4 w-4 text-purple-500" />}
-                              preview={digest.insights.length > 0 ? `${digest.insights.length} insight${digest.insights.length > 1 ? "s" : ""} available` : "Operations on track"}
+                              preview={activeDigest.insights.length > 0 ? `${activeDigest.insights.length} insight${activeDigest.insights.length > 1 ? "s" : ""} available` : "Operations on track"}
                             >
                               <div className="space-y-2 pt-1">
-                                {digest.insights.slice(0, 2).map((ins, i) => (
+                                {activeDigest.insights.slice(0, 2).map((ins, i) => (
                                   <div key={i} className="text-xs">
                                     <div className="font-medium">{ins.title}</div>
                                     <div className="text-muted-foreground leading-relaxed">{ins.description}</div>
                                   </div>
                                 ))}
-                                <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Give me an operations summary for this week")}>
-                                  Full Ops Summary
-                                </Button>
+                                {!isDemo && (
+                                  <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={() => sendMessage("Give me an operations summary for this week")}>
+                                    Full Ops Summary
+                                  </Button>
+                                )}
                               </div>
                             </CollapsibleSection>
                           </div>
@@ -1062,23 +1194,34 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
             {/* Sticky chat input at the bottom */}
             <div className="border-t bg-background px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
-              <div className="flex gap-2">
-                <Input
-                  data-testid="chat-input"
-                  placeholder={isStaff ? "Ask about revenue, retention, schedule, or growth..." : "Ask about your schedule or bookings..."}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isLoading}
-                  className="flex-1"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                />
-                <Button data-testid="send-message" onClick={() => sendMessage()} disabled={isLoading || !input.trim()} size="icon" className="shrink-0">
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </Button>
-              </div>
+              {isDemo ? (
+                <div className="flex items-center gap-2 py-1" data-testid="demo-chat-blocked">
+                  <div className="flex-1 rounded-lg border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                    Sign in to use the AI scheduling assistant
+                  </div>
+                  <Link href="/auth">
+                    <Button size="sm" className="h-8 text-xs shrink-0" data-testid="demo-chat-signin">Sign In</Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    data-testid="chat-input"
+                    placeholder={isStaff ? "Ask about revenue, retention, schedule, or growth..." : "Ask about your schedule or bookings..."}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={isLoading}
+                    className="flex-1"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                  />
+                  <Button data-testid="send-message" onClick={() => sendMessage()} disabled={isLoading || !input.trim()} size="icon" className="shrink-0">
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1087,16 +1230,25 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
         {activeTab === "ops" && (
           <ScrollArea className="h-full">
             <div className="p-4 space-y-5 max-w-2xl mx-auto">
-              {digestLoading ? (
+              {isDemo && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20 px-4 py-3 flex items-center gap-2" data-testid="ops-demo-banner">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                  <div>
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">Demo Mode </span>
+                    <span className="text-xs text-muted-foreground">— Sample data only. Sign in to view your real operations metrics.</span>
+                  </div>
+                </div>
+              )}
+              {digestLoading && !isDemo ? (
                 <div className="space-y-3"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-20 w-full rounded-xl" /><Skeleton className="h-20 w-full rounded-xl" /></div>
-              ) : digest ? (
+              ) : activeDigest ? (
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
-                      { label: "Booked This Week", value: digest.totalBookingsThisWeek, sub: digest.weekRange, id: "metric-bookings", color: "" },
-                      { label: "Open Slots", value: digest.openSlotsThisWeek, sub: "this week", id: "metric-open-slots", color: "text-orange-500" },
-                      { label: "Open Revenue Est.", value: `$${digest.estimatedOpenRevenue.toLocaleString()}`, sub: "fillable", id: "metric-revenue", color: "text-green-600" },
-                      { label: "Waitlist", value: digest.waitlistCount, sub: "clients waiting", id: "metric-waitlist", color: "text-blue-500" },
+                      { label: "Booked This Week", value: activeDigest.totalBookingsThisWeek, sub: activeDigest.weekRange, id: "metric-bookings", color: "" },
+                      { label: "Open Slots", value: activeDigest.openSlotsThisWeek, sub: "this week", id: "metric-open-slots", color: "text-orange-500" },
+                      { label: "Open Revenue Est.", value: `$${activeDigest.estimatedOpenRevenue.toLocaleString()}`, sub: "fillable", id: "metric-revenue", color: "text-green-600" },
+                      { label: "Waitlist", value: activeDigest.waitlistCount, sub: "clients waiting", id: "metric-waitlist", color: "text-blue-500" },
                     ].map(m => (
                       <Card key={m.id} className="border-0 shadow-sm" data-testid={m.id}>
                         <CardContent className="p-3">
@@ -1107,36 +1259,38 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                       </Card>
                     ))}
                   </div>
-                  {digest.insights.length > 0 && (
+                  {activeDigest.insights.length > 0 && (
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <h3 className="font-semibold text-sm flex items-center gap-1.5"><Zap className="h-4 w-4 text-orange-500" />Insights & Actions</h3>
-                        <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => refetchDigest()} data-testid="refresh-digest">
-                          <RefreshCw className="h-3 w-3 mr-1" />Refresh
-                        </Button>
+                        {!isDemo && (
+                          <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => refetchDigest()} data-testid="refresh-digest">
+                            <RefreshCw className="h-3 w-3 mr-1" />Refresh
+                          </Button>
+                        )}
                       </div>
                       <div className="space-y-2">
-                        {digest.insights.map((insight, i) => (
-                          <InsightCard key={i} insight={insight} onAction={handleOpsAction} />
+                        {activeDigest.insights.map((insight, i) => (
+                          <InsightCard key={i} insight={insight} onAction={isDemo ? () => {} : handleOpsAction} />
                         ))}
                       </div>
                     </div>
                   )}
-                  {digest.coaches.length > 0 && (
+                  {activeDigest.coaches.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><BarChart3 className="h-4 w-4 text-blue-500" />Coach Utilization</h3>
                       <Card>
                         <CardContent className="p-4 space-y-3">
-                          {digest.coaches.map(c => <UtilizationBar key={c.coachId} coach={c} />)}
+                          {activeDigest.coaches.map(c => <UtilizationBar key={c.coachId} coach={c} />)}
                         </CardContent>
                       </Card>
                     </div>
                   )}
-                  {digest.recentCancellations.length > 0 && (
+                  {activeDigest.recentCancellations.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><XCircle className="h-4 w-4 text-red-400" />Recent Cancellations</h3>
                       <div className="space-y-2">
-                        {digest.recentCancellations.map(c => (
+                        {activeDigest.recentCancellations.map(c => (
                           <Card key={c.id} data-testid={`cancellation-${c.id}`}>
                             <CardContent className="p-3 flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -1155,16 +1309,18 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                   )}
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-sm flex items-center gap-1.5"><ListOrdered className="h-4 w-4 text-blue-500" />Waitlist ({waitlist?.length ?? 0})</h3>
-                      <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => refetchWaitlist()} data-testid="refresh-waitlist">
-                        <RefreshCw className="h-3 w-3 mr-1" />Refresh
-                      </Button>
+                      <h3 className="font-semibold text-sm flex items-center gap-1.5"><ListOrdered className="h-4 w-4 text-blue-500" />Waitlist ({activeWaitlist?.length ?? 0})</h3>
+                      {!isDemo && (
+                        <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => refetchWaitlist()} data-testid="refresh-waitlist">
+                          <RefreshCw className="h-3 w-3 mr-1" />Refresh
+                        </Button>
+                      )}
                     </div>
-                    {waitlistLoading ? <Skeleton className="h-16 w-full rounded-xl" /> : !waitlist || waitlist.length === 0 ? (
+                    {waitlistLoading && !isDemo ? <Skeleton className="h-16 w-full rounded-xl" /> : !activeWaitlist || activeWaitlist.length === 0 ? (
                       <Card><CardContent className="p-4 flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-green-500" />No clients on the waitlist</CardContent></Card>
                     ) : (
                       <div className="space-y-2">
-                        {waitlist.map(entry => (
+                        {activeWaitlist.map(entry => (
                           <Card key={entry.id} data-testid={`waitlist-entry-${entry.id}`}>
                             <CardContent className="p-3 flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -1172,16 +1328,18 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                                 {entry.sessionType && <div className="text-xs text-muted-foreground">{entry.sessionType}</div>}
                                 {entry.notes && <div className="text-xs text-muted-foreground italic">{entry.notes}</div>}
                               </div>
-                              <div className="flex gap-1.5 shrink-0">
-                                <Button variant="ghost" size="sm" className="h-7 text-xs" data-testid={`book-waitlist-${entry.id}`}
-                                  onClick={() => handleOpsAction(`Book a session for ${entry.client ? `${entry.client.firstName} ${entry.client.lastName}` : "this client"} from the waitlist`)}>
-                                  <Calendar className="h-3 w-3 mr-1" />Book
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" data-testid={`remove-waitlist-${entry.id}`}
-                                  onClick={() => removeFromWaitlist.mutate(entry.id)}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
+                              {!isDemo && (
+                                <div className="flex gap-1.5 shrink-0">
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs" data-testid={`book-waitlist-${entry.id}`}
+                                    onClick={() => handleOpsAction(`Book a session for ${entry.client ? `${entry.client.firstName} ${entry.client.lastName}` : "this client"} from the waitlist`)}>
+                                    <Calendar className="h-3 w-3 mr-1" />Book
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" data-testid={`remove-waitlist-${entry.id}`}
+                                    onClick={() => removeFromWaitlist.mutate(entry.id)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              )}
                             </CardContent>
                           </Card>
                         ))}
@@ -1226,15 +1384,24 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
         {activeTab === "revenue" && (
           <ScrollArea className="h-full">
             <div className="p-4 space-y-5 max-w-2xl mx-auto">
-              {revenueLoading ? (
+              {isDemo && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20 px-4 py-3 flex items-center gap-2" data-testid="revenue-demo-banner">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                  <div>
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">Demo Mode </span>
+                    <span className="text-xs text-muted-foreground">— Sample data only. Sign in to view your real revenue metrics.</span>
+                  </div>
+                </div>
+              )}
+              {revenueLoading && !isDemo ? (
                 <div className="space-y-3"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-48 w-full rounded-xl" /></div>
-              ) : revenueSummary ? (
+              ) : activeRevenueSummary ? (
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {[
-                      { label: "Last 30d Revenue", value: `$${(revenueSummary.last30dRevenueCents / 100).toLocaleString()}`, sub: revenueSummary.revenueGrowthPct >= 0 ? `+${revenueSummary.revenueGrowthPct.toFixed(1)}% vs prior 30d` : `${revenueSummary.revenueGrowthPct.toFixed(1)}% vs prior 30d`, id: "rev-last30", color: "text-green-600", subColor: revenueSummary.revenueGrowthPct >= 0 ? "text-green-500" : "text-red-500" },
-                      { label: "MRR", value: `$${(revenueSummary.mrr / 100).toLocaleString()}`, sub: `${revenueSummary.activeSubscribers} active subscribers`, id: "rev-mrr", color: "", subColor: "" },
-                      { label: "Avg Session Value", value: `$${(revenueSummary.avgRevenuePerSessionCents / 100).toFixed(0)}`, sub: `${revenueSummary.sessionsLast30d} sessions last 30d`, id: "rev-session-val", color: "", subColor: "" },
+                      { label: "Last 30d Revenue", value: `$${(activeRevenueSummary.last30dRevenueCents / 100).toLocaleString()}`, sub: activeRevenueSummary.revenueGrowthPct >= 0 ? `+${activeRevenueSummary.revenueGrowthPct.toFixed(1)}% vs prior 30d` : `${activeRevenueSummary.revenueGrowthPct.toFixed(1)}% vs prior 30d`, id: "rev-last30", color: "text-green-600", subColor: activeRevenueSummary.revenueGrowthPct >= 0 ? "text-green-500" : "text-red-500" },
+                      { label: "MRR", value: `$${(activeRevenueSummary.mrr / 100).toLocaleString()}`, sub: `${activeRevenueSummary.activeSubscribers} active subscribers`, id: "rev-mrr", color: "", subColor: "" },
+                      { label: "Avg Session Value", value: `$${(activeRevenueSummary.avgRevenuePerSessionCents / 100).toFixed(0)}`, sub: `${activeRevenueSummary.sessionsLast30d} sessions last 30d`, id: "rev-session-val", color: "", subColor: "" },
                     ].map(m => (
                       <Card key={m.id} className="border-0 shadow-sm" data-testid={m.id}>
                         <CardContent className="p-3">
@@ -1246,48 +1413,48 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     ))}
                   </div>
 
-                  {(revenueSummary.churnRiskCount > 0 || revenueSummary.sessionPackageAlertCount > 0 || revenueSummary.upsellOpportunityCount > 0) && (
+                  {(activeRevenueSummary.churnRiskCount > 0 || activeRevenueSummary.sessionPackageAlertCount > 0 || activeRevenueSummary.upsellOpportunityCount > 0) && (
                     <>
                       <h3 className="font-semibold text-sm flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 text-orange-500" />Revenue Alerts</h3>
                       <div className="flex flex-wrap gap-2">
-                        {revenueSummary.churnRiskCount > 0 && (
+                        {activeRevenueSummary.churnRiskCount > 0 && (
                           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-800 dark:text-red-400 hover:opacity-80 transition-opacity"
                             data-testid="churn-pill" onClick={() => document.getElementById("churn-section")?.scrollIntoView({ behavior: "smooth" })}>
-                            <AlertTriangle className="h-3 w-3" />{revenueSummary.churnRiskCount} churn risk{revenueSummary.churnRiskCount > 1 ? "s" : ""}
+                            <AlertTriangle className="h-3 w-3" />{activeRevenueSummary.churnRiskCount} churn risk{activeRevenueSummary.churnRiskCount > 1 ? "s" : ""}
                           </button>
                         )}
-                        {revenueSummary.sessionPackageAlertCount > 0 && (
+                        {activeRevenueSummary.sessionPackageAlertCount > 0 && (
                           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-800 dark:text-orange-400 hover:opacity-80 transition-opacity"
                             data-testid="packages-pill" onClick={() => document.getElementById("packages-section")?.scrollIntoView({ behavior: "smooth" })}>
-                            <Package className="h-3 w-3" />{revenueSummary.sessionPackageAlertCount} package alert{revenueSummary.sessionPackageAlertCount > 1 ? "s" : ""}
+                            <Package className="h-3 w-3" />{activeRevenueSummary.sessionPackageAlertCount} package alert{activeRevenueSummary.sessionPackageAlertCount > 1 ? "s" : ""}
                           </button>
                         )}
-                        {revenueSummary.upsellOpportunityCount > 0 && (
+                        {activeRevenueSummary.upsellOpportunityCount > 0 && (
                           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 hover:opacity-80 transition-opacity"
                             data-testid="upsell-pill" onClick={() => document.getElementById("upsell-section")?.scrollIntoView({ behavior: "smooth" })}>
-                            <TrendingUp className="h-3 w-3" />{revenueSummary.upsellOpportunityCount} upsell opportunity{revenueSummary.upsellOpportunityCount > 1 ? "s" : ""}
+                            <TrendingUp className="h-3 w-3" />{activeRevenueSummary.upsellOpportunityCount} upsell opportunity{activeRevenueSummary.upsellOpportunityCount > 1 ? "s" : ""}
                           </button>
                         )}
                       </div>
                     </>
                   )}
 
-                  {revenueSummary.coachRevenues.length > 0 && (
+                  {activeRevenueSummary.coachRevenues.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><BarChart3 className="h-4 w-4 text-green-500" />Revenue by Coach</h3>
                       <Card>
                         <CardContent className="p-4 space-y-3">
-                          {revenueSummary.coachRevenues.map(c => <CoachBar key={c.coachId} coach={c} maxRevenue={maxCoachRevenue} />)}
+                          {activeRevenueSummary.coachRevenues.map(c => <CoachBar key={c.coachId} coach={c} maxRevenue={maxCoachRevenue} />)}
                         </CardContent>
                       </Card>
                     </div>
                   )}
 
-                  {revenueSummary.topClients.length > 0 && (
+                  {activeRevenueSummary.topClients.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Users className="h-4 w-4 text-blue-500" />Top Clients by Revenue</h3>
                       <div className="space-y-2">
-                        {revenueSummary.topClients.map((c, i) => (
+                        {activeRevenueSummary.topClients.map((c, i) => (
                           <Card key={c.clientId} data-testid={`top-client-${i}`}>
                             <CardContent className="p-3 flex items-center justify-between gap-3">
                               <div className="flex items-center gap-2 min-w-0">
@@ -1305,12 +1472,12 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     </div>
                   )}
 
-                  {revenueSummary.timeBlockRevenues.length > 0 && (
+                  {activeRevenueSummary.timeBlockRevenues.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Clock className="h-4 w-4 text-purple-500" />Revenue by Time Block (Last 30d)</h3>
                       <Card>
                         <CardContent className="p-4 space-y-2">
-                          {revenueSummary.timeBlockRevenues
+                          {activeRevenueSummary.timeBlockRevenues
                             .sort((a, b) => a.hour - b.hour)
                             .map(tb => <TimeBlockBar key={tb.hour} block={tb} maxRevenue={maxTimeBlockRevenue} />)}
                         </CardContent>
@@ -1320,11 +1487,11 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
                   <div id="churn-section">
                     <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 text-red-500" />Retention Risks</h3>
-                    {churnLoading ? <Skeleton className="h-20 w-full rounded-xl" /> : !churnRisks || churnRisks.length === 0 ? (
+                    {churnLoading && !isDemo ? <Skeleton className="h-20 w-full rounded-xl" /> : !activeChurnRisks || activeChurnRisks.length === 0 ? (
                       <Card><CardContent className="p-4 flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-green-500" />No clients flagged as at-risk — great retention!</CardContent></Card>
                     ) : (
                       <div className="space-y-2">
-                        {churnRisks.slice(0, 6).map(risk => (
+                        {activeChurnRisks.slice(0, 6).map(risk => (
                           <Card key={risk.clientId} data-testid={`churn-risk-${risk.clientId}`}>
                             <CardContent className="p-3">
                               <div className="flex items-start justify-between gap-3">
@@ -1338,10 +1505,12 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                                   </div>
                                   <p className="text-xs text-primary mt-1.5 font-medium">{risk.suggestedAction}</p>
                                 </div>
-                                <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" data-testid={`churn-action-${risk.clientId}`}
-                                  onClick={() => handleOpsAction(risk.suggestedAction)}>
-                                  <MessageSquare className="h-3 w-3 mr-1" />Ask agent
-                                </Button>
+                                {!isDemo && (
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" data-testid={`churn-action-${risk.clientId}`}
+                                    onClick={() => handleOpsAction(risk.suggestedAction)}>
+                                    <MessageSquare className="h-3 w-3 mr-1" />Ask agent
+                                  </Button>
+                                )}
                               </div>
                             </CardContent>
                           </Card>
@@ -1352,11 +1521,11 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
                   <div id="packages-section">
                     <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Package className="h-4 w-4 text-orange-500" />Session Package Alerts</h3>
-                    {packagesLoading ? <Skeleton className="h-16 w-full rounded-xl" /> : !packageAlerts || packageAlerts.length === 0 ? (
+                    {packagesLoading && !isDemo ? <Skeleton className="h-16 w-full rounded-xl" /> : !activePackageAlerts || activePackageAlerts.length === 0 ? (
                       <Card><CardContent className="p-4 flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-green-500" />All clients have healthy session balances</CardContent></Card>
                     ) : (
                       <div className="space-y-2">
-                        {packageAlerts.map(alert => (
+                        {activePackageAlerts.map(alert => (
                           <Card key={alert.clientId} data-testid={`package-alert-${alert.clientId}`}>
                             <CardContent className="p-3 flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -1369,10 +1538,12 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                                   {alert.cancelAtPeriodEnd && " · Cancelling at period end"}
                                 </div>
                               </div>
-                              <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" data-testid={`package-action-${alert.clientId}`}
-                                onClick={() => handleOpsAction(`Help me reach out to ${alert.clientName} about renewing their session package (${alert.sessionsRemaining} sessions remaining)`)}>
-                                <MessageSquare className="h-3 w-3 mr-1" />Reach out
-                              </Button>
+                              {!isDemo && (
+                                <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" data-testid={`package-action-${alert.clientId}`}
+                                  onClick={() => handleOpsAction(`Help me reach out to ${alert.clientName} about renewing their session package (${alert.sessionsRemaining} sessions remaining)`)}>
+                                  <MessageSquare className="h-3 w-3 mr-1" />Reach out
+                                </Button>
+                              )}
                             </CardContent>
                           </Card>
                         ))}
@@ -1382,11 +1553,11 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
                   <div id="upsell-section">
                     <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-green-500" />Upsell Opportunities</h3>
-                    {upsellLoading ? <Skeleton className="h-16 w-full rounded-xl" /> : !upsellOpps || upsellOpps.length === 0 ? (
+                    {upsellLoading && !isDemo ? <Skeleton className="h-16 w-full rounded-xl" /> : !activeUpsellOpps || activeUpsellOpps.length === 0 ? (
                       <Card><CardContent className="p-4 text-sm text-muted-foreground">No upsell opportunities detected from current booking patterns.</CardContent></Card>
                     ) : (
                       <div className="space-y-2">
-                        {upsellOpps.map(opp => (
+                        {activeUpsellOpps.map(opp => (
                           <Card key={`${opp.clientId}-${opp.opportunity}`} data-testid={`upsell-${opp.clientId}`}>
                             <CardContent className="p-3">
                               <div className="flex items-start justify-between gap-3">
@@ -1399,10 +1570,12 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                                   <p className="text-xs font-medium text-foreground/80">{opp.opportunity}</p>
                                   <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{opp.reasoning}</p>
                                 </div>
-                                <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0 mt-0.5" data-testid={`upsell-action-${opp.clientId}`}
-                                  onClick={() => handleOpsAction(opp.reasoning)}>
-                                  <MessageSquare className="h-3 w-3 mr-1" />Ask agent
-                                </Button>
+                                {!isDemo && (
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0 mt-0.5" data-testid={`upsell-action-${opp.clientId}`}
+                                    onClick={() => handleOpsAction(opp.reasoning)}>
+                                    <MessageSquare className="h-3 w-3 mr-1" />Ask agent
+                                  </Button>
+                                )}
                               </div>
                             </CardContent>
                           </Card>
