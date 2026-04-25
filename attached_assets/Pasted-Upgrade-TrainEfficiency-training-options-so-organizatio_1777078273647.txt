@@ -1,0 +1,459 @@
+Upgrade TrainEfficiency training options so organizations can define session categories, client pricing, and coach payout logic separately.
+
+Current issue:
+Training options only support basic session type, duration, and client price. This does not handle real business cases like:
+- free intro sessions
+- floor hours
+- meetings
+- membership/package redemptions
+- internal paid coach time
+- $0 client price but paid coach compensation
+
+Goal:
+Separate revenue logic from coach payout logic.
+
+Do not treat all $0 sessions as the same. A $0 intro, $0 floor hour, and $0 membership redemption are different business events.
+
+========================
+PHASE 1 — DATABASE MODEL
+========================
+
+Update the training options schema to support:
+
+Session classification:
+- category:
+  - paid
+  - intro
+  - internal
+  - meeting
+  - membership
+  - package_redemption
+  - comp
+
+Revenue fields:
+- priceCents
+- countsTowardRevenue boolean
+- revenueRecognition:
+  - at_booking
+  - at_purchase
+  - none
+
+Coach payout fields:
+- payoutType:
+  - percentage
+  - fixed
+  - hourly
+  - none
+- payoutValueCents nullable
+- payoutPercent nullable
+- coachPayWhenRedeemed boolean
+
+Operational fields:
+- countsTowardUtilization boolean
+- blocksAvailability boolean
+- countsTowardSessionCount boolean
+- requiresClient boolean
+- isBookableByClient boolean
+- isBookableByCoach boolean
+
+Defaults:
+Paid session:
+- category = paid
+- countsTowardRevenue = true
+- revenueRecognition = at_booking
+- payoutType = percentage
+- countsTowardUtilization = true
+- blocksAvailability = true
+- requiresClient = true
+- isBookableByClient = true
+- isBookableByCoach = true
+
+Free intro:
+- category = intro
+- priceCents = 0
+- countsTowardRevenue = false
+- revenueRecognition = none
+- payoutType = fixed or none
+- countsTowardUtilization = true
+- blocksAvailability = true
+- requiresClient = true
+- isBookableByClient = true
+- isBookableByCoach = true
+
+Floor hours:
+- category = internal
+- priceCents = 0
+- countsTowardRevenue = false
+- revenueRecognition = none
+- payoutType = hourly
+- countsTowardUtilization = true
+- blocksAvailability = true
+- requiresClient = false
+- isBookableByClient = false
+- isBookableByCoach = true
+
+Meeting:
+- category = meeting
+- priceCents = 0
+- countsTowardRevenue = false
+- revenueRecognition = none
+- payoutType = fixed/hourly/none
+- countsTowardUtilization = false or true depending on org setting
+- blocksAvailability = true
+- requiresClient = false
+- isBookableByClient = false
+- isBookableByCoach = true
+
+Membership/package redemption:
+- category = membership or package_redemption
+- priceCents = 0 at booking level
+- countsTowardRevenue = false
+- revenueRecognition = at_purchase
+- coachPayWhenRedeemed = true
+- payoutType = fixed or percentage depending on org setup
+- countsTowardUtilization = true
+- blocksAvailability = true
+- requiresClient = true
+- isBookableByClient = true
+- isBookableByCoach = true
+
+Create migration safely:
+- preserve existing training options
+- backfill existing records as category = paid
+- infer countsTowardRevenue = priceCents > 0
+- default payoutType = percentage if existing payout percent exists
+- do not break existing booking creation
+
+========================
+PHASE 2 — PAYOUT CALCULATION LOGIC
+========================
+
+Create or update a centralized function:
+
+calculateCoachPayoutForBooking(booking)
+
+Inputs:
+- training option
+- booking duration
+- client price
+- assigned coach payout defaults
+- training option payout settings
+
+Rules:
+1. If payoutType = none:
+   coach payout = 0
+
+2. If payoutType = fixed:
+   coach payout = payoutValueCents
+
+3. If payoutType = hourly:
+   coach payout = payoutValueCents × booking duration hours
+
+4. If payoutType = percentage:
+   coach payout = eligible revenue × payoutPercent
+
+Eligible revenue:
+- if countsTowardRevenue = true → use booking price
+- if revenueRecognition = at_purchase → use redemption value if available
+- if priceCents = 0 and no redemption value → percentage payout should be 0 unless fixed override exists
+
+Important:
+- Floor hours with hourly payout should pay coach even when client price is $0.
+- Meetings may pay or not pay depending on payoutType.
+- Intro sessions may pay fixed coach amount even with $0 client price.
+- Package redemptions should be able to pay coach even if booking price is $0.
+
+Return:
+- coachPayoutCents
+- payoutSource:
+  - booking_price
+  - fixed
+  - hourly
+  - package_redemption
+  - none
+- payoutExplanation
+
+========================
+PHASE 3 — REVENUE REPORTING LOGIC
+========================
+
+Update revenue tools so they do not treat all booked sessions as revenue.
+
+Revenue summaries should include:
+- gross client revenue
+- paid session revenue
+- package/membership revenue if available
+- non-revenue sessions count
+- internal hours count
+- coach payout estimate
+- net revenue estimate if possible
+
+Rules:
+- category = internal, meeting, intro with price $0 → no revenue
+- category = package_redemption → no new revenue at booking time
+- category = paid → revenue at booking
+- category = membership → revenue at purchase, not each booking
+
+Update:
+- get_revenue_by_period
+- get_revenue_forecast
+- get_weekly_business_recap
+- get_goal_performance_summary
+- get_operator_performance_metrics if it uses booking price
+
+Avoid inflating revenue with internal sessions.
+Avoid treating coach-paid $0 sessions as worthless in utilization/payroll views.
+
+========================
+PHASE 4 — UTILIZATION + OPERATIONS LOGIC
+========================
+
+Update utilization tools to respect:
+
+countsTowardUtilization
+blocksAvailability
+
+Examples:
+- Floor hours should count toward coach workload/utilization if enabled.
+- Meetings should block availability but may or may not count toward utilization depending on setting.
+- Cancelled sessions should not count.
+- Internal sessions should appear separately from client sessions.
+
+Update:
+- get_coach_utilization
+- get_operations_digest
+- get_daily_action_queue
+- get_weekly_business_recap
+
+Add output fields:
+- clientSessionHours
+- internalHours
+- meetingHours
+- totalBlockedHours
+- revenueGeneratingHours
+- nonRevenueHours
+
+Agent should be able to answer:
+- “How many floor hours did Hunter work?”
+- “How many paid sessions did Bryan coach?”
+- “How much unpaid time is on the schedule?”
+- “What is coach payout this week?”
+
+========================
+PHASE 5 — CONFIGURATION UI
+========================
+
+Upgrade Add/Edit Training Option modal.
+
+Add section:
+“Business Type”
+
+Dropdown:
+- Paid Session
+- Free Intro
+- Floor Hours / Internal Time
+- Meeting
+- Membership Redemption
+- Package Redemption
+- Comp Session
+
+When category changes, apply smart defaults.
+
+Fields:
+
+Always show:
+- name
+- description
+- duration
+- active status
+- bookable by coach
+- bookable by client
+
+Revenue section:
+- client price
+- counts toward revenue
+- revenue recognition
+
+Hide or disable client price for internal/meeting/floor hours unless explicitly allowed.
+
+Payout section:
+- payout type:
+  - None
+  - Percentage of revenue
+  - Fixed amount
+  - Hourly rate
+- payout value
+- explanation preview:
+  - “Coach earns $25/hr for this floor hour.”
+  - “Coach earns $20 when this free intro is completed.”
+  - “Coach earns 50% of $70 = $35.”
+
+Operations section:
+- blocks availability
+- counts toward utilization
+- requires client
+- counts toward session count
+
+Add helper text:
+“Client price controls revenue. Coach payout controls compensation. A session can cost the client $0 and still pay the coach.”
+
+========================
+PHASE 6 — TRAINING OPTION CARDS
+========================
+
+Update training option cards to show:
+
+- category badge
+  - Paid
+  - Intro
+  - Internal
+  - Meeting
+  - Membership
+  - Package
+  - Comp
+
+- price badge:
+  - $70 client price
+  - $0 client price
+  - Revenue at purchase
+
+- payout badge:
+  - 50% payout
+  - $25 fixed payout
+  - $25/hr payout
+  - No payout
+
+- operational badges:
+  - Blocks calendar
+  - Counts utilization
+  - Coach-only
+  - Client-bookable
+
+Make cards readable on mobile.
+Avoid badge overflow by wrapping cleanly.
+
+========================
+PHASE 7 — BOOKING FLOW UPDATES
+========================
+
+Update Add Session / booking modal.
+
+When selected training option has:
+requiresClient = false:
+- client field should be optional or hidden
+- label should change to “Internal time / meeting”
+- allow booking without client
+
+category = internal:
+- default title can be “Floor Hours”
+- no client required
+
+category = meeting:
+- allow optional notes/title
+- no client required
+
+category = package_redemption:
+- client required
+- if package balance exists, show redemption source
+- booking price should remain $0
+- coach payout should still preview if configured
+
+Add payout/revenue preview:
+- Client charged: $0 / $70 / package redemption
+- Coach payout: $25 / $35 / no payout
+- Revenue category: Paid / Internal / Redemption
+
+========================
+PHASE 8 — AGENT TOOL + PROMPT UPDATES
+========================
+
+Update agent understanding of session categories.
+
+The agent must know:
+- Price and payout are separate.
+- $0 does not always mean no coach pay.
+- Floor hours and meetings can block availability.
+- Internal time should not be counted as revenue.
+- Package redemptions may pay coaches without new revenue.
+
+Agent should answer:
+- “Create a floor hour option that pays coaches $25/hr.”
+- “Add a free intro that pays the coach $20.”
+- “How much coach payout do we owe this week?”
+- “How much revenue came from paid sessions vs package redemptions?”
+- “How many non-revenue hours are on the schedule?”
+
+If agent can create/update training options, extend tool schema.
+If not, at least update prompt/routing so it explains accurately and can guide the coach.
+
+========================
+PHASE 9 — DEFAULT OPTION TEMPLATES
+========================
+
+Add quick templates in the Add Training Option UI:
+
+Templates:
+1. Paid 1:1 Session
+2. Paid Group Session
+3. Free Intro
+4. Floor Hours
+5. Coach Meeting
+6. Package Redemption
+7. Comp Session
+
+Selecting a template auto-fills:
+- category
+- default price
+- payout type
+- utilization flags
+- bookability flags
+- requires client
+
+Example:
+Floor Hours:
+- price $0
+- payout hourly
+- default $25/hr
+- requiresClient false
+- coach-only
+- blocks availability true
+- counts utilization true
+
+========================
+PHASE 10 — VALIDATION
+========================
+
+Test existing behavior:
+1. Existing paid sessions still work.
+2. Existing booking flow still works.
+3. Existing revenue reports still work.
+
+Test new categories:
+4. Create Paid Session: $70, 50% payout.
+5. Create Free Intro: $0, fixed $20 payout.
+6. Create Floor Hours: $0, $25/hr payout, no client required.
+7. Create Meeting: $0, no payout, no client required.
+8. Create Package Redemption: $0 booking price, coach payout enabled.
+
+Booking tests:
+9. Book floor hours without client.
+10. Book meeting without client.
+11. Book free intro with client.
+12. Book paid session with client.
+13. Book package redemption with client.
+
+Reporting tests:
+14. Revenue excludes floor hours and meetings.
+15. Utilization includes floor hours if enabled.
+16. Coach payout includes floor hours and intro payout.
+17. Weekly recap separates revenue and non-revenue time.
+18. Agent can explain why a $0 session still pays coach.
+
+Return:
+- files changed
+- DB migration summary
+- schema fields added
+- payout calculation logic
+- UI changes
+- agent updates
+- validation results
