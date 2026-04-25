@@ -223,6 +223,17 @@ const PAGE_QUICK_PROMPTS: Record<SourcePage, { label: string; icon: any; prompt:
 };
 
 function renderMarkdown(text: string): React.ReactNode[] {
+  if (text.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text.trim());
+      if (parsed.requiresConfirmation) {
+        const summary = parsed.summary ? `\n\n${parsed.summary}` : "";
+        text = `I need your confirmation before I can complete this.${summary}\n\nReply **yes** to confirm or **no** to cancel.`;
+      }
+    } catch {
+      // not JSON — fall through to normal markdown rendering
+    }
+  }
   const lines = text.split("\n");
   const nodes: React.ReactNode[] = [];
   let keyIndex = 0;

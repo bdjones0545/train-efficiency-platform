@@ -1,0 +1,117 @@
+Implement Phase 4: pendingActionId confirmation handshake for the TrainEfficiency Scheduling Agent.
+
+Goal:
+Move booking/cancel/reschedule safety from argument-level confirmation to server-verified confirmation.
+
+Scope:
+Work only in:
+- server/scheduling-assistant.ts
+- server/routes.ts if needed
+- client/src/components/coach-agent-panel.tsx only if needed for displaying confirmation payloads
+
+Do not redesign the UI yet.
+
+1. Add a pending action store
+In server/scheduling-assistant.ts, create a short-lived in-memory pending action store.
+
+Each pending action should include:
+- pendingActionId
+- userId
+- actionType: "book_session" | "cancel_booking" | "reschedule_booking" | "coach_create_session" | "create_confirmed_recurring_sessions" | "send_scheduling_inquiry"
+- normalizedArgs
+- createdAt
+- expiresAt
+
+Use crypto.randomUUID() for pendingActionId.
+Expire actions after 10 minutes.
+Add cleanup for expired entries.
+
+2. Create helper functions
+Add helpers:
+- createPendingAction(userId, actionType, normalizedArgs)
+- getPendingAction(pendingActionId)
+- consumePendingAction(pendingActionId)
+- validatePendingAction(pendingAction, userId, actionType, incomingArgs)
+
+Validation should confirm:
+- pendingAction exists
+- not expired
+- userId matches
+- actionType matches
+- critical args match the previewed action
+
+Critical args:
+book_session: coachId, serviceId, startAt
+cancel_booking: bookingId
+reschedule_booking: bookingId, newStartAt
+coach_create_session: clientId/clientName, coachId, serviceId, startAt
+create_confirmed_recurring_sessions: recurringGroupId or preview/session list identity
+send_scheduling_inquiry: recipient/contact target + message body
+
+3. Update gated executeTool cases
+For each gated tool:
+- book_session
+- cancel_booking
+- reschedule_booking
+- coach_create_session
+- create_confirmed_recurring_sessions
+- send_scheduling_inquiry
+
+Behavior:
+A. If confirmed !== true:
+- create a pending action using the intended args
+- return JSON.stringify({
+    requiresConfirmation: true,
+    pendingActionId,
+    actionType,
+    summary,
+    message: "Please confirm this action before I complete it."
+  })
+
+B. If confirmed === true:
+- require pendingActionId in args
+- validate pendingActionId against the stored pending action
+- if invalid/expired/mismatched, return a clear JSON error requiring the action to be previewed again
+- if valid, consume it and then execute the existing action logic
+
+Important:
+Do not execute any gated action with confirmed=true unless pendingActionId validates.
+
+4. Update tool schemas
+Add pendingActionId: string to the schemas for all gated tools.
+
+Rules:
+- confirmed is still required.
+- pendingActionId is required only when confirmed=true, but since JSON schema may not express that cleanly, document it in the description:
+  “Required when confirmed is true. Must match the pending action generated during preview.”
+
+5. Update system prompt
+Update the scheduling assistant system prompt:
+
+Rules:
+- First call any committing tool with confirmed=false to generate a pendingActionId.
+- Restate the action clearly to the user.
+- Only after the user confirms, call the same tool with confirmed=true and the exact pendingActionId.
+- Never invent a pendingActionId.
+- If the pendingActionId is missing, expired, or rejected, preview the action again.
+
+6. Client compatibility
+If the assistant returns a requiresConfirmation payload, make sure the chat does not show raw JSON to the user.
+The assistant should convert it into natural language.
+If raw JSON currently leaks, add a minimal client-side guard that formats:
+- summary
+- “Reply yes to confirm or no to cancel.”
+
+Do not build confirmation buttons yet.
+
+7. Validation
+After implementation:
+- Run typecheck/build.
+- Confirm these cases:
+  - book_session confirmed=true without pendingActionId fails.
+  - book_session confirmed=true with wrong pendingActionId fails.
+  - book_session confirmed=false returns pendingActionId.
+  - book_session confirmed=true with matching pendingActionId succeeds.
+  - cancel_booking follows the same pattern.
+  - coach_create_session follows the same pattern.
+- Report files changed, helper functions added, and any remaining risks.

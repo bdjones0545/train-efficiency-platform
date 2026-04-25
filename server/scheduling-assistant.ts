@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { addDays, startOfWeek, format, addMinutes, startOfMonth, endOfMonth } from "date-fns";
 import {
@@ -59,6 +60,106 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+// ─── Pending action store ─────────────────────────────────────────────────────
+type GatedActionType =
+  | "book_session"
+  | "cancel_booking"
+  | "reschedule_booking"
+  | "coach_create_session"
+  | "create_confirmed_recurring_sessions"
+  | "send_scheduling_inquiry";
+
+interface PendingAction {
+  pendingActionId: string;
+  userId: string | null;
+  actionType: GatedActionType;
+  normalizedArgs: Record<string, unknown>;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+const PENDING_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const pendingActions = new Map<string, PendingAction>();
+
+function purgeExpiredPending(): void {
+  const now = new Date();
+  pendingActions.forEach((a, id) => {
+    if (a.expiresAt < now) pendingActions.delete(id);
+  });
+}
+
+function createPendingAction(
+  userId: string | null,
+  actionType: GatedActionType,
+  normalizedArgs: Record<string, unknown>
+): PendingAction {
+  purgeExpiredPending();
+  const now = new Date();
+  const action: PendingAction = {
+    pendingActionId: randomUUID(),
+    userId,
+    actionType,
+    normalizedArgs,
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + PENDING_TTL_MS),
+  };
+  pendingActions.set(action.pendingActionId, action);
+  return action;
+}
+
+function getPendingAction(id: string): PendingAction | undefined {
+  const a = pendingActions.get(id);
+  if (!a) return undefined;
+  if (a.expiresAt < new Date()) { pendingActions.delete(id); return undefined; }
+  return a;
+}
+
+function consumePendingAction(id: string): PendingAction | undefined {
+  const a = getPendingAction(id);
+  if (a) pendingActions.delete(id);
+  return a;
+}
+
+function validatePendingAction(
+  pending: PendingAction,
+  userId: string | null,
+  actionType: GatedActionType,
+  args: Record<string, unknown>
+): { valid: boolean; error?: string } {
+  if (pending.actionType !== actionType)
+    return { valid: false, error: "pendingActionId was created for a different action type. Preview the action again to generate a new one." };
+  if (pending.userId !== userId)
+    return { valid: false, error: "pendingActionId does not match the current user. Preview the action again." };
+  const s = pending.normalizedArgs;
+  if (actionType === "book_session") {
+    if (s.coachId !== args.coachId || s.serviceId !== args.serviceId || s.startAt !== args.startAt)
+      return { valid: false, error: "Booking details changed since preview. Preview the action again to generate a new pendingActionId." };
+  } else if (actionType === "cancel_booking") {
+    if (s.bookingId !== args.bookingId)
+      return { valid: false, error: "Booking ID changed since preview. Preview the action again." };
+  } else if (actionType === "reschedule_booking") {
+    if (s.bookingId !== args.bookingId || s.newStartAt !== args.newStartAt)
+      return { valid: false, error: "Reschedule details changed since preview. Preview the action again." };
+  } else if (actionType === "coach_create_session") {
+    if (s.coachId !== args.coachId || s.serviceId !== args.serviceId || s.startAt !== args.startAt)
+      return { valid: false, error: "Session details changed since preview. Preview the action again." };
+    if (s.clientId && s.clientId !== args.clientId)
+      return { valid: false, error: "Client changed since preview. Preview the action again." };
+  } else if (actionType === "create_confirmed_recurring_sessions") {
+    if (s.clientId !== args.clientId || s.coachId !== args.coachId || s.serviceId !== args.serviceId)
+      return { valid: false, error: "Recurring session details changed since preview. Preview the action again." };
+    const sSlots = s.confirmedSlots as unknown[];
+    const aSlots = args.confirmedSlots as unknown[];
+    if (!sSlots || !aSlots || sSlots.length !== aSlots.length)
+      return { valid: false, error: "Slot count changed since preview. Preview the action again." };
+  } else if (actionType === "send_scheduling_inquiry") {
+    if ((s.message as string)?.trim() !== (args.message as string)?.trim())
+      return { valid: false, error: "Inquiry message changed since preview. Preview the action again." };
+  }
+  return { valid: true };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
@@ -97,7 +198,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "book_session",
-      description: "Book a session for the current user. You MUST pass confirmed: true — only set this after the user has explicitly said they want to proceed with a specific time slot. Never call with confirmed: true unless the user has clearly confirmed.",
+      description: "Book a session for the current user. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, present the summary to the user, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
       parameters: {
         type: "object",
         properties: {
@@ -105,7 +206,8 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           serviceId: { type: "string", description: "The service ID" },
           startAt: { type: "string", description: "Session start time in ISO 8601 format" },
           endAt: { type: "string", description: "Session end time in ISO 8601 format" },
-          confirmed: { type: "boolean", description: "Must be true. Only set to true after the user has explicitly confirmed they want this specific booking." },
+          confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
+          pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
         },
         required: ["coachId", "serviceId", "startAt", "endAt", "confirmed"],
       },
@@ -123,12 +225,13 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "cancel_booking",
-      description: "Cancel a specific booking by ID. You MUST pass confirmed: true — only set this after explicitly restating the booking details to the user and receiving clear confirmation to cancel.",
+      description: "Cancel a specific booking by ID. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, restate what will be cancelled to the user, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
       parameters: {
         type: "object",
         properties: {
           bookingId: { type: "string", description: "The booking ID to cancel" },
-          confirmed: { type: "boolean", description: "Must be true. Only set to true after you have shown the user what will be cancelled and they have explicitly confirmed." },
+          confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
+          pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
         },
         required: ["bookingId", "confirmed"],
       },
@@ -198,7 +301,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "coach_create_session",
-      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name. You MUST pass confirmed: true — only set this after presenting the client, coach, service, and time to the coach and receiving explicit confirmation.",
+      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, restate all details to the coach, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
       parameters: {
         type: "object",
         properties: {
@@ -209,7 +312,8 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           clientFirstName: { type: "string", description: "Walk-in client first name (if no clientId)" },
           clientLastName: { type: "string", description: "Walk-in client last name (if no clientId)" },
           location: { type: "string", description: "Session location (optional)" },
-          confirmed: { type: "boolean", description: "Must be true. Only set to true after the coach has explicitly confirmed the client, service, and time." },
+          confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the coach confirms." },
+          pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
         },
         required: ["coachId", "serviceId", "startAt", "confirmed"],
       },
@@ -277,14 +381,15 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "reschedule_booking",
-      description: "Reschedule an existing booking to a new time (coach/admin only). You MUST pass confirmed: true — only set this after showing the user the current booking, proposing the new time, and receiving explicit confirmation.",
+      description: "Reschedule an existing booking to a new time (coach/admin only). Use the two-call handshake: first call with confirmed: false to get a pendingActionId, show the user the current booking and new time, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
       parameters: {
         type: "object",
         properties: {
           bookingId: { type: "string", description: "The ID of the booking to reschedule" },
           newStartAt: { type: "string", description: "New start time in ISO 8601 format" },
           newEndAt: { type: "string", description: "New end time in ISO 8601 format" },
-          confirmed: { type: "boolean", description: "Must be true. Only set to true after you have shown the user the current and new booking details and they have explicitly confirmed the reschedule." },
+          confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
+          pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
         },
         required: ["bookingId", "newStartAt", "newEndAt", "confirmed"],
       },
@@ -364,12 +469,13 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "send_scheduling_inquiry",
-      description: "Send a scheduling inquiry email to the organization's configured scheduling contact on behalf of the current user. Only use this if the org has allowUserInquiryEmails enabled. You MUST pass confirmed: true — only set this after restating the recipient and message content to the user and receiving their explicit confirmation to send.",
+      description: "Send a scheduling inquiry email to the organization's configured scheduling contact on behalf of the current user. Only use this if the org has allowUserInquiryEmails enabled. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, restate the recipient and message to the user, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
       parameters: {
         type: "object",
         properties: {
           message: { type: "string", description: "The user's inquiry message to forward" },
-          confirmed: { type: "boolean", description: "Must be true. Only set to true after the user has explicitly confirmed they want this inquiry sent." },
+          confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
+          pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
         },
         required: ["message", "confirmed"],
       },
@@ -481,7 +587,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "create_confirmed_recurring_sessions",
-      description: "Create recurring sessions for confirmed available slots. Only call AFTER presenting the preview plan to the coach and receiving explicit confirmation. You MUST pass confirmed: true — only set this after the coach has reviewed the full slot list and said yes.",
+      description: "Create recurring sessions for confirmed available slots. Only call AFTER presenting the preview plan to the coach. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, show the coach the full slot list, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
       parameters: {
         type: "object",
         properties: {
@@ -500,7 +606,8 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             description: "Array of {startAt, endAt} pairs to book — taken from the preview_recurring_sessions output",
           },
           location: { type: "string", description: "Session location (optional)" },
-          confirmed: { type: "boolean", description: "Must be true. Only set to true after the coach has reviewed the preview slot list and explicitly confirmed they want all sessions created." },
+          confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the coach confirms all slots." },
+          pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
         },
         required: ["clientId", "coachId", "serviceId", "confirmedSlots", "confirmed"],
       },
@@ -961,8 +1068,31 @@ async function executeTool(
 
       case "book_session": {
         if (args.confirmed !== true) {
-          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before booking. Please restate the session details (coach, service, date, time) to the user and ask them to confirm before proceeding." });
+          const pending = createPendingAction(userId, "book_session", {
+            coachId: args.coachId,
+            serviceId: args.serviceId,
+            startAt: args.startAt,
+            endAt: args.endAt,
+          });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "book_session",
+            summary: `Book session: coach ${args.coachId}, service ${args.serviceId}, starting ${args.startAt}`,
+            message: "Restate the session details clearly to the user and ask them to confirm. Once they confirm, call book_session again with confirmed: true and the exact pendingActionId from this response.",
+          });
         }
+        const pendingActionId_book: string | undefined = args.pendingActionId;
+        if (!pendingActionId_book) {
+          return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call book_session with confirmed: false first to generate one." });
+        }
+        const pendingBook = getPendingAction(pendingActionId_book);
+        if (!pendingBook) {
+          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call book_session with confirmed: false again to generate a new one." });
+        }
+        const pvBook = validatePendingAction(pendingBook, userId, "book_session", args);
+        if (!pvBook.valid) return JSON.stringify({ error: pvBook.error });
+        consumePendingAction(pendingActionId_book);
         if (!userId) return JSON.stringify({ error: "You need to be logged in to book a session." });
         const { coachId, serviceId, startAt, endAt } = args;
 
@@ -1116,8 +1246,26 @@ async function executeTool(
 
       case "cancel_booking": {
         if (args.confirmed !== true) {
-          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before cancelling. Please restate the booking details (service, coach, date, time) to the user and ask them to confirm the cancellation before proceeding." });
+          const pending = createPendingAction(userId, "cancel_booking", { bookingId: args.bookingId });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "cancel_booking",
+            summary: `Cancel booking ID: ${args.bookingId}`,
+            message: "Restate what will be cancelled (service, coach, date, time) to the user and ask them to confirm. Once they confirm, call cancel_booking again with confirmed: true and the exact pendingActionId from this response.",
+          });
         }
+        const pendingActionId_cancel: string | undefined = args.pendingActionId;
+        if (!pendingActionId_cancel) {
+          return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call cancel_booking with confirmed: false first to generate one." });
+        }
+        const pendingCancel = getPendingAction(pendingActionId_cancel);
+        if (!pendingCancel) {
+          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call cancel_booking with confirmed: false again to generate a new one." });
+        }
+        const pvCancel = validatePendingAction(pendingCancel, userId, "cancel_booking", args);
+        if (!pvCancel.valid) return JSON.stringify({ error: pvCancel.error });
+        consumePendingAction(pendingActionId_cancel);
         if (!userId) return JSON.stringify({ error: "You need to be logged in." });
         const booking = await storage.getBooking(args.bookingId);
         if (!booking) return JSON.stringify({ error: "Booking not found." });
@@ -1191,8 +1339,33 @@ async function executeTool(
 
       case "coach_create_session": {
         if (args.confirmed !== true) {
-          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before creating this session. Please restate the client, coach, service, and time to the coach and ask them to confirm." });
+          const pending = createPendingAction(userId, "coach_create_session", {
+            coachId: args.coachId,
+            serviceId: args.serviceId,
+            startAt: args.startAt,
+            clientId: args.clientId,
+            clientFirstName: args.clientFirstName,
+            clientLastName: args.clientLastName,
+          });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "coach_create_session",
+            summary: `Create session: coach ${args.coachId}, service ${args.serviceId}, client ${args.clientId || `${args.clientFirstName} ${args.clientLastName}`}, starting ${args.startAt}`,
+            message: "Restate the client, coach, service, and time to the coach and ask them to confirm. Once confirmed, call coach_create_session again with confirmed: true and the exact pendingActionId from this response.",
+          });
         }
+        const pendingActionId_create: string | undefined = args.pendingActionId;
+        if (!pendingActionId_create) {
+          return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call coach_create_session with confirmed: false first to generate one." });
+        }
+        const pendingCreate = getPendingAction(pendingActionId_create);
+        if (!pendingCreate) {
+          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call coach_create_session with confirmed: false again to generate a new one." });
+        }
+        const pvCreate = validatePendingAction(pendingCreate, userId, "coach_create_session", args);
+        if (!pvCreate.valid) return JSON.stringify({ error: pvCreate.error });
+        consumePendingAction(pendingActionId_create);
         if (userRole !== "COACH" && userRole !== "ADMIN") {
           return JSON.stringify({ error: "Only coaches and admins can create sessions for clients." });
         }
@@ -1544,8 +1717,30 @@ async function executeTool(
 
       case "reschedule_booking": {
         if (args.confirmed !== true) {
-          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before rescheduling. Please show the user the current booking details and the proposed new time, then ask them to confirm before proceeding." });
+          const pending = createPendingAction(userId, "reschedule_booking", {
+            bookingId: args.bookingId,
+            newStartAt: args.newStartAt,
+            newEndAt: args.newEndAt,
+          });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "reschedule_booking",
+            summary: `Reschedule booking ${args.bookingId} to ${args.newStartAt}`,
+            message: "Show the user the current booking and the proposed new time. Once they confirm, call reschedule_booking again with confirmed: true and the exact pendingActionId from this response.",
+          });
         }
+        const pendingActionId_reschedule: string | undefined = args.pendingActionId;
+        if (!pendingActionId_reschedule) {
+          return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call reschedule_booking with confirmed: false first to generate one." });
+        }
+        const pendingReschedule = getPendingAction(pendingActionId_reschedule);
+        if (!pendingReschedule) {
+          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call reschedule_booking with confirmed: false again to generate a new one." });
+        }
+        const pvReschedule = validatePendingAction(pendingReschedule, userId, "reschedule_booking", args);
+        if (!pvReschedule.valid) return JSON.stringify({ error: pvReschedule.error });
+        consumePendingAction(pendingActionId_reschedule);
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can reschedule bookings." });
         }
@@ -1961,8 +2156,26 @@ async function executeTool(
 
       case "send_scheduling_inquiry": {
         if (args.confirmed !== true) {
-          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before sending this scheduling inquiry. Restate who it will be sent to and the message content, then ask the user to confirm." });
+          const pending = createPendingAction(userId, "send_scheduling_inquiry", { message: args.message });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "send_scheduling_inquiry",
+            summary: `Send scheduling inquiry: "${String(args.message).slice(0, 80)}${String(args.message).length > 80 ? "…" : ""}"`,
+            message: "Restate the recipient and message content to the user and ask them to confirm. Once confirmed, call send_scheduling_inquiry again with confirmed: true and the exact pendingActionId from this response.",
+          });
         }
+        const pendingActionId_inquiry: string | undefined = args.pendingActionId;
+        if (!pendingActionId_inquiry) {
+          return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call send_scheduling_inquiry with confirmed: false first to generate one." });
+        }
+        const pendingInquiry = getPendingAction(pendingActionId_inquiry);
+        if (!pendingInquiry) {
+          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call send_scheduling_inquiry with confirmed: false again to generate a new one." });
+        }
+        const pvInquiry = validatePendingAction(pendingInquiry, userId, "send_scheduling_inquiry", args);
+        if (!pvInquiry.valid) return JSON.stringify({ error: pvInquiry.error });
+        consumePendingAction(pendingActionId_inquiry);
         if (!organizationId) return JSON.stringify({ error: "No organization context." });
         const org = await storage.getOrganizationById(organizationId);
         if (!org) return JSON.stringify({ error: "Organization not found." });
@@ -2278,8 +2491,32 @@ async function executeTool(
 
       case "create_confirmed_recurring_sessions": {
         if (args.confirmed !== true) {
-          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required. You have already shown the preview. Ask the coach to explicitly confirm they want to create all listed sessions, then retry with confirmed: true." });
+          const slots = Array.isArray(args.confirmedSlots) ? args.confirmedSlots : [];
+          const pending = createPendingAction(userId, "create_confirmed_recurring_sessions", {
+            clientId: args.clientId,
+            coachId: args.coachId,
+            serviceId: args.serviceId,
+            slotCount: slots.length,
+          });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "create_confirmed_recurring_sessions",
+            summary: `Create ${slots.length} recurring session(s) for client ${args.clientId}, service ${args.serviceId}`,
+            message: "Show the coach the full list of slots to be created and ask them to confirm. Once confirmed, call create_confirmed_recurring_sessions again with confirmed: true and the exact pendingActionId from this response.",
+          });
         }
+        const pendingActionId_recurring: string | undefined = args.pendingActionId;
+        if (!pendingActionId_recurring) {
+          return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call create_confirmed_recurring_sessions with confirmed: false first to generate one." });
+        }
+        const pendingRecurring = getPendingAction(pendingActionId_recurring);
+        if (!pendingRecurring) {
+          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call create_confirmed_recurring_sessions with confirmed: false again to generate a new one." });
+        }
+        const pvRecurring = validatePendingAction(pendingRecurring, userId, "create_confirmed_recurring_sessions", args);
+        if (!pvRecurring.valid) return JSON.stringify({ error: pvRecurring.error });
+        consumePendingAction(pendingActionId_recurring);
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can create sessions." });
         }
@@ -2802,19 +3039,26 @@ Avoid: "Query complete. Here are the available time slots as requested."
 - **Booking Actions**: Find open slots, create, cancel, and reschedule bookings (with confirmation)
 
 ## Co-Pilot Mode (Critical Rules)
-You are a SUGGESTION-FIRST assistant. Before executing any booking action:
+You are a SUGGESTION-FIRST assistant. All mutating actions (book_session, cancel_booking, reschedule_booking, coach_create_session, send_scheduling_inquiry, create_confirmed_recurring_sessions) use a mandatory two-call handshake:
 
-1. **For new bookings**: Always check availability first (use get_available_slots or get_org_schedule), then present 2–3 specific time options clearly numbered. Ask the user to pick one. When the user explicitly confirms a specific slot, call book_session with confirmed: true. Never set confirmed: true unless the user has clearly said yes to a specific time.
+### Two-Call Handshake Protocol
+**Call 1 — Preview (confirmed: false):** Call the tool with confirmed: false and all required args. The tool returns {requiresConfirmation: true, pendingActionId, summary, message}. Present the summary clearly to the user in natural language and ask them to confirm.
+
+**Call 2 — Execute (confirmed: true):** Only after the user explicitly says yes, call the tool again with confirmed: true AND the exact pendingActionId from Call 1. pendingActionIds expire after 10 minutes — if expired, restart from Call 1.
+
+**Never invent a pendingActionId.** Only use the exact value returned by Call 1. Never skip Call 1 and go directly to confirmed: true.
+
+1. **For new bookings**: Check availability first (get_available_slots or get_org_schedule), present 2–3 numbered options, then do the two-call handshake once the user picks one.
    Example: "Here are 3 open times for Mike next week:
    1. Tuesday at 9:00 AM with Coach Bryan
    2. Wednesday at 2:00 PM with Coach Bryan  
    3. Friday at 10:00 AM with Coach Hunter
    Which works best? I'll get it booked."
-   Then after user says "Option 1" or "Tuesday at 9": call book_session with confirmed: true.
+   User says "Option 1" → Call 1 (confirmed:false) → present summary → user confirms → Call 2 (confirmed:true + pendingActionId).
 
-2. **For rescheduling**: First show the current booking details, then offer 2–3 alternative slots. When the user confirms the new time, call reschedule_booking with confirmed: true. Never set confirmed: true before the user has explicitly agreed to the new time.
+2. **For rescheduling**: Show current booking and proposed new time. Use the two-call handshake once the user agrees to the new time.
 
-3. **For cancellations**: Always restate what will be cancelled (service, coach, date, time) and ask the user to confirm. Only after the user explicitly says to proceed, call cancel_booking with confirmed: true. Never cancel without this explicit confirmation step.
+3. **For cancellations**: Restate what will be cancelled (service, coach, date, time). Use the two-call handshake once the user confirms.
 
 4. **For availability/schedule changes**: These can be executed immediately without preview.
 
