@@ -1,0 +1,175 @@
+Run a full technical audit of the client-side TrainEfficiency Scheduling Agent functions.
+
+Focus specifically on function behavior, state flow, event handlers, API calls, routing, loading states, error handling, mobile behavior, and whether each visible action actually maps cleanly to a working backend/client function.
+
+Audit these areas:
+
+1. Entry + initialization
+- Identify the main component/page responsible for the client scheduling agent.
+- Trace how the agent loads user/client/org/coach/session context.
+- Check whether any required data can be undefined on first render.
+- Look for race conditions, duplicate fetches, or stale state.
+
+2. Quick action cards
+Audit every visible card:
+- Book a Session
+- Available Times
+- My Bookings
+- Browse Coaches
+- Cancel a Booking
+- Get Help
+
+For each one, report:
+- Which function runs on tap/click
+- What state changes
+- What API endpoint is called, if any
+- Whether the result displays correctly on mobile
+- Whether failures show a user-friendly error
+- Whether loading/disabled states prevent double taps
+
+3. Chat input + send flow
+Trace the full message lifecycle:
+- User types message
+- Send button pressed
+- Message appears in chat
+- Intent is classified
+- Backend/API call is made
+- Agent response returns
+- UI updates
+
+Check for:
+- Empty message handling
+- Enter key behavior
+- Mobile keyboard layout issues
+- Duplicate sends
+- Long-running request states
+- Failed request recovery
+- Whether user messages always display immediately
+- Whether the send button disables correctly while thinking
+
+4. Scheduling intent logic
+Audit how the agent handles:
+- booking requests
+- availability requests
+- cancel requests
+- reschedule/edit requests
+- coach browsing
+- general help questions
+
+For each intent, verify:
+- Is there a deterministic route/function?
+- Is fallback handled?
+- Are ambiguous requests clarified?
+- Are dates/times parsed safely?
+- Are timezone issues handled?
+- Is there a confirmation step before booking/canceling?
+
+5. Booking flow
+Trace:
+- client selection
+- coach selection
+- service/session type selection
+- available slot selection
+- booking confirmation
+- success message
+- calendar/session refresh
+
+Check:
+- required fields
+- validation
+- overbooking prevention
+- double-submit protection
+- backend error handling
+- post-booking UI refresh
+- whether mobile users can complete the entire flow without hidden buttons
+
+6. Availability flow
+Trace how available times are fetched and displayed.
+
+Check:
+- current week vs selected week behavior
+- coach filters
+- service duration logic
+- unavailable/busy times
+- timezone handling
+- empty state when no slots exist
+- loading skeletons
+- stale availability after booking/canceling
+
+7. My Bookings flow
+Trace how upcoming bookings are fetched.
+
+Check:
+- sorting by date/time
+- cancellation/edit actions
+- empty state
+- refresh after booking/canceling
+- whether past bookings are excluded
+- whether failed fetches are recoverable
+
+8. Cancel/reschedule safety
+Audit whether destructive actions require confirmation.
+
+Check:
+- cancel confirmation modal
+- backend cancellation endpoint
+- optimistic UI updates
+- rollback on failure
+- success/error toast
+- schedule refresh after cancel
+- whether users can accidentally cancel by tapping once
+
+9. Mobile UI/function issues
+Use the screenshots as context. Audit:
+- fixed footer/input overlap
+- scroll container height
+- whether bottom cards are hidden behind input
+- whether keyboard covers send/input
+- safe-area insets on iPhone
+- tap targets
+- sticky headers
+- tab/section navigation
+- whether every action remains reachable on small screens
+
+10. Security + authorization
+Verify:
+- client can only see their own bookings
+- client cannot book for unauthorized users
+- client cannot cancel another client’s booking
+- backend validates org/client/coach/session ownership
+- no sensitive data leaks into frontend logs
+- no dev/debug output visible in production
+
+11. API contract audit
+List every endpoint used by this agent.
+
+For each endpoint, document:
+- method
+- request payload
+- expected response
+- failure cases
+- frontend caller function
+- whether response validation exists
+
+12. Output format
+Return a structured audit with:
+
+A. Critical bugs
+Issues that can break booking, canceling, availability, auth, or state.
+
+B. High-priority UX/function issues
+Issues that make the agent feel unreliable or confusing.
+
+C. Medium-priority polish
+Visual/function polish that improves trust.
+
+D. Dead code / duplicate logic
+Unused functions, duplicate handlers, repeated API logic, stale components.
+
+E. Recommended fix order
+A tight prioritized sprint plan.
+
+F. Copy-paste implementation prompts
+Give me the exact next 3 Replit prompts to fix the highest-impact issues one phase at a time.
+
+Do not rewrite the app yet. Audit first, trace the actual functions, cite file names and function names, and explain what is working vs what is risky.
