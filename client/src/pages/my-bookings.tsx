@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -21,13 +23,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Calendar, Clock, X, Users, MapPin, CheckCircle, Shield, Bell } from "lucide-react";
+import { Calendar, Clock, X, Users, MapPin, CheckCircle, Shield, Bell, MessageSquare, Mail } from "lucide-react";
 import { format, parseISO, isPast } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 import type { BookingWithDetails, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
 
-interface NotificationPreferences {
+interface ChannelPrefs {
   bookingConfirmations: boolean;
   cancellations: boolean;
   reschedules: boolean;
@@ -36,13 +38,25 @@ interface NotificationPreferences {
   marketing: boolean;
 }
 
-const PREF_META: { key: keyof NotificationPreferences; label: string; description: string; essential?: boolean }[] = [
-  { key: "bookingConfirmations", label: "Booking Confirmations", description: "Receive an email when a session is booked for you.", essential: true },
-  { key: "cancellations", label: "Cancellations", description: "Receive an email when a session is cancelled.", essential: true },
-  { key: "reschedules", label: "Reschedule Notices", description: "Receive an email when a session is rescheduled.", essential: true },
-  { key: "reminders", label: "Session Reminders", description: "Get a reminder before your upcoming training sessions." },
-  { key: "outreach", label: "Coach Outreach", description: "Allow your coach to send you personalized messages and offers." },
-  { key: "marketing", label: "Marketing & Promotions", description: "Receive promotional emails and feature announcements." },
+interface NotificationPreferences {
+  email: ChannelPrefs;
+  sms: ChannelPrefs;
+}
+
+interface PrefsResponse {
+  preferences: NotificationPreferences;
+  phone: string | null;
+  smsOptIn: boolean | null;
+  smsOptInAt: string | null;
+}
+
+const PREF_META: { key: keyof ChannelPrefs; label: string; emailDesc: string; smsDesc: string; essential?: boolean }[] = [
+  { key: "bookingConfirmations", label: "Booking Confirmations", emailDesc: "Receive an email when a session is booked for you.", smsDesc: "Receive a text when a session is booked for you.", essential: true },
+  { key: "cancellations", label: "Cancellations", emailDesc: "Receive an email when a session is cancelled.", smsDesc: "Receive a text when a session is cancelled.", essential: true },
+  { key: "reschedules", label: "Reschedule Notices", emailDesc: "Receive an email when a session is rescheduled.", smsDesc: "Receive a text when a session is rescheduled.", essential: true },
+  { key: "reminders", label: "Session Reminders", emailDesc: "Get a reminder email before your upcoming sessions.", smsDesc: "Get a reminder text before your upcoming sessions." },
+  { key: "outreach", label: "Coach Outreach", emailDesc: "Allow your coach to send you personalized emails and offers.", smsDesc: "Allow your coach to send you personalized texts and offers." },
+  { key: "marketing", label: "Marketing & Promotions", emailDesc: "Receive promotional emails and feature announcements.", smsDesc: "Receive promotional texts and feature announcements." },
 ];
 
 const statusColors: Record<string, string> = {
@@ -53,11 +67,31 @@ const statusColors: Record<string, string> = {
   NO_SHOW: "bg-gray-500/15 text-gray-700 dark:text-gray-400",
 };
 
+const DEFAULT_CHANNEL_PREFS: ChannelPrefs = {
+  bookingConfirmations: true,
+  cancellations: true,
+  reschedules: true,
+  reminders: true,
+  outreach: true,
+  marketing: false,
+};
+
+const DEFAULT_SMS_PREFS: ChannelPrefs = {
+  bookingConfirmations: false,
+  cancellations: false,
+  reschedules: false,
+  reminders: false,
+  outreach: false,
+  marketing: false,
+};
+
 export default function MyBookingsPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [localPrefs, setLocalPrefs] = useState<NotificationPreferences | null>(null);
+  const [localPhone, setLocalPhone] = useState<string>("");
+  const [localSmsOptIn, setLocalSmsOptIn] = useState<boolean>(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
 
   const { data: bookings, isLoading } = useQuery<BookingWithDetails[]>({
@@ -68,13 +102,20 @@ export default function MyBookingsPage() {
     queryKey: ["/api/profile"],
   });
 
-  const { data: prefsData, isLoading: prefsLoading } = useQuery<{ preferences: NotificationPreferences }>({
+  const { data: prefsData, isLoading: prefsLoading } = useQuery<PrefsResponse>({
     queryKey: ["/api/notification-preferences"],
   });
 
+  useEffect(() => {
+    if (prefsData && localPrefs === null) {
+      setLocalPhone(prefsData.phone || "");
+      setLocalSmsOptIn(prefsData.smsOptIn ?? false);
+    }
+  }, [prefsData, localPrefs]);
+
   const prefsMutation = useMutation({
-    mutationFn: async (preferences: NotificationPreferences) => {
-      const res = await apiRequest("PATCH", "/api/notification-preferences", { preferences });
+    mutationFn: async (payload: { preferences: NotificationPreferences; phone: string; smsOptIn: boolean }) => {
+      const res = await apiRequest("PATCH", "/api/notification-preferences", payload);
       return res.json();
     },
     onSuccess: () => {
@@ -87,17 +128,26 @@ export default function MyBookingsPage() {
     },
   });
 
-  const currentPrefs = localPrefs ?? prefsData?.preferences ?? null;
+  const currentPrefs = localPrefs ?? (prefsData ? {
+    email: { ...DEFAULT_CHANNEL_PREFS, ...prefsData.preferences.email },
+    sms: { ...DEFAULT_SMS_PREFS, ...prefsData.preferences.sms },
+  } : null);
 
-  const togglePref = (key: keyof NotificationPreferences) => {
+  const toggleEmailPref = (key: keyof ChannelPrefs) => {
     if (!currentPrefs) return;
     setPrefsSaved(false);
-    setLocalPrefs({ ...currentPrefs, [key]: !currentPrefs[key] });
+    setLocalPrefs({ ...currentPrefs, email: { ...currentPrefs.email, [key]: !currentPrefs.email[key] } });
+  };
+
+  const toggleSmsPref = (key: keyof ChannelPrefs) => {
+    if (!currentPrefs) return;
+    setPrefsSaved(false);
+    setLocalPrefs({ ...currentPrefs, sms: { ...currentPrefs.sms, [key]: !currentPrefs.sms[key] } });
   };
 
   const savePrefs = () => {
     if (!currentPrefs) return;
-    prefsMutation.mutate(currentPrefs);
+    prefsMutation.mutate({ preferences: currentPrefs, phone: localPhone, smsOptIn: localSmsOptIn });
   };
 
   const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
@@ -248,7 +298,7 @@ export default function MyBookingsPage() {
           </TabsTrigger>
           <TabsTrigger value="preferences" data-testid="tab-preferences">
             <Bell className="h-3.5 w-3.5 mr-1.5" />
-            Email Preferences
+            Notifications
           </TabsTrigger>
         </TabsList>
         <TabsContent value="upcoming" className="space-y-3 mt-4">
@@ -273,75 +323,163 @@ export default function MyBookingsPage() {
             past.map((b) => renderBooking(b))
           )}
         </TabsContent>
-        <TabsContent value="preferences" className="mt-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="mb-5">
-                <h2 className="text-base font-semibold" data-testid="heading-email-preferences">Email Notifications</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  Choose which emails you receive from TrainEfficiency.
-                </p>
-              </div>
-              {prefsLoading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div className="space-y-1.5">
-                        <Skeleton className="h-4 w-32" />
-                        <Skeleton className="h-3 w-48" />
-                      </div>
-                      <Skeleton className="h-6 w-11 rounded-full" />
+        <TabsContent value="preferences" className="mt-4 space-y-4">
+          {prefsLoading ? (
+            <Card>
+              <CardContent className="pt-6 space-y-4">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="space-y-1.5">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-48" />
                     </div>
-                  ))}
-                </div>
-              ) : currentPrefs ? (
-                <div className="space-y-5">
-                  {PREF_META.map(({ key, label, description, essential }) => (
-                    <div key={key} className="flex items-start justify-between gap-4" data-testid={`pref-row-${key}`}>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{label}</span>
-                          {essential && (
-                            <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
-                              <Shield className="h-3 w-3" />
-                              Essential
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-                      </div>
-                      <Switch
-                        checked={currentPrefs[key]}
-                        onCheckedChange={() => togglePref(key)}
-                        data-testid={`switch-pref-${key}`}
-                      />
-                    </div>
-                  ))}
-                  <div className="pt-3 flex flex-col gap-2 border-t">
-                    <Button
-                      onClick={savePrefs}
-                      disabled={prefsMutation.isPending}
-                      data-testid="button-save-email-preferences"
-                    >
-                      {prefsMutation.isPending ? "Saving..." : "Save Preferences"}
-                    </Button>
-                    {prefsSaved && (
-                      <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400" data-testid="text-preferences-saved">
-                        <CheckCircle className="h-4 w-4" />
-                        Preferences saved successfully
-                      </div>
-                    )}
+                    <Skeleton className="h-6 w-11 rounded-full" />
                   </div>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">Unable to load preferences.</p>
+                ))}
+              </CardContent>
+            </Card>
+          ) : currentPrefs ? (
+            <>
+              {/* Phone & SMS Opt-in */}
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MessageSquare className="h-4 w-4 text-primary" />
+                    <h2 className="text-base font-semibold" data-testid="heading-sms-settings">SMS Settings</h2>
+                  </div>
+                  <p className="text-sm text-muted-foreground -mt-2">
+                    Add your phone number and opt in to receive text message notifications.
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="phone-input">Mobile Phone Number</Label>
+                    <Input
+                      id="phone-input"
+                      type="tel"
+                      placeholder="+1 (555) 000-0000"
+                      value={localPhone}
+                      onChange={(e) => { setLocalPhone(e.target.value); setPrefsSaved(false); }}
+                      data-testid="input-phone"
+                    />
+                  </div>
+                  <div className="flex items-start justify-between gap-4 pt-1" data-testid="row-sms-opt-in">
+                    <div className="flex-1">
+                      <span className="text-sm font-medium">Enable SMS Notifications</span>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Opt in to receive text message notifications. Reply STOP at any time to unsubscribe.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={localSmsOptIn}
+                      onCheckedChange={(val) => { setLocalSmsOptIn(val); setPrefsSaved(false); }}
+                      data-testid="switch-sms-opt-in"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Email Preferences */}
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Mail className="h-4 w-4 text-primary" />
+                    <h2 className="text-base font-semibold" data-testid="heading-email-preferences">Email Notifications</h2>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-0.5 mb-5">
+                    Choose which emails you receive from TrainEfficiency.
+                  </p>
+                  <div className="space-y-5">
+                    {PREF_META.map(({ key, label, emailDesc, essential }) => (
+                      <div key={key} className="flex items-start justify-between gap-4" data-testid={`pref-row-email-${key}`}>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{label}</span>
+                            {essential && (
+                              <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                                <Shield className="h-3 w-3" />
+                                Essential
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{emailDesc}</p>
+                        </div>
+                        <Switch
+                          checked={currentPrefs.email[key]}
+                          onCheckedChange={() => toggleEmailPref(key)}
+                          data-testid={`switch-pref-email-${key}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* SMS Preferences */}
+              {localSmsOptIn && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-2 mb-1">
+                      <MessageSquare className="h-4 w-4 text-primary" />
+                      <h2 className="text-base font-semibold" data-testid="heading-sms-preferences">SMS Notifications</h2>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-0.5 mb-5">
+                      Choose which text messages you receive. You can always reply STOP to unsubscribe.
+                    </p>
+                    <div className="space-y-5">
+                      {PREF_META.map(({ key, label, smsDesc, essential }) => (
+                        <div key={key} className="flex items-start justify-between gap-4" data-testid={`pref-row-sms-${key}`}>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{label}</span>
+                              {essential && (
+                                <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                                  <Shield className="h-3 w-3" />
+                                  Essential
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">{smsDesc}</p>
+                          </div>
+                          <Switch
+                            checked={currentPrefs.sms[key]}
+                            onCheckedChange={() => toggleSmsPref(key)}
+                            data-testid={`switch-pref-sms-${key}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               )}
-            </CardContent>
-          </Card>
-          <p className="text-xs text-muted-foreground mt-3">
-            Essential emails (booking confirmations, cancellations, reschedule notices) help keep your schedule accurate.
-            You can disable them, but we recommend keeping them on.
-          </p>
+
+              {/* Save button */}
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={savePrefs}
+                  disabled={prefsMutation.isPending}
+                  data-testid="button-save-email-preferences"
+                >
+                  {prefsMutation.isPending ? "Saving..." : "Save Preferences"}
+                </Button>
+                {prefsSaved && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400" data-testid="text-preferences-saved">
+                    <CheckCircle className="h-4 w-4" />
+                    Preferences saved successfully
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Essential notifications (booking confirmations, cancellations, reschedule notices) help keep your schedule accurate.
+                You can disable them, but we recommend keeping them on.
+              </p>
+            </>
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Unable to load preferences.</p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

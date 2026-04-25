@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle, Mail, AlertCircle, Shield } from "lucide-react";
+import { CheckCircle, Mail, MessageSquare, AlertCircle, Shield } from "lucide-react";
 
-interface Preferences {
+interface ChannelPrefs {
   bookingConfirmations: boolean;
   cancellations: boolean;
   reschedules: boolean;
@@ -15,41 +15,70 @@ interface Preferences {
   marketing: boolean;
 }
 
-const PREF_META: { key: keyof Preferences; label: string; description: string; essential?: boolean }[] = [
+interface Preferences {
+  email: ChannelPrefs;
+  sms: ChannelPrefs;
+}
+
+const PREF_META: { key: keyof ChannelPrefs; label: string; emailDesc: string; smsDesc: string; essential?: boolean }[] = [
   {
     key: "bookingConfirmations",
     label: "Booking Confirmations",
-    description: "Receive an email when a session is booked for you.",
+    emailDesc: "Receive an email when a session is booked for you.",
+    smsDesc: "Receive a text when a session is booked for you.",
     essential: true,
   },
   {
     key: "cancellations",
     label: "Cancellations",
-    description: "Receive an email when a session is cancelled.",
+    emailDesc: "Receive an email when a session is cancelled.",
+    smsDesc: "Receive a text when a session is cancelled.",
     essential: true,
   },
   {
     key: "reschedules",
     label: "Reschedule Notices",
-    description: "Receive an email when a session is rescheduled.",
+    emailDesc: "Receive an email when a session is rescheduled.",
+    smsDesc: "Receive a text when a session is rescheduled.",
     essential: true,
   },
   {
     key: "reminders",
     label: "Session Reminders",
-    description: "Get a reminder before your upcoming training sessions.",
+    emailDesc: "Get a reminder before your upcoming training sessions.",
+    smsDesc: "Get a text reminder before your upcoming training sessions.",
   },
   {
     key: "outreach",
     label: "Coach Outreach",
-    description: "Allow your coach to send you personalized messages and offers.",
+    emailDesc: "Allow your coach to send you personalized messages and offers.",
+    smsDesc: "Allow your coach to send you personalized texts and offers.",
   },
   {
     key: "marketing",
     label: "Marketing & Promotions",
-    description: "Receive promotional emails and feature announcements.",
+    emailDesc: "Receive promotional emails and feature announcements.",
+    smsDesc: "Receive promotional texts and feature announcements.",
   },
 ];
+
+const DEFAULT_EMAIL_PREFS: ChannelPrefs = {
+  bookingConfirmations: true,
+  cancellations: true,
+  reschedules: true,
+  reminders: true,
+  outreach: true,
+  marketing: false,
+};
+
+const DEFAULT_SMS_PREFS: ChannelPrefs = {
+  bookingConfirmations: false,
+  cancellations: false,
+  reschedules: false,
+  reminders: false,
+  outreach: false,
+  marketing: false,
+};
 
 export default function UnsubscribePage() {
   const params = useParams<{ token: string }>();
@@ -57,6 +86,7 @@ export default function UnsubscribePage() {
 
   const [email, setEmail] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
+  const [hasSms, setHasSms] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -74,7 +104,21 @@ export default function UnsubscribePage() {
       })
       .then((data) => {
         setEmail(data.email);
-        setPrefs(data.preferences);
+        const raw = data.preferences;
+        if (raw?.email || raw?.sms) {
+          setPrefs({
+            email: { ...DEFAULT_EMAIL_PREFS, ...(raw.email || {}) },
+            sms: { ...DEFAULT_SMS_PREFS, ...(raw.sms || {}) },
+          });
+          const smsVals = Object.values({ ...DEFAULT_SMS_PREFS, ...(raw.sms || {}) });
+          setHasSms(smsVals.some(Boolean));
+        } else {
+          setPrefs({
+            email: { ...DEFAULT_EMAIL_PREFS, ...(raw || {}) },
+            sms: { ...DEFAULT_SMS_PREFS },
+          });
+          setHasSms(false);
+        }
         setLoading(false);
       })
       .catch((e) => {
@@ -83,10 +127,16 @@ export default function UnsubscribePage() {
       });
   }, [token]);
 
-  const toggle = (key: keyof Preferences) => {
+  const toggleEmail = (key: keyof ChannelPrefs) => {
     if (!prefs) return;
     setSaved(false);
-    setPrefs({ ...prefs, [key]: !prefs[key] });
+    setPrefs({ ...prefs, email: { ...prefs.email, [key]: !prefs.email[key] } });
+  };
+
+  const toggleSms = (key: keyof ChannelPrefs) => {
+    if (!prefs) return;
+    setSaved(false);
+    setPrefs({ ...prefs, sms: { ...prefs.sms, [key]: !prefs.sms[key] } });
   };
 
   const save = async () => {
@@ -108,6 +158,36 @@ export default function UnsubscribePage() {
     }
   };
 
+  const renderPrefRows = (
+    channel: "email" | "sms",
+    toggleFn: (key: keyof ChannelPrefs) => void
+  ) => {
+    if (!prefs) return null;
+    return PREF_META.map(({ key, label, emailDesc, smsDesc, essential }) => (
+      <div key={key} className="flex items-start justify-between gap-4" data-testid={`pref-row-${channel}-${key}`}>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">{label}</span>
+            {essential && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                <Shield className="h-3 w-3" />
+                Essential
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {channel === "email" ? emailDesc : smsDesc}
+          </p>
+        </div>
+        <Switch
+          checked={prefs[channel][key]}
+          onCheckedChange={() => toggleFn(key)}
+          data-testid={`switch-${channel}-${key}`}
+        />
+      </div>
+    ));
+  };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-lg space-y-4">
@@ -116,10 +196,10 @@ export default function UnsubscribePage() {
             <Mail className="h-6 w-6 text-primary" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight" data-testid="heading-unsubscribe">
-            Email Preferences
+            Notification Preferences
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Manage what emails you receive from TrainEfficiency
+            Manage what messages you receive from TrainEfficiency
           </p>
           {email && (
             <p className="text-xs text-muted-foreground mt-1" data-testid="text-email-address">
@@ -128,21 +208,23 @@ export default function UnsubscribePage() {
           )}
         </div>
 
-        <Card>
-          <CardContent className="pt-6">
-            {loading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <div className="space-y-1.5">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-3 w-48" />
-                    </div>
-                    <Skeleton className="h-6 w-11 rounded-full" />
+        {loading ? (
+          <Card>
+            <CardContent className="pt-6 space-y-4">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <div className="space-y-1.5">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-48" />
                   </div>
-                ))}
-              </div>
-            ) : error ? (
+                  <Skeleton className="h-6 w-11 rounded-full" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ) : error ? (
+          <Card>
+            <CardContent className="pt-6">
               <div className="text-center py-8" data-testid="text-error">
                 <AlertCircle className="h-10 w-10 text-destructive mx-auto mb-3" />
                 <p className="font-medium text-destructive">{error}</p>
@@ -150,33 +232,42 @@ export default function UnsubscribePage() {
                   This link may be invalid or expired. Contact your coach for help.
                 </p>
               </div>
-            ) : prefs ? (
-              <div className="space-y-5">
-                {PREF_META.map(({ key, label, description, essential }) => (
-                  <div key={key} className="flex items-start justify-between gap-4" data-testid={`pref-row-${key}`}>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{label}</span>
-                        {essential && (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
-                            <Shield className="h-3 w-3" />
-                            Essential
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-                    </div>
-                    <Switch
-                      checked={prefs[key]}
-                      onCheckedChange={() => toggle(key)}
-                      data-testid={`switch-${key}`}
-                    />
+            </CardContent>
+          </Card>
+        ) : prefs ? (
+          <>
+            {/* Email preferences */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Mail className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold">Email Notifications</h2>
+                </div>
+                <div className="space-y-5">
+                  {renderPrefRows("email", toggleEmail)}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* SMS preferences — only show if they have SMS prefs stored */}
+            {hasSms && (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <MessageSquare className="h-4 w-4 text-primary" />
+                    <h2 className="text-sm font-semibold">SMS Notifications</h2>
                   </div>
-                ))}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    You can also reply STOP to any text message to unsubscribe instantly.
+                  </p>
+                  <div className="space-y-5">
+                    {renderPrefRows("sms", toggleSms)}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        ) : null}
 
         {prefs && !error && (
           <div className="flex flex-col gap-2">
@@ -193,7 +284,7 @@ export default function UnsubscribePage() {
         )}
 
         <p className="text-xs text-center text-muted-foreground">
-          Essential emails (booking confirmations, cancellations) help keep your schedule accurate.
+          Essential notifications (booking confirmations, cancellations) help keep your schedule accurate.
           You can disable them but we recommend keeping them on.
         </p>
       </div>

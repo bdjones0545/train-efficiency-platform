@@ -5,6 +5,7 @@ import {
   type OrgBranding,
   type EmailLogContext,
 } from "./email";
+import { sendSms, smsReminder, normalizePhone } from "./sms";
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // Run every hour
 const WINDOW_HOURS = 24; // Send reminders for sessions starting within 24 hours
@@ -12,11 +13,11 @@ const INITIAL_DELAY_MS = 2 * 60 * 1000; // Wait 2 minutes after startup before f
 
 async function getOrgBrandingForBooking(
   organizationId: string | null | undefined
-): Promise<{ branding: OrgBranding | undefined; timezone: string }> {
-  if (!organizationId) return { branding: undefined, timezone: "America/New_York" };
+): Promise<{ branding: OrgBranding | undefined; timezone: string; orgName: string }> {
+  if (!organizationId) return { branding: undefined, timezone: "America/New_York", orgName: "TrainEfficiency" };
   try {
     const org = await storage.getOrganizationById(organizationId);
-    if (!org) return { branding: undefined, timezone: "America/New_York" };
+    if (!org) return { branding: undefined, timezone: "America/New_York", orgName: "TrainEfficiency" };
     return {
       branding: {
         name: org.name,
@@ -26,9 +27,10 @@ async function getOrgBrandingForBooking(
         ownerEmail: org.ownerEmail || undefined,
       },
       timezone: org.timezone || "America/New_York",
+      orgName: org.name || "TrainEfficiency",
     };
   } catch {
-    return { branding: undefined, timezone: "America/New_York" };
+    return { branding: undefined, timezone: "America/New_York", orgName: "TrainEfficiency" };
   }
 }
 
@@ -71,7 +73,7 @@ async function sendSessionReminders() {
     const location = (booking as any).location || undefined;
 
     // Fetch org branding and timezone
-    const { branding, timezone } = await getOrgBrandingForBooking(booking.organizationId);
+    const { branding, timezone, orgName } = await getOrgBrandingForBooking(booking.organizationId);
 
     // --- Client reminder ---
     if (!booking.clientReminderSentAt) {
@@ -84,6 +86,7 @@ async function sendSessionReminders() {
           const coachName = coachProfile?.user
             ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
             : "Your Coach";
+          const coachFirstName = coachProfile?.user?.firstName || "Your Coach";
           const serviceName = service?.name || "Training Session";
 
           const clientReminderLogCtx: EmailLogContext | undefined = booking.organizationId ? {
@@ -105,6 +108,30 @@ async function sendSessionReminders() {
             branding,
             clientReminderLogCtx
           );
+
+          // SMS reminder for client
+          if (booking.organizationId && clientUser.phone && normalizePhone(clientUser.phone)) {
+            const dateStr = startAt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: timezone });
+            const timeStr = startAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: timezone });
+            await sendSms({
+              to: clientUser.phone,
+              body: smsReminder({
+                clientFirstName: clientUser.firstName || "there",
+                serviceName,
+                coachFirstName,
+                dateStr,
+                timeStr,
+                orgName,
+              }),
+              ctx: {
+                orgId: booking.organizationId,
+                type: "reminder",
+                userId: clientUser.id,
+                bookingId: booking.id,
+                recipientUserId: clientUser.id,
+              },
+            });
+          }
 
           await storage.markClientReminderSent(booking.id);
           console.log(
@@ -129,6 +156,7 @@ async function sendSessionReminders() {
       try {
         const coachProfile = await storage.getCoachProfile(booking.coachId);
         const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+        const coachUserId = coachProfile?.user?.id;
 
         if (coachEmail) {
           const clientUser = await storage.getUser(booking.clientId);
@@ -142,6 +170,7 @@ async function sendSessionReminders() {
               orgId: booking.organizationId,
               type: "reminder",
               bookingId: booking.id,
+              recipientUserId: coachUserId,
             } : undefined;
           await sendUpcomingSessionReminderEmailToCoach(
             coachEmail,
@@ -155,6 +184,31 @@ async function sendSessionReminders() {
             branding,
             coachReminderLogCtx
           );
+
+          // SMS reminder for coach
+          const coachPhone = coachProfile?.user?.phone;
+          if (booking.organizationId && coachUserId && coachPhone && normalizePhone(coachPhone)) {
+            const dateStr = startAt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: timezone });
+            const timeStr = startAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: timezone });
+            await sendSms({
+              to: coachPhone,
+              body: smsReminder({
+                clientFirstName: clientName,
+                serviceName,
+                coachFirstName: clientName,
+                dateStr,
+                timeStr,
+                orgName,
+              }),
+              ctx: {
+                orgId: booking.organizationId,
+                type: "reminder",
+                coachId: booking.coachId,
+                bookingId: booking.id,
+                recipientUserId: coachUserId,
+              },
+            });
+          }
 
           await storage.markCoachReminderSent(booking.id);
           console.log(

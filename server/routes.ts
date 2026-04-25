@@ -10,12 +10,14 @@ import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinute
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, type OrgBranding, type EmailLogContext } from "./email";
+import { sendSms, normalizePhone, smsBookingConfirmation, smsCancellation, smsReschedule } from "./sms";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
 import { organizationSubscriptionPlans } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
+import { users } from "@shared/models/auth";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 import { startSessionReminderJob } from "./session-reminders";
@@ -1623,11 +1625,12 @@ export async function registerRoutes(
             bookingId: booking.id,
             recipientUserId: userId,
           } : undefined;
+          const coachName = coachProfile?.user ? `${coachProfile.user.firstName} ${coachProfile.user.lastName}` : "your coach";
           if (clientUser?.email) {
             sendBookingConfirmationToClient(
               clientUser.email,
               clientUser.firstName || "there",
-              coachProfile?.user ? `${coachProfile.user.firstName} ${coachProfile.user.lastName}` : "your coach",
+              coachName,
               service.name,
               start,
               end,
@@ -1636,6 +1639,19 @@ export async function registerRoutes(
               orgB,
               bookingLogCtx
             ).catch(() => {});
+          }
+          // SMS booking confirmation
+          if (clientUser?.phone && bookingOrgId) {
+            const startZoned = toZonedTime(start, tz);
+            const smsBody = smsBookingConfirmation({
+              clientFirstName: clientUser.firstName || "there",
+              serviceName: service.name,
+              coachFirstName: coachProfile?.user?.firstName || "your coach",
+              dateStr: format(startZoned, "EEE MMM d"),
+              timeStr: format(startZoned, "h:mm a"),
+              orgName: orgB?.name || "TrainEfficiency",
+            });
+            sendSms({ to: clientUser.phone, body: smsBody, ctx: { orgId: bookingOrgId, type: 'booking_confirmation', userId, bookingId: booking.id, recipientUserId: userId } }).catch(() => {});
           }
           const coachEmail = coachProfile?.email || coachProfile?.user?.email;
           if (coachEmail) {
@@ -1755,6 +1771,18 @@ export async function registerRoutes(
               ).catch(() => {});
             } else {
               console.log("[PATCH /api/bookings/:id/status] Skipping client cancellation email — no email on file");
+            }
+            // SMS cancellation
+            if (clientUser?.phone && orgId) {
+              const startZoned = toZonedTime(startAt, tz);
+              const smsCancelBody = smsCancellation({
+                clientFirstName: clientUser.firstName || "there",
+                serviceName,
+                dateStr: format(startZoned, "EEE MMM d"),
+                timeStr: format(startZoned, "h:mm a"),
+                orgName: orgBranding?.name || "TrainEfficiency",
+              });
+              sendSms({ to: clientUser.phone, body: smsCancelBody, ctx: { orgId, type: 'cancellation', userId: clientUser.id, bookingId: booking.id, recipientUserId: clientUser.id } }).catch(() => {});
             }
 
             const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
@@ -2330,6 +2358,18 @@ export async function registerRoutes(
               ).catch(() => {});
             } else {
               console.log("[PATCH /api/coach/bookings/:id] Skipping client reschedule email — no email on file");
+            }
+            // SMS reschedule
+            if (clientUser?.phone && orgId) {
+              const newStartZoned = toZonedTime(newStartAt, tz);
+              const smsRescheduleBody = smsReschedule({
+                clientFirstName: clientUser.firstName || "there",
+                serviceName,
+                newDateStr: format(newStartZoned, "EEE MMM d"),
+                newTimeStr: format(newStartZoned, "h:mm a"),
+                orgName: orgBranding?.name || "TrainEfficiency",
+              });
+              sendSms({ to: clientUser.phone, body: smsRescheduleBody, ctx: { orgId, type: 'reschedule', userId: clientUser.id, bookingId: bookingId, recipientUserId: clientUser.id } }).catch(() => {});
             }
 
             const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
@@ -6214,12 +6254,30 @@ export async function registerRoutes(
     marketing: false,
   };
 
+  const DEFAULT_SMS_PREFS_ROUTE = {
+    bookingConfirmations: false,
+    cancellations: false,
+    reschedules: false,
+    reminders: false,
+    outreach: false,
+    marketing: false,
+  };
+
   app.get("/api/unsubscribe/:token", async (req: any, res) => {
     try {
       const user = await storage.getUserByUnsubscribeToken(req.params.token);
       if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
-      const prefs = (user.notificationPreferences as Record<string, boolean> | null) || DEFAULT_NOTIFICATION_PREFS;
-      res.json({ email: user.email, preferences: { ...DEFAULT_NOTIFICATION_PREFS, ...prefs } });
+      const rawPrefs = user.notificationPreferences as any;
+      let emailPrefs: Record<string, boolean>;
+      let smsPrefs: Record<string, boolean>;
+      if (rawPrefs?.email || rawPrefs?.sms) {
+        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs.email || {}) };
+        smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE, ...(rawPrefs.sms || {}) };
+      } else {
+        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs || {}) };
+        smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE };
+      }
+      res.json({ email: user.email, preferences: { email: emailPrefs, sms: smsPrefs } });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -6229,9 +6287,21 @@ export async function registerRoutes(
     try {
       const user = await storage.getUserByUnsubscribeToken(req.params.token);
       if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
-      const incoming = req.body.preferences as Record<string, boolean>;
+      const incoming = req.body.preferences;
       if (!incoming || typeof incoming !== "object") return res.status(400).json({ message: "preferences object required" });
-      const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...(user.notificationPreferences as Record<string, boolean> || {}), ...incoming };
+      const rawPrefs = user.notificationPreferences as any;
+      let existingEmail: Record<string, boolean>;
+      let existingSms: Record<string, boolean>;
+      if (rawPrefs?.email || rawPrefs?.sms) {
+        existingEmail = rawPrefs.email || {};
+        existingSms = rawPrefs.sms || {};
+      } else {
+        existingEmail = rawPrefs || {};
+        existingSms = {};
+      }
+      const mergedEmail = { ...DEFAULT_NOTIFICATION_PREFS, ...existingEmail, ...(incoming.email || incoming) };
+      const mergedSms = { ...DEFAULT_SMS_PREFS_ROUTE, ...existingSms, ...(incoming.sms || {}) };
+      const merged = { email: mergedEmail, sms: mergedSms };
       await storage.updateNotificationPreferences(user.id, merged);
       res.json({ success: true, preferences: merged });
     } catch (err: any) {
@@ -6244,9 +6314,26 @@ export async function registerRoutes(
       const userId = req.user.claims?.sub ?? req.user.id;
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
-      const prefs = (user.notificationPreferences as Record<string, boolean> | null) || DEFAULT_NOTIFICATION_PREFS;
       const token = await storage.ensureUnsubscribeToken(userId);
-      res.json({ preferences: { ...DEFAULT_NOTIFICATION_PREFS, ...prefs }, unsubscribeToken: token });
+      const rawPrefs = user.notificationPreferences as any;
+      // Normalize to nested shape
+      let emailPrefs: Record<string, boolean>;
+      let smsPrefs: Record<string, boolean>;
+      if (rawPrefs?.email || rawPrefs?.sms) {
+        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs.email || {}) };
+        smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE, ...(rawPrefs.sms || {}) };
+      } else {
+        // Legacy flat shape — treat as email prefs
+        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs || {}) };
+        smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE };
+      }
+      res.json({
+        preferences: { email: emailPrefs, sms: smsPrefs },
+        unsubscribeToken: token,
+        phone: user.phone,
+        smsOptIn: user.smsOptIn,
+        smsOptInAt: user.smsOptInAt,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -6257,9 +6344,37 @@ export async function registerRoutes(
       const userId = req.user.claims?.sub ?? req.user.id;
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
-      const incoming = req.body as Record<string, boolean>;
-      if (!incoming || typeof incoming !== "object") return res.status(400).json({ message: "preferences object required" });
-      const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...(user.notificationPreferences as Record<string, boolean> || {}), ...incoming };
+      const { preferences, phone, smsOptIn } = req.body;
+      if (!preferences || typeof preferences !== "object") return res.status(400).json({ message: "preferences object required" });
+
+      // Handle phone update
+      if (phone !== undefined) {
+        const { normalizePhone } = await import('./sms');
+        const normalized = phone ? normalizePhone(phone) : null;
+        await storage.updateUser(userId, { phone: normalized ?? phone ?? null });
+      }
+
+      // Handle SMS opt-in change
+      if (smsOptIn !== undefined && typeof smsOptIn === "boolean") {
+        if (smsOptIn !== user.smsOptIn) {
+          await storage.updateUserSmsOptIn(userId, smsOptIn, 'notification_preferences');
+        }
+      }
+
+      // Save preferences in nested shape
+      const rawPrefs = user.notificationPreferences as any;
+      let existingEmail: Record<string, boolean>;
+      let existingSms: Record<string, boolean>;
+      if (rawPrefs?.email || rawPrefs?.sms) {
+        existingEmail = rawPrefs.email || {};
+        existingSms = rawPrefs.sms || {};
+      } else {
+        existingEmail = rawPrefs || {};
+        existingSms = {};
+      }
+      const mergedEmail = { ...DEFAULT_NOTIFICATION_PREFS, ...existingEmail, ...(preferences.email || {}) };
+      const mergedSms = { ...DEFAULT_SMS_PREFS_ROUTE, ...existingSms, ...(preferences.sms || {}) };
+      const merged = { email: mergedEmail, sms: mergedSms };
       await storage.updateNotificationPreferences(userId, merged);
       res.json({ preferences: merged });
     } catch (err: any) {
@@ -6286,6 +6401,40 @@ export async function registerRoutes(
       res.json(logs);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Twilio STOP/START webhook for SMS opt-out/opt-in
+  app.post("/api/twilio/sms/incoming", express.urlencoded({ extended: false }), async (req: any, res) => {
+    try {
+      const from: string = (req.body?.From || "").trim();
+      const body: string = (req.body?.Body || "").trim().toUpperCase();
+      if (!from) return res.status(200).send("<?xml version='1.0'?><Response/>");
+
+      // Normalize phone to find user
+      const { normalizePhone } = await import('./sms');
+      const normalized = normalizePhone(from);
+      if (!normalized) return res.status(200).send("<?xml version='1.0'?><Response/>");
+
+      if (body === "STOP" || body === "STOPALL" || body === "UNSUBSCRIBE" || body === "CANCEL" || body === "END" || body === "QUIT") {
+        // Find user by phone and opt them out
+        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
+        for (const u of allUsers) {
+          await storage.updateUserSmsOptIn(u.id, false, 'twilio_stop');
+          console.log(`[SMS STOP] Opted out user ${u.id} (${normalized})`);
+        }
+      } else if (body === "START" || body === "YES" || body === "UNSTOP") {
+        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
+        for (const u of allUsers) {
+          await storage.updateUserSmsOptIn(u.id, true, 'twilio_start');
+          console.log(`[SMS START] Opted in user ${u.id} (${normalized})`);
+        }
+      }
+
+      res.status(200).send("<?xml version='1.0'?><Response/>");
+    } catch (err) {
+      console.error("[Twilio webhook] Error:", err);
+      res.status(200).send("<?xml version='1.0'?><Response/>");
     }
   });
 

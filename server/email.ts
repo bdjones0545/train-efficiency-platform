@@ -143,7 +143,10 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
     try {
       const recipientUser = await storage.getUser(logCtx.recipientUserId);
       if (recipientUser) {
-        const prefs = (recipientUser.notificationPreferences as Record<string, boolean> | null) || DEFAULT_NOTIFICATION_PREFS;
+        const rawPrefs = recipientUser.notificationPreferences as any;
+        // Support both flat legacy shape and new nested { email: {...}, sms: {...} } shape
+        const emailPrefs: Record<string, boolean> = rawPrefs?.email ?? (rawPrefs && !rawPrefs.email && !rawPrefs.sms ? rawPrefs : DEFAULT_NOTIFICATION_PREFS);
+        const prefs = { ...DEFAULT_NOTIFICATION_PREFS, ...emailPrefs };
         const prefKey = TYPE_TO_PREF_KEY[logCtx.type];
         const effectivePref = prefKey !== undefined ? (prefs[prefKey] ?? DEFAULT_NOTIFICATION_PREFS[prefKey] ?? true) : true;
 

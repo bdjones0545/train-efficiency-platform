@@ -83,7 +83,8 @@ export interface IStorage {
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   getAllUsersWithProfiles(): Promise<(User & { profile?: UserProfile })[]>;
-  updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined>;
+  updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null; phone?: string | null; smsOptIn?: boolean; smsOptInAt?: Date | null; smsOptOutAt?: Date | null; smsConsentSource?: string | null }): Promise<User | undefined>;
+  updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
   deleteUser(id: string): Promise<boolean>;
   getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
 
@@ -275,7 +276,8 @@ export interface IStorage {
 
   getUserByUnsubscribeToken(token: string): Promise<User | undefined>;
   ensureUnsubscribeToken(userId: string): Promise<string>;
-  updateNotificationPreferences(userId: string, prefs: Record<string, boolean>): Promise<User | undefined>;
+  updateNotificationPreferences(userId: string, prefs: Record<string, any>): Promise<User | undefined>;
+  updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -314,14 +316,33 @@ export class DatabaseStorage implements IStorage {
     return allUsers.map(u => ({ ...u, profile: profileMap.get(u.id) }));
   }
 
-  async updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined> {
+  async updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null; phone?: string | null; smsOptIn?: boolean; smsOptInAt?: Date | null; smsOptOutAt?: Date | null; smsConsentSource?: string | null }): Promise<User | undefined> {
     const setData: any = {};
     if (data.firstName !== undefined) setData.firstName = data.firstName;
     if (data.lastName !== undefined) setData.lastName = data.lastName;
     if (data.email !== undefined) setData.email = data.email;
+    if (data.phone !== undefined) setData.phone = data.phone;
+    if (data.smsOptIn !== undefined) setData.smsOptIn = data.smsOptIn;
+    if (data.smsOptInAt !== undefined) setData.smsOptInAt = data.smsOptInAt;
+    if (data.smsOptOutAt !== undefined) setData.smsOptOutAt = data.smsOptOutAt;
+    if (data.smsConsentSource !== undefined) setData.smsConsentSource = data.smsConsentSource;
     if (Object.keys(setData).length === 0) return this.getUser(id);
     const [updated] = await db.update(users).set(setData).where(eq(users.id, id)).returning();
     return updated;
+  }
+
+  async updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined> {
+    const now = new Date();
+    const setData: any = { smsOptIn: optIn };
+    if (optIn) {
+      setData.smsOptInAt = now;
+      setData.smsOptOutAt = null;
+    } else {
+      setData.smsOptOutAt = now;
+    }
+    if (source) setData.smsConsentSource = source;
+    const [updated] = await db.update(users).set(setData).where(eq(users.id, userId)).returning();
+    return updated || undefined;
   }
 
   async deleteUser(id: string): Promise<boolean> {
@@ -1726,7 +1747,7 @@ export class DatabaseStorage implements IStorage {
     return token;
   }
 
-  async updateNotificationPreferences(userId: string, prefs: Record<string, boolean>): Promise<User | undefined> {
+  async updateNotificationPreferences(userId: string, prefs: Record<string, any>): Promise<User | undefined> {
     const [updated] = await db
       .update(users)
       .set({ notificationPreferences: prefs })
