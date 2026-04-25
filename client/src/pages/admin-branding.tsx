@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, Image, Link2, Type, ExternalLink, Globe, Mail } from "lucide-react";
-import { SiInstagram, SiFacebook } from "react-icons/si";
+import { Save, Image, Link2, Type, ExternalLink, Globe, Mail, Music } from "lucide-react";
+import { SiInstagram, SiFacebook, SiYoutube, SiTiktok } from "react-icons/si";
 import type { Organization } from "@shared/schema";
 
 export default function AdminBrandingPage() {
@@ -37,6 +37,9 @@ export default function AdminBrandingPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [instagramUrl, setInstagramUrl] = useState("");
   const [facebookUrl, setFacebookUrl] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [tiktokUrl, setTiktokUrl] = useState("");
+  const [linktreeUrl, setLinktreeUrl] = useState("");
   const [emailPrimaryColor, setEmailPrimaryColor] = useState("");
   const [emailSecondaryColor, setEmailSecondaryColor] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
@@ -51,6 +54,9 @@ export default function AdminBrandingPage() {
       setWebsiteUrl(org.websiteUrl || "");
       setInstagramUrl(org.instagramUrl || "");
       setFacebookUrl(org.facebookUrl || "");
+      setYoutubeUrl(org.youtubeUrl || "");
+      setTiktokUrl(org.tiktokUrl || "");
+      setLinktreeUrl(org.linktreeUrl || "");
       setEmailPrimaryColor(org.emailPrimaryColor || "");
       setEmailSecondaryColor(org.emailSecondaryColor || "");
       setHasChanges(false);
@@ -58,6 +64,13 @@ export default function AdminBrandingPage() {
   }, [org]);
 
   const markChanged = () => setHasChanges(true);
+
+  const normalizeUrl = (value: string): string => {
+    if (!value || !value.trim()) return value;
+    const trimmed = value.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+  };
 
   const updateMutation = useMutation({
     mutationFn: async (data: Partial<Organization>) => {
@@ -99,6 +112,9 @@ export default function AdminBrandingPage() {
       websiteUrl: websiteUrl || null,
       instagramUrl: instagramUrl || null,
       facebookUrl: facebookUrl || null,
+      youtubeUrl: youtubeUrl || null,
+      tiktokUrl: tiktokUrl || null,
+      linktreeUrl: linktreeUrl || null,
       emailPrimaryColor: emailPrimaryColor || null,
       emailSecondaryColor: emailSecondaryColor || null,
     };
@@ -291,52 +307,41 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Globe className="h-5 w-5" />
-          Social Links
-        </h2>
-        <Card className="p-4 space-y-4">
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <Globe className="h-4 w-4" />
-              Website
-            </Label>
-            <Input
-              value={websiteUrl}
-              onChange={(e) => { setWebsiteUrl(e.target.value); markChanged(); }}
-              placeholder="https://yourwebsite.com"
-              data-testid="input-website-url"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <SiInstagram className="h-4 w-4" />
-              Instagram
-            </Label>
-            <Input
-              value={instagramUrl}
-              onChange={(e) => { setInstagramUrl(e.target.value); markChanged(); }}
-              placeholder="https://instagram.com/yourbusiness"
-              data-testid="input-instagram-url"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <SiFacebook className="h-4 w-4" />
-              Facebook
-            </Label>
-            <Input
-              value={facebookUrl}
-              onChange={(e) => { setFacebookUrl(e.target.value); markChanged(); }}
-              placeholder="https://facebook.com/yourbusiness"
-              data-testid="input-facebook-url"
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            These links will appear on your landing page so visitors can find you on the web.
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            Social Links
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Add the links visitors should see on your landing page.
           </p>
-        </Card>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          {[
+            { label: "Website", icon: <Globe className="h-3.5 w-3.5" />, value: websiteUrl, setter: setWebsiteUrl, placeholder: "https://yourwebsite.com", testId: "input-website-url" },
+            { label: "Instagram", icon: <SiInstagram className="h-3.5 w-3.5" />, value: instagramUrl, setter: setInstagramUrl, placeholder: "instagram.com/yourhandle", testId: "input-instagram-url" },
+            { label: "Facebook", icon: <SiFacebook className="h-3.5 w-3.5" />, value: facebookUrl, setter: setFacebookUrl, placeholder: "facebook.com/yourpage", testId: "input-facebook-url" },
+            { label: "YouTube", icon: <SiYoutube className="h-3.5 w-3.5" />, value: youtubeUrl, setter: setYoutubeUrl, placeholder: "youtube.com/@yourchannel", testId: "input-youtube-url" },
+            { label: "TikTok", icon: <SiTiktok className="h-3.5 w-3.5" />, value: tiktokUrl, setter: setTiktokUrl, placeholder: "tiktok.com/@yourhandle", testId: "input-tiktok-url" },
+            { label: "Linktree", icon: <ExternalLink className="h-3.5 w-3.5" />, value: linktreeUrl, setter: setLinktreeUrl, placeholder: "linktr.ee/yourhandle", testId: "input-linktree-url" },
+          ].map(({ label, icon, value, setter, placeholder, testId }) => (
+            <Card key={label} className="p-2.5 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                {icon}
+                {label}
+              </div>
+              <Input
+                value={value}
+                onChange={(e) => { setter(e.target.value); markChanged(); }}
+                onBlur={(e) => { const n = normalizeUrl(e.target.value); if (n !== e.target.value) { setter(n); markChanged(); } }}
+                placeholder={placeholder}
+                className="h-7 text-xs px-2"
+                data-testid={testId}
+              />
+            </Card>
+          ))}
+        </div>
       </section>
 
       <Separator />

@@ -659,7 +659,7 @@ export async function registerRoutes(
       if (profile?.organizationId !== req.params.id) {
         return res.status(403).json({ message: "You can only update your own organization" });
       }
-      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour, athleticEnabled, athleticProgramName, coachTransactionsVisible, schedulingInquiryEmail, schedulingInquiryName, allowUserInquiryEmails } = req.body;
+      const { locations, tagline, tagline2, primaryColor, secondaryColor, logoUrl, slug, name, stripeSecretKey, stripePublishableKey, websiteUrl, instagramUrl, facebookUrl, youtubeUrl, tiktokUrl, linktreeUrl, subscriptionsEnabled, athleticStartHour, athleticEndHour, athleticEnabled, athleticProgramName, coachTransactionsVisible, schedulingInquiryEmail, schedulingInquiryName, allowUserInquiryEmails } = req.body;
       const updateData: any = {};
       if (locations !== undefined) updateData.locations = locations;
       if (tagline !== undefined) updateData.tagline = tagline;
@@ -678,6 +678,9 @@ export async function registerRoutes(
       if (websiteUrl !== undefined) updateData.websiteUrl = websiteUrl || null;
       if (instagramUrl !== undefined) updateData.instagramUrl = instagramUrl || null;
       if (facebookUrl !== undefined) updateData.facebookUrl = facebookUrl || null;
+      if (youtubeUrl !== undefined) updateData.youtubeUrl = youtubeUrl || null;
+      if (tiktokUrl !== undefined) updateData.tiktokUrl = tiktokUrl || null;
+      if (linktreeUrl !== undefined) updateData.linktreeUrl = linktreeUrl || null;
       if (stripeSecretKey !== undefined) updateData.stripeSecretKey = stripeSecretKey || null;
       if (stripePublishableKey !== undefined) updateData.stripePublishableKey = stripePublishableKey || null;
       if (subscriptionsEnabled !== undefined) updateData.subscriptionsEnabled = subscriptionsEnabled;

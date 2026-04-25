@@ -15,9 +15,9 @@ import {
 } from "@/components/ui/dialog";
 import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
-  UserPlus, Trophy, Menu, X, Globe, Mail, ChevronLeft, ChevronRight, Play, Quote,
+  UserPlus, Trophy, Menu, X, Globe, Mail, ChevronLeft, ChevronRight, Play, Quote, ExternalLink,
 } from "lucide-react";
-import { SiInstagram, SiFacebook } from "react-icons/si";
+import { SiInstagram, SiFacebook, SiYoutube, SiTiktok } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
@@ -506,39 +506,36 @@ export default function OrgLandingPage() {
         )}
         <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center relative w-full">
           <div className="space-y-6">
-            {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
+            {(org.websiteUrl || org.instagramUrl || org.facebookUrl || org.youtubeUrl || org.tiktokUrl || org.linktreeUrl) && (
               <div className="flex items-center gap-3" data-testid="hero-social-links">
                 {org.websiteUrl && (
-                  <a
-                    href={ensureUrl(org.websiteUrl)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
-                    data-testid="link-hero-website"
-                  >
+                  <a href={ensureUrl(org.websiteUrl)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`} data-testid="link-hero-website">
                     <Globe className="h-4 w-4" />
                   </a>
                 )}
                 {org.instagramUrl && (
-                  <a
-                    href={ensureUrl(org.instagramUrl)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
-                    data-testid="link-hero-instagram"
-                  >
+                  <a href={ensureUrl(org.instagramUrl)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`} data-testid="link-hero-instagram">
                     <SiInstagram className="h-4 w-4" />
                   </a>
                 )}
                 {org.facebookUrl && (
-                  <a
-                    href={ensureUrl(org.facebookUrl)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
-                    data-testid="link-hero-facebook"
-                  >
+                  <a href={ensureUrl(org.facebookUrl)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`} data-testid="link-hero-facebook">
                     <SiFacebook className="h-4 w-4" />
+                  </a>
+                )}
+                {org.youtubeUrl && (
+                  <a href={ensureUrl(org.youtubeUrl)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`} data-testid="link-hero-youtube">
+                    <SiYoutube className="h-4 w-4" />
+                  </a>
+                )}
+                {org.tiktokUrl && (
+                  <a href={ensureUrl(org.tiktokUrl)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`} data-testid="link-hero-tiktok">
+                    <SiTiktok className="h-4 w-4" />
+                  </a>
+                )}
+                {org.linktreeUrl && (
+                  <a href={ensureUrl(org.linktreeUrl)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`} data-testid="link-hero-linktree">
+                    <ExternalLink className="h-4 w-4" />
                   </a>
                 )}
               </div>
@@ -830,7 +827,7 @@ export default function OrgLandingPage() {
               <span>{org.name}</span>
             </div>
             <div className="flex items-center gap-4">
-              {(org.websiteUrl || org.instagramUrl || org.facebookUrl) && (
+              {(org.websiteUrl || org.instagramUrl || org.facebookUrl || org.youtubeUrl || org.tiktokUrl || org.linktreeUrl) && (
                 <div className="flex items-center gap-3">
                   {org.websiteUrl && (
                     <a href={ensureUrl(org.websiteUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-website">
@@ -845,6 +842,21 @@ export default function OrgLandingPage() {
                   {org.facebookUrl && (
                     <a href={ensureUrl(org.facebookUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-facebook">
                       <SiFacebook className="h-4 w-4" />
+                    </a>
+                  )}
+                  {org.youtubeUrl && (
+                    <a href={ensureUrl(org.youtubeUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-youtube">
+                      <SiYoutube className="h-4 w-4" />
+                    </a>
+                  )}
+                  {org.tiktokUrl && (
+                    <a href={ensureUrl(org.tiktokUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-tiktok">
+                      <SiTiktok className="h-4 w-4" />
+                    </a>
+                  )}
+                  {org.linktreeUrl && (
+                    <a href={ensureUrl(org.linktreeUrl)} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors" data-testid="link-org-linktree">
+                      <ExternalLink className="h-4 w-4" />
                     </a>
                   )}
                 </div>
