@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Mail, Search, CheckCircle, XCircle, RefreshCw, Filter } from "lucide-react";
+import { Mail, Search, CheckCircle, XCircle, RefreshCw, Filter, MinusCircle } from "lucide-react";
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import type { CommunicationLog } from "@shared/schema";
 
@@ -66,6 +66,7 @@ export default function CommunicationHistoryPage() {
 
   const sentCount = logs?.filter((l) => l.status === "sent").length ?? 0;
   const failedCount = logs?.filter((l) => l.status === "failed").length ?? 0;
+  const skippedCount = logs?.filter((l) => l.status === "skipped").length ?? 0;
 
   const clearFilters = () => {
     setSearch("");
@@ -100,7 +101,7 @@ export default function CommunicationHistoryPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card data-testid="card-total-sent">
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">
@@ -152,6 +153,23 @@ export default function CommunicationHistoryPage() {
             </div>
           </CardContent>
         </Card>
+        <Card data-testid="card-skipped-count">
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                <MinusCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Skipped</p>
+                {isLoading ? (
+                  <Skeleton className="h-6 w-12 mt-1" />
+                ) : (
+                  <p className="text-2xl font-bold text-amber-600 dark:text-amber-400" data-testid="text-skipped-count">{skippedCount}</p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -195,6 +213,7 @@ export default function CommunicationHistoryPage() {
                 <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="sent">Sent</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="skipped">Skipped</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex gap-2 items-center">
@@ -288,15 +307,25 @@ export default function CommunicationHistoryPage() {
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Sent
                           </Badge>
+                        ) : log.status === "skipped" ? (
+                          <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-0" data-testid={`badge-status-${log.id}`}>
+                            <MinusCircle className="h-3 w-3 mr-1" />
+                            Skipped
+                          </Badge>
                         ) : (
                           <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-0" data-testid={`badge-status-${log.id}`}>
                             <XCircle className="h-3 w-3 mr-1" />
                             Failed
                           </Badge>
                         )}
-                        {log.errorMessage && (
+                        {log.errorMessage && log.status !== "skipped" && (
                           <p className="text-xs text-red-500 mt-0.5 max-w-[160px] truncate" title={log.errorMessage}>
                             {log.errorMessage}
+                          </p>
+                        )}
+                        {log.status === "skipped" && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                            User opted out
                           </p>
                         )}
                       </td>

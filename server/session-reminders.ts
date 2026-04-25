@@ -91,6 +91,7 @@ async function sendSessionReminders() {
               type: "reminder",
               userId: clientUser.id,
               bookingId: booking.id,
+              recipientUserId: clientUser.id,
             } : undefined;
           await sendUpcomingSessionReminderEmailToClient(
             clientUser.email,

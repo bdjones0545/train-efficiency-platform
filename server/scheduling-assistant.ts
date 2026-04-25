@@ -3059,6 +3059,7 @@ Return a JSON object with exactly these keys:
               userId: clientUser.id,
               coachId: agentAction.coachId || undefined,
               agentActionId: agentActionId_outreach,
+              recipientUserId: clientUser.id,
             }
           );
           await storage.updateAgentAction(agentActionId_outreach, { status: "sent" });

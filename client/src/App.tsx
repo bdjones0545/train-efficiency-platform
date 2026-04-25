@@ -47,6 +47,7 @@ import ClaimSubscriptionPage from "@/pages/claim-subscription";
 import SchedulingPage from "@/pages/scheduling";
 import SchedulingAgentPage from "@/pages/scheduling-agent";
 import CommunicationHistoryPage from "@/pages/communication-history";
+import UnsubscribePage from "@/pages/unsubscribe";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { Button } from "@/components/ui/button";
@@ -183,6 +184,7 @@ function AuthenticatedLayout() {
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />
+                  <Route path="/unsubscribe/:token" component={UnsubscribePage} />
                   <Route component={NotFound} />
                 </Switch>
               </SubscriptionGate>
@@ -214,6 +216,7 @@ function PublicLayout() {
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/privacy" component={PrivacyPolicyPage} />
       <Route path="/terms" component={TermsConditionsPage} />
+      <Route path="/unsubscribe/:token" component={UnsubscribePage} />
       <Route><LandingPage /></Route>
     </Switch>
   );

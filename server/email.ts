@@ -21,7 +21,29 @@ export interface EmailLogContext {
   coachId?: string;
   bookingId?: string;
   agentActionId?: string;
+  recipientUserId?: string;
 }
+
+const DEFAULT_NOTIFICATION_PREFS: Record<string, boolean> = {
+  bookingConfirmations: true,
+  cancellations: true,
+  reschedules: true,
+  reminders: true,
+  outreach: true,
+  marketing: false,
+};
+
+const TYPE_TO_PREF_KEY: Record<string, string> = {
+  booking_confirmation: 'bookingConfirmations',
+  cancellation: 'cancellations',
+  reschedule: 'reschedules',
+  recurring: 'bookingConfirmations',
+  reminder: 'reminders',
+  outreach: 'outreach',
+  marketing: 'marketing',
+};
+
+const UNSUBSCRIBE_BASE_URL = 'https://trainefficiency.com';
 
 const DEFAULT_BRANDING: OrgBranding = {
   name: "Train Efficiency",
@@ -115,6 +137,54 @@ async function getUncachableSendGridClient() {
 }
 
 async function sendEmail(to: string, subject: string, html: string, senderName?: string, logCtx?: EmailLogContext) {
+  let finalHtml = html;
+
+  if (logCtx?.recipientUserId) {
+    try {
+      const recipientUser = await storage.getUser(logCtx.recipientUserId);
+      if (recipientUser) {
+        const prefs = (recipientUser.notificationPreferences as Record<string, boolean> | null) || DEFAULT_NOTIFICATION_PREFS;
+        const prefKey = TYPE_TO_PREF_KEY[logCtx.type];
+        const effectivePref = prefKey !== undefined ? (prefs[prefKey] ?? DEFAULT_NOTIFICATION_PREFS[prefKey] ?? true) : true;
+
+        if (effectivePref === false) {
+          if (logCtx.orgId) {
+            try {
+              await storage.createCommunicationLog({
+                orgId: logCtx.orgId,
+                userId: logCtx.userId,
+                coachId: logCtx.coachId,
+                bookingId: logCtx.bookingId,
+                agentActionId: logCtx.agentActionId,
+                type: logCtx.type,
+                channel: 'email',
+                recipientEmail: to,
+                subject,
+                status: 'skipped',
+                provider: 'sendgrid',
+                errorMessage: 'user_opt_out',
+              });
+            } catch (logErr) {
+              console.error('[CommLog] Failed to log skipped email:', logErr);
+            }
+          }
+          console.log(`[Email] Skipped "${subject}" to ${to} (opt-out: ${prefKey})`);
+          return;
+        }
+
+        try {
+          const token = await storage.ensureUnsubscribeToken(logCtx.recipientUserId);
+          const unsubUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${token}`;
+          finalHtml = html + `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #333;"><p style="font-size:12px;color:#666;margin:0;font-family:Arial,sans-serif;"><a href="${unsubUrl}" style="color:#888;text-decoration:underline;">Manage email preferences</a></p></div>`;
+        } catch (tokenErr) {
+          console.error('[Email] Failed to generate unsubscribe token:', tokenErr);
+        }
+      }
+    } catch (prefErr) {
+      console.error('[Email] Error checking notification preferences:', prefErr);
+    }
+  }
+
   let errorMsg: string | undefined;
   try {
     const { client, fromEmail } = await getUncachableSendGridClient();
@@ -122,7 +192,7 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
       to,
       from: { email: fromEmail, name: senderName || 'Train Efficiency' },
       subject,
-      html,
+      html: finalHtml,
     });
     console.log(`Email sent to ${to}: ${subject}`);
   } catch (error: any) {

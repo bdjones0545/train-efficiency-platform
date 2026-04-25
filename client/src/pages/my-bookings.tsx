@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -20,11 +21,29 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Calendar, Clock, X, Users, MapPin } from "lucide-react";
+import { Calendar, Clock, X, Users, MapPin, CheckCircle, Shield, Bell } from "lucide-react";
 import { format, parseISO, isPast } from "date-fns";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 import type { BookingWithDetails, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
+
+interface NotificationPreferences {
+  bookingConfirmations: boolean;
+  cancellations: boolean;
+  reschedules: boolean;
+  reminders: boolean;
+  outreach: boolean;
+  marketing: boolean;
+}
+
+const PREF_META: { key: keyof NotificationPreferences; label: string; description: string; essential?: boolean }[] = [
+  { key: "bookingConfirmations", label: "Booking Confirmations", description: "Receive an email when a session is booked for you.", essential: true },
+  { key: "cancellations", label: "Cancellations", description: "Receive an email when a session is cancelled.", essential: true },
+  { key: "reschedules", label: "Reschedule Notices", description: "Receive an email when a session is rescheduled.", essential: true },
+  { key: "reminders", label: "Session Reminders", description: "Get a reminder before your upcoming training sessions." },
+  { key: "outreach", label: "Coach Outreach", description: "Allow your coach to send you personalized messages and offers." },
+  { key: "marketing", label: "Marketing & Promotions", description: "Receive promotional emails and feature announcements." },
+];
 
 const statusColors: Record<string, string> = {
   PENDING: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
@@ -38,6 +57,8 @@ export default function MyBookingsPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [localPrefs, setLocalPrefs] = useState<NotificationPreferences | null>(null);
+  const [prefsSaved, setPrefsSaved] = useState(false);
 
   const { data: bookings, isLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/bookings"],
@@ -46,6 +67,38 @@ export default function MyBookingsPage() {
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
   });
+
+  const { data: prefsData, isLoading: prefsLoading } = useQuery<{ preferences: NotificationPreferences }>({
+    queryKey: ["/api/notification-preferences"],
+  });
+
+  const prefsMutation = useMutation({
+    mutationFn: async (preferences: NotificationPreferences) => {
+      const res = await apiRequest("PATCH", "/api/notification-preferences", { preferences });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
+      setPrefsSaved(true);
+      toast({ title: "Preferences saved" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save preferences", variant: "destructive" });
+    },
+  });
+
+  const currentPrefs = localPrefs ?? prefsData?.preferences ?? null;
+
+  const togglePref = (key: keyof NotificationPreferences) => {
+    if (!currentPrefs) return;
+    setPrefsSaved(false);
+    setLocalPrefs({ ...currentPrefs, [key]: !currentPrefs[key] });
+  };
+
+  const savePrefs = () => {
+    if (!currentPrefs) return;
+    prefsMutation.mutate(currentPrefs);
+  };
 
   const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
 
@@ -193,6 +246,10 @@ export default function MyBookingsPage() {
           <TabsTrigger value="past" data-testid="tab-past">
             Past ({past.length})
           </TabsTrigger>
+          <TabsTrigger value="preferences" data-testid="tab-preferences">
+            <Bell className="h-3.5 w-3.5 mr-1.5" />
+            Email Preferences
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="upcoming" className="space-y-3 mt-4">
           {upcoming.length === 0 ? (
@@ -215,6 +272,76 @@ export default function MyBookingsPage() {
           ) : (
             past.map((b) => renderBooking(b))
           )}
+        </TabsContent>
+        <TabsContent value="preferences" className="mt-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="mb-5">
+                <h2 className="text-base font-semibold" data-testid="heading-email-preferences">Email Notifications</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Choose which emails you receive from TrainEfficiency.
+                </p>
+              </div>
+              {prefsLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-48" />
+                      </div>
+                      <Skeleton className="h-6 w-11 rounded-full" />
+                    </div>
+                  ))}
+                </div>
+              ) : currentPrefs ? (
+                <div className="space-y-5">
+                  {PREF_META.map(({ key, label, description, essential }) => (
+                    <div key={key} className="flex items-start justify-between gap-4" data-testid={`pref-row-${key}`}>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{label}</span>
+                          {essential && (
+                            <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                              <Shield className="h-3 w-3" />
+                              Essential
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                      </div>
+                      <Switch
+                        checked={currentPrefs[key]}
+                        onCheckedChange={() => togglePref(key)}
+                        data-testid={`switch-pref-${key}`}
+                      />
+                    </div>
+                  ))}
+                  <div className="pt-3 flex flex-col gap-2 border-t">
+                    <Button
+                      onClick={savePrefs}
+                      disabled={prefsMutation.isPending}
+                      data-testid="button-save-email-preferences"
+                    >
+                      {prefsMutation.isPending ? "Saving..." : "Save Preferences"}
+                    </Button>
+                    {prefsSaved && (
+                      <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400" data-testid="text-preferences-saved">
+                        <CheckCircle className="h-4 w-4" />
+                        Preferences saved successfully
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Unable to load preferences.</p>
+              )}
+            </CardContent>
+          </Card>
+          <p className="text-xs text-muted-foreground mt-3">
+            Essential emails (booking confirmations, cancellations, reschedule notices) help keep your schedule accurate.
+            You can disable them, but we recommend keeping them on.
+          </p>
         </TabsContent>
       </Tabs>
     </div>

@@ -1621,6 +1621,7 @@ export async function registerRoutes(
             type: "booking_confirmation",
             userId: userId,
             bookingId: booking.id,
+            recipientUserId: userId,
           } : undefined;
           if (clientUser?.email) {
             sendBookingConfirmationToClient(
@@ -1737,6 +1738,7 @@ export async function registerRoutes(
                 type: "cancellation",
                 userId: clientUser?.id,
                 bookingId: booking.id,
+                recipientUserId: clientUser?.id,
               } : undefined;
             if (clientUser?.email) {
               sendBookingCancellationEmailToClient(
@@ -2029,7 +2031,7 @@ export async function registerRoutes(
                 req.body.location || undefined,
                 tz,
                 orgB,
-                coachBookingOrgId ? { orgId: coachBookingOrgId, type: "booking_confirmation", userId: resolvedClientId, bookingId: booking.id } : undefined
+                coachBookingOrgId ? { orgId: coachBookingOrgId, type: "booking_confirmation", userId: resolvedClientId, bookingId: booking.id, recipientUserId: resolvedClientId } : undefined
               ).catch(() => {});
             }
           }
@@ -2152,6 +2154,7 @@ export async function registerRoutes(
                 orgId,
                 type: "recurring",
                 userId: clientUser?.id,
+                recipientUserId: clientUser?.id,
               } : undefined;
             if (clientUser?.email) {
               sendRecurringSessionsCreatedEmailToClient(
@@ -2308,6 +2311,7 @@ export async function registerRoutes(
                 type: "reschedule",
                 userId: clientUser?.id,
                 bookingId: bookingId,
+                recipientUserId: clientUser?.id,
               } : undefined;
             if (clientUser?.email) {
               sendBookingRescheduleEmailToClient(
@@ -6196,6 +6200,68 @@ export async function registerRoutes(
       const org = await storage.getOrganizationById(profile.organizationId);
       if (!org) return res.status(404).json({ message: "Organization not found" });
       res.json({ id: org.id, name: org.name, slug: org.slug });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  const DEFAULT_NOTIFICATION_PREFS = {
+    bookingConfirmations: true,
+    cancellations: true,
+    reschedules: true,
+    reminders: true,
+    outreach: true,
+    marketing: false,
+  };
+
+  app.get("/api/unsubscribe/:token", async (req: any, res) => {
+    try {
+      const user = await storage.getUserByUnsubscribeToken(req.params.token);
+      if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
+      const prefs = (user.notificationPreferences as Record<string, boolean> | null) || DEFAULT_NOTIFICATION_PREFS;
+      res.json({ email: user.email, preferences: { ...DEFAULT_NOTIFICATION_PREFS, ...prefs } });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/unsubscribe/:token", async (req: any, res) => {
+    try {
+      const user = await storage.getUserByUnsubscribeToken(req.params.token);
+      if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
+      const incoming = req.body.preferences as Record<string, boolean>;
+      if (!incoming || typeof incoming !== "object") return res.status(400).json({ message: "preferences object required" });
+      const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...(user.notificationPreferences as Record<string, boolean> || {}), ...incoming };
+      await storage.updateNotificationPreferences(user.id, merged);
+      res.json({ success: true, preferences: merged });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/notification-preferences", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const prefs = (user.notificationPreferences as Record<string, boolean> | null) || DEFAULT_NOTIFICATION_PREFS;
+      const token = await storage.ensureUnsubscribeToken(userId);
+      res.json({ preferences: { ...DEFAULT_NOTIFICATION_PREFS, ...prefs }, unsubscribeToken: token });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/notification-preferences", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const incoming = req.body as Record<string, boolean>;
+      if (!incoming || typeof incoming !== "object") return res.status(400).json({ message: "preferences object required" });
+      const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...(user.notificationPreferences as Record<string, boolean> || {}), ...incoming };
+      await storage.updateNotificationPreferences(userId, merged);
+      res.json({ preferences: merged });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

@@ -272,6 +272,10 @@ export interface IStorage {
   getCommunicationsByOrg(orgId: string, limit?: number): Promise<CommunicationLog[]>;
   getCommunicationsByUser(userId: string): Promise<CommunicationLog[]>;
   getCommunicationsByBooking(bookingId: string): Promise<CommunicationLog[]>;
+
+  getUserByUnsubscribeToken(token: string): Promise<User | undefined>;
+  ensureUnsubscribeToken(userId: string): Promise<string>;
+  updateNotificationPreferences(userId: string, prefs: Record<string, boolean>): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1707,6 +1711,28 @@ export class DatabaseStorage implements IStorage {
       .from(communicationLogs)
       .where(eq(communicationLogs.bookingId, bookingId))
       .orderBy(desc(communicationLogs.createdAt));
+  }
+
+  async getUserByUnsubscribeToken(token: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.unsubscribeToken, token));
+    return user || undefined;
+  }
+
+  async ensureUnsubscribeToken(userId: string): Promise<string> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (user?.unsubscribeToken) return user.unsubscribeToken;
+    const token = require('crypto').randomUUID();
+    await db.update(users).set({ unsubscribeToken: token }).where(eq(users.id, userId));
+    return token;
+  }
+
+  async updateNotificationPreferences(userId: string, prefs: Record<string, boolean>): Promise<User | undefined> {
+    const [updated] = await db
+      .update(users)
+      .set({ notificationPreferences: prefs })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated || undefined;
   }
 }
 

@@ -1,0 +1,87 @@
+Implement Phase 5: Notification Preferences + Unsubscribe System
+
+Goal:
+Give users control over what emails they receive and ensure compliance (CAN-SPAM, best practices).
+
+Current state:
+- Emails are sent across multiple categories (booking, reminders, outreach, etc.)
+- No unsubscribe system
+- No preference management
+- No per-category control
+
+Scope:
+
+1. Add notification preferences to user schema:
+Add a new column:
+notificationPreferences (JSON or structured fields)
+
+Recommended structure:
+{
+  bookingConfirmations: true,
+  cancellations: true,
+  reschedules: true,
+  reminders: true,
+  outreach: true,
+  marketing: false
+}
+
+Default:
+- All transactional = true
+- Marketing = false
+
+2. Add unsubscribe token system:
+- Generate a unique unsubscribe token per user
+- Store in users table (unsubscribeToken)
+- Add route:
+  GET /unsubscribe/:token
+
+Behavior:
+- Load user by token
+- Show simple page:
+  “Manage your email preferences”
+- Allow toggling categories
+- Save changes
+
+3. Add unsubscribe link to ALL emails:
+At the bottom of every email:
+
+"Manage email preferences"
+
+Link:
+https://trainefficiency.com/unsubscribe/{token}
+
+4. Respect preferences in email sending:
+Before every email send:
+- Check user.notificationPreferences
+- Skip sending if that category is disabled
+
+Examples:
+- booking_confirmation → check bookingConfirmations
+- reminder → check reminders
+- outreach → check outreach
+
+5. Add UI in user profile:
+Allow users to:
+- Toggle categories
+- Save preferences
+- Clearly label what each category means
+
+6. Safety rules:
+- Transactional emails (booking confirmations, cancellations) should be harder to disable or clearly labeled as essential
+- Do NOT allow users to fully disable critical system emails unless required
+- Outreach and marketing should always be optional
+
+7. Logging:
+- If an email is skipped due to preferences:
+  - Log it in communication_logs with status: skipped
+  - Add reason: "user_opt_out"
+
+8. Testing:
+- Confirm unsubscribe link works
+- Confirm preferences persist
+- Confirm emails are skipped correctly
+- Confirm logs reflect skipped emails
+- Confirm no crashes if token is invalid
+
+Expected result:
+Users can control their communication preferences, unsubscribe cleanly, and TrainEfficiency becomes compliant and more trustworthy.

@@ -31,6 +31,8 @@ export const users = pgTable("users", {
   lastReminderSentAt: timestamp("last_reminder_sent_at"),
   passwordResetToken: varchar("password_reset_token"),
   passwordResetTokenExpires: timestamp("password_reset_token_expires"),
+  unsubscribeToken: varchar("unsubscribe_token").unique(),
+  notificationPreferences: jsonb("notification_preferences"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
