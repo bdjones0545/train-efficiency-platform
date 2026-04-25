@@ -1,0 +1,71 @@
+Audit and fix TrainEfficiency social link previews.
+
+Current issue:
+When trainEfficiency.com is shared through iMessage, Facebook, or other platforms, it only shows the raw link with no preview image, title, or description.
+
+Goal:
+Add proper social sharing metadata so shared links display:
+- Preview image
+- Title
+- Description
+- Site name
+- Correct URL
+
+Implement the following:
+
+1. Add global Open Graph meta tags to the public landing page HTML/head:
+   - og:title
+   - og:description
+   - og:image
+   - og:url
+   - og:type = website
+   - og:site_name = TrainEfficiency
+   - twitter:card = summary_large_image
+   - twitter:title
+   - twitter:description
+   - twitter:image
+
+2. Use strong default copy:
+   Title:
+   TrainEfficiency | Coaching, Scheduling & Performance Management
+
+   Description:
+   Build your coaching business with smarter scheduling, athlete management, team training, payments, and performance tools in one platform.
+
+3. Add a high-quality preview image:
+   - Create or use a branded image at 1200x630.
+   - Store it in the public assets folder.
+   - Example path:
+     /social-preview.png
+
+4. Make sure og:image uses an absolute URL:
+   https://trainefficiency.com/social-preview.png
+
+5. Make sure og:url uses:
+   https://trainefficiency.com
+
+6. If the app has dynamic organization landing pages, also add dynamic Open Graph support:
+   - Org landing pages should use the organization name as the title.
+   - Org landing pages should use the org tagline/description if available.
+   - Org landing pages should use the org logo or social preview image if available.
+   - Otherwise fall back to the default TrainEfficiency preview.
+
+7. Important:
+   iMessage, Facebook, LinkedIn, and X scrape server-rendered HTML. If this is a Vite/React SPA, client-side React helmet tags may not be enough.
+   Ensure the meta tags exist in the initial HTML response whenever possible.
+   If needed, update the Express/server route that serves index.html to inject the correct meta tags before sending the page.
+
+8. Add cache-busting:
+   - Use a versioned image URL if needed, like:
+     https://trainefficiency.com/social-preview.png?v=1
+   - This helps platforms refresh the preview.
+
+9. Test after implementation:
+   - Open the page source and confirm the og tags are present before React loads.
+   - Share trainefficiency.com in iMessage and confirm a preview card appears.
+   - Test with Facebook Sharing Debugger.
+   - Test with LinkedIn Post Inspector.
+   - Confirm org-specific landing pages produce custom preview metadata.
+
+Expected result:
+When someone shares trainefficiency.com, it should show a professional preview card instead of just the raw URL.
