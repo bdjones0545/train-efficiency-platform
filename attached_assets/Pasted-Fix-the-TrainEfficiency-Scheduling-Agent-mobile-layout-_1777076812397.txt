@@ -1,0 +1,127 @@
+Fix the TrainEfficiency Scheduling Agent mobile layout so the chat input/footer is visible immediately when the page first opens.
+
+Current issue:
+The Scheduling Agent now opens at the top correctly, but the send-message footer is not immediately visible. The user has to scroll slightly before the input appears.
+
+Goal:
+On mobile, the layout must show:
+1. Fixed header/tabs at top
+2. Scrollable middle command center content
+3. Fixed chat input/footer at bottom immediately on first load
+
+Do not change backend logic. This is layout only.
+
+========================
+PHASE 1 — DIAGNOSE WHY FOOTER IS BELOW VIEWPORT
+========================
+
+Find why the chat input is not visible on first load.
+
+Likely causes:
+- input is inside the scrollable content instead of outside it
+- page uses min-h-screen and content pushes footer down
+- mobile browser viewport uses 100vh instead of 100dvh
+- fixed/sticky footer is being placed after content rather than pinned
+- parent container allows full-page scroll instead of only middle content scroll
+
+Identify the actual scrolling container.
+
+========================
+PHASE 2 — TRUE FIXED FOOTER STRUCTURE
+========================
+
+Refactor mobile layout to:
+
+Root container:
+- height: 100dvh
+- display: flex
+- flex-direction: column
+- overflow: hidden
+
+Header/tabs:
+- flex-shrink: 0
+- sticky/fixed at top
+- z-index high
+
+Content:
+- flex: 1
+- overflow-y: auto
+- min-height: 0
+- padding-bottom: 12px
+
+Footer/chat input:
+- flex-shrink: 0
+- always rendered outside the scrollable content
+- visible immediately
+- border-top
+- background blur/dark
+- padding-bottom: max(env(safe-area-inset-bottom), 12px)
+
+Important:
+The input must NOT be a child of the scrollable content on mobile.
+
+========================
+PHASE 3 — REMOVE SCROLL-DEPENDENT FOOTER BEHAVIOR
+========================
+
+If the input currently uses position: sticky inside a scroll container, replace it on mobile with the flex footer approach.
+
+Avoid relying on:
+- sticky bottom inside overflow containers
+- input appearing only after content scroll
+- margin-top auto inside scroll area
+
+The footer must occupy its own fixed layout zone.
+
+========================
+PHASE 4 — CONTENT HEIGHT FIX
+========================
+
+Ensure the scrollable content does not push the footer below the viewport.
+
+Required CSS/tailwind patterns:
+- root: h-[100dvh] overflow-hidden flex flex-col
+- content: flex-1 min-h-0 overflow-y-auto
+- footer: shrink-0
+
+Remove or override conflicting:
+- min-h-screen
+- h-screen
+- pb values intended for fixed footer
+- page-level overflow-y-auto
+- nested full-height wrappers
+
+========================
+PHASE 5 — MOBILE ONLY IF NEEDED
+========================
+
+If desktop layout currently works, apply this structure only under mobile breakpoint.
+
+Desktop can keep current drawer/full layout if stable.
+
+Mobile must prioritize:
+- visible input
+- visible header
+- independently scrollable content
+
+========================
+PHASE 6 — VALIDATION
+========================
+
+Test on mobile viewport:
+
+1. Tap Scheduling Agent from sidebar.
+2. Page opens at top.
+3. Header/tabs visible.
+4. Chat input/footer visible immediately without scrolling.
+5. Middle content scrolls independently.
+6. Footer remains visible while scrolling.
+7. Last card is not hidden behind footer.
+8. Keyboard opens without hiding send button.
+9. Desktop still works.
+
+Return:
+- files changed
+- root/header/content/footer structure after fix
+- scroll container identified
+- validation results
