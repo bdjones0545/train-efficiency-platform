@@ -660,31 +660,34 @@ export default function AdminDashboardPage() {
                 <div className="grid grid-cols-3 gap-4 mt-2">
                   <div>
                     <p className="text-xs text-muted-foreground">Target</p>
-                    <p className="font-semibold" data-testid="text-weekly-target">${((revPressure.weeklyTargetCents ?? 0) / 100).toFixed(0)}</p>
+                    <p className="font-semibold" data-testid="text-weekly-target">${((revPressure.targetCents ?? 0) / 100).toFixed(0)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Achieved</p>
-                    <p className="font-semibold" data-testid="text-achieved">${((revPressure.achievedCents ?? 0) / 100).toFixed(0)}</p>
+                    <p className="font-semibold" data-testid="text-achieved">${((revPressure.currentCents ?? 0) / 100).toFixed(0)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Gap</p>
                     <p className="font-semibold text-red-600 dark:text-red-400" data-testid="text-gap">${((revPressure.gapCents ?? 0) / 100).toFixed(0)}</p>
                   </div>
                 </div>
-                {revPressure.requiredDailyRevenueCents > 0 && (
+                {(revPressure.requiredDailyRevenueCents ?? 0) > 0 && (
                   <p className="text-sm text-muted-foreground mt-1" data-testid="text-required-daily">
                     Need <strong>${((revPressure.requiredDailyRevenueCents ?? 0) / 100).toFixed(0)}/day</strong> to close the gap
                   </p>
                 )}
-                {revPressure.recoveryActions?.length > 0 && (
+                {revPressure.topRecoveryActions?.length > 0 && (
                   <div className="mt-2">
                     <p className="text-xs font-medium text-muted-foreground mb-1">Top Recovery Actions</p>
                     <ul className="space-y-1">
-                      {revPressure.recoveryActions.map((a: string, i: number) => (
-                        <li key={i} className="text-sm text-foreground" data-testid={`text-recovery-action-${i}`}>• {a}</li>
+                      {revPressure.topRecoveryActions.map((a: { action: string }, i: number) => (
+                        <li key={i} className="text-sm text-foreground" data-testid={`text-recovery-action-${i}`}>• {a.action}</li>
                       ))}
                     </ul>
                   </div>
+                )}
+                {revPressure.insight && (
+                  <p className="text-xs text-muted-foreground mt-1 italic" data-testid="text-pressure-insight">{revPressure.insight}</p>
                 )}
               </div>
             ) : (
@@ -709,15 +712,15 @@ export default function AdminDashboardPage() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Open Slots</p>
-                    <p className="font-semibold" data-testid="text-open-slots-value">${((lostRevenue.openSlotRevenueCents ?? 0) / 100).toFixed(0)}</p>
+                    <p className="font-semibold" data-testid="text-open-slots-value">${((lostRevenue.openSlotsValueCents ?? 0) / 100).toFixed(0)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Inactive Clients</p>
-                    <p className="font-semibold" data-testid="text-inactive-clients-value">${((lostRevenue.inactiveClientRevenueCents ?? 0) / 100).toFixed(0)}</p>
+                    <p className="font-semibold" data-testid="text-inactive-clients-value">${((lostRevenue.inactiveClientValueCents ?? 0) / 100).toFixed(0)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Unconverted Intros</p>
-                    <p className="font-semibold" data-testid="text-intro-value">${((lostRevenue.unconvertedIntroRevenueCents ?? 0) / 100).toFixed(0)}</p>
+                    <p className="font-semibold" data-testid="text-intro-value">${((lostRevenue.unconvertedIntrosValueCents ?? 0) / 100).toFixed(0)}</p>
                   </div>
                 </div>
                 {lostRevenue.topOpportunities?.length > 0 && (
@@ -793,24 +796,31 @@ export default function AdminDashboardPage() {
               <Skeleton className="h-20 w-full" />
             ) : sessionMix ? (
               <div className="space-y-2">
-                <div className="grid grid-cols-3 gap-3">
-                  {Object.entries(sessionMix.breakdown ?? {}).map(([category, data]: [string, any]) => (
-                    <div key={category} className="rounded-lg border p-3" data-testid={`card-mix-${category}`}>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{category}</p>
-                      <p className="text-lg font-bold" data-testid={`text-mix-pct-${category}`}>{data.percent?.toFixed(0) ?? 0}%</p>
-                      <p className="text-xs text-muted-foreground">{data.count ?? 0} sessions</p>
-                    </div>
-                  ))}
-                </div>
-                {(sessionMix.breakdown?.intro?.percent ?? 0) > 30 && (
+                {sessionMix.totalSessions === 0 ? (
+                  <p className="text-sm text-muted-foreground">No sessions this week — check back once sessions are scheduled.</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-3">
+                    {Object.entries(sessionMix.categoryBreakdown ?? {}).map(([category, count]: [string, any]) => (
+                      <div key={category} className="rounded-lg border p-3" data-testid={`card-mix-${category}`}>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{category}</p>
+                        <p className="text-lg font-bold" data-testid={`text-mix-pct-${category}`}>{sessionMix.percentageBreakdown?.[category] ?? 0}%</p>
+                        <p className="text-xs text-muted-foreground">{count ?? 0} sessions</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(sessionMix.percentageBreakdown?.["intro"] ?? 0) > 30 && (
                   <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 text-xs" data-testid="badge-high-intro">
                     High intro rate — convert more before adding new intros
                   </Badge>
                 )}
-                {(sessionMix.breakdown?.paid?.percent ?? 100) < 50 && (
+                {sessionMix.totalSessions > 0 && (sessionMix.percentageBreakdown?.["paid"] ?? 100) < 50 && (
                   <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 text-xs" data-testid="badge-low-paid">
                     Less than 50% paid sessions — revenue mix concern
                   </Badge>
+                )}
+                {sessionMix.insight && (
+                  <p className="text-xs text-muted-foreground italic" data-testid="text-mix-insight">{sessionMix.insight}</p>
                 )}
               </div>
             ) : (
@@ -832,7 +842,7 @@ export default function AdminDashboardPage() {
                   <div key={c.coachId} className="flex items-center justify-between border rounded-lg p-3" data-testid={`card-coach-prof-${c.coachId}`}>
                     <div>
                       <p className="font-medium text-sm" data-testid={`text-coach-name-${c.coachId}`}>{c.coachName}</p>
-                      <p className="text-xs text-muted-foreground">{(c.revenueHours ?? 0).toFixed(1)}h revenue · ${((c.estimatedPayoutCents ?? 0) / 100).toFixed(0)} payout</p>
+                      <p className="text-xs text-muted-foreground">{(c.hoursWorked ?? 0).toFixed(1)}h worked · ${((c.payoutCents ?? 0) / 100).toFixed(0)} payout</p>
                     </div>
                     <div className="text-right">
                       <p className="font-semibold" data-testid={`text-coach-revenue-${c.coachId}`}>${((c.revenueCents ?? 0) / 100).toFixed(0)}</p>
