@@ -204,6 +204,7 @@ export interface IStorage {
   undoAgentAction(id: string): Promise<boolean>;
 
   createAgentAction(entry: InsertAgentAction): Promise<AgentAction>;
+  getAgentActionById(id: string): Promise<AgentAction | undefined>;
   getAgentActions(orgId: string, opts?: { status?: string; clientId?: string; sinceDays?: number; limit?: number }): Promise<AgentAction[]>;
   updateAgentAction(id: string, data: Partial<AgentAction>): Promise<AgentAction | undefined>;
 
@@ -1537,6 +1538,11 @@ export class DatabaseStorage implements IStorage {
   async createAgentAction(entry: InsertAgentAction): Promise<AgentAction> {
     const [row] = await db.insert(agentActions).values(entry).returning();
     return row;
+  }
+
+  async getAgentActionById(id: string): Promise<AgentAction | undefined> {
+    const [row] = await db.select().from(agentActions).where(eq(agentActions.id, id));
+    return row || undefined;
   }
 
   async getAgentActions(orgId: string, opts: { status?: string; clientId?: string; sinceDays?: number; limit?: number } = {}): Promise<AgentAction[]> {

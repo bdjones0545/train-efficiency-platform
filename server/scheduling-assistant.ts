@@ -42,6 +42,7 @@ import {
   sendBookingRescheduleEmailToCoach,
   sendRecurringSessionsCreatedEmailToClient,
   sendRecurringSessionsCreatedEmailToCoach,
+  sendAgentOutreachEmail,
   type OrgBranding,
 } from "./email";
 
@@ -73,7 +74,8 @@ type GatedActionType =
   | "reschedule_booking"
   | "coach_create_session"
   | "create_confirmed_recurring_sessions"
-  | "send_scheduling_inquiry";
+  | "send_scheduling_inquiry"
+  | "send_drafted_outreach_email";
 
 interface PendingAction {
   pendingActionId: string;
@@ -693,6 +695,22 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           },
         },
         required: ["clientId", "reason", "goal"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_drafted_outreach_email",
+      description: "Send a previously drafted outreach email to a client. Use after draft_client_outreach returns an agentActionId. Use the two-call handshake: first call with confirmed: false to show a preview and get a pendingActionId, present the email details to the user and ask them to confirm, then call again with confirmed: true and the pendingActionId. Never invent a pendingActionId or agentActionId.",
+      parameters: {
+        type: "object",
+        properties: {
+          agentActionId: { type: "string", description: "The agentActionId returned by draft_client_outreach" },
+          confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
+          pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
+        },
+        required: ["agentActionId", "confirmed"],
       },
     },
   },
@@ -2933,25 +2951,115 @@ Return a JSON object with exactly these keys:
           reasoning: drafts.reasoning || "",
         };
 
+        let agentActionId: string | undefined;
         if (organizationId) {
-          createAgentAction({
-            organizationId,
-            clientId,
-            actionType: "outreach",
-            actionSubType: reason,
-            status: "pending",
-            clientName,
-            relatedSlot: targetSlot ? { label: targetSlot } : null,
-            messageContent: {
-              sms: outreachResult.sms,
-              emailSubject: outreachResult.emailSubject,
-              emailBody: outreachResult.emailBody,
-            },
-            followUpAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          }).catch(() => {});
+          try {
+            const action = await createAgentAction({
+              organizationId,
+              clientId,
+              actionType: "outreach",
+              actionSubType: reason,
+              status: "pending",
+              clientName,
+              relatedSlot: targetSlot ? { label: targetSlot } : null,
+              messageContent: {
+                sms: outreachResult.sms,
+                emailSubject: outreachResult.emailSubject,
+                emailBody: outreachResult.emailBody,
+              },
+              followUpAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            });
+            agentActionId = action?.id;
+          } catch (_) {}
         }
 
-        return JSON.stringify(outreachResult);
+        return JSON.stringify({ ...outreachResult, agentActionId });
+      }
+
+      case "send_drafted_outreach_email": {
+        if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
+          return JSON.stringify({ error: "Only coaches, admins, and staff can send outreach emails." });
+        }
+        const agentActionId_outreach: string | undefined = args.agentActionId;
+        if (!agentActionId_outreach) {
+          return JSON.stringify({ error: "agentActionId is required. Call draft_client_outreach first to get one." });
+        }
+
+        if (args.confirmed !== true) {
+          const agentAction = await storage.getAgentActionById(agentActionId_outreach);
+          if (!agentAction) {
+            return JSON.stringify({ error: "Agent action not found. The draft may have been deleted or the ID is invalid." });
+          }
+          if (agentAction.status !== "pending") {
+            return JSON.stringify({ error: `This outreach has already been ${agentAction.status}. Draft a new message to send again.` });
+          }
+          if (organizationId && agentAction.organizationId !== organizationId) {
+            return JSON.stringify({ error: "This draft belongs to a different organization." });
+          }
+          const mc = agentAction.messageContent as any;
+          const pending = createPendingAction(userId, "send_drafted_outreach_email", { agentActionId: agentActionId_outreach });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "send_drafted_outreach_email",
+            summary: `Send outreach email to ${agentAction.clientName}`,
+            recipient: agentAction.clientName,
+            emailSubject: mc?.emailSubject ?? "(no subject)",
+            emailBody: mc?.emailBody ?? "(no body)",
+            expiresAt: pending.expiresAt.toISOString(),
+            message: "Show the recipient name, subject, and email body to the user and ask them to confirm sending. Once confirmed, call send_drafted_outreach_email again with confirmed: true and the exact pendingActionId from this response.",
+          });
+        }
+
+        const pendingActionId_outreach: string | undefined = args.pendingActionId;
+        if (!pendingActionId_outreach) {
+          return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call send_drafted_outreach_email with confirmed: false first." });
+        }
+        const statusOutreach = getPendingActionStatus(pendingActionId_outreach);
+        if (statusOutreach.status === "expired") {
+          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
+        }
+        if (statusOutreach.status === "not_found") {
+          return JSON.stringify({ error: "pendingActionId not found. Call send_drafted_outreach_email with confirmed: false first." });
+        }
+        const pvOutreach = validatePendingAction(statusOutreach.action, userId, "send_drafted_outreach_email", args);
+        if (!pvOutreach.valid) return JSON.stringify({ error: pvOutreach.error });
+        consumePendingAction(pendingActionId_outreach);
+
+        const agentAction = await storage.getAgentActionById(agentActionId_outreach);
+        if (!agentAction) {
+          return JSON.stringify({ error: "Agent action not found after confirmation. The draft may have been deleted." });
+        }
+        if (agentAction.status !== "pending") {
+          return JSON.stringify({ error: `This outreach has already been ${agentAction.status}.` });
+        }
+
+        const clientUser = await storage.getUser(agentAction.clientId);
+        if (!clientUser || !clientUser.email) {
+          await storage.updateAgentAction(agentActionId_outreach, { status: "failed" });
+          return JSON.stringify({ error: "Client has no email address on file. Email not sent." });
+        }
+
+        const mc = agentAction.messageContent as any;
+        const emailSubject = mc?.emailSubject ?? "Message from your coach";
+        const emailBody = mc?.emailBody ?? "";
+        const clientFirstName = clientUser.firstName || agentAction.clientName || "there";
+        const orgBranding = await getOrgBranding(agentAction.organizationId);
+
+        try {
+          await sendAgentOutreachEmail(clientUser.email, clientFirstName, emailSubject, emailBody, orgBranding);
+          await storage.updateAgentAction(agentActionId_outreach, { status: "sent" });
+          console.log(`[send_drafted_outreach_email] Sent to ${clientUser.email} (action ${agentActionId_outreach})`);
+          return JSON.stringify({
+            success: true,
+            message: `Email sent to ${agentAction.clientName} (${clientUser.email}).`,
+            subject: emailSubject,
+          });
+        } catch (err: any) {
+          await storage.updateAgentAction(agentActionId_outreach, { status: "failed" });
+          console.error(`[send_drafted_outreach_email] Failed for action ${agentActionId_outreach}:`, err?.message);
+          return JSON.stringify({ error: "Failed to send email. The action has been marked as failed." });
+        }
       }
 
       case "get_daily_action_queue": {
@@ -3303,7 +3411,7 @@ Avoid: "Query complete. Here are the available time slots as requested."
 - **Booking Actions**: Find open slots, create, cancel, and reschedule bookings (with confirmation)
 
 ## Co-Pilot Mode (Critical Rules)
-You are a SUGGESTION-FIRST assistant. All mutating actions (book_session, cancel_booking, reschedule_booking, coach_create_session, send_scheduling_inquiry, create_confirmed_recurring_sessions) use a mandatory two-call handshake:
+You are a SUGGESTION-FIRST assistant. All mutating actions (book_session, cancel_booking, reschedule_booking, coach_create_session, send_scheduling_inquiry, create_confirmed_recurring_sessions, send_drafted_outreach_email) use a mandatory two-call handshake:
 
 ### Two-Call Handshake Protocol
 **Call 1 — Preview (confirmed: false):** Call the tool with confirmed: false and all required args. The tool returns {requiresConfirmation: true, pendingActionId, summary, message}. Present the summary clearly to the user in natural language and ask them to confirm.
@@ -3478,13 +3586,20 @@ The get_daily_action_queue now returns a ranked flat list (not just grouped) + t
 - Show performanceNote to acknowledge whether profile data was used or baseline was applied
 
 ## Action Tracking Rules (CRITICAL — Closed-Loop System)
-Every time you call **draft_client_outreach**, the system automatically records an action entry in the database. This powers the closed-loop follow-up system:
-- The entry starts with status: "pending" — the coach must mark it "sent" after actually sending the message
+Every time you call **draft_client_outreach**, the system automatically records an action entry in the database and returns an **agentActionId**. This powers the closed-loop follow-up system:
+- The entry starts with status: "pending"
 - If the client books after the message → system auto-marks as "booked"
 - If no response after 48h → system auto-marks as "ignored"
 - get_follow_up_actions reads these entries to surface who needs follow-up
 - get_operator_performance_metrics reads them to compute conversion rates
 
+**Sending the drafted email:**
+After draft_client_outreach returns an agentActionId, always offer to send the email draft directly using **send_drafted_outreach_email**. Use the two-call handshake:
+1. Call send_drafted_outreach_email with agentActionId and confirmed: false → returns preview + pendingActionId
+2. Show the recipient, subject, and email body to the coach and ask them to confirm
+3. Call again with confirmed: true and the pendingActionId → email is sent, action marked "sent"
+
+When a coach says "send it" or "yes, send the email" after seeing a draft → call send_drafted_outreach_email with confirmed: false using the agentActionId from the draft.
 When a coach says "I sent that message" or "I texted [name]" → remind them the system will auto-detect if a booking comes in.
 When a coach asks "did it work?" → call get_follow_up_actions to show current outcome status.
 

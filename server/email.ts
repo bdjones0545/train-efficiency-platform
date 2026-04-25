@@ -924,6 +924,21 @@ export async function sendRecurringSessionsCreatedEmailToCoach(
   await sendEmail(coachEmail, subject, html, b.name);
 }
 
+export async function sendAgentOutreachEmail(
+  clientEmail: string,
+  clientFirstName: string,
+  emailSubject: string,
+  emailBody: string,
+  org?: OrgBranding
+) {
+  const b = brand(org);
+  const html = emailShell(emailSubject, `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
+    <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px 0;">${emailBody.replace(/\n/g, "<br>")}</p>
+  `, org);
+  await sendEmail(clientEmail, emailSubject, html, b.name);
+}
+
 export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {
   const subject = "Reset your TrainEfficiency password";
   const html = emailShell("Reset Your Password", `

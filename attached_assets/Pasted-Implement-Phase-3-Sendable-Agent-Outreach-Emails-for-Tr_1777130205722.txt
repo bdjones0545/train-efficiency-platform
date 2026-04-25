@@ -1,0 +1,100 @@
+Implement Phase 3: Sendable Agent Outreach Emails for TrainEfficiency.
+
+Goal:
+Convert the existing draft_client_outreach tool from draft-only into a real confirmation-gated outreach workflow that can send emails to clients.
+
+Current state:
+- draft_client_outreach generates an SMS draft and email body.
+- It logs a pending agent_actions entry.
+- It does NOT send anything.
+- SendGrid is already real and functional.
+- SMS should NOT be implemented yet.
+
+Scope:
+1. Keep draft_client_outreach as the draft-generation tool.
+   It should continue to:
+   - Generate outreach copy.
+   - Return the drafted email body.
+   - Return the drafted SMS text if useful for manual copy/paste.
+   - Save the draft to agent_actions as status: "pending".
+
+2. Add a new confirmation-gated agent tool:
+   - send_drafted_outreach_email
+
+   Purpose:
+   Send a previously drafted outreach email to the intended client after coach/admin confirmation.
+
+3. Tool schema should require:
+   - pendingActionId or agentActionId
+   - confirmed boolean
+
+4. Use the existing two-call handshake pattern:
+   Phase A:
+   - confirmed !== true
+   - Load the pending outreach draft.
+   - Return requiresConfirmation: true
+   - Show recipient, subject, and email preview.
+   - Do NOT send.
+
+   Phase B:
+   - confirmed === true
+   - Require the exact pendingActionId / agentActionId.
+   - Validate the draft exists.
+   - Validate it is still pending.
+   - Validate the authenticated coach/admin has permission for that org/client.
+   - Send the email through SendGrid.
+   - Mark the agent_action as sent/completed.
+   - Store sentAt timestamp if supported.
+   - Return success summary.
+
+5. Add email function in server/email.ts:
+   - sendAgentOutreachEmail
+
+   It should:
+   - Use existing branding helpers.
+   - Use org colors if available.
+   - Use recipient client email.
+   - Use a clear subject.
+   - Include the drafted message body.
+   - Include TrainEfficiency footer/CTA if appropriate.
+
+6. Safety guards:
+   - Never send if client email is missing.
+   - Never send if draft status is not pending.
+   - Never send if org/client ownership does not match.
+   - Never send during draft generation.
+   - Never allow arbitrary raw email sending from the agent.
+   - Only send drafts created by draft_client_outreach.
+   - Email failure should not falsely mark the draft as sent.
+
+7. Logging:
+   Update agent_actions with:
+   - status: sent/completed
+   - sentAt timestamp if column exists
+   - delivery provider = sendgrid if metadata supports it
+   - error message if send fails
+
+8. UI behavior:
+   If the coach asks the agent to contact a client:
+   - Agent drafts the message first.
+   - UI shows the draft.
+   - Coach confirms.
+   - Agent calls send_drafted_outreach_email.
+   - UI displays “Email sent to [client name].”
+
+9. Important:
+   Do not add SMS sending in this phase.
+   Keep SMS as draft-only/manual copy-paste until phone persistence and SMS consent are implemented.
+
+10. Testing:
+   - Run TypeScript/build checks.
+   - Confirm draft_client_outreach still works.
+   - Confirm send_drafted_outreach_email preview does not send.
+   - Confirm confirmed send actually sends via SendGrid.
+   - Confirm a sent draft cannot be sent again.
+   - Confirm missing email blocks send.
+   - Confirm unauthorized org/client access blocks send.
+   - Confirm failed send keeps draft pending or marks failed, but not sent.
+
+Expected result:
+The TrainEfficiency agent should now be able to draft outreach and, after explicit coach/admin confirmation, send the drafted email to the client through SendGrid.
