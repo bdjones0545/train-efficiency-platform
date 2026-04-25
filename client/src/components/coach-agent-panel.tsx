@@ -389,7 +389,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  const { data: profile } = useQuery<{ role?: string }>({ queryKey: ["/api/profile"] });
+  const { data: profile, isLoading: profileLoading } = useQuery<{ role?: string }>({ queryKey: ["/api/profile"] });
   const userRole = profile?.role || "CLIENT";
   const isStaff = userRole === "COACH" || userRole === "ADMIN" || userRole === "STAFF";
 
@@ -511,6 +511,9 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
         full = await response.text();
       }
       setMessages([...newMessages, { role: "assistant", content: full }]);
+      qc.invalidateQueries({ queryKey: ["/api/bookings"] });
+      qc.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      qc.invalidateQueries({ queryKey: ["/api/coaches"] });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
       setMessages(prev => [
@@ -643,7 +646,14 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
               <div className="px-3 py-3">
                 {messages.length === 0 ? (
                   <div className="flex flex-col gap-3">
-                    {isStaff ? (
+                    {profileLoading ? (
+                      <div className="flex flex-col gap-3 pt-2" data-testid="role-loading-skeleton">
+                        <Skeleton className="h-24 w-full rounded-2xl" />
+                        <Skeleton className="h-10 w-full rounded-xl" />
+                        <Skeleton className="h-10 w-full rounded-xl" />
+                        <Skeleton className="h-10 w-full rounded-xl" />
+                      </div>
+                    ) : isStaff ? (
                       <>
                         {/* Command Center Card — only in full mode or when no context */}
                         {(mode === "full" || !context) && (

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ const statusColors: Record<string, string> = {
 
 export default function MyBookingsPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const { data: bookings, isLoading } = useQuery<BookingWithDetails[]>({
@@ -70,13 +72,17 @@ export default function MyBookingsPage() {
     },
   });
 
-  const upcoming = bookings?.filter(
+  const upcoming = (bookings?.filter(
     (b) => ["CONFIRMED", "PENDING"].includes(b.status) && !isPast(parseISO(b.startAt as unknown as string))
-  ) || [];
+  ) || []).sort((a, b) =>
+    parseISO(a.startAt as unknown as string).getTime() - parseISO(b.startAt as unknown as string).getTime()
+  );
 
-  const past = bookings?.filter(
+  const past = (bookings?.filter(
     (b) => !["CONFIRMED", "PENDING"].includes(b.status) || isPast(parseISO(b.startAt as unknown as string))
-  ) || [];
+  ) || []).sort((a, b) =>
+    parseISO(b.startAt as unknown as string).getTime() - parseISO(a.startAt as unknown as string).getTime()
+  );
 
   const renderBooking = (booking: BookingWithDetails, showCancel = false) => (
     <Card key={booking.id} className="p-4" data-testid={`card-booking-${booking.id}`}>
@@ -193,7 +199,7 @@ export default function MyBookingsPage() {
             <Card className="p-8 text-center">
               <Calendar className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">No upcoming sessions</p>
-              <Button variant="outline" className="mt-3" onClick={() => window.location.href = "/coaches"}>
+              <Button variant="outline" className="mt-3" onClick={() => navigate("/coaches")}>
                 Browse Coaches
               </Button>
             </Card>

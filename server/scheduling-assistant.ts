@@ -97,7 +97,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "book_session",
-      description: "Book a session for the current user. Only use when the user has confirmed they want to book.",
+      description: "Book a session for the current user. You MUST pass confirmed: true — only set this after the user has explicitly said they want to proceed with a specific time slot. Never call with confirmed: true unless the user has clearly confirmed.",
       parameters: {
         type: "object",
         properties: {
@@ -105,8 +105,9 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           serviceId: { type: "string", description: "The service ID" },
           startAt: { type: "string", description: "Session start time in ISO 8601 format" },
           endAt: { type: "string", description: "Session end time in ISO 8601 format" },
+          confirmed: { type: "boolean", description: "Must be true. Only set to true after the user has explicitly confirmed they want this specific booking." },
         },
-        required: ["coachId", "serviceId", "startAt", "endAt"],
+        required: ["coachId", "serviceId", "startAt", "endAt", "confirmed"],
       },
     },
   },
@@ -122,13 +123,14 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "cancel_booking",
-      description: "Cancel a specific booking by ID. Only use when the user has confirmed cancellation.",
+      description: "Cancel a specific booking by ID. You MUST pass confirmed: true — only set this after explicitly restating the booking details to the user and receiving clear confirmation to cancel.",
       parameters: {
         type: "object",
         properties: {
           bookingId: { type: "string", description: "The booking ID to cancel" },
+          confirmed: { type: "boolean", description: "Must be true. Only set to true after you have shown the user what will be cancelled and they have explicitly confirmed." },
         },
-        required: ["bookingId"],
+        required: ["bookingId", "confirmed"],
       },
     },
   },
@@ -274,15 +276,16 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "reschedule_booking",
-      description: "Reschedule an existing booking to a new time (coach/admin only). Only call this after the user has explicitly confirmed the new time.",
+      description: "Reschedule an existing booking to a new time (coach/admin only). You MUST pass confirmed: true — only set this after showing the user the current booking, proposing the new time, and receiving explicit confirmation.",
       parameters: {
         type: "object",
         properties: {
           bookingId: { type: "string", description: "The ID of the booking to reschedule" },
           newStartAt: { type: "string", description: "New start time in ISO 8601 format" },
           newEndAt: { type: "string", description: "New end time in ISO 8601 format" },
+          confirmed: { type: "boolean", description: "Must be true. Only set to true after you have shown the user the current and new booking details and they have explicitly confirmed the reschedule." },
         },
-        required: ["bookingId", "newStartAt", "newEndAt"],
+        required: ["bookingId", "newStartAt", "newEndAt", "confirmed"],
       },
     },
   },
@@ -954,6 +957,9 @@ async function executeTool(
       }
 
       case "book_session": {
+        if (args.confirmed !== true) {
+          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before booking. Please restate the session details (coach, service, date, time) to the user and ask them to confirm before proceeding." });
+        }
         if (!userId) return JSON.stringify({ error: "You need to be logged in to book a session." });
         const { coachId, serviceId, startAt, endAt } = args;
 
@@ -1106,6 +1112,9 @@ async function executeTool(
       }
 
       case "cancel_booking": {
+        if (args.confirmed !== true) {
+          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before cancelling. Please restate the booking details (service, coach, date, time) to the user and ask them to confirm the cancellation before proceeding." });
+        }
         if (!userId) return JSON.stringify({ error: "You need to be logged in." });
         const booking = await storage.getBooking(args.bookingId);
         if (!booking) return JSON.stringify({ error: "Booking not found." });
@@ -1528,6 +1537,9 @@ async function executeTool(
       }
 
       case "reschedule_booking": {
+        if (args.confirmed !== true) {
+          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before rescheduling. Please show the user the current booking details and the proposed new time, then ask them to confirm before proceeding." });
+        }
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can reschedule bookings." });
         }
@@ -2780,16 +2792,17 @@ Avoid: "Query complete. Here are the available time slots as requested."
 ## Co-Pilot Mode (Critical Rules)
 You are a SUGGESTION-FIRST assistant. Before executing any booking action:
 
-1. **For new bookings**: Always check availability first (use get_available_slots or get_org_schedule), then present 2–3 specific time options clearly numbered. Ask the user to pick one. Only book AFTER they confirm a specific option.
+1. **For new bookings**: Always check availability first (use get_available_slots or get_org_schedule), then present 2–3 specific time options clearly numbered. Ask the user to pick one. When the user explicitly confirms a specific slot, call book_session with confirmed: true. Never set confirmed: true unless the user has clearly said yes to a specific time.
    Example: "Here are 3 open times for Mike next week:
    1. Tuesday at 9:00 AM with Coach Bryan
    2. Wednesday at 2:00 PM with Coach Bryan  
    3. Friday at 10:00 AM with Coach Hunter
    Which works best? I'll get it booked."
+   Then after user says "Option 1" or "Tuesday at 9": call book_session with confirmed: true.
 
-2. **For rescheduling**: First show the current booking details, then offer 2–3 alternative slots. Only reschedule after confirmation.
+2. **For rescheduling**: First show the current booking details, then offer 2–3 alternative slots. When the user confirms the new time, call reschedule_booking with confirmed: true. Never set confirmed: true before the user has explicitly agreed to the new time.
 
-3. **For cancellations**: Always confirm by restating what will be cancelled before doing it.
+3. **For cancellations**: Always restate what will be cancelled (service, coach, date, time) and ask the user to confirm. Only after the user explicitly says to proceed, call cancel_booking with confirmed: true. Never cancel without this explicit confirmation step.
 
 4. **For availability/schedule changes**: These can be executed immediately without preview.
 

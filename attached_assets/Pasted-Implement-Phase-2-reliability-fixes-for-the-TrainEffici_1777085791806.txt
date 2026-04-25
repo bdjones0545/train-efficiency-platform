@@ -1,0 +1,67 @@
+Implement Phase 2 reliability fixes for the TrainEfficiency Scheduling Agent.
+
+Fix only these items:
+
+1. Add a hard confirmation gate for destructive/committing agent tools
+File: server/scheduling-assistant.ts
+
+For tool calls that create, cancel, or reschedule bookings:
+- book_session
+- cancel_booking
+- reschedule_booking
+
+Require an explicit confirmation flag in the tool arguments before execution.
+
+Add/verify an argument like:
+confirmed: boolean
+
+If confirmed !== true:
+- Do not execute the booking/cancel/reschedule.
+- Return a response telling the assistant to restate the action and ask the user to confirm.
+- Example: “Confirmation required before completing this action.”
+
+This must be code-level protection, not just prompt instructions.
+
+2. Update the scheduling assistant tool schema/prompt
+File: server/scheduling-assistant.ts
+
+Update the tool definitions and system prompt so the model knows:
+- It may gather details freely.
+- It may show available options.
+- It may draft the intended action.
+- It must only call book_session/cancel_booking/reschedule_booking with confirmed: true after the user clearly confirms.
+
+3. Add cache invalidation after successful chat booking/cancel/reschedule
+File: client/src/components/coach-agent-panel.tsx
+
+After a successful scheduling-agent chat response completes, invalidate:
+- /api/bookings
+- /api/sessions/open
+- /api/coaches
+
+This ensures My Bookings and availability are fresh after agent actions.
+
+4. Add role loading skeleton
+File: client/src/components/coach-agent-panel.tsx
+
+While /api/profile is still loading and profile is undefined, do not flash client UI.
+Show a simple skeleton state instead.
+
+5. Sort My Bookings
+File: client/src/pages/my-bookings.tsx
+
+Sort:
+- upcoming bookings by startAt ascending
+- past bookings by startAt descending
+
+6. Replace hard navigation
+File: client/src/pages/my-bookings.tsx
+
+Replace window.location.href = "/coaches" with wouter navigation.
+
+After implementation:
+- Run typecheck/build.
+- Confirm no CLIENT role flash.
+- Confirm bookings appear in chronological order.
+- Confirm agent cannot book/cancel/reschedule unless confirmed=true.
+- Report files changed and remaining risks.
