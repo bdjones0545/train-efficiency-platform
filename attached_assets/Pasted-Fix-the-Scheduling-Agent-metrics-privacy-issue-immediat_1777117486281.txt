@@ -1,0 +1,188 @@
+Fix the Scheduling Agent metrics/privacy issue immediately.
+
+Current issue:
+When a user is not signed in, the Scheduling Agent can display real business metrics. This is a data privacy bug.
+
+Goal:
+1. Every authenticated org only sees its own metrics.
+2. Unauthenticated users see demo/sample metrics only.
+3. No real org revenue, bookings, clients, churn, open slots, coach data, or business intelligence can leak publicly.
+
+========================
+PHASE 1 — AUDIT DATA SOURCES
+========================
+
+Find every place the Scheduling Agent dashboard pulls metrics from:
+
+- Chat tab headline
+- Ops tab
+- Revenue tab
+- Alerts badge
+- Quick actions
+- Open slots
+- Revenue estimates
+- Coach revenue
+- Top clients
+- Churn risks
+- Upsell opportunities
+- Operations digest
+- Revenue summary
+- Weekly progress
+- Revenue pressure
+- Any cached query in coach-agent-panel.tsx
+
+List each API endpoint/query used.
+
+========================
+PHASE 2 — AUTH + ORG SCOPING
+========================
+
+For every protected metric endpoint, enforce:
+
+- user must be authenticated
+- user must belong to an organization
+- query must use user.organizationId, not a hardcoded org id
+- never accept organizationId from client query params unless verified
+- staff/admin/coach only see their own org data unless superadmin logic exists
+
+Affected endpoint types likely include:
+- /api/scheduling/operations-digest
+- /api/scheduling/revenue-summary
+- /api/scheduling/revenue-by-period
+- /api/scheduling/revenue-forecast
+- /api/scheduling/revenue-pressure
+- /api/scheduling/lost-revenue
+- /api/scheduling/revenue-quality
+- /api/scheduling/session-mix
+- /api/scheduling/coach-profitability
+- /api/scheduling/operator-performance
+- /api/scheduling/daily-action-queue
+- any agent tool route that returns org-wide metrics
+
+If unauthenticated:
+- return 401 for protected endpoints
+- do not return real data
+
+========================
+PHASE 3 — DEMO MODE FOR UNSIGNED USERS
+========================
+
+If the Scheduling Agent is accessible without login, it must enter DEMO MODE.
+
+Demo mode:
+- use static sample data only
+- clearly label UI as “Demo”
+- never call real protected metrics endpoints
+- never show real client names, coach names, revenue, bookings, or org info
+
+Demo sample examples:
+- Open slots: 12
+- Open revenue estimate: ~$840
+- Booked this week: 18
+- Waitlist: 3
+- Last 30d revenue: $4,250
+- MRR: $600
+- Avg session value: $65
+- Churn risks: 2 sample clients with fake names
+- Upsell opportunities: 4
+- Coach names: Coach Alex, Coach Riley
+- Top clients: Sample Client A, Sample Client B
+
+UI label:
+- Add pill: “Demo Mode”
+- Add small note:
+  “Sign in to view your real scheduling and revenue metrics.”
+
+========================
+PHASE 4 — FRONTEND QUERY GATING
+========================
+
+In coach-agent-panel.tsx and any agent dashboard component:
+
+If no authenticated user:
+- do not run protected queries
+- use demo constants
+- show Demo Mode badge
+
+If authenticated user:
+- run protected queries normally
+- data must come from authenticated org only
+
+Use enabled flags in React Query:
+enabled: !!user && role is coach/admin/staff
+
+Do not allow stale cached real data to display after logout.
+
+On logout:
+- clear/invalidate protected query cache
+- reset agent dashboard state
+- remove pending metric state
+
+========================
+PHASE 5 — SEPARATE CLIENT VS COACH AGENT DATA
+========================
+
+Client/user-facing Scheduling Agent must not load coach business metrics.
+
+For CLIENT role:
+- hide Revenue tab
+- hide Ops business metrics if they expose org-wide data
+- show only:
+  - my upcoming sessions
+  - available times
+  - book/reschedule/cancel options
+
+Coach/admin/staff:
+- can see business metrics for their own org only
+
+Unauthenticated:
+- demo mode only, or redirect/sign-in prompt depending current product decision
+
+========================
+PHASE 6 — SERVER-SIDE SAFETY TESTS
+========================
+
+Test directly with API calls:
+
+1. Not logged in → revenue-summary returns 401 or demo endpoint only
+2. Not logged in → operations-digest returns 401 or no real data
+3. Logged in as Org A coach → sees Org A metrics only
+4. Logged in as Org B coach → sees Org B metrics only
+5. Org A user cannot pass orgId=OrgB to access Org B data
+6. Client role cannot access coach revenue endpoints
+7. Public landing page cannot access private metrics endpoints
+
+========================
+PHASE 7 — FRONTEND VALIDATION
+========================
+
+Test:
+
+1. Log out completely.
+2. Open Scheduling Agent.
+3. Confirm Demo Mode badge appears.
+4. Confirm no real names appear.
+5. Confirm no real revenue appears.
+6. Sign in as coach for Org A.
+7. Confirm Org A metrics only.
+8. Sign out.
+9. Confirm metrics immediately clear and switch to demo.
+10. Sign in as another org.
+11. Confirm previous org data never flashes.
+12. Sign in as client.
+13. Confirm no Revenue tab or coach metrics.
+
+========================
+PHASE 8 — SECURITY SUMMARY
+========================
+
+Return:
+- endpoints audited
+- endpoints protected
+- frontend queries gated
+- demo constants added
+- cache clearing behavior
+- role behavior
+- validation results
+
+This is a privacy-critical fix. Prioritize correctness over UI polish.
