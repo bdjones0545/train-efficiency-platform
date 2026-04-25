@@ -479,7 +479,7 @@ export default function OrgLandingPage() {
         )}
       </nav>
 
-      <section className="relative pt-32 pb-20 px-6 overflow-hidden min-h-[70vh] flex items-center" data-testid="section-hero">
+      <section className="relative pt-20 md:pt-32 pb-12 md:pb-20 px-6 overflow-hidden md:min-h-[70vh] flex items-start md:items-center" data-testid="section-hero">
         {heroMedia.length > 0 ? (
           <>
             <div className="absolute inset-0 pointer-events-none overflow-hidden" data-testid="hero-media-bg">
