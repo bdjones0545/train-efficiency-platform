@@ -392,6 +392,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const { data: profile, isLoading: profileLoading } = useQuery<{ role?: string }>({ queryKey: ["/api/profile"] });
   const userRole = profile?.role || "CLIENT";
   const isStaff = userRole === "COACH" || userRole === "ADMIN" || userRole === "STAFF";
+  const isAdmin = userRole === "ADMIN";
 
   const contextPrompts = context ? PAGE_QUICK_PROMPTS[context.sourcePage] : null;
   const QUICK_ACTIONS = isStaff
@@ -478,6 +479,16 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
+
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || isLoading) return;
@@ -511,9 +522,12 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
         full = await response.text();
       }
       setMessages([...newMessages, { role: "assistant", content: full }]);
-      qc.invalidateQueries({ queryKey: ["/api/bookings"] });
-      qc.invalidateQueries({ queryKey: ["/api/sessions/open"] });
-      qc.invalidateQueries({ queryKey: ["/api/coaches"] });
+      const bookingActionDetected = /\b(booked|booking confirmed|cancell|rescheduled|session created)\b/i.test(full);
+      if (bookingActionDetected) {
+        qc.invalidateQueries({ queryKey: ["/api/bookings"] });
+        qc.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+        qc.invalidateQueries({ queryKey: ["/api/coaches"] });
+      }
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
       setMessages(prev => [
@@ -938,6 +952,9 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                   onKeyDown={handleKeyDown}
                   disabled={isLoading}
                   className="flex-1"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                 />
                 <Button data-testid="send-message" onClick={() => sendMessage()} disabled={isLoading || !input.trim()} size="icon" className="shrink-0">
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -1287,7 +1304,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
               <div>
                 <h3 className="font-semibold text-sm mb-1">Automation Level</h3>
                 <p className="text-xs text-muted-foreground mb-4">Controls how proactively the agent operates for scheduling and revenue actions.</p>
-                <div className="space-y-3">
+                <div className={`space-y-3 ${!isAdmin ? "opacity-50 pointer-events-none" : ""}`}>
                   {[
                     { level: 1, label: "Co-Pilot (Suggest Only)", description: "All actions require your explicit confirmation. Insights are surfaced on demand.", icon: <MessageSquare className="h-4 w-4 text-blue-500" /> },
                     { level: 2, label: "Assisted (Auto-Inform)", description: "Low-risk actions (waitlist adds, package alerts) run automatically with notifications. Bookings still require confirmation.", icon: <Zap className="h-4 w-4 text-yellow-500" /> },
@@ -1304,9 +1321,13 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     </button>
                   ))}
                 </div>
-                <Button className="mt-4 w-full" data-testid="save-automation-level" onClick={() => saveAutomationLevel(automationLevel)} disabled={savingLevel}>
-                  {savingLevel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Save Automation Level
-                </Button>
+                {isAdmin ? (
+                  <Button className="mt-4 w-full" data-testid="save-automation-level" onClick={() => saveAutomationLevel(automationLevel)} disabled={savingLevel}>
+                    {savingLevel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Save Automation Level
+                  </Button>
+                ) : (
+                  <p className="mt-4 text-xs text-muted-foreground text-center" data-testid="automation-level-readonly">Only admins can change this setting.</p>
+                )}
               </div>
               <Separator />
               <div>

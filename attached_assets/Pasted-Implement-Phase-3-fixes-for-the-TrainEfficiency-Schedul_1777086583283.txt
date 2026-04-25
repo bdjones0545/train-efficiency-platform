@@ -1,0 +1,66 @@
+Implement Phase 3 fixes for the TrainEfficiency Scheduling Agent.
+
+Fix only these items:
+
+1. Extend confirmed gate to coach_create_session
+File: server/scheduling-assistant.ts
+- Add confirmed: boolean to the coach_create_session tool schema and required array.
+- At the very top of executeTool case "coach_create_session", before any DB write:
+  if (args.confirmed !== true) return JSON.stringify({
+    requiresConfirmation: true,
+    message: "Confirmation required before creating this session. Please restate the client, coach, service, and time to the coach and ask them to confirm."
+  });
+
+2. Extend confirmed gate to create_confirmed_recurring_sessions
+File: server/scheduling-assistant.ts
+- Add confirmed: boolean to the create_confirmed_recurring_sessions tool schema and required array.
+- Before creating sessions:
+  if (args.confirmed !== true) return JSON.stringify({
+    requiresConfirmation: true,
+    message: "Confirmation required. You have already shown the preview. Ask the coach to explicitly confirm they want to create all listed sessions, then retry with confirmed: true."
+  });
+
+3. Extend confirmed gate to send_scheduling_inquiry
+File: server/scheduling-assistant.ts
+- Add confirmed: boolean to the send_scheduling_inquiry tool schema and required array.
+- Before sending/logging the inquiry:
+  if (args.confirmed !== true) return JSON.stringify({
+    requiresConfirmation: true,
+    message: "Confirmation required before sending this scheduling inquiry. Restate who it will be sent to and the message content, then ask the user to confirm."
+  });
+
+4. Narrow cache invalidation after chat
+File: client/src/components/coach-agent-panel.tsx
+After streaming completes, only invalidate:
+/api/bookings
+/api/sessions/open
+/api/coaches
+
+when:
+const bookingActionDetected = /\b(booked|booking confirmed|cancell|rescheduled|session created)\b/i.test(full);
+
+5. Fix automation level role gating
+File: client/src/components/coach-agent-panel.tsx
+- Add const isAdmin = userRole === "ADMIN";
+- For non-admin staff, make automation controls read-only/disabled.
+- Replace Save button with:
+“Only admins can change this setting.”
+
+6. Fix iOS keyboard scroll reliability
+File: client/src/components/coach-agent-panel.tsx
+- Add a visualViewport resize listener.
+- On resize, call messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+- Clean up the listener on unmount.
+
+7. Fix chat input iOS behavior
+File: client/src/components/coach-agent-panel.tsx
+Add to the chat input:
+autoCorrect="off"
+autoCapitalize="off"
+spellCheck={false}
+
+After implementation:
+- Run typecheck.
+- Confirm no new TS errors in changed files.
+- Confirm coach_create_session, create_confirmed_recurring_sessions, and send_scheduling_inquiry return requiresConfirmation when confirmed is absent.
+- Report files changed and remaining risks.

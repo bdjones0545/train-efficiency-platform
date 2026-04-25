@@ -198,7 +198,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "coach_create_session",
-      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name. Only use AFTER the user has confirmed a specific time.",
+      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name. You MUST pass confirmed: true — only set this after presenting the client, coach, service, and time to the coach and receiving explicit confirmation.",
       parameters: {
         type: "object",
         properties: {
@@ -209,8 +209,9 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           clientFirstName: { type: "string", description: "Walk-in client first name (if no clientId)" },
           clientLastName: { type: "string", description: "Walk-in client last name (if no clientId)" },
           location: { type: "string", description: "Session location (optional)" },
+          confirmed: { type: "boolean", description: "Must be true. Only set to true after the coach has explicitly confirmed the client, service, and time." },
         },
-        required: ["coachId", "serviceId", "startAt"],
+        required: ["coachId", "serviceId", "startAt", "confirmed"],
       },
     },
   },
@@ -363,13 +364,14 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "send_scheduling_inquiry",
-      description: "Send a scheduling inquiry email to the organization's configured scheduling contact on behalf of the current user. Only use this if the org has allowUserInquiryEmails enabled. Always confirm with the user before sending.",
+      description: "Send a scheduling inquiry email to the organization's configured scheduling contact on behalf of the current user. Only use this if the org has allowUserInquiryEmails enabled. You MUST pass confirmed: true — only set this after restating the recipient and message content to the user and receiving their explicit confirmation to send.",
       parameters: {
         type: "object",
         properties: {
           message: { type: "string", description: "The user's inquiry message to forward" },
+          confirmed: { type: "boolean", description: "Must be true. Only set to true after the user has explicitly confirmed they want this inquiry sent." },
         },
-        required: ["message"],
+        required: ["message", "confirmed"],
       },
     },
   },
@@ -479,7 +481,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "create_confirmed_recurring_sessions",
-      description: "Create recurring sessions for confirmed available slots. Only call AFTER presenting the preview plan to the coach and receiving explicit confirmation. Never call without prior preview and user approval.",
+      description: "Create recurring sessions for confirmed available slots. Only call AFTER presenting the preview plan to the coach and receiving explicit confirmation. You MUST pass confirmed: true — only set this after the coach has reviewed the full slot list and said yes.",
       parameters: {
         type: "object",
         properties: {
@@ -498,8 +500,9 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             description: "Array of {startAt, endAt} pairs to book — taken from the preview_recurring_sessions output",
           },
           location: { type: "string", description: "Session location (optional)" },
+          confirmed: { type: "boolean", description: "Must be true. Only set to true after the coach has reviewed the preview slot list and explicitly confirmed they want all sessions created." },
         },
-        required: ["clientId", "coachId", "serviceId", "confirmedSlots"],
+        required: ["clientId", "coachId", "serviceId", "confirmedSlots", "confirmed"],
       },
     },
   },
@@ -1187,6 +1190,9 @@ async function executeTool(
       }
 
       case "coach_create_session": {
+        if (args.confirmed !== true) {
+          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before creating this session. Please restate the client, coach, service, and time to the coach and ask them to confirm." });
+        }
         if (userRole !== "COACH" && userRole !== "ADMIN") {
           return JSON.stringify({ error: "Only coaches and admins can create sessions for clients." });
         }
@@ -1954,6 +1960,9 @@ async function executeTool(
       }
 
       case "send_scheduling_inquiry": {
+        if (args.confirmed !== true) {
+          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required before sending this scheduling inquiry. Restate who it will be sent to and the message content, then ask the user to confirm." });
+        }
         if (!organizationId) return JSON.stringify({ error: "No organization context." });
         const org = await storage.getOrganizationById(organizationId);
         if (!org) return JSON.stringify({ error: "Organization not found." });
@@ -2268,6 +2277,9 @@ async function executeTool(
       }
 
       case "create_confirmed_recurring_sessions": {
+        if (args.confirmed !== true) {
+          return JSON.stringify({ requiresConfirmation: true, message: "Confirmation required. You have already shown the preview. Ask the coach to explicitly confirm they want to create all listed sessions, then retry with confirmed: true." });
+        }
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can create sessions." });
         }
