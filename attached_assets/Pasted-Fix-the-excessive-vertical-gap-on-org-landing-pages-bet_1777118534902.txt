@@ -1,0 +1,71 @@
+Fix the excessive vertical gap on org landing pages between the header/nav and the hero title.
+
+Current issue:
+On mobile, there is a huge empty space between the org header and the hero content/title. This makes the landing page feel broken and pushes the CTA too far down.
+
+Goal:
+Tighten the hero layout so the headline, subtitle, and Book a Session button appear higher on mobile while still looking premium.
+
+Requirements:
+
+1. Find the org landing page hero component.
+Likely route/component:
+- /org/:slug
+- public org landing page component
+- hero section wrapper
+
+2. Audit vertical spacing:
+Check for:
+- min-h-screen
+- h-screen
+- large padding-top values
+- spacer divs
+- hero media reserved height
+- fixed header offset
+- margin-top classes like mt-24, pt-32, py-32
+- mobile-specific height classes
+
+3. Reduce mobile hero top spacing.
+Target:
+- Header/nav
+- then ~32–56px gap max
+- then social icons / badge
+- then hero headline
+
+Do NOT leave a massive empty hero spacer.
+
+4. Adjust responsive layout:
+Mobile:
+- hero should not force full viewport height unless media is visible
+- use min-h-[calc(100dvh-HEADER_HEIGHT)] only if needed
+- reduce pt/py values significantly
+- CTA should appear above the fold on common iPhone sizes
+
+Desktop:
+- can retain more spacious premium hero layout if it looks good
+
+5. If hero media exists:
+- Keep media background/object-cover behavior
+- Keep overlay readable
+- Do not crop text
+- Still avoid excessive blank spacing
+
+6. If no hero media exists:
+- Use compact hero layout
+- Do not reserve media/carousel height
+- headline should move up
+
+7. Validate:
+- Open org landing page on mobile
+- Confirm no huge gap after header
+- Confirm headline visible without scrolling
+- Confirm Book a Session CTA is visible or nearly visible above fold
+- Confirm desktop layout still looks good
+- Confirm pages with hero media still look correct
+- Confirm pages without hero media look compact and intentional
+
+Return:
+- file changed
+- spacing classes removed/changed
+- before/after behavior
+- validation results
