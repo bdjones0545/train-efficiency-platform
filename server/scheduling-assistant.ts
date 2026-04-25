@@ -95,6 +95,34 @@ function createPendingAction(
 ): PendingAction {
   purgeExpiredPending();
   const now = new Date();
+  const argsKey = JSON.stringify(normalizedArgs);
+
+  // Dedup: return existing non-expired action for same user + actionType + args
+  let existingAction: PendingAction | undefined;
+  pendingActions.forEach((a) => {
+    if (
+      !existingAction &&
+      a.userId === userId &&
+      a.actionType === actionType &&
+      JSON.stringify(a.normalizedArgs) === argsKey &&
+      a.expiresAt > now
+    ) {
+      existingAction = a;
+    }
+  });
+  if (existingAction) return existingAction;
+
+  // Max 5 active pending actions per user — delete oldest first
+  const userEntries: [string, PendingAction][] = [];
+  pendingActions.forEach((a, id) => {
+    if (a.userId === userId) userEntries.push([id, a]);
+  });
+  userEntries.sort((x, y) => x[1].createdAt.getTime() - y[1].createdAt.getTime());
+  while (userEntries.length >= 5) {
+    const oldest = userEntries.shift()!;
+    pendingActions.delete(oldest[0]);
+  }
+
   const action: PendingAction = {
     pendingActionId: randomUUID(),
     userId,
@@ -118,6 +146,18 @@ function consumePendingAction(id: string): PendingAction | undefined {
   const a = getPendingAction(id);
   if (a) pendingActions.delete(id);
   return a;
+}
+
+function getPendingActionStatus(
+  id: string
+): { status: "found"; action: PendingAction } | { status: "expired" } | { status: "not_found" } {
+  const a = pendingActions.get(id);
+  if (!a) return { status: "not_found" };
+  if (a.expiresAt < new Date()) {
+    pendingActions.delete(id);
+    return { status: "expired" };
+  }
+  return { status: "found", action: a };
 }
 
 function validatePendingAction(
@@ -1079,6 +1119,7 @@ async function executeTool(
             pendingActionId: pending.pendingActionId,
             actionType: "book_session",
             summary: `Book session: coach ${args.coachId}, service ${args.serviceId}, starting ${args.startAt}`,
+            expiresAt: pending.expiresAt.toISOString(),
             message: "Restate the session details clearly to the user and ask them to confirm. Once they confirm, call book_session again with confirmed: true and the exact pendingActionId from this response.",
           });
         }
@@ -1086,10 +1127,14 @@ async function executeTool(
         if (!pendingActionId_book) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call book_session with confirmed: false first to generate one." });
         }
-        const pendingBook = getPendingAction(pendingActionId_book);
-        if (!pendingBook) {
-          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call book_session with confirmed: false again to generate a new one." });
+        const statusBook = getPendingActionStatus(pendingActionId_book);
+        if (statusBook.status === "expired") {
+          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
+        if (statusBook.status === "not_found") {
+          return JSON.stringify({ error: "pendingActionId not found. Call book_session with confirmed: false first to generate one." });
+        }
+        const pendingBook = statusBook.action;
         const pvBook = validatePendingAction(pendingBook, userId, "book_session", args);
         if (!pvBook.valid) return JSON.stringify({ error: pvBook.error });
         consumePendingAction(pendingActionId_book);
@@ -1252,6 +1297,7 @@ async function executeTool(
             pendingActionId: pending.pendingActionId,
             actionType: "cancel_booking",
             summary: `Cancel booking ID: ${args.bookingId}`,
+            expiresAt: pending.expiresAt.toISOString(),
             message: "Restate what will be cancelled (service, coach, date, time) to the user and ask them to confirm. Once they confirm, call cancel_booking again with confirmed: true and the exact pendingActionId from this response.",
           });
         }
@@ -1259,10 +1305,14 @@ async function executeTool(
         if (!pendingActionId_cancel) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call cancel_booking with confirmed: false first to generate one." });
         }
-        const pendingCancel = getPendingAction(pendingActionId_cancel);
-        if (!pendingCancel) {
-          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call cancel_booking with confirmed: false again to generate a new one." });
+        const statusCancel = getPendingActionStatus(pendingActionId_cancel);
+        if (statusCancel.status === "expired") {
+          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
+        if (statusCancel.status === "not_found") {
+          return JSON.stringify({ error: "pendingActionId not found. Call cancel_booking with confirmed: false first to generate one." });
+        }
+        const pendingCancel = statusCancel.action;
         const pvCancel = validatePendingAction(pendingCancel, userId, "cancel_booking", args);
         if (!pvCancel.valid) return JSON.stringify({ error: pvCancel.error });
         consumePendingAction(pendingActionId_cancel);
@@ -1352,6 +1402,7 @@ async function executeTool(
             pendingActionId: pending.pendingActionId,
             actionType: "coach_create_session",
             summary: `Create session: coach ${args.coachId}, service ${args.serviceId}, client ${args.clientId || `${args.clientFirstName} ${args.clientLastName}`}, starting ${args.startAt}`,
+            expiresAt: pending.expiresAt.toISOString(),
             message: "Restate the client, coach, service, and time to the coach and ask them to confirm. Once confirmed, call coach_create_session again with confirmed: true and the exact pendingActionId from this response.",
           });
         }
@@ -1359,10 +1410,14 @@ async function executeTool(
         if (!pendingActionId_create) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call coach_create_session with confirmed: false first to generate one." });
         }
-        const pendingCreate = getPendingAction(pendingActionId_create);
-        if (!pendingCreate) {
-          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call coach_create_session with confirmed: false again to generate a new one." });
+        const statusCreate = getPendingActionStatus(pendingActionId_create);
+        if (statusCreate.status === "expired") {
+          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
+        if (statusCreate.status === "not_found") {
+          return JSON.stringify({ error: "pendingActionId not found. Call coach_create_session with confirmed: false first to generate one." });
+        }
+        const pendingCreate = statusCreate.action;
         const pvCreate = validatePendingAction(pendingCreate, userId, "coach_create_session", args);
         if (!pvCreate.valid) return JSON.stringify({ error: pvCreate.error });
         consumePendingAction(pendingActionId_create);
@@ -1727,6 +1782,7 @@ async function executeTool(
             pendingActionId: pending.pendingActionId,
             actionType: "reschedule_booking",
             summary: `Reschedule booking ${args.bookingId} to ${args.newStartAt}`,
+            expiresAt: pending.expiresAt.toISOString(),
             message: "Show the user the current booking and the proposed new time. Once they confirm, call reschedule_booking again with confirmed: true and the exact pendingActionId from this response.",
           });
         }
@@ -1734,10 +1790,14 @@ async function executeTool(
         if (!pendingActionId_reschedule) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call reschedule_booking with confirmed: false first to generate one." });
         }
-        const pendingReschedule = getPendingAction(pendingActionId_reschedule);
-        if (!pendingReschedule) {
-          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call reschedule_booking with confirmed: false again to generate a new one." });
+        const statusReschedule = getPendingActionStatus(pendingActionId_reschedule);
+        if (statusReschedule.status === "expired") {
+          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
+        if (statusReschedule.status === "not_found") {
+          return JSON.stringify({ error: "pendingActionId not found. Call reschedule_booking with confirmed: false first to generate one." });
+        }
+        const pendingReschedule = statusReschedule.action;
         const pvReschedule = validatePendingAction(pendingReschedule, userId, "reschedule_booking", args);
         if (!pvReschedule.valid) return JSON.stringify({ error: pvReschedule.error });
         consumePendingAction(pendingActionId_reschedule);
@@ -2162,6 +2222,7 @@ async function executeTool(
             pendingActionId: pending.pendingActionId,
             actionType: "send_scheduling_inquiry",
             summary: `Send scheduling inquiry: "${String(args.message).slice(0, 80)}${String(args.message).length > 80 ? "…" : ""}"`,
+            expiresAt: pending.expiresAt.toISOString(),
             message: "Restate the recipient and message content to the user and ask them to confirm. Once confirmed, call send_scheduling_inquiry again with confirmed: true and the exact pendingActionId from this response.",
           });
         }
@@ -2169,10 +2230,14 @@ async function executeTool(
         if (!pendingActionId_inquiry) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call send_scheduling_inquiry with confirmed: false first to generate one." });
         }
-        const pendingInquiry = getPendingAction(pendingActionId_inquiry);
-        if (!pendingInquiry) {
-          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call send_scheduling_inquiry with confirmed: false again to generate a new one." });
+        const statusInquiry = getPendingActionStatus(pendingActionId_inquiry);
+        if (statusInquiry.status === "expired") {
+          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
+        if (statusInquiry.status === "not_found") {
+          return JSON.stringify({ error: "pendingActionId not found. Call send_scheduling_inquiry with confirmed: false first to generate one." });
+        }
+        const pendingInquiry = statusInquiry.action;
         const pvInquiry = validatePendingAction(pendingInquiry, userId, "send_scheduling_inquiry", args);
         if (!pvInquiry.valid) return JSON.stringify({ error: pvInquiry.error });
         consumePendingAction(pendingActionId_inquiry);
@@ -2503,6 +2568,7 @@ async function executeTool(
             pendingActionId: pending.pendingActionId,
             actionType: "create_confirmed_recurring_sessions",
             summary: `Create ${slots.length} recurring session(s) for client ${args.clientId}, service ${args.serviceId}`,
+            expiresAt: pending.expiresAt.toISOString(),
             message: "Show the coach the full list of slots to be created and ask them to confirm. Once confirmed, call create_confirmed_recurring_sessions again with confirmed: true and the exact pendingActionId from this response.",
           });
         }
@@ -2510,10 +2576,14 @@ async function executeTool(
         if (!pendingActionId_recurring) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call create_confirmed_recurring_sessions with confirmed: false first to generate one." });
         }
-        const pendingRecurring = getPendingAction(pendingActionId_recurring);
-        if (!pendingRecurring) {
-          return JSON.stringify({ error: "pendingActionId not found or expired (10-minute TTL). Call create_confirmed_recurring_sessions with confirmed: false again to generate a new one." });
+        const statusRecurring = getPendingActionStatus(pendingActionId_recurring);
+        if (statusRecurring.status === "expired") {
+          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
+        if (statusRecurring.status === "not_found") {
+          return JSON.stringify({ error: "pendingActionId not found. Call create_confirmed_recurring_sessions with confirmed: false first to generate one." });
+        }
+        const pendingRecurring = statusRecurring.action;
         const pvRecurring = validatePendingAction(pendingRecurring, userId, "create_confirmed_recurring_sessions", args);
         if (!pvRecurring.valid) return JSON.stringify({ error: pvRecurring.error });
         consumePendingAction(pendingActionId_recurring);
@@ -3048,6 +3118,8 @@ You are a SUGGESTION-FIRST assistant. All mutating actions (book_session, cancel
 
 **Never invent a pendingActionId.** Only use the exact value returned by Call 1. Never skip Call 1 and go directly to confirmed: true.
 
+**If a tool returns {error: "pending_action_expired"}: tell the user "That confirmation window expired — let me start fresh." Then immediately restart from Call 1 (confirmed: false) to generate a new pendingActionId and re-present the summary.**
+
 1. **For new bookings**: Check availability first (get_available_slots or get_org_schedule), present 2–3 numbered options, then do the two-call handshake once the user picks one.
    Example: "Here are 3 open times for Mike next week:
    1. Tuesday at 9:00 AM with Coach Bryan
@@ -3568,6 +3640,7 @@ export function handleAssistantMessage(
   async function* generate(): AsyncGenerator<string> {
     let currentMessages = [...chatMessages];
     let maxIterations = 5;
+    let pendingConfirmPayload: { pendingActionId: string; actionType: string; summary: string; expiresAt: string } | null = null;
 
     while (maxIterations > 0) {
       maxIterations--;
@@ -3637,9 +3710,26 @@ export function handleAssistantMessage(
           tool_call_id: tc.id,
           content: result,
         });
+        // Capture requiresConfirmation payload to emit as stream marker
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.requiresConfirmation === true && parsed.pendingActionId) {
+            pendingConfirmPayload = {
+              pendingActionId: parsed.pendingActionId,
+              actionType: parsed.actionType || tc.name,
+              summary: parsed.summary || "",
+              expiresAt: parsed.expiresAt || "",
+            };
+          }
+        } catch {}
       }
 
       fullContent = "";
+    }
+
+    // Emit structured confirmation marker so the client can render a confirm card
+    if (pendingConfirmPayload) {
+      yield `\n<!--CONFIRM:${JSON.stringify(pendingConfirmPayload)}-->`;
     }
   }
 

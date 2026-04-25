@@ -1,0 +1,133 @@
+Implement Phase 5 improvements for the TrainEfficiency Scheduling Agent.
+
+Goal:
+Improve reliability, UX clarity, and system integrity around pending actions.
+
+Do NOT change core architecture. Build on top of the pendingActionId system.
+
+---
+
+1. Prevent duplicate pending actions
+
+File: server/scheduling-assistant.ts
+
+Before creating a new pending action:
+- Check if an existing pending action exists for the same:
+  userId + actionType + critical args
+
+If one exists and is not expired:
+- Return the existing pendingActionId instead of creating a new one
+
+This avoids stacking duplicate pending confirmations.
+
+---
+
+2. Add pending action expiration feedback
+
+In validation step (when confirmed === true):
+
+If pending action is expired:
+Return:
+{
+  error: "pending_action_expired",
+  message: "This action has expired. Please review and confirm again."
+}
+
+Update system prompt:
+- If expired, the assistant must regenerate the preview and new pendingActionId
+
+---
+
+3. Add structured confirmation response (server-side)
+
+When returning requiresConfirmation:
+
+Ensure payload includes:
+- summary (clean, human-readable)
+- actionType
+- pendingActionId
+- expiresAt
+
+Example summary:
+"Book a 60-minute session with Coach Mike on Tuesday at 9:00 AM"
+
+This should be deterministic and not rely on the model to rewrite it.
+
+---
+
+4. Client-side confirmation UI enhancement (lightweight)
+
+File: client/src/components/coach-agent-panel.tsx
+
+Detect when assistant response includes requiresConfirmation.
+
+Instead of only rendering text:
+- Render a confirmation card below the message with:
+  - summary
+  - Confirm button
+  - Cancel button
+
+Confirm button:
+→ sends message programmatically:
+   "Confirm this action"
+   and injects pendingActionId into the next tool call context
+
+Cancel button:
+→ sends:
+   "Cancel this request"
+
+Do NOT fully redesign chat — just append this UI block.
+
+---
+
+5. Replace regex cache invalidation with tool-based detection
+
+In sendMessage:
+
+Track whether a tool was executed successfully by inspecting:
+- response metadata OR
+- presence of pendingActionId consumption success message
+
+Simplest approach:
+If response includes:
+"Booking confirmed"
+"Booking has been cancelled"
+"Booking rescheduled"
+
+→ trigger invalidation
+
+But centralize phrases in one constant:
+const ACTION_SUCCESS_PATTERNS = [...]
+
+---
+
+6. Add max pending actions per user
+
+In pending action store:
+
+Limit:
+- max 5 active pending actions per user
+
+If exceeded:
+- delete oldest before inserting new
+
+---
+
+7. Validation checklist
+
+After implementation confirm:
+
+- Duplicate requests reuse pendingActionId
+- Expired actions return proper message
+- Confirmation UI renders correctly
+- Confirm button completes action successfully
+- Cancel button does NOT trigger tool execution
+- No duplicate bookings possible via rapid interaction
+- Cache updates correctly after confirmed actions
+
+---
+
+Return:
+- Files changed
+- New helper logic added
+- Any edge cases discovered

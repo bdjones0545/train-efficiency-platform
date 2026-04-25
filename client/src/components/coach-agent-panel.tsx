@@ -388,6 +388,28 @@ function TimeBlockBar({ block, maxRevenue }: { block: RevenueSummary["timeBlockR
   );
 }
 
+interface PendingConfirmation {
+  pendingActionId: string;
+  actionType: string;
+  summary: string;
+  expiresAt: string;
+}
+
+const ACTION_SUCCESS_PATTERNS = [
+  /\b(booking confirmed|successfully booked|session booked)\b/i,
+  /\b(booking has been cancelled|booking cancelled|successfully cancelled)\b/i,
+  /\b(successfully rescheduled|booking rescheduled|has been rescheduled)\b/i,
+  /\b(session has been created|session created successfully|sessions? have been created)\b/i,
+  /\b(inquiry has been sent|inquiry sent successfully)\b/i,
+  /\b(recurring sessions? created|sessions? scheduled successfully)\b/i,
+];
+
+const CONFIRM_MARKER_RE = /\n?<!--CONFIRM:(\{[\s\S]+?\})-->/;
+
+function stripConfirmMarker(text: string): string {
+  return text.replace(CONFIRM_MARKER_RE, "").trim();
+}
+
 export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSchedulingAgentPanelProps) {
   const [activeTab, setActiveTab] = useState<"chat" | "ops" | "revenue" | "settings">("chat");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -396,6 +418,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [automationLevel, setAutomationLevel] = useState<number>(1);
   const [savingLevel, setSavingLevel] = useState(false);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -505,6 +528,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     if (!content || isLoading) return;
     setInput("");
     setShowQuickActions(false);
+    setPendingConfirmation(null);
     const newMessages: Message[] = [...messages, { role: "user", content }];
     setMessages(newMessages);
     setIsLoading(true);
@@ -526,15 +550,27 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
           const { done, value } = await reader.read();
           if (done) break;
           full += decoder.decode(value, { stream: true });
-          setMessages([...newMessages, { role: "assistant", content: full }]);
+          setMessages([...newMessages, { role: "assistant", content: stripConfirmMarker(full) }]);
         }
         full += decoder.decode();
       } else {
         full = await response.text();
       }
-      setMessages([...newMessages, { role: "assistant", content: full }]);
-      const bookingActionDetected = /\b(booked|booking confirmed|cancell|rescheduled|session created)\b/i.test(full);
-      if (bookingActionDetected) {
+
+      // Parse and strip the CONFIRM marker before displaying
+      const confirmMatch = full.match(CONFIRM_MARKER_RE);
+      if (confirmMatch) {
+        try {
+          const confirmData = JSON.parse(confirmMatch[1]) as PendingConfirmation;
+          setPendingConfirmation(confirmData);
+        } catch {}
+      }
+      const displayFull = stripConfirmMarker(full);
+      setMessages([...newMessages, { role: "assistant", content: displayFull }]);
+
+      // Cache invalidation using centralized patterns
+      const actionDetected = ACTION_SUCCESS_PATTERNS.some(p => p.test(full));
+      if (actionDetected) {
         qc.invalidateQueries({ queryKey: ["/api/bookings"] });
         qc.invalidateQueries({ queryKey: ["/api/sessions/open"] });
         qc.invalidateQueries({ queryKey: ["/api/coaches"] });
@@ -934,6 +970,56 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                       {message.role === "user" && <div className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-1"><User className="h-3.5 w-3.5" /></div>}
                     </div>
                   ))}
+
+                  {/* Confirmation card — shown after assistant requests confirmation */}
+                  {pendingConfirmation && !isLoading && (
+                    <div className="flex gap-3 justify-start" data-testid="confirmation-card">
+                      <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                        <div className="flex items-start gap-2 mb-3">
+                          <CheckCircle2 className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-0.5 uppercase tracking-wide">Confirm Action</p>
+                            <p className="text-sm text-foreground leading-relaxed">{pendingConfirmation.summary}</p>
+                            {pendingConfirmation.expiresAt && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Expires at {new Date(pendingConfirmation.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs"
+                            data-testid="button-confirm-action"
+                            onClick={() => {
+                              const id = pendingConfirmation.pendingActionId;
+                              setPendingConfirmation(null);
+                              sendMessage(`Yes, confirmed. pendingActionId: ${id}`);
+                            }}
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            data-testid="button-cancel-action"
+                            onClick={() => {
+                              setPendingConfirmation(null);
+                              sendMessage("Cancel this request");
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {isLoading && (
                     <div className="flex gap-3 justify-start">
                       <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1"><Bot className="h-3.5 w-3.5 text-primary" /></div>
