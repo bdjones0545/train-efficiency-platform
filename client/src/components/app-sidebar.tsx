@@ -48,6 +48,7 @@ import {
   Bot,
   CalendarDays,
   ImagePlay,
+  Mail,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -134,6 +135,7 @@ export function AppSidebar() {
     { title: "Users", url: "/coach/users", icon: Users },
     ...(athleticEnabled ? [{ title: activeAthleticPrograms.length === 1 ? activeAthleticPrograms[0]?.name || "Athletic" : "Athletic", url: "/coach/athletic", icon: Trophy }] : []),
     { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
+    { title: "Email History", url: "/coach/communications", icon: Mail },
   ];
 
 

@@ -9,7 +9,7 @@ import express from "express";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, type OrgBranding } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, type OrgBranding, type EmailLogContext } from "./email";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -1615,6 +1615,13 @@ export async function registerRoutes(
           const coachProfile = await storage.getCoachProfile(coachId);
           const tz = coachProfile?.timezone || coach?.timezone || "America/New_York";
           const orgB = await getOrgBranding(coachProfile?.organizationId);
+          const bookingOrgId = coachProfile?.organizationId;
+          const bookingLogCtx: EmailLogContext | undefined = bookingOrgId ? {
+            orgId: bookingOrgId,
+            type: "booking_confirmation",
+            userId: userId,
+            bookingId: booking.id,
+          } : undefined;
           if (clientUser?.email) {
             sendBookingConfirmationToClient(
               clientUser.email,
@@ -1625,7 +1632,8 @@ export async function registerRoutes(
               end,
               req.body.location || undefined,
               tz,
-              orgB
+              orgB,
+              bookingLogCtx
             ).catch(() => {});
           }
           const coachEmail = coachProfile?.email || coachProfile?.user?.email;
@@ -1724,6 +1732,12 @@ export async function registerRoutes(
             const endAt = new Date(booking.endAt);
             const location = (booking as any).location || undefined;
 
+            const cancelLogCtx: EmailLogContext | undefined = orgId ? {
+                orgId,
+                type: "cancellation",
+                userId: clientUser?.id,
+                bookingId: booking.id,
+              } : undefined;
             if (clientUser?.email) {
               sendBookingCancellationEmailToClient(
                 clientUser.email,
@@ -1734,7 +1748,8 @@ export async function registerRoutes(
                 endAt,
                 location,
                 tz,
-                orgBranding
+                orgBranding,
+                cancelLogCtx
               ).catch(() => {});
             } else {
               console.log("[PATCH /api/bookings/:id/status] Skipping client cancellation email — no email on file");
@@ -2003,6 +2018,7 @@ export async function registerRoutes(
                 orgB
               ).catch(() => {});
             } else {
+              const coachBookingOrgId = coachProfile?.organizationId;
               sendBookingConfirmationToClient(
                 clientUser.email,
                 clientUser.firstName || "there",
@@ -2012,7 +2028,8 @@ export async function registerRoutes(
                 end,
                 req.body.location || undefined,
                 tz,
-                orgB
+                orgB,
+                coachBookingOrgId ? { orgId: coachBookingOrgId, type: "booking_confirmation", userId: resolvedClientId, bookingId: booking.id } : undefined
               ).catch(() => {});
             }
           }
@@ -2131,6 +2148,11 @@ export async function registerRoutes(
             const lastSessionAt = new Date(sortedCreated[sortedCreated.length - 1].startAt);
             const location = (sourceBooking as any).location || undefined;
 
+            const recurringLogCtx: EmailLogContext | undefined = orgId ? {
+                orgId,
+                type: "recurring",
+                userId: clientUser?.id,
+              } : undefined;
             if (clientUser?.email) {
               sendRecurringSessionsCreatedEmailToClient(
                 clientUser.email,
@@ -2142,7 +2164,8 @@ export async function registerRoutes(
                 lastSessionAt,
                 location,
                 tz,
-                orgBranding
+                orgBranding,
+                recurringLogCtx
               ).catch(() => {});
             } else {
               console.log("[POST /api/coach/bookings/clone] Skipping client recurring email — no email on file");
@@ -2280,6 +2303,12 @@ export async function registerRoutes(
             const newEndAt = new Date(updateData.endAt || existing.endAt);
             const location = (updateData.location ?? (existing as any).location) || undefined;
 
+            const rescheduleLogCtx: EmailLogContext | undefined = orgId ? {
+                orgId,
+                type: "reschedule",
+                userId: clientUser?.id,
+                bookingId: bookingId,
+              } : undefined;
             if (clientUser?.email) {
               sendBookingRescheduleEmailToClient(
                 clientUser.email,
@@ -2292,7 +2321,8 @@ export async function registerRoutes(
                 newEndAt,
                 location,
                 tz,
-                orgBranding
+                orgBranding,
+                rescheduleLogCtx
               ).catch(() => {});
             } else {
               console.log("[PATCH /api/coach/bookings/:id] Skipping client reschedule email — no email on file");
@@ -6166,6 +6196,28 @@ export async function registerRoutes(
       const org = await storage.getOrganizationById(profile.organizationId);
       if (!org) return res.status(404).json({ message: "Organization not found" });
       res.json({ id: org.id, name: org.name, slug: org.slug });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/communication-logs", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const limit = parseInt(req.query.limit as string) || 200;
+      const logs = await storage.getCommunicationsByOrg(profile.organizationId, limit);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/communication-logs/booking/:bookingId", isAuthenticated, async (req: any, res) => {
+    try {
+      const logs = await storage.getCommunicationsByBooking(req.params.bookingId);
+      res.json(logs);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

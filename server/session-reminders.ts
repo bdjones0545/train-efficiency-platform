@@ -3,6 +3,7 @@ import {
   sendUpcomingSessionReminderEmailToClient,
   sendUpcomingSessionReminderEmailToCoach,
   type OrgBranding,
+  type EmailLogContext,
 } from "./email";
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // Run every hour
@@ -85,6 +86,12 @@ async function sendSessionReminders() {
             : "Your Coach";
           const serviceName = service?.name || "Training Session";
 
+          const clientReminderLogCtx: EmailLogContext | undefined = booking.organizationId ? {
+              orgId: booking.organizationId,
+              type: "reminder",
+              userId: clientUser.id,
+              bookingId: booking.id,
+            } : undefined;
           await sendUpcomingSessionReminderEmailToClient(
             clientUser.email,
             clientUser.firstName || "there",
@@ -94,7 +101,8 @@ async function sendSessionReminders() {
             endAt,
             location,
             timezone,
-            branding
+            branding,
+            clientReminderLogCtx
           );
 
           await storage.markClientReminderSent(booking.id);
@@ -129,6 +137,11 @@ async function sendSessionReminders() {
             : "A client";
           const serviceName = service?.name || "Training Session";
 
+          const coachReminderLogCtx: EmailLogContext | undefined = booking.organizationId ? {
+              orgId: booking.organizationId,
+              type: "reminder",
+              bookingId: booking.id,
+            } : undefined;
           await sendUpcomingSessionReminderEmailToCoach(
             coachEmail,
             coachProfile?.user?.firstName || "Coach",
@@ -138,7 +151,8 @@ async function sendSessionReminders() {
             endAt,
             location,
             timezone,
-            branding
+            branding,
+            coachReminderLogCtx
           );
 
           await storage.markCoachReminderSent(booking.id);

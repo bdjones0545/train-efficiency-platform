@@ -548,3 +548,25 @@ export type Cashout = typeof cashouts.$inferSelect;
 export type InsertCashout = z.infer<typeof insertCashoutSchema>;
 export type WalletTransaction = typeof walletTransactions.$inferSelect;
 export type InsertWalletTransaction = z.infer<typeof insertWalletTransactionSchema>;
+
+export const communicationLogs = pgTable("communication_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id"),
+  coachId: varchar("coach_id"),
+  bookingId: varchar("booking_id"),
+  agentActionId: varchar("agent_action_id"),
+  type: varchar("type").notNull(),
+  channel: varchar("channel").notNull().default("email"),
+  recipientEmail: varchar("recipient_email").notNull(),
+  subject: text("subject").notNull(),
+  status: varchar("status").notNull().default("sent"),
+  provider: varchar("provider").notNull().default("sendgrid"),
+  sentAt: timestamp("sent_at").defaultNow(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCommunicationLogSchema = createInsertSchema(communicationLogs).omit({ id: true, createdAt: true, sentAt: true });
+export type CommunicationLog = typeof communicationLogs.$inferSelect;
+export type InsertCommunicationLog = z.infer<typeof insertCommunicationLogSchema>;

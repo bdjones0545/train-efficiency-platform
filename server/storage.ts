@@ -19,6 +19,9 @@ import {
   agentActionLog,
   agentActions,
   organizationMedia,
+  communicationLogs,
+  type CommunicationLog,
+  type InsertCommunicationLog,
   type Waitlist,
   type InsertWaitlist,
   type AgentActionLog,
@@ -264,6 +267,11 @@ export interface IStorage {
   deleteOrgMedia(id: string): Promise<boolean>;
   reorderOrgMedia(updates: { id: string; orderIndex: number }[]): Promise<void>;
   getOrgMediaById(id: string): Promise<OrganizationMedia | undefined>;
+
+  createCommunicationLog(data: InsertCommunicationLog): Promise<CommunicationLog>;
+  getCommunicationsByOrg(orgId: string, limit?: number): Promise<CommunicationLog[]>;
+  getCommunicationsByUser(userId: string): Promise<CommunicationLog[]>;
+  getCommunicationsByBooking(bookingId: string): Promise<CommunicationLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1669,6 +1677,36 @@ export class DatabaseStorage implements IStorage {
   async getOrgMediaById(id: string): Promise<OrganizationMedia | undefined> {
     const [item] = await db.select().from(organizationMedia).where(eq(organizationMedia.id, id));
     return item || undefined;
+  }
+
+  async createCommunicationLog(data: InsertCommunicationLog): Promise<CommunicationLog> {
+    const [row] = await db.insert(communicationLogs).values(data).returning();
+    return row;
+  }
+
+  async getCommunicationsByOrg(orgId: string, limit: number = 200): Promise<CommunicationLog[]> {
+    return db
+      .select()
+      .from(communicationLogs)
+      .where(eq(communicationLogs.orgId, orgId))
+      .orderBy(desc(communicationLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getCommunicationsByUser(userId: string): Promise<CommunicationLog[]> {
+    return db
+      .select()
+      .from(communicationLogs)
+      .where(eq(communicationLogs.userId, userId))
+      .orderBy(desc(communicationLogs.createdAt));
+  }
+
+  async getCommunicationsByBooking(bookingId: string): Promise<CommunicationLog[]> {
+    return db
+      .select()
+      .from(communicationLogs)
+      .where(eq(communicationLogs.bookingId, bookingId))
+      .orderBy(desc(communicationLogs.createdAt));
   }
 }
 

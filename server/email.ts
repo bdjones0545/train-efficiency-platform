@@ -1,6 +1,7 @@
 import sgMail from '@sendgrid/mail';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { storage } from './storage';
 
 let connectionSettings: any;
 
@@ -11,6 +12,15 @@ export interface OrgBranding {
   emailSecondaryColor?: string;
   ownerName?: string;
   ownerEmail?: string;
+}
+
+export interface EmailLogContext {
+  orgId: string;
+  type: string;
+  userId?: string;
+  coachId?: string;
+  bookingId?: string;
+  agentActionId?: string;
 }
 
 const DEFAULT_BRANDING: OrgBranding = {
@@ -104,7 +114,8 @@ async function getUncachableSendGridClient() {
   return { client: sgMail, fromEmail: email };
 }
 
-async function sendEmail(to: string, subject: string, html: string, senderName?: string) {
+async function sendEmail(to: string, subject: string, html: string, senderName?: string, logCtx?: EmailLogContext) {
+  let errorMsg: string | undefined;
   try {
     const { client, fromEmail } = await getUncachableSendGridClient();
     await client.send({
@@ -115,7 +126,29 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
     });
     console.log(`Email sent to ${to}: ${subject}`);
   } catch (error: any) {
+    errorMsg = error?.response?.body ? JSON.stringify(error.response.body) : (error.message || 'Unknown error');
     console.error(`Failed to send email to ${to}:`, error?.response?.body || error.message);
+  }
+
+  if (logCtx?.orgId) {
+    try {
+      await storage.createCommunicationLog({
+        orgId: logCtx.orgId,
+        userId: logCtx.userId,
+        coachId: logCtx.coachId,
+        bookingId: logCtx.bookingId,
+        agentActionId: logCtx.agentActionId,
+        type: logCtx.type,
+        channel: 'email',
+        recipientEmail: to,
+        subject,
+        status: errorMsg ? 'failed' : 'sent',
+        provider: 'sendgrid',
+        errorMessage: errorMsg,
+      });
+    } catch (logErr) {
+      console.error('[CommLog] Failed to write communication log:', logErr);
+    }
   }
 }
 
@@ -168,7 +201,8 @@ export async function sendBookingConfirmationToClient(
   endAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Session Confirmed — ${serviceName}`;
@@ -190,7 +224,7 @@ export async function sendBookingConfirmationToClient(
     ], b.color, b.secondaryColor)}
     ${para("See you there! If you need to make changes, you can manage your bookings from your account.")}
   `, org);
-  await sendEmail(clientEmail, subject, html, b.name);
+  await sendEmail(clientEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendBookingNotificationToCoach(
@@ -637,7 +671,8 @@ export async function sendUpcomingSessionReminderEmailToClient(
   endAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Reminder: Session Tomorrow — ${serviceName}`;
@@ -659,7 +694,7 @@ export async function sendUpcomingSessionReminderEmailToClient(
     ], b.color, b.secondaryColor)}
     ${para("We look forward to seeing you! If you need to make any changes, please log in to your account ahead of time.")}
   `, org);
-  await sendEmail(clientEmail, subject, html, b.name);
+  await sendEmail(clientEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendUpcomingSessionReminderEmailToCoach(
@@ -671,7 +706,8 @@ export async function sendUpcomingSessionReminderEmailToCoach(
   endAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Reminder: Session Tomorrow — ${clientName}`;
@@ -693,7 +729,7 @@ export async function sendUpcomingSessionReminderEmailToCoach(
     ], b.color, b.secondaryColor)}
     ${para("You can view your full schedule and manage sessions from your coach dashboard.")}
   `, org);
-  await sendEmail(coachEmail, subject, html, b.name);
+  await sendEmail(coachEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendBookingCancellationEmailToClient(
@@ -705,7 +741,8 @@ export async function sendBookingCancellationEmailToClient(
   endAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Session Cancelled — ${serviceName}`;
@@ -727,7 +764,7 @@ export async function sendBookingCancellationEmailToClient(
     ], b.color, b.secondaryColor)}
     ${para("If you'd like to rebook or have any questions, please log in to your account or reach out to your coach.")}
   `, org);
-  await sendEmail(clientEmail, subject, html, b.name);
+  await sendEmail(clientEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendBookingCancellationEmailToCoach(
@@ -739,7 +776,8 @@ export async function sendBookingCancellationEmailToCoach(
   endAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Session Cancelled — ${clientName}`;
@@ -761,7 +799,7 @@ export async function sendBookingCancellationEmailToCoach(
     ], b.color, b.secondaryColor)}
     ${para("This time slot is now open on your calendar. You can manage your schedule from your coach dashboard.")}
   `, org);
-  await sendEmail(coachEmail, subject, html, b.name);
+  await sendEmail(coachEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendBookingRescheduleEmailToClient(
@@ -775,7 +813,8 @@ export async function sendBookingRescheduleEmailToClient(
   newEndAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Session Rescheduled — ${serviceName}`;
@@ -805,7 +844,7 @@ export async function sendBookingRescheduleEmailToClient(
     ], b.color, b.secondaryColor)}
     ${para("If you have any questions about this change, please reach out to your coach or log in to your account.")}
   `, org);
-  await sendEmail(clientEmail, subject, html, b.name);
+  await sendEmail(clientEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendBookingRescheduleEmailToCoach(
@@ -819,7 +858,8 @@ export async function sendBookingRescheduleEmailToCoach(
   newEndAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Session Rescheduled — ${clientName}`;
@@ -849,7 +889,7 @@ export async function sendBookingRescheduleEmailToCoach(
     ], b.color, b.secondaryColor)}
     ${para("Your dashboard has been updated to reflect the new time.")}
   `, org);
-  await sendEmail(coachEmail, subject, html, b.name);
+  await sendEmail(coachEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendRecurringSessionsCreatedEmailToClient(
@@ -862,7 +902,8 @@ export async function sendRecurringSessionsCreatedEmailToClient(
   lastSessionAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Recurring Sessions Confirmed — ${serviceName}`;
@@ -885,7 +926,7 @@ export async function sendRecurringSessionsCreatedEmailToClient(
     ], b.color, b.secondaryColor)}
     ${para("You can view all of your upcoming sessions by logging in to your account. See you on the schedule!")}
   `, org);
-  await sendEmail(clientEmail, subject, html, b.name);
+  await sendEmail(clientEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendRecurringSessionsCreatedEmailToCoach(
@@ -898,7 +939,8 @@ export async function sendRecurringSessionsCreatedEmailToCoach(
   lastSessionAt: Date,
   location?: string,
   timezone: string = "America/New_York",
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const subject = `Recurring Sessions Created — ${clientName}`;
@@ -921,7 +963,7 @@ export async function sendRecurringSessionsCreatedEmailToCoach(
     ], b.color, b.secondaryColor)}
     ${para("All sessions are now confirmed on your calendar. You can view and manage them from your coach dashboard.")}
   `, org);
-  await sendEmail(coachEmail, subject, html, b.name);
+  await sendEmail(coachEmail, subject, html, b.name, logCtx);
 }
 
 export async function sendAgentOutreachEmail(
@@ -929,14 +971,15 @@ export async function sendAgentOutreachEmail(
   clientFirstName: string,
   emailSubject: string,
   emailBody: string,
-  org?: OrgBranding
+  org?: OrgBranding,
+  logCtx?: EmailLogContext
 ) {
   const b = brand(org);
   const html = emailShell(emailSubject, `
     <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
     <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px 0;">${emailBody.replace(/\n/g, "<br>")}</p>
   `, org);
-  await sendEmail(clientEmail, emailSubject, html, b.name);
+  await sendEmail(clientEmail, emailSubject, html, b.name, logCtx);
 }
 
 export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {

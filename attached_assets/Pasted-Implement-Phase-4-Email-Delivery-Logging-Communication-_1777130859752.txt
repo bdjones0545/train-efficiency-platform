@@ -1,0 +1,103 @@
+Implement Phase 4: Email Delivery Logging + Communication History
+
+Goal:
+Create a full audit trail and visibility layer for all outbound emails so coaches/admins can see what was sent, when, and to whom.
+
+Current state:
+- Emails are sent via SendGrid.
+- Some agent actions are logged.
+- No centralized delivery log exists.
+- No UI visibility for sent communications.
+
+Scope:
+
+1. Create a new table: communication_logs
+
+Fields:
+- id
+- orgId
+- userId (recipient)
+- coachId (sender if applicable)
+- bookingId (nullable)
+- agentActionId (nullable)
+- type (ENUM or string):
+  - booking_confirmation
+  - cancellation
+  - reschedule
+  - reminder
+  - outreach
+  - payment
+  - system
+- channel (email for now)
+- recipientEmail
+- subject
+- status:
+  - sent
+  - failed
+- provider (sendgrid)
+- sentAt
+- errorMessage (nullable)
+- createdAt
+
+2. Update ALL email send functions:
+In server/email.ts:
+- After a successful send → insert into communication_logs with status: sent
+- On failure → insert with status: failed + errorMessage
+
+This applies to:
+- booking confirmation
+- cancellation
+- reschedule
+- recurring
+- reminders
+- outreach
+- all existing email functions
+
+3. Do NOT block core flows:
+- Logging should never break booking or agent actions
+- Wrap logging in try/catch
+
+4. Link agent outreach:
+- When send_drafted_outreach_email runs:
+  - Store agentActionId in communication_logs
+  - This creates a full audit trail from draft → send
+
+5. Add basic retrieval methods:
+In storage layer:
+- getCommunicationsByUser(userId)
+- getCommunicationsByOrg(orgId, limit)
+- getCommunicationsByBooking(bookingId)
+
+6. Add simple UI (coach/admin panel):
+Create a new section:
+"Communication History"
+
+Show:
+- Recipient
+- Type
+- Status (sent/failed)
+- Timestamp
+- Subject preview
+
+Keep it simple:
+Table or list view is fine.
+
+7. Optional (if fast):
+- Add resend button for failed emails
+- Re-trigger send using stored data
+
+8. Testing:
+- Confirm logs are created for every email type
+- Confirm failures are logged
+- Confirm no duplicate logs per send
+- Confirm UI loads logs correctly
+- Confirm no performance impact on booking flows
+
+Expected result:
+Every email sent by TrainEfficiency is now:
+- Logged
+- Traceable
+- Visible in the UI
+- Debbugable if something fails
+
+This turns the system into a true operational platform instead of a black box.

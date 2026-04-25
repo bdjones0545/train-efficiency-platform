@@ -3047,7 +3047,20 @@ Return a JSON object with exactly these keys:
         const orgBranding = await getOrgBranding(agentAction.organizationId);
 
         try {
-          await sendAgentOutreachEmail(clientUser.email, clientFirstName, emailSubject, emailBody, orgBranding);
+          await sendAgentOutreachEmail(
+            clientUser.email,
+            clientFirstName,
+            emailSubject,
+            emailBody,
+            orgBranding,
+            {
+              orgId: agentAction.organizationId,
+              type: "outreach",
+              userId: clientUser.id,
+              coachId: agentAction.coachId || undefined,
+              agentActionId: agentActionId_outreach,
+            }
+          );
           await storage.updateAgentAction(agentActionId_outreach, { status: "sent" });
           console.log(`[send_drafted_outreach_email] Sent to ${clientUser.email} (action ${agentActionId_outreach})`);
           return JSON.stringify({
