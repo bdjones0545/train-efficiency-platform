@@ -380,6 +380,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const [automationLevel, setAutomationLevel] = useState<number>(1);
   const [savingLevel, setSavingLevel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const { data: profile } = useQuery<{ role?: string }>({ queryKey: ["/api/profile"] });
@@ -455,7 +456,20 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     finally { setSavingLevel(false); }
   };
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => {
+    if (messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    const resetScroll = () => {
+      if (chatScrollRef.current) chatScrollRef.current.scrollTop = 0;
+    };
+    resetScroll();
+    const raf = requestAnimationFrame(resetScroll);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
@@ -614,7 +628,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
         {/* ===== CHAT TAB ===== */}
         {activeTab === "chat" && (
           <div className="flex flex-col h-full min-h-0">
-            <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
               <div className="px-3 py-3">
                 {messages.length === 0 ? (
                   <div className="flex flex-col gap-3">
