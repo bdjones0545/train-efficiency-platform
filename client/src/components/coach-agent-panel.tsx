@@ -150,7 +150,7 @@ interface SessionPackageAlert {
   urgency: "critical" | "warning";
 }
 
-export type SourcePage = "schedule" | "clients" | "revenue" | "settings" | "dashboard";
+export type SourcePage = "schedule" | "clients" | "revenue" | "settings" | "dashboard" | "media";
 
 export interface AgentContext {
   sourcePage: SourcePage;
@@ -213,6 +213,12 @@ const PAGE_QUICK_PROMPTS: Record<SourcePage, { label: string; icon: any; prompt:
     { label: "Show my weekly progress", icon: TrendingUp, prompt: "Show my weekly business progress", color: "text-green-500", desc: "Progress summary" },
     { label: "Give me my weekly business recap", icon: BarChart3, prompt: "Give me my weekly business recap", color: "text-blue-500", desc: "Full recap" },
     { label: "Draft my top outreach messages", icon: MessageSquare, prompt: "Draft my top outreach messages for this week", color: "text-orange-500", desc: "Top messages" },
+  ],
+  media: [
+    { label: "Help me build my landing page", icon: Target, prompt: "Help me build a high-converting landing page. What should I upload first?", color: "text-primary", desc: "Landing page guide" },
+    { label: "What media should I add next?", icon: TrendingUp, prompt: "Based on my current media, what should I upload next to improve my landing page?", color: "text-green-500", desc: "Next best action" },
+    { label: "What makes a strong hero video?", icon: Activity, prompt: "What makes a strong hero video for a strength coach landing page?", color: "text-blue-500", desc: "Hero best practices" },
+    { label: "How does media affect bookings?", icon: BarChart3, prompt: "How much does landing page media impact client bookings and conversions?", color: "text-orange-500", desc: "Media ROI" },
   ],
 };
 
@@ -556,6 +562,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     revenue: "Revenue",
     settings: "Settings",
     dashboard: "Dashboard",
+    media: "Media Library",
   };
 
   return (

@@ -6,6 +6,7 @@ import { Bot } from "lucide-react";
 import { CoachSchedulingAgentPanel, type AgentContext, type SourcePage, type OpsDigest } from "@/components/coach-agent-panel";
 
 function getSourcePage(path: string): SourcePage {
+  if (path.startsWith("/admin/media")) return "media";
   if (path.startsWith("/scheduling") || path.startsWith("/coach/availability")) return "schedule";
   if (path.startsWith("/coach/users") || path.includes("clients")) return "clients";
   if (path.startsWith("/coach/transactions") || path.startsWith("/coach/business-plan")) return "revenue";

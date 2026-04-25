@@ -5959,6 +5959,19 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/org/info", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(404).json({ message: "No organization" });
+      const org = await storage.getOrganizationById(profile.organizationId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      res.json({ id: org.id, name: org.name, slug: org.slug });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   startWeeklyReminderJob();
 
   return httpServer;

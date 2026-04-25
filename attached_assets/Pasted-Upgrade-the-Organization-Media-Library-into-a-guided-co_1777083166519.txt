@@ -1,0 +1,223 @@
+Upgrade the Organization Media Library into a guided, conversion-optimized media builder with live preview, completion tracking, and smarter UX.
+
+Goal:
+Transform the current “upload files” UI into a structured system that helps coaches build a high-converting landing page.
+
+========================
+PHASE 1 — GUIDED BUILD FLOW
+========================
+
+Replace the empty state with a 3-step guided system.
+
+Add a new component at the top:
+
+MediaBuildProgress
+
+Steps:
+1. Hero Media (required)
+2. Training Showcase (recommended)
+3. Facility Media (recommended)
+
+UI:
+- Progress bar (0–100%)
+- Each step shows:
+  - status: complete / incomplete
+  - short description
+- Example:
+  [ ] Hero Media — Add a video or image that represents your training
+  [ ] Training Showcase — Show how you coach (3–5 clips recommended)
+  [ ] Facility — Show your environment and equipment
+
+Logic:
+- Hero complete = at least 1 active hero item
+- Training complete = at least 3 active training items
+- Facility complete = at least 2 active facility items
+
+Display:
+- Show % complete
+- Show green checkmarks as sections are completed
+
+========================
+PHASE 2 — LIVE LANDING PAGE PREVIEW
+========================
+
+Add a toggle at top right:
+
+[ Preview Page ]
+
+Behavior:
+- Opens a side panel (desktop) or full-screen modal (mobile)
+- Renders actual org landing page using current media
+
+Implementation:
+- Reuse public landing page component
+- Inject current org media state (no refetch required if cached)
+
+Live updates:
+- After upload, reorder, or toggle active:
+  → preview updates immediately
+
+Mobile:
+- Use full-screen overlay (Sheet)
+- Add close button top-right
+
+========================
+PHASE 3 — HERO SECTION PRIORITY
+========================
+
+Enhance Hero tab UI.
+
+Add:
+- Badge: “⭐ Most Important”
+- Subtext:
+  “This is the first thing clients see. Strong hero media increases bookings.”
+
+Optional:
+- Add small blurred sample hero preview block
+
+========================
+PHASE 4 — SMART EMPTY STATES
+========================
+
+Replace “No media yet” with contextual guidance.
+
+Hero:
+- “Start with a strong first impression”
+- Suggestions:
+  - Athlete highlight
+  - Lift clip
+  - Training energy shot
+
+Training:
+- “Show how you coach”
+- Suggestions:
+  - Drill execution
+  - Coaching cues
+  - Group training clips
+
+Facility:
+- “Show your environment”
+- Suggestions:
+  - Equipment
+  - Turf/space
+  - Gym layout
+
+Display as bullet list under upload box
+
+========================
+PHASE 5 — UPLOAD UX IMPROVEMENTS
+========================
+
+Enhance upload area:
+
+- Add icons:
+  🎥 Upload video
+  📸 Upload photo
+
+- Add hover/tap animation:
+  subtle scale + border glow
+
+- Improve microcopy:
+  “Show your coaching, athletes, and facility in action”
+
+Auto-suggest section:
+- If uploading from global upload (future-safe):
+  - video → suggest Hero or Training
+  - image → suggest Facility or Coaches
+
+========================
+PHASE 6 — SECTION STATUS IN TABS
+========================
+
+Update tab labels to show completion:
+
+Hero (0/5)
+Training (0/5)
+Facility (0/3)
+Coaches (0/5)
+Testimonials (0/5)
+Results (0/5)
+
+If completed:
+- show checkmark icon
+
+If recommended but incomplete:
+- subtle warning dot
+
+========================
+PHASE 7 — REORDER CLARITY
+========================
+
+Above media grid add:
+
+“Drag to reorder how this appears on your landing page”
+
+If drag-and-drop exists:
+- ensure visible grab cursor
+- add subtle shadow while dragging
+
+========================
+PHASE 8 — CONVERSION SIGNALS
+========================
+
+Add conversion messaging:
+
+Top banner (small, subtle):
+
+“Pages with media convert significantly better. Start with a hero video.”
+
+Optional dynamic:
+- If no hero:
+  show warning badge
+- If hero exists:
+  show:
+  “Great — your page now has a strong first impression”
+
+========================
+PHASE 9 — AGENT CONTEXT HOOK
+========================
+
+When user is on Media Library page:
+
+Enhance agent launcher behavior:
+- clicking agent suggests:
+  “Want help building your landing page?”
+
+Agent can:
+- recommend what to upload next
+- explain missing sections
+- guide toward best practices
+
+No new API required initially — just prompt injection based on route.
+
+========================
+PHASE 10 — MOBILE OPTIMIZATION
+========================
+
+Ensure:
+
+- Upload box is full-width and thumb-friendly
+- Tabs are horizontally scrollable
+- Preview opens full-screen
+- Buttons are minimum 44px height
+- No overflow clipping behind floating agent button
+
+========================
+VALIDATION
+========================
+
+Test:
+
+1. New org sees guided steps instead of empty state
+2. Uploading hero updates progress
+3. Preview reflects uploaded media instantly
+4. Tabs show correct counts
+5. Reordering updates landing page order
+6. Mobile experience is smooth and usable
+7. No regression to existing landing pages without media
+
+Return:
+- files changed
+- new components added
+- preview implementation details
+- validation results
