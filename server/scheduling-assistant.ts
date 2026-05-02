@@ -77,7 +77,8 @@ type GatedActionType =
   | "create_confirmed_recurring_sessions"
   | "send_scheduling_inquiry"
   | "send_drafted_outreach_email"
-  | "send_drafted_outreach_sms";
+  | "send_drafted_outreach_sms"
+  | "send_team_outreach_email";
 
 interface PendingAction {
   pendingActionId: string;
@@ -1041,6 +1042,117 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "get_lost_revenue",
       description: "Quantify total recoverable revenue: value of open calendar slots, inactive clients who could rebook, and unconverted intro sessions. Returns dollar estimates and top opportunities ranked by impact. Use for 'How much revenue am I losing?', 'What revenue opportunities am I missing?', 'How much could I recover?', 'What's sitting on the table?', 'How do I make more money this week?'",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+
+  // ── Team Training Prospecting Tools ─────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "research_team_training_leads",
+      description: "Research and find new local team training prospects (youth clubs, school programs, AAU teams, etc.) near the organization. Saves new lead records to the CRM. Agent may call this without user confirmation. Use when the coach says 'Find team training leads', 'Research sports teams', 'Find prospects', or 'Help me grow team training'.",
+      parameters: {
+        type: "object",
+        properties: {
+          sport: { type: "string", description: "Optional: focus on a specific sport (e.g. 'Football', 'Soccer', 'Basketball', 'Baseball', 'Volleyball')" },
+          limit: { type: "number", description: "Number of prospects to find (default 8, max 15)" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_team_training_prospects",
+      description: "List existing team training prospects in the CRM. Use when the coach asks to see their lead list, review pending drafts, or check pipeline status.",
+      parameters: {
+        type: "object",
+        properties: {
+          sport: { type: "string", description: "Optional: filter by sport" },
+          outreachStatus: { type: "string", description: "Optional: filter by status — New, Needs Review, Approved, Contacted, Replied, Not Interested, Do Not Contact" },
+          limit: { type: "number", description: "Max results to return (default 20)" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_team_outreach_draft",
+      description: "Generate a personalized email outreach draft for a specific team training prospect. Agent may generate drafts without user confirmation. Use after research_team_training_leads or when the coach says 'Draft outreach for [team]' or 'Generate team email'.",
+      parameters: {
+        type: "object",
+        properties: {
+          prospectId: { type: "string", description: "The prospect ID to generate a draft for" },
+        },
+        required: ["prospectId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "approve_team_outreach_draft",
+      description: "Approve an existing outreach draft, marking it ready to send. Use when the coach says 'Approve this draft' or 'Mark it ready to send'.",
+      parameters: {
+        type: "object",
+        properties: {
+          draftId: { type: "string", description: "The draft ID to approve" },
+        },
+        required: ["draftId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_team_outreach_email",
+      description: "Send an approved outreach email to a team training prospect. REQUIRES explicit user confirmation — use the two-call handshake. Call with confirmed: false first to show a confirmation card with prospect name, email, subject, and preview. Only send (confirmed: true + pendingActionId) after user explicitly confirms. NEVER auto-send. Respects Do Not Contact and opt-out lists.",
+      parameters: {
+        type: "object",
+        properties: {
+          draftId: { type: "string", description: "The draft ID to send" },
+          confirmed: { type: "boolean", description: "false to preview and get pendingActionId; true to execute after user confirms" },
+          pendingActionId: { type: "string", description: "Required when confirmed: true. Must be exact value returned from confirmed: false call. Never invent." },
+        },
+        required: ["draftId", "confirmed"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mark_team_prospect_replied",
+      description: "Mark a team training prospect as having replied to outreach. Use when the coach says a prospect responded or when asked to log a reply.",
+      parameters: {
+        type: "object",
+        properties: {
+          prospectId: { type: "string", description: "The prospect ID to mark as replied" },
+        },
+        required: ["prospectId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mark_team_prospect_do_not_contact",
+      description: "Mark a team training prospect as Do Not Contact and add to opt-out list. Use when the coach says to stop outreach to a prospect.",
+      parameters: {
+        type: "object",
+        properties: {
+          prospectId: { type: "string", description: "The prospect ID to mark as Do Not Contact" },
+        },
+        required: ["prospectId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "show_team_pipeline_summary",
+      description: "Show the team training pipeline summary: total prospects, new leads, high-confidence leads, drafts awaiting approval, replies needing follow-up, and estimated pipeline value. Use for 'Show team revenue pipeline', 'Team pipeline summary', or 'How many leads do I have?'.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -3531,6 +3643,325 @@ Return a JSON object with exactly these keys:
         return JSON.stringify(lost);
       }
 
+      // ── Team Training Prospecting Tools ──────────────────────────────────────
+
+      case "research_team_training_leads": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const org = await storage.getOrganizationById(organizationId);
+        if (!org) return JSON.stringify({ error: "Organization not found." });
+        const { researchProspects, scoreProspect } = await import("./team-training-prospecting");
+        const sport = args.sport as string | undefined;
+        const limit = Math.min(Number(args.limit) || 8, 15);
+        const results = await researchProspects(org, sport, limit);
+        const created = [];
+        for (const p of results) {
+          const scored = scoreProspect(p);
+          const prospect = await storage.createTeamTrainingProspect({
+            orgId: organizationId,
+            prospectName: p.prospectName,
+            organizationType: p.organizationType,
+            sport: p.sport,
+            city: p.city,
+            state: p.state,
+            websiteUrl: p.websiteUrl,
+            contactName: p.contactName,
+            contactRole: p.contactRole,
+            contactEmail: null,
+            contactPhone: null,
+            sourceUrl: p.sourceUrl,
+            confidenceScore: scored,
+            outreachStatus: "Needs Review",
+            notes: p.notes,
+          });
+          created.push(prospect);
+        }
+        await storage.logOutreachEvent({
+          orgId: organizationId,
+          eventType: "research_run",
+          description: `Agent researched ${created.length} prospects${sport ? ` for sport: ${sport}` : ""}`,
+          metadata: { count: created.length, sport: sport || null },
+        });
+        return JSON.stringify({
+          found: created.length,
+          prospects: created.map(p => ({
+            id: p.id,
+            prospectName: p.prospectName,
+            sport: p.sport,
+            organizationType: p.organizationType,
+            city: p.city,
+            state: p.state,
+            confidenceScore: p.confidenceScore,
+            contactName: p.contactName,
+            contactRole: p.contactRole,
+            notes: p.notes,
+          })),
+          message: `Found and saved ${created.length} team training prospects. Ready to draft outreach.`,
+        });
+      }
+
+      case "list_team_training_prospects": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const prospects = await storage.getTeamTrainingProspects(organizationId, {
+          sport: args.sport as string | undefined,
+          outreachStatus: args.outreachStatus as string | undefined,
+        });
+        const limit = Number(args.limit) || 20;
+        const sliced = prospects.slice(0, limit);
+        return JSON.stringify({
+          total: prospects.length,
+          shown: sliced.length,
+          prospects: sliced.map(p => ({
+            id: p.id,
+            prospectName: p.prospectName,
+            sport: p.sport,
+            organizationType: p.organizationType,
+            city: p.city,
+            state: p.state,
+            outreachStatus: p.outreachStatus,
+            confidenceScore: p.confidenceScore,
+            contactName: p.contactName,
+            contactEmail: p.contactEmail ?? null,
+            lastContactedAt: p.lastContactedAt ?? null,
+            notes: p.notes,
+          })),
+        });
+      }
+
+      case "generate_team_outreach_draft": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const prospectId = args.prospectId as string;
+        if (!prospectId) return JSON.stringify({ error: "prospectId is required." });
+        const prospect = await storage.getTeamTrainingProspect(prospectId);
+        if (!prospect) return JSON.stringify({ error: "Prospect not found." });
+        if (prospect.outreachStatus === "Do Not Contact") {
+          return JSON.stringify({ error: "This prospect is marked Do Not Contact — cannot generate outreach." });
+        }
+        const org = await storage.getOrganizationById(organizationId);
+        const coaches = await storage.getCoachProfiles();
+        const orgCoaches = coaches.filter(c => c.organizationId === organizationId);
+        const coachName = orgCoaches.length > 0
+          ? `${orgCoaches[0].user?.firstName || ""} ${orgCoaches[0].user?.lastName || ""}`.trim()
+          : "Coach";
+        const { generateOutreachEmail } = await import("./team-training-prospecting");
+        const draft = await generateOutreachEmail({
+          businessName: org?.name || "Our Training Business",
+          coachName,
+          prospectName: prospect.prospectName,
+          sport: prospect.sport || "sports",
+          city: prospect.city || "your area",
+          contactName: prospect.contactName || "unknown",
+          services: org ? [(org as any).specialties || "speed, strength, agility, performance training"] : undefined,
+        });
+        const saved = await storage.createOutreachDraft({
+          orgId: organizationId,
+          prospectId: prospect.id,
+          subject: draft.subject,
+          body: draft.body,
+          approved: false,
+        });
+        await storage.logOutreachEvent({
+          orgId: organizationId,
+          prospectId: prospect.id,
+          draftId: saved.id,
+          eventType: "draft_created",
+          description: `Agent generated outreach draft for ${prospect.prospectName}`,
+        });
+        return JSON.stringify({
+          draftId: saved.id,
+          prospectId: prospect.id,
+          prospectName: prospect.prospectName,
+          subject: draft.subject,
+          bodyPreview: draft.body.slice(0, 200) + (draft.body.length > 200 ? "..." : ""),
+          approved: false,
+          message: `Draft created for ${prospect.prospectName}. Review and approve before sending.`,
+        });
+      }
+
+      case "approve_team_outreach_draft": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const draftId = args.draftId as string;
+        if (!draftId) return JSON.stringify({ error: "draftId is required." });
+        const draft = await storage.getOutreachDraft(draftId);
+        if (!draft || draft.orgId !== organizationId) return JSON.stringify({ error: "Draft not found." });
+        if (draft.sentAt) return JSON.stringify({ error: "Draft already sent." });
+        const updated = await storage.updateOutreachDraft(draftId, { approved: true, approvedAt: new Date() });
+        await storage.logOutreachEvent({
+          orgId: organizationId,
+          prospectId: draft.prospectId,
+          draftId,
+          eventType: "approved",
+          description: "Draft approved by agent/user",
+        });
+        return JSON.stringify({
+          draftId,
+          approved: true,
+          message: "Draft approved. You can now send it.",
+        });
+      }
+
+      case "send_team_outreach_email": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const draftId = args.draftId as string;
+        const confirmed = args.confirmed as boolean;
+        const pendingActionId = args.pendingActionId as string | undefined;
+
+        if (!draftId) return JSON.stringify({ error: "draftId is required." });
+        const draft = await storage.getOutreachDraft(draftId);
+        if (!draft || draft.orgId !== organizationId) return JSON.stringify({ error: "Draft not found." });
+        if (draft.sentAt) return JSON.stringify({ error: "This email has already been sent." });
+
+        const prospect = await storage.getTeamTrainingProspect(draft.prospectId);
+        if (!prospect) return JSON.stringify({ error: "Prospect not found." });
+
+        if (prospect.outreachStatus === "Do Not Contact") {
+          return JSON.stringify({ error: "This prospect is marked Do Not Contact. Sending is blocked." });
+        }
+        if (!prospect.contactEmail) {
+          return JSON.stringify({ error: "Prospect has no email address. Please add one in the Team Training Leads page before sending." });
+        }
+        const optedOut = await storage.isProspectOptedOut(organizationId, prospect.contactEmail);
+        if (optedOut) {
+          return JSON.stringify({ error: "This prospect has opted out of outreach. Sending is blocked." });
+        }
+
+        if (!confirmed) {
+          const pending = createPendingAction(userId, "send_team_outreach_email", { draftId });
+          return JSON.stringify({
+            requiresConfirmation: true,
+            pendingActionId: pending.pendingActionId,
+            actionType: "send_team_outreach_email",
+            summary: `Send team outreach email to ${prospect.prospectName} (${prospect.contactEmail})\n\nSubject: ${draft.subject}\n\nPreview: ${draft.body.slice(0, 150)}${draft.body.length > 150 ? "..." : ""}`,
+            prospect: {
+              name: prospect.prospectName,
+              sport: prospect.sport,
+              email: prospect.contactEmail,
+              city: prospect.city,
+              state: prospect.state,
+              confidenceScore: prospect.confidenceScore,
+              sourceUrl: prospect.sourceUrl,
+            },
+            draft: {
+              subject: draft.subject,
+              bodyPreview: draft.body.slice(0, 200),
+              approved: draft.approved,
+            },
+            expiresAt: pending.expiresAt.toISOString(),
+            message: "Please confirm before sending.",
+          });
+        }
+
+        if (!pendingActionId) return JSON.stringify({ error: "pendingActionId required to confirm." });
+        const pending = consumePendingAction(pendingActionId);
+        if (!pending) return JSON.stringify({ error: "pending_action_expired", message: "The confirmation window expired. Please restart the send flow." });
+        if (pending.actionType !== "send_team_outreach_email") return JSON.stringify({ error: "Confirmation mismatch. Please restart." });
+
+        if (!draft.approved) {
+          await storage.updateOutreachDraft(draftId, { approved: true, approvedAt: new Date() });
+        }
+
+        const branding = await getOrgBranding(organizationId);
+        const { sendTeamTrainingOutreachEmail } = await import("./email");
+        try {
+          await sendTeamTrainingOutreachEmail(prospect.contactEmail, draft.subject, draft.body, branding);
+        } catch (sendErr: any) {
+          await storage.logOutreachEvent({
+            orgId: organizationId,
+            prospectId: prospect.id,
+            draftId,
+            eventType: "failed",
+            description: `Failed to send: ${sendErr.message}`,
+          });
+          return JSON.stringify({ error: `Failed to send email: ${sendErr.message}` });
+        }
+
+        await storage.updateOutreachDraft(draftId, { sentAt: new Date() });
+        await storage.updateTeamTrainingProspect(prospect.id, {
+          outreachStatus: "Contacted",
+          lastContactedAt: new Date(),
+        });
+        await storage.logOutreachEvent({
+          orgId: organizationId,
+          prospectId: prospect.id,
+          draftId,
+          eventType: "sent",
+          description: `Outreach email sent to ${prospect.contactEmail}`,
+        });
+
+        return JSON.stringify({
+          ok: true,
+          sentTo: prospect.contactEmail,
+          prospectName: prospect.prospectName,
+          message: `Email sent to ${prospect.prospectName} (${prospect.contactEmail}). Status updated to Contacted.`,
+        });
+      }
+
+      case "mark_team_prospect_replied": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const prospectId = args.prospectId as string;
+        if (!prospectId) return JSON.stringify({ error: "prospectId is required." });
+        const prospect = await storage.getTeamTrainingProspect(prospectId);
+        if (!prospect || prospect.orgId !== organizationId) return JSON.stringify({ error: "Prospect not found." });
+        await storage.updateTeamTrainingProspect(prospectId, { outreachStatus: "Replied" });
+        await storage.logOutreachEvent({
+          orgId: organizationId,
+          prospectId,
+          eventType: "replied",
+          description: `Marked as replied: ${prospect.prospectName}`,
+        });
+        return JSON.stringify({ ok: true, prospectName: prospect.prospectName, status: "Replied", message: `${prospect.prospectName} marked as replied. Consider booking a demo/consult call.` });
+      }
+
+      case "mark_team_prospect_do_not_contact": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const prospectId = args.prospectId as string;
+        if (!prospectId) return JSON.stringify({ error: "prospectId is required." });
+        const prospect = await storage.getTeamTrainingProspect(prospectId);
+        if (!prospect || prospect.orgId !== organizationId) return JSON.stringify({ error: "Prospect not found." });
+        await storage.updateTeamTrainingProspect(prospectId, { outreachStatus: "Do Not Contact" });
+        if (prospect.contactEmail) {
+          await storage.addProspectOptOut(organizationId, prospect.contactEmail, "Marked Do Not Contact by agent");
+        }
+        await storage.logOutreachEvent({
+          orgId: organizationId,
+          prospectId,
+          eventType: "marked_do_not_contact",
+          description: `Marked as Do Not Contact: ${prospect.prospectName}`,
+        });
+        return JSON.stringify({ ok: true, prospectName: prospect.prospectName, message: `${prospect.prospectName} marked as Do Not Contact and added to opt-out list.` });
+      }
+
+      case "show_team_pipeline_summary": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const allProspects = await storage.getTeamTrainingProspects(organizationId);
+        const allDrafts = await storage.getOutreachDraftsByOrg(organizationId);
+        const newLeads = allProspects.filter(p => p.outreachStatus === "New").length;
+        const highConfidence = allProspects.filter(p => (p.confidenceScore || 0) >= 75 && p.outreachStatus !== "Do Not Contact" && p.outreachStatus !== "Not Interested").length;
+        const draftsAwaitingApproval = allDrafts.filter(d => !d.approved && !d.sentAt).length;
+        const repliesNeedingFollowUp = allProspects.filter(p => p.outreachStatus === "Replied").length;
+        const activePipelineCount = allProspects.filter(p => p.outreachStatus !== "Do Not Contact" && p.outreachStatus !== "Not Interested").length;
+        const estimatedValuePerProspect = 75000;
+        const estimatedPipelineValueCents = activePipelineCount * estimatedValuePerProspect;
+        return JSON.stringify({
+          totalProspects: allProspects.length,
+          newLeads,
+          highConfidenceLeads: highConfidence,
+          draftsAwaitingApproval,
+          repliesNeedingFollowUp,
+          activePipelineCount,
+          estimatedPipelineValueCents,
+          estimatedPipelineValueLabel: `$${(estimatedPipelineValueCents / 100).toLocaleString()}`,
+          breakdown: {
+            new: allProspects.filter(p => p.outreachStatus === "New").length,
+            needsReview: allProspects.filter(p => p.outreachStatus === "Needs Review").length,
+            approved: allProspects.filter(p => p.outreachStatus === "Approved").length,
+            contacted: allProspects.filter(p => p.outreachStatus === "Contacted").length,
+            replied: allProspects.filter(p => p.outreachStatus === "Replied").length,
+            notInterested: allProspects.filter(p => p.outreachStatus === "Not Interested").length,
+            doNotContact: allProspects.filter(p => p.outreachStatus === "Do Not Contact").length,
+          },
+        });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -4051,7 +4482,75 @@ When asked for a growth plan or revenue insights, proactively surface ALL of:
 When presenting get_operations_digest results, structure your response with:
 1. A brief headline metric (e.g., "X open slots this week — ~$Y in potential revenue")
 2. Key insights in priority order
-3. A short "suggested next step" based on the highest-priority insight`;
+3. A short "suggested next step" based on the highest-priority insight
+
+## Team Training Prospecting
+
+You are also a **Team Training Growth Co-Pilot**. Your job is to help the coach build long-term B2B revenue by identifying and reaching local youth teams, school programs, AAU clubs, and sports organizations who could hire the business for group training.
+
+### Dual Mission
+- **Short-term**: Fill open schedule slots with individual clients (existing tools)
+- **Long-term**: Build team training B2B pipeline (new team training tools)
+When the coach has open slots AND a team training pipeline opportunity, address the schedule gap first, then pivot to team growth.
+
+### Team Training Tools Usage
+Use **research_team_training_leads** when the coach says:
+- "Find me some team training leads" / "Research sports teams near me" / "Help me find prospects"
+- "What teams could I pitch?" / "Find football/soccer/basketball teams to contact"
+- "Help me grow team training" / "Find new B2B opportunities"
+
+Use **list_team_training_prospects** when the coach asks:
+- "Show my lead list" / "What prospects do I have?" / "Who have I contacted?"
+- "Show me prospects by sport" / "Who's replied?" / "Any prospects needing review?"
+
+Use **generate_team_outreach_draft** when the coach says:
+- "Draft outreach for [team]" / "Write an email to [prospect]" / "Generate an intro email"
+- After listing prospects, offer to draft for specific ones
+
+Use **approve_team_outreach_draft** when:
+- The coach says "Approve that draft" / "Mark it ready to send" / "That looks good"
+- ALWAYS show the draft details before approving
+
+Use **send_team_outreach_email** (TWO-CALL HANDSHAKE REQUIRED):
+- Call 1: confirmed: false → shows confirmation card with prospect name, email, subject, preview
+- Call 2: confirmed: true + pendingActionId → executes send
+- NEVER call with confirmed: true without a valid pendingActionId from Call 1
+- NEVER auto-send. The user must explicitly say "Send it", "Yes send it", or "Confirm"
+- Always state: "Note: this estimated value is pipeline potential, not booked revenue."
+
+Use **mark_team_prospect_replied** when the coach says:
+- "They replied" / "Mark [team] as replied" / "[Team] responded to our email"
+
+Use **mark_team_prospect_do_not_contact** when the coach says:
+- "Stop contacting [team]" / "Remove them" / "Mark as do not contact"
+
+Use **show_team_pipeline_summary** when the coach asks:
+- "Show team revenue pipeline" / "What's my team pipeline worth?" / "Team training summary"
+- "How many leads do I have?" / "Give me a B2B overview"
+
+### Team Pipeline Presentation Rules
+When showing pipeline data:
+- **Always clarify**: "This is estimated pipeline potential — not booked revenue."
+- Show the breakdown: New → Needs Review → Contacted → Replied stages
+- Highlight the highest-confidence leads as priority outreach targets
+- Estimate at $750/prospect for potential team contract value (ballpark only)
+- When replies exist, prioritize scheduling a call/meeting
+
+### Safety Rules for Team Outreach
+1. **No auto-send**: Always require explicit confirmation before sending any email
+2. **Respect DNC**: Never suggest outreach to Do Not Contact or opted-out prospects
+3. **Pipeline ≠ Revenue**: Always clarify estimated values are potential, not guaranteed
+4. **No invented emails**: Never fabricate an email address — check contactEmail field first
+5. **Cooldown**: Do not suggest re-contacting a prospect contacted within the past 7 days
+
+### Quick Team Training Actions
+When the coach types or clicks a team training quick action, route to the correct tool:
+- "Find team training leads" → research_team_training_leads (ask for sport preference if unclear)
+- "Draft team outreach" → list_team_training_prospects then generate_team_outreach_draft for the top prospect
+- "Review pending team drafts" → list_team_training_prospects + show drafts awaiting approval
+- "Show team revenue pipeline" → show_team_pipeline_summary
+- "Who should I follow up with today?" → list_team_training_prospects with outreachStatus: "Replied" first, then "Contacted"`;
+
   } else {
     prompt += `
 Role: CLIENT

@@ -41,9 +41,12 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Users,
+  Users2,
   Package,
   Target,
   X,
+  Mail,
+  Building2,
 } from "lucide-react";
 import { Link } from "wouter";
 import { getAuthHeaders } from "@/lib/authToken";
@@ -265,6 +268,10 @@ const STAFF_QUICK_ACTIONS = [
   { label: "Schedule", icon: Calendar, prompt: "Show me this week's full schedule", color: "text-blue-500", desc: "Today / this week" },
   { label: "Book a Session", icon: PlusCircle, prompt: "I need to book a session for a client", color: "text-primary", desc: "Add a new booking" },
   { label: "Ops Summary", icon: Activity, prompt: "Give me an operations summary for this week", color: "text-purple-500", desc: "What needs attention" },
+  { label: "Find Team Leads", icon: Users2, prompt: "Find me some team training leads near us", color: "text-cyan-500", desc: "Research local teams" },
+  { label: "Team Pipeline", icon: Building2, prompt: "Show team revenue pipeline", color: "text-teal-500", desc: "B2B prospect pipeline" },
+  { label: "Draft Team Outreach", icon: Mail, prompt: "Draft team outreach for our top prospects", color: "text-indigo-500", desc: "Generate team emails" },
+  { label: "Follow Up Today", icon: MessageSquare, prompt: "Who should I follow up with today?", color: "text-violet-500", desc: "Replies & contacts" },
 ];
 
 const CLIENT_QUICK_ACTIONS = [
@@ -673,6 +680,20 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     staleTime: 60 * 1000,
   });
 
+  const { data: teamPipeline, isLoading: teamPipelineLoading } = useQuery<{
+    totalProspects: number;
+    newLeads: number;
+    highConfidenceLeads: number;
+    draftsAwaitingApproval: number;
+    repliesNeedingFollowUp: number;
+    activePipelineCount: number;
+    estimatedPipelineValueCents: number;
+  }>({
+    queryKey: ["/api/scheduling/team-pipeline-summary"],
+    enabled: isAuthenticated && isStaff,
+    staleTime: 60 * 1000,
+  });
+
   useEffect(() => { if (automationData?.level) setAutomationLevel(automationData.level); }, [automationData]);
 
   useEffect(() => {
@@ -685,6 +706,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
       qc.removeQueries({ queryKey: ["/api/scheduling/waitlist"] });
       qc.removeQueries({ queryKey: ["/api/scheduling/agent-action-log"] });
       qc.removeQueries({ queryKey: ["/api/scheduling/automation-level"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/team-pipeline-summary"] });
     }
   }, [isAuthenticated, authLoading]);
 
@@ -1247,6 +1269,65 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                                 )}
                               </div>
                             </CollapsibleSection>
+
+                            {/* Team Training Pipeline Banner */}
+                            {isStaff && !isDemo && (
+                              <CollapsibleSection
+                                title="Team Training Pipeline"
+                                icon={<Building2 className="h-4 w-4 text-teal-500" />}
+                                preview={
+                                  teamPipelineLoading
+                                    ? "Loading pipeline..."
+                                    : teamPipeline && teamPipeline.totalProspects > 0
+                                      ? `${teamPipeline.activePipelineCount} active leads · ~$${(teamPipeline.estimatedPipelineValueCents / 100).toLocaleString()} potential`
+                                      : "No team leads yet — ask me to find some"
+                                }
+                              >
+                                <div className="space-y-3 pt-1">
+                                  {teamPipelineLoading ? (
+                                    <Skeleton className="h-12 w-full rounded" />
+                                  ) : teamPipeline && teamPipeline.totalProspects > 0 ? (
+                                    <>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div className="rounded-lg border p-2 text-center">
+                                          <div className="text-lg font-bold text-teal-600">{teamPipeline.activePipelineCount}</div>
+                                          <div className="text-[11px] text-muted-foreground">Active Leads</div>
+                                        </div>
+                                        <div className="rounded-lg border p-2 text-center">
+                                          <div className="text-lg font-bold text-green-600">${(teamPipeline.estimatedPipelineValueCents / 100).toLocaleString()}</div>
+                                          <div className="text-[11px] text-muted-foreground">Est. Potential*</div>
+                                        </div>
+                                      </div>
+                                      {(teamPipeline.repliesNeedingFollowUp > 0 || teamPipeline.draftsAwaitingApproval > 0) && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {teamPipeline.repliesNeedingFollowUp > 0 && (
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 font-medium">
+                                              {teamPipeline.repliesNeedingFollowUp} replied
+                                            </span>
+                                          )}
+                                          {teamPipeline.draftsAwaitingApproval > 0 && (
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400 font-medium">
+                                              {teamPipeline.draftsAwaitingApproval} draft{teamPipeline.draftsAwaitingApproval > 1 ? "s" : ""} pending
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                      <p className="text-[10px] text-muted-foreground italic">*Estimated potential — not booked revenue</p>
+                                    </>
+                                  ) : (
+                                    <div className="text-xs text-muted-foreground">No team prospects yet. Ask me to find local teams to pitch.</div>
+                                  )}
+                                  <div className="flex gap-1.5">
+                                    <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => sendMessage("Show team revenue pipeline")} data-testid="team-pipeline-summary-btn">
+                                      View Pipeline
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => sendMessage("Find me some team training leads near us")} data-testid="find-team-leads-btn">
+                                      Find Leads
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CollapsibleSection>
+                            )}
                           </div>
                         )}
                       </>
@@ -1544,6 +1625,116 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                       </div>
                     </div>
                   )}
+                  {/* Team Growth section */}
+                  {!isDemo && isStaff && (
+                    <div data-testid="team-growth-section">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-sm flex items-center gap-1.5">
+                          <Building2 className="h-4 w-4 text-teal-500" />Team Growth
+                        </h3>
+                        <Link href="/admin/team-training">
+                          <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-teal-600 dark:text-teal-400" data-testid="view-team-leads-link">
+                            View Leads <ChevronRight className="h-3 w-3 ml-0.5" />
+                          </Button>
+                        </Link>
+                      </div>
+                      {teamPipelineLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-20 w-full rounded-xl" />
+                          <Skeleton className="h-16 w-full rounded-xl" />
+                        </div>
+                      ) : teamPipeline ? (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {[
+                              { label: "Total Prospects", value: teamPipeline.totalProspects, color: "", id: "team-metric-total" },
+                              { label: "High Confidence", value: teamPipeline.highConfidenceLeads, color: "text-teal-600", id: "team-metric-high" },
+                              { label: "Drafts Pending", value: teamPipeline.draftsAwaitingApproval, color: "text-amber-500", id: "team-metric-drafts" },
+                              { label: "Replied", value: teamPipeline.repliesNeedingFollowUp, color: "text-green-600", id: "team-metric-replies" },
+                            ].map(m => (
+                              <Card key={m.id} className="border-0 shadow-sm" data-testid={m.id}>
+                                <CardContent className="p-3">
+                                  <div className="text-xs text-muted-foreground mb-1">{m.label}</div>
+                                  <div className={`text-2xl font-bold ${m.color}`}>{m.value}</div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                          <Card className="border border-teal-200/60 bg-teal-50/40 dark:border-teal-800/40 dark:bg-teal-950/10">
+                            <CardContent className="p-3 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-teal-700 dark:text-teal-400">Estimated Pipeline Potential</div>
+                                <div className="text-xl font-bold text-teal-600 dark:text-teal-400">${(teamPipeline.estimatedPipelineValueCents / 100).toLocaleString()}</div>
+                                <div className="text-[10px] text-muted-foreground italic">Estimated value only — not booked revenue</div>
+                              </div>
+                              <Button size="sm" variant="outline" className="shrink-0 h-8 text-xs border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400" data-testid="ops-team-pipeline-btn"
+                                onClick={() => { setActiveTab("chat"); sendMessage("Show team revenue pipeline"); }}>
+                                Ask Agent
+                              </Button>
+                            </CardContent>
+                          </Card>
+                          {teamPipeline.repliesNeedingFollowUp > 0 && (
+                            <Card className="border border-green-200/60 bg-green-50/40 dark:border-green-800/40 dark:bg-green-950/10">
+                              <CardContent className="p-3 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                                    <span className="text-xs font-semibold text-green-700 dark:text-green-400">
+                                      {teamPipeline.repliesNeedingFollowUp} prospect{teamPipeline.repliesNeedingFollowUp > 1 ? "s" : ""} replied
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">Schedule a consult call to convert</div>
+                                </div>
+                                <Button size="sm" variant="outline" className="shrink-0 h-8 text-xs" data-testid="ops-follow-up-btn"
+                                  onClick={() => { setActiveTab("chat"); sendMessage("Who should I follow up with today? Show me replied team prospects first."); }}>
+                                  Follow Up
+                                </Button>
+                              </CardContent>
+                            </Card>
+                          )}
+                          {teamPipeline.draftsAwaitingApproval > 0 && (
+                            <Card className="border border-amber-200/60 bg-amber-50/40 dark:border-amber-800/40 dark:bg-amber-950/10">
+                              <CardContent className="p-3 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <Mail className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                      {teamPipeline.draftsAwaitingApproval} outreach draft{teamPipeline.draftsAwaitingApproval > 1 ? "s" : ""} awaiting approval
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">Review and send to advance pipeline</div>
+                                </div>
+                                <Button size="sm" variant="outline" className="shrink-0 h-8 text-xs" data-testid="ops-review-drafts-btn"
+                                  onClick={() => { setActiveTab("chat"); sendMessage("Review pending team outreach drafts"); }}>
+                                  Review
+                                </Button>
+                              </CardContent>
+                            </Card>
+                          )}
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" data-testid="ops-find-team-leads-btn"
+                              onClick={() => { setActiveTab("chat"); sendMessage("Find me some team training leads near us"); }}>
+                              <Users2 className="h-3 w-3 mr-1" />Find Leads
+                            </Button>
+                            <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" data-testid="ops-draft-outreach-btn"
+                              onClick={() => { setActiveTab("chat"); sendMessage("Draft team outreach for our top prospects"); }}>
+                              <Mail className="h-3 w-3 mr-1" />Draft Outreach
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Card>
+                          <CardContent className="p-4 text-center">
+                            <Building2 className="h-6 w-6 mx-auto mb-2 text-teal-400 opacity-60" />
+                            <p className="text-sm text-muted-foreground mb-2">No team training prospects yet.</p>
+                            <Button size="sm" className="h-8 text-xs" onClick={() => { setActiveTab("chat"); sendMessage("Find me some team training leads near us"); }} data-testid="ops-start-team-leads-btn">
+                              Find Team Leads
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
@@ -1761,6 +1952,83 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                       </div>
                     )}
                   </div>
+
+                  {/* Team Training Pipeline section in Revenue tab */}
+                  {!isDemo && isStaff && (
+                    <div data-testid="revenue-team-pipeline-section">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-sm flex items-center gap-1.5">
+                          <Building2 className="h-4 w-4 text-teal-500" />Team Training Pipeline
+                          <Badge variant="secondary" className="text-[10px] ml-1 px-1.5 bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400 border-teal-200 dark:border-teal-800">B2B</Badge>
+                        </h3>
+                        <Link href="/admin/team-training">
+                          <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-teal-600 dark:text-teal-400" data-testid="revenue-view-team-leads-link">
+                            Manage <ChevronRight className="h-3 w-3 ml-0.5" />
+                          </Button>
+                        </Link>
+                      </div>
+                      {teamPipelineLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-20 w-full rounded-xl" />
+                        </div>
+                      ) : teamPipeline ? (
+                        <div className="space-y-3">
+                          <Card className="border border-teal-200/60 dark:border-teal-800/40">
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-1">Estimated Pipeline Value</div>
+                                  <div className="text-3xl font-bold text-teal-600 dark:text-teal-400">
+                                    ${(teamPipeline.estimatedPipelineValueCents / 100).toLocaleString()}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground italic mt-0.5">Potential only — not booked revenue</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-xs text-muted-foreground mb-0.5">{teamPipeline.activePipelineCount} active leads</div>
+                                  <div className="text-xs text-muted-foreground">{teamPipeline.highConfidenceLeads} high confidence</div>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="rounded-lg border bg-background p-2 text-center">
+                                  <div className="text-base font-bold">{teamPipeline.newLeads}</div>
+                                  <div className="text-[10px] text-muted-foreground">New</div>
+                                </div>
+                                <div className="rounded-lg border bg-background p-2 text-center">
+                                  <div className={`text-base font-bold ${teamPipeline.draftsAwaitingApproval > 0 ? "text-amber-500" : ""}`}>{teamPipeline.draftsAwaitingApproval}</div>
+                                  <div className="text-[10px] text-muted-foreground">Drafts</div>
+                                </div>
+                                <div className="rounded-lg border bg-background p-2 text-center">
+                                  <div className={`text-base font-bold ${teamPipeline.repliesNeedingFollowUp > 0 ? "text-green-600" : ""}`}>{teamPipeline.repliesNeedingFollowUp}</div>
+                                  <div className="text-[10px] text-muted-foreground">Replied</div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" data-testid="revenue-team-pipeline-btn"
+                              onClick={() => { setActiveTab("chat"); sendMessage("Show team revenue pipeline"); }}>
+                              Pipeline Summary
+                            </Button>
+                            <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" data-testid="revenue-find-leads-btn"
+                              onClick={() => { setActiveTab("chat"); sendMessage("Find me some team training leads near us"); }}>
+                              Find More Leads
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Card>
+                          <CardContent className="p-4 text-center">
+                            <Building2 className="h-6 w-6 mx-auto mb-2 text-teal-400 opacity-60" />
+                            <p className="text-sm text-muted-foreground mb-2">No team prospects in pipeline yet.</p>
+                            <p className="text-xs text-muted-foreground mb-3">Team training contracts can be a significant source of recurring B2B revenue.</p>
+                            <Button size="sm" className="h-8 text-xs" onClick={() => { setActiveTab("chat"); sendMessage("Find me some team training leads near us"); }} data-testid="revenue-start-team-leads-btn">
+                              Start Building Pipeline
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : null}
             </div>

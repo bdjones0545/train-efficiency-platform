@@ -84,6 +84,25 @@ The application employs a client-server architecture. The frontend is developed 
     -   **Email Sending:** `sendTeamTrainingOutreachEmail` in `server/email.ts` using SendGrid, triggered only after explicit admin approval.
     -   **Audit Log:** Every research run, draft creation, approval, send, failure, replied, and DNC event is logged to `team_training_outreach_events`.
 
+-   **Unified Business Agent (TrainEfficiency Business Agent):** The Scheduling Agent and Team Training Prospecting Agent are unified into a single co-pilot, sharing tools, system prompt context, and UI surfaces.
+    -   **8 New Agent Tools** added to `server/scheduling-assistant.ts`:
+        -   `research_team_training_leads` — AI prospects discovery, saves to DB, no confirmation required
+        -   `list_team_training_prospects` — list/filter CRM leads by sport/status
+        -   `generate_team_outreach_draft` — AI email draft generation per prospect, no confirmation required
+        -   `approve_team_outreach_draft` — marks draft approved and ready to send
+        -   `send_team_outreach_email` — two-call handshake (confirmed: false → preview card; confirmed: true + pendingActionId → send). Respects DNC/opt-out/cooldown.
+        -   `mark_team_prospect_replied` — updates prospect status to Replied
+        -   `mark_team_prospect_do_not_contact` — marks DNC + adds to opt-out list
+        -   `show_team_pipeline_summary` — aggregated pipeline stats with estimated value
+    -   **GatedActionType** extended with `send_team_outreach_email` for the two-call confirmation handshake.
+    -   **System Prompt** updated with a full "Team Training Prospecting" section: dual-mission framing (short-term schedule fill + long-term B2B pipeline), tool routing rules, presentation rules (pipeline ≠ booked revenue), safety rules (no auto-send, DNC enforcement, no invented emails, 7-day cooldown), and quick action routing table.
+    -   **New API Route:** `GET /api/scheduling/team-pipeline-summary` returns { totalProspects, newLeads, highConfidenceLeads, draftsAwaitingApproval, repliesNeedingFollowUp, activePipelineCount, estimatedPipelineValueCents }. Pipeline value estimated at $750/active prospect (ballpark, always labeled as potential not revenue).
+    -   **Dashboard (Chat Tab):** "Team Training Pipeline" CollapsibleSection added after Ops Summary, showing active lead count, estimated potential value, reply/draft badges, and Find Leads / View Pipeline buttons.
+    -   **Ops Tab:** "Team Growth" section added below the Waitlist, with stat cards (total, high-confidence, drafts, replies), estimated pipeline value card (clearly labeled potential), contextual reply follow-up and draft review cards, and Find Leads / Draft Outreach action buttons.
+    -   **Revenue Tab:** "Team Training Pipeline (B2B)" section added after Upsell Opportunities, with a large pipeline value card showing estimated potential (labeled), active/high-confidence counts, and a New/Drafts/Replied breakdown grid.
+    -   **Quick Actions:** 4 new team training quick actions in STAFF_QUICK_ACTIONS: "Find Team Leads", "Team Pipeline", "Draft Team Outreach", "Follow Up Today".
+    -   **Safety Rules Enforced:** No auto-send anywhere; all email sends require explicit confirmation via gated action handshake; DNC and opt-out checks happen in both the agent tool and the existing send API; pipeline values always labeled as estimates.
+
 ## External Dependencies
 -   **PostgreSQL:** Database.
 -   **Express.js:** Backend framework.

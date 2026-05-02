@@ -6965,6 +6965,48 @@ export async function registerRoutes(
     }
   });
 
+  // Team pipeline summary for the scheduling agent dashboard
+  app.get("/api/scheduling/team-pipeline-summary", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const [allProspects, allDrafts] = await Promise.all([
+        storage.getTeamTrainingProspects(orgId),
+        storage.getOutreachDraftsByOrg(orgId),
+      ]);
+
+      const newLeads = allProspects.filter(p => p.outreachStatus === "New").length;
+      const highConfidenceLeads = allProspects.filter(p =>
+        (p.confidenceScore || 0) >= 75 &&
+        p.outreachStatus !== "Do Not Contact" &&
+        p.outreachStatus !== "Not Interested"
+      ).length;
+      const draftsAwaitingApproval = allDrafts.filter(d => !d.approved && !d.sentAt).length;
+      const repliesNeedingFollowUp = allProspects.filter(p => p.outreachStatus === "Replied").length;
+      const activePipelineCount = allProspects.filter(p =>
+        p.outreachStatus !== "Do Not Contact" &&
+        p.outreachStatus !== "Not Interested"
+      ).length;
+      const estimatedValuePerProspectCents = 75000;
+      const estimatedPipelineValueCents = activePipelineCount * estimatedValuePerProspectCents;
+
+      res.json({
+        totalProspects: allProspects.length,
+        newLeads,
+        highConfidenceLeads,
+        draftsAwaitingApproval,
+        repliesNeedingFollowUp,
+        activePipelineCount,
+        estimatedPipelineValueCents,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   startWeeklyReminderJob();
   startSessionReminderJob();
 
