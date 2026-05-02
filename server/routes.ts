@@ -7110,6 +7110,23 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/email-agent/run-daily-job", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { runEmailAgentForOrg } = await import("./email-agent/scheduled-email-agent");
+      const result = await runEmailAgentForOrg(profile.organizationId);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[Email Agent Manual Run]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  const { initializeScheduledEmailAgent } = await import("./email-agent/scheduled-email-agent");
+  initializeScheduledEmailAgent();
+
   startWeeklyReminderJob();
   startSessionReminderJob();
 

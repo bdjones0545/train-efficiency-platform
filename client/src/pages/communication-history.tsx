@@ -1245,6 +1245,16 @@ function SentTab() {
 }
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
+interface DailyJobResult {
+  orgId: string;
+  draftsGenerated: number;
+  emailsSent: number;
+  emailsSkipped: number;
+  emailsBlocked: number;
+  emailsFailed: number;
+  errors: string[];
+}
+
 function SettingsTab() {
   const { toast } = useToast();
   const { data: raw, isLoading } = useQuery<EmailAgentSettings>({ queryKey: ["/api/email-agent/settings"] });
@@ -1261,6 +1271,7 @@ function SettingsTab() {
     defaultEstimatedValue: 2500,
   });
   const [initialized, setInitialized] = useState(false);
+  const [jobResult, setJobResult] = useState<DailyJobResult | null>(null);
 
   if (raw && !initialized) {
     setSettings({ ...settings, ...raw });
@@ -1275,6 +1286,18 @@ function SettingsTab() {
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const runJobMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/email-agent/run-daily-job").then(r => r.json()),
+    onSuccess: (data: DailyJobResult) => {
+      setJobResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/queue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
+      toast({ title: "Agent run complete", description: `Sent ${data.emailsSent} · Drafts ${data.draftsGenerated} · Skipped ${data.emailsSkipped}` });
+    },
+    onError: (e: any) => toast({ title: "Agent run failed", description: e.message, variant: "destructive" }),
   });
 
   const set = (k: keyof EmailAgentSettings, v: any) => setSettings(s => ({ ...s, [k]: v }));
@@ -1444,6 +1467,71 @@ function SettingsTab() {
         {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
         Save Settings
       </Button>
+
+      {/* Manual Run */}
+      <Card className="border-primary/30 bg-primary/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" />
+            Run Agent Now
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Trigger today's full outreach cycle immediately — builds queue, generates drafts
+            {settings.autoSend ? ", and sends emails" : ", and leaves drafts awaiting approval"}.
+          </p>
+          <Button
+            onClick={() => { setJobResult(null); runJobMutation.mutate(); }}
+            disabled={runJobMutation.isPending}
+            className="gap-2"
+            data-testid="button-run-agent-now"
+          >
+            {runJobMutation.isPending
+              ? <><Loader2 className="h-4 w-4 animate-spin" />Running Agent…</>
+              : <><Zap className="h-4 w-4" />Run Today's Agent Now</>
+            }
+          </Button>
+
+          {jobResult && (
+            <div className="mt-3 rounded-lg border bg-background p-4 space-y-3" data-testid="agent-run-result">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                Agent Run Complete
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-md bg-green-500/10 p-3 text-center" data-testid="result-drafts-generated">
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">{jobResult.draftsGenerated}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Drafts Generated</p>
+                </div>
+                <div className="rounded-md bg-blue-500/10 p-3 text-center" data-testid="result-emails-sent">
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{jobResult.emailsSent}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Emails Sent</p>
+                </div>
+                <div className="rounded-md bg-yellow-500/10 p-3 text-center" data-testid="result-emails-skipped">
+                  <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{jobResult.emailsSkipped}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Skipped</p>
+                </div>
+                <div className="rounded-md bg-red-500/10 p-3 text-center" data-testid="result-emails-blocked">
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">{jobResult.emailsBlocked + jobResult.emailsFailed}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Blocked / Failed</p>
+                </div>
+              </div>
+              {jobResult.errors.length > 0 && (
+                <div className="rounded-md bg-destructive/10 p-3 space-y-1">
+                  <p className="text-xs font-semibold text-destructive flex items-center gap-1">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {jobResult.errors.length} error{jobResult.errors.length > 1 ? "s" : ""}
+                  </p>
+                  {jobResult.errors.map((e, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
