@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "43t55VtlaYYk7dXzuSvcH"
+uri = "file://AUDIT_REPORT.md"
+type = "text"
+title = "TrainEfficiency — Full Product Audit Report"
