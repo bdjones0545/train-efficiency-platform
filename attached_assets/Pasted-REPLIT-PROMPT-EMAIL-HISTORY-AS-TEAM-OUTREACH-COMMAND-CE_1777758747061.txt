@@ -1,0 +1,444 @@
+REPLIT PROMPT — EMAIL HISTORY AS TEAM OUTREACH COMMAND CENTER
+
+Objective:
+Upgrade the “Email History” page into the management hub for the AI Email Agent.
+
+This page should manage:
+1. Athletic team prospect discovery
+2. Daily outbound outreach
+3. Email history
+4. AI-generated drafts
+5. Sent emails
+6. Replies/status tracking
+7. Safety rules like cooldowns, opt-outs, and daily caps
+
+Core behavior:
+The system should automatically build a local prospect list of athletic teams around our service area and send up to 10 outreach emails per day to qualified prospects.
+
+Important:
+Do not spam.
+Do not send more than 10 prospecting emails per day per organization.
+Do not contact the same prospect more than once inside the cooldown window.
+Respect do-not-contact, opt-outs, and invalid/missing emails.
+
+PAGE TO MODIFY:
+Email History page/sidebar route.
+
+Rename page heading to:
+“Email Agent”
+
+Subtitle:
+“Manage outreach, prospects, sent emails, and AI-generated follow-ups.”
+
+PHASE 1 — PAGE LAYOUT
+
+Create tabs:
+
+1. Overview
+2. Prospects
+3. Drafts
+4. Sent
+5. Settings
+
+OVERVIEW TAB:
+Add cards:
+
+- Emails Sent Today
+  Example: 4 / 10
+
+- Daily Limit
+  Example: 10 athletic team emails/day
+
+- Prospect List
+  Example: 38 qualified teams
+
+- Replies / Interested
+  Example: 3 interested prospects
+
+- Estimated Pipeline
+  Example: $6,500
+
+Add section:
+“Today’s Outreach Queue”
+
+Show up to 10 prospects selected for today with:
+- Team / school / organization name
+- Sport
+- Contact name if available
+- Email
+- Confidence score
+- Status
+- Estimated opportunity value
+- Button: View Draft
+- Button: Send Now
+- Button: Skip
+- Button: Mark Do Not Contact
+
+PHASE 2 — PROSPECT DISCOVERY
+
+Create or extend a backend service:
+
+server/team-prospecting/team-prospect-discovery.ts
+
+Purpose:
+Find and store athletic team prospects around the organization’s area.
+
+Prospect fields:
+
+team_training_prospects:
+- id
+- organization_id
+- name
+- school_or_org_name
+- sport
+- level
+  - middle_school
+  - high_school
+  - club
+  - college
+  - adult
+  - other
+- contact_name nullable
+- contact_title nullable
+- contact_email nullable
+- contact_phone nullable
+- website_url nullable
+- source_url nullable
+- city nullable
+- state nullable
+- distance_miles nullable
+- confidence_score numeric
+- estimated_value numeric
+- status enum:
+  - discovered
+  - queued
+  - drafted
+  - sent
+  - replied
+  - interested
+  - not_interested
+  - do_not_contact
+  - invalid_contact
+- last_contacted_at nullable
+- next_eligible_contact_at nullable
+- notes nullable
+- created_at
+- updated_at
+
+Discovery rules:
+- Use organization city/state as the center point.
+- Search for athletic teams, schools, clubs, and programs nearby.
+- Prioritize:
+  - high school athletic teams
+  - club sports teams
+  - travel teams
+  - private academies
+  - athletic directors
+  - coaches with public email addresses
+- Store source_url for every discovered contact.
+- Never invent contact info.
+- If email is not found, store the prospect but mark contact_email as null.
+- Only prospects with valid contact_email can enter the outreach queue.
+
+Add a button on Email Agent page:
+“Find Team Prospects”
+
+When clicked:
+- Run prospect discovery
+- Save prospects to database
+- Show progress state
+- Return number found, number with emails, number skipped as duplicates
+
+PHASE 3 — DAILY EMAIL QUEUE
+
+Create service:
+
+server/email-agent/daily-team-outreach-queue.ts
+
+Function:
+buildDailyTeamOutreachQueue(organizationId)
+
+Rules:
+- Select up to 10 prospects per day
+- Only include prospects where:
+  - contact_email is present
+  - status is discovered, drafted, or queued
+  - do_not_contact is false
+  - email_opt_out is false
+  - last_contacted_at is null OR older than cooldown window
+- Prioritize by:
+  1. confidence_score
+  2. estimated_value
+  3. distance_miles closest
+  4. high school / club / travel programs first
+- Mark selected prospects as queued
+
+Daily limit:
+- max_team_outreach_emails_per_day = 10
+- Count all sent team outreach emails today for the organization before sending.
+- If already at 10, block additional auto-sends and show:
+  “Daily outreach limit reached.”
+
+PHASE 4 — AI EMAIL DRAFTING
+
+Create service:
+
+server/email-agent/team-outreach-drafts.ts
+
+Function:
+generateTeamOutreachDraft(prospect, organizationContext)
+
+Draft should be personalized using:
+- team/org name
+- sport
+- city
+- coach/contact title if known
+- business name
+- training offer
+- clear CTA
+
+Tone:
+- professional
+- local
+- helpful
+- not spammy
+- short enough to read on mobile
+
+Email structure:
+Subject examples:
+- “Team training support for [Team Name]”
+- “Performance training for [Sport] athletes”
+- “Local strength & speed training for your athletes”
+
+Body should include:
+- quick intro
+- why we’re reaching out
+- relevant offer
+- low-friction CTA
+- signature
+
+Example CTA:
+“Would it be worth sending over a simple team training option for your athletes?”
+
+Every draft should be stored before sending.
+
+team_outreach_emails:
+- id
+- organization_id
+- prospect_id
+- subject
+- body
+- status enum:
+  - draft
+  - queued
+  - sent
+  - failed
+  - replied
+  - bounced
+  - skipped
+- risk_level default medium
+- send_type enum:
+  - manual
+  - daily_auto
+- sent_at nullable
+- error_message nullable
+- created_at
+- updated_at
+
+PHASE 5 — AUTO-SEND SYSTEM
+
+Create service:
+
+server/email-agent/team-outreach-auto-send.ts
+
+Function:
+runDailyTeamOutreachSend(organizationId)
+
+Behavior:
+- Build or load today’s queue
+- Generate drafts if missing
+- Send up to 10 emails per day
+- Use existing SendGrid integration
+- Log every sent email
+- Update prospect status to sent
+- Set last_contacted_at = now
+- Set next_eligible_contact_at based on cooldown
+
+Safety:
+Before every send, check:
+- daily count < 10
+- prospect has valid email
+- prospect not do_not_contact
+- prospect not opted out
+- prospect not contacted inside cooldown
+- no duplicate sent email to same email address within cooldown
+- organization email sending enabled
+
+PHASE 6 — SETTINGS TAB
+
+Add Email Agent Settings:
+
+Fields:
+- Enable Team Outreach Agent: on/off
+- Daily email limit: default 10, max 10
+- Outreach radius: default 25 miles
+- Cooldown days: default 30
+- Auto-generate drafts: on/off
+- Auto-send daily queue: on/off
+- Preferred sports: multi-select
+- Target levels:
+  - high school
+  - club
+  - travel
+  - college
+  - adult
+- Default estimated team value
+
+Important:
+Default auto-send should be OFF until user enables it.
+Draft generation can be ON by default.
+Sending requires explicit user setting enabled.
+
+PHASE 7 — SENT TAB
+
+Show email history:
+
+Columns/cards:
+- Date sent
+- Prospect/team
+- Sport
+- Contact
+- Email
+- Subject
+- Status
+- Estimated value
+- Actions:
+  - View Email
+  - Mark Replied
+  - Mark Interested
+  - Mark Not Interested
+  - Mark Do Not Contact
+
+PHASE 8 — PROSPECTS TAB
+
+Show searchable prospect CRM:
+
+Filters:
+- status
+- sport
+- city
+- level
+- has email
+- confidence score
+
+Actions:
+- Generate Draft
+- Queue for Outreach
+- Send Now
+- Mark DNC
+- Edit Contact Info
+- Add Notes
+
+Add manual prospect creation:
+Button:
+“Add Prospect”
+
+Fields:
+- school/team/org name
+- sport
+- contact name
+- contact email
+- city/state
+- website
+- notes
+
+PHASE 9 — AGENT INTEGRATION
+
+Update the scheduling/business agent system prompt with:
+
+EMAIL AGENT CONTEXT:
+- Team outreach enabled: true/false
+- Auto-send enabled: true/false
+- Emails sent today: X / 10
+- Qualified prospects: X
+- Drafts waiting approval: X
+- Interested prospects: X
+- Estimated team training pipeline: $X
+
+Rules:
+- Never exceed 10 team outreach emails per day.
+- Never invent contact information.
+- Only use verified/public contact info stored in the prospect database.
+- Never contact DNC or opted-out prospects.
+- Keep outreach short, local, and professional.
+- Clearly separate estimated pipeline from confirmed revenue.
+- If the user asks to “send outreach,” check the daily cap first.
+
+Add Agent Quick Actions:
+- “Find new athletic team prospects”
+- “Build today’s outreach queue”
+- “Generate drafts for today’s prospects”
+- “Send today’s 10 team outreach emails”
+- “Show interested team prospects”
+- “Who should I follow up with?”
+
+PHASE 10 — SCHEDULED JOB
+
+Add daily cron/job:
+
+At 8:30 AM local organization time:
+- If Team Outreach Agent enabled
+- If Auto-send enabled
+- Build today’s queue
+- Generate drafts
+- Send up to 10 emails
+- Log results
+
+If auto-send disabled:
+- Build draft queue only
+- Show drafts in Email Agent page for approval
+
+PHASE 11 — MOBILE UX
+
+The Email Agent page must work well on mobile.
+
+Mobile requirements:
+- Tabs scroll horizontally
+- Cards stack vertically
+- Today’s Outreach Queue uses compact cards
+- Sticky bottom button:
+  “Ask Email Agent”
+- No tables that overflow screen
+
+PHASE 12 — QA CHECKLIST
+
+Verify:
+- Email Agent page loads
+- Sidebar Email History link still works
+- Prospect discovery saves records
+- Duplicate prospects are not created
+- Only prospects with emails are queued
+- Daily cap blocks after 10 sends
+- DNC blocks sending
+- Opt-out blocks sending
+- Cooldown blocks repeated sends
+- Drafts are stored before sending
+- Sent emails appear in Sent tab
+- Prospects update status after send
+- Settings persist per organization
+- Mobile layout is clean
+- No TypeScript errors
+- App starts cleanly
+
+FINAL EXPECTED BEHAVIOR:
+
+Coach opens Email Agent.
+
+They can:
+- find local athletic team prospects
+- build a qualified list with contact info
+- review AI-generated outreach drafts
+- allow the agent to send up to 10 prospecting emails per day
+- track sent emails, replies, interested teams, and pipeline value
+
+This should make TrainEfficiency feel like it has a built-in business development assistant for team training revenue.
