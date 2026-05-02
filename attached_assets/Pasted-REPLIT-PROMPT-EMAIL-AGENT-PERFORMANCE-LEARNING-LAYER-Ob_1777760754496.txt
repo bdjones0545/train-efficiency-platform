@@ -1,0 +1,142 @@
+REPLIT PROMPT — EMAIL AGENT PERFORMANCE + LEARNING LAYER
+
+Objective:
+Upgrade the Email Agent from a sending system into a performance-optimizing system.
+
+We need:
+- open tracking
+- reply tracking
+- conversion tracking
+- subject line + message performance
+- AI learning feedback loop
+
+PHASE 1 — TRACK EMAIL PERFORMANCE
+
+Extend team_outreach_emails table:
+
+Add:
+- opened_at timestamp nullable
+- clicked_at timestamp nullable
+- replied_at timestamp nullable
+- bounce_type nullable
+- message_variant_id nullable
+
+Tracking requirements:
+
+1. Open tracking:
+- Inject tracking pixel into every email
+- Create route:
+  GET /api/email-agent/track-open/:emailId
+- When hit:
+  - set opened_at = now
+
+2. Click tracking:
+- Wrap all links with redirect:
+  /api/email-agent/track-click/:emailId?url=...
+- On hit:
+  - set clicked_at = now
+  - redirect to actual URL
+
+3. Reply tracking:
+- When user clicks “Mark Replied”
+  → set replied_at = now
+- Later phase: integrate inbound parsing
+
+PHASE 2 — PERFORMANCE METRICS
+
+Create endpoint:
+
+GET /api/email-agent/performance
+
+Return:
+
+{
+  sent,
+  opened,
+  clicked,
+  replied,
+  openRate,
+  clickRate,
+  replyRate,
+  conversionRate
+}
+
+Conversion = replied OR booked
+
+PHASE 3 — VARIANT TESTING (HUGE)
+
+Create table:
+
+email_message_variants:
+- id
+- name
+- subject_template
+- body_template
+- performance_score
+- times_used
+- replies
+- conversions
+
+Modify draft generation:
+
+Instead of 1 draft:
+- rotate between 2–3 variants
+- store message_variant_id on email
+
+PHASE 4 — AUTO OPTIMIZATION
+
+Every 50 emails sent:
+
+- rank variants by:
+  reply rate + conversion rate
+
+- boost top performer
+- reduce usage of lowest performer
+
+Simple weighting system:
+- best = 50%
+- second = 30%
+- third = 20%
+
+PHASE 5 — UI (EMAIL AGENT → OVERVIEW TAB)
+
+Add section:
+
+“Email Performance”
+
+Show:
+
+- Open Rate
+- Reply Rate
+- Conversion Rate
+- Best Performing Message
+
+Add insight line:
+
+Example:
+“Your outreach is converting at 18%. Best results are coming from short, direct messages to high school coaches.”
+
+PHASE 6 — AGENT CONTEXT
+
+Inject into system prompt:
+
+EMAIL PERFORMANCE CONTEXT:
+- open rate: X%
+- reply rate: X%
+- conversion rate: X%
+- best performing variant: [name]
+
+Rules:
+- prefer high-performing variants
+- adapt tone if reply rate is low
+- suggest shorter messaging if open rate high but replies low
+
+PHASE 7 — QA
+
+- Tracking pixel works
+- Click tracking redirects correctly
+- No duplicate tracking events
+- Performance endpoint accurate
+- Variants rotate correctly
+- No TypeScript errors
+- App starts cleanly
