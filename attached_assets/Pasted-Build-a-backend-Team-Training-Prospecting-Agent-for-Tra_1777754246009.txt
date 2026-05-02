@@ -1,0 +1,196 @@
+Build a backend Team Training Prospecting Agent for TrainEfficiency.
+
+Purpose:
+The agent researches teams, clubs, schools, sports organizations, gyms, and youth programs in the organization’s local area and helps generate team-training leads.
+
+Important:
+This should be a backend/admin agent, not the normal coach chat agent.
+It should run from the org/admin area and support manual review before sending emails.
+
+Core capabilities:
+
+1. Local prospect discovery
+- Use the organization’s address, city, state, service radius, and training specialties.
+- Search for nearby:
+  - youth sports teams
+  - high school athletic programs
+  - club teams
+  - AAU teams
+  - travel ball teams
+  - soccer clubs
+  - volleyball clubs
+  - baseball academies
+  - football programs
+  - lacrosse clubs
+  - swim teams
+  - cheer programs
+  - martial arts gyms
+  - private schools
+  - community sports organizations
+- Store discovered prospects in a TeamTrainingProspects table.
+
+2. Prospect data fields
+Each prospect should include:
+- orgId
+- prospectName
+- organizationType
+- sport
+- city
+- state
+- websiteUrl
+- contactName
+- contactRole
+- contactEmail
+- contactPhone
+- sourceUrl
+- confidenceScore
+- outreachStatus
+- lastContactedAt
+- notes
+- createdAt
+- updatedAt
+
+3. Safety and compliance rules
+- Never email scraped contacts automatically without admin approval.
+- Respect unsubscribe/opt-out records.
+- Do not contact the same prospect more than once within a configurable cooldown window.
+- Add clear status labels:
+  - New
+  - Needs Review
+  - Approved
+  - Contacted
+  - Replied
+  - Not Interested
+  - Do Not Contact
+- Every generated email must be reviewable before sending.
+- Store source URLs for every prospect so the admin can verify.
+
+4. Admin UI
+Add a Team Training Leads section in the org/admin area.
+
+The page should include:
+- Lead cards/table
+- Filters by sport, type, city, confidence, and status
+- “Research new leads” button
+- “Generate email” button
+- “Approve to send” button
+- “Mark contacted”
+- “Do not contact”
+- Source link
+- Confidence score
+- Editable contact info
+- Editable email draft
+
+5. Email generation
+Generate personalized outreach emails using:
+- business name
+- coach name
+- prospect/team name
+- sport
+- location
+- training offer
+- available services
+- short call-to-action
+
+Default tone:
+Professional, local, direct, not spammy.
+
+Example email:
+
+Subject: Team training for [Team Name]
+
+Hi [Coach/Director Name],
+
+I’m reaching out from [Business Name]. We work with athletes on speed, strength, movement quality, and performance training.
+
+I came across [Team Name] and thought there may be a good fit for off-season or in-season team training.
+
+We can support athletes with:
+- speed and agility
+- strength development
+- injury-risk reduction
+- conditioning
+- movement mechanics
+
+Would you be open to a quick conversation about team training options for your athletes?
+
+Best,
+[Coach Name]
+
+6. Sending rules
+Do not send automatically on discovery.
+Use a two-step flow:
+- Step 1: Generate draft
+- Step 2: Admin approves send
+
+Before sending, check:
+- prospect has valid email
+- prospect is not Do Not Contact
+- prospect has not opted out
+- cooldown window has passed
+- email body is not empty
+- admin explicitly approved
+
+7. Agent behavior
+The backend agent should:
+- research prospects
+- score lead quality
+- summarize why each lead is relevant
+- generate personalized email drafts
+- recommend priority order
+- never claim certainty without a source
+- never invent contact details
+- store “unknown” if data is missing
+
+8. Database additions
+Create tables for:
+- team_training_prospects
+- team_training_outreach_drafts
+- team_training_outreach_events
+- prospect_opt_outs, if not already covered globally
+
+9. Email events
+Track:
+- draft_created
+- approved
+- sent
+- failed
+- replied
+- bounced
+- unsubscribed
+- marked_do_not_contact
+
+10. Dashboard widgets
+Add to admin dashboard:
+- New team leads found
+- Drafts awaiting approval
+- Outreach sent this week
+- Replies received
+- Estimated team training revenue pipeline
+
+11. Revenue logic
+Allow admin to set estimated team training value, for example:
+- $250/session
+- $500/session
+- $1,000/month team contract
+
+Use this to estimate pipeline value.
+
+12. Implementation constraints
+- Keep this separate from the normal scheduling agent.
+- Do not break existing agent tools.
+- Do not auto-send without approval.
+- Add clear logs for all research, draft, approval, and send actions.
+- Add empty states and demo states clearly labeled.
+- Mobile should be usable but admin desktop can be primary.
+
+Deliverables:
+- Schema migration
+- Backend research service
+- Lead scoring service
+- Email draft generation service
+- Admin Team Training Leads UI
+- Approval/send flow
+- Safety checks
+- Audit logs
+- Basic tests
