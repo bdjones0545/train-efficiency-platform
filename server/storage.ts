@@ -1871,6 +1871,125 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  // ─── Email Agent Settings ─────────────────────────────────────────────────
+  async getEmailAgentSettings(orgId: string): Promise<Record<string, any>> {
+    const key = `email_agent_settings_${orgId}`;
+    const row = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+    if (row.length === 0) return {};
+    try { return JSON.parse(row[0].value); } catch { return {}; }
+  }
+
+  async saveEmailAgentSettings(orgId: string, settings: Record<string, any>): Promise<void> {
+    const key = `email_agent_settings_${orgId}`;
+    await db.insert(appSettings).values({ key, value: JSON.stringify(settings) })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value: JSON.stringify(settings) } });
+  }
+
+  async getEmailAgentOverview(orgId: string): Promise<{
+    sentToday: number;
+    dailyLimit: number;
+    totalProspects: number;
+    prospectsWithEmail: number;
+    replied: number;
+    interested: number;
+    estimatedPipeline: number;
+  }> {
+    const { teamTrainingProspects, teamTrainingOutreachEvents } = await import("@shared/schema");
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [allProspects, todayEvents, settings] = await Promise.all([
+      db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId)),
+      db.select().from(teamTrainingOutreachEvents).where(
+        and(
+          eq(teamTrainingOutreachEvents.orgId, orgId),
+          eq(teamTrainingOutreachEvents.eventType, "sent"),
+          gte(teamTrainingOutreachEvents.createdAt!, startOfToday)
+        )
+      ),
+      this.getEmailAgentSettings(orgId),
+    ]);
+
+    const dailyLimit = settings.dailyLimit ?? 10;
+    const defaultValue = settings.defaultEstimatedValue ?? 2500;
+    const replied = allProspects.filter(p => p.outreachStatus === "Replied").length;
+    const interested = allProspects.filter(p => p.outreachStatus === "Replied" || p.outreachStatus === "Approved").length;
+    const estimatedPipeline = allProspects
+      .filter(p => p.outreachStatus !== "Do Not Contact" && p.outreachStatus !== "Not Interested")
+      .reduce((sum, p) => sum + (p.estimatedValue ?? defaultValue), 0);
+
+    return {
+      sentToday: todayEvents.length,
+      dailyLimit,
+      totalProspects: allProspects.length,
+      prospectsWithEmail: allProspects.filter(p => !!p.contactEmail).length,
+      replied,
+      interested,
+      estimatedPipeline,
+    };
+  }
+
+  async buildDailyOutreachQueue(orgId: string, limit = 10): Promise<import("@shared/schema").TeamTrainingProspect[]> {
+    const { teamTrainingProspects, teamTrainingOutreachEvents } = await import("@shared/schema");
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const settings = await this.getEmailAgentSettings(orgId);
+    const cooldownDays = settings.cooldownDays ?? 30;
+    const cutoff = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000);
+
+    const [allProspects, sentToday] = await Promise.all([
+      db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId)),
+      db.select().from(teamTrainingOutreachEvents).where(
+        and(
+          eq(teamTrainingOutreachEvents.orgId, orgId),
+          eq(teamTrainingOutreachEvents.eventType, "sent"),
+          gte(teamTrainingOutreachEvents.createdAt!, startOfToday)
+        )
+      ),
+    ]);
+
+    const alreadySentCount = sentToday.length;
+    const remaining = Math.max(0, limit - alreadySentCount);
+    if (remaining === 0) return [];
+
+    const eligible = allProspects.filter(p => {
+      if (!p.contactEmail) return false;
+      if (p.outreachStatus === "Do Not Contact" || p.outreachStatus === "Not Interested") return false;
+      if (p.outreachStatus === "Contacted" || p.outreachStatus === "Replied") return false;
+      if (p.lastContactedAt && new Date(p.lastContactedAt) > cutoff) return false;
+      return true;
+    });
+
+    eligible.sort((a, b) => {
+      const scoreA = (a.confidenceScore ?? 0);
+      const scoreB = (b.confidenceScore ?? 0);
+      return scoreB - scoreA;
+    });
+
+    const queue = eligible.slice(0, remaining);
+
+    for (const p of queue) {
+      await db.update(teamTrainingProspects)
+        .set({ queuedForTodayAt: new Date(), updatedAt: new Date() })
+        .where(eq(teamTrainingProspects.id, p.id));
+    }
+
+    return queue;
+  }
+
+  async getDailyQueueProspects(orgId: string): Promise<import("@shared/schema").TeamTrainingProspect[]> {
+    const { teamTrainingProspects } = await import("@shared/schema");
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return db.select().from(teamTrainingProspects).where(
+      and(
+        eq(teamTrainingProspects.orgId, orgId),
+        gte(teamTrainingProspects.queuedForTodayAt!, startOfToday)
+      )
+    ).orderBy(desc(teamTrainingProspects.confidenceScore));
+  }
+
   // ─── Team Training Prospecting Implementation ────────────────────────────
   async getTeamTrainingProspects(orgId: string, opts?: { sport?: string; outreachStatus?: string; city?: string }) {
     const { teamTrainingProspects } = await import("@shared/schema");

@@ -139,7 +139,7 @@ export function AppSidebar() {
     { title: "Users", url: "/coach/users", icon: Users },
     ...(athleticEnabled ? [{ title: activeAthleticPrograms.length === 1 ? activeAthleticPrograms[0]?.name || "Athletic" : "Athletic", url: "/coach/athletic", icon: Trophy }] : []),
     { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText },
-    { title: "Email History", url: "/coach/communications", icon: Mail },
+    { title: "Email Agent", url: "/coach/communications", icon: Bot },
   ];
 
 

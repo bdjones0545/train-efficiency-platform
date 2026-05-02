@@ -7046,6 +7046,70 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Email Agent Routes ────────────────────────────────────────────────────
+
+  app.get("/api/email-agent/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const settings = await storage.getEmailAgentSettings(profile.organizationId);
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/email-agent/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      await storage.saveEmailAgentSettings(profile.organizationId, req.body);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/email-agent/overview", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const overview = await storage.getEmailAgentOverview(profile.organizationId);
+      res.json(overview);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/email-agent/queue", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const queue = await storage.getDailyQueueProspects(profile.organizationId);
+      res.json(queue);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/email-agent/queue/build", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const settings = await storage.getEmailAgentSettings(profile.organizationId);
+      const limit = settings.dailyLimit ?? 10;
+      const queue = await storage.buildDailyOutreachQueue(profile.organizationId, limit);
+      res.json({ count: queue.length, queue });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   startWeeklyReminderJob();
   startSessionReminderJob();
 
