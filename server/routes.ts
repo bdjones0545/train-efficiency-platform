@@ -22,6 +22,7 @@ import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClie
 import { startWeeklyReminderJob } from "./weekly-reminder";
 import { startSessionReminderJob } from "./session-reminders";
 import { handleAssistantMessage } from "./scheduling-assistant";
+import { computeCommandCenter, setMonthlyGoal, buildCommandCenterContextString } from "./business-command-center";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
 
@@ -6104,6 +6105,37 @@ export async function registerRoutes(
     }
   });
 
+  // ===== BUSINESS COMMAND CENTER =====
+
+  app.get("/api/business-command-center", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const data = await computeCommandCenter(profile.organizationId);
+      res.json(data);
+    } catch (err: any) {
+      console.error("Business command center error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/business-command-center/monthly-goal", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { goalCents } = req.body;
+      if (typeof goalCents !== "number" || goalCents < 0) {
+        return res.status(400).json({ message: "goalCents must be a non-negative number" });
+      }
+      await setMonthlyGoal(profile.organizationId, goalCents);
+      res.json({ ok: true, goalCents });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ===== SCHEDULING AGENT =====
   app.post("/api/scheduling-agent/chat", isAuthenticated, async (req: any, res) => {
     try {
@@ -6117,12 +6149,19 @@ export async function registerRoutes(
       const coachProfile = await storage.getCoachProfileByUserId(userId);
       const userName = user ? `${user.firstName} ${user.lastName}`.trim() : null;
 
+      let businessContext: string | null = null;
+      if ((profile.role === "ADMIN" || profile.role === "COACH") && profile.organizationId) {
+        try {
+          businessContext = await buildCommandCenterContextString(profile.organizationId);
+        } catch {}
+      }
+
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Transfer-Encoding", "chunked");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("X-Accel-Buffering", "no");
 
-      const stream = handleAssistantMessage(messages, userId, profile.role, userName, coachProfile?.id || null, profile.organizationId || null);
+      const stream = handleAssistantMessage(messages, userId, profile.role, userName, coachProfile?.id || null, profile.organizationId || null, businessContext);
       for await (const chunk of stream) {
         res.write(chunk);
       }

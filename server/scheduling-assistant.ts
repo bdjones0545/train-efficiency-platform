@@ -4585,9 +4585,13 @@ export function handleAssistantMessage(
   userRole: string,
   userName: string | null,
   coachId: string | null = null,
-  organizationId: string | null = null
+  organizationId: string | null = null,
+  businessContext: string | null = null
 ): AsyncGenerator<string> {
-  const systemPrompt = getSystemPrompt(userRole, userName, coachId);
+  const basePrompt = getSystemPrompt(userRole, userName, coachId);
+  const systemPrompt = businessContext
+    ? `${basePrompt}\n\n${businessContext}`
+    : basePrompt;
 
   const chatMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },

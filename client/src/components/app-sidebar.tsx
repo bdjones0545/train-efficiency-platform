@@ -50,6 +50,7 @@ import {
   ImagePlay,
   Mail,
   Target,
+  Flame,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -129,6 +130,7 @@ export function AppSidebar() {
   const coachTransactionsVisible = (organization as any)?.coachTransactionsVisible !== false;
 
   const coachItems = [
+    { title: "Command Center", url: "/command-center", icon: Flame },
     { title: "Dashboard", url: "/coach", icon: LayoutDashboard },
     { title: "My Profile", url: "/coach/profile", icon: UserCog },
     { title: "Availability", url: "/coach/availability", icon: CalendarClock },

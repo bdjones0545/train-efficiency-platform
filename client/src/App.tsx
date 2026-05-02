@@ -50,6 +50,7 @@ import CommunicationHistoryPage from "@/pages/communication-history";
 import UnsubscribePage from "@/pages/unsubscribe";
 import SettingsPage from "@/pages/settings";
 import AdminTeamTrainingLeadsPage from "@/pages/admin-team-training-leads";
+import BusinessCommandCenterPage from "@/pages/business-command-center";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { Button } from "@/components/ui/button";
@@ -185,6 +186,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/stripe" component={AdminStripePage} />
                   <Route path="/admin/subscription" component={AdminSubscriptionPage} />
                   <Route path="/admin/team-training-leads" component={AdminTeamTrainingLeadsPage} />
+                  <Route path="/command-center" component={BusinessCommandCenterPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />
