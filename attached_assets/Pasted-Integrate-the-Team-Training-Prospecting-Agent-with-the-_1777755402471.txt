@@ -1,0 +1,151 @@
+Integrate the Team Training Prospecting Agent with the existing Scheduling Agent as a unified TrainEfficiency Business Agent.
+
+Goal:
+The user should experience one agent that can both:
+1. Fill open schedule slots with current clients
+2. Build future revenue through team-training leads
+
+Do not remove the separate backend services. Keep the Team Training Prospecting Agent as its own backend module, but expose its insights and actions through the main Scheduling Agent dashboard/chat.
+
+Core architecture:
+- Keep scheduling tools separate from team prospecting tools
+- Add a shared Business Context Layer that summarizes:
+  - today’s schedule
+  - upcoming open slots
+  - current revenue
+  - monthly revenue goal
+  - revenue gap
+  - active clients needing outreach
+  - team-training lead pipeline
+  - drafts awaiting approval
+  - replies needing follow-up
+- Inject this context into the main agent system prompt before every response
+
+Agent behavior:
+The main agent should now reason across both short-term and long-term revenue.
+
+If open schedule slots exist:
+- Prioritize client booking/backfill recommendations
+
+If schedule is mostly full:
+- Prioritize team-training outreach
+
+If team leads have pending drafts:
+- Recommend reviewing/approving them
+
+If a team lead replied:
+- Recommend booking a consult/demo
+
+If revenue gap is large:
+- Recommend the highest-value action between:
+  - filling open 1:1 sessions
+  - contacting existing clients
+  - generating team-training outreach
+  - following up with team leads
+
+Add new agent quick actions:
+- “Find team training leads”
+- “Draft team outreach”
+- “Review pending team drafts”
+- “Show team revenue pipeline”
+- “Who should I follow up with today?”
+
+Agent UI updates:
+On the Agent Dashboard, add a second revenue banner under open slots:
+
+“Team pipeline: $X potential from Y leads”
+
+Clicking it should open the Team Training Leads page.
+
+In the Ops tab, add a Team Growth section showing:
+- new leads
+- high-confidence leads
+- drafts awaiting approval
+- replies needing follow-up
+- estimated pipeline value
+
+In the Revenue tab, include team pipeline as separate from booked revenue:
+- Booked session revenue
+- Projected month-end revenue
+- Team pipeline potential
+- Revenue gap to goal
+
+Important:
+Pipeline revenue should not be counted as booked revenue.
+Label it clearly as potential revenue.
+
+Tool integration:
+Expose team tools to the main agent:
+- research_team_training_leads
+- list_team_training_prospects
+- generate_team_outreach_draft
+- approve_team_outreach_draft
+- send_team_outreach_email
+- mark_team_prospect_replied
+- mark_team_prospect_do_not_contact
+- show_team_pipeline_summary
+
+Safety:
+- The agent may research leads without confirmation
+- The agent may generate drafts without confirmation
+- The agent may NOT send outreach without explicit confirmation
+- Sending must use the existing approve/send flow
+- Respect opt-outs and Do Not Contact
+- Never invent emails
+- Never auto-send on research
+- Every sent email must be logged
+
+Confirmation behavior:
+Use the same Confirm/Cancel card system as scheduling actions.
+
+For team outreach, confirmation cards should show:
+- prospect/team name
+- contact email
+- subject line
+- short preview
+- source/verification status
+- send button
+- cancel button
+
+Example desired behavior:
+
+User: “What should I do today?”
+
+Agent:
+“You have 2 open slots worth about $97, so the first priority is filling those. You also have 6 team-training leads worth about $4,500 in pipeline, with 2 drafts waiting for review.
+
+Recommended order:
+1. Offer the 10:30 AM slot to Mike
+2. Review the football team outreach draft
+3. Generate 3 new baseball team leads
+
+Want me to start with the open-slot outreach?”
+
+Example team behavior:
+
+User: “Help me grow team training.”
+
+Agent:
+“I found 7 team-training prospects within your area. 3 look high quality based on sport fit and available contact info. I can draft outreach for the top 3 now.”
+
+Then show:
+- Generate drafts button
+- View leads button
+
+Do not make this feel like two agents to the user.
+The UI can show separate sections, but the chat should feel like one business co-pilot.
+
+Implementation deliverables:
+1. Shared business context service
+2. Main agent prompt update
+3. Team prospecting tools exposed to main agent
+4. Agent dashboard pipeline card
+5. Ops tab team growth section
+6. Revenue tab pipeline section
+7. Confirm/Cancel cards for team outreach sending
+8. Tests for:
+   - no auto-send
+   - opt-out enforcement
+   - team pipeline not counted as booked revenue
+   - scheduling recommendations still work
+   - agent can prioritize between schedule gaps and team leads
