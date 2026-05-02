@@ -573,6 +573,99 @@ export const insertCommunicationLogSchema = createInsertSchema(communicationLogs
 export type CommunicationLog = typeof communicationLogs.$inferSelect;
 export type InsertCommunicationLog = z.infer<typeof insertCommunicationLogSchema>;
 
+// ─── Team Training Prospecting ─────────────────────────────────────────────
+export const prospectOutreachStatusEnum = pgEnum("prospect_outreach_status", [
+  "New",
+  "Needs Review",
+  "Approved",
+  "Contacted",
+  "Replied",
+  "Not Interested",
+  "Do Not Contact",
+]);
+
+export const teamTrainingProspects = pgTable("team_training_prospects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  prospectName: varchar("prospect_name").notNull(),
+  organizationType: varchar("organization_type").default("unknown"),
+  sport: varchar("sport").default("unknown"),
+  city: varchar("city").default("unknown"),
+  state: varchar("state").default("unknown"),
+  websiteUrl: text("website_url"),
+  contactName: varchar("contact_name").default("unknown"),
+  contactRole: varchar("contact_role").default("unknown"),
+  contactEmail: varchar("contact_email"),
+  contactPhone: varchar("contact_phone"),
+  sourceUrl: text("source_url"),
+  confidenceScore: integer("confidence_score").default(50),
+  outreachStatus: prospectOutreachStatusEnum("outreach_status").default("New"),
+  lastContactedAt: timestamp("last_contacted_at"),
+  notes: text("notes").default(""),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const teamTrainingOutreachDrafts = pgTable("team_training_outreach_drafts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  prospectId: varchar("prospect_id").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  approved: boolean("approved").default(false),
+  approvedAt: timestamp("approved_at"),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const teamTrainingOutreachEventTypeEnum = pgEnum("team_outreach_event_type", [
+  "draft_created",
+  "approved",
+  "sent",
+  "failed",
+  "replied",
+  "bounced",
+  "unsubscribed",
+  "marked_do_not_contact",
+  "research_run",
+]);
+
+export const teamTrainingOutreachEvents = pgTable("team_training_outreach_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  prospectId: varchar("prospect_id"),
+  draftId: varchar("draft_id"),
+  eventType: teamTrainingOutreachEventTypeEnum("event_type").notNull(),
+  description: text("description"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const prospectOptOuts = pgTable("prospect_opt_outs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  email: varchar("email").notNull(),
+  optedOutAt: timestamp("opted_out_at").defaultNow(),
+  reason: text("reason"),
+});
+
+export const insertTeamTrainingProspectSchema = createInsertSchema(teamTrainingProspects).omit({ id: true, createdAt: true, updatedAt: true });
+export type TeamTrainingProspect = typeof teamTrainingProspects.$inferSelect;
+export type InsertTeamTrainingProspect = z.infer<typeof insertTeamTrainingProspectSchema>;
+
+export const insertTeamTrainingOutreachDraftSchema = createInsertSchema(teamTrainingOutreachDrafts).omit({ id: true, createdAt: true, updatedAt: true });
+export type TeamTrainingOutreachDraft = typeof teamTrainingOutreachDrafts.$inferSelect;
+export type InsertTeamTrainingOutreachDraft = z.infer<typeof insertTeamTrainingOutreachDraftSchema>;
+
+export const insertTeamTrainingOutreachEventSchema = createInsertSchema(teamTrainingOutreachEvents).omit({ id: true, createdAt: true });
+export type TeamTrainingOutreachEvent = typeof teamTrainingOutreachEvents.$inferSelect;
+export type InsertTeamTrainingOutreachEvent = z.infer<typeof insertTeamTrainingOutreachEventSchema>;
+
+export const insertProspectOptOutSchema = createInsertSchema(prospectOptOuts).omit({ id: true, optedOutAt: true });
+export type ProspectOptOut = typeof prospectOptOuts.$inferSelect;
+export type InsertProspectOptOut = z.infer<typeof insertProspectOptOutSchema>;
+
 // ─── Per-Organization User Notification Preferences ────────────────────────
 export const userOrgPreferences = pgTable("user_org_preferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -49,6 +49,7 @@ import {
   CalendarDays,
   ImagePlay,
   Mail,
+  Target,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -238,6 +239,24 @@ export function AppSidebar() {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+
+          {role === "ADMIN" && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Growth</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/team-training-leads"}>
+                      <Link href="/admin/team-training-leads" onClick={handleNavClick} data-testid="nav-team-training-leads">
+                        <Target className="h-4 w-4" />
+                        <span>Team Training Leads</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

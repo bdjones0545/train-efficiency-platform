@@ -6593,6 +6593,378 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Team Training Prospecting Routes ─────────────────────────────────────
+
+  // Get all prospects for org
+  app.get("/api/admin/team-training/prospects", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { sport, outreachStatus, city } = req.query as any;
+      const prospects = await storage.getTeamTrainingProspects(profile.organizationId, {
+        sport: sport || undefined,
+        outreachStatus: outreachStatus || undefined,
+        city: city || undefined,
+      });
+      res.json(prospects);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Dashboard stats
+  app.get("/api/admin/team-training/stats", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const stats = await storage.getProspectDashboardStats(profile.organizationId);
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Run AI research
+  app.post("/api/admin/team-training/research", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const org = await storage.getOrganizationById(profile.organizationId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const { sport, limit = 8 } = req.body;
+      const { researchProspects, scoreProspect } = await import("./team-training-prospecting");
+      const results = await researchProspects(org, sport || undefined, Number(limit));
+
+      const created = [];
+      for (const p of results) {
+        const scored = scoreProspect(p);
+        const prospect = await storage.createTeamTrainingProspect({
+          orgId: profile.organizationId,
+          prospectName: p.prospectName,
+          organizationType: p.organizationType,
+          sport: p.sport,
+          city: p.city,
+          state: p.state,
+          websiteUrl: p.websiteUrl,
+          contactName: p.contactName,
+          contactRole: p.contactRole,
+          contactEmail: p.contactEmail,
+          contactPhone: p.contactPhone,
+          sourceUrl: p.sourceUrl,
+          confidenceScore: scored,
+          outreachStatus: "Needs Review",
+          notes: p.notes,
+        });
+        created.push(prospect);
+      }
+
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        eventType: "research_run",
+        description: `Research run found ${created.length} prospects${sport ? ` for sport: ${sport}` : ""}`,
+        metadata: { count: created.length, sport: sport || null },
+      });
+
+      res.json({ count: created.length, prospects: created });
+    } catch (err: any) {
+      console.error("[TeamTraining Research]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Create prospect manually
+  app.post("/api/admin/team-training/prospects", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const prospect = await storage.createTeamTrainingProspect({
+        ...req.body,
+        orgId: profile.organizationId,
+      });
+      res.json(prospect);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Update prospect
+  app.patch("/api/admin/team-training/prospects/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const updated = await storage.updateTeamTrainingProspect(req.params.id, req.body);
+      if (!updated) return res.status(404).json({ message: "Prospect not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Delete prospect
+  app.delete("/api/admin/team-training/prospects/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      await storage.deleteTeamTrainingProspect(req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Get drafts for a prospect
+  app.get("/api/admin/team-training/prospects/:id/drafts", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const drafts = await storage.getOutreachDraftsByProspect(req.params.id);
+      res.json(drafts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Get all drafts for org
+  app.get("/api/admin/team-training/drafts", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const drafts = await storage.getOutreachDraftsByOrg(profile.organizationId);
+      res.json(drafts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Generate email draft (AI)
+  app.post("/api/admin/team-training/prospects/:id/generate-email", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const prospect = await storage.getTeamTrainingProspect(req.params.id);
+      if (!prospect) return res.status(404).json({ message: "Prospect not found" });
+
+      const org = await storage.getOrganizationById(profile.organizationId);
+      const owner = org?.ownerUserId ? await storage.getUser(org.ownerUserId) : null;
+      const ownerCoach = org?.ownerEmail ? await storage.getCoachProfileByEmail(org.ownerEmail) : null;
+      const coachUser = ownerCoach ? await storage.getUser(ownerCoach.userId) : null;
+      const coachName = coachUser ? `${coachUser.firstName} ${coachUser.lastName}`.trim() : (owner ? `${owner.firstName} ${owner.lastName}`.trim() : "Coach");
+
+      const { generateOutreachEmail } = await import("./team-training-prospecting");
+      const draft = await generateOutreachEmail({
+        businessName: org?.name || "Our Training Facility",
+        coachName,
+        prospectName: prospect.prospectName,
+        sport: prospect.sport || "your sport",
+        city: prospect.city || "your area",
+        contactName: prospect.contactName || "unknown",
+        services: req.body?.services,
+      });
+
+      const saved = await storage.createOutreachDraft({
+        orgId: profile.organizationId,
+        prospectId: prospect.id,
+        subject: draft.subject,
+        body: draft.body,
+        approved: false,
+      });
+
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        prospectId: prospect.id,
+        draftId: saved.id,
+        eventType: "draft_created",
+        description: `Email draft generated for ${prospect.prospectName}`,
+      });
+
+      res.json(saved);
+    } catch (err: any) {
+      console.error("[TeamTraining GenerateEmail]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Update draft (edit body/subject)
+  app.patch("/api/admin/team-training/drafts/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const updated = await storage.updateOutreachDraft(req.params.id, req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Approve draft
+  app.post("/api/admin/team-training/drafts/:id/approve", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const updated = await storage.updateOutreachDraft(req.params.id, {
+        approved: true,
+        approvedAt: new Date(),
+      });
+
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        prospectId: draft.prospectId,
+        draftId: draft.id,
+        eventType: "approved",
+        description: "Draft approved by admin",
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Send draft (after approval)
+  app.post("/api/admin/team-training/drafts/:id/send", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+      if (!draft.approved) return res.status(400).json({ message: "Draft must be approved before sending" });
+      if (draft.sentAt) return res.status(400).json({ message: "Draft already sent" });
+
+      const prospect = await storage.getTeamTrainingProspect(draft.prospectId);
+      if (!prospect) return res.status(404).json({ message: "Prospect not found" });
+
+      // Safety checks
+      if (!prospect.contactEmail) {
+        return res.status(400).json({ message: "Prospect has no email address. Please add one before sending." });
+      }
+      if (prospect.outreachStatus === "Do Not Contact") {
+        return res.status(400).json({ message: "This prospect is marked Do Not Contact." });
+      }
+      const optedOut = await storage.isProspectOptedOut(profile.organizationId, prospect.contactEmail);
+      if (optedOut) {
+        return res.status(400).json({ message: "This prospect has opted out." });
+      }
+      if (!draft.body || draft.body.trim().length === 0) {
+        return res.status(400).json({ message: "Email body is empty." });
+      }
+
+      // Cooldown check (7 days)
+      if (prospect.lastContactedAt) {
+        const cooldownDays = 7;
+        const daysSince = (Date.now() - new Date(prospect.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSince < cooldownDays) {
+          return res.status(400).json({ message: `Cooldown: last contacted ${Math.round(daysSince)} days ago (minimum ${cooldownDays} days).` });
+        }
+      }
+
+      // Send via SendGrid (using the email module helper)
+      const org = await storage.getOrganizationById(profile.organizationId);
+      const branding = await getOrgBranding(profile.organizationId);
+      const { sendTeamTrainingOutreachEmail } = await import("./email");
+
+      try {
+        await sendTeamTrainingOutreachEmail(
+          prospect.contactEmail,
+          draft.subject,
+          draft.body,
+          branding,
+        );
+      } catch (sendErr: any) {
+        console.error("[TeamTraining Send]", sendErr);
+        await storage.logOutreachEvent({
+          orgId: profile.organizationId,
+          prospectId: prospect.id,
+          draftId: draft.id,
+          eventType: "failed",
+          description: `Failed to send email: ${sendErr.message}`,
+        });
+        return res.status(500).json({ message: `Failed to send email: ${sendErr.message}` });
+      }
+
+      // Mark sent
+      await storage.updateOutreachDraft(draft.id, { sentAt: new Date() });
+      await storage.updateTeamTrainingProspect(prospect.id, {
+        outreachStatus: "Contacted",
+        lastContactedAt: new Date(),
+      });
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        prospectId: prospect.id,
+        draftId: draft.id,
+        eventType: "sent",
+        description: `Outreach email sent to ${prospect.contactEmail}`,
+      });
+
+      res.json({ ok: true, sentTo: prospect.contactEmail });
+    } catch (err: any) {
+      console.error("[TeamTraining Send]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Mark replied
+  app.post("/api/admin/team-training/prospects/:id/mark-replied", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      await storage.updateTeamTrainingProspect(req.params.id, { outreachStatus: "Replied" });
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        prospectId: req.params.id,
+        eventType: "replied",
+        description: "Marked as replied by admin",
+      });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Mark do not contact
+  app.post("/api/admin/team-training/prospects/:id/do-not-contact", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const prospect = await storage.getTeamTrainingProspect(req.params.id);
+      if (!prospect) return res.status(404).json({ message: "Not found" });
+      await storage.updateTeamTrainingProspect(req.params.id, { outreachStatus: "Do Not Contact" });
+      if (prospect.contactEmail) {
+        await storage.addProspectOptOut(profile.organizationId, prospect.contactEmail, "Marked Do Not Contact by admin");
+      }
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        prospectId: req.params.id,
+        eventType: "marked_do_not_contact",
+        description: "Marked as Do Not Contact by admin",
+      });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Get outreach events/audit log
+  app.get("/api/admin/team-training/events", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const events = await storage.getOutreachEvents(profile.organizationId, req.query.prospectId as string | undefined);
+      res.json(events);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   startWeeklyReminderJob();
   startSessionReminderJob();
 

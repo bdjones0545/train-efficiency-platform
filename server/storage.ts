@@ -282,6 +282,23 @@ export interface IStorage {
   updateNotificationPreferences(userId: string, prefs: Record<string, any>): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
 
+  // Team Training Prospecting
+  getTeamTrainingProspects(orgId: string, opts?: { sport?: string; outreachStatus?: string; city?: string }): Promise<import("@shared/schema").TeamTrainingProspect[]>;
+  getTeamTrainingProspect(id: string): Promise<import("@shared/schema").TeamTrainingProspect | undefined>;
+  createTeamTrainingProspect(data: import("@shared/schema").InsertTeamTrainingProspect): Promise<import("@shared/schema").TeamTrainingProspect>;
+  updateTeamTrainingProspect(id: string, data: Partial<import("@shared/schema").TeamTrainingProspect>): Promise<import("@shared/schema").TeamTrainingProspect | undefined>;
+  deleteTeamTrainingProspect(id: string): Promise<boolean>;
+  getOutreachDraftsByProspect(prospectId: string): Promise<import("@shared/schema").TeamTrainingOutreachDraft[]>;
+  getOutreachDraft(id: string): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
+  createOutreachDraft(data: import("@shared/schema").InsertTeamTrainingOutreachDraft): Promise<import("@shared/schema").TeamTrainingOutreachDraft>;
+  updateOutreachDraft(id: string, data: Partial<import("@shared/schema").TeamTrainingOutreachDraft>): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
+  logOutreachEvent(data: import("@shared/schema").InsertTeamTrainingOutreachEvent): Promise<import("@shared/schema").TeamTrainingOutreachEvent>;
+  getOutreachEvents(orgId: string, prospectId?: string): Promise<import("@shared/schema").TeamTrainingOutreachEvent[]>;
+  isProspectOptedOut(orgId: string, email: string): Promise<boolean>;
+  addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void>;
+  getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>;
+  getOutreachDraftsByOrg(orgId: string): Promise<(import("@shared/schema").TeamTrainingOutreachDraft & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
+
   // Per-org preferences
   getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null>;
   getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined>;
@@ -1852,6 +1869,128 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return created;
+  }
+
+  // ─── Team Training Prospecting Implementation ────────────────────────────
+  async getTeamTrainingProspects(orgId: string, opts?: { sport?: string; outreachStatus?: string; city?: string }) {
+    const { teamTrainingProspects } = await import("@shared/schema");
+    let q = db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId));
+    const results = await q.orderBy(desc(teamTrainingProspects.createdAt));
+    return results.filter((r) => {
+      if (opts?.sport && r.sport?.toLowerCase() !== opts.sport.toLowerCase()) return false;
+      if (opts?.outreachStatus && r.outreachStatus !== opts.outreachStatus) return false;
+      if (opts?.city && !r.city?.toLowerCase().includes(opts.city.toLowerCase())) return false;
+      return true;
+    });
+  }
+
+  async getTeamTrainingProspect(id: string) {
+    const { teamTrainingProspects } = await import("@shared/schema");
+    const [row] = await db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.id, id));
+    return row || undefined;
+  }
+
+  async createTeamTrainingProspect(data: import("@shared/schema").InsertTeamTrainingProspect) {
+    const { teamTrainingProspects } = await import("@shared/schema");
+    const [row] = await db.insert(teamTrainingProspects).values(data).returning();
+    return row;
+  }
+
+  async updateTeamTrainingProspect(id: string, data: Partial<import("@shared/schema").TeamTrainingProspect>) {
+    const { teamTrainingProspects } = await import("@shared/schema");
+    const updateData: any = { ...data, updatedAt: new Date() };
+    delete updateData.id;
+    delete updateData.createdAt;
+    const [row] = await db.update(teamTrainingProspects).set(updateData).where(eq(teamTrainingProspects.id, id)).returning();
+    return row || undefined;
+  }
+
+  async deleteTeamTrainingProspect(id: string): Promise<boolean> {
+    const { teamTrainingProspects } = await import("@shared/schema");
+    await db.delete(teamTrainingProspects).where(eq(teamTrainingProspects.id, id));
+    return true;
+  }
+
+  async getOutreachDraftsByProspect(prospectId: string) {
+    const { teamTrainingOutreachDrafts } = await import("@shared/schema");
+    return db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.prospectId, prospectId)).orderBy(desc(teamTrainingOutreachDrafts.createdAt));
+  }
+
+  async getOutreachDraftsByOrg(orgId: string) {
+    const { teamTrainingOutreachDrafts, teamTrainingProspects } = await import("@shared/schema");
+    const drafts = await db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.orgId, orgId)).orderBy(desc(teamTrainingOutreachDrafts.createdAt));
+    const prospectIds = [...new Set(drafts.map((d) => d.prospectId))];
+    const prospects = prospectIds.length > 0
+      ? await db.select().from(teamTrainingProspects).where(inArray(teamTrainingProspects.id, prospectIds))
+      : [];
+    const prospectMap = new Map(prospects.map((p) => [p.id, p]));
+    return drafts.map((d) => ({ ...d, prospect: prospectMap.get(d.prospectId) }));
+  }
+
+  async getOutreachDraft(id: string) {
+    const { teamTrainingOutreachDrafts } = await import("@shared/schema");
+    const [row] = await db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.id, id));
+    return row || undefined;
+  }
+
+  async createOutreachDraft(data: import("@shared/schema").InsertTeamTrainingOutreachDraft) {
+    const { teamTrainingOutreachDrafts } = await import("@shared/schema");
+    const [row] = await db.insert(teamTrainingOutreachDrafts).values(data).returning();
+    return row;
+  }
+
+  async updateOutreachDraft(id: string, data: Partial<import("@shared/schema").TeamTrainingOutreachDraft>) {
+    const { teamTrainingOutreachDrafts } = await import("@shared/schema");
+    const updateData: any = { ...data, updatedAt: new Date() };
+    delete updateData.id;
+    delete updateData.createdAt;
+    const [row] = await db.update(teamTrainingOutreachDrafts).set(updateData).where(eq(teamTrainingOutreachDrafts.id, id)).returning();
+    return row || undefined;
+  }
+
+  async logOutreachEvent(data: import("@shared/schema").InsertTeamTrainingOutreachEvent) {
+    const { teamTrainingOutreachEvents } = await import("@shared/schema");
+    const [row] = await db.insert(teamTrainingOutreachEvents).values(data).returning();
+    return row;
+  }
+
+  async getOutreachEvents(orgId: string, prospectId?: string) {
+    const { teamTrainingOutreachEvents } = await import("@shared/schema");
+    if (prospectId) {
+      return db.select().from(teamTrainingOutreachEvents).where(and(eq(teamTrainingOutreachEvents.orgId, orgId), eq(teamTrainingOutreachEvents.prospectId!, prospectId))).orderBy(desc(teamTrainingOutreachEvents.createdAt));
+    }
+    return db.select().from(teamTrainingOutreachEvents).where(eq(teamTrainingOutreachEvents.orgId, orgId)).orderBy(desc(teamTrainingOutreachEvents.createdAt));
+  }
+
+  async isProspectOptedOut(orgId: string, email: string): Promise<boolean> {
+    const { prospectOptOuts } = await import("@shared/schema");
+    const [row] = await db.select().from(prospectOptOuts).where(and(eq(prospectOptOuts.orgId, orgId), eq(prospectOptOuts.email, email.toLowerCase())));
+    return !!row;
+  }
+
+  async addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void> {
+    const { prospectOptOuts } = await import("@shared/schema");
+    await db.insert(prospectOptOuts).values({ orgId, email: email.toLowerCase(), reason }).onConflictDoNothing();
+  }
+
+  async getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }> {
+    const { teamTrainingProspects, teamTrainingOutreachDrafts, teamTrainingOutreachEvents } = await import("@shared/schema");
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 7);
+
+    const [allProspects, allDrafts, weekEvents] = await Promise.all([
+      db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId)),
+      db.select().from(teamTrainingOutreachDrafts).where(and(eq(teamTrainingOutreachDrafts.orgId, orgId), eq(teamTrainingOutreachDrafts.approved, false))),
+      db.select().from(teamTrainingOutreachEvents).where(and(eq(teamTrainingOutreachEvents.orgId, orgId), gte(teamTrainingOutreachEvents.createdAt!, weekStart))),
+    ]);
+
+    return {
+      newLeads: allProspects.filter((p) => p.outreachStatus === "New").length,
+      pendingApproval: allDrafts.length,
+      sentThisWeek: weekEvents.filter((e) => e.eventType === "sent").length,
+      replies: weekEvents.filter((e) => e.eventType === "replied").length,
+    };
   }
 
   async backfillUserOrgPreferences(): Promise<{ created: number; skipped: number }> {

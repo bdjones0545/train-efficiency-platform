@@ -1075,6 +1075,19 @@ export async function sendAgentOutreachEmail(
   await sendEmail(clientEmail, emailSubject, html, b.name, logCtx);
 }
 
+export async function sendTeamTrainingOutreachEmail(
+  toEmail: string,
+  subject: string,
+  body: string,
+  org?: OrgBranding,
+) {
+  const b = brand(org);
+  const html = emailShell(subject, `
+    <div style="font-size: 15px; line-height: 1.7; white-space: pre-wrap;">${body.replace(/\n/g, "<br>")}</div>
+  `, org);
+  await sendEmail(toEmail, subject, html, b.name);
+}
+
 export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {
   const subject = "Reset your TrainEfficiency password";
   const html = emailShell("Reset Your Password", `
