@@ -307,6 +307,16 @@ export interface IStorage {
   selectVariantForEmail(orgId: string): Promise<import("@shared/schema").EmailMessageVariant | null>;
   runVariantOptimization(orgId: string): Promise<void>;
 
+  // Follow-ups
+  createFollowUp(data: import("@shared/schema").InsertEmailFollowUp): Promise<import("@shared/schema").EmailFollowUp>;
+  getFollowUpsByOrg(orgId: string): Promise<(import("@shared/schema").EmailFollowUp & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
+  getFollowUpsByDraft(outreachDraftId: string): Promise<import("@shared/schema").EmailFollowUp[]>;
+  getFollowUp(id: string): Promise<import("@shared/schema").EmailFollowUp | undefined>;
+  updateFollowUp(id: string, data: Partial<import("@shared/schema").EmailFollowUp>): Promise<import("@shared/schema").EmailFollowUp | undefined>;
+  getDueFollowUps(orgId: string): Promise<import("@shared/schema").EmailFollowUp[]>;
+  cancelFollowUpSequence(outreachDraftId: string): Promise<void>;
+  getFollowUpStats(orgId: string): Promise<{ activeSequences: number; pendingReplies: number; interestedLeads: number }>;
+
   // Per-org preferences
   getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null>;
   getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined>;
@@ -2245,6 +2255,87 @@ export class DatabaseStorage implements IStorage {
     }
 
     console.log(`[Variant Optimization] org ${orgId} — reweighted ${scored.length} variants`);
+  }
+
+  async createFollowUp(data: import("@shared/schema").InsertEmailFollowUp): Promise<import("@shared/schema").EmailFollowUp> {
+    const { emailFollowUps } = await import("@shared/schema");
+    const [row] = await db.insert(emailFollowUps).values(data).returning();
+    return row;
+  }
+
+  async getFollowUpsByOrg(orgId: string): Promise<(import("@shared/schema").EmailFollowUp & { prospect?: import("@shared/schema").TeamTrainingProspect })[]> {
+    const { emailFollowUps, teamTrainingProspects } = await import("@shared/schema");
+    const rows = await db.select().from(emailFollowUps)
+      .where(eq(emailFollowUps.orgId, orgId))
+      .orderBy(desc(emailFollowUps.scheduledFor));
+    const prospectIds = [...new Set(rows.map(r => r.prospectId))];
+    const prospects = prospectIds.length > 0
+      ? await db.select().from(teamTrainingProspects).where(inArray(teamTrainingProspects.id, prospectIds))
+      : [];
+    const prospectMap = Object.fromEntries(prospects.map(p => [p.id, p]));
+    return rows.map(r => ({ ...r, prospect: prospectMap[r.prospectId] }));
+  }
+
+  async getFollowUpsByDraft(outreachDraftId: string): Promise<import("@shared/schema").EmailFollowUp[]> {
+    const { emailFollowUps } = await import("@shared/schema");
+    return db.select().from(emailFollowUps)
+      .where(eq(emailFollowUps.outreachDraftId, outreachDraftId))
+      .orderBy(emailFollowUps.stepNumber);
+  }
+
+  async getFollowUp(id: string): Promise<import("@shared/schema").EmailFollowUp | undefined> {
+    const { emailFollowUps } = await import("@shared/schema");
+    const [row] = await db.select().from(emailFollowUps).where(eq(emailFollowUps.id, id));
+    return row;
+  }
+
+  async updateFollowUp(id: string, data: Partial<import("@shared/schema").EmailFollowUp>): Promise<import("@shared/schema").EmailFollowUp | undefined> {
+    const { emailFollowUps } = await import("@shared/schema");
+    const [row] = await db.update(emailFollowUps)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(emailFollowUps.id, id))
+      .returning();
+    return row;
+  }
+
+  async getDueFollowUps(orgId: string): Promise<import("@shared/schema").EmailFollowUp[]> {
+    const { emailFollowUps } = await import("@shared/schema");
+    return db.select().from(emailFollowUps)
+      .where(and(
+        eq(emailFollowUps.orgId, orgId),
+        eq(emailFollowUps.status, "pending"),
+        lte(emailFollowUps.scheduledFor, new Date()),
+      ));
+  }
+
+  async cancelFollowUpSequence(outreachDraftId: string): Promise<void> {
+    const { emailFollowUps } = await import("@shared/schema");
+    await db.update(emailFollowUps)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(and(
+        eq(emailFollowUps.outreachDraftId, outreachDraftId),
+        eq(emailFollowUps.status, "pending"),
+      ));
+  }
+
+  async getFollowUpStats(orgId: string): Promise<{ activeSequences: number; pendingReplies: number; interestedLeads: number }> {
+    const { emailFollowUps, teamTrainingOutreachDrafts, teamTrainingProspects } = await import("@shared/schema");
+    const pending = await db.select().from(emailFollowUps)
+      .where(and(eq(emailFollowUps.orgId, orgId), eq(emailFollowUps.status, "pending")));
+    const activeSequences = new Set(pending.map(f => f.outreachDraftId)).size;
+
+    const replied = await db.select().from(teamTrainingProspects)
+      .where(and(eq(teamTrainingProspects.orgId, orgId), eq(teamTrainingProspects.outreachStatus, "Replied")));
+    const pendingReplies = replied.length;
+
+    const draftsWithInterested = await db.select().from(teamTrainingOutreachDrafts)
+      .where(and(
+        eq(teamTrainingOutreachDrafts.orgId, orgId),
+        eq(teamTrainingOutreachDrafts.replyClassification, "interested"),
+      ));
+    const interestedLeads = draftsWithInterested.length;
+
+    return { activeSequences, pendingReplies, interestedLeads };
   }
 
   async getEmailPerformanceStats(orgId: string): Promise<{

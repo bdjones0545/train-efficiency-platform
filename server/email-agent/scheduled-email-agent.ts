@@ -218,10 +218,11 @@ export async function runEmailAgentForOrg(orgId: string): Promise<DailyJobResult
           draftToSend.id,
         );
 
-        await storage.updateOutreachDraft(draftToSend.id, { sentAt: new Date() });
+        const sentAt = new Date();
+        await storage.updateOutreachDraft(draftToSend.id, { sentAt });
         await storage.updateTeamTrainingProspect(prospect.id, {
           outreachStatus: "Contacted",
-          lastContactedAt: new Date(),
+          lastContactedAt: sentAt,
         });
         await storage.logOutreachEvent({
           orgId,
@@ -230,6 +231,14 @@ export async function runEmailAgentForOrg(orgId: string): Promise<DailyJobResult
           eventType: "sent",
           description: `[Auto] Outreach sent to ${prospect.contactEmail}`,
         });
+
+        // Schedule follow-up sequence
+        try {
+          const { scheduleFollowUpsForDraft } = await import("./follow-up-cron");
+          await scheduleFollowUpsForDraft(orgId, draftToSend.id, prospect.id, sentAt);
+        } catch (fuErr: any) {
+          console.warn(`[Email Agent Cron] follow-up scheduling error:`, fuErr.message);
+        }
 
         result.emailsSent++;
         console.log(`[Email Agent Cron] sent email to ${prospect.contactEmail} (${prospect.prospectName})`);

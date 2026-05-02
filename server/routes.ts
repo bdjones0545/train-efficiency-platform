@@ -6153,11 +6153,14 @@ export async function registerRoutes(
       if ((profile.role === "ADMIN" || profile.role === "COACH") && profile.organizationId) {
         try {
           businessContext = await buildCommandCenterContextString(profile.organizationId);
-          // Inject email performance context
+          // Inject email performance + follow-up context
           try {
-            const perfStats = await storage.getEmailPerformanceStats(profile.organizationId);
+            const [perfStats, followUpStats] = await Promise.all([
+              storage.getEmailPerformanceStats(profile.organizationId),
+              storage.getFollowUpStats(profile.organizationId),
+            ]);
             const bestVariantName = perfStats.bestVariant?.name ?? "none";
-            const emailCtx = `\n\nEMAIL PERFORMANCE CONTEXT:\n- open rate: ${perfStats.openRate}%\n- reply rate: ${perfStats.replyRate}%\n- conversion rate: ${perfStats.conversionRate}%\n- best performing variant: ${bestVariantName}\n\nRules:\n- prefer high-performing variants when suggesting outreach strategies\n- if reply rate is low (<5%), recommend adapting tone or shortening messages\n- if open rate is high but replies low, suggest more direct calls to action`;
+            const emailCtx = `\n\nEMAIL PERFORMANCE CONTEXT:\n- open rate: ${perfStats.openRate}%\n- reply rate: ${perfStats.replyRate}%\n- conversion rate: ${perfStats.conversionRate}%\n- best performing variant: ${bestVariantName}\n\nFOLLOW-UP CONTEXT:\n- active follow-up sequences: ${followUpStats.activeSequences}\n- replies pending review: ${followUpStats.pendingReplies}\n- interested leads: ${followUpStats.interestedLeads}\n\nRules:\n- if interested leads > 0, prioritize converting them before new outreach\n- if active sequences > 0, avoid sending duplicate outreach to prospects already in a follow-up sequence\n- prefer high-performing variants when suggesting outreach strategies\n- if reply rate is low (<5%), recommend adapting tone or shortening messages\n- if open rate is high but replies low, suggest more direct calls to action`;
             businessContext = (businessContext || "") + emailCtx;
           } catch {}
         } catch {}
@@ -6936,10 +6939,11 @@ export async function registerRoutes(
       }
 
       // Mark sent
-      await storage.updateOutreachDraft(draft.id, { sentAt: new Date() });
+      const manualSentAt = new Date();
+      await storage.updateOutreachDraft(draft.id, { sentAt: manualSentAt });
       await storage.updateTeamTrainingProspect(prospect.id, {
         outreachStatus: "Contacted",
-        lastContactedAt: new Date(),
+        lastContactedAt: manualSentAt,
       });
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
@@ -6949,6 +6953,14 @@ export async function registerRoutes(
         description: `Outreach email sent to ${prospect.contactEmail}`,
       });
 
+      // Schedule follow-up sequence
+      try {
+        const { scheduleFollowUpsForDraft } = await import("./email-agent/follow-up-cron");
+        await scheduleFollowUpsForDraft(profile.organizationId, draft.id, prospect.id, manualSentAt);
+      } catch (fuErr: any) {
+        console.warn("[ManualSend] follow-up scheduling error:", fuErr.message);
+      }
+
       res.json({ ok: true, sentTo: prospect.contactEmail });
     } catch (err: any) {
       console.error("[TeamTraining Send]", err);
@@ -6956,18 +6968,37 @@ export async function registerRoutes(
     }
   });
 
-  // Mark replied
+  // Mark replied — accepts optional replyText + replyClassification (or auto-classify)
   app.post("/api/admin/team-training/prospects/:id/mark-replied", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const { replyText, replyClassification: manualClassification } = req.body ?? {};
+
+      // AI-classify if text provided but no manual classification
+      let classification = manualClassification ?? null;
+      if (replyText && !classification) {
+        try {
+          const { classifyReply } = await import("./email-agent/reply-classifier");
+          classification = await classifyReply(replyText);
+        } catch {}
+      }
+
       await storage.updateTeamTrainingProspect(req.params.id, { outreachStatus: "Replied" });
-      // Set repliedAt on the most recently sent draft for this prospect
+
+      // Set repliedAt + reply fields on the most recently sent draft
       const drafts = await storage.getOutreachDraftsByProspect(req.params.id);
       const sentDraft = drafts.find(d => !!d.sentAt && !d.repliedAt);
       if (sentDraft) {
-        await storage.updateOutreachDraft(sentDraft.id, { repliedAt: new Date() });
+        await storage.updateOutreachDraft(sentDraft.id, {
+          repliedAt: new Date(),
+          replyText: replyText ?? null,
+          replyClassification: classification,
+        });
+        // Cancel pending follow-ups for this draft (prospect replied — stop sequence)
+        await storage.cancelFollowUpSequence(sentDraft.id);
         // Update variant conversion stats
         if (sentDraft.messageVariantId) {
           const variant = await storage.getEmailMessageVariant(sentDraft.messageVariantId);
@@ -6979,13 +7010,18 @@ export async function registerRoutes(
           }
         }
       }
+
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
         prospectId: req.params.id,
         eventType: "replied",
-        description: "Marked as replied by admin",
+        description: classification
+          ? `Marked as replied (${classification})${replyText ? " with reply text" : ""}`
+          : "Marked as replied by admin",
+        metadata: replyText ? { replyText: replyText.slice(0, 500), classification } : undefined,
       });
-      res.json({ ok: true });
+
+      res.json({ ok: true, classification });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -7272,8 +7308,78 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Follow-Up Routes ──────────────────────────────────────────────────────
+
+  app.get("/api/email-agent/follow-ups", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const followUps = await storage.getFollowUpsByOrg(profile.organizationId);
+      res.json(followUps);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/email-agent/follow-up-stats", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const stats = await storage.getFollowUpStats(profile.organizationId);
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/email-agent/follow-ups/:id/cancel", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const followUp = await storage.getFollowUp(req.params.id);
+      if (!followUp || followUp.orgId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+      await storage.updateFollowUp(req.params.id, { status: "cancelled" });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Cancel entire sequence for a draft
+  app.post("/api/email-agent/follow-ups/cancel-sequence/:draftId", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      await storage.cancelFollowUpSequence(req.params.draftId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Manually run follow-up processing for this org
+  app.post("/api/email-agent/follow-ups/run", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { processFollowUpsForOrg } = await import("./email-agent/follow-up-cron");
+      const result = await processFollowUpsForOrg(profile.organizationId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   const { initializeScheduledEmailAgent } = await import("./email-agent/scheduled-email-agent");
   initializeScheduledEmailAgent();
+
+  const { initializeFollowUpCron } = await import("./email-agent/follow-up-cron");
+  initializeFollowUpCron();
 
   startWeeklyReminderJob();
   startSessionReminderJob();

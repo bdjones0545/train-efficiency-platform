@@ -15,12 +15,13 @@ import {
   Mail, Search, CheckCircle, XCircle, RefreshCw, Filter, MinusCircle,
   Bot, Users, Send, Target, TrendingUp, Clock, Plus, Eye, Zap,
   PhoneOff, MessageSquare, Edit2, Trash2, ChevronDown, ChevronUp,
-  Loader2, AlertCircle, DollarSign, Calendar, SkipForward, Settings2
+  Loader2, AlertCircle, DollarSign, Calendar, SkipForward, Settings2,
+  RepeatIcon, Ban, Info
 } from "lucide-react";
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { CommunicationLog, TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
+import type { CommunicationLog, TeamTrainingProspect, TeamTrainingOutreachDraft, EmailFollowUp } from "@shared/schema";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TYPE_LABELS: Record<string, string> = {
@@ -56,6 +57,35 @@ const SPORTS = [
 const SPORTS_MULTISELECT = SPORTS;
 
 type DraftWithProspect = TeamTrainingOutreachDraft & { prospect?: TeamTrainingProspect };
+type FollowUpWithProspect = EmailFollowUp & { prospect?: TeamTrainingProspect };
+
+type ReplyClassification =
+  | "interested" | "not_interested" | "ask_info" | "referral"
+  | "wrong_contact" | "out_of_office" | "unknown";
+
+const CLASSIFICATION_OPTIONS: { value: ReplyClassification; label: string; color: string }[] = [
+  { value: "interested", label: "Interested", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
+  { value: "not_interested", label: "Not Interested", color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+  { value: "ask_info", label: "Asking Info", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
+  { value: "referral", label: "Referral", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300" },
+  { value: "wrong_contact", label: "Wrong Contact", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300" },
+  { value: "out_of_office", label: "Out of Office", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" },
+  { value: "unknown", label: "Unknown", color: "bg-muted text-muted-foreground" },
+];
+
+function classificationColor(c: ReplyClassification | null | undefined): string {
+  return CLASSIFICATION_OPTIONS.find(o => o.value === c)?.color ?? "bg-muted text-muted-foreground";
+}
+function classificationLabel(c: ReplyClassification | null | undefined): string {
+  return CLASSIFICATION_OPTIONS.find(o => o.value === c)?.label ?? (c ?? "—");
+}
+
+const FOLLOW_UP_STATUS_COLORS: Record<string, string> = {
+  pending: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  sent: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  cancelled: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+  skipped: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+};
 
 interface EmailAgentOverview {
   sentToday: number;
@@ -1136,6 +1166,314 @@ function EditDraftDialog({
   );
 }
 
+// ─── Reply Classification Dialog ──────────────────────────────────────────────
+function ReplyDialog({
+  prospectId,
+  prospectName,
+  onClose,
+}: { prospectId: string; prospectName: string; onClose: () => void }) {
+  const { toast } = useToast();
+  const [replyText, setReplyText] = useState("");
+  const [manualClassification, setManualClassification] = useState<ReplyClassification | "">("");
+
+  const markRepliedMutation = useMutation({
+    mutationFn: (body: { replyText?: string; replyClassification?: string }) =>
+      apiRequest("POST", `/api/admin/team-training/prospects/${prospectId}/mark-replied`, body).then(r => r.json()),
+    onSuccess: (data) => {
+      const cls = data.classification ? classificationLabel(data.classification) : null;
+      toast({
+        title: "Marked as replied",
+        description: cls ? `Classified as: ${cls}` : undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-ups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-up-stats"] });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const handleSubmit = () => {
+    const body: { replyText?: string; replyClassification?: string } = {};
+    if (replyText.trim()) body.replyText = replyText.trim();
+    if (manualClassification) body.replyClassification = manualClassification;
+    markRepliedMutation.mutate(body);
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Log Reply — {prospectName}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          <div>
+            <Label className="text-sm font-medium">Paste their reply <span className="text-muted-foreground">(optional)</span></Label>
+            <Textarea
+              value={replyText}
+              onChange={e => setReplyText(e.target.value)}
+              placeholder="Paste the reply text here for AI classification…"
+              rows={4}
+              className="mt-1.5 text-sm"
+              data-testid="input-reply-text"
+            />
+            {replyText.trim() && !manualClassification && (
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <Bot className="h-3 w-3" /> AI will auto-classify this reply
+              </p>
+            )}
+          </div>
+          <div>
+            <Label className="text-sm font-medium">Classification <span className="text-muted-foreground">(optional override)</span></Label>
+            <Select value={manualClassification} onValueChange={v => setManualClassification(v as ReplyClassification)}>
+              <SelectTrigger className="mt-1.5" data-testid="select-reply-classification">
+                <SelectValue placeholder="Auto-classify from text…" />
+              </SelectTrigger>
+              <SelectContent>
+                {CLASSIFICATION_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-3 text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
+            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <p>Marking as replied will automatically cancel pending follow-up emails for this prospect.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} data-testid="button-cancel-reply-dialog">Cancel</Button>
+          <Button onClick={handleSubmit} disabled={markRepliedMutation.isPending} data-testid="button-submit-replied">
+            {markRepliedMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+            Mark Replied
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Follow-Ups Tab ────────────────────────────────────────────────────────────
+function FollowUpsTab() {
+  const { toast } = useToast();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [expandedDraft, setExpandedDraft] = useState<string | null>(null);
+
+  const { data: followUps, isLoading, refetch } = useQuery<FollowUpWithProspect[]>({
+    queryKey: ["/api/email-agent/follow-ups"],
+  });
+  const { data: stats } = useQuery<{ activeSequences: number; pendingReplies: number; interestedLeads: number }>({
+    queryKey: ["/api/email-agent/follow-up-stats"],
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/email-agent/follow-ups/${id}/cancel`, {}).then(r => r.json()),
+    onSuccess: () => {
+      toast({ title: "Follow-up cancelled" });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-ups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-up-stats"] });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const cancelSequenceMutation = useMutation({
+    mutationFn: (draftId: string) => apiRequest("POST", `/api/email-agent/follow-ups/cancel-sequence/${draftId}`, {}).then(r => r.json()),
+    onSuccess: () => {
+      toast({ title: "Sequence cancelled" });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-ups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-up-stats"] });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  // Group by outreachDraftId for sequence view
+  const grouped = useMemo(() => {
+    if (!followUps) return [];
+    const map = new Map<string, FollowUpWithProspect[]>();
+    for (const f of followUps) {
+      const arr = map.get(f.outreachDraftId) ?? [];
+      arr.push(f);
+      map.set(f.outreachDraftId, arr);
+    }
+    return Array.from(map.entries()).map(([draftId, steps]) => ({
+      draftId,
+      prospect: steps[0]?.prospect,
+      steps: steps.sort((a, b) => a.stepNumber - b.stepNumber),
+      hasPending: steps.some(s => s.status === "pending"),
+    }));
+  }, [followUps]);
+
+  const filtered = useMemo(() => {
+    if (statusFilter === "all") return grouped;
+    if (statusFilter === "active") return grouped.filter(g => g.hasPending);
+    if (statusFilter === "done") return grouped.filter(g => !g.hasPending);
+    return grouped;
+  }, [grouped, statusFilter]);
+
+  return (
+    <div className="space-y-5">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card data-testid="card-active-sequences">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <RepeatIcon className="h-4 w-4 text-blue-500" />
+              <span className="text-xs text-muted-foreground">Active Sequences</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400" data-testid="text-active-sequences">
+              {stats?.activeSequences ?? 0}
+            </p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-interested-leads">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle className="h-4 w-4 text-green-500" />
+              <span className="text-xs text-muted-foreground">Interested Leads</span>
+            </div>
+            <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-interested-leads">
+              {stats?.interestedLeads ?? 0}
+            </p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-pending-replies">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <MessageSquare className="h-4 w-4 text-emerald-500" />
+              <span className="text-xs text-muted-foreground">Pending Replies</span>
+            </div>
+            <p className="text-2xl font-bold" data-testid="text-pending-replies">
+              {stats?.pendingReplies ?? 0}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters + refresh */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40 h-9" data-testid="select-followup-filter">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sequences</SelectItem>
+            <SelectItem value="active">Active Only</SelectItem>
+            <SelectItem value="done">Completed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-followups">
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Sequences */}
+      {isLoading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full" />)}</div>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-no-followups">
+            <RepeatIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="font-medium">No follow-up sequences</p>
+            <p className="text-sm mt-1">Follow-up sequences are created automatically when an outreach email is sent.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(({ draftId, prospect, steps, hasPending }) => (
+            <Card key={draftId} data-testid={`card-followup-sequence-${draftId}`}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{prospect?.prospectName ?? "Unknown"}</span>
+                      {prospect?.sport && prospect.sport !== "unknown" && (
+                        <Badge variant="outline" className="text-xs">{prospect.sport}</Badge>
+                      )}
+                      <Badge className={`text-xs ${hasPending ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" : "bg-muted text-muted-foreground"}`}>
+                        {hasPending ? "Active" : "Done"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {prospect?.contactEmail ?? "—"}
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5 items-center">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      onClick={() => setExpandedDraft(expandedDraft === draftId ? null : draftId)}
+                      data-testid={`button-expand-sequence-${draftId}`}
+                    >
+                      {expandedDraft === draftId ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      {steps.length} step{steps.length !== 1 ? "s" : ""}
+                    </Button>
+                    {hasPending && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs text-muted-foreground hover:text-red-600"
+                        onClick={() => cancelSequenceMutation.mutate(draftId)}
+                        disabled={cancelSequenceMutation.isPending}
+                        data-testid={`button-cancel-sequence-${draftId}`}
+                      >
+                        <Ban className="h-3 w-3 mr-1" />Cancel All
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {expandedDraft === draftId && (
+                  <div className="mt-3 space-y-2 border-t pt-3">
+                    {steps.map(step => (
+                      <div key={step.id} className="flex items-center gap-3 text-xs" data-testid={`row-followup-step-${step.id}`}>
+                        <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center font-bold text-muted-foreground shrink-0">
+                          {step.stepNumber}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium">
+                            Follow-up #{step.stepNumber}
+                            {step.subject && <span className="font-normal text-muted-foreground"> — {step.subject}</span>}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {step.status === "sent" && step.sentAt
+                              ? `Sent ${format(new Date(step.sentAt), "MMM d, yyyy")}`
+                              : step.status === "pending"
+                              ? `Scheduled for ${format(new Date(step.scheduledFor), "MMM d, yyyy")}`
+                              : `${(step.status ?? "unknown").charAt(0).toUpperCase() + (step.status ?? "unknown").slice(1)}`
+                            }
+                          </p>
+                        </div>
+                        <Badge className={`text-xs ${FOLLOW_UP_STATUS_COLORS[step.status ?? "pending"] ?? ""}`}>
+                          {step.status}
+                        </Badge>
+                        {step.status === "pending" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
+                            onClick={() => cancelMutation.mutate(step.id)}
+                            disabled={cancelMutation.isPending}
+                            data-testid={`button-cancel-step-${step.id}`}
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Sent Tab ─────────────────────────────────────────────────────────────────
 function SentTab() {
   const [search, setSearch] = useState("");
@@ -1195,6 +1533,7 @@ function SentTab() {
     });
   }, [logs, typeFilter, statusFilter, search, dateFrom, dateTo]);
 
+  const [replyDialogDraft, setReplyDialogDraft] = useState<DraftWithProspect | null>(null);
   const outreachDraftsSent = sentDrafts?.filter(d => !!d.sentAt) ?? [];
 
   const clearFilters = () => { setSearch(""); setTypeFilter("all"); setStatusFilter("all"); setDateFrom(""); setDateTo(""); };
@@ -1202,6 +1541,13 @@ function SentTab() {
 
   return (
     <div className="space-y-5">
+      {replyDialogDraft && replyDialogDraft.prospect && (
+        <ReplyDialog
+          prospectId={replyDialogDraft.prospect.id}
+          prospectName={replyDialogDraft.prospect.prospectName}
+          onClose={() => setReplyDialogDraft(null)}
+        />
+      )}
       {/* Outreach Sent */}
       {outreachDraftsSent.length > 0 && (
         <div>
@@ -1216,22 +1562,36 @@ function SentTab() {
                       {draft.prospect?.sport && draft.prospect.sport !== "unknown" && (
                         <Badge variant="outline" className="text-xs">{draft.prospect.sport}</Badge>
                       )}
-                      <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-xs">
-                        <CheckCircle className="h-3 w-3 mr-1" />Sent
-                      </Badge>
+                      {draft.repliedAt ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-xs">
+                          <MessageSquare className="h-3 w-3 mr-1" />Replied
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-xs">
+                          <CheckCircle className="h-3 w-3 mr-1" />Sent
+                        </Badge>
+                      )}
+                      {draft.replyClassification && (
+                        <Badge className={`text-xs ${classificationColor(draft.replyClassification as ReplyClassification)}`}>
+                          {classificationLabel(draft.replyClassification as ReplyClassification)}
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{draft.subject}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       To: <span className="font-mono">{draft.prospect?.contactEmail || "—"}</span>
                       {draft.sentAt && ` · ${format(new Date(draft.sentAt), "MMM d, yyyy h:mm a")}`}
                     </p>
+                    {draft.replyText && (
+                      <p className="text-xs text-muted-foreground mt-0.5 italic truncate max-w-md">"{draft.replyText.slice(0, 120)}{draft.replyText.length > 120 ? "…" : ""}"</p>
+                    )}
                     {draft.prospect?.estimatedValue && (
                       <p className="text-xs text-muted-foreground mt-0.5">Est. value: ${draft.prospect.estimatedValue.toLocaleString()}</p>
                     )}
                   </div>
-                  {draft.prospect && (
+                  {draft.prospect && !draft.repliedAt && (
                     <div className="flex gap-1.5 flex-wrap shrink-0">
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => markRepliedMutation.mutate(draft.prospect!.id)} data-testid={`button-mark-replied-${draft.id}`}>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setReplyDialogDraft(draft)} data-testid={`button-mark-replied-${draft.id}`}>
                         <MessageSquare className="h-3 w-3 mr-1" />Replied
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-red-600" onClick={() => dncMutation.mutate(draft.prospect!.id)} data-testid={`button-sent-dnc-${draft.id}`}>
@@ -1680,6 +2040,10 @@ export default function CommunicationHistoryPage() {
               <Mail className="h-3.5 w-3.5 mr-1.5 hidden sm:inline" />
               Sent
             </TabsTrigger>
+            <TabsTrigger value="followups" className="whitespace-nowrap" data-testid="tab-followups">
+              <RepeatIcon className="h-3.5 w-3.5 mr-1.5 hidden sm:inline" />
+              Follow-Ups
+            </TabsTrigger>
             <TabsTrigger value="settings" className="whitespace-nowrap" data-testid="tab-settings">
               <Settings2 className="h-3.5 w-3.5 mr-1.5 hidden sm:inline" />
               Settings
@@ -1698,6 +2062,9 @@ export default function CommunicationHistoryPage() {
         </TabsContent>
         <TabsContent value="sent" className="mt-4">
           <SentTab />
+        </TabsContent>
+        <TabsContent value="followups" className="mt-4">
+          <FollowUpsTab />
         </TabsContent>
         <TabsContent value="settings" className="mt-4">
           <SettingsTab />

@@ -628,6 +628,16 @@ export const insertEmailMessageVariantSchema = createInsertSchema(emailMessageVa
 export type EmailMessageVariant = typeof emailMessageVariants.$inferSelect;
 export type InsertEmailMessageVariant = z.infer<typeof insertEmailMessageVariantSchema>;
 
+export const replyClassificationEnum = pgEnum("reply_classification", [
+  "interested",
+  "not_interested",
+  "ask_info",
+  "referral",
+  "wrong_contact",
+  "out_of_office",
+  "unknown",
+]);
+
 export const teamTrainingOutreachDrafts = pgTable("team_training_outreach_drafts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),
@@ -641,6 +651,31 @@ export const teamTrainingOutreachDrafts = pgTable("team_training_outreach_drafts
   clickedAt: timestamp("clicked_at"),
   repliedAt: timestamp("replied_at"),
   bounceType: varchar("bounce_type"),
+  messageVariantId: varchar("message_variant_id"),
+  replyText: text("reply_text"),
+  replyClassification: replyClassificationEnum("reply_classification"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const followUpStatusEnum = pgEnum("follow_up_status", [
+  "pending",
+  "sent",
+  "cancelled",
+  "skipped",
+]);
+
+export const emailFollowUps = pgTable("email_follow_ups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  outreachDraftId: varchar("outreach_draft_id").notNull(),
+  prospectId: varchar("prospect_id").notNull(),
+  stepNumber: integer("step_number").notNull().default(1),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  sentAt: timestamp("sent_at"),
+  status: followUpStatusEnum("status").default("pending"),
+  subject: text("subject"),
+  body: text("body"),
   messageVariantId: varchar("message_variant_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -684,6 +719,10 @@ export type InsertTeamTrainingProspect = z.infer<typeof insertTeamTrainingProspe
 export const insertTeamTrainingOutreachDraftSchema = createInsertSchema(teamTrainingOutreachDrafts).omit({ id: true, createdAt: true, updatedAt: true });
 export type TeamTrainingOutreachDraft = typeof teamTrainingOutreachDrafts.$inferSelect;
 export type InsertTeamTrainingOutreachDraft = z.infer<typeof insertTeamTrainingOutreachDraftSchema>;
+
+export const insertEmailFollowUpSchema = createInsertSchema(emailFollowUps).omit({ id: true, createdAt: true, updatedAt: true });
+export type EmailFollowUp = typeof emailFollowUps.$inferSelect;
+export type InsertEmailFollowUp = z.infer<typeof insertEmailFollowUpSchema>;
 
 export const insertTeamTrainingOutreachEventSchema = createInsertSchema(teamTrainingOutreachEvents).omit({ id: true, createdAt: true });
 export type TeamTrainingOutreachEvent = typeof teamTrainingOutreachEvents.$inferSelect;
