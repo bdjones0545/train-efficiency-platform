@@ -66,6 +66,17 @@ interface EmailAgentOverview {
   interested: number;
   estimatedPipeline: number;
 }
+interface EmailPerformanceStats {
+  sent: number;
+  opened: number;
+  clicked: number;
+  replied: number;
+  openRate: number;
+  clickRate: number;
+  replyRate: number;
+  conversionRate: number;
+  bestVariant: { id: string; name: string; performanceScore: number; timesUsed: number } | null;
+}
 interface EmailAgentSettings {
   enabled?: boolean;
   dailyLimit?: number;
@@ -100,6 +111,9 @@ function OverviewTab() {
   });
   const { data: queue, isLoading: queueLoading, refetch: refetchQueue } = useQuery<TeamTrainingProspect[]>({
     queryKey: ["/api/email-agent/queue"],
+  });
+  const { data: perf, isLoading: perfLoading } = useQuery<EmailPerformanceStats>({
+    queryKey: ["/api/email-agent/performance"],
   });
 
   const buildQueueMutation = useMutation({
@@ -216,6 +230,97 @@ function OverviewTab() {
           </CardContent>
         </Card>
       )}
+
+      {/* Email Performance Section */}
+      <div>
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2" data-testid="heading-email-performance">
+          <TrendingUp className="h-4 w-4 text-primary" />
+          Email Performance
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          <Card data-testid="card-open-rate">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Eye className="h-4 w-4 text-blue-500" />
+                <span className="text-xs text-muted-foreground">Open Rate</span>
+              </div>
+              {perfLoading ? <Skeleton className="h-7 w-16" /> : (
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400" data-testid="text-open-rate">
+                  {perf?.openRate ?? 0}%
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-0.5">{perf?.opened ?? 0} of {perf?.sent ?? 0} sent</p>
+            </CardContent>
+          </Card>
+          <Card data-testid="card-reply-rate">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-1">
+                <MessageSquare className="h-4 w-4 text-emerald-500" />
+                <span className="text-xs text-muted-foreground">Reply Rate</span>
+              </div>
+              {perfLoading ? <Skeleton className="h-7 w-16" /> : (
+                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400" data-testid="text-reply-rate">
+                  {perf?.replyRate ?? 0}%
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-0.5">{perf?.replied ?? 0} replies</p>
+            </CardContent>
+          </Card>
+          <Card data-testid="card-conversion-rate">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-xs text-muted-foreground">Conversion Rate</span>
+              </div>
+              {perfLoading ? <Skeleton className="h-7 w-16" /> : (
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-conversion-rate">
+                  {perf?.conversionRate ?? 0}%
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-0.5">Replied or booked</p>
+            </CardContent>
+          </Card>
+          <Card data-testid="card-best-variant">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Zap className="h-4 w-4 text-orange-500" />
+                <span className="text-xs text-muted-foreground">Best Message</span>
+              </div>
+              {perfLoading ? <Skeleton className="h-7 w-28" /> : (
+                <p className="text-sm font-bold truncate" data-testid="text-best-variant">
+                  {perf?.bestVariant?.name ?? "—"}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {perf?.bestVariant ? `Score: ${perf.bestVariant.performanceScore}` : "No variants yet"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Insight line */}
+        {perf && perf.sent > 0 && (
+          <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10" data-testid="card-perf-insight">
+            <CardContent className="pt-3 pb-3 flex items-start gap-3">
+              <Bot className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+              <p className="text-sm text-foreground" data-testid="text-perf-insight">
+                {perf.conversionRate > 0
+                  ? `Your outreach is converting at ${perf.conversionRate}%. ${
+                      perf.bestVariant
+                        ? `Best results are coming from "${perf.bestVariant.name}" messages.`
+                        : ""
+                    } ${
+                      perf.openRate > 30 && perf.replyRate < 5
+                        ? "Opens are strong but replies are low — consider shorter, more direct messages."
+                        : ""
+                    }`
+                  : `${perf.sent} email${perf.sent !== 1 ? "s" : ""} sent so far. Replies and opens will appear here as responses come in.`
+                }
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Today's Outreach Queue */}
       <div>

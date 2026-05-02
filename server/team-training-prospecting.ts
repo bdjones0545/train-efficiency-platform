@@ -116,6 +116,61 @@ export interface EmailDraftParams {
   services?: string[];
 }
 
+export async function generateOutreachEmailFromVariant(
+  params: EmailDraftParams,
+  variant: { subjectTemplate: string; bodyTemplate: string }
+): Promise<{ subject: string; body: string }> {
+  const openai = getOpenAI();
+
+  const prompt = `You are personalizing an outreach email template for a sports performance training business.
+
+Fill in the template below using the provided context. Replace any placeholder tokens like {businessName}, {coachName}, {prospectName}, {sport}, {city}, {contactName} with the actual values. Keep the tone and style of the template intact. Do not add or remove significant content beyond the substitutions and minor natural-language polish.
+
+Context:
+Business: ${params.businessName}
+Coach/Owner: ${params.coachName}
+Prospect Team/Club: ${params.prospectName}
+Sport: ${params.sport}
+Location: ${params.city}
+Contact Name: ${params.contactName !== "unknown" ? params.contactName : "Coach/Director"}
+
+Subject Template:
+${variant.subjectTemplate}
+
+Body Template:
+${variant.bodyTemplate}
+
+Return a JSON object with:
+- subject: string (personalized subject line)
+- body: string (personalized plain text email body, use \\n for line breaks)
+
+Return only JSON. No markdown.`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.5,
+    max_tokens: 600,
+  });
+
+  const raw = response.choices[0].message.content || '{"subject":"","body":""}';
+  try {
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return {
+      subject: variant.subjectTemplate.replace("{prospectName}", params.prospectName).replace("{sport}", params.sport),
+      body: variant.bodyTemplate
+        .replace(/{businessName}/g, params.businessName)
+        .replace(/{coachName}/g, params.coachName)
+        .replace(/{prospectName}/g, params.prospectName)
+        .replace(/{sport}/g, params.sport)
+        .replace(/{city}/g, params.city)
+        .replace(/{contactName}/g, params.contactName !== "unknown" ? params.contactName : "Coach"),
+    };
+  }
+}
+
 export async function generateOutreachEmail(params: EmailDraftParams): Promise<{ subject: string; body: string }> {
   const openai = getOpenAI();
 

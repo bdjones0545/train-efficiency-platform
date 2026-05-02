@@ -78,7 +78,7 @@ import {
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
 import { db } from "./db";
-import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike, inArray, ne, isNull } from "drizzle-orm";
+import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike, inArray, ne, isNull, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -298,6 +298,14 @@ export interface IStorage {
   addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void>;
   getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>;
   getOutreachDraftsByOrg(orgId: string): Promise<(import("@shared/schema").TeamTrainingOutreachDraft & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
+  getEmailPerformanceStats(orgId: string): Promise<{ sent: number; opened: number; clicked: number; replied: number; openRate: number; clickRate: number; replyRate: number; conversionRate: number; bestVariant: import("@shared/schema").EmailMessageVariant | null }>;
+  getEmailMessageVariants(orgId: string): Promise<import("@shared/schema").EmailMessageVariant[]>;
+  createEmailMessageVariant(data: import("@shared/schema").InsertEmailMessageVariant): Promise<import("@shared/schema").EmailMessageVariant>;
+  updateEmailMessageVariant(id: string, data: Partial<import("@shared/schema").EmailMessageVariant>): Promise<import("@shared/schema").EmailMessageVariant | undefined>;
+  getEmailMessageVariant(id: string): Promise<import("@shared/schema").EmailMessageVariant | undefined>;
+  deleteEmailMessageVariant(id: string): Promise<boolean>;
+  selectVariantForEmail(orgId: string): Promise<import("@shared/schema").EmailMessageVariant | null>;
+  runVariantOptimization(orgId: string): Promise<void>;
 
   // Per-org preferences
   getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null>;
@@ -2156,6 +2164,122 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { created, skipped };
+  }
+
+  // ─── Email Message Variants ─────────────────────────────────────────────────
+
+  async getEmailMessageVariants(orgId: string): Promise<import("@shared/schema").EmailMessageVariant[]> {
+    const { emailMessageVariants } = await import("@shared/schema");
+    return db.select().from(emailMessageVariants)
+      .where(and(eq(emailMessageVariants.orgId, orgId), eq(emailMessageVariants.active, true)))
+      .orderBy(desc(emailMessageVariants.performanceScore));
+  }
+
+  async createEmailMessageVariant(data: import("@shared/schema").InsertEmailMessageVariant): Promise<import("@shared/schema").EmailMessageVariant> {
+    const { emailMessageVariants } = await import("@shared/schema");
+    const [row] = await db.insert(emailMessageVariants).values(data).returning();
+    return row;
+  }
+
+  async updateEmailMessageVariant(id: string, data: Partial<import("@shared/schema").EmailMessageVariant>): Promise<import("@shared/schema").EmailMessageVariant | undefined> {
+    const { emailMessageVariants } = await import("@shared/schema");
+    const updateData: any = { ...data, updatedAt: new Date() };
+    delete updateData.id;
+    delete updateData.createdAt;
+    const [row] = await db.update(emailMessageVariants).set(updateData).where(eq(emailMessageVariants.id, id)).returning();
+    return row || undefined;
+  }
+
+  async getEmailMessageVariant(id: string): Promise<import("@shared/schema").EmailMessageVariant | undefined> {
+    const { emailMessageVariants } = await import("@shared/schema");
+    const [row] = await db.select().from(emailMessageVariants).where(eq(emailMessageVariants.id, id));
+    return row || undefined;
+  }
+
+  async deleteEmailMessageVariant(id: string): Promise<boolean> {
+    const { emailMessageVariants } = await import("@shared/schema");
+    await db.update(emailMessageVariants).set({ active: false, updatedAt: new Date() }).where(eq(emailMessageVariants.id, id));
+    return true;
+  }
+
+  async selectVariantForEmail(orgId: string): Promise<import("@shared/schema").EmailMessageVariant | null> {
+    const { emailMessageVariants } = await import("@shared/schema");
+    const variants = await db.select().from(emailMessageVariants)
+      .where(and(eq(emailMessageVariants.orgId, orgId), eq(emailMessageVariants.active, true)));
+    if (variants.length === 0) return null;
+
+    // Weighted random selection
+    const totalWeight = variants.reduce((sum, v) => sum + (v.weight ?? 34), 0);
+    let rand = Math.floor(Math.random() * totalWeight);
+    for (const variant of variants) {
+      rand -= (variant.weight ?? 34);
+      if (rand < 0) return variant;
+    }
+    return variants[0];
+  }
+
+  async runVariantOptimization(orgId: string): Promise<void> {
+    const { emailMessageVariants, teamTrainingOutreachDrafts } = await import("@shared/schema");
+    const variants = await db.select().from(emailMessageVariants)
+      .where(and(eq(emailMessageVariants.orgId, orgId), eq(emailMessageVariants.active, true)));
+    if (variants.length < 2) return;
+
+    // Recalculate performance scores based on reply + conversion rates
+    const scored = variants.map((v) => {
+      const used = v.timesUsed || 1;
+      const replyRate = (v.replies || 0) / used;
+      const convRate = (v.conversions || 0) / used;
+      const score = Math.round((replyRate * 0.6 + convRate * 0.4) * 100);
+      return { ...v, calcScore: score };
+    });
+
+    scored.sort((a, b) => b.calcScore - a.calcScore);
+
+    const weights = [50, 30, 20];
+    for (let i = 0; i < scored.length; i++) {
+      const w = weights[i] ?? 10;
+      const s = Math.round(scored[i].calcScore);
+      await db.update(emailMessageVariants)
+        .set({ weight: w, performanceScore: s, updatedAt: new Date() })
+        .where(eq(emailMessageVariants.id, scored[i].id));
+    }
+
+    console.log(`[Variant Optimization] org ${orgId} — reweighted ${scored.length} variants`);
+  }
+
+  async getEmailPerformanceStats(orgId: string): Promise<{
+    sent: number;
+    opened: number;
+    clicked: number;
+    replied: number;
+    openRate: number;
+    clickRate: number;
+    replyRate: number;
+    conversionRate: number;
+    bestVariant: import("@shared/schema").EmailMessageVariant | null;
+  }> {
+    const { teamTrainingOutreachDrafts, emailMessageVariants } = await import("@shared/schema");
+
+    const drafts = await db.select().from(teamTrainingOutreachDrafts)
+      .where(and(eq(teamTrainingOutreachDrafts.orgId, orgId), isNotNull(teamTrainingOutreachDrafts.sentAt)));
+
+    const sent = drafts.length;
+    const opened = drafts.filter(d => !!d.openedAt).length;
+    const clicked = drafts.filter(d => !!d.clickedAt).length;
+    const replied = drafts.filter(d => !!d.repliedAt).length;
+    const conversions = drafts.filter(d => !!d.repliedAt).length;
+
+    const openRate = sent > 0 ? Math.round((opened / sent) * 100) : 0;
+    const clickRate = sent > 0 ? Math.round((clicked / sent) * 100) : 0;
+    const replyRate = sent > 0 ? Math.round((replied / sent) * 100) : 0;
+    const conversionRate = sent > 0 ? Math.round((conversions / sent) * 100) : 0;
+
+    const [bestVariant] = await db.select().from(emailMessageVariants)
+      .where(and(eq(emailMessageVariants.orgId, orgId), eq(emailMessageVariants.active, true)))
+      .orderBy(desc(emailMessageVariants.performanceScore))
+      .limit(1);
+
+    return { sent, opened, clicked, replied, openRate, clickRate, replyRate, conversionRate, bestVariant: bestVariant ?? null };
   }
 }
 

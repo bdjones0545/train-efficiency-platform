@@ -6153,6 +6153,13 @@ export async function registerRoutes(
       if ((profile.role === "ADMIN" || profile.role === "COACH") && profile.organizationId) {
         try {
           businessContext = await buildCommandCenterContextString(profile.organizationId);
+          // Inject email performance context
+          try {
+            const perfStats = await storage.getEmailPerformanceStats(profile.organizationId);
+            const bestVariantName = perfStats.bestVariant?.name ?? "none";
+            const emailCtx = `\n\nEMAIL PERFORMANCE CONTEXT:\n- open rate: ${perfStats.openRate}%\n- reply rate: ${perfStats.replyRate}%\n- conversion rate: ${perfStats.conversionRate}%\n- best performing variant: ${bestVariantName}\n\nRules:\n- prefer high-performing variants when suggesting outreach strategies\n- if reply rate is low (<5%), recommend adapting tone or shortening messages\n- if open rate is high but replies low, suggest more direct calls to action`;
+            businessContext = (businessContext || "") + emailCtx;
+          } catch {}
         } catch {}
       }
 
@@ -6914,6 +6921,7 @@ export async function registerRoutes(
           draft.subject,
           draft.body,
           branding,
+          draft.id,
         );
       } catch (sendErr: any) {
         console.error("[TeamTraining Send]", sendErr);
@@ -6955,6 +6963,22 @@ export async function registerRoutes(
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       await storage.updateTeamTrainingProspect(req.params.id, { outreachStatus: "Replied" });
+      // Set repliedAt on the most recently sent draft for this prospect
+      const drafts = await storage.getOutreachDraftsByProspect(req.params.id);
+      const sentDraft = drafts.find(d => !!d.sentAt && !d.repliedAt);
+      if (sentDraft) {
+        await storage.updateOutreachDraft(sentDraft.id, { repliedAt: new Date() });
+        // Update variant conversion stats
+        if (sentDraft.messageVariantId) {
+          const variant = await storage.getEmailMessageVariant(sentDraft.messageVariantId);
+          if (variant) {
+            await storage.updateEmailMessageVariant(variant.id, {
+              replies: (variant.replies ?? 0) + 1,
+              conversions: (variant.conversions ?? 0) + 1,
+            });
+          }
+        }
+      }
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
         prospectId: req.params.id,
@@ -7046,6 +7070,51 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Email Agent Tracking Routes (public, no auth) ─────────────────────────
+
+  app.get("/api/email-agent/track-open/:emailId", async (req: any, res) => {
+    try {
+      const { emailId } = req.params;
+      const draft = await storage.getOutreachDraft(emailId);
+      if (draft && !draft.openedAt) {
+        await storage.updateOutreachDraft(emailId, { openedAt: new Date() });
+      }
+    } catch (_) {}
+    // Return 1x1 transparent GIF
+    const pixel = Buffer.from(
+      "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+      "base64"
+    );
+    res.set("Content-Type", "image/gif");
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    res.set("Pragma", "no-cache");
+    res.end(pixel);
+  });
+
+  app.get("/api/email-agent/track-click/:emailId", async (req: any, res) => {
+    try {
+      const { emailId } = req.params;
+      const { url } = req.query as { url?: string };
+      const draft = await storage.getOutreachDraft(emailId);
+      if (draft && !draft.clickedAt) {
+        await storage.updateOutreachDraft(emailId, { clickedAt: new Date() });
+        // Also update variant stats if linked
+        if (draft.messageVariantId) {
+          const variant = await storage.getEmailMessageVariant(draft.messageVariantId);
+          if (variant) {
+            await storage.updateEmailMessageVariant(variant.id, { timesUsed: (variant.timesUsed ?? 0) });
+          }
+        }
+      }
+      if (url) {
+        return res.redirect(decodeURIComponent(url));
+      }
+      res.status(200).send("OK");
+    } catch (_) {
+      res.status(200).send("OK");
+    }
+  });
+
   // ─── Email Agent Routes ────────────────────────────────────────────────────
 
   app.get("/api/email-agent/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
@@ -7120,6 +7189,85 @@ export async function registerRoutes(
       res.json(result);
     } catch (err: any) {
       console.error("[Email Agent Manual Run]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Email Agent Performance ───────────────────────────────────────────────
+
+  app.get("/api/email-agent/performance", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const stats = await storage.getEmailPerformanceStats(profile.organizationId);
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Email Message Variants CRUD ──────────────────────────────────────────
+
+  app.get("/api/email-agent/variants", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const variants = await storage.getEmailMessageVariants(profile.organizationId);
+      res.json(variants);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/email-agent/variants", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { name, subjectTemplate, bodyTemplate } = req.body;
+      if (!name || !subjectTemplate || !bodyTemplate) return res.status(400).json({ message: "name, subjectTemplate, bodyTemplate required" });
+      const variant = await storage.createEmailMessageVariant({ orgId: profile.organizationId, name, subjectTemplate, bodyTemplate });
+      res.json(variant);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/email-agent/variants/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const variant = await storage.updateEmailMessageVariant(req.params.id, req.body);
+      if (!variant) return res.status(404).json({ message: "Not found" });
+      res.json(variant);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/email-agent/variants/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      await storage.deleteEmailMessageVariant(req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/email-agent/variants/optimize", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      await storage.runVariantOptimization(profile.organizationId);
+      res.json({ ok: true });
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });

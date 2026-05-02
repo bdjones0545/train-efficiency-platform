@@ -1075,16 +1075,36 @@ export async function sendAgentOutreachEmail(
   await sendEmail(clientEmail, emailSubject, html, b.name, logCtx);
 }
 
+function injectTrackingPixel(html: string, emailId: string, baseUrl: string): string {
+  const pixelUrl = `${baseUrl}/api/email-agent/track-open/${emailId}`;
+  const pixel = `<img src="${pixelUrl}" alt="" width="1" height="1" style="display:block;border:0;" />`;
+  return html.replace(/<\/div>\s*$/, `${pixel}</div>`);
+}
+
+function wrapLinksForTracking(html: string, emailId: string, baseUrl: string): string {
+  return html.replace(/href="(https?:\/\/[^"]+)"/g, (match, url) => {
+    const encoded = encodeURIComponent(url);
+    return `href="${baseUrl}/api/email-agent/track-click/${emailId}?url=${encoded}"`;
+  });
+}
+
+const APP_BASE_URL = process.env.APP_BASE_URL || "https://trainefficiency.replit.app";
+
 export async function sendTeamTrainingOutreachEmail(
   toEmail: string,
   subject: string,
   body: string,
   org?: OrgBranding,
+  emailId?: string,
 ) {
   const b = brand(org);
-  const html = emailShell(subject, `
+  let html = emailShell(subject, `
     <div style="font-size: 15px; line-height: 1.7; white-space: pre-wrap;">${body.replace(/\n/g, "<br>")}</div>
   `, org);
+  if (emailId) {
+    html = injectTrackingPixel(html, emailId, APP_BASE_URL);
+    html = wrapLinksForTracking(html, emailId, APP_BASE_URL);
+  }
   await sendEmail(toEmail, subject, html, b.name);
 }
 

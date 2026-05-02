@@ -608,6 +608,26 @@ export const teamTrainingProspects = pgTable("team_training_prospects", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const emailMessageVariants = pgTable("email_message_variants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  name: varchar("name").notNull(),
+  subjectTemplate: text("subject_template").notNull(),
+  bodyTemplate: text("body_template").notNull(),
+  performanceScore: integer("performance_score").default(50),
+  timesUsed: integer("times_used").default(0),
+  replies: integer("replies").default(0),
+  conversions: integer("conversions").default(0),
+  weight: integer("weight").default(34),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertEmailMessageVariantSchema = createInsertSchema(emailMessageVariants).omit({ id: true, createdAt: true, updatedAt: true });
+export type EmailMessageVariant = typeof emailMessageVariants.$inferSelect;
+export type InsertEmailMessageVariant = z.infer<typeof insertEmailMessageVariantSchema>;
+
 export const teamTrainingOutreachDrafts = pgTable("team_training_outreach_drafts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),
@@ -617,6 +637,11 @@ export const teamTrainingOutreachDrafts = pgTable("team_training_outreach_drafts
   approved: boolean("approved").default(false),
   approvedAt: timestamp("approved_at"),
   sentAt: timestamp("sent_at"),
+  openedAt: timestamp("opened_at"),
+  clickedAt: timestamp("clicked_at"),
+  repliedAt: timestamp("replied_at"),
+  bounceType: varchar("bounce_type"),
+  messageVariantId: varchar("message_variant_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
