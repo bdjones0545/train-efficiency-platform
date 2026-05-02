@@ -1,0 +1,119 @@
+Build the Today Business Command Center for TrainEfficiency.
+
+Goal:
+Create one primary dashboard that tells a coach/admin exactly what to do today to grow revenue, fill the schedule, and manage urgent business actions.
+
+This should become the default high-value surface of the app.
+
+Core sections:
+
+1. Today Revenue Snapshot
+Show:
+- booked revenue today
+- open slot value today
+- projected month-end revenue
+- monthly revenue goal
+- revenue gap
+- sessions needed to close gap
+
+If no monthly goal exists, show:
+“Set a monthly goal to unlock revenue recommendations”
+with a Set Goal button.
+
+2. Best Action Today
+Show one ranked top recommendation based on:
+- open schedule slots
+- high-value clients needing booking
+- clients with low remaining sessions
+- at-risk clients
+- pending team-training replies
+- team outreach drafts awaiting approval
+- high-confidence team leads
+- revenue gap
+
+Example:
+“Fill your 10:30 AM opening with Mike — estimated $120.”
+
+Include buttons:
+- Take Action
+- Ask Agent Why
+
+3. Schedule Gaps
+Show today/tomorrow open slots and estimated value.
+Each gap should have:
+- time
+- estimated value
+- suggested client if available
+- action button
+
+4. Client Revenue Opportunities
+Show:
+- clients who should book
+- clients near package renewal
+- churn-risk clients
+- missed-session clients
+
+5. Team Training Pipeline
+Show:
+- active team leads
+- high-confidence leads
+- drafts pending approval
+- replies needing follow-up
+- estimated potential pipeline value
+Clearly label this as potential, not booked revenue.
+
+6. Agent Quick Actions
+Add buttons:
+- What should I do today?
+- Fill open slots
+- Draft team outreach
+- Review team drafts
+- Follow up with replies
+- Show revenue gap
+
+7. Mobile-first layout
+On mobile:
+- no horizontal overflow
+- top recommendation visible immediately
+- cards stacked cleanly
+- sticky agent action button
+- minimal scrolling
+- large tap targets
+
+8. Backend context endpoint
+Create a consolidated endpoint:
+GET /api/business-command-center
+
+Return:
+- today schedule summary
+- open slots
+- revenue snapshot
+- monthly goal
+- revenue gap
+- best action
+- client opportunities
+- team pipeline summary
+- pending drafts
+- replies needing follow-up
+
+9. Agent integration
+Inject this Business Command Center context into the main agent prompt.
+
+When the user asks:
+“What should I do today?”
+the agent should answer from this context first.
+
+10. Safety
+- Do not count team pipeline as booked revenue
+- Label estimated values clearly
+- Do not send emails without confirmation
+- Do not create fake revenue when data is missing
+- Use empty states when there is insufficient data
+
+Deliverables:
+- Backend endpoint
+- Command Center UI component
+- Dashboard integration
+- Agent prompt/context injection
+- Mobile polish
+- Tests for revenue math and pipeline labeling
