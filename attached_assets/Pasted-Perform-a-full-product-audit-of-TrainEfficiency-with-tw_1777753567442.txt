@@ -1,0 +1,144 @@
+Perform a full product audit of TrainEfficiency with two major focuses:
+
+1. UI / UX quality across the entire platform
+2. Agent functionality as a coach/business co-pilot
+
+Do not make random visual changes yet. First inspect the app and produce a detailed audit report.
+
+Audit the following areas:
+
+UI / UX AUDIT
+
+Review all major pages and components:
+- Dashboard / command center
+- Calendar / scheduling
+- Client profiles
+- Revenue dashboard
+- Bookings and session management
+- Settings / organization configuration
+- Coach/admin views
+- Mobile layouts
+- Agent launcher and agent page
+
+For each area, evaluate:
+- Is the screen immediately understandable?
+- Is the most important information above the fold?
+- Is there unnecessary scrolling?
+- Are actions obvious?
+- Are buttons labeled clearly?
+- Is the layout too dense?
+- Is mobile usable with one thumb?
+- Are revenue-driving actions prioritized?
+- Are client/session/package statuses clear?
+- Does the UI feel like a serious coaching business platform instead of a generic scheduling app?
+
+Identify:
+- UI clutter
+- confusing flows
+- duplicated information
+- missing empty states
+- weak hierarchy
+- poor mobile behavior
+- places where the coach has to think too much
+- places where a high-value action should be surfaced sooner
+
+AGENT FUNCTION AUDIT
+
+Audit the coach agent across:
+- Floating agent launcher
+- Dedicated agent page
+- Tool calling
+- Scheduling actions
+- Revenue intelligence
+- Client risk detection
+- Backfill recommendations
+- Confirmation flows
+- Error handling
+- Context awareness
+
+Verify whether the agent can reliably understand:
+- Today’s schedule
+- Upcoming bookings
+- available time slots
+- client package status
+- session count remaining
+- client attendance patterns
+- revenue goals
+- projected month-end revenue
+- churn risk
+- coach availability
+- organization rules and preferences
+
+Audit all agent tools and confirm:
+- Each tool has a clear purpose
+- Tool schemas are accurate
+- The agent knows when to use tools
+- The agent does not hallucinate actions
+- The agent asks for confirmation before booking, canceling, rescheduling, sending outreach, or creating recurring sessions
+- Pending action IDs are generated, validated, consumed, and not invented
+- The two-call confirmation handshake works correctly
+- The agent gives useful summaries before confirmation
+- The agent gives clear success/failure messages after execution
+
+The agent should behave like a business co-pilot, not a generic chatbot.
+
+Examples of desired behavior:
+
+Bad:
+“You should contact more clients.”
+
+Good:
+“You have a 10:30 AM opening tomorrow. Mike has 2 sessions left, usually trains on Tuesdays, and has not booked this week. Want me to offer him that spot?”
+
+Bad:
+“You are projected to make more money this month.”
+
+Good:
+“You are currently projected at $8,920 for the month. You need $1,080 to hit your $10,000 goal. Filling 9 more $120 sessions would close the gap.”
+
+AUDIT OUTPUT FORMAT
+
+Produce a structured report with:
+
+1. Executive Summary
+- Overall UI grade
+- Overall agent grade
+- Biggest strength
+- Biggest weakness
+- Highest ROI fix
+
+2. UI Audit
+For each major page:
+- What works
+- What is confusing
+- What should be simplified
+- What should be moved higher
+- What should be removed
+- Mobile issues
+- Recommended fixes
+
+3. Agent Audit
+For each agent capability:
+- Current behavior
+- Expected behavior
+- Missing context
+- Broken tool flow, if any
+- Confirmation/safety issues
+- Recommended fixes
+
+4. Priority Fix List
+Group fixes into:
+- Critical trust-breaking issues
+- High ROI UX fixes
+- Agent intelligence upgrades
+- Mobile polish
+- Nice-to-have improvements
+
+5. Implementation Plan
+Create a tight phased plan:
+- Phase 1: trust and functionality fixes
+- Phase 2: dashboard and mobile simplification
+- Phase 3: agent business intelligence upgrades
+- Phase 4: polish and conversion improvements
+
+Do not implement yet. Only audit and report.
