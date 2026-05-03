@@ -673,6 +673,15 @@ export async function buildCommandCenterContextString(orgId: string): Promise<st
       globalPriorityLine = buildGlobalPriorityContextString(queue);
     } catch {}
 
+    // Auto-execution context injection
+    let autoExecLine = "";
+    try {
+      const { getExecutionLog, buildAutoExecContextString } = await import("./email-agent/auto-execution-engine");
+      const settings = await storage.getEmailAgentSettings(orgId);
+      const log = await getExecutionLog(orgId);
+      autoExecLine = buildAutoExecContextString(log, settings);
+    } catch {}
+
     return `
 ## Today's Business Command Center Context (as of ${format(new Date(), "MMM d, yyyy h:mm a")})
 
@@ -682,7 +691,7 @@ ${slotsLine}
 ${bestLine}
 
 Client opportunities: ${churnCount} churn risks, ${renewalCount} renewals due, ${shouldBookCount} clients who should book.
-${teamLine}${dealLine}${intelligenceLine}${globalPriorityLine}
+${teamLine}${dealLine}${intelligenceLine}${globalPriorityLine}${autoExecLine}
 
 When the coach asks "What should I do today?" or similar, always lead with the GLOBAL PRIORITY top action first, then provide additional context from this command center data.
 `.trim();

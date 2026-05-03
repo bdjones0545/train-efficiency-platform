@@ -7588,6 +7588,62 @@ Business: ${org?.name ?? "Training Facility"}
     }
   });
 
+  // POST /api/email-agent/auto-execute/run — trigger auto-execution of top eligible action
+  app.post("/api/email-agent/auto-execute/run", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { runAutoExecution } = await import("./email-agent/auto-execution-engine");
+      const result = await runAutoExecution(profile.organizationId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/email-agent/auto-execute/undo/:executionId — undo an auto-execution
+  app.post("/api/email-agent/auto-execute/undo/:executionId", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { undoAutoExecution } = await import("./email-agent/auto-execution-engine");
+      const result = await undoAutoExecution(profile.organizationId, req.params.executionId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/email-agent/auto-execute/log — get execution log + stats
+  app.get("/api/email-agent/auto-execute/log", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { getExecutionLog } = await import("./email-agent/auto-execution-engine");
+      const log = await getExecutionLog(profile.organizationId);
+      const settings = await storage.getEmailAgentSettings(profile.organizationId);
+      const today = new Date().toDateString();
+      const todayCount = log.filter(
+        (e) => !e.undone && new Date(e.executedAt).toDateString() === today && e.outcome === "success"
+      ).length;
+      const maxPerDay = settings.autoExecuteMaxPerDay ?? 3;
+      const successCount = log.filter((e) => e.outcome === "success" && !e.undone).length;
+      const successRate = log.length > 0 ? Math.round((successCount / log.length) * 100) : 0;
+      res.json({
+        log: log.slice(-20).reverse(),
+        todayCount,
+        maxPerDay,
+        successRate,
+        enabled: settings.autoExecuteEnabled === true,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // GET /api/email-agent/intelligence/global-priority — unified priority engine
   app.get("/api/email-agent/intelligence/global-priority", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {

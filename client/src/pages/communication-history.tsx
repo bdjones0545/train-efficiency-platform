@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import {
   PhoneOff, MessageSquare, Edit2, Trash2, ChevronDown, ChevronUp,
   Loader2, AlertCircle, DollarSign, Calendar, SkipForward, Settings2,
   RepeatIcon, Ban, Info, Brain, Flame, ShieldAlert, ArrowRight,
-  Sparkles, Activity, Copy
+  Sparkles, Activity, Copy, Undo2, PlayCircle, ShieldCheck
 } from "lucide-react";
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -118,6 +118,31 @@ interface EmailAgentSettings {
   preferredSports?: string[];
   targetLevels?: string[];
   defaultEstimatedValue?: number;
+  autoExecuteEnabled?: boolean;
+  autoExecuteMaxPerDay?: number;
+}
+
+interface AutoExecution {
+  id: string;
+  actionType: string;
+  title: string;
+  prospectId: string;
+  prospectName: string;
+  estimatedValue: number;
+  draftId?: string;
+  followUpId?: string;
+  executedAt: string;
+  outcome: "success" | "failed";
+  error?: string;
+  undone: boolean;
+}
+
+interface AutoExecLogData {
+  log: AutoExecution[];
+  todayCount: number;
+  maxPerDay: number;
+  successRate: number;
+  enabled: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -520,7 +545,193 @@ const GP_CONFIDENCE: Record<string, string> = {
   low: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
 
+// ─── Auto-Execution Monitor Hook ─────────────────────────────────────────────
+function useAutoExecution() {
+  const { toast } = useToast();
+  const triggeredRef = useRef(false);
+
+  const { data: settings } = useQuery<EmailAgentSettings>({
+    queryKey: ["/api/email-agent/settings"],
+    staleTime: 30_000,
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (executionId: string) =>
+      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then((r) => r.json()),
+    onSuccess: (_, executionId) => {
+      toast({ title: "Auto-execution undone", description: "The action has been reversed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
+    },
+    onError: (e: any) => toast({ title: "Undo failed", description: e.message, variant: "destructive" }),
+  });
+
+  const runMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/email-agent/auto-execute/run").then((r) => r.json()),
+    onSuccess: (data: { executed: boolean; execution: AutoExecution | null; reason?: string }) => {
+      if (!data.executed || !data.execution) return;
+      const exec = data.execution;
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });
+
+      toast({
+        title: `AI executed: ${exec.actionType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}`,
+        description: (
+          <div className="flex items-center justify-between gap-3 w-full">
+            <span className="text-sm leading-tight">{exec.title}</span>
+            <button
+              className="shrink-0 text-xs font-semibold underline text-primary hover:text-primary/80 flex items-center gap-1"
+              onClick={() => undoMutation.mutate(exec.id)}
+              data-testid="button-undo-auto-exec"
+            >
+              <Undo2 className="h-3 w-3" />
+              Undo (8s)
+            </button>
+          </div>
+        ) as any,
+        duration: 8000,
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (triggeredRef.current) return;
+    if (!settings) return;
+    if (!settings.autoExecuteEnabled) return;
+    triggeredRef.current = true;
+    // Short delay to avoid triggering before page fully loads
+    const timer = setTimeout(() => {
+      runMutation.mutate();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [settings?.autoExecuteEnabled]);
+}
+
+// ─── Auto-Execution Log Section ───────────────────────────────────────────────
+function AutoExecLogSection() {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<AutoExecLogData>({
+    queryKey: ["/api/email-agent/auto-execute/log"],
+    staleTime: 30_000,
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (executionId: string) =>
+      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then((r) => r.json()),
+    onSuccess: () => {
+      toast({ title: "Undone successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
+    },
+    onError: (e: any) => toast({ title: "Undo failed", description: e.message, variant: "destructive" }),
+  });
+
+  if (!data?.enabled && !isLoading) {
+    return (
+      <Card className="border-dashed" data-testid="card-auto-exec-disabled">
+        <CardContent className="py-6 text-center text-muted-foreground">
+          <ShieldCheck className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm font-medium">Auto-execution is off</p>
+          <p className="text-xs mt-1">Enable it in Settings to let the AI execute top-priority actions automatically.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-3" data-testid="section-auto-exec-log">
+      {/* Stats bar */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card>
+          <CardContent className="py-3 text-center">
+            <p className="text-xl font-bold text-primary" data-testid="text-autoexec-today">{isLoading ? "—" : data?.todayCount ?? 0}</p>
+            <p className="text-xs text-muted-foreground">Today / {data?.maxPerDay ?? 3} max</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3 text-center">
+            <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-autoexec-success-rate">
+              {isLoading ? "—" : `${data?.successRate ?? 0}%`}
+            </p>
+            <p className="text-xs text-muted-foreground">Success rate</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3 text-center">
+            <p className="text-xl font-bold" data-testid="text-autoexec-total">{isLoading ? "—" : data?.log.length ?? 0}</p>
+            <p className="text-xs text-muted-foreground">All-time</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Execution log */}
+      {isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
+      ) : !data?.log.length ? (
+        <Card>
+          <CardContent className="py-6 text-center text-muted-foreground text-sm">
+            No auto-executions yet. The AI will act on the next high-confidence opportunity.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {data.log.map((exec) => (
+            <Card
+              key={exec.id}
+              className={`p-3 ${exec.undone ? "opacity-50" : ""} ${exec.outcome === "failed" ? "border-destructive/40" : ""}`}
+              data-testid={`card-auto-exec-${exec.id}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 rounded-full p-1.5 shrink-0 ${exec.outcome === "success" ? "bg-green-500/15" : "bg-destructive/15"}`}>
+                  {exec.outcome === "success"
+                    ? <PlayCircle className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                    : <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium leading-tight">{exec.title}</p>
+                    {exec.undone && <Badge variant="outline" className="text-xs text-muted-foreground">Undone</Badge>}
+                    {exec.outcome === "failed" && <Badge variant="destructive" className="text-xs">Failed</Badge>}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <Badge variant="outline" className="text-xs">{exec.actionType.replace(/_/g, " ")}</Badge>
+                    {exec.estimatedValue > 0 && (
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                        ${exec.estimatedValue.toLocaleString()}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {format(new Date(exec.executedAt), "MMM d, h:mm a")}
+                    </span>
+                  </div>
+                  {exec.error && <p className="text-xs text-destructive mt-0.5">{exec.error}</p>}
+                </div>
+                {!exec.undone && exec.outcome === "success" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs shrink-0"
+                    onClick={() => undoMutation.mutate(exec.id)}
+                    disabled={undoMutation.isPending}
+                    data-testid={`button-undo-${exec.id}`}
+                  >
+                    <Undo2 className="h-3 w-3 mr-1" />
+                    Undo
+                  </Button>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GlobalPriorityPanel() {
+  useAutoExecution();
   const { toast } = useToast();
 
   const { data, isLoading } = useQuery<GlobalPriorityQueue>({
@@ -706,8 +917,17 @@ function OverviewTab() {
 
   return (
     <div className="space-y-6">
-      {/* Global Priority Engine */}
+      {/* Global Priority Engine + Auto-Execute */}
       <GlobalPriorityPanel />
+
+      {/* Auto-Execution Log */}
+      <div>
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2" data-testid="heading-auto-exec-log">
+          <PlayCircle className="h-4 w-4 text-primary" />
+          Auto-Execution
+        </h2>
+        <AutoExecLogSection />
+      </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -2425,6 +2645,23 @@ function SettingsTab() {
               <p className="text-xs text-muted-foreground text-amber-600 dark:text-amber-400">⚠ Emails will send automatically without manual approval</p>
             </div>
             <Switch checked={settings.autoSend ?? false} onCheckedChange={v => set("autoSend", v)} data-testid="switch-auto-send" />
+          </div>
+          <div className="flex items-center justify-between pt-1 border-t">
+            <div>
+              <Label className="font-medium flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                Auto-Execute High-Confidence Actions
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                AI will automatically execute top-priority follow-ups and drafts when confidence is high and risk is low.
+                Max {settings.autoExecuteMaxPerDay ?? 3}/day. Never executes deals, pricing, or DNC actions.
+              </p>
+            </div>
+            <Switch
+              checked={settings.autoExecuteEnabled ?? false}
+              onCheckedChange={v => set("autoExecuteEnabled", v)}
+              data-testid="switch-auto-execute"
+            />
           </div>
         </CardContent>
       </Card>

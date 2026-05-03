@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
   ArrowRight,
   Building2,
   Flame,
+  Undo2,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -280,6 +281,69 @@ function GlobalPriorityPanel() {
   );
 }
 
+// ─── Auto-Execution Monitor ───────────────────────────────────────────────────
+function useAutoExecution() {
+  const { toast } = useToast();
+  const triggeredRef = useRef(false);
+
+  type EmailAgentSettings = { autoExecuteEnabled?: boolean };
+  type AutoExecution = { id: string; actionType: string; title: string; estimatedValue: number };
+  type AutoExecResult = { executed: boolean; execution: AutoExecution | null; reason?: string };
+
+  const { data: settings } = useQuery<EmailAgentSettings>({
+    queryKey: ["/api/email-agent/settings"],
+    staleTime: 30_000,
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (executionId: string) =>
+      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then((r) => r.json()),
+    onSuccess: () => {
+      toast({ title: "Auto-execution undone", description: "The action has been reversed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
+    },
+    onError: (e: any) => toast({ title: "Undo failed", description: e.message, variant: "destructive" }),
+  });
+
+  const runMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/email-agent/auto-execute/run").then((r) => r.json()),
+    onSuccess: (data: AutoExecResult) => {
+      if (!data.executed || !data.execution) return;
+      const exec = data.execution;
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });
+      toast({
+        title: `AI executed: ${exec.actionType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}`,
+        description: (
+          <div className="flex items-center justify-between gap-3 w-full">
+            <span className="text-sm leading-tight">{exec.title}</span>
+            <button
+              className="shrink-0 text-xs font-semibold underline flex items-center gap-1"
+              onClick={() => undoMutation.mutate(exec.id)}
+              data-testid="button-undo-auto-exec-cmd"
+            >
+              <Undo2 className="h-3 w-3" />
+              Undo (8s)
+            </button>
+          </div>
+        ) as any,
+        duration: 8000,
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (triggeredRef.current) return;
+    if (!settings) return;
+    if (!settings.autoExecuteEnabled) return;
+    triggeredRef.current = true;
+    const timer = setTimeout(() => {
+      runMutation.mutate();
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [settings?.autoExecuteEnabled]);
+}
+
 function fmt$(cents: number) {
   if (cents >= 100000) return `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   return `$${(cents / 100).toFixed(0)}`;
@@ -317,6 +381,8 @@ export default function BusinessCommandCenterPage() {
   const [, setLocation] = useLocation();
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
   const [goalInput, setGoalInput] = useState("");
+
+  useAutoExecution();
 
   const { data, isLoading, refetch, isRefetching } = useQuery<CommandCenterData>({
     queryKey: ["/api/business-command-center"],
