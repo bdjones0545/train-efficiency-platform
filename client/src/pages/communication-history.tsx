@@ -135,9 +135,17 @@ function ConfidenceBar({ score }: { score: number }) {
 
 // ─── Intelligence Types ────────────────────────────────────────────────────────
 interface IntelligenceScores { warmth: number; urgency: number; fit: number; risk: number }
-interface NextBestAction { actionType: string; priority: string; reason: string; estimatedValue: number; recommendedPrompt: string; requiresApproval: boolean }
+interface DecisionExplanation {
+  decision_reason: string;
+  supporting_signals: string[];
+  risk_flags: string[];
+  confidence_level: "low" | "medium" | "high";
+  expected_outcome: string;
+  alternative_action: string;
+}
+interface NextBestAction { actionType: string; priority: string; reason: string; estimatedValue: number; recommendedPrompt: string; requiresApproval: boolean; explanation?: DecisionExplanation }
 interface IntelligenceCard { prospectId: string; prospectName: string; sport: string; city?: string; estimatedValue: number; scores: IntelligenceScores; nextBestAction: NextBestAction; engagement?: { totalSent: number; opened: boolean; clicked: boolean; replied: boolean; replyClassification: string | null } }
-interface IntelligenceOverview { warmestProspect: IntelligenceCard | null; highestValueOpportunity: IntelligenceCard | null; mostUrgentFollowUp: IntelligenceCard | null; pipelineRisk: { prospectId: string; prospectName: string; sport: string; riskScore: number; reason: string } | null; nextBestActions: IntelligenceCard[] }
+interface IntelligenceOverview { warmestProspect: IntelligenceCard | null; highestValueOpportunity: IntelligenceCard | null; mostUrgentFollowUp: IntelligenceCard | null; pipelineRisk: { prospectId: string; prospectName: string; sport: string; riskScore: number; reason: string; explanation?: DecisionExplanation } | null; nextBestActions: IntelligenceCard[] }
 interface ProspectIntelligence { scores: IntelligenceScores; intelligence: { scores: IntelligenceScores; nextBestAction: NextBestAction }; safety: { isDNC: boolean; cooldownActive: boolean; nextEligibleDate: string | null } }
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -167,6 +175,91 @@ function ScoreBar({ label, score, color }: { label: string; score: number; color
         <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
       </div>
       <span className="text-xs font-medium w-6 text-right">{score}</span>
+    </div>
+  );
+}
+
+const CONFIDENCE_STYLE: Record<string, string> = {
+  high: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+  low: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+};
+
+function WhyPanel({ explanation, testId }: { explanation: DecisionExplanation; testId?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div data-testid={testId}>
+      <button
+        className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors mt-1"
+        onClick={() => setOpen(o => !o)}
+        data-testid={testId ? `${testId}-toggle` : undefined}
+      >
+        <Info className="h-3 w-3" />
+        Why this recommendation?
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {open && (
+        <div
+          className="mt-2 rounded-lg border bg-background p-3 space-y-2.5 text-xs"
+          data-testid={testId ? `${testId}-panel` : undefined}
+        >
+          {/* Reason */}
+          <div>
+            <p className="font-semibold text-foreground mb-0.5">Why:</p>
+            <p className="text-muted-foreground leading-relaxed">{explanation.decision_reason}</p>
+          </div>
+
+          {/* Signals */}
+          {explanation.supporting_signals.length > 0 && (
+            <div>
+              <p className="font-semibold text-foreground mb-0.5">What we know (facts):</p>
+              <ul className="space-y-0.5">
+                {explanation.supporting_signals.map((s, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-muted-foreground">
+                    <CheckCircle className="h-3 w-3 shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Risk flags */}
+          {explanation.risk_flags.length > 0 && (
+            <div>
+              <p className="font-semibold text-foreground mb-0.5">Risks / cautions:</p>
+              <ul className="space-y-0.5">
+                {explanation.risk_flags.map((r, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-red-600 dark:text-red-400">
+                    <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Confidence + outcome */}
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+            <div>
+              <p className="font-semibold text-foreground mb-0.5">AI confidence:</p>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${CONFIDENCE_STYLE[explanation.confidence_level] ?? CONFIDENCE_STYLE.low}`}>
+                {explanation.confidence_level.charAt(0).toUpperCase() + explanation.confidence_level.slice(1)}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-foreground mb-0.5">Expected outcome:</p>
+              <p className="text-muted-foreground">{explanation.expected_outcome}</p>
+            </div>
+          </div>
+
+          {/* Alternative */}
+          <div>
+            <p className="font-semibold text-foreground mb-0.5">If not now — alternative:</p>
+            <p className="text-muted-foreground italic">{explanation.alternative_action}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -222,22 +315,30 @@ function IntelligenceCardWidget({
         {intel?.nextBestAction?.reason ?? risk?.reason ?? "—"}
       </p>
       {intel && onAction && (
-        <div className="flex items-center justify-between gap-2 pt-1">
-          {intel.nextBestAction?.priority && (
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[intel.nextBestAction.priority] ?? PRIORITY_COLOR.low}`}>
-              {intel.nextBestAction.priority}
-            </span>
+        <div className="space-y-1 pt-1">
+          <div className="flex items-center justify-between gap-2">
+            {intel.nextBestAction?.priority && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[intel.nextBestAction.priority] ?? PRIORITY_COLOR.low}`}>
+                {intel.nextBestAction.priority}
+              </span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs px-2 ml-auto"
+              onClick={() => onAction(intel.nextBestAction.recommendedPrompt, card.prospectName)}
+              data-testid={`intel-action-${card.prospectId}`}
+            >
+              {ACTION_LABELS[intel.nextBestAction.actionType] ?? "Act"}
+              <ArrowRight className="h-3 w-3 ml-1" />
+            </Button>
+          </div>
+          {intel.nextBestAction?.explanation && (
+            <WhyPanel
+              explanation={intel.nextBestAction.explanation}
+              testId={`why-intel-${card.prospectId}`}
+            />
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 text-xs px-2 ml-auto"
-            onClick={() => onAction(intel.nextBestAction.recommendedPrompt, card.prospectName)}
-            data-testid={`intel-action-${card.prospectId}`}
-          >
-            {ACTION_LABELS[intel.nextBestAction.actionType] ?? "Act"}
-            <ArrowRight className="h-3 w-3 ml-1" />
-          </Button>
         </div>
       )}
     </Card>
@@ -356,6 +457,12 @@ function AgentIntelligenceSection() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{item.nextBestAction.reason}</p>
+                    {item.nextBestAction.explanation && (
+                      <WhyPanel
+                        explanation={item.nextBestAction.explanation}
+                        testId={`why-nba-${item.prospectId}`}
+                      />
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {item.estimatedValue > 0 && (
@@ -1127,16 +1234,24 @@ function ProspectCard({
                   <ScoreBar label="Risk" score={scores.risk} color={scores.risk >= 60 ? "bg-red-500" : scores.risk >= 30 ? "bg-amber-500" : "bg-muted-foreground/40"} />
                 </div>
                 {nba && (
-                  <div className="mt-2 rounded-md bg-background border p-2 flex items-start gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-medium">{ACTION_LABELS[nba.actionType] ?? nba.actionType}</span>
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${PRIORITY_COLOR[nba.priority] ?? PRIORITY_COLOR.low}`}>{nba.priority}</span>
-                        {nba.requiresApproval && <span className="text-xs text-amber-600 dark:text-amber-400">requires approval</span>}
+                  <div className="mt-2 rounded-md bg-background border p-2 space-y-1">
+                    <div className="flex items-start gap-2">
+                      <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-medium">{ACTION_LABELS[nba.actionType] ?? nba.actionType}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${PRIORITY_COLOR[nba.priority] ?? PRIORITY_COLOR.low}`}>{nba.priority}</span>
+                          {nba.requiresApproval && <span className="text-xs text-amber-600 dark:text-amber-400">requires approval</span>}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{nba.reason}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{nba.reason}</p>
                     </div>
+                    {nba.explanation && (
+                      <WhyPanel
+                        explanation={nba.explanation}
+                        testId={`why-prospect-${prospect.id}`}
+                      />
+                    )}
                   </div>
                 )}
                 <Button

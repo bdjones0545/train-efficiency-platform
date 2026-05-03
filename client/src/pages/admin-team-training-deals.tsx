@@ -14,7 +14,7 @@ import {
   DollarSign, Calendar, Zap, ChevronRight, Trash2, Edit2,
   TrendingUp, Target, Briefcase, Loader2, MessageSquare,
   Phone, FileText, Sparkles, CheckCircle, XCircle, Plus,
-  AlertTriangle, Flame, Clock, Copy, Brain,
+  AlertTriangle, Flame, Clock, Copy, Brain, Info, ChevronDown, ChevronUp, AlertCircle,
 } from "lucide-react";
 import type { TeamTrainingDeal, TeamTrainingProspect } from "@shared/schema";
 
@@ -54,18 +54,239 @@ function staleDays(date: string | Date | null): number {
   return Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
 }
 
-function getDealHealth(deal: DealWithProspect): { label: string; color: string; icon: React.ElementType; move: string } {
-  const days = staleDays(deal.lastActivityAt);
+interface DealExplanation {
+  decision_reason: string;
+  supporting_signals: string[];
+  risk_flags: string[];
+  confidence_level: "low" | "medium" | "high";
+  expected_outcome: string;
+  alternative_action: string;
+}
 
-  if (deal.status === "won") return { label: "Won — onboard team", color: "text-green-600 dark:text-green-400", icon: CheckCircle, move: "Schedule the kickoff session" };
-  if (deal.status === "lost") return { label: "Lost — review", color: "text-muted-foreground", icon: XCircle, move: "Note reason and decide whether to re-engage later" };
-  if (days >= 14) return { label: `Stale ${days}d — re-engage now`, color: "text-red-600 dark:text-red-400", icon: AlertTriangle, move: "Send a re-engagement message immediately" };
-  if (days >= 7) return { label: `Stale ${days}d — follow up`, color: "text-amber-600 dark:text-amber-400", icon: Clock, move: "Follow up and re-confirm interest" };
-  if (deal.status === "interested") return { label: "High intent — create proposal or call", color: "text-emerald-600 dark:text-emerald-400", icon: Flame, move: "Send a training proposal or book a call this week" };
-  if (deal.status === "call_scheduled") return { label: "Call scheduled — prepare pitch", color: "text-purple-600 dark:text-purple-400", icon: Zap, move: "Review org profile and prepare a custom program outline" };
-  if (deal.status === "proposal_sent") return { label: `Proposal pending${days >= 3 ? ` (${days}d)` : ""}`, color: "text-yellow-600 dark:text-yellow-400", icon: FileText, move: `Follow up on the proposal${days >= 3 ? " — it has been " + days + " days" : ""}` };
-  if (deal.status === "negotiating") return { label: "In negotiation — close it", color: "text-blue-600 dark:text-blue-400", icon: TrendingUp, move: "Address objections and ask for a commitment" };
-  return { label: "Active deal — advance stage", color: "text-foreground", icon: ChevronRight, move: "Reach out and push to the next stage" };
+const DEAL_CONFIDENCE_STYLE: Record<string, string> = {
+  high: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+  low: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+};
+
+function DealWhyPanel({ explanation, dealId }: { explanation: DealExplanation; dealId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div data-testid={`why-deal-${dealId}`}>
+      <button
+        className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+        onClick={() => setOpen(o => !o)}
+        data-testid={`why-deal-${dealId}-toggle`}
+      >
+        <Info className="h-3 w-3" />
+        Why this recommendation?
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border bg-background p-3 space-y-2.5 text-xs" data-testid={`why-deal-${dealId}-panel`}>
+          <div>
+            <p className="font-semibold text-foreground mb-0.5">Why:</p>
+            <p className="text-muted-foreground leading-relaxed">{explanation.decision_reason}</p>
+          </div>
+          {explanation.supporting_signals.length > 0 && (
+            <div>
+              <p className="font-semibold text-foreground mb-0.5">What we know (facts):</p>
+              <ul className="space-y-0.5">
+                {explanation.supporting_signals.map((s, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-muted-foreground">
+                    <CheckCircle className="h-3 w-3 shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {explanation.risk_flags.length > 0 && (
+            <div>
+              <p className="font-semibold text-foreground mb-0.5">Risks / cautions:</p>
+              <ul className="space-y-0.5">
+                {explanation.risk_flags.map((r, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-red-600 dark:text-red-400">
+                    <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+            <div>
+              <p className="font-semibold text-foreground mb-0.5">AI confidence:</p>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${DEAL_CONFIDENCE_STYLE[explanation.confidence_level] ?? DEAL_CONFIDENCE_STYLE.low}`}>
+                {explanation.confidence_level.charAt(0).toUpperCase() + explanation.confidence_level.slice(1)}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-foreground mb-0.5">Expected outcome:</p>
+              <p className="text-muted-foreground">{explanation.expected_outcome}</p>
+            </div>
+          </div>
+          <div>
+            <p className="font-semibold text-foreground mb-0.5">If not now — alternative:</p>
+            <p className="text-muted-foreground italic">{explanation.alternative_action}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getDealHealth(deal: DealWithProspect): { label: string; color: string; icon: React.ElementType; move: string; explanation: DealExplanation } {
+  const days = staleDays(deal.lastActivityAt);
+  const valueStr = (deal.estimatedValue ?? 0) > 0 ? `$${(deal.estimatedValue ?? 0).toLocaleString()}` : null;
+  const name = deal.prospect?.prospectName ?? "This team";
+
+  const baseSignals: string[] = [
+    `Deal stage: ${deal.status}`,
+    deal.lastActivityAt ? `Last activity: ${days} day${days !== 1 ? "s" : ""} ago` : "No activity recorded",
+    valueStr ? `Deal value: ${valueStr}` : "",
+    deal.probability > 0 ? `Close probability: ${deal.probability}%` : "",
+    deal.nextAction ? `Recorded next action: ${deal.nextAction}` : "",
+    deal.prospect?.sport && deal.prospect.sport !== "unknown" ? `Sport: ${deal.prospect.sport}` : "",
+  ].filter(Boolean) as string[];
+
+  if (deal.status === "won") {
+    return {
+      label: "Won — onboard team", color: "text-green-600 dark:text-green-400", icon: CheckCircle,
+      move: "Schedule the kickoff session",
+      explanation: {
+        decision_reason: `${name} signed — congratulations! The next step is to deliver on what you promised and schedule the first training session.`,
+        supporting_signals: baseSignals,
+        risk_flags: [],
+        confidence_level: "high",
+        expected_outcome: "Successful kickoff and a happy client who may refer other teams.",
+        alternative_action: "If scheduling is delayed, send a welcome message to maintain excitement and confirm the program details.",
+      },
+    };
+  }
+
+  if (deal.status === "lost") {
+    return {
+      label: "Lost — review", color: "text-muted-foreground", icon: XCircle,
+      move: "Note reason and decide whether to re-engage later",
+      explanation: {
+        decision_reason: `This deal did not close. Reviewing what happened will help you improve your approach with future prospects.`,
+        supporting_signals: baseSignals,
+        risk_flags: ["Deal was marked as lost — avoid re-engaging without a clear change in circumstances"],
+        confidence_level: "high",
+        expected_outcome: "Capturing the loss reason improves future close rates and reveals patterns.",
+        alternative_action: "If the reason was timing or budget, add a note to revisit in 3–6 months.",
+      },
+    };
+  }
+
+  if (days >= 14) {
+    return {
+      label: `Stale ${days}d — re-engage now`, color: "text-red-600 dark:text-red-400", icon: AlertTriangle,
+      move: "Send a re-engagement message immediately",
+      explanation: {
+        decision_reason: `This deal has been completely inactive for ${days} days. At this point, it is at critical risk of being permanently lost without immediate action.`,
+        supporting_signals: baseSignals,
+        risk_flags: [
+          `Critical: ${days} days with no activity`,
+          "Prospect may have moved on or chosen a competitor",
+          "Long gaps create awkward re-entry — acknowledge the gap in your message",
+        ],
+        confidence_level: "high",
+        expected_outcome: "A well-crafted re-engagement message may revive the deal. Even a 'not interested' reply gives you closure.",
+        alternative_action: "If the prospect doesn't respond to re-engagement, mark as Lost and note the reason for future reference.",
+      },
+    };
+  }
+
+  if (days >= 7) {
+    return {
+      label: `Stale ${days}d — follow up`, color: "text-amber-600 dark:text-amber-400", icon: Clock,
+      move: "Follow up and re-confirm interest",
+      explanation: {
+        decision_reason: `The deal has been quiet for ${days} days. A timely follow-up keeps the momentum going before the prospect loses interest.`,
+        supporting_signals: baseSignals,
+        risk_flags: [`Deal inactive for ${days} days — risk of losing momentum`],
+        confidence_level: "medium",
+        expected_outcome: "A follow-up re-engages the prospect and moves the deal to the next stage.",
+        alternative_action: "If a direct follow-up feels too soon, share a relevant article or update about your program as a soft touch.",
+      },
+    };
+  }
+
+  if (deal.status === "interested") {
+    return {
+      label: "High intent — create proposal or call", color: "text-emerald-600 dark:text-emerald-400", icon: Flame,
+      move: "Send a training proposal or book a call this week",
+      explanation: {
+        decision_reason: `${name} has expressed interest. Strike while the iron is hot — send a proposal or book a call before their attention shifts elsewhere.`,
+        supporting_signals: baseSignals,
+        risk_flags: days >= 3 ? [`Interest was expressed ${days} days ago — act before momentum fades`] : [],
+        confidence_level: "high",
+        expected_outcome: "A proposal or call this week can move this deal to negotiation or close within days.",
+        alternative_action: "If you need more time to prepare a full proposal, book a discovery call first to understand their specific needs.",
+      },
+    };
+  }
+
+  if (deal.status === "call_scheduled") {
+    return {
+      label: "Call scheduled — prepare pitch", color: "text-purple-600 dark:text-purple-400", icon: Zap,
+      move: "Review org profile and prepare a custom program outline",
+      explanation: {
+        decision_reason: `A call is scheduled with ${name}. Preparation is the most impactful thing you can do right now — know their sport, team size, and goals.`,
+        supporting_signals: baseSignals,
+        risk_flags: [],
+        confidence_level: "high",
+        expected_outcome: "A well-prepared call builds confidence and often leads directly to a proposal request or verbal commitment.",
+        alternative_action: "If the call needs to be rescheduled, confirm the new time immediately so the deal doesn't go cold.",
+      },
+    };
+  }
+
+  if (deal.status === "proposal_sent") {
+    const waitRisk = days >= 3;
+    return {
+      label: `Proposal pending${days >= 3 ? ` (${days}d)` : ""}`, color: "text-yellow-600 dark:text-yellow-400", icon: FileText,
+      move: `Follow up on the proposal${days >= 3 ? " — it has been " + days + " days" : ""}`,
+      explanation: {
+        decision_reason: `A proposal has been sent${days >= 3 ? ` ${days} days ago` : ""}. Following up shows professionalism and keeps you top of mind while they decide.`,
+        supporting_signals: baseSignals,
+        risk_flags: waitRisk ? [`Proposal has been pending for ${days} days — a follow-up is overdue`] : [],
+        confidence_level: waitRisk ? "high" : "medium",
+        expected_outcome: "A follow-up often prompts a decision — either moving forward or surfacing objections you can address.",
+        alternative_action: "If you don't hear back after 2 follow-ups, try calling or reaching out via a different channel.",
+      },
+    };
+  }
+
+  if (deal.status === "negotiating") {
+    return {
+      label: "In negotiation — close it", color: "text-blue-600 dark:text-blue-400", icon: TrendingUp,
+      move: "Address objections and ask for a commitment",
+      explanation: {
+        decision_reason: `${name} is in active negotiation. The goal now is to resolve any remaining objections and ask for a commitment.`,
+        supporting_signals: baseSignals,
+        risk_flags: days >= 5 ? [`Negotiation has been ongoing for ${days} days — prolonged negotiations can stall`] : [],
+        confidence_level: "medium",
+        expected_outcome: "Resolving objections and asking directly for a decision moves this deal to 'Won'.",
+        alternative_action: "If the negotiation is stalling on price, consider offering a tiered package or a limited-time incentive to move things forward.",
+      },
+    };
+  }
+
+  return {
+    label: "Active deal — advance stage", color: "text-foreground", icon: ChevronRight,
+    move: "Reach out and push to the next stage",
+    explanation: {
+      decision_reason: `This deal is active but needs to be advanced to the next stage. A proactive outreach now keeps the pipeline moving.`,
+      supporting_signals: baseSignals,
+      risk_flags: days >= 5 ? [`No activity for ${days} days — take action soon`] : [],
+      confidence_level: "low",
+      expected_outcome: "Advancing the stage keeps revenue moving through your pipeline toward a close.",
+      alternative_action: "If you are unsure of the next step, review the deal notes and identify the specific blocker holding it back.",
+    },
+  };
 }
 
 function statusInfo(key: string) {
@@ -140,10 +361,13 @@ function DealCard({
         <span className="text-muted-foreground">{deal.probability}% probability</span>
       </div>
 
-      {/* Suggested close move */}
-      <div className="flex items-start gap-1 text-xs bg-primary/5 border border-primary/20 rounded px-2 py-1.5" data-testid={`deal-move-${deal.id}`}>
-        <Brain className="h-3 w-3 shrink-0 mt-0.5 text-primary" />
-        <span className="text-muted-foreground line-clamp-2">{health.move}</span>
+      {/* Suggested close move + why */}
+      <div className="rounded border border-primary/20 bg-primary/5 px-2 py-1.5 space-y-1" data-testid={`deal-move-${deal.id}`}>
+        <div className="flex items-start gap-1 text-xs">
+          <Brain className="h-3 w-3 shrink-0 mt-0.5 text-primary" />
+          <span className="text-muted-foreground line-clamp-2">{health.move}</span>
+        </div>
+        <DealWhyPanel explanation={health.explanation} dealId={deal.id} />
       </div>
 
       {deal.nextAction && (
