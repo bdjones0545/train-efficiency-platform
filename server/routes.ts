@@ -7588,6 +7588,20 @@ Business: ${org?.name ?? "Training Facility"}
     }
   });
 
+  // GET /api/email-agent/intelligence/global-priority — unified priority engine
+  app.get("/api/email-agent/intelligence/global-priority", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { buildGlobalActionQueue } = await import("./email-agent/global-priority-engine");
+      const queue = await buildGlobalActionQueue(profile.organizationId);
+      res.json(queue);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // GET /api/email-agent/deals/:id/intelligence — deal-specific intelligence
   app.get("/api/email-agent/deals/:id/intelligence", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {

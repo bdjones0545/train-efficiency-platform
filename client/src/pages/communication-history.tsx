@@ -490,6 +490,174 @@ function AgentIntelligenceSection() {
 }
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
+interface GlobalAction {
+  id: string;
+  actionType: string;
+  title: string;
+  reason: string;
+  priorityScore: number;
+  estimatedValue: number;
+  confidence: "low" | "medium" | "high";
+  sourceType: "prospect" | "deal" | "followup" | "risk";
+  prospectId?: string;
+  prospectName?: string;
+  dealId?: string;
+  dealStatus?: string;
+  sport?: string;
+  city?: string;
+}
+
+interface GlobalPriorityQueue {
+  topAction: GlobalAction | null;
+  topThree: GlobalAction[];
+  fullQueue: GlobalAction[];
+  generatedAt: string;
+}
+
+const GP_CONFIDENCE: Record<string, string> = {
+  high: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+  low: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+};
+
+function GlobalPriorityPanel() {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<GlobalPriorityQueue>({
+    queryKey: ["/api/email-agent/intelligence/global-priority"],
+    staleTime: 60_000,
+  });
+
+  function execute(action: GlobalAction) {
+    const msg = `Execute this top priority action: ${action.title}. Reason: ${action.reason}. Estimated value: $${action.estimatedValue.toLocaleString()}.`;
+    navigator.clipboard?.writeText(msg).catch(() => {});
+    toast({
+      title: "Action copied to clipboard",
+      description: "Paste this into the Agent or Email composer to execute.",
+    });
+  }
+
+  if (isLoading) {
+    return (
+      <div>
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2" data-testid="heading-global-priority-loading">
+          <Flame className="h-4 w-4 text-orange-500" />
+          Top Priority
+        </h2>
+        <Skeleton className="h-40 w-full rounded-xl mb-3" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Skeleton className="h-20 rounded-xl" />
+          <Skeleton className="h-20 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!data?.topAction) {
+    return (
+      <Card data-testid="card-global-priority-empty">
+        <CardContent className="py-8 text-center text-muted-foreground">
+          <Flame className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No priority actions yet</p>
+          <p className="text-xs mt-1">Add prospects or advance deals to unlock global priority recommendations.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { topAction, topThree } = data;
+  const nextTwo = topThree.slice(1);
+
+  return (
+    <div data-testid="section-global-priority">
+      <h2 className="text-base font-semibold mb-3 flex items-center gap-2" data-testid="heading-global-priority">
+        <Flame className="h-4 w-4 text-orange-500" />
+        Top Priority
+      </h2>
+
+      <Card
+        className="border-orange-400/50 bg-gradient-to-br from-orange-500/10 to-red-500/5 dark:from-orange-500/15 dark:to-red-500/10 mb-3"
+        data-testid="card-top-priority"
+      >
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-full bg-orange-500/20 p-2 shrink-0">
+              <Flame className="h-5 w-5 text-orange-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <Badge className="bg-orange-500/20 text-orange-700 dark:text-orange-300 border-orange-500/30 text-xs">
+                  Score {topAction.priorityScore}/100
+                </Badge>
+                <Badge className={`text-xs ${GP_CONFIDENCE[topAction.confidence]}`}>
+                  {topAction.confidence.charAt(0).toUpperCase() + topAction.confidence.slice(1)} confidence
+                </Badge>
+                {topAction.sport && (
+                  <Badge variant="outline" className="text-xs capitalize">{topAction.sport}</Badge>
+                )}
+              </div>
+              <p className="font-semibold text-base text-foreground leading-tight" data-testid="text-top-priority-title">
+                {topAction.title}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1 leading-relaxed" data-testid="text-top-priority-reason">
+                {topAction.reason}
+              </p>
+              {topAction.estimatedValue > 0 && (
+                <p className="text-sm font-semibold text-orange-600 dark:text-orange-400 mt-1">
+                  Estimated: ${topAction.estimatedValue.toLocaleString()}
+                </p>
+              )}
+            </div>
+          </div>
+          <Button
+            className="w-full mt-4 bg-orange-500 hover:bg-orange-600 text-white"
+            size="sm"
+            onClick={() => execute(topAction)}
+            data-testid="button-execute-top-priority"
+          >
+            <Zap className="h-4 w-4 mr-1.5" />
+            Execute Now
+          </Button>
+        </CardContent>
+      </Card>
+
+      {nextTwo.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-2">Next Best Actions</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="list-next-best-actions">
+            {nextTwo.map((action, i) => (
+              <Card
+                key={action.id}
+                className="cursor-pointer hover:border-primary/40 transition-colors"
+                onClick={() => execute(action)}
+                data-testid={`card-next-action-${i}`}
+              >
+                <CardContent className="pt-3 pb-3">
+                  <div className="flex items-start gap-2">
+                    <ArrowRight className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-tight">{action.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{action.reason}</p>
+                      {action.estimatedValue > 0 && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-0.5">
+                          ${action.estimatedValue.toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                    <Badge className="bg-primary/10 text-primary border-primary/20 text-xs shrink-0">
+                      {action.priorityScore}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OverviewTab() {
   const { toast } = useToast();
 
@@ -538,6 +706,9 @@ function OverviewTab() {
 
   return (
     <div className="space-y-6">
+      {/* Global Priority Engine */}
+      <GlobalPriorityPanel />
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Card data-testid="card-emails-sent-today">

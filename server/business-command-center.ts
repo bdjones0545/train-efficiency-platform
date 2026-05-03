@@ -665,6 +665,14 @@ export async function buildCommandCenterContextString(orgId: string): Promise<st
       }
     } catch {}
 
+    // Global priority context injection
+    let globalPriorityLine = "";
+    try {
+      const { buildGlobalActionQueue, buildGlobalPriorityContextString } = await import("./email-agent/global-priority-engine");
+      const queue = await buildGlobalActionQueue(orgId);
+      globalPriorityLine = buildGlobalPriorityContextString(queue);
+    } catch {}
+
     return `
 ## Today's Business Command Center Context (as of ${format(new Date(), "MMM d, yyyy h:mm a")})
 
@@ -674,9 +682,9 @@ ${slotsLine}
 ${bestLine}
 
 Client opportunities: ${churnCount} churn risks, ${renewalCount} renewals due, ${shouldBookCount} clients who should book.
-${teamLine}${dealLine}${intelligenceLine}
+${teamLine}${dealLine}${intelligenceLine}${globalPriorityLine}
 
-When the coach asks "What should I do today?" or similar, lead with this context and give a prioritized action list.
+When the coach asks "What should I do today?" or similar, always lead with the GLOBAL PRIORITY top action first, then provide additional context from this command center data.
 `.trim();
   } catch {
     return "";
