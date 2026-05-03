@@ -337,6 +337,17 @@ export interface IStorage {
   }): Promise<UserOrgPreferences>;
   ensureUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences>;
   backfillUserOrgPreferences(): Promise<{ created: number; skipped: number }>;
+  createAiRevenueEvent(data: import("@shared/schema").InsertAiRevenueEvent): Promise<import("@shared/schema").AiRevenueEvent>;
+  updateAiRevenueEvent(id: string, data: { outcomeStatus?: string; outcomeValue?: number; outcomeSource?: string; outcomeTimestamp?: Date; timeToOutcomeHours?: number }): Promise<void>;
+  findRecentAiEventForProspect(orgId: string, prospectId: string, windowHours?: number): Promise<import("@shared/schema").AiRevenueEvent | null>;
+  getAiRevenueStats(orgId: string): Promise<{
+    today: { revenue: number; actions: number; wonActions: number; engagedActions: number; avgPerAction: number };
+    week: { revenue: number; actions: number; wonActions: number; engagedActions: number; avgPerAction: number };
+    month: { revenue: number; actions: number; wonActions: number; engagedActions: number; avgPerAction: number };
+    autoVsManual: { autoCount: number; manualCount: number; autoRevenue: number; manualRevenue: number; autoMultiplier: number };
+    byActionType: { actionType: string; count: number; revenue: number; avgRevenue: number }[];
+  }>;
+  getAiImpactFeed(orgId: string, limit?: number): Promise<import("@shared/schema").AiRevenueEvent[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2442,6 +2453,119 @@ export class DatabaseStorage implements IStorage {
       .filter(d => d.status === "won")
       .reduce((sum, d) => sum + (d.finalValue ?? d.estimatedValue), 0);
     return { active, interested, negotiating, projectedRevenue, wonRevenue };
+  }
+
+  async createAiRevenueEvent(data: import("@shared/schema").InsertAiRevenueEvent) {
+    const { aiRevenueEvents } = await import("@shared/schema");
+    const [row] = await db.insert(aiRevenueEvents).values(data).returning();
+    return row;
+  }
+
+  async updateAiRevenueEvent(id: string, updates: { outcomeStatus?: string; outcomeValue?: number; outcomeSource?: string; outcomeTimestamp?: Date; timeToOutcomeHours?: number }) {
+    const { aiRevenueEvents } = await import("@shared/schema");
+    await db.update(aiRevenueEvents).set(updates as any).where(eq(aiRevenueEvents.id, id));
+  }
+
+  async findRecentAiEventForProspect(orgId: string, prospectId: string, windowHours = 72) {
+    const { aiRevenueEvents } = await import("@shared/schema");
+    const cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+    const rows = await db
+      .select()
+      .from(aiRevenueEvents)
+      .where(
+        and(
+          eq(aiRevenueEvents.orgId, orgId),
+          eq(aiRevenueEvents.prospectId!, prospectId),
+          eq(aiRevenueEvents.outcomeStatus, "pending")
+        )
+      )
+      .orderBy(desc(aiRevenueEvents.createdAt))
+      .limit(1);
+    if (rows.length === 0) return null;
+    if (new Date(rows[0].createdAt) < cutoff) return null;
+    return rows[0];
+  }
+
+  async getAiRevenueStats(orgId: string) {
+    const { aiRevenueEvents } = await import("@shared/schema");
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfToday.getDate() - 6);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const all = await db
+      .select()
+      .from(aiRevenueEvents)
+      .where(
+        and(eq(aiRevenueEvents.orgId, orgId))
+      )
+      .orderBy(desc(aiRevenueEvents.createdAt));
+
+    function periodStats(rows: typeof all, from: Date) {
+      const inPeriod = rows.filter((r) => new Date(r.createdAt) >= from);
+      const won = inPeriod.filter((r) => r.outcomeStatus === "won");
+      const engaged = inPeriod.filter((r) => r.outcomeStatus === "engaged");
+      const revenue = won.reduce((s, r) => s + (r.outcomeValue ?? 0), 0);
+      const actions = inPeriod.filter((r) => r.outcomeStatus !== "pending").length;
+      return {
+        revenue,
+        actions,
+        wonActions: won.length,
+        engagedActions: engaged.length,
+        avgPerAction: actions > 0 ? Math.round(revenue / (won.length || 1)) : 0,
+      };
+    }
+
+    const today = periodStats(all, startOfToday);
+    const week = periodStats(all, startOfWeek);
+    const month = periodStats(all, startOfMonth);
+
+    // Auto vs manual
+    const wonAll = all.filter((r) => r.outcomeStatus === "won");
+    const autoRevenue = wonAll.filter((r) => r.actionSource === "auto_executed").reduce((s, r) => s + (r.outcomeValue ?? 0), 0);
+    const manualRevenue = wonAll.filter((r) => r.actionSource === "manual").reduce((s, r) => s + (r.outcomeValue ?? 0), 0);
+    const autoCount = all.filter((r) => r.actionSource === "auto_executed").length;
+    const manualCount = all.filter((r) => r.actionSource === "manual").length;
+    const autoMultiplier = manualRevenue > 0 && autoCount > 0 && manualCount > 0
+      ? parseFloat(((autoRevenue / Math.max(autoCount, 1)) / (manualRevenue / Math.max(manualCount, 1))).toFixed(1))
+      : 0;
+
+    // By action type
+    const byType: Record<string, { count: number; revenue: number }> = {};
+    for (const row of all) {
+      if (!byType[row.actionType]) byType[row.actionType] = { count: 0, revenue: 0 };
+      byType[row.actionType].count++;
+      if (row.outcomeStatus === "won") byType[row.actionType].revenue += row.outcomeValue ?? 0;
+    }
+    const byActionType = Object.entries(byType).map(([actionType, v]) => ({
+      actionType,
+      count: v.count,
+      revenue: v.revenue,
+      avgRevenue: v.count > 0 ? Math.round(v.revenue / v.count) : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    return {
+      today,
+      week,
+      month,
+      autoVsManual: { autoCount, manualCount, autoRevenue, manualRevenue, autoMultiplier },
+      byActionType,
+    };
+  }
+
+  async getAiImpactFeed(orgId: string, limit = 20) {
+    const { aiRevenueEvents } = await import("@shared/schema");
+    return db
+      .select()
+      .from(aiRevenueEvents)
+      .where(
+        and(
+          eq(aiRevenueEvents.orgId, orgId),
+        )
+      )
+      .orderBy(desc(aiRevenueEvents.createdAt))
+      .limit(limit);
   }
 }
 

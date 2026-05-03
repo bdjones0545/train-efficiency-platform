@@ -112,6 +112,42 @@ type GlobalPriorityQueue = {
   generatedAt: string;
 };
 
+type AiRevenuePeriod = {
+  revenue: number;
+  actions: number;
+  wonActions: number;
+  engagedActions: number;
+  avgPerAction: number;
+};
+
+type AiRevenueImpactItem = {
+  id: string;
+  actionType: string;
+  actionSource: string;
+  prospectName: string | null;
+  sport?: string | null;
+  outcomeStatus: string;
+  outcomeValue: number;
+  outcomeTimestamp?: string | null;
+  timeToOutcomeHours?: number | null;
+  createdAt: string;
+};
+
+type AiRevenueOutcomes = {
+  today: AiRevenuePeriod;
+  week: AiRevenuePeriod;
+  month: AiRevenuePeriod;
+  autoVsManual: {
+    autoCount: number;
+    manualCount: number;
+    autoRevenue: number;
+    manualRevenue: number;
+    autoMultiplier: number;
+  };
+  byActionType: { actionType: string; count: number; revenue: number; avgRevenue: number }[];
+  impactFeed: AiRevenueImpactItem[];
+};
+
 type CommandCenterData = {
   generatedAt: string;
   timezone: string;
@@ -344,6 +380,201 @@ function useAutoExecution() {
   }, [settings?.autoExecuteEnabled]);
 }
 
+// ─── AI Revenue Panel ─────────────────────────────────────────────────────────
+function fmtDollars(dollars: number) {
+  if (dollars >= 1000) return `$${(dollars / 1000).toFixed(1)}k`;
+  return `$${dollars.toLocaleString()}`;
+}
+
+function actionLabel(actionType: string): string {
+  const map: Record<string, string> = {
+    send_follow_up: "Follow-up",
+    generate_draft: "Draft outreach",
+    send_initial_email: "Initial email",
+    create_deal: "Deal created",
+    generate_response: "Response generated",
+    schedule_call: "Call scheduled",
+    create_proposal: "Proposal sent",
+  };
+  return map[actionType] ?? actionType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function outcomeStatusBadge(status: string, value: number) {
+  switch (status) {
+    case "won":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 dark:text-green-400">
+          <CheckCircle className="h-3 w-3" />
+          Won {value > 0 ? `· ${fmtDollars(value)}` : ""}
+        </span>
+      );
+    case "engaged":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400">
+          <MessageSquare className="h-3 w-3" />
+          Reply received
+        </span>
+      );
+    case "booked":
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-purple-600 dark:text-purple-400">
+          <Calendar className="h-3 w-3" />
+          Booked
+        </span>
+      );
+    default:
+      return (
+        <span className="text-xs text-muted-foreground">Pending outcome</span>
+      );
+  }
+}
+
+function AiRevenuePanel() {
+  const { data, isLoading } = useQuery<AiRevenueOutcomes>({
+    queryKey: ["/api/email-agent/revenue-outcomes"],
+    staleTime: 60_000,
+  });
+
+  const hasData = !isLoading && data;
+  const hasAnyRevenue = hasData && (data.month.revenue > 0 || data.month.actions > 0);
+  const recentOutcomes = hasData
+    ? data.impactFeed.filter(i => i.outcomeStatus !== "pending").slice(0, 5)
+    : [];
+
+  return (
+    <section data-testid="section-ai-revenue-panel">
+      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+        <Bot className="h-3.5 w-3.5" />
+        AI-Generated Revenue
+      </h2>
+
+      {/* Revenue stat cards */}
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        {/* Today */}
+        <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-today">
+          <p className="text-xs text-muted-foreground">Today</p>
+          {isLoading ? (
+            <Skeleton className="h-6 w-16" />
+          ) : (
+            <p className="text-xl font-bold text-foreground">
+              {fmtDollars(data?.today.revenue ?? 0)}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {isLoading ? "—" : `${data?.today.wonActions ?? 0} won · ${data?.today.engagedActions ?? 0} engaged`}
+          </p>
+        </Card>
+
+        {/* This Week */}
+        <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-week">
+          <p className="text-xs text-muted-foreground">This Week</p>
+          {isLoading ? (
+            <Skeleton className="h-6 w-16" />
+          ) : (
+            <p className="text-xl font-bold text-foreground">
+              {fmtDollars(data?.week.revenue ?? 0)}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {isLoading ? "—" : `${data?.week.actions ?? 0} actions tracked`}
+          </p>
+        </Card>
+
+        {/* This Month */}
+        <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-month">
+          <p className="text-xs text-muted-foreground">This Month</p>
+          {isLoading ? (
+            <Skeleton className="h-6 w-16" />
+          ) : (
+            <p className="text-xl font-bold text-primary">
+              {fmtDollars(data?.month.revenue ?? 0)}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {isLoading ? "—" : data?.month.avgPerAction && data.month.wonActions > 0
+              ? `avg ${fmtDollars(data.month.avgPerAction)}/win`
+              : `${data?.month.actions ?? 0} actions`}
+          </p>
+        </Card>
+      </div>
+
+      {/* Impact Feed */}
+      {!isLoading && !hasAnyRevenue && (
+        <Card className="border-dashed" data-testid="card-ai-revenue-empty">
+          <div className="py-5 text-center">
+            <TrendingUp className="h-7 w-7 mx-auto mb-2 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground font-medium">Revenue tracking starts now</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Every AI action — auto-executed or manual — will be tracked here once outcomes are recorded.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {recentOutcomes.length > 0 && (
+        <Card data-testid="card-ai-impact-feed">
+          <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Impact Feed</p>
+          </div>
+          <div className="divide-y divide-border">
+            {recentOutcomes.map((item) => (
+              <div
+                key={item.id}
+                className="px-4 py-2.5 flex items-start gap-3"
+                data-testid={`row-impact-feed-${item.id}`}
+              >
+                <div className="mt-0.5 flex-shrink-0">
+                  {item.actionSource === "auto_executed"
+                    ? <Zap className="h-3.5 w-3.5 text-primary" />
+                    : <Send className="h-3.5 w-3.5 text-muted-foreground" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-snug truncate">
+                    {actionLabel(item.actionType)}
+                    {item.prospectName ? ` → ${item.prospectName}` : ""}
+                  </p>
+                  <div className="mt-0.5 flex items-center gap-2 flex-wrap">
+                    {outcomeStatusBadge(item.outcomeStatus, item.outcomeValue)}
+                    {item.timeToOutcomeHours != null && (
+                      <span className="text-xs text-muted-foreground">
+                        {item.timeToOutcomeHours < 24
+                          ? `${item.timeToOutcomeHours}h`
+                          : `${Math.round(item.timeToOutcomeHours / 24)}d`}
+                      </span>
+                    )}
+                    {item.sport && (
+                      <span className="text-xs text-muted-foreground capitalize">{item.sport}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  {item.actionSource === "auto_executed" && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-primary/5 text-primary border-primary/20">
+                      Auto
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Auto vs Manual efficiency bar (only show when we have data) */}
+      {hasData && data.autoVsManual.autoCount > 0 && data.autoVsManual.manualCount > 0 && data.autoVsManual.autoMultiplier > 0 && (
+        <Card className="p-3 mt-3 flex items-center gap-3" data-testid="card-ai-vs-manual">
+          <Zap className="h-4 w-4 text-primary flex-shrink-0" />
+          <p className="text-xs text-muted-foreground">
+            Auto-executed actions generate{" "}
+            <span className="font-semibold text-foreground">{data.autoVsManual.autoMultiplier}×</span>{" "}
+            more revenue per action than manual sends
+          </p>
+        </Card>
+      )}
+    </section>
+  );
+}
+
 function fmt$(cents: number) {
   if (cents >= 100000) return `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   return `$${(cents / 100).toFixed(0)}`;
@@ -464,6 +695,9 @@ export default function BusinessCommandCenterPage() {
           <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
         </Button>
       </div>
+
+      {/* ─── AI Revenue Outcome Engine ────────────────────────────────────── */}
+      <AiRevenuePanel />
 
       {/* ─── Global Priority Engine ───────────────────────────────────────── */}
       <GlobalPriorityPanel />

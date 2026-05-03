@@ -7020,6 +7020,11 @@ export async function registerRoutes(
           : "Marked as replied by admin",
         metadata: replyText ? { replyText: replyText.slice(0, 500), classification } : undefined,
       });
+      // Revenue attribution: mark most recent AI action as "engaged"
+      try {
+        const { attributeOutcomeToProspect } = await import("./email-agent/revenue-outcome-engine");
+        await attributeOutcomeToProspect(profile.organizationId, req.params.id, "engaged", 0, "reply");
+      } catch {}
 
       // Phase 2: Auto-create deal when classification is interested or ask_info
       let dealCreated = false;
@@ -7134,6 +7139,12 @@ export async function registerRoutes(
         });
         // Update prospect status
         await storage.updateTeamTrainingProspect(deal.prospectId, { outreachStatus: "Replied" });
+        // Revenue attribution: link most recent AI action to this win
+        try {
+          const { attributeOutcomeToProspect } = await import("./email-agent/revenue-outcome-engine");
+          const winValue = updated?.finalValue ?? updated?.estimatedValue ?? 0;
+          await attributeOutcomeToProspect(profile.organizationId, deal.prospectId, "won", winValue, "deal_pipeline");
+        } catch {}
       }
       res.json(updated);
     } catch (err: any) {
@@ -7639,6 +7650,20 @@ Business: ${org?.name ?? "Training Facility"}
         successRate,
         enabled: settings.autoExecuteEnabled === true,
       });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/email-agent/revenue-outcomes — AI-generated revenue stats + impact feed
+  app.get("/api/email-agent/revenue-outcomes", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { getRevenueOutcomes } = await import("./email-agent/revenue-outcome-engine");
+      const outcomes = await getRevenueOutcomes(profile.organizationId);
+      res.json(outcomes);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

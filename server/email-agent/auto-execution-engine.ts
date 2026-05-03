@@ -285,6 +285,26 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
 
   await saveAutoExecutionLog(orgId, [...log, execution]);
   console.log(`[Auto-Execute] org ${orgId} — executed: ${execution.title}`);
+
+  // Log to revenue outcome engine for attribution tracking
+  try {
+    const { logActionAsEvent } = await import("./revenue-outcome-engine");
+    if (eligibleAction.prospectId) {
+      const prospect = await storage.getTeamTrainingProspect(eligibleAction.prospectId);
+      await logActionAsEvent(orgId, {
+        actionType: eligibleAction.actionType,
+        actionSource: "auto_executed",
+        prospectId: eligibleAction.prospectId,
+        prospectName: prospect?.prospectName ?? eligibleAction.prospectName,
+        sport: prospect?.sport ?? eligibleAction.sport,
+        executionLogId: execution.id,
+        outcomeSource: eligibleAction.actionType,
+      });
+    }
+  } catch (revErr: any) {
+    console.warn("[Auto-Execute] revenue event log failed:", revErr.message);
+  }
+
   return { executed: true, execution };
 }
 

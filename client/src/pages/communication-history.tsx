@@ -145,6 +145,43 @@ interface AutoExecLogData {
   enabled: boolean;
 }
 
+// ─── AI Revenue types ─────────────────────────────────────────────────────────
+interface AiRevenuePeriod {
+  revenue: number;
+  actions: number;
+  wonActions: number;
+  engagedActions: number;
+  avgPerAction: number;
+}
+
+interface AiRevenueImpactItem {
+  id: string;
+  actionType: string;
+  actionSource: string;
+  prospectName: string | null;
+  sport?: string | null;
+  outcomeStatus: string;
+  outcomeValue: number;
+  outcomeTimestamp?: string | null;
+  timeToOutcomeHours?: number | null;
+  createdAt: string;
+}
+
+interface AiRevenueOutcomes {
+  today: AiRevenuePeriod;
+  week: AiRevenuePeriod;
+  month: AiRevenuePeriod;
+  autoVsManual: {
+    autoCount: number;
+    manualCount: number;
+    autoRevenue: number;
+    manualRevenue: number;
+    autoMultiplier: number;
+  };
+  byActionType: { actionType: string; count: number; revenue: number; avgRevenue: number }[];
+  impactFeed: AiRevenueImpactItem[];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function ConfidenceBar({ score }: { score: number }) {
   const color = score >= 75 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-400";
@@ -608,6 +645,189 @@ function useAutoExecution() {
   }, [settings?.autoExecuteEnabled]);
 }
 
+// ─── Performance Insights Section ────────────────────────────────────────────
+function fmtDollars(dollars: number) {
+  if (dollars >= 1000) return `$${(dollars / 1000).toFixed(1)}k`;
+  return `$${dollars.toLocaleString()}`;
+}
+
+function revActionLabel(actionType: string): string {
+  const map: Record<string, string> = {
+    send_follow_up: "Follow-up",
+    generate_draft: "Draft outreach",
+    send_initial_email: "Initial email",
+    create_deal: "Deal created",
+    generate_response: "Response",
+    schedule_call: "Call scheduled",
+    create_proposal: "Proposal sent",
+  };
+  return map[actionType] ?? actionType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function PerformanceInsightsSection() {
+  const { data, isLoading } = useQuery<AiRevenueOutcomes>({
+    queryKey: ["/api/email-agent/revenue-outcomes"],
+    staleTime: 60_000,
+  });
+
+  const hasRevenue = !isLoading && data && data.month.revenue > 0;
+  const topActions = data?.byActionType.slice(0, 4) ?? [];
+  const recentWins = data?.impactFeed.filter(i => i.outcomeStatus === "won").slice(0, 4) ?? [];
+
+  return (
+    <div data-testid="section-performance-insights">
+      <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-primary" />
+        Revenue Outcome Intelligence
+      </h2>
+
+      {/* Period stats bar */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <Card>
+          <CardContent className="py-3 text-center">
+            {isLoading
+              ? <Skeleton className="h-7 w-16 mx-auto" />
+              : <p className="text-xl font-bold text-primary" data-testid="text-ai-rev-today">{fmtDollars(data?.today.revenue ?? 0)}</p>
+            }
+            <p className="text-xs text-muted-foreground">Today</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3 text-center">
+            {isLoading
+              ? <Skeleton className="h-7 w-16 mx-auto" />
+              : <p className="text-xl font-bold" data-testid="text-ai-rev-week">{fmtDollars(data?.week.revenue ?? 0)}</p>
+            }
+            <p className="text-xs text-muted-foreground">This Week</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3 text-center">
+            {isLoading
+              ? <Skeleton className="h-7 w-16 mx-auto" />
+              : <p className="text-xl font-bold" data-testid="text-ai-rev-month">{fmtDollars(data?.month.revenue ?? 0)}</p>
+            }
+            <p className="text-xs text-muted-foreground">This Month</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {!hasRevenue && !isLoading && (
+        <Card className="border-dashed mb-4" data-testid="card-perf-insights-empty">
+          <CardContent className="py-6 text-center">
+            <Activity className="h-7 w-7 mx-auto mb-2 text-muted-foreground/40" />
+            <p className="text-sm font-medium text-muted-foreground">Attribution tracking active</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              When deals are won or replies come in after AI actions, outcomes will appear here.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* By action type breakdown */}
+      {topActions.length > 0 && (
+        <Card className="mb-4" data-testid="card-action-type-breakdown">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold">Revenue by Action Type</CardTitle>
+          </CardHeader>
+          <div className="px-4 pb-4 space-y-2">
+            {topActions.map((at) => {
+              const barPct = topActions[0].revenue > 0
+                ? Math.round((at.revenue / topActions[0].revenue) * 100)
+                : 0;
+              return (
+                <div key={at.actionType} className="space-y-1" data-testid={`row-action-type-${at.actionType}`}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium">{revActionLabel(at.actionType)}</span>
+                    <span className="text-muted-foreground">{at.count} actions · {fmtDollars(at.revenue)}</span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all"
+                      style={{ width: `${barPct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Auto vs Manual efficiency */}
+      {data && data.autoVsManual.autoCount > 0 && data.autoVsManual.manualCount > 0 && (
+        <Card className="mb-4" data-testid="card-auto-vs-manual">
+          <CardContent className="py-4 px-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Auto vs Manual</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center p-3 rounded-lg bg-primary/5 border border-primary/15">
+                <p className="text-lg font-bold text-primary">{fmtDollars(data.autoVsManual.autoRevenue)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Auto-executed</p>
+                <p className="text-xs text-muted-foreground">{data.autoVsManual.autoCount} actions</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted/40 border">
+                <p className="text-lg font-bold">{fmtDollars(data.autoVsManual.manualRevenue)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Manual</p>
+                <p className="text-xs text-muted-foreground">{data.autoVsManual.manualCount} actions</p>
+              </div>
+            </div>
+            {data.autoVsManual.autoMultiplier > 1 && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 rounded-md px-3 py-2">
+                <Zap className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                <span>
+                  Auto-executed actions generate{" "}
+                  <span className="font-semibold text-foreground">{data.autoVsManual.autoMultiplier}×</span>
+                  {" "}more revenue per action
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recent wins feed */}
+      {recentWins.length > 0 && (
+        <Card data-testid="card-recent-wins">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <DollarSign className="h-3.5 w-3.5 text-green-600" />
+              Recent AI-Attributed Wins
+            </CardTitle>
+          </CardHeader>
+          <div className="divide-y divide-border">
+            {recentWins.map((item) => (
+              <div key={item.id} className="px-4 py-2.5 flex items-center gap-3" data-testid={`row-win-${item.id}`}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {revActionLabel(item.actionType)}
+                    {item.prospectName ? ` → ${item.prospectName}` : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.sport ?? ""}
+                    {item.timeToOutcomeHours != null
+                      ? ` · closed in ${item.timeToOutcomeHours < 24 ? `${item.timeToOutcomeHours}h` : `${Math.round(item.timeToOutcomeHours / 24)}d`}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-sm font-bold text-green-600 dark:text-green-400">
+                    {fmtDollars(item.outcomeValue)}
+                  </p>
+                  {item.actionSource === "auto_executed" && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-primary/5 text-primary border-primary/20">
+                      Auto
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── Auto-Execution Log Section ───────────────────────────────────────────────
 function AutoExecLogSection() {
   const { toast } = useToast();
@@ -928,6 +1148,9 @@ function OverviewTab() {
         </h2>
         <AutoExecLogSection />
       </div>
+
+      {/* Revenue Outcome Intelligence */}
+      <PerformanceInsightsSection />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">

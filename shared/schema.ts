@@ -782,3 +782,26 @@ export const teamTrainingDeals = pgTable("team_training_deals", {
 export const insertTeamTrainingDealSchema = createInsertSchema(teamTrainingDeals).omit({ id: true, createdAt: true, updatedAt: true });
 export type TeamTrainingDeal = typeof teamTrainingDeals.$inferSelect;
 export type InsertTeamTrainingDeal = z.infer<typeof insertTeamTrainingDealSchema>;
+
+// ─── AI Revenue Events ────────────────────────────────────────────────────────
+export const aiRevenueEvents = pgTable("ai_revenue_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  prospectId: varchar("prospect_id"),
+  dealId: varchar("deal_id"),
+  executionLogId: varchar("execution_log_id"),
+  actionType: varchar("action_type").notNull(),
+  actionSource: varchar("action_source").notNull().default("manual"),
+  outcomeStatus: varchar("outcome_status").notNull().default("pending"),
+  outcomeValue: integer("outcome_value").default(0),
+  outcomeSource: varchar("outcome_source"),
+  outcomeTimestamp: timestamp("outcome_timestamp"),
+  timeToOutcomeHours: integer("time_to_outcome_hours"),
+  prospectName: varchar("prospect_name"),
+  sport: varchar("sport"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertAiRevenueEventSchema = createInsertSchema(aiRevenueEvents).omit({ id: true, createdAt: true });
+export type AiRevenueEvent = typeof aiRevenueEvents.$inferSelect;
+export type InsertAiRevenueEvent = z.infer<typeof insertAiRevenueEventSchema>;
