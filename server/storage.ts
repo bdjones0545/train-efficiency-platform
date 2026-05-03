@@ -317,6 +317,15 @@ export interface IStorage {
   cancelFollowUpSequence(outreachDraftId: string): Promise<void>;
   getFollowUpStats(orgId: string): Promise<{ activeSequences: number; pendingReplies: number; interestedLeads: number }>;
 
+  // Team Training Deals
+  getTeamTrainingDeals(orgId: string): Promise<(import("@shared/schema").TeamTrainingDeal & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
+  getTeamTrainingDeal(id: string): Promise<import("@shared/schema").TeamTrainingDeal | undefined>;
+  getTeamTrainingDealByProspect(prospectId: string, orgId: string): Promise<import("@shared/schema").TeamTrainingDeal | undefined>;
+  createTeamTrainingDeal(data: import("@shared/schema").InsertTeamTrainingDeal): Promise<import("@shared/schema").TeamTrainingDeal>;
+  updateTeamTrainingDeal(id: string, data: Partial<import("@shared/schema").TeamTrainingDeal>): Promise<import("@shared/schema").TeamTrainingDeal | undefined>;
+  deleteTeamTrainingDeal(id: string): Promise<boolean>;
+  getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number }>;
+
   // Per-org preferences
   getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null>;
   getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined>;
@@ -2371,6 +2380,68 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
 
     return { sent, opened, clicked, replied, openRate, clickRate, replyRate, conversionRate, bestVariant: bestVariant ?? null };
+  }
+
+  // ─── Team Training Deals ─────────────────────────────────────────────────────
+
+  async getTeamTrainingDeals(orgId: string): Promise<(import("@shared/schema").TeamTrainingDeal & { prospect?: import("@shared/schema").TeamTrainingProspect })[]> {
+    const { teamTrainingDeals, teamTrainingProspects } = await import("@shared/schema");
+    const deals = await db.select().from(teamTrainingDeals)
+      .where(eq(teamTrainingDeals.organizationId, orgId))
+      .orderBy(desc(teamTrainingDeals.lastActivityAt));
+    if (deals.length === 0) return [];
+    const prospectIds = [...new Set(deals.map(d => d.prospectId))];
+    const prospects = await db.select().from(teamTrainingProspects)
+      .where(inArray(teamTrainingProspects.id, prospectIds));
+    const prospectMap = new Map(prospects.map(p => [p.id, p]));
+    return deals.map(d => ({ ...d, prospect: prospectMap.get(d.prospectId) }));
+  }
+
+  async getTeamTrainingDeal(id: string): Promise<import("@shared/schema").TeamTrainingDeal | undefined> {
+    const { teamTrainingDeals } = await import("@shared/schema");
+    const [row] = await db.select().from(teamTrainingDeals).where(eq(teamTrainingDeals.id, id));
+    return row;
+  }
+
+  async getTeamTrainingDealByProspect(prospectId: string, orgId: string): Promise<import("@shared/schema").TeamTrainingDeal | undefined> {
+    const { teamTrainingDeals } = await import("@shared/schema");
+    const [row] = await db.select().from(teamTrainingDeals)
+      .where(and(eq(teamTrainingDeals.prospectId, prospectId), eq(teamTrainingDeals.organizationId, orgId)));
+    return row;
+  }
+
+  async createTeamTrainingDeal(data: import("@shared/schema").InsertTeamTrainingDeal): Promise<import("@shared/schema").TeamTrainingDeal> {
+    const { teamTrainingDeals } = await import("@shared/schema");
+    const [row] = await db.insert(teamTrainingDeals).values(data).returning();
+    return row;
+  }
+
+  async updateTeamTrainingDeal(id: string, data: Partial<import("@shared/schema").TeamTrainingDeal>): Promise<import("@shared/schema").TeamTrainingDeal | undefined> {
+    const { teamTrainingDeals } = await import("@shared/schema");
+    const updateData = { ...data, updatedAt: new Date(), lastActivityAt: new Date() };
+    const [row] = await db.update(teamTrainingDeals).set(updateData).where(eq(teamTrainingDeals.id, id)).returning();
+    return row;
+  }
+
+  async deleteTeamTrainingDeal(id: string): Promise<boolean> {
+    const { teamTrainingDeals } = await import("@shared/schema");
+    await db.delete(teamTrainingDeals).where(eq(teamTrainingDeals.id, id));
+    return true;
+  }
+
+  async getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number }> {
+    const { teamTrainingDeals } = await import("@shared/schema");
+    const deals = await db.select().from(teamTrainingDeals).where(eq(teamTrainingDeals.organizationId, orgId));
+    const active = deals.filter(d => !["won", "lost"].includes(d.status)).length;
+    const interested = deals.filter(d => d.status === "interested").length;
+    const negotiating = deals.filter(d => d.status === "negotiating").length;
+    const projectedRevenue = deals
+      .filter(d => !["won", "lost"].includes(d.status))
+      .reduce((sum, d) => sum + Math.round((d.estimatedValue * d.probability) / 100), 0);
+    const wonRevenue = deals
+      .filter(d => d.status === "won")
+      .reduce((sum, d) => sum + (d.finalValue ?? d.estimatedValue), 0);
+    return { active, interested, negotiating, projectedRevenue, wonRevenue };
   }
 }
 

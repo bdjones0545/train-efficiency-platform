@@ -51,6 +51,7 @@ import {
   Mail,
   Target,
   Flame,
+  KanbanSquare,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -256,6 +257,14 @@ export function AppSidebar() {
                       <Link href="/admin/team-training-leads" onClick={handleNavClick} data-testid="nav-team-training-leads">
                         <Target className="h-4 w-4" />
                         <span>Team Training Leads</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/team-training-deals"}>
+                      <Link href="/admin/team-training-deals" onClick={handleNavClick} data-testid="nav-team-training-deals">
+                        <KanbanSquare className="h-4 w-4" />
+                        <span>Deal Pipeline</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

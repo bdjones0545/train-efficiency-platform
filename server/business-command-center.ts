@@ -625,6 +625,18 @@ export async function buildCommandCenterContextString(orgId: string): Promise<st
         ? `Team pipeline: ${data.teamPipeline.totalProspects} prospects, ${data.teamPipeline.draftsAwaitingApproval} drafts pending approval, ${data.teamPipeline.repliesNeedingFollowUp} replies needing follow-up. Estimated pipeline: $${(data.teamPipeline.estimatedPipelineValueCents / 100).toFixed(0)} (potential only, not booked revenue).`
         : "No team training prospects yet.";
 
+    // Phase 7: Deal pipeline context
+    let dealLine = "";
+    try {
+      const dealStats = await storage.getDealPipelineStats(orgId);
+      if (dealStats.active > 0) {
+        dealLine = `\nDEAL PIPELINE CONTEXT: ${dealStats.active} active deals | ${dealStats.interested} interested leads | ${dealStats.negotiating} in negotiation | Projected revenue: $${dealStats.projectedRevenue.toLocaleString()} | Won revenue: $${dealStats.wonRevenue.toLocaleString()}`;
+        if (dealStats.active >= 5) {
+          dealLine += "\nPRIORITY RULE: Pipeline is active — prioritize closing existing deals over new cold outreach. Suggest next best action per deal.";
+        }
+      }
+    } catch {}
+
     return `
 ## Today's Business Command Center Context (as of ${format(new Date(), "MMM d, yyyy h:mm a")})
 
@@ -634,7 +646,7 @@ ${slotsLine}
 ${bestLine}
 
 Client opportunities: ${churnCount} churn risks, ${renewalCount} renewals due, ${shouldBookCount} clients who should book.
-${teamLine}
+${teamLine}${dealLine}
 
 When the coach asks "What should I do today?" or similar, lead with this context and give a prioritized action list.
 `.trim();

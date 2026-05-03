@@ -7021,7 +7021,28 @@ export async function registerRoutes(
         metadata: replyText ? { replyText: replyText.slice(0, 500), classification } : undefined,
       });
 
-      res.json({ ok: true, classification });
+      // Phase 2: Auto-create deal when classification is interested or ask_info
+      let dealCreated = false;
+      if (classification === "interested" || classification === "ask_info") {
+        const existingDeal = await storage.getTeamTrainingDealByProspect(req.params.id, profile.organizationId);
+        if (!existingDeal) {
+          const prospect = await storage.getTeamTrainingProspect(req.params.id);
+          await storage.createTeamTrainingDeal({
+            organizationId: profile.organizationId,
+            prospectId: req.params.id,
+            outreachDraftId: sentDraft?.id ?? null,
+            status: "interested",
+            estimatedValue: prospect?.estimatedValue ?? 0,
+            probability: 40,
+            nextAction: classification === "ask_info" ? "Send information and schedule a call" : "Schedule a discovery call",
+            notes: replyText ? `Initial reply: ${replyText.slice(0, 300)}` : "",
+            lastActivityAt: new Date(),
+          });
+          dealCreated = true;
+        }
+      }
+
+      res.json({ ok: true, classification, dealCreated });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -7046,6 +7067,167 @@ export async function registerRoutes(
         description: "Marked as Do Not Contact by admin",
       });
       res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Team Training Deals ──────────────────────────────────────────────────────
+
+  app.get("/api/admin/team-training/deals", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deals = await storage.getTeamTrainingDeals(profile.organizationId);
+      res.json(deals);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/team-training/deals", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { prospectId, outreachDraftId, status, estimatedValue, probability, nextAction, notes } = req.body;
+      if (!prospectId) return res.status(400).json({ message: "prospectId required" });
+      // No duplicate deals per prospect
+      const existing = await storage.getTeamTrainingDealByProspect(prospectId, profile.organizationId);
+      if (existing) return res.status(409).json({ message: "Deal already exists for this prospect", deal: existing });
+      const deal = await storage.createTeamTrainingDeal({
+        organizationId: profile.organizationId,
+        prospectId,
+        outreachDraftId: outreachDraftId ?? null,
+        status: status ?? "new",
+        estimatedValue: estimatedValue ?? 0,
+        probability: probability ?? 40,
+        nextAction: nextAction ?? "",
+        notes: notes ?? "",
+        lastActivityAt: new Date(),
+      });
+      res.json(deal);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/admin/team-training/deals/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+      const prevStatus = deal.status;
+      const updated = await storage.updateTeamTrainingDeal(req.params.id, req.body);
+      // Phase 6: When deal marked "won", log outreach event and link to dashboard
+      if (req.body.status === "won" && prevStatus !== "won") {
+        await storage.logOutreachEvent({
+          orgId: profile.organizationId,
+          prospectId: deal.prospectId,
+          draftId: deal.outreachDraftId ?? undefined,
+          eventType: "replied",
+          description: `Deal WON — ${updated?.finalValue ? `$${updated.finalValue}` : "value TBD"}`,
+          metadata: { dealId: deal.id, finalValue: updated?.finalValue, source: "deal_pipeline" },
+        });
+        // Update prospect status
+        await storage.updateTeamTrainingProspect(deal.prospectId, { outreachStatus: "Replied" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/admin/team-training/deals/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+      await storage.deleteTeamTrainingDeal(req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // AI Close Assistant
+  app.post("/api/admin/team-training/deals/:id/ai-action", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+      const { action } = req.body;
+      if (!["generate_response", "suggest_next_step", "create_proposal"].includes(action)) {
+        return res.status(400).json({ message: "Invalid action" });
+      }
+      const prospect = await storage.getTeamTrainingProspect(deal.prospectId);
+      const org = await storage.getOrganizationById(profile.organizationId);
+      // Fetch latest reply text from drafts
+      const drafts = await storage.getOutreachDraftsByProspect(deal.prospectId);
+      const latestReply = drafts.find(d => !!d.replyText)?.replyText ?? null;
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI();
+      const contextBlock = `
+Deal context:
+- Team: ${prospect?.prospectName ?? "Unknown"}
+- Sport: ${prospect?.sport ?? "Unknown"}
+- Contact: ${prospect?.contactName ?? "Unknown"} (${prospect?.contactRole ?? "Unknown"})
+- Email: ${prospect?.contactEmail ?? "N/A"}
+- Deal status: ${deal.status}
+- Estimated value: $${deal.estimatedValue}
+- Probability: ${deal.probability}%
+- Notes: ${deal.notes || "None"}
+- Latest reply text: ${latestReply ?? "No reply yet"}
+- Next action: ${deal.nextAction || "Not set"}
+Business: ${org?.name ?? "Training Facility"}
+`.trim();
+
+      let systemPrompt = "";
+      let userPrompt = "";
+
+      if (action === "generate_response") {
+        systemPrompt = "You are a sports business development expert helping a training facility respond to a prospect. Write a concise, warm, professional email response that moves the deal forward. Suggest pricing if relevant. Recommend call vs email clearly.";
+        userPrompt = `${contextBlock}\n\nWrite the best email response to send right now. Be direct and compelling. Include a clear call to action. Keep it under 200 words.`;
+      } else if (action === "suggest_next_step") {
+        systemPrompt = "You are a sales coach specializing in sports training deals. Analyze the deal and provide a clear, actionable next step recommendation.";
+        userPrompt = `${contextBlock}\n\nWhat is the single best next action for this deal right now? Should we call or email? What should we say? Be specific and concise (2-3 sentences max).`;
+      } else if (action === "create_proposal") {
+        systemPrompt = "You are a sports training business expert. Create a compelling, professional training proposal outline for a team training partnership.";
+        userPrompt = `${contextBlock}\n\nCreate a concise team training proposal. Include: (1) Program overview, (2) Suggested pricing based on estimated value of $${deal.estimatedValue}, (3) What's included, (4) Call to action. Keep it professional and under 300 words.`;
+      }
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+      });
+
+      const result = completion.choices[0]?.message?.content?.trim() ?? "";
+      res.json({ result, action });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Deal pipeline stats for agent context
+  app.get("/api/admin/team-training/deals/pipeline-stats", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const stats = await storage.getDealPipelineStats(profile.organizationId);
+      res.json(stats);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

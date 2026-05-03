@@ -102,6 +102,16 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         continue;
       }
 
+      // Phase 5: Check if there's an active deal for this prospect — if so, skip cold follow-ups
+      // (deal-aware messaging is handled through the deal pipeline directly)
+      const activeDeal = await storage.getTeamTrainingDealByProspect(followUp.prospectId, orgId).catch(() => null);
+      if (activeDeal && !["won", "lost"].includes(activeDeal.status)) {
+        // Prospect is in active deal pipeline — skip automated cold follow-up
+        await storage.updateFollowUp(followUp.id, { status: "skipped" });
+        result.skipped++;
+        continue;
+      }
+
       const optedOut = await storage.isProspectOptedOut(orgId, prospect.contactEmail);
       if (optedOut) {
         await storage.updateFollowUp(followUp.id, { status: "cancelled" });

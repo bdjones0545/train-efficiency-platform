@@ -750,3 +750,35 @@ export const userOrgPreferences = pgTable("user_org_preferences", {
 export const insertUserOrgPreferencesSchema = createInsertSchema(userOrgPreferences).omit({ id: true, createdAt: true, updatedAt: true });
 export type UserOrgPreferences = typeof userOrgPreferences.$inferSelect;
 export type InsertUserOrgPreferences = z.infer<typeof insertUserOrgPreferencesSchema>;
+
+// ─── Team Training Deals ─────────────────────────────────────────────────────
+export const dealStatusEnum = pgEnum("deal_status", [
+  "new",
+  "contacted",
+  "interested",
+  "call_scheduled",
+  "proposal_sent",
+  "negotiating",
+  "won",
+  "lost",
+]);
+
+export const teamTrainingDeals = pgTable("team_training_deals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  prospectId: varchar("prospect_id").notNull(),
+  outreachDraftId: varchar("outreach_draft_id"),
+  status: dealStatusEnum("status").default("new").notNull(),
+  estimatedValue: integer("estimated_value").default(0).notNull(),
+  finalValue: integer("final_value"),
+  probability: integer("probability").default(40).notNull(),
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+  nextAction: text("next_action").default("").notNull(),
+  notes: text("notes").default(""),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertTeamTrainingDealSchema = createInsertSchema(teamTrainingDeals).omit({ id: true, createdAt: true, updatedAt: true });
+export type TeamTrainingDeal = typeof teamTrainingDeals.$inferSelect;
+export type InsertTeamTrainingDeal = z.infer<typeof insertTeamTrainingDealSchema>;
