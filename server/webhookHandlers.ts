@@ -732,4 +732,345 @@ export class WebhookHandlers {
       summary: { total: payments.length, credited: creditedCount, skipped: skippedCount, noMatch: noMatchCount },
     };
   }
+
+  static async platformStripeWalletSyncAudit(days = 90): Promise<{
+    orgs: Array<{
+      orgId: string | null;
+      orgName: string;
+      stripeAccountType: 'platform' | 'org';
+      totalPayments: number;
+      creditedPayments: number;
+      missingCredits: number;
+      unmatchedPayments: number;
+      totalMissingCents: number;
+      payments: Array<{
+        stripePaymentIntentId: string;
+        chargeId: string | null;
+        customerEmail: string | null;
+        customerName: string | null;
+        stripeCustomerId: string | null;
+        amountCents: number;
+        currency: string;
+        createdAt: number;
+        matchedUserId: string | null;
+        matchedUserEmail: string | null;
+        hasLedgerEntry: boolean;
+        ledgerTxId: string | null;
+      }>;
+    }>;
+    summary: {
+      totalOrgs: number;
+      healthyOrgs: number;
+      orgsWithMissingCredits: number;
+      totalPayments: number;
+      totalCredited: number;
+      totalMissing: number;
+      totalMissingCents: number;
+      totalUnmatched: number;
+    };
+  }> {
+    const PLATFORM_LOG = '[Platform Stripe Wallet Sync]';
+    const since = Math.floor(Date.now() / 1000) - days * 86400;
+    const orgs = await storage.getAllOrganizations();
+    const results = [];
+
+    type OrgContext = {
+      orgId: string | null;
+      orgName: string;
+      stripeAccountType: 'platform' | 'org';
+      stripe: Stripe;
+      orgUsers: Array<{ id: string; email: string | null; firstName: string | null; lastName: string | null; stripeCustomerId: string | null; balanceCents: number }> | null;
+    };
+
+    const contexts: OrgContext[] = [];
+
+    for (const org of orgs) {
+      if (org.stripeSecretKey) {
+        const orgUsers = await storage.getUsersInOrgWithStripeInfo(org.id);
+        contexts.push({
+          orgId: org.id,
+          orgName: org.name,
+          stripeAccountType: 'org',
+          stripe: new Stripe(org.stripeSecretKey),
+          orgUsers,
+        });
+      }
+    }
+
+    try {
+      const platformStripe = await getUncachableStripeClient();
+      contexts.push({
+        orgId: null,
+        orgName: 'Platform (default Stripe)',
+        stripeAccountType: 'platform',
+        stripe: platformStripe,
+        orgUsers: null,
+      });
+    } catch {}
+
+    for (const ctx of contexts) {
+      const payments: Stripe.PaymentIntent[] = [];
+      let hasMore = true;
+      let startingAfter: string | undefined;
+      try {
+        while (hasMore) {
+          const page = await ctx.stripe.paymentIntents.list({
+            limit: 100,
+            created: { gte: since },
+            ...(startingAfter ? { starting_after: startingAfter } : {}),
+          });
+          payments.push(...page.data.filter(pi => pi.status === 'succeeded'));
+          hasMore = page.has_more;
+          if (page.data.length > 0) startingAfter = page.data[page.data.length - 1].id;
+        }
+      } catch (err: any) {
+        console.error(`${PLATFORM_LOG} failed to list payments for ${ctx.orgName}:`, err.message);
+        continue;
+      }
+
+      const emailMap = new Map<string, typeof ctx.orgUsers extends null ? never : NonNullable<typeof ctx.orgUsers>[number]>();
+      const stripeIdMap = new Map<string, NonNullable<typeof ctx.orgUsers>[number]>();
+
+      if (ctx.orgUsers) {
+        for (const u of ctx.orgUsers) {
+          if (u.email) emailMap.set(u.email.toLowerCase(), u);
+          if (u.stripeCustomerId) stripeIdMap.set(u.stripeCustomerId, u);
+        }
+      }
+
+      const orgPayments = [];
+      let credited = 0;
+      let missing = 0;
+      let unmatched = 0;
+      let missingCents = 0;
+
+      for (const pi of payments) {
+        const stripeCustomerId = typeof pi.customer === 'string' ? pi.customer : (pi.customer as any)?.id || null;
+        const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge as any)?.id || null;
+
+        let customerEmail: string | null = null;
+        let customerName: string | null = null;
+
+        if (stripeCustomerId) {
+          try {
+            const customer = await ctx.stripe.customers.retrieve(stripeCustomerId);
+            if (customer && !('deleted' in customer)) {
+              customerEmail = (customer as Stripe.Customer).email || null;
+              customerName = (customer as Stripe.Customer).name || null;
+            }
+          } catch {}
+        }
+        if (!customerEmail && pi.receipt_email) customerEmail = pi.receipt_email;
+
+        let matchedUser: { id: string; email: string | null } | null = null;
+
+        if (ctx.orgUsers) {
+          if (stripeCustomerId && stripeIdMap.has(stripeCustomerId)) {
+            matchedUser = stripeIdMap.get(stripeCustomerId)!;
+          } else if (customerEmail && emailMap.has(customerEmail.toLowerCase())) {
+            matchedUser = emailMap.get(customerEmail.toLowerCase())!;
+          }
+        } else {
+          matchedUser = await matchUserToStripePayment(stripeCustomerId, customerEmail, customerName);
+        }
+
+        const existing = await storage.getWalletTransactionByStripePaymentIntentId(pi.id);
+        const hasLedger = !!existing;
+        const amountCents = pi.amount_received || pi.amount;
+
+        if (hasLedger) credited++;
+        else if (!matchedUser) unmatched++;
+        else { missing++; missingCents += amountCents; }
+
+        orgPayments.push({
+          stripePaymentIntentId: pi.id,
+          chargeId,
+          customerEmail,
+          customerName,
+          stripeCustomerId,
+          amountCents,
+          currency: pi.currency,
+          createdAt: pi.created,
+          matchedUserId: matchedUser?.id || null,
+          matchedUserEmail: matchedUser?.email || null,
+          hasLedgerEntry: hasLedger,
+          ledgerTxId: existing?.id || null,
+        });
+      }
+
+      console.log(`${PLATFORM_LOG} audit — ${ctx.orgName}: ${payments.length} payments, ${credited} credited, ${missing} missing, ${unmatched} unmatched`);
+
+      results.push({
+        orgId: ctx.orgId,
+        orgName: ctx.orgName,
+        stripeAccountType: ctx.stripeAccountType,
+        totalPayments: payments.length,
+        creditedPayments: credited,
+        missingCredits: missing,
+        unmatchedPayments: unmatched,
+        totalMissingCents: missingCents,
+        payments: orgPayments,
+      });
+    }
+
+    const healthyOrgs = results.filter(r => r.missingCredits === 0).length;
+    const totalPayments = results.reduce((s, r) => s + r.totalPayments, 0);
+    const totalCredited = results.reduce((s, r) => s + r.creditedPayments, 0);
+    const totalMissing = results.reduce((s, r) => s + r.missingCredits, 0);
+    const totalMissingCents = results.reduce((s, r) => s + r.totalMissingCents, 0);
+    const totalUnmatched = results.reduce((s, r) => s + r.unmatchedPayments, 0);
+
+    return {
+      orgs: results,
+      summary: {
+        totalOrgs: results.length,
+        healthyOrgs,
+        orgsWithMissingCredits: results.length - healthyOrgs,
+        totalPayments,
+        totalCredited,
+        totalMissing,
+        totalMissingCents,
+        totalUnmatched,
+      },
+    };
+  }
+
+  static async platformStripeWalletSyncRepair(dryRun = true, organizationId?: string, days = 90): Promise<{
+    dryRun: boolean;
+    repaired: Array<{
+      orgId: string | null;
+      orgName: string;
+      stripePaymentIntentId: string;
+      userId: string;
+      userEmail: string | null;
+      amountCents: number;
+      currency: string;
+      action: 'credited' | 'skipped' | 'no_user_match';
+    }>;
+    summary: { total: number; credited: number; skipped: number; noMatch: number };
+  }> {
+    const PLATFORM_LOG = '[Platform Stripe Wallet Sync]';
+    const since = Math.floor(Date.now() / 1000) - days * 86400;
+    const allOrgs = await storage.getAllOrganizations();
+    const repaired: any[] = [];
+    let totalCount = 0;
+    let creditedCount = 0;
+    let skippedCount = 0;
+    let noMatchCount = 0;
+
+    type RepairContext = {
+      orgId: string | null;
+      orgName: string;
+      stripe: Stripe;
+      orgUsers: Array<{ id: string; email: string | null; firstName: string | null; lastName: string | null; stripeCustomerId: string | null }> | null;
+    };
+
+    const contexts: RepairContext[] = [];
+
+    for (const org of allOrgs) {
+      if (organizationId && org.id !== organizationId) continue;
+      if (org.stripeSecretKey) {
+        const orgUsers = await storage.getUsersInOrgWithStripeInfo(org.id);
+        contexts.push({ orgId: org.id, orgName: org.name, stripe: new Stripe(org.stripeSecretKey), orgUsers });
+      }
+    }
+
+    if (!organizationId) {
+      try {
+        const platformStripe = await getUncachableStripeClient();
+        contexts.push({ orgId: null, orgName: 'Platform (default Stripe)', stripe: platformStripe, orgUsers: null });
+      } catch {}
+    }
+
+    for (const ctx of contexts) {
+      const payments: Stripe.PaymentIntent[] = [];
+      let hasMore = true;
+      let startingAfter: string | undefined;
+      try {
+        while (hasMore) {
+          const page = await ctx.stripe.paymentIntents.list({
+            limit: 100,
+            created: { gte: since },
+            ...(startingAfter ? { starting_after: startingAfter } : {}),
+          });
+          payments.push(...page.data.filter(pi => pi.status === 'succeeded'));
+          hasMore = page.has_more;
+          if (page.data.length > 0) startingAfter = page.data[page.data.length - 1].id;
+        }
+      } catch (err: any) {
+        console.error(`${PLATFORM_LOG} failed to list payments for ${ctx.orgName}:`, err.message);
+        continue;
+      }
+
+      totalCount += payments.length;
+
+      const emailMap = new Map<string, NonNullable<typeof ctx.orgUsers>[number]>();
+      const stripeIdMap = new Map<string, NonNullable<typeof ctx.orgUsers>[number]>();
+      if (ctx.orgUsers) {
+        for (const u of ctx.orgUsers) {
+          if (u.email) emailMap.set(u.email.toLowerCase(), u);
+          if (u.stripeCustomerId) stripeIdMap.set(u.stripeCustomerId, u);
+        }
+      }
+
+      for (const pi of payments) {
+        const existing = await storage.getWalletTransactionByStripePaymentIntentId(pi.id);
+        if (existing) {
+          skippedCount++;
+          repaired.push({ orgId: ctx.orgId, orgName: ctx.orgName, stripePaymentIntentId: pi.id, userId: existing.userId, userEmail: null, amountCents: pi.amount_received || pi.amount, currency: pi.currency, action: 'skipped' });
+          continue;
+        }
+
+        const stripeCustomerId = typeof pi.customer === 'string' ? pi.customer : (pi.customer as any)?.id || null;
+        const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge as any)?.id || null;
+        let customerEmail: string | null = null;
+        let customerName: string | null = null;
+
+        if (stripeCustomerId) {
+          try {
+            const customer = await ctx.stripe.customers.retrieve(stripeCustomerId);
+            if (customer && !('deleted' in customer)) {
+              customerEmail = (customer as Stripe.Customer).email || null;
+              customerName = (customer as Stripe.Customer).name || null;
+            }
+          } catch {}
+        }
+        if (!customerEmail && pi.receipt_email) customerEmail = pi.receipt_email;
+
+        let matchedUser: { id: string; email: string | null } | null = null;
+        if (ctx.orgUsers) {
+          if (stripeCustomerId && stripeIdMap.has(stripeCustomerId)) matchedUser = stripeIdMap.get(stripeCustomerId)!;
+          else if (customerEmail && emailMap.has(customerEmail.toLowerCase())) matchedUser = emailMap.get(customerEmail.toLowerCase())!;
+        } else {
+          matchedUser = await matchUserToStripePayment(stripeCustomerId, customerEmail, customerName);
+        }
+
+        if (!matchedUser) {
+          noMatchCount++;
+          repaired.push({ orgId: ctx.orgId, orgName: ctx.orgName, stripePaymentIntentId: pi.id, userId: '', userEmail: customerEmail, amountCents: pi.amount_received || pi.amount, currency: pi.currency, action: 'no_user_match' });
+          continue;
+        }
+
+        const amountCents = pi.amount_received || pi.amount;
+
+        if (!dryRun) {
+          const prior = await storage.getUserBalance(matchedUser.id);
+          await storage.creditWallet(matchedUser.id, amountCents, `Platform repair — $${(amountCents / 100).toFixed(2)} (${ctx.orgName}, pi: ${pi.id})`, undefined, pi.id, chargeId || undefined, pi.currency || 'usd', 'succeeded');
+          const next = await storage.getUserBalance(matchedUser.id);
+          console.log(`${PLATFORM_LOG} credited — org: ${ctx.orgName}, userId: ${matchedUser.id} (${matchedUser.email}), $${(amountCents / 100).toFixed(2)}, prior: $${(prior / 100).toFixed(2)}, new: $${(next / 100).toFixed(2)}`);
+        } else {
+          console.log(`${PLATFORM_LOG} [DRY RUN] would credit — org: ${ctx.orgName}, userId: ${matchedUser.id} (${matchedUser.email}), $${(amountCents / 100).toFixed(2)}, pi: ${pi.id}`);
+        }
+
+        creditedCount++;
+        repaired.push({ orgId: ctx.orgId, orgName: ctx.orgName, stripePaymentIntentId: pi.id, userId: matchedUser.id, userEmail: matchedUser.email, amountCents, currency: pi.currency, action: 'credited' });
+      }
+    }
+
+    return {
+      dryRun,
+      repaired,
+      summary: { total: totalCount, credited: creditedCount, skipped: skippedCount, noMatch: noMatchCount },
+    };
+  }
 }

@@ -180,6 +180,7 @@ export interface IStorage {
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
   getWalletTransactionByStripePaymentIntentId(stripePaymentIntentId: string): Promise<WalletTransaction | undefined>;
   getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
+  getUsersInOrgWithStripeInfo(orgId: string): Promise<Array<{ id: string; email: string | null; firstName: string | null; lastName: string | null; stripeCustomerId: string | null; balanceCents: number }>>;
   updateLastSignIn(userId: string): Promise<void>;
   getInactiveUsersForReminder(sinceDays: number): Promise<User[]>;
   markReminderSent(userId: string): Promise<void>;
@@ -1098,6 +1099,22 @@ export class DatabaseStorage implements IStorage {
   async getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, stripeCustomerId));
     return user || undefined;
+  }
+
+  async getUsersInOrgWithStripeInfo(orgId: string): Promise<Array<{ id: string; email: string | null; firstName: string | null; lastName: string | null; stripeCustomerId: string | null; balanceCents: number }>> {
+    const result = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        stripeCustomerId: users.stripeCustomerId,
+        balanceCents: users.balanceCents,
+      })
+      .from(userProfiles)
+      .innerJoin(users, eq(userProfiles.userId, users.id))
+      .where(eq(userProfiles.organizationId, orgId));
+    return result;
   }
 
   async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]> {

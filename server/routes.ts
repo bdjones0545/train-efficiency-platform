@@ -543,6 +543,32 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/platform-stripe-wallet-sync-audit", adminRepairAuth, async (req: any, res) => {
+    try {
+      const days = parseInt((req.query.days as string) || "90", 10);
+      const { WebhookHandlers } = await import("./webhookHandlers");
+      const result = await WebhookHandlers.platformStripeWalletSyncAudit(days);
+      res.json(result);
+    } catch (err: any) {
+      console.error("Platform stripe wallet sync audit error:", err);
+      res.status(500).json({ message: err.message || "Platform audit failed" });
+    }
+  });
+
+  app.post("/api/admin/platform-stripe-wallet-sync-repair", adminRepairAuth, async (req: any, res) => {
+    try {
+      const dryRun = req.body?.dryRun !== false;
+      const organizationId = req.body?.organizationId as string | undefined;
+      const days = parseInt(req.body?.days || "90", 10);
+      const { WebhookHandlers } = await import("./webhookHandlers");
+      const result = await WebhookHandlers.platformStripeWalletSyncRepair(dryRun, organizationId, days);
+      res.json(result);
+    } catch (err: any) {
+      console.error("Platform stripe wallet sync repair error:", err);
+      res.status(500).json({ message: err.message || "Platform repair failed" });
+    }
+  });
+
   app.post("/api/admin/backfill-org-prefs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const result = await storage.backfillUserOrgPreferences();
