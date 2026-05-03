@@ -1,0 +1,65 @@
+Audit and fix TrainEfficiency Stripe payment → wallet sync.
+
+Problem:
+Stripe shows a successful $200 payment from James Langford / jamielangford.lcc@gmail.com on May 2, but inside TrainEfficiency the matching user/customer wallet did not increase. The wallet still shows a negative balance for Langford.
+
+Required fix:
+1. Audit the Stripe webhook handler for successful payments:
+   - payment_intent.succeeded
+   - checkout.session.completed
+   - invoice.payment_succeeded
+   - charge.succeeded if used
+
+2. Find where internal wallet/customer balance is updated after Stripe payment success.
+
+3. Ensure every successful Stripe payment creates a durable internal ledger transaction:
+   - userId/customerId
+   - organizationId
+   - stripePaymentIntentId or stripeChargeId
+   - amountPaid
+   - currency
+   - payment status = succeeded
+   - source = stripe
+   - createdAt
+
+4. Ensure wallet balance is recalculated from ledger transactions, not only patched manually.
+
+5. Match Stripe customer/email to the correct TrainEfficiency customer:
+   - stripeCustomerId first
+   - then email fallback
+   - then customer name fallback only if email is unavailable
+   - log if no match is found
+
+6. Add idempotency protection:
+   - Do not double-credit the wallet if the same Stripe event/payment is received twice.
+   - Use stripePaymentIntentId / chargeId / invoiceId as unique keys.
+
+7. Add a backfill/admin repair function:
+   - Scan recent successful Stripe payments.
+   - For any payment without a matching internal ledger transaction, create one and update wallet.
+   - Include a safe dry-run mode first.
+
+8. Add developer logs:
+   - [Stripe Wallet Sync] payment received
+   - matched customer
+   - amount credited
+   - prior balance
+   - new balance
+   - skipped duplicate
+   - unmatched payment warning
+
+9. Add an admin-only endpoint:
+   GET /api/admin/stripe-wallet-sync-audit
+   Returns recent successful Stripe payments and whether each has a matching internal ledger transaction.
+
+10. Add an admin-only repair endpoint:
+   POST /api/admin/stripe-wallet-sync-repair
+   Body: { dryRun: true/false }
+   Repairs missing ledger credits from successful Stripe payments.
+
+Acceptance test:
+- James Langford’s successful $200 Stripe payment should appear in his internal payment ledger.
+- His wallet/customer balance should reflect the $200 credit.
+- If he was at -$70 before, his new balance should become $130.
+- Running the webhook twice must not double-credit him.
+- The app should restart cleanly with no TypeScript errors.
