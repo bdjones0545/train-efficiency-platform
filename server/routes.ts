@@ -501,7 +501,25 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/admin/stripe-wallet-sync-audit", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+  function isAdminRepairAuthorized(req: any, res: any): boolean {
+    const headerKey = req.headers["x-admin-key"];
+    const envKey = process.env.ADMIN_REPAIR_KEY;
+    if (envKey && headerKey === envKey) return true;
+    return false;
+  }
+
+  async function adminRepairAuth(req: any, res: any, next: any) {
+    if (isAdminRepairAuthorized(req, res)) return next();
+    return isAuthenticated(req, res, async () => {
+      const userId = req.user?.claims?.sub;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const role = await getUserRole(userId);
+      if (role !== "ADMIN") return res.status(403).json({ message: "Forbidden" });
+      next();
+    });
+  }
+
+  app.get("/api/admin/stripe-wallet-sync-audit", adminRepairAuth, async (req: any, res) => {
     try {
       const lookbackDays = parseInt((req.query.days as string) || "30", 10);
       const { WebhookHandlers } = await import("./webhookHandlers");
@@ -513,7 +531,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/stripe-wallet-sync-repair", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+  app.post("/api/admin/stripe-wallet-sync-repair", adminRepairAuth, async (req: any, res) => {
     try {
       const dryRun = req.body?.dryRun !== false;
       const { WebhookHandlers } = await import("./webhookHandlers");
