@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { sendTeamTrainingOutreachEmail, type OrgBranding } from "../email";
 import { generateOutreachEmailFromVariant } from "../team-training-prospecting";
+import { logTriggerEvent, updateTriggerEvent, logMissedOpportunity } from "./trigger-logger";
 
 // Base follow-up sequence schedule: days after initial send
 const BASE_FOLLOW_UP_DAYS = [3, 7, 14];
@@ -141,6 +142,18 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
   const coachName = await getCoachName(orgId);
 
   for (const followUp of dueFollowUps) {
+    // ── Log BEFORE execution decision ────────────────────────────────────────
+    const triggerEventId = await logTriggerEvent({
+      organizationId: orgId,
+      prospectId: followUp.prospectId,
+      followUpId: followUp.id,
+      outreachDraftId: followUp.outreachDraftId,
+      triggerType: "follow_up_cron",
+      triggerSource: "hourly_follow_up_cron",
+      actionType: "send_follow_up",
+      reasoning: `Follow-up step #${followUp.stepNumber} due for processing`,
+    });
+
     try {
       const prospect = await storage.getTeamTrainingProspect(followUp.prospectId);
 
@@ -148,12 +161,27 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
       if (!prospect || !prospect.contactEmail) {
         await storage.updateFollowUp(followUp.id, { status: "skipped" });
         result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "MISSING_EMAIL",
+          reasoning: prospect ? "Prospect has no contact email" : "Prospect not found",
+          missedOpportunity: true,
+        });
         continue;
       }
+
+      await storage.updateEmailTriggerEvent(triggerEventId, { prospectName: prospect.prospectName });
 
       if (prospect.outreachStatus === "Do Not Contact" || prospect.outreachStatus === "Replied") {
         await storage.updateFollowUp(followUp.id, { status: "cancelled" });
         result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: prospect.outreachStatus === "Do Not Contact" ? "DNC" : "DEAL_ACTIVE_BLOCK",
+          reasoning: `Prospect status is "${prospect.outreachStatus}" — follow-up cancelled`,
+        });
         continue;
       }
 
@@ -162,6 +190,12 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
       if (activeDeal && !["won", "lost"].includes(activeDeal.status)) {
         await storage.updateFollowUp(followUp.id, { status: "skipped" });
         result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "DEAL_ACTIVE_BLOCK",
+          reasoning: `Active deal exists (status: ${activeDeal.status}) — cold follow-up skipped`,
+        });
         continue;
       }
 
@@ -169,6 +203,12 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
       if (optedOut) {
         await storage.updateFollowUp(followUp.id, { status: "cancelled" });
         result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "OPTED_OUT",
+          reasoning: "Prospect email is on the opt-out list",
+        });
         continue;
       }
 
@@ -176,6 +216,12 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
       if (followUp.stepNumber > MAX_FOLLOW_UPS) {
         await storage.updateFollowUp(followUp.id, { status: "cancelled" });
         result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "COOLDOWN_ACTIVE",
+          reasoning: `Max follow-ups (${MAX_FOLLOW_UPS}) reached for this sequence`,
+        });
         continue;
       }
 
@@ -247,11 +293,25 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         description: `[Auto] Follow-up #${followUp.stepNumber} sent to ${prospect.contactEmail}`,
       });
 
+      await updateTriggerEvent(triggerEventId, {
+        wasExecuted: true,
+        executionBlocked: false,
+        followUpId: followUp.id,
+        outreachDraftId: followUp.outreachDraftId,
+        reasoning: `Follow-up #${followUp.stepNumber} sent to ${prospect.contactEmail}`,
+      });
+
       result.sent++;
     } catch (err: any) {
       console.error(`[FollowUp] Error processing follow-up ${followUp.id}:`, err.message);
       result.errors.push(`follow-up ${followUp.id}: ${err.message}`);
       await storage.updateFollowUp(followUp.id, { status: "skipped" }).catch(() => {});
+      await updateTriggerEvent(triggerEventId, {
+        wasExecuted: false,
+        executionBlocked: true,
+        blockReason: "INVALID_STAGE",
+        reasoning: `Error during follow-up processing: ${err.message}`,
+      });
     }
   }
 

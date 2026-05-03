@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { buildGlobalActionQueue, type GlobalAction } from "./global-priority-engine";
+import { logTriggerEvent, updateTriggerEvent } from "./trigger-logger";
 
 const MAX_AUTO_EXEC_PER_DAY = 3;
 const RISK_THRESHOLD = 40;
@@ -233,7 +234,22 @@ async function executeDraftGeneration(
 export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult> {
   const settings = await storage.getEmailAgentSettings(orgId);
 
+  // Log the auto-exec evaluation event
+  const triggerEventId = await logTriggerEvent({
+    organizationId: orgId,
+    triggerType: "auto_execution",
+    triggerSource: "auto_exec_hook",
+    actionType: "send_follow_up",
+    reasoning: "Auto-execution engine evaluating highest-confidence action",
+  });
+
   if (!settings.autoExecuteEnabled) {
+    await updateTriggerEvent(triggerEventId, {
+      wasExecuted: false,
+      executionBlocked: true,
+      blockReason: "AGENT_DISABLED",
+      reasoning: "Auto-execute is disabled in settings",
+    });
     return { executed: false, execution: null, reason: "auto-execute disabled" };
   }
 
@@ -242,12 +258,24 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
   const maxPerDay = settings.autoExecuteMaxPerDay ?? MAX_AUTO_EXEC_PER_DAY;
 
   if (todayCount >= maxPerDay) {
+    await updateTriggerEvent(triggerEventId, {
+      wasExecuted: false,
+      executionBlocked: true,
+      blockReason: "AUTO_EXEC_LIMIT_REACHED",
+      reasoning: `Auto-exec daily limit reached: ${todayCount}/${maxPerDay}`,
+    });
     return { executed: false, execution: null, reason: `daily limit reached (${todayCount}/${maxPerDay})` };
   }
 
   const overview = await storage.getEmailAgentOverview(orgId);
   const dailyLimit = typeof settings.dailyLimit === "number" ? settings.dailyLimit : 10;
   if (overview.sentToday >= dailyLimit) {
+    await updateTriggerEvent(triggerEventId, {
+      wasExecuted: false,
+      executionBlocked: true,
+      blockReason: "DAILY_LIMIT_REACHED",
+      reasoning: `Overall daily send limit reached: ${overview.sentToday}/${dailyLimit}`,
+    });
     return { executed: false, execution: null, reason: "daily send limit reached" };
   }
 
@@ -255,8 +283,25 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
   const eligibleAction = queue.fullQueue.find((a) => isAutoExecutable(a, settings, todayCount));
 
   if (!eligibleAction) {
+    await updateTriggerEvent(triggerEventId, {
+      wasExecuted: false,
+      executionBlocked: false,
+      reasoning: "No eligible high-confidence actions found in global priority queue",
+      missedOpportunity: queue.fullQueue.length > 0,
+    });
     return { executed: false, execution: null, reason: "no eligible high-confidence actions" };
   }
+
+  // Update trigger event with the selected action's context
+  await storage.updateEmailTriggerEvent(triggerEventId, {
+    prospectId: eligibleAction.prospectId ?? undefined,
+    prospectName: eligibleAction.prospectName ?? undefined,
+    actionType: eligibleAction.actionType as any,
+    confidenceLevel: eligibleAction.confidence,
+    riskScore: (eligibleAction as any).riskScore ?? 0,
+    priorityScore: eligibleAction.priorityScore,
+    reasoning: `Auto-executing: ${eligibleAction.title} (confidence: ${eligibleAction.confidence}, priority: ${eligibleAction.priorityScore})`,
+  });
 
   const execution: AutoExecution = {
     id: crypto.randomUUID(),
@@ -276,6 +321,13 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
     if (eligibleAction.actionType === "send_follow_up") {
       const followUpId = await executeFollowUp(orgId, eligibleAction.prospectId!);
       if (!followUpId) {
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "INVALID_STAGE",
+          reasoning: "No due follow-up found for prospect",
+          missedOpportunity: true,
+        });
         return { executed: false, execution: null, reason: "no due follow-up found for prospect" };
       }
       execution.followUpId = followUpId;
@@ -285,21 +337,47 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
     ) {
       const draftId = await executeDraftGeneration(orgId, eligibleAction.prospectId!, settings);
       if (!draftId) {
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "INVALID_STAGE",
+          reasoning: "Draft already exists or generation failed",
+        });
         return { executed: false, execution: null, reason: "draft already exists or generation failed" };
       }
       execution.draftId = draftId;
     } else {
+      await updateTriggerEvent(triggerEventId, {
+        wasExecuted: false,
+        executionBlocked: true,
+        blockReason: "INVALID_STAGE",
+        reasoning: `Action type not auto-executable: ${eligibleAction.actionType}`,
+      });
       return { executed: false, execution: null, reason: `action type not auto-executable: ${eligibleAction.actionType}` };
     }
   } catch (err: any) {
     execution.outcome = "failed";
     execution.error = err.message;
     await saveAutoExecutionLog(orgId, [...log, execution]);
+    await updateTriggerEvent(triggerEventId, {
+      wasExecuted: false,
+      executionBlocked: true,
+      blockReason: "INVALID_STAGE",
+      reasoning: `Execution error: ${err.message}`,
+    });
     return { executed: false, execution, reason: err.message };
   }
 
   await saveAutoExecutionLog(orgId, [...log, execution]);
   console.log(`[Auto-Execute] org ${orgId} — executed: ${execution.title}`);
+
+  await updateTriggerEvent(triggerEventId, {
+    wasExecuted: true,
+    executionBlocked: false,
+    outreachDraftId: execution.draftId,
+    followUpId: execution.followUpId,
+    reasoning: `Successfully auto-executed: ${execution.title}`,
+  });
 
   // Log to revenue outcome engine for attribution tracking
   try {

@@ -52,6 +52,7 @@ import SettingsPage from "@/pages/settings";
 import AdminTeamTrainingLeadsPage from "@/pages/admin-team-training-leads";
 import AdminTeamTrainingDealsPage from "@/pages/admin-team-training-deals";
 import BusinessCommandCenterPage from "@/pages/business-command-center";
+import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { Button } from "@/components/ui/button";
@@ -189,6 +190,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/team-training-leads" component={AdminTeamTrainingLeadsPage} />
                   <Route path="/admin/team-training-deals" component={AdminTeamTrainingDealsPage} />
                   <Route path="/command-center" component={BusinessCommandCenterPage} />
+                  <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />

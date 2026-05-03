@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -269,6 +270,13 @@ function DraftCard({ draft, onApprove, onSend, onEdit }: {
           <Button size="sm" className="h-7 text-xs" onClick={() => onSend(draft.id)} data-testid={`button-send-draft-${draft.id}`}>
             <SendHorizonal className="h-3 w-3 mr-1" /> Send Now
           </Button>
+        )}
+        {draft.sentAt && draft.prospectId && (
+          <Link href={`/admin/trigger-audit?prospect_id=${draft.prospectId}`}>
+            <Button size="sm" variant="outline" className="h-7 text-xs" data-testid={`button-view-trigger-${draft.id}`}>
+              <Activity className="h-3 w-3 mr-1" /> View Trigger
+            </Button>
+          </Link>
         )}
       </div>
     </Card>

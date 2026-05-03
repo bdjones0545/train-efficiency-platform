@@ -348,6 +348,19 @@ export interface IStorage {
     byActionType: { actionType: string; count: number; revenue: number; avgRevenue: number }[];
   }>;
   getAiImpactFeed(orgId: string, limit?: number): Promise<import("@shared/schema").AiRevenueEvent[]>;
+
+  // Email Trigger Audit
+  createEmailTriggerEvent(data: import("@shared/schema").InsertEmailTriggerEvent): Promise<import("@shared/schema").EmailTriggerEvent>;
+  updateEmailTriggerEvent(id: string, data: Partial<import("@shared/schema").EmailTriggerEvent>): Promise<void>;
+  getEmailTriggerEvents(orgId: string, opts?: { sinceMinutes?: number; sinceHours?: number; sinceDays?: number; triggerType?: string; actionType?: string; prospectId?: string; limit?: number }): Promise<import("@shared/schema").EmailTriggerEvent[]>;
+  getTriggerAuditSummary(orgId: string, windowHours?: number): Promise<{
+    summary: { totalEvaluated: number; totalExecuted: number; totalBlocked: number; byTriggerType: Record<string, number>; byActionType: Record<string, number> };
+    blockReasons: { reason: string; count: number }[];
+    timeline: { timestamp: string; triggerType: string; actionType: string; prospectName: string | null; outcome: string; reason: string | null; confidenceLevel: string | null }[];
+    missedOpportunities: number;
+    collisions: number;
+    events: import("@shared/schema").EmailTriggerEvent[];
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2566,6 +2579,101 @@ export class DatabaseStorage implements IStorage {
       )
       .orderBy(desc(aiRevenueEvents.createdAt))
       .limit(limit);
+  }
+
+  // ─── Email Trigger Audit ────────────────────────────────────────────────────
+
+  async createEmailTriggerEvent(data: import("@shared/schema").InsertEmailTriggerEvent) {
+    const { emailTriggerEvents } = await import("@shared/schema");
+    const [row] = await db.insert(emailTriggerEvents).values(data).returning();
+    return row;
+  }
+
+  async updateEmailTriggerEvent(id: string, data: Partial<import("@shared/schema").EmailTriggerEvent>) {
+    const { emailTriggerEvents } = await import("@shared/schema");
+    const updateData: any = { ...data, updatedAt: new Date() };
+    delete updateData.id;
+    delete updateData.createdAt;
+    await db.update(emailTriggerEvents).set(updateData).where(eq(emailTriggerEvents.id, id));
+  }
+
+  async getEmailTriggerEvents(
+    orgId: string,
+    opts: { sinceMinutes?: number; sinceHours?: number; sinceDays?: number; triggerType?: string; actionType?: string; prospectId?: string; limit?: number } = {}
+  ) {
+    const { emailTriggerEvents } = await import("@shared/schema");
+
+    let cutoff: Date | null = null;
+    if (opts.sinceMinutes) {
+      cutoff = new Date(Date.now() - opts.sinceMinutes * 60 * 1000);
+    } else if (opts.sinceHours) {
+      cutoff = new Date(Date.now() - opts.sinceHours * 60 * 60 * 1000);
+    } else if (opts.sinceDays) {
+      cutoff = new Date(Date.now() - opts.sinceDays * 24 * 60 * 60 * 1000);
+    }
+
+    const conditions: any[] = [eq(emailTriggerEvents.organizationId, orgId)];
+    if (cutoff) conditions.push(gte(emailTriggerEvents.createdAt, cutoff));
+    if (opts.triggerType) conditions.push(eq(emailTriggerEvents.triggerType, opts.triggerType as any));
+    if (opts.actionType) conditions.push(eq(emailTriggerEvents.actionType, opts.actionType as any));
+    if (opts.prospectId) conditions.push(eq(emailTriggerEvents.prospectId!, opts.prospectId));
+
+    const query = db
+      .select()
+      .from(emailTriggerEvents)
+      .where(and(...conditions))
+      .orderBy(desc(emailTriggerEvents.createdAt))
+      .limit(opts.limit ?? 500);
+
+    return query;
+  }
+
+  async getTriggerAuditSummary(orgId: string, windowHours = 24) {
+    const events = await this.getEmailTriggerEvents(orgId, { sinceHours: windowHours, limit: 1000 });
+
+    const totalEvaluated = events.length;
+    const totalExecuted = events.filter((e) => e.wasExecuted).length;
+    const totalBlocked = events.filter((e) => e.executionBlocked).length;
+    const missedOpportunities = events.filter((e) => e.missedOpportunity).length;
+    const collisions = events.filter((e) => e.collisionDetected).length;
+
+    const byTriggerType: Record<string, number> = {};
+    const byActionType: Record<string, number> = {};
+    const blockReasonCounts: Record<string, number> = {};
+
+    for (const e of events) {
+      byTriggerType[e.triggerType] = (byTriggerType[e.triggerType] || 0) + 1;
+      byActionType[e.actionType] = (byActionType[e.actionType] || 0) + 1;
+      if (e.blockReason) {
+        blockReasonCounts[e.blockReason] = (blockReasonCounts[e.blockReason] || 0) + 1;
+      }
+    }
+
+    const blockReasons = Object.entries(blockReasonCounts)
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const timeline = events.slice(0, 200).map((e) => ({
+      timestamp: e.createdAt.toISOString(),
+      triggerType: e.triggerType,
+      actionType: e.actionType,
+      prospectName: e.prospectName ?? null,
+      outcome: e.wasExecuted ? "executed" : e.executionBlocked ? "blocked" : "evaluated",
+      reason: e.blockReason ?? e.reasoning ?? null,
+      confidenceLevel: e.confidenceLevel ?? null,
+      riskScore: e.riskScore ?? null,
+      missedOpportunity: e.missedOpportunity ?? false,
+      collisionDetected: e.collisionDetected ?? false,
+    }));
+
+    return {
+      summary: { totalEvaluated, totalExecuted, totalBlocked, byTriggerType, byActionType },
+      blockReasons,
+      timeline,
+      missedOpportunities,
+      collisions,
+      events,
+    };
   }
 }
 

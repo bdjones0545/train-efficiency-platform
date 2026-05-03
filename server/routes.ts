@@ -7414,7 +7414,7 @@ Business: ${org?.name ?? "Training Facility"}
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const { runEmailAgentForOrg } = await import("./email-agent/scheduled-email-agent");
-      const result = await runEmailAgentForOrg(profile.organizationId);
+      const result = await runEmailAgentForOrg(profile.organizationId, "user_click");
       res.json(result);
     } catch (err: any) {
       console.error("[Email Agent Manual Run]", err);
@@ -7678,6 +7678,72 @@ Business: ${org?.name ?? "Training Facility"}
       res.json(report);
     } catch (err: any) {
       console.error("[Email Agent Audit]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/email-agent/trigger-audit — Trigger audit summary
+  app.get("/api/email-agent/trigger-audit", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const windowHours = req.query.window ? parseInt(req.query.window as string, 10) : 24;
+      const triggerType = req.query.trigger_type as string | undefined;
+      const actionType = req.query.action_type as string | undefined;
+
+      let summary;
+      if (triggerType || actionType) {
+        // Filtered events
+        const events = await storage.getEmailTriggerEvents(profile.organizationId, {
+          sinceHours: windowHours,
+          triggerType,
+          actionType,
+          limit: 500,
+        });
+        summary = await storage.getTriggerAuditSummary(profile.organizationId, windowHours);
+        // Override events with filtered version
+        summary.events = events;
+      } else {
+        summary = await storage.getTriggerAuditSummary(profile.organizationId, windowHours);
+      }
+
+      res.json(summary);
+    } catch (err: any) {
+      console.error("[Trigger Audit]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/email-agent/trigger-audit/prospect/:prospectId — trace for a specific prospect
+  app.get("/api/email-agent/trigger-audit/prospect/:prospectId", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const events = await storage.getEmailTriggerEvents(profile.organizationId, {
+        prospectId: req.params.prospectId,
+        limit: 100,
+      });
+
+      const executed = events.filter((e) => e.wasExecuted);
+      const blocked = events.filter((e) => e.executionBlocked);
+      const blockReasonCounts: Record<string, number> = {};
+      for (const e of blocked) {
+        if (e.blockReason) blockReasonCounts[e.blockReason] = (blockReasonCounts[e.blockReason] || 0) + 1;
+      }
+
+      res.json({
+        prospectId: req.params.prospectId,
+        totalEvaluated: events.length,
+        totalExecuted: executed.length,
+        totalBlocked: blocked.length,
+        blockReasons: Object.entries(blockReasonCounts).map(([r, c]) => ({ reason: r, count: c })),
+        events,
+      });
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });

@@ -809,3 +809,71 @@ export const aiRevenueEvents = pgTable("ai_revenue_events", {
 export const insertAiRevenueEventSchema = createInsertSchema(aiRevenueEvents).omit({ id: true, createdAt: true });
 export type AiRevenueEvent = typeof aiRevenueEvents.$inferSelect;
 export type InsertAiRevenueEvent = z.infer<typeof insertAiRevenueEventSchema>;
+
+// ─── Email Trigger Audit Events ───────────────────────────────────────────────
+export const triggerTypeEnum = pgEnum("email_trigger_type", [
+  "daily_outreach",
+  "follow_up_cron",
+  "auto_execution",
+  "manual",
+  "system_event",
+]);
+
+export const triggerSourceEnum = pgEnum("email_trigger_source", [
+  "cron_8_30am",
+  "hourly_follow_up_cron",
+  "auto_exec_hook",
+  "user_click",
+  "api_call",
+]);
+
+export const triggerActionTypeEnum = pgEnum("email_trigger_action_type", [
+  "send_initial_email",
+  "send_follow_up",
+  "generate_draft",
+  "send_response",
+]);
+
+export const triggerBlockReasonEnum = pgEnum("email_trigger_block_reason", [
+  "DNC",
+  "OPTED_OUT",
+  "COOLDOWN_ACTIVE",
+  "DAILY_LIMIT_REACHED",
+  "AUTO_EXEC_LIMIT_REACHED",
+  "LOW_CONFIDENCE",
+  "HIGH_RISK",
+  "MISSING_EMAIL",
+  "DUPLICATE_CONTACT",
+  "INVALID_STAGE",
+  "DEAL_ACTIVE_BLOCK",
+  "AGENT_DISABLED",
+  "NO_ELIGIBLE_PROSPECTS",
+]);
+
+export const emailTriggerEvents = pgTable("email_trigger_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  prospectId: varchar("prospect_id"),
+  prospectName: varchar("prospect_name"),
+  outreachDraftId: varchar("outreach_draft_id"),
+  followUpId: varchar("follow_up_id"),
+  triggerType: triggerTypeEnum("trigger_type").notNull(),
+  triggerSource: triggerSourceEnum("trigger_source").notNull(),
+  actionType: triggerActionTypeEnum("action_type").notNull(),
+  wasExecuted: boolean("was_executed").default(false),
+  executionBlocked: boolean("execution_blocked").default(false),
+  blockReason: triggerBlockReasonEnum("block_reason"),
+  reasoning: text("reasoning"),
+  confidenceLevel: varchar("confidence_level"),
+  riskScore: integer("risk_score"),
+  priorityScore: integer("priority_score"),
+  missedOpportunity: boolean("missed_opportunity").default(false),
+  collisionDetected: boolean("collision_detected").default(false),
+  collisionDetails: text("collision_details"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertEmailTriggerEventSchema = createInsertSchema(emailTriggerEvents).omit({ id: true, createdAt: true, updatedAt: true });
+export type EmailTriggerEvent = typeof emailTriggerEvents.$inferSelect;
+export type InsertEmailTriggerEvent = z.infer<typeof insertEmailTriggerEventSchema>;
