@@ -4,6 +4,8 @@ import { storage } from './storage';
 import { organizationSubscriptionPlans } from '@shared/schema';
 import { sendTeamQuoteEmail, sendSubscriptionExpiredEmail, type OrgBranding } from './email';
 
+const LOG_PREFIX = '[Stripe Wallet Sync]';
+
 async function getOrgStripeForQuote(organizationId: string | null): Promise<Stripe> {
   if (organizationId) {
     try {
@@ -14,6 +16,102 @@ async function getOrgStripeForQuote(organizationId: string | null): Promise<Stri
     } catch {}
   }
   return getUncachableStripeClient();
+}
+
+async function matchUserToStripePayment(
+  stripeCustomerId: string | null,
+  customerEmail: string | null,
+  customerName: string | null
+): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number } | null> {
+  if (stripeCustomerId) {
+    const user = await storage.getUserByStripeCustomerId(stripeCustomerId);
+    if (user) {
+      console.log(`${LOG_PREFIX} matched customer by stripeCustomerId: ${stripeCustomerId} → userId: ${user.id}`);
+      return user;
+    }
+  }
+
+  if (customerEmail) {
+    const user = await storage.getUserByEmail(customerEmail);
+    if (user) {
+      console.log(`${LOG_PREFIX} matched customer by email: ${customerEmail} → userId: ${user.id}`);
+      if (stripeCustomerId) {
+        await storage.updateUserStripeCustomerId(user.id, stripeCustomerId);
+      }
+      return user;
+    }
+  }
+
+  if (customerName && !customerEmail) {
+    const nameParts = customerName.trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    if (firstName) {
+      const results = await storage.searchUsers(customerName);
+      if (results.length === 1) {
+        const user = results[0];
+        console.log(`${LOG_PREFIX} matched customer by name fallback: "${customerName}" → userId: ${user.id}`);
+        return user;
+      }
+    }
+  }
+
+  console.warn(`${LOG_PREFIX} unmatched payment warning — could not find user for stripeCustomerId=${stripeCustomerId}, email=${customerEmail}, name=${customerName}`);
+  return null;
+}
+
+async function processWalletCredit(params: {
+  stripePaymentIntentId: string | null;
+  stripeChargeId: string | null;
+  stripeCustomerId: string | null;
+  customerEmail: string | null;
+  customerName: string | null;
+  amountCents: number;
+  currency: string;
+  description: string;
+  eventType: string;
+}): Promise<void> {
+  const {
+    stripePaymentIntentId,
+    stripeChargeId,
+    stripeCustomerId,
+    customerEmail,
+    customerName,
+    amountCents,
+    currency,
+    description,
+    eventType,
+  } = params;
+
+  console.log(`${LOG_PREFIX} payment received — event: ${eventType}, paymentIntentId: ${stripePaymentIntentId}, chargeId: ${stripeChargeId}, amount: ${amountCents} ${currency}`);
+
+  if (stripePaymentIntentId) {
+    const existing = await storage.getWalletTransactionByStripePaymentIntentId(stripePaymentIntentId);
+    if (existing) {
+      console.log(`${LOG_PREFIX} skipped duplicate — paymentIntentId ${stripePaymentIntentId} already credited (txId: ${existing.id})`);
+      return;
+    }
+  }
+
+  const user = await matchUserToStripePayment(stripeCustomerId, customerEmail, customerName);
+  if (!user) return;
+
+  const priorBalance = await storage.getUserBalance(user.id);
+
+  await storage.creditWallet(
+    user.id,
+    amountCents,
+    description,
+    undefined,
+    stripePaymentIntentId || undefined,
+    stripeChargeId || undefined,
+    currency || 'usd',
+    'succeeded'
+  );
+
+  const newBalance = await storage.getUserBalance(user.id);
+
+  console.log(`${LOG_PREFIX} amount credited — userId: ${user.id} (${user.email}), amount: $${(amountCents / 100).toFixed(2)}, prior balance: $${(priorBalance / 100).toFixed(2)}, new balance: $${(newBalance / 100).toFixed(2)}`);
 }
 
 export class WebhookHandlers {
@@ -43,6 +141,16 @@ export class WebhookHandlers {
         }
       }
 
+      if (event.type === 'invoice.payment_succeeded') {
+        const invoice = event.data?.object;
+        if (invoice?.id) {
+          await WebhookHandlers.handleInvoicePaid(invoice.id);
+        }
+        if (invoice?.subscription) {
+          await WebhookHandlers.handleSubscriptionRenewal(invoice.subscription, invoice.period_start, invoice.period_end);
+        }
+      }
+
       if (event.type === 'customer.subscription.created' ||
           event.type === 'customer.subscription.updated' ||
           event.type === 'customer.subscription.deleted') {
@@ -51,6 +159,7 @@ export class WebhookHandlers {
 
       if (event.type === 'checkout.session.completed') {
         const session = event.data?.object;
+
         if (session?.mode === 'subscription' && session?.subscription) {
           const orgId = session.metadata?.orgId;
           if (orgId) {
@@ -65,7 +174,141 @@ export class WebhookHandlers {
             console.log(`Subscription ${subscription.id} linked to org ${orgId} (status: ${subscription.status})`);
           }
         }
+
+        if (session?.mode === 'payment' && session?.payment_status === 'paid') {
+          const metaType = session.metadata?.type;
+          const metaUserId = session.metadata?.userId;
+          const amountCents = parseInt(session.metadata?.amountCents || '0', 10);
+          const sessionId = session.id;
+
+          if (metaType === 'wallet_deposit' && metaUserId && amountCents > 0) {
+            const existingBySession = await storage.getWalletTransactionByStripeSessionId(sessionId);
+            if (existingBySession) {
+              console.log(`${LOG_PREFIX} skipped duplicate — checkoutSessionId ${sessionId} already credited`);
+            } else {
+              const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id || null;
+              if (paymentIntentId) {
+                const existingByPI = await storage.getWalletTransactionByStripePaymentIntentId(paymentIntentId);
+                if (existingByPI) {
+                  console.log(`${LOG_PREFIX} skipped duplicate — paymentIntentId ${paymentIntentId} already credited`);
+                } else {
+                  const priorBalance = await storage.getUserBalance(metaUserId);
+                  await storage.creditWallet(
+                    metaUserId,
+                    amountCents,
+                    `Added $${(amountCents / 100).toFixed(2)} via Stripe (webhook)`,
+                    sessionId,
+                    paymentIntentId,
+                    undefined,
+                    session.currency || 'usd',
+                    'succeeded'
+                  );
+                  const newBalance = await storage.getUserBalance(metaUserId);
+                  console.log(`${LOG_PREFIX} wallet deposit credited via checkout.session.completed — userId: ${metaUserId}, amount: $${(amountCents / 100).toFixed(2)}, prior balance: $${(priorBalance / 100).toFixed(2)}, new balance: $${(newBalance / 100).toFixed(2)}`);
+                }
+              }
+            }
+          }
+        }
       }
+
+      if (event.type === 'payment_intent.succeeded') {
+        const pi = event.data?.object;
+        if (!pi?.id) return;
+
+        const isWalletDeposit = pi.metadata?.type === 'wallet_deposit';
+        if (isWalletDeposit) {
+          console.log(`${LOG_PREFIX} payment_intent.succeeded for wallet_deposit — skipping direct credit (handled via checkout.session.completed)`);
+          return;
+        }
+
+        const amountCents = pi.amount_received || pi.amount || 0;
+        const currency = pi.currency || 'usd';
+        const stripeCustomerId = typeof pi.customer === 'string' ? pi.customer : pi.customer?.id || null;
+        const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : pi.latest_charge?.id || null;
+
+        let customerEmail: string | null = null;
+        let customerName: string | null = null;
+
+        if (stripeCustomerId) {
+          try {
+            const stripe = await getUncachableStripeClient();
+            const customer = await stripe.customers.retrieve(stripeCustomerId);
+            if (customer && !('deleted' in customer)) {
+              customerEmail = customer.email || null;
+              customerName = customer.name || null;
+            }
+          } catch {}
+        }
+
+        if (!customerEmail && pi.receipt_email) {
+          customerEmail = pi.receipt_email;
+        }
+
+        await processWalletCredit({
+          stripePaymentIntentId: pi.id,
+          stripeChargeId: chargeId,
+          stripeCustomerId,
+          customerEmail,
+          customerName,
+          amountCents,
+          currency,
+          description: `Stripe payment $${(amountCents / 100).toFixed(2)} (paymentIntent: ${pi.id})`,
+          eventType: event.type,
+        });
+      }
+
+      if (event.type === 'charge.succeeded') {
+        const charge = event.data?.object;
+        if (!charge?.id) return;
+
+        const isWalletDeposit = charge.metadata?.type === 'wallet_deposit';
+        if (isWalletDeposit) {
+          console.log(`${LOG_PREFIX} charge.succeeded for wallet_deposit — skipping direct credit (handled via checkout.session.completed)`);
+          return;
+        }
+
+        const paymentIntentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id || null;
+
+        if (paymentIntentId) {
+          const existing = await storage.getWalletTransactionByStripePaymentIntentId(paymentIntentId);
+          if (existing) {
+            console.log(`${LOG_PREFIX} skipped duplicate charge.succeeded — paymentIntentId ${paymentIntentId} already credited`);
+            return;
+          }
+        }
+
+        const amountCents = charge.amount || 0;
+        const currency = charge.currency || 'usd';
+        const stripeCustomerId = typeof charge.customer === 'string' ? charge.customer : charge.customer?.id || null;
+
+        let customerEmail: string | null = charge.billing_details?.email || charge.receipt_email || null;
+        let customerName: string | null = charge.billing_details?.name || null;
+
+        if (!customerEmail && stripeCustomerId) {
+          try {
+            const stripe = await getUncachableStripeClient();
+            const customer = await stripe.customers.retrieve(stripeCustomerId);
+            if (customer && !('deleted' in customer)) {
+              customerEmail = (customer as Stripe.Customer).email || null;
+              customerName = customerName || (customer as Stripe.Customer).name || null;
+            }
+          } catch {}
+        }
+
+        await processWalletCredit({
+          stripePaymentIntentId: paymentIntentId,
+          stripeChargeId: charge.id,
+          stripeCustomerId,
+          customerEmail,
+          customerName,
+          amountCents,
+          currency,
+          description: `Stripe charge $${(amountCents / 100).toFixed(2)} (chargeId: ${charge.id})`,
+          eventType: event.type,
+        });
+      }
+
     } catch (err) {
       console.error('Error processing custom webhook logic:', err);
     }
@@ -281,5 +524,212 @@ export class WebhookHandlers {
     } catch (error) {
       console.error(`Failed to generate month ${paidQuote.currentMonth + 1} invoice for "${paidQuote.teamName}":`, error);
     }
+  }
+
+  static async stripeWalletSyncAudit(lookbackDays = 30): Promise<{
+    payments: Array<{
+      stripePaymentIntentId: string;
+      chargeId: string | null;
+      customerEmail: string | null;
+      customerName: string | null;
+      stripeCustomerId: string | null;
+      amountCents: number;
+      currency: string;
+      createdAt: number;
+      matchedUserId: string | null;
+      matchedUserEmail: string | null;
+      hasLedgerEntry: boolean;
+      ledgerTxId: string | null;
+    }>;
+    summary: { total: number; matched: number; credited: number; missing: number };
+  }> {
+    const stripe = await getUncachableStripeClient();
+    const since = Math.floor(Date.now() / 1000) - lookbackDays * 86400;
+
+    const payments: Stripe.PaymentIntent[] = [];
+    let hasMore = true;
+    let startingAfter: string | undefined;
+
+    while (hasMore) {
+      const page = await stripe.paymentIntents.list({
+        limit: 100,
+        created: { gte: since },
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+      payments.push(...page.data.filter(pi => pi.status === 'succeeded'));
+      hasMore = page.has_more;
+      if (page.data.length > 0) startingAfter = page.data[page.data.length - 1].id;
+    }
+
+    const results = [];
+    let matched = 0;
+    let credited = 0;
+    let missing = 0;
+
+    for (const pi of payments) {
+      const stripeCustomerId = typeof pi.customer === 'string' ? pi.customer : pi.customer?.id || null;
+      const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge as any)?.id || null;
+
+      let customerEmail: string | null = null;
+      let customerName: string | null = null;
+
+      if (stripeCustomerId) {
+        try {
+          const customer = await stripe.customers.retrieve(stripeCustomerId);
+          if (customer && !('deleted' in customer)) {
+            customerEmail = (customer as Stripe.Customer).email || null;
+            customerName = (customer as Stripe.Customer).name || null;
+          }
+        } catch {}
+      }
+
+      const user = await matchUserToStripePayment(stripeCustomerId, customerEmail, customerName);
+      const existing = await storage.getWalletTransactionByStripePaymentIntentId(pi.id);
+
+      const hasLedger = !!existing;
+      if (user) matched++;
+      if (hasLedger) credited++;
+      else missing++;
+
+      results.push({
+        stripePaymentIntentId: pi.id,
+        chargeId,
+        customerEmail,
+        customerName,
+        stripeCustomerId,
+        amountCents: pi.amount_received || pi.amount,
+        currency: pi.currency,
+        createdAt: pi.created,
+        matchedUserId: user?.id || null,
+        matchedUserEmail: user?.email || null,
+        hasLedgerEntry: hasLedger,
+        ledgerTxId: existing?.id || null,
+      });
+    }
+
+    return {
+      payments: results,
+      summary: { total: payments.length, matched, credited, missing },
+    };
+  }
+
+  static async stripeWalletSyncRepair(dryRun = true): Promise<{
+    dryRun: boolean;
+    repaired: Array<{
+      stripePaymentIntentId: string;
+      userId: string;
+      userEmail: string | null;
+      amountCents: number;
+      currency: string;
+      action: 'credited' | 'skipped' | 'no_user_match';
+    }>;
+    summary: { total: number; credited: number; skipped: number; noMatch: number };
+  }> {
+    const stripe = await getUncachableStripeClient();
+    const since = Math.floor(Date.now() / 1000) - 90 * 86400;
+
+    const payments: Stripe.PaymentIntent[] = [];
+    let hasMore = true;
+    let startingAfter: string | undefined;
+
+    while (hasMore) {
+      const page = await stripe.paymentIntents.list({
+        limit: 100,
+        created: { gte: since },
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+      payments.push(...page.data.filter(pi => pi.status === 'succeeded'));
+      hasMore = page.has_more;
+      if (page.data.length > 0) startingAfter = page.data[page.data.length - 1].id;
+    }
+
+    const repaired = [];
+    let creditedCount = 0;
+    let skippedCount = 0;
+    let noMatchCount = 0;
+
+    for (const pi of payments) {
+      const existing = await storage.getWalletTransactionByStripePaymentIntentId(pi.id);
+      if (existing) {
+        skippedCount++;
+        repaired.push({
+          stripePaymentIntentId: pi.id,
+          userId: existing.userId,
+          userEmail: null,
+          amountCents: pi.amount_received || pi.amount,
+          currency: pi.currency,
+          action: 'skipped' as const,
+        });
+        continue;
+      }
+
+      const stripeCustomerId = typeof pi.customer === 'string' ? pi.customer : pi.customer?.id || null;
+      const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : (pi.latest_charge as any)?.id || null;
+
+      let customerEmail: string | null = null;
+      let customerName: string | null = null;
+
+      if (stripeCustomerId) {
+        try {
+          const customer = await stripe.customers.retrieve(stripeCustomerId);
+          if (customer && !('deleted' in customer)) {
+            customerEmail = (customer as Stripe.Customer).email || null;
+            customerName = (customer as Stripe.Customer).name || null;
+          }
+        } catch {}
+      }
+
+      if (!customerEmail && pi.receipt_email) customerEmail = pi.receipt_email;
+
+      const user = await matchUserToStripePayment(stripeCustomerId, customerEmail, customerName);
+      if (!user) {
+        noMatchCount++;
+        repaired.push({
+          stripePaymentIntentId: pi.id,
+          userId: '',
+          userEmail: customerEmail,
+          amountCents: pi.amount_received || pi.amount,
+          currency: pi.currency,
+          action: 'no_user_match' as const,
+        });
+        continue;
+      }
+
+      const amountCents = pi.amount_received || pi.amount;
+
+      if (!dryRun) {
+        const priorBalance = await storage.getUserBalance(user.id);
+        await storage.creditWallet(
+          user.id,
+          amountCents,
+          `Stripe backfill — $${(amountCents / 100).toFixed(2)} (paymentIntent: ${pi.id})`,
+          undefined,
+          pi.id,
+          chargeId || undefined,
+          pi.currency || 'usd',
+          'succeeded'
+        );
+        const newBalance = await storage.getUserBalance(user.id);
+        console.log(`${LOG_PREFIX} backfill credited — userId: ${user.id} (${user.email}), amount: $${(amountCents / 100).toFixed(2)}, prior: $${(priorBalance / 100).toFixed(2)}, new: $${(newBalance / 100).toFixed(2)}`);
+      } else {
+        console.log(`${LOG_PREFIX} [DRY RUN] would credit userId: ${user.id} (${user.email}), amount: $${(amountCents / 100).toFixed(2)}, paymentIntent: ${pi.id}`);
+      }
+
+      creditedCount++;
+      repaired.push({
+        stripePaymentIntentId: pi.id,
+        userId: user.id,
+        userEmail: user.email,
+        amountCents,
+        currency: pi.currency,
+        action: 'credited' as const,
+      });
+    }
+
+    return {
+      dryRun,
+      repaired,
+      summary: { total: payments.length, credited: creditedCount, skipped: skippedCount, noMatch: noMatchCount },
+    };
   }
 }

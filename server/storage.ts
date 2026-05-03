@@ -172,12 +172,14 @@ export interface IStorage {
   getUserBalancesByOrganization(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
 
   getUserBalance(userId: string): Promise<number>;
-  creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string): Promise<WalletTransaction>;
+  creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string): Promise<WalletTransaction>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
+  getWalletTransactionByStripePaymentIntentId(stripePaymentIntentId: string): Promise<WalletTransaction | undefined>;
+  getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
   updateLastSignIn(userId: string): Promise<void>;
   getInactiveUsersForReminder(sinceDays: number): Promise<User[]>;
   markReminderSent(userId: string): Promise<void>;
@@ -1037,7 +1039,7 @@ export class DatabaseStorage implements IStorage {
     return user?.balanceCents || 0;
   }
 
-  async creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string): Promise<WalletTransaction> {
+  async creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string): Promise<WalletTransaction> {
     const [tx] = await db.insert(walletTransactions).values({
       userId,
       type: "CREDIT" as const,
@@ -1045,6 +1047,10 @@ export class DatabaseStorage implements IStorage {
       description,
       sourceType: "stripe",
       stripeSessionId: stripeSessionId || null,
+      stripePaymentIntentId: stripePaymentIntentId || null,
+      stripeChargeId: stripeChargeId || null,
+      currency: currency || "usd",
+      paymentStatus: paymentStatus || "succeeded",
     }).returning();
 
     await db.update(users).set({
@@ -1082,6 +1088,16 @@ export class DatabaseStorage implements IStorage {
   async getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined> {
     const [tx] = await db.select().from(walletTransactions).where(eq(walletTransactions.stripeSessionId, stripeSessionId));
     return tx || undefined;
+  }
+
+  async getWalletTransactionByStripePaymentIntentId(stripePaymentIntentId: string): Promise<WalletTransaction | undefined> {
+    const [tx] = await db.select().from(walletTransactions).where(eq(walletTransactions.stripePaymentIntentId, stripePaymentIntentId));
+    return tx || undefined;
+  }
+
+  async getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, stripeCustomerId));
+    return user || undefined;
   }
 
   async getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]> {

@@ -325,6 +325,10 @@ export const walletTransactions = pgTable("wallet_transactions", {
   sourceType: varchar("source_type"),
   sourceId: varchar("source_id"),
   stripeSessionId: varchar("stripe_session_id"),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id"),
+  stripeChargeId: varchar("stripe_charge_id"),
+  currency: varchar("currency").default("usd"),
+  paymentStatus: varchar("payment_status"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

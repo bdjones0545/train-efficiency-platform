@@ -501,6 +501,30 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/admin/stripe-wallet-sync-audit", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const lookbackDays = parseInt((req.query.days as string) || "30", 10);
+      const { WebhookHandlers } = await import("./webhookHandlers");
+      const result = await WebhookHandlers.stripeWalletSyncAudit(lookbackDays);
+      res.json(result);
+    } catch (err: any) {
+      console.error("Stripe wallet sync audit error:", err);
+      res.status(500).json({ message: err.message || "Audit failed" });
+    }
+  });
+
+  app.post("/api/admin/stripe-wallet-sync-repair", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const dryRun = req.body?.dryRun !== false;
+      const { WebhookHandlers } = await import("./webhookHandlers");
+      const result = await WebhookHandlers.stripeWalletSyncRepair(dryRun);
+      res.json(result);
+    } catch (err: any) {
+      console.error("Stripe wallet sync repair error:", err);
+      res.status(500).json({ message: err.message || "Repair failed" });
+    }
+  });
+
   app.post("/api/admin/backfill-org-prefs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const result = await storage.backfillUserOrgPreferences();
