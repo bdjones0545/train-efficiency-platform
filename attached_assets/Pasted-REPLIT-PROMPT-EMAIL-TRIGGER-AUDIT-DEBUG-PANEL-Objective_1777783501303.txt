@@ -1,0 +1,270 @@
+REPLIT PROMPT — EMAIL TRIGGER AUDIT + DEBUG PANEL
+
+Objective:
+Audit and visualize exactly when, why, and how emails are triggered across the entire Email Agent system.
+
+We want:
+- Full visibility into trigger sources
+- Debuggable logs
+- Clear reasoning for every email sent
+- Detection of overlaps, duplicates, or missed sends
+
+This is NOT a feature for users — this is an internal + optional admin/debug layer.
+
+---
+
+PHASE 1 — TRIGGER LOGGING SYSTEM
+
+Create a unified log table:
+
+email_trigger_events:
+- id
+- organization_id
+- prospect_id nullable
+- outreach_draft_id nullable
+- follow_up_id nullable
+- trigger_type enum:
+  - daily_outreach
+  - follow_up_cron
+  - auto_execution
+  - manual
+  - system_event
+- trigger_source:
+  - cron_8_30am
+  - hourly_follow_up_cron
+  - auto_exec_hook
+  - user_click
+  - api_call
+- action_type:
+  - send_initial_email
+  - send_follow_up
+  - generate_draft
+  - send_response
+- was_executed boolean
+- execution_blocked boolean
+- block_reason nullable
+- reasoning text (short explanation)
+- confidence_level
+- risk_score
+- priority_score
+- created_at
+
+Every time an email-related action is evaluated:
+→ log an entry BEFORE execution decision
+→ log execution result AFTER decision
+
+---
+
+PHASE 2 — WRAP ALL TRIGGER POINTS
+
+Instrument these locations:
+
+1. Daily outreach job (8:30 AM)
+2. Manual "Run Today’s Agent"
+3. Follow-up cron (hourly)
+4. Auto-execution hook
+5. Manual send actions
+6. Agent-triggered sends
+
+Each must:
+- call logTriggerEvent() BEFORE execution
+- update event with outcome AFTER
+
+---
+
+PHASE 3 — BLOCK REASON STANDARDIZATION
+
+Standardize block_reason values:
+
+- DNC
+- OPTED_OUT
+- COOLDOWN_ACTIVE
+- DAILY_LIMIT_REACHED
+- AUTO_EXEC_LIMIT_REACHED
+- LOW_CONFIDENCE
+- HIGH_RISK
+- MISSING_EMAIL
+- DUPLICATE_CONTACT
+- INVALID_STAGE
+- DEAL_ACTIVE_BLOCK
+
+Always log exact reason.
+
+---
+
+PHASE 4 — TRIGGER AUDIT API
+
+Add:
+
+GET /api/email-agent/trigger-audit
+
+Query params:
+- last 24h / 7d
+- filter by trigger_type
+- filter by action_type
+
+Return:
+
+{
+  summary: {
+    totalEvaluated,
+    totalExecuted,
+    totalBlocked,
+    byTriggerType,
+    byActionType
+  },
+  blockReasons: [
+    { reason, count }
+  ],
+  timeline: [
+    { timestamp, trigger_type, action_type, outcome }
+  ],
+  events: full list
+}
+
+---
+
+PHASE 5 — DEBUG PANEL (ADMIN)
+
+Add new tab or dev-only panel:
+
+“Trigger Audit”
+
+Sections:
+
+1. Summary Cards:
+- Emails Sent Today
+- Emails Blocked
+- Execution Rate %
+- Most Common Trigger
+
+2. Trigger Breakdown:
+- Daily Outreach
+- Follow-Up Cron
+- Auto-Execution
+- Manual
+
+3. Block Reasons Chart:
+- DNC
+- cooldown
+- limit reached
+- etc.
+
+4. Timeline Feed (most important):
+Each row:
+- Time
+- Prospect
+- Trigger
+- Action
+- Outcome (sent / blocked)
+- Reason
+- Confidence
+
+Color code:
+- Green = executed
+- Red = blocked
+- Yellow = evaluated but skipped
+
+---
+
+PHASE 6 — “WHY WAS THIS EMAIL SENT?” TRACE
+
+On every sent email (Sent tab):
+
+Add button:
+“View Trigger”
+
+Shows:
+
+- Trigger type (e.g., follow_up_cron)
+- Exact reason:
+  “Day 3 follow-up due, prospect opened twice, high priority score”
+- Scores:
+  - warmth
+  - urgency
+  - risk
+- Whether auto-executed or manual
+- Full decision explanation
+
+---
+
+PHASE 7 — DUPLICATE + COLLISION DETECTION
+
+Add detection:
+
+If same prospect:
+- receives multiple sends within short window
+- or evaluated by multiple triggers simultaneously
+
+Log warning:
+
+- “Trigger collision detected”
+- show involved triggers
+
+Prevent execution if necessary.
+
+---
+
+PHASE 8 — MISSED OPPORTUNITY DETECTION
+
+Detect cases where:
+
+- follow-up was due but not sent
+- high-priority action not executed
+- auto-exec eligible but skipped
+
+Log:
+
+- missed_opportunity flag
+- reason
+
+Surface in audit panel:
+
+“Missed Revenue Opportunities”
+
+---
+
+PHASE 9 — AGENT CONTEXT
+
+Inject:
+
+EMAIL TRIGGER CONTEXT:
+- emails sent today
+- blocked count
+- most common block reason
+- missed opportunities count
+
+Rules:
+- If system is blocked often, explain why
+- If triggers are not firing, surface issue
+- If collisions detected, suggest fix
+
+---
+
+PHASE 10 — QA
+
+Verify:
+
+- Every email send has a trigger log
+- Block reasons always recorded
+- No duplicate logs
+- Timeline matches actual sends
+- Trigger types correctly assigned
+- No performance degradation
+- Mobile panel optional or hidden
+- No TypeScript errors
+- App runs cleanly
+
+---
+
+FINAL EXPECTED BEHAVIOR:
+
+You should be able to answer instantly:
+
+- “Why was this email sent?”
+- “Why wasn’t this email sent?”
+- “Which trigger is doing the most work?”
+- “Where are we losing opportunities?”
+- “Are triggers colliding or misfiring?”
+
+This turns the Email Agent into a fully observable, debuggable system.
