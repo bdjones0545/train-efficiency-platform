@@ -1,0 +1,244 @@
+REPLIT PROMPT — EMAIL AGENT FUNCTION AUDIT + HIGH-ROI UPGRADES
+
+Objective:
+Audit the Email Agent end-to-end and add the highest-ROI improvements without adding clutter.
+
+Audit these functional areas:
+1. Prospect discovery
+2. Contact quality
+3. Outreach drafts
+4. Follow-up sequences
+5. Reply classification
+6. Deal creation
+7. Contextual intelligence
+8. Global priority
+9. Auto-execution
+10. Revenue attribution
+11. UI explainability
+12. Safety rules
+
+PHASE 1 — AUDIT REPORT
+
+Create a developer-facing audit output/log that checks:
+
+- Can prospects be discovered?
+- Are duplicate prospects prevented?
+- Are contacts valid?
+- Are DNC and opt-outs respected?
+- Are daily caps enforced?
+- Are drafts created before sends?
+- Are follow-ups scheduled correctly?
+- Do sequences stop on reply/DNC/opt-out?
+- Are replies classified?
+- Are interested replies creating deals?
+- Are next-best-actions generated?
+- Is global priority ranking correctly?
+- Does auto-execution only run safe actions?
+- Are revenue outcomes attributed without double-counting?
+
+Add a route:
+
+GET /api/email-agent/audit
+
+Return:
+{
+  status,
+  checks[],
+  warnings[],
+  recommendations[]
+}
+
+Each check should include:
+- name
+- pass boolean
+- severity: low | medium | high | critical
+- details
+- suggestedFix
+
+PHASE 2 — CONTACT QUALITY SCORE
+
+Add computed contactQualityScore: 0–100.
+
+Scoring:
+- direct coach email: 90–100
+- athletic director email: 75–85
+- school athletics department email: 55–70
+- generic school inbox: 30–50
+- missing email: 0
+- invalid email: 0
+
+Add contactQualityReason.
+
+Use this score in:
+- prospect cards
+- intelligence scoring
+- global priority ranking
+- queue building
+
+Do not prioritize low-quality contacts unless there are no better prospects.
+
+PHASE 3 — CONVERSATION STAGE
+
+Add conversationStage:
+
+- cold
+- contacted
+- engaged
+- interested
+- deal_open
+- proposal
+- won
+- lost
+- do_not_contact
+
+Compute from:
+- outreach status
+- opens/clicks
+- replies
+- reply classification
+- deal status
+
+Show stage badge on:
+- Prospect cards
+- Sent emails
+- Follow-ups
+- Deal cards
+
+PHASE 4 — STAGE-AWARE MESSAGING
+
+Update draft and follow-up generation so messaging changes by stage.
+
+Rules:
+- cold: short local intro, low-pressure CTA
+- contacted: simple bump/follow-up
+- engaged: reference prior engagement
+- interested: move toward call or simple proposal
+- deal_open: deal-aware response, no cold language
+- proposal: ask for decision or next step
+- lost/do_not_contact: no outreach
+
+Make sure:
+- if a prospect has replied, never use cold email language again
+- if a deal exists, all messaging is deal-aware
+- if stage is do_not_contact, sending is blocked
+
+PHASE 5 — DYNAMIC FOLLOW-UP TIMING
+
+Replace rigid timing only with adaptive timing.
+
+Base sequence:
+- Day 3
+- Day 7
+- Day 14
+
+Adjust:
+- opened 2+ times or clicked: move next follow-up sooner by 1–2 days
+- no opens: delay by 2 days
+- high warmth + high fit: prioritize earlier
+- high risk: delay or require approval
+
+Never violate cooldown or daily cap.
+
+PHASE 6 — AUTO-EXECUTION LEARNING LOOP
+
+Add performance-aware auto-execution behavior.
+
+Rules:
+- If auto-executed follow-ups produce strong engagement, allow them to be ranked higher.
+- If auto-executed actions fail repeatedly, lower their priority.
+- Keep hard max of 3 auto-executions/day unless settings explicitly change.
+- Never auto-execute pricing, proposal, DNC, deal-won/lost, or high-risk actions.
+
+Track:
+- autoExecutionSuccessRate
+- autoExecutionEngagementRate
+- autoExecutionRevenuePerAction
+
+Use these in:
+- global priority engine
+- agent context
+- performance insights UI
+
+PHASE 7 — MULTI-TOUCH ATTRIBUTION
+
+Improve revenue attribution from last-touch only to multi-touch aware.
+
+When a deal is won or booking occurs:
+- attribute primary credit to most recent high-impact action
+- preserve assist credit for earlier actions in the chain
+- show attribution chain:
+  initial outreach → follow-up → reply → deal won
+
+Update ai_revenue_events to support:
+- attribution_role: primary | assist
+- attribution_chain_id
+- chain_position
+
+UI:
+In AI Impact Feed, show:
+“Deal won: Beaufort High Football +$1,200”
+“Assisted by: Initial email, Follow-up 1, Reply classification”
+
+PHASE 8 — UI UPDATES
+
+Add to Email Agent:
+
+1. Audit tab or admin card:
+- Overall health score
+- Critical issues
+- Warnings
+- Recommended fixes
+
+2. Prospect cards:
+- Contact Quality Score
+- Conversation Stage
+- Next best action
+- Why panel
+
+3. Overview:
+- Contact quality distribution
+- Stage distribution
+- Auto-execution performance
+- Multi-touch revenue wins
+
+Keep UI clean.
+Do not overcrowd the main page.
+
+PHASE 9 — AGENT CONTEXT UPDATE
+
+Inject:
+
+EMAIL AGENT AUDIT CONTEXT:
+- health score
+- critical warnings
+- top functional risk
+- contact quality distribution
+- stage distribution
+- auto-execution success rate
+- multi-touch revenue attribution summary
+
+Rules:
+- If audit detects critical issue, mention it before recommending outreach.
+- Prioritize high-quality contacts.
+- Never recommend cold messaging for engaged or deal-stage prospects.
+- Always explain blocked actions clearly.
+
+PHASE 10 — QA CHECKLIST
+
+Verify:
+- Audit endpoint works
+- Audit checks return useful results
+- Contact quality scoring works
+- Stage badges render correctly
+- Stage-aware messaging prevents cold copy after reply
+- Follow-up timing adjusts correctly
+- Auto-exec performance metrics update
+- Multi-touch attribution does not double-count revenue
+- Global priority ranking changes logically
+- DNC/opt-out/cooldown are still hard blocks
+- Mobile UI remains clean
+- No TypeScript errors
+- App starts cleanly
+
+Final expected behavior:
+The Email Agent should not only automate outreach; it should audit itself, prioritize better contacts, adapt messaging to relationship stage, time follow-ups intelligently, learn from auto-execution outcomes, and prove which actions helped create revenue.
