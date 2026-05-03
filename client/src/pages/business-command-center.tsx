@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useAiRevenueToasts } from "@/hooks/use-ai-revenue-toasts";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -146,6 +147,8 @@ type AiRevenueOutcomes = {
   };
   byActionType: { actionType: string; count: number; revenue: number; avgRevenue: number }[];
   impactFeed: AiRevenueImpactItem[];
+  streaks: { daysStreak: number; weeklyWins: number };
+  recentlyAttributed: AiRevenueImpactItem[];
 };
 
 type CommandCenterData = {
@@ -429,6 +432,43 @@ function outcomeStatusBadge(status: string, value: number) {
   }
 }
 
+function AiImpactHighlight({ data }: { data: AiRevenueOutcomes }) {
+  const [idx, setIdx] = useState(0);
+
+  const msgs: string[] = [
+    data.week.revenue > 0
+      ? `This week: AI generated ${fmtDollars(data.week.revenue)} from ${data.week.wonActions > 0 ? `${data.week.wonActions} win${data.week.wonActions !== 1 ? "s" : ""}` : `${data.week.actions} actions`}`
+      : "",
+    data.streaks.weeklyWins > 1
+      ? `AI closed ${data.streaks.weeklyWins} deals this week`
+      : "",
+    data.autoVsManual.autoRevenue > 0
+      ? `Auto-executed actions: ${fmtDollars(data.autoVsManual.autoRevenue)} earned`
+      : "",
+    data.byActionType[0]?.revenue > 0
+      ? `Best action: ${actionLabel(data.byActionType[0].actionType)} · avg ${fmtDollars(data.byActionType[0].avgRevenue)}/win`
+      : "",
+  ].filter(Boolean);
+
+  useEffect(() => {
+    if (msgs.length <= 1) return;
+    const t = setInterval(() => setIdx(i => (i + 1) % msgs.length), 4000);
+    return () => clearInterval(t);
+  }, [msgs.length]);
+
+  if (!msgs.length) return null;
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-2 bg-primary/5 border border-primary/15 rounded-lg mb-3"
+      data-testid="card-ai-impact-highlight"
+    >
+      <Flame className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+      <p className="text-xs font-medium text-foreground">{msgs[idx]}</p>
+    </div>
+  );
+}
+
 function AiRevenuePanel() {
   const { data, isLoading } = useQuery<AiRevenueOutcomes>({
     queryKey: ["/api/email-agent/revenue-outcomes"],
@@ -447,6 +487,26 @@ function AiRevenuePanel() {
         <Bot className="h-3.5 w-3.5" />
         AI-Generated Revenue
       </h2>
+
+      {/* Rotating impact highlight */}
+      {hasData && hasAnyRevenue && <AiImpactHighlight data={data} />}
+
+      {/* Streak badges */}
+      {hasData && (data.streaks.daysStreak >= 2 || data.streaks.weeklyWins > 0) && (
+        <div className="flex items-center gap-2 mb-3" data-testid="row-streak-badges">
+          {data.streaks.daysStreak >= 2 && (
+            <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20 text-xs gap-1">
+              <Flame className="h-3 w-3" />
+              {data.streaks.daysStreak}-day streak
+            </Badge>
+          )}
+          {data.streaks.weeklyWins > 0 && (
+            <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20 text-xs">
+              🏆 {data.streaks.weeklyWins} win{data.streaks.weeklyWins !== 1 ? "s" : ""} this week
+            </Badge>
+          )}
+        </div>
+      )}
 
       {/* Revenue stat cards */}
       <div className="grid grid-cols-3 gap-3 mb-3">
@@ -614,6 +674,9 @@ export default function BusinessCommandCenterPage() {
   const [goalInput, setGoalInput] = useState("");
 
   useAutoExecution();
+  useAiRevenueToasts((opts) =>
+    toast({ title: opts.title, description: opts.description, duration: opts.duration })
+  );
 
   const { data, isLoading, refetch, isRefetching } = useQuery<CommandCenterData>({
     queryKey: ["/api/business-command-center"],
@@ -645,7 +708,19 @@ export default function BusinessCommandCenterPage() {
   }
 
   function openAgentWith(message: string) {
-    sessionStorage.setItem("agent_prefill_message", message);
+    // Phase 5 — Agent Voice: inject recent-win context on first open after a win
+    let prefill = message;
+    if (!message && !sessionStorage.getItem("ai_win_announced")) {
+      const winRaw = sessionStorage.getItem("ai_recent_win");
+      if (winRaw) {
+        try {
+          const win = JSON.parse(winRaw);
+          sessionStorage.setItem("ai_win_announced", "1");
+          prefill = `We just closed ${win.prospectName} for $${win.amount.toLocaleString()}. What should we do next?`;
+        } catch {}
+      }
+    }
+    sessionStorage.setItem("agent_prefill_message", prefill);
     setLocation("/scheduling/agent");
   }
 

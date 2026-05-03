@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useAiRevenueToasts } from "@/hooks/use-ai-revenue-toasts";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -180,6 +181,8 @@ interface AiRevenueOutcomes {
   };
   byActionType: { actionType: string; count: number; revenue: number; avgRevenue: number }[];
   impactFeed: AiRevenueImpactItem[];
+  streaks: { daysStreak: number; weeklyWins: number };
+  recentlyAttributed: AiRevenueImpactItem[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -3073,6 +3076,11 @@ function SettingsTab() {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function CommunicationHistoryPage() {
   const [activeTab, setActiveTab] = useState("overview");
+  const { toast } = useToast();
+
+  useAiRevenueToasts((opts) =>
+    toast({ title: opts.title, description: opts.description, duration: opts.duration })
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto pb-24 md:pb-6">
