@@ -1,0 +1,275 @@
+REPLIT PROMPT — CONTEXTUAL INTELLIGENCE LAYER FOR EMAIL AGENT + DEAL PIPELINE
+
+Objective:
+Build a contextual intelligence layer that sits above prospects, outreach, follow-ups, replies, and deals.
+
+The goal is to make the Email Agent understand:
+- who the prospect is
+- what has happened so far
+- what they said
+- how warm they are
+- what the best next action is
+- whether to send, wait, follow up, call, create a proposal, or stop
+
+This should make the system feel like an AI sales operator, not a simple email automation tool.
+
+PHASE 1 — CREATE CONTEXT SNAPSHOT SERVICE
+
+Create:
+
+server/email-agent/contextual-intelligence.ts
+
+Add function:
+
+buildProspectContext(prospectId, organizationId)
+
+It should gather:
+- prospect record
+- contact info
+- sport
+- level
+- location
+- confidence score
+- estimated value
+- outreach history
+- all drafts/emails sent
+- opens/clicks/replies
+- reply classification
+- reply text
+- follow-up sequence status
+- deal status if one exists
+- last contacted date
+- next eligible contact date
+- DNC/opt-out state
+- notes
+
+Return a clean object:
+
+{
+  prospect,
+  engagement,
+  outreachHistory,
+  followUps,
+  deal,
+  safety,
+  intelligence
+}
+
+PHASE 2 — INTELLIGENCE SCORING
+
+Add computed scores:
+
+1. Warmth Score: 0–100
+Based on:
+- replied = strong positive
+- clicked = positive
+- opened multiple times = positive
+- interested/ask_info classification = strong positive
+- not_interested/wrong_contact = negative
+- no engagement after 3 touches = negative
+
+2. Urgency Score: 0–100
+Based on:
+- interested reply
+- pending next action
+- stale deal
+- upcoming season relevance
+- high estimated value
+- recent engagement
+
+3. Fit Score: 0–100
+Based on:
+- target level match
+- preferred sport match
+- distance
+- contact quality
+- confidence score
+
+4. Risk Score: 0–100
+Based on:
+- cooldown violation
+- DNC/opt-out
+- too many touches
+- negative reply
+- uncertain contact info
+
+Store these optionally on the prospect/deal, but they can also be computed live.
+
+PHASE 3 — NEXT BEST ACTION ENGINE
+
+Create:
+
+getNextBestAction(prospectContext)
+
+Return:
+
+{
+  actionType:
+    - send_initial_email
+    - generate_draft
+    - send_follow_up
+    - wait
+    - mark_interested
+    - create_deal
+    - schedule_call
+    - generate_response
+    - create_proposal
+    - mark_do_not_contact
+    - stop_sequence
+
+  priority:
+    - low
+    - medium
+    - high
+    - urgent
+
+  reason: string
+  estimatedValue: number
+  recommendedPrompt: string
+  requiresApproval: boolean
+}
+
+Rules:
+- If DNC or opted out → stop_sequence
+- If interested reply and no deal → create_deal
+- If interested reply and deal exists → schedule_call or generate_response
+- If ask_info → generate_response
+- If wrong_contact → ask for referral or mark wrong contact
+- If opened/clicked but no reply → send_follow_up if eligible
+- If no engagement after full sequence → wait or mark cold
+- If high fit + no outreach → send_initial_email
+- If high value + stale deal → suggest follow-up
+- If risk score high → require approval
+
+PHASE 4 — CONTEXTUAL AGENT PROMPT INJECTION
+
+Update scheduling/email agent system prompt with:
+
+CONTEXTUAL INTELLIGENCE CONTEXT:
+- top warm prospects
+- urgent next actions
+- deals needing attention
+- prospects that should not be contacted
+- follow-ups due today
+- highest-value opportunity
+- pipeline risk warnings
+
+Rules:
+- Always prioritize warm/interested leads before cold outreach.
+- Do not recommend contacting DNC, opted-out, or cooldown-blocked prospects.
+- Clearly explain why an action is recommended.
+- Distinguish between estimated pipeline and confirmed revenue.
+- If a prospect has replied, never treat them like a cold lead again.
+- If a deal exists, all outreach should be deal-aware.
+- If the next action is high-risk, require approval.
+
+PHASE 5 — UI: ADD “INTELLIGENCE” SECTION TO EMAIL AGENT OVERVIEW
+
+Add a new section above Today’s Outreach Queue:
+
+“Agent Intelligence”
+
+Cards:
+1. Warmest Prospect
+2. Highest-Value Opportunity
+3. Most Urgent Follow-Up
+4. Pipeline Risk
+
+Each card should show:
+- prospect/team name
+- sport
+- value
+- reason
+- recommended action button
+
+Example:
+“Beaufort High Football opened twice and clicked once. Suggested: send follow-up today.”
+
+PHASE 6 — UI: PROSPECT INTELLIGENCE PANEL
+
+On each prospect card, add:
+- Warmth score
+- Fit score
+- Urgency score
+- Risk score
+- Next best action
+- Reason
+
+Add button:
+“Ask Agent About This Prospect”
+
+This should prefill:
+“Analyze this prospect and tell me the best next action.”
+
+PHASE 7 — UI: DEAL INTELLIGENCE
+
+On each deal card, add:
+- Deal health
+- Probability
+- Next action
+- Last activity
+- Suggested close move
+
+Examples:
+- “High intent — schedule call”
+- “Stale 9 days — send follow-up”
+- “Proposal needed”
+- “Risk: no activity after reply”
+
+PHASE 8 — INTELLIGENCE API ROUTES
+
+Add:
+
+GET /api/email-agent/intelligence/overview
+
+Returns:
+- warmestProspect
+- highestValueOpportunity
+- mostUrgentFollowUp
+- pipelineRisk
+- nextBestActions[]
+
+GET /api/email-agent/prospects/:id/intelligence
+
+Returns full prospect context + next best action.
+
+GET /api/email-agent/deals/:id/intelligence
+
+Returns deal-specific intelligence.
+
+PHASE 9 — AGENT QUICK ACTIONS
+
+Add quick actions:
+- “What should I do next?”
+- “Show my warmest prospects”
+- “Who needs follow-up today?”
+- “Which deal is most likely to close?”
+- “What prospect should I stop contacting?”
+- “Find the highest-value safe action”
+
+PHASE 10 — QA CHECKLIST
+
+Verify:
+- Intelligence endpoints are org-scoped
+- DNC/opt-out prospects are never recommended for outreach
+- Interested replies create higher urgency
+- Cold prospects do not outrank warm prospects
+- Deal-aware prospects do not receive cold messaging
+- Scores render on mobile
+- Overview loads with empty states
+- No duplicate next-best-action recommendations
+- No TypeScript errors
+- App starts cleanly
+
+FINAL EXPECTED BEHAVIOR:
+
+When the coach opens Email Agent, they should not just see data.
+
+They should see:
+- who matters most
+- why they matter
+- what to do next
+- what is risky
+- where the money is
+
+This turns the Email Agent into a true contextual sales operator for team training.

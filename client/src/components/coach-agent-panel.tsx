@@ -272,6 +272,11 @@ const STAFF_QUICK_ACTIONS = [
   { label: "Team Pipeline", icon: Building2, prompt: "Show team revenue pipeline", color: "text-teal-500", desc: "B2B prospect pipeline" },
   { label: "Draft Team Outreach", icon: Mail, prompt: "Draft team outreach for our top prospects", color: "text-indigo-500", desc: "Generate team emails" },
   { label: "Follow Up Today", icon: MessageSquare, prompt: "Who should I follow up with today?", color: "text-violet-500", desc: "Replies & contacts" },
+  { label: "Warmest Prospects", icon: Zap, prompt: "Show me my warmest prospects right now — who has the highest engagement and is most likely to convert?", color: "text-amber-500", desc: "Highest engagement leads" },
+  { label: "Best Next Action", icon: ArrowUpRight, prompt: "What is the single best action I should take right now for team training revenue? Consider all prospects and deals.", color: "text-emerald-500", desc: "Top priority action" },
+  { label: "Deal to Close", icon: CheckCircle2, prompt: "Which deal in my pipeline is most likely to close this week, and what should I do to advance it?", color: "text-green-500", desc: "Highest close probability" },
+  { label: "Who to Stop", icon: XCircle, prompt: "Which prospects should I stop contacting — those with no engagement, wrong contact info, or who have opted out?", color: "text-muted-foreground", desc: "Remove from outreach" },
+  { label: "High-Value Safe", icon: TrendingUp, prompt: "Find me the highest-value prospect that is safe to contact right now — not in cooldown, not DNC, and with a strong fit score.", color: "text-teal-500", desc: "Best value + low risk" },
 ];
 
 const CLIENT_QUICK_ACTIONS = [

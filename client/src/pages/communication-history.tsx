@@ -16,7 +16,8 @@ import {
   Bot, Users, Send, Target, TrendingUp, Clock, Plus, Eye, Zap,
   PhoneOff, MessageSquare, Edit2, Trash2, ChevronDown, ChevronUp,
   Loader2, AlertCircle, DollarSign, Calendar, SkipForward, Settings2,
-  RepeatIcon, Ban, Info
+  RepeatIcon, Ban, Info, Brain, Flame, ShieldAlert, ArrowRight,
+  Sparkles, Activity, Copy
 } from "lucide-react";
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -128,6 +129,255 @@ function ConfidenceBar({ score }: { score: number }) {
         <div className={`h-full ${color} rounded-full`} style={{ width: `${score}%` }} />
       </div>
       <span className="text-xs text-muted-foreground w-8 text-right">{score}%</span>
+    </div>
+  );
+}
+
+// ─── Intelligence Types ────────────────────────────────────────────────────────
+interface IntelligenceScores { warmth: number; urgency: number; fit: number; risk: number }
+interface NextBestAction { actionType: string; priority: string; reason: string; estimatedValue: number; recommendedPrompt: string; requiresApproval: boolean }
+interface IntelligenceCard { prospectId: string; prospectName: string; sport: string; city?: string; estimatedValue: number; scores: IntelligenceScores; nextBestAction: NextBestAction; engagement?: { totalSent: number; opened: boolean; clicked: boolean; replied: boolean; replyClassification: string | null } }
+interface IntelligenceOverview { warmestProspect: IntelligenceCard | null; highestValueOpportunity: IntelligenceCard | null; mostUrgentFollowUp: IntelligenceCard | null; pipelineRisk: { prospectId: string; prospectName: string; sport: string; riskScore: number; reason: string } | null; nextBestActions: IntelligenceCard[] }
+interface ProspectIntelligence { scores: IntelligenceScores; intelligence: { scores: IntelligenceScores; nextBestAction: NextBestAction }; safety: { isDNC: boolean; cooldownActive: boolean; nextEligibleDate: string | null } }
+
+const PRIORITY_COLOR: Record<string, string> = {
+  urgent: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  high: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  medium: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  low: "bg-muted text-muted-foreground",
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  create_deal: "Create Deal",
+  generate_response: "Respond",
+  schedule_call: "Schedule Call",
+  send_follow_up: "Follow Up",
+  generate_draft: "Generate Draft",
+  mark_do_not_contact: "Mark DNC",
+  stop_sequence: "Stop",
+  wait: "Wait",
+  create_proposal: "Create Proposal",
+};
+
+function ScoreBar({ label, score, color }: { label: string; score: number; color: string }) {
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className="text-xs text-muted-foreground w-10 shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
+      </div>
+      <span className="text-xs font-medium w-6 text-right">{score}</span>
+    </div>
+  );
+}
+
+function IntelligenceCardWidget({
+  title,
+  icon: Icon,
+  iconColor,
+  card,
+  onAction,
+}: {
+  title: string;
+  icon: React.ElementType;
+  iconColor: string;
+  card: IntelligenceCard | { prospectId: string; prospectName: string; sport: string; riskScore?: number; reason?: string } | null;
+  onAction?: (prompt: string, name: string) => void;
+}) {
+  if (!card) {
+    return (
+      <Card className="p-3 flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Icon className={`h-3.5 w-3.5 ${iconColor}`} />
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</span>
+        </div>
+        <p className="text-xs text-muted-foreground italic">No data yet</p>
+      </Card>
+    );
+  }
+
+  const isRiskCard = "riskScore" in card;
+  const intel = !isRiskCard ? (card as IntelligenceCard) : null;
+  const risk = isRiskCard ? (card as any) : null;
+
+  return (
+    <Card className="p-3 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Icon className={`h-3.5 w-3.5 ${iconColor}`} />
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</span>
+      </div>
+      <div>
+        <p className="font-semibold text-sm truncate" data-testid={`intel-card-name-${title.toLowerCase().replace(/\s+/g, "-")}`}>{card.prospectName}</p>
+        {card.sport && card.sport !== "unknown" && <p className="text-xs text-muted-foreground">{card.sport}</p>}
+      </div>
+      {intel && intel.estimatedValue > 0 && (
+        <p className="text-xs font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
+          <DollarSign className="h-3 w-3" />${intel.estimatedValue.toLocaleString()}
+        </p>
+      )}
+      {risk && (
+        <p className="text-xs font-medium text-red-600 dark:text-red-400">Risk score: {risk.riskScore}/100</p>
+      )}
+      <p className="text-xs text-muted-foreground line-clamp-2">
+        {intel?.nextBestAction?.reason ?? risk?.reason ?? "—"}
+      </p>
+      {intel && onAction && (
+        <div className="flex items-center justify-between gap-2 pt-1">
+          {intel.nextBestAction?.priority && (
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[intel.nextBestAction.priority] ?? PRIORITY_COLOR.low}`}>
+              {intel.nextBestAction.priority}
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-xs px-2 ml-auto"
+            onClick={() => onAction(intel.nextBestAction.recommendedPrompt, card.prospectName)}
+            data-testid={`intel-action-${card.prospectId}`}
+          >
+            {ACTION_LABELS[intel.nextBestAction.actionType] ?? "Act"}
+            <ArrowRight className="h-3 w-3 ml-1" />
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AgentIntelligenceSection() {
+  const { toast } = useToast();
+
+  const { data: intel, isLoading } = useQuery<IntelligenceOverview>({
+    queryKey: ["/api/email-agent/intelligence/overview"],
+  });
+
+  function handleAction(prompt: string, name: string) {
+    navigator.clipboard.writeText(prompt).then(() => {
+      toast({
+        title: "Prompt copied",
+        description: `Open your agent and paste to analyze ${name}.`,
+        duration: 4000,
+      });
+    });
+  }
+
+  if (isLoading) {
+    return (
+      <div>
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
+          <Brain className="h-4 w-4 text-primary" />
+          Agent Intelligence
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-36" />)}
+        </div>
+      </div>
+    );
+  }
+
+  const hasAnyData = intel && (intel.warmestProspect || intel.highestValueOpportunity || intel.mostUrgentFollowUp || intel.pipelineRisk);
+
+  if (!hasAnyData) {
+    return (
+      <div>
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2" data-testid="heading-agent-intelligence">
+          <Brain className="h-4 w-4 text-primary" />
+          Agent Intelligence
+        </h2>
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            <Brain className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="font-medium text-sm">No intelligence data yet</p>
+            <p className="text-xs mt-1">Add prospects and send outreach to see AI-driven signals here.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-semibold flex items-center gap-2" data-testid="heading-agent-intelligence">
+          <Brain className="h-4 w-4 text-primary" />
+          Agent Intelligence
+        </h2>
+        <span className="text-xs text-muted-foreground">Tip: click action buttons to copy agent prompts</span>
+      </div>
+
+      {/* 4 signal cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" data-testid="intelligence-cards">
+        <IntelligenceCardWidget
+          title="Warmest Prospect"
+          icon={Flame}
+          iconColor="text-orange-500"
+          card={intel?.warmestProspect ?? null}
+          onAction={handleAction}
+        />
+        <IntelligenceCardWidget
+          title="Highest Value"
+          icon={DollarSign}
+          iconColor="text-green-500"
+          card={intel?.highestValueOpportunity ?? null}
+          onAction={handleAction}
+        />
+        <IntelligenceCardWidget
+          title="Most Urgent"
+          icon={Zap}
+          iconColor="text-yellow-500"
+          card={intel?.mostUrgentFollowUp ?? null}
+          onAction={handleAction}
+        />
+        <IntelligenceCardWidget
+          title="Pipeline Risk"
+          icon={ShieldAlert}
+          iconColor="text-red-500"
+          card={intel?.pipelineRisk ?? null}
+        />
+      </div>
+
+      {/* Next best actions list */}
+      {intel?.nextBestActions && intel.nextBestActions.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+            <Activity className="h-3.5 w-3.5 text-primary" />
+            Recommended Actions
+          </h3>
+          <div className="space-y-2">
+            {intel.nextBestActions.map((item) => (
+              <Card key={item.prospectId} className="p-3" data-testid={`nba-card-${item.prospectId}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{item.prospectName}</span>
+                      {item.sport && item.sport !== "unknown" && <Badge variant="outline" className="text-xs">{item.sport}</Badge>}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[item.nextBestAction.priority] ?? PRIORITY_COLOR.low}`}>
+                        {item.nextBestAction.priority}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{item.nextBestAction.reason}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {item.estimatedValue > 0 && (
+                      <span className="text-xs font-medium text-green-700 dark:text-green-400">${item.estimatedValue.toLocaleString()}</span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => handleAction(item.nextBestAction.recommendedPrompt, item.prospectName)}
+                      data-testid={`nba-action-${item.prospectId}`}
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      {ACTION_LABELS[item.nextBestAction.actionType] ?? "Act"}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -351,6 +601,9 @@ function OverviewTab() {
           </Card>
         )}
       </div>
+
+      {/* Agent Intelligence */}
+      <AgentIntelligenceSection />
 
       {/* Today's Outreach Queue */}
       <div>
@@ -776,7 +1029,26 @@ function ProspectCard({
   onDnc: () => void;
   onDelete: () => void;
 }) {
+  const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
+
+  const { data: intel, isLoading: intelLoading } = useQuery<ProspectIntelligence>({
+    queryKey: ["/api/email-agent/prospects", prospect.id, "intelligence"],
+    queryFn: () => fetch(`/api/email-agent/prospects/${prospect.id}/intelligence`).then(r => r.json()),
+    enabled: expanded,
+    staleTime: 60_000,
+  });
+
+  function handleAskAgent() {
+    const prompt = intel?.intelligence?.nextBestAction?.recommendedPrompt
+      ?? `Analyze this prospect and tell me the best next action: ${prospect.prospectName} (${prospect.sport ?? "sport unknown"}, ${prospect.city ?? "location unknown"}).`;
+    navigator.clipboard.writeText(prompt).then(() => {
+      toast({ title: "Prompt copied!", description: "Paste it in your agent chat to get a full analysis.", duration: 4000 });
+    });
+  }
+
+  const scores = intel?.intelligence?.scores;
+  const nba = intel?.intelligence?.nextBestAction;
 
   return (
     <Card className="p-4" data-testid={`card-prospect-${prospect.id}`}>
@@ -824,13 +1096,64 @@ function ProspectCard({
           </Button>
         </div>
       </div>
+
       {expanded && (
-        <div className="mt-3 pt-3 border-t text-sm space-y-1">
-          {prospect.contactName && prospect.contactName !== "unknown" && <p><span className="text-muted-foreground">Contact:</span> {prospect.contactName}{prospect.contactRole && prospect.contactRole !== "unknown" ? ` (${prospect.contactRole})` : ""}</p>}
-          {prospect.contactPhone && <p><span className="text-muted-foreground">Phone:</span> {prospect.contactPhone}</p>}
-          {prospect.websiteUrl && <p><span className="text-muted-foreground">Website:</span> <a href={prospect.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{prospect.websiteUrl}</a></p>}
-          {prospect.notes && prospect.notes !== "" && <p><span className="text-muted-foreground">Notes:</span> {prospect.notes}</p>}
-          {prospect.lastContactedAt && <p><span className="text-muted-foreground">Last contacted:</span> {format(new Date(prospect.lastContactedAt), "MMM d, yyyy")}</p>}
+        <div className="mt-3 pt-3 border-t space-y-3">
+          {/* Basic details */}
+          <div className="text-sm space-y-1">
+            {prospect.contactName && prospect.contactName !== "unknown" && <p><span className="text-muted-foreground">Contact:</span> {prospect.contactName}{prospect.contactRole && prospect.contactRole !== "unknown" ? ` (${prospect.contactRole})` : ""}</p>}
+            {prospect.contactPhone && <p><span className="text-muted-foreground">Phone:</span> {prospect.contactPhone}</p>}
+            {prospect.websiteUrl && <p><span className="text-muted-foreground">Website:</span> <a href={prospect.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{prospect.websiteUrl}</a></p>}
+            {prospect.notes && prospect.notes !== "" && <p><span className="text-muted-foreground">Notes:</span> {prospect.notes}</p>}
+            {prospect.lastContactedAt && <p><span className="text-muted-foreground">Last contacted:</span> {format(new Date(prospect.lastContactedAt), "MMM d, yyyy")}</p>}
+          </div>
+
+          {/* Intelligence panel */}
+          <div className="rounded-lg border bg-muted/30 p-3" data-testid={`intelligence-panel-${prospect.id}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <Brain className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs font-semibold">Intelligence</span>
+            </div>
+            {intelLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+              </div>
+            ) : scores ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  <ScoreBar label="Warmth" score={scores.warmth} color={scores.warmth >= 60 ? "bg-orange-500" : scores.warmth >= 30 ? "bg-yellow-500" : "bg-muted-foreground/40"} />
+                  <ScoreBar label="Urgency" score={scores.urgency} color={scores.urgency >= 60 ? "bg-red-500" : scores.urgency >= 30 ? "bg-amber-500" : "bg-muted-foreground/40"} />
+                  <ScoreBar label="Fit" score={scores.fit} color={scores.fit >= 60 ? "bg-green-500" : scores.fit >= 30 ? "bg-blue-500" : "bg-muted-foreground/40"} />
+                  <ScoreBar label="Risk" score={scores.risk} color={scores.risk >= 60 ? "bg-red-500" : scores.risk >= 30 ? "bg-amber-500" : "bg-muted-foreground/40"} />
+                </div>
+                {nba && (
+                  <div className="mt-2 rounded-md bg-background border p-2 flex items-start gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium">{ACTION_LABELS[nba.actionType] ?? nba.actionType}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${PRIORITY_COLOR[nba.priority] ?? PRIORITY_COLOR.low}`}>{nba.priority}</span>
+                        {nba.requiresApproval && <span className="text-xs text-amber-600 dark:text-amber-400">requires approval</span>}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{nba.reason}</p>
+                    </div>
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full h-7 text-xs mt-1"
+                  onClick={handleAskAgent}
+                  data-testid={`button-ask-agent-${prospect.id}`}
+                >
+                  <Brain className="h-3 w-3 mr-1.5" />
+                  Ask Agent About This Prospect
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Could not load intelligence data.</p>
+            )}
+          </div>
         </div>
       )}
     </Card>

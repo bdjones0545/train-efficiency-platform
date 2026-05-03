@@ -14,6 +14,7 @@ import {
   DollarSign, Calendar, Zap, ChevronRight, Trash2, Edit2,
   TrendingUp, Target, Briefcase, Loader2, MessageSquare,
   Phone, FileText, Sparkles, CheckCircle, XCircle, Plus,
+  AlertTriangle, Flame, Clock, Copy, Brain,
 } from "lucide-react";
 import type { TeamTrainingDeal, TeamTrainingProspect } from "@shared/schema";
 
@@ -48,6 +49,25 @@ function timeAgo(date: string | Date | null): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function staleDays(date: string | Date | null): number {
+  if (!date) return 99;
+  return Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+}
+
+function getDealHealth(deal: DealWithProspect): { label: string; color: string; icon: React.ElementType; move: string } {
+  const days = staleDays(deal.lastActivityAt);
+
+  if (deal.status === "won") return { label: "Won — onboard team", color: "text-green-600 dark:text-green-400", icon: CheckCircle, move: "Schedule the kickoff session" };
+  if (deal.status === "lost") return { label: "Lost — review", color: "text-muted-foreground", icon: XCircle, move: "Note reason and decide whether to re-engage later" };
+  if (days >= 14) return { label: `Stale ${days}d — re-engage now`, color: "text-red-600 dark:text-red-400", icon: AlertTriangle, move: "Send a re-engagement message immediately" };
+  if (days >= 7) return { label: `Stale ${days}d — follow up`, color: "text-amber-600 dark:text-amber-400", icon: Clock, move: "Follow up and re-confirm interest" };
+  if (deal.status === "interested") return { label: "High intent — create proposal or call", color: "text-emerald-600 dark:text-emerald-400", icon: Flame, move: "Send a training proposal or book a call this week" };
+  if (deal.status === "call_scheduled") return { label: "Call scheduled — prepare pitch", color: "text-purple-600 dark:text-purple-400", icon: Zap, move: "Review org profile and prepare a custom program outline" };
+  if (deal.status === "proposal_sent") return { label: `Proposal pending${days >= 3 ? ` (${days}d)` : ""}`, color: "text-yellow-600 dark:text-yellow-400", icon: FileText, move: `Follow up on the proposal${days >= 3 ? " — it has been " + days + " days" : ""}` };
+  if (deal.status === "negotiating") return { label: "In negotiation — close it", color: "text-blue-600 dark:text-blue-400", icon: TrendingUp, move: "Address objections and ask for a commitment" };
+  return { label: "Active deal — advance stage", color: "text-foreground", icon: ChevronRight, move: "Reach out and push to the next stage" };
+}
+
 function statusInfo(key: string) {
   return DEAL_STATUSES.find(s => s.key === key) ?? DEAL_STATUSES[0];
 }
@@ -69,7 +89,18 @@ function DealCard({
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
 }) {
-  const info = statusInfo(deal.status);
+  const { toast } = useToast();
+  const health = getDealHealth(deal);
+  const HealthIcon = health.icon;
+
+  function handleAskAgent() {
+    const name = deal.prospect?.prospectName ?? "this team";
+    const prompt = `Analyze my deal with ${name} (status: ${deal.status}, probability: ${deal.probability}%, last activity: ${timeAgo(deal.lastActivityAt)}). Suggested move: ${health.move}. What is the single best action to close this deal?`;
+    navigator.clipboard.writeText(prompt).then(() => {
+      toast({ title: "Prompt copied!", description: "Paste in your agent chat for deal analysis.", duration: 3000 });
+    });
+  }
+
   return (
     <Card
       draggable
@@ -95,12 +126,24 @@ function DealCard({
         </div>
       </div>
 
+      {/* Deal health indicator */}
+      <div className={`flex items-center gap-1.5 text-xs font-medium ${health.color}`} data-testid={`deal-health-${deal.id}`}>
+        <HealthIcon className="h-3 w-3 shrink-0" />
+        <span className="line-clamp-1">{health.label}</span>
+      </div>
+
       <div className="flex items-center justify-between text-xs">
         <span className="flex items-center gap-1 text-green-700 dark:text-green-400 font-medium">
           <DollarSign className="h-3 w-3" />
           {deal.estimatedValue > 0 ? `$${deal.estimatedValue.toLocaleString()}` : "No estimate"}
         </span>
         <span className="text-muted-foreground">{deal.probability}% probability</span>
+      </div>
+
+      {/* Suggested close move */}
+      <div className="flex items-start gap-1 text-xs bg-primary/5 border border-primary/20 rounded px-2 py-1.5" data-testid={`deal-move-${deal.id}`}>
+        <Brain className="h-3 w-3 shrink-0 mt-0.5 text-primary" />
+        <span className="text-muted-foreground line-clamp-2">{health.move}</span>
       </div>
 
       {deal.nextAction && (
@@ -115,6 +158,9 @@ function DealCard({
           <Calendar className="h-3 w-3" />
           {timeAgo(deal.lastActivityAt)}
         </span>
+        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={handleAskAgent} title="Copy agent prompt" data-testid={`button-ask-agent-deal-${deal.id}`}>
+          <Copy className="h-2.5 w-2.5" />
+        </Button>
       </div>
 
       <div className="flex gap-1 flex-wrap pt-1">

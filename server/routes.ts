@@ -7557,6 +7557,54 @@ Business: ${org?.name ?? "Training Facility"}
     }
   });
 
+  // ─── Contextual Intelligence Routes ─────────────────────────────────────────
+
+  // GET /api/email-agent/intelligence/overview — top signals across all prospects
+  app.get("/api/email-agent/intelligence/overview", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { getIntelligenceOverview } = await import("./email-agent/contextual-intelligence");
+      const overview = await getIntelligenceOverview(profile.organizationId);
+      res.json(overview);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/email-agent/prospects/:id/intelligence — full context + NBA for one prospect
+  app.get("/api/email-agent/prospects/:id/intelligence", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { buildProspectContext } = await import("./email-agent/contextual-intelligence");
+      const ctx = await buildProspectContext(req.params.id, profile.organizationId);
+      if (!ctx) return res.status(404).json({ message: "Prospect not found" });
+      res.json(ctx);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/email-agent/deals/:id/intelligence — deal-specific intelligence
+  app.get("/api/email-agent/deals/:id/intelligence", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Deal not found" });
+      const prospect = await storage.getTeamTrainingProspect(deal.prospectId);
+      const { getDealIntelligence } = await import("./email-agent/contextual-intelligence");
+      const intel = getDealIntelligence(deal, prospect);
+      res.json({ deal, prospect, intelligence: intel });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   const { initializeScheduledEmailAgent } = await import("./email-agent/scheduled-email-agent");
   initializeScheduledEmailAgent();
 

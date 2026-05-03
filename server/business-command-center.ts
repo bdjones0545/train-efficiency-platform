@@ -637,6 +637,34 @@ export async function buildCommandCenterContextString(orgId: string): Promise<st
       }
     } catch {}
 
+    // Contextual intelligence context
+    let intelligenceLine = "";
+    try {
+      const { getIntelligenceOverview } = await import("./email-agent/contextual-intelligence");
+      const intel = await getIntelligenceOverview(orgId);
+      const parts: string[] = [];
+      if (intel.warmestProspect) {
+        parts.push(`Warmest prospect: ${intel.warmestProspect.prospectName} (warmth ${intel.warmestProspect.scores.warmth}/100) — ${intel.warmestProspect.nextBestAction.reason}`);
+      }
+      if (intel.highestValueOpportunity) {
+        parts.push(`Highest-value opportunity: ${intel.highestValueOpportunity.prospectName} ($${(intel.highestValueOpportunity.estimatedValue ?? 0).toLocaleString()}) — ${intel.highestValueOpportunity.nextBestAction.reason}`);
+      }
+      if (intel.mostUrgentFollowUp && intel.mostUrgentFollowUp.scores.urgency >= 40) {
+        parts.push(`Most urgent follow-up: ${intel.mostUrgentFollowUp.prospectName} (urgency ${intel.mostUrgentFollowUp.scores.urgency}/100) — ${intel.mostUrgentFollowUp.nextBestAction.reason}`);
+      }
+      if (intel.pipelineRisk && intel.pipelineRisk.riskScore >= 50) {
+        parts.push(`Pipeline risk: ${intel.pipelineRisk.prospectName} (risk ${intel.pipelineRisk.riskScore}/100) — ${intel.pipelineRisk.reason}`);
+      }
+      const urgentActions = intel.nextBestActions.filter((a: any) => a.nextBestAction.priority === "urgent" || a.nextBestAction.priority === "high");
+      if (urgentActions.length > 0) {
+        parts.push(`High-priority actions: ${urgentActions.map((a: any) => `${a.prospectName} → ${a.nextBestAction.actionType}`).join(", ")}`);
+      }
+      if (parts.length > 0) {
+        intelligenceLine = `\nCONTEXTUAL INTELLIGENCE:\n${parts.map(p => `- ${p}`).join("\n")}`;
+        intelligenceLine += "\nRULES: Always prioritize warm/interested leads over cold. Do not recommend contacting DNC or opted-out prospects. If a prospect has replied, never treat them as cold. If a deal exists, all outreach is deal-aware.";
+      }
+    } catch {}
+
     return `
 ## Today's Business Command Center Context (as of ${format(new Date(), "MMM d, yyyy h:mm a")})
 
@@ -646,7 +674,7 @@ ${slotsLine}
 ${bestLine}
 
 Client opportunities: ${churnCount} churn risks, ${renewalCount} renewals due, ${shouldBookCount} clients who should book.
-${teamLine}${dealLine}
+${teamLine}${dealLine}${intelligenceLine}
 
 When the coach asks "What should I do today?" or similar, lead with this context and give a prioritized action list.
 `.trim();
