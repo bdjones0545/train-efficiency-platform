@@ -7716,6 +7716,21 @@ Business: ${org?.name ?? "Training Facility"}
     }
   });
 
+  // GET /api/email-agent/trigger-alerts — proactive system warnings
+  app.get("/api/email-agent/trigger-alerts", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeTriggerAlerts } = await import("./email-agent/trigger-alerts");
+      const result = await computeTriggerAlerts(profile.organizationId);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[Trigger Alerts]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // GET /api/email-agent/trigger-audit/prospect/:prospectId — trace for a specific prospect
   app.get("/api/email-agent/trigger-audit/prospect/:prospectId", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {

@@ -689,6 +689,14 @@ export async function buildCommandCenterContextString(orgId: string): Promise<st
       revenueLine = buildRevenueContextString(outcomes);
     } catch {}
 
+    // Trigger alerts context injection (Phase 4)
+    let triggerAlertsLine = "";
+    try {
+      const { computeTriggerAlerts, buildTriggerAlertsContextString } = await import("./email-agent/trigger-alerts");
+      const alertsResult = await computeTriggerAlerts(orgId);
+      triggerAlertsLine = buildTriggerAlertsContextString(alertsResult);
+    } catch {}
+
     return `
 ## Today's Business Command Center Context (as of ${format(new Date(), "MMM d, yyyy h:mm a")})
 
@@ -698,9 +706,9 @@ ${slotsLine}
 ${bestLine}
 
 Client opportunities: ${churnCount} churn risks, ${renewalCount} renewals due, ${shouldBookCount} clients who should book.
-${teamLine}${dealLine}${intelligenceLine}${globalPriorityLine}${autoExecLine}${revenueLine}
+${teamLine}${dealLine}${intelligenceLine}${globalPriorityLine}${autoExecLine}${revenueLine}${triggerAlertsLine}
 
-When the coach asks "What should I do today?" or similar, always lead with the GLOBAL PRIORITY top action first, then provide additional context from this command center data.
+When the coach asks "What should I do today?" or similar, always lead with the GLOBAL PRIORITY top action first, then provide additional context from this command center data. If CRITICAL trigger alerts are active, surface them immediately before any outreach recommendations.
 `.trim();
   } catch {
     return "";

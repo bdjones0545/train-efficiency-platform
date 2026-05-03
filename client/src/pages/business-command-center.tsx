@@ -31,6 +31,9 @@ import {
   Building2,
   Flame,
   Undo2,
+  ShieldAlert,
+  XCircle,
+  Info,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -185,6 +188,102 @@ const CONFIDENCE_BADGE: Record<string, string> = {
   medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
   low: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
+
+// ─── Trigger Alerts Panel ─────────────────────────────────────────────────────
+
+type TriggerAlert = {
+  type: string;
+  severity: "critical" | "warning" | "info";
+  message: string;
+  affectedCount: number;
+  suggestedAction: string;
+};
+
+type TriggerAlertsResult = {
+  alerts: TriggerAlert[];
+  hasActive: boolean;
+  criticalCount: number;
+  warningCount: number;
+  topRisk: string | null;
+};
+
+function TriggerAlertsPanel() {
+  const [, setLocation] = useLocation();
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const { data, isLoading } = useQuery<TriggerAlertsResult>({
+    queryKey: ["/api/email-agent/trigger-alerts"],
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+
+  if (isLoading || !data || !data.hasActive) return null;
+
+  const visible = data.alerts.filter((a) => !dismissed.has(a.type));
+  if (visible.length === 0) return null;
+
+  function severityStyle(s: TriggerAlert["severity"]) {
+    if (s === "critical")
+      return "border-red-400/60 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200";
+    if (s === "warning")
+      return "border-yellow-400/60 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200";
+    return "border-blue-300/60 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200";
+  }
+
+  function SeverityIcon({ s }: { s: TriggerAlert["severity"] }) {
+    if (s === "critical") return <XCircle className="h-4 w-4 shrink-0 text-red-500" />;
+    if (s === "warning") return <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-500" />;
+    return <Info className="h-4 w-4 shrink-0 text-blue-500" />;
+  }
+
+  return (
+    <section data-testid="section-trigger-alerts">
+      <h2
+        className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors"
+        onClick={() => setLocation("/admin/trigger-audit")}
+        data-testid="heading-trigger-alerts"
+      >
+        <ShieldAlert className="h-4 w-4 text-red-500" />
+        System Alerts
+        <span className="ml-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold w-4 h-4">
+          {visible.length}
+        </span>
+      </h2>
+      <div className="space-y-2">
+        {visible.map((alert) => (
+          <div
+            key={alert.type}
+            className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${severityStyle(alert.severity)}`}
+            data-testid={`alert-${alert.type.toLowerCase()}`}
+          >
+            <SeverityIcon s={alert.severity} />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium leading-snug">{alert.message}</p>
+              <p className="text-xs mt-0.5 opacity-75 leading-snug">{alert.suggestedAction}</p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                className="text-xs underline opacity-60 hover:opacity-100 transition-opacity"
+                onClick={() => setLocation("/admin/trigger-audit")}
+                data-testid={`button-view-audit-${alert.type.toLowerCase()}`}
+              >
+                View
+              </button>
+              <button
+                className="text-xs opacity-40 hover:opacity-80 transition-opacity ml-1"
+                onClick={() => setDismissed((prev) => new Set([...prev, alert.type]))}
+                aria-label="Dismiss alert"
+                data-testid={`button-dismiss-alert-${alert.type.toLowerCase()}`}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function GlobalPriorityPanel() {
   const [, setLocation] = useLocation();
@@ -770,6 +869,9 @@ export default function BusinessCommandCenterPage() {
           <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
         </Button>
       </div>
+
+      {/* ─── Trigger System Alerts ────────────────────────────────────────── */}
+      <TriggerAlertsPanel />
 
       {/* ─── AI Revenue Outcome Engine ────────────────────────────────────── */}
       <AiRevenuePanel />
