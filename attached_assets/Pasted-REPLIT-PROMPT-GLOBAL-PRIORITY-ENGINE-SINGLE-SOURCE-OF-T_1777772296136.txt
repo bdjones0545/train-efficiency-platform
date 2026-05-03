@@ -1,0 +1,130 @@
+REPLIT PROMPT — GLOBAL PRIORITY ENGINE (SINGLE SOURCE OF TRUTH)
+
+Objective:
+Create a unified priority system that ranks ALL possible actions across:
+- prospects
+- follow-ups
+- deals
+- outreach
+- risks
+
+So the coach always sees:
+“What is the single most valuable thing I should do right now?”
+
+PHASE 1 — PRIORITY SCORING MODEL
+
+Create function:
+
+computeGlobalPriorityScore(action)
+
+Score components:
+
+- revenue_value_weight (0–100)
+- urgency_weight (0–100)
+- likelihood_weight (based on warmth + fit)
+- risk_penalty (subtract score if risky)
+- effort_score (lower effort = higher priority)
+
+Final score:
+priorityScore = 
+  (revenue * 0.35) +
+  (urgency * 0.25) +
+  (likelihood * 0.25) -
+  (risk * 0.15) +
+  (low_effort_bonus)
+
+PHASE 2 — AGGREGATE ALL ACTIONS
+
+Collect:
+- all next-best-actions from prospects
+- all follow-ups due
+- all deal next actions
+- pipeline risk actions
+- new outreach opportunities
+
+Flatten into one list:
+globalActionQueue[]
+
+PHASE 3 — RANKING
+
+Sort:
+highest priorityScore first
+
+Return top:
+- 1 (primary focus)
+- 3 (secondary)
+- 5 (full list)
+
+PHASE 4 — API
+
+GET /api/email-agent/intelligence/global-priority
+
+Return:
+
+{
+  topAction,
+  topThree,
+  fullQueue
+}
+
+Each action includes:
+- actionType
+- prospect/deal reference
+- priorityScore
+- explanation
+- estimatedValue
+
+PHASE 5 — UI
+
+At VERY TOP of Command Center + Email Agent:
+
+🔥 “Top Priority”
+
+Large card:
+
+- Action title:
+  “Follow up with Beaufort High Football”
+
+- Reason:
+  “Opened twice, clicked once, high-value ($1,200), cooldown passed”
+
+- Value:
+  “Estimated: $1,200”
+
+- Confidence badge
+
+- Button:
+  “Execute Now”
+
+Below:
+“Next Best Actions”
+(show top 3)
+
+PHASE 6 — AGENT INJECTION
+
+Add:
+
+GLOBAL PRIORITY CONTEXT:
+- top action
+- why it’s #1
+- top 3 queue
+
+Rules:
+- Always recommend the top action first
+- Avoid suggesting lower priority actions unless asked
+- If user asks “what should I do?” → return top action
+
+PHASE 7 — GUARDRAILS
+
+- Never surface blocked actions (DNC, opt-out)
+- Never prioritize low-value over high-value unless urgency is extreme
+- Avoid overwhelming the user (max 5 shown)
+
+PHASE 8 — QA
+
+- Top action always exists or shows empty state
+- Ranking is stable and logical
+- High-value warm leads outrank cold outreach
+- Deal-closing actions outrank prospecting when pipeline is active
+- No TypeScript errors
+- App runs cleanly
