@@ -691,6 +691,7 @@ export const teamTrainingOutreachEventTypeEnum = pgEnum("team_outreach_event_typ
   "unsubscribed",
   "marked_do_not_contact",
   "research_run",
+  "skipped",
 ]);
 
 export const teamTrainingOutreachEvents = pgTable("team_training_outreach_events", {
@@ -799,6 +800,9 @@ export const aiRevenueEvents = pgTable("ai_revenue_events", {
   timeToOutcomeHours: integer("time_to_outcome_hours"),
   prospectName: varchar("prospect_name"),
   sport: varchar("sport"),
+  attributionRole: varchar("attribution_role").default("primary"),
+  attributionChainId: varchar("attribution_chain_id"),
+  chainPosition: integer("chain_position").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

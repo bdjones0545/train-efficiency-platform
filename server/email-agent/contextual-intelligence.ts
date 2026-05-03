@@ -1,8 +1,12 @@
 import { storage } from "../storage";
+import { computeContactQualityScore, type ContactQuality } from "./contact-quality";
+import { computeConversationStage, getStageInfo, type ConversationStage, type StageInfo } from "./conversation-stage";
 
 export type ReplyClassification =
   | "interested" | "not_interested" | "ask_info" | "referral"
   | "wrong_contact" | "out_of_office" | "unknown";
+
+export type { ConversationStage };
 
 export interface IntelligenceScores {
   warmth: number;
@@ -59,6 +63,9 @@ export interface ProspectContext {
     scores: IntelligenceScores;
     nextBestAction: NextBestAction;
   };
+  contactQuality: ContactQuality;
+  conversationStage: ConversationStage;
+  stageInfo: StageInfo;
 }
 
 export async function buildProspectContext(prospectId: string, orgId: string): Promise<ProspectContext | null> {
@@ -102,6 +109,18 @@ export async function buildProspectContext(prospectId: string, orgId: string): P
   const safety = { isDNC, isOptedOut: false, cooldownActive, nextEligibleDate };
   const engagement = { totalSent, opened, openCount, clicked, replied, replyClassification, replyText, lastDraftSentAt };
 
+  const contactQuality = computeContactQualityScore(prospect);
+  const conversationStage = computeConversationStage({
+    prospect,
+    totalSent,
+    openCount,
+    clicked,
+    replied,
+    replyClassification,
+    deal: deal ?? null,
+  });
+  const stageInfo = getStageInfo(conversationStage);
+
   return {
     prospect,
     engagement,
@@ -113,6 +132,9 @@ export async function buildProspectContext(prospectId: string, orgId: string): P
       scores,
       nextBestAction: getNextBestAction({ prospect, engagement, deal: deal ?? null, safety, scores }),
     },
+    contactQuality,
+    conversationStage,
+    stageInfo,
   };
 }
 

@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { buildProspectContext, type ProspectContext } from "./contextual-intelligence";
+import { computeContactQualityScore } from "./contact-quality";
 
 export interface GlobalAction {
   id: string;
@@ -36,13 +37,17 @@ function computeGlobalPriorityScore(params: {
   likelihood: number;
   risk: number;
   actionType: string;
+  contactQualityScore?: number;
 }): number {
-  const { revenueValue, urgency, likelihood, risk, actionType } = params;
+  const { revenueValue, urgency, likelihood, risk, actionType, contactQualityScore = 50 } = params;
 
   const revenueWeight = Math.min(100, revenueValue);
   const urgencyWeight = Math.min(100, urgency);
   const likelihoodWeight = Math.min(100, likelihood);
   const riskPenalty = Math.min(100, risk);
+
+  // Contact quality bonus: high-quality contacts get up to +8 points; missing email gets penalty
+  const qualityBonus = contactQualityScore >= 70 ? 8 : contactQualityScore >= 40 ? 3 : contactQualityScore === 0 ? -15 : 0;
 
   const lowEffortActions: Record<string, number> = {
     create_deal: 5,
@@ -62,7 +67,8 @@ function computeGlobalPriorityScore(params: {
     urgencyWeight * 0.25 +
     likelihoodWeight * 0.25 -
     riskPenalty * 0.15 +
-    effortBonus;
+    effortBonus +
+    qualityBonus;
 
   return Math.round(Math.max(0, Math.min(100, raw)));
 }
@@ -108,13 +114,19 @@ export async function buildGlobalActionQueue(orgId: string): Promise<GlobalPrior
   );
 
   for (const ctx of valid) {
-    const { prospect, safety, intelligence, deal, followUps } = ctx;
+    const { prospect, safety, intelligence, deal, followUps, contactQuality, conversationStage } = ctx;
     const { isDNC, isOptedOut } = safety;
 
     if (isDNC || isOptedOut) continue;
 
+    // Skip low-quality contacts unless nothing better is available
+    // (handled by quality score bonus/penalty in priority computation)
+
     const nba = intelligence.nextBestAction;
     const scores = intelligence.scores;
+
+    // Block sending to do_not_contact/lost/won stages
+    if (conversationStage === "do_not_contact" || conversationStage === "won") continue;
 
     if (nba.actionType === "stop_sequence" || nba.actionType === "wait") {
       if (scores.risk < 70) continue;
@@ -131,6 +143,7 @@ export async function buildGlobalActionQueue(orgId: string): Promise<GlobalPrior
       likelihood,
       risk: scores.risk,
       actionType: nba.actionType,
+      contactQualityScore: contactQuality.score,
     });
 
     const action: GlobalAction = {

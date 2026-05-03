@@ -114,6 +114,10 @@ export interface EmailDraftParams {
   city: string;
   contactName: string;
   services?: string[];
+  // Phase 9 — agent context injection
+  conversationStage?: string;
+  contactQualityScore?: number;
+  stageContext?: string;
 }
 
 export async function generateOutreachEmailFromVariant(
@@ -121,6 +125,14 @@ export async function generateOutreachEmailFromVariant(
   variant: { subjectTemplate: string; bodyTemplate: string }
 ): Promise<{ subject: string; body: string }> {
   const openai = getOpenAI();
+
+  // Phase 9: stage-aware context injection
+  const stageNoteV = params.conversationStage && params.conversationStage !== "cold"
+    ? `\nConversation Stage: ${params.conversationStage}${params.stageContext ? ` — ${params.stageContext}` : ""}`
+    : "";
+  const qualityNoteV = params.contactQualityScore !== undefined && params.contactQualityScore > 0
+    ? `\nContact Quality Score: ${params.contactQualityScore}/100${params.contactQualityScore >= 70 ? " (direct decision-maker)" : params.contactQualityScore < 40 ? " (generic inbox — keep brief)" : ""}`
+    : "";
 
   const prompt = `You are personalizing an outreach email template for a sports performance training business.
 
@@ -132,7 +144,7 @@ Coach/Owner: ${params.coachName}
 Prospect Team/Club: ${params.prospectName}
 Sport: ${params.sport}
 Location: ${params.city}
-Contact Name: ${params.contactName !== "unknown" ? params.contactName : "Coach/Director"}
+Contact Name: ${params.contactName !== "unknown" ? params.contactName : "Coach/Director"}${stageNoteV}${qualityNoteV}
 
 Subject Template:
 ${variant.subjectTemplate}
@@ -178,6 +190,14 @@ export async function generateOutreachEmail(params: EmailDraftParams): Promise<{
     ? params.services.join(", ")
     : "speed and agility, strength development, injury-risk reduction, conditioning, movement mechanics";
 
+  // Phase 9: stage-aware context injection
+  const stageNote = params.conversationStage && params.conversationStage !== "cold"
+    ? `\nConversation Stage: ${params.conversationStage}${params.stageContext ? ` — ${params.stageContext}` : ""}`
+    : "";
+  const qualityNote = params.contactQualityScore !== undefined && params.contactQualityScore > 0
+    ? `\nContact Quality Score: ${params.contactQualityScore}/100${params.contactQualityScore >= 70 ? " (direct decision-maker — reference their role specifically)" : params.contactQualityScore < 40 ? " (generic inbox — keep it warm and brief)" : ""}`
+    : "";
+
   const prompt = `Write a professional, local, direct outreach email (not spammy) for a sports performance training business reaching out to a local sports team.
 
 Business: ${params.businessName}
@@ -186,7 +206,7 @@ Prospect Team/Club: ${params.prospectName}
 Sport: ${params.sport}
 Location: ${params.city}
 Contact Name: ${params.contactName !== "unknown" ? params.contactName : "Coach/Director"}
-Available Services: ${servicesList}
+Available Services: ${servicesList}${stageNote}${qualityNote}
 
 Rules:
 - Professional and respectful tone. Not pushy or salesy.
@@ -194,6 +214,8 @@ Rules:
 - Mention the team name and sport.
 - Mention 3-4 specific services.
 - End with a simple, low-pressure call to action (open to a quick conversation).
+- If conversation stage is "contacted" or "follow_up", acknowledge prior contact briefly.
+- If contact quality is high (direct coach/AD), address them by role; if low (generic inbox), keep it brief and warm.
 - Sign off with the coach name and business name.
 
 Return a JSON object with:

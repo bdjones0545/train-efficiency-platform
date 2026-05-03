@@ -15,7 +15,8 @@ import {
   Search, Plus, Loader2, RefreshCw, Mail, CheckCircle, XCircle,
   ExternalLink, Edit2, ChevronDown, ChevronUp, Target, TrendingUp,
   Users, SendHorizonal, AlertCircle, FileText, Trash2, Filter,
-  MessageSquare, PhoneOff
+  MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
+  Activity, BarChart2, Zap
 } from "lucide-react";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
 
@@ -31,9 +32,48 @@ const STATUS_COLORS: Record<string, string> = {
 
 const SPORTS = ["Football", "Soccer", "Basketball", "Baseball", "Volleyball", "Lacrosse", "Wrestling", "Cheer", "Swimming", "Track & Field", "Softball", "Martial Arts", "Tennis", "Cross Country"];
 const STATUSES = ["New", "Needs Review", "Approved", "Contacted", "Replied", "Not Interested", "Do Not Contact"];
-const ORG_TYPES = ["Youth Club", "High School Program", "AAU Team", "Travel Ball", "Club Team", "Academy", "Martial Arts Gym", "Community Program", "Private School", "Cheer Program", "Swim Team"];
 
 type DraftWithProspect = TeamTrainingOutreachDraft & { prospect?: TeamTrainingProspect };
+
+// ─── Client-side Stage Computation ─────────────────────────────────────────
+function getClientStage(prospect: TeamTrainingProspect): { label: string; className: string } {
+  const status = prospect.outreachStatus || "New";
+  if (status === "Do Not Contact") return { label: "Do Not Contact", className: "bg-red-200 text-red-700 dark:bg-red-900/40 dark:text-red-300" };
+  if (status === "Not Interested") return { label: "Lost", className: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" };
+  if (status === "Replied") return { label: "Interested", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" };
+  if (status === "Contacted") return { label: "Contacted", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" };
+  return { label: "Cold", className: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" };
+}
+
+// ─── Client-side Contact Quality Computation ───────────────────────────────
+function getClientQuality(prospect: TeamTrainingProspect): { label: string; className: string; score: number } {
+  const email = (prospect.contactEmail || "").trim().toLowerCase();
+  const role = (prospect.contactRole || "").toLowerCase();
+
+  if (!email) return { label: "No Email", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0 };
+  if (!email.includes("@")) return { label: "Invalid", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0 };
+
+  const coachRoles = ["head coach", "coach", "assistant coach", "strength", "trainer"];
+  if (coachRoles.some((r) => role.includes(r)) || email.includes("coach") || email.includes("trainer")) {
+    return { label: "High Quality", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: 92 };
+  }
+
+  const adRoles = ["athletic director", "athletics director", "director of athletics"];
+  if (adRoles.some((r) => role.includes(r)) || email.includes("athleticdirector") || email.split("@")[0] === "ad") {
+    return { label: "High Quality", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: 80 };
+  }
+
+  if (email.includes("athletics@") || email.includes("sports@") || email.includes("athletic@")) {
+    return { label: "Medium Quality", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: 62 };
+  }
+
+  const emailUser = email.split("@")[0];
+  if (["info", "office", "admin", "contact", "hello", "general", "school", "main"].some((g) => emailUser === g || emailUser.startsWith(g + "."))) {
+    return { label: "Low Quality", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: 38 };
+  }
+
+  return { label: "Medium Quality", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: 55 };
+}
 
 function ConfidenceBar({ score }: { score: number }) {
   const color = score >= 75 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-400";
@@ -65,6 +105,8 @@ function ProspectCard({
   onDoNotContact: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const stage = getClientStage(prospect);
+  const quality = getClientQuality(prospect);
 
   return (
     <Card className="p-4 space-y-3" data-testid={`card-prospect-${prospect.id}`}>
@@ -75,12 +117,18 @@ function ProspectCard({
             <Badge className={`text-xs shrink-0 ${STATUS_COLORS[prospect.outreachStatus || "New"]}`} data-testid={`badge-status-${prospect.id}`}>
               {prospect.outreachStatus}
             </Badge>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${stage.className}`} data-testid={`badge-stage-${prospect.id}`}>
+              {stage.label}
+            </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {prospect.organizationType} · {prospect.sport} · {prospect.city}, {prospect.state}
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quality.className}`} data-testid={`badge-quality-${prospect.id}`} title={`Email Quality Score: ${quality.score}/100`}>
+            {quality.score > 0 ? `Q:${quality.score}` : quality.label}
+          </span>
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit(prospect)} data-testid={`button-edit-${prospect.id}`}>
             <Edit2 className="h-3.5 w-3.5" />
           </Button>
@@ -136,6 +184,20 @@ function ProspectCard({
               </div>
             )}
           </div>
+          {/* Stage-aware messaging guidance */}
+          {stage.label !== "Cold" && (
+            <div className="bg-muted/50 rounded p-2 border-l-2 border-primary/40">
+              <p className="text-muted-foreground font-medium mb-0.5">Messaging Guidance — {stage.label}</p>
+              <p className="text-muted-foreground">{getMessagingGuidance(stage.label)}</p>
+            </div>
+          )}
+          {/* Contact quality detail */}
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quality.className}`}>
+              {quality.label}
+            </span>
+            <span className="text-muted-foreground">Score: {quality.score}/100</span>
+          </div>
           {prospect.notes && (
             <p className="text-muted-foreground italic border-l-2 pl-2">{prospect.notes}</p>
           )}
@@ -156,6 +218,16 @@ function ProspectCard({
       )}
     </Card>
   );
+}
+
+function getMessagingGuidance(stageLabel: string): string {
+  const map: Record<string, string> = {
+    "Contacted": "Send a simple, friendly bump. Keep it brief — one paragraph, one ask.",
+    "Interested": "Move toward a call or simple proposal. Be direct — they want to hear more.",
+    "Lost": "Do not contact. Revisit in 6–12 months with a fresh approach if appropriate.",
+    "Do Not Contact": "Outreach is blocked. Do not send any messages to this prospect.",
+  };
+  return map[stageLabel] || "Reference their prior engagement. Offer something specific.";
 }
 
 function DraftCard({ draft, onApprove, onSend, onEdit }: {
@@ -200,6 +272,234 @@ function DraftCard({ draft, onApprove, onSend, onEdit }: {
         )}
       </div>
     </Card>
+  );
+}
+
+// ─── Audit Tab ─────────────────────────────────────────────────────────────
+interface AuditCheck {
+  name: string;
+  pass: boolean;
+  severity: "low" | "medium" | "high" | "critical";
+  details: string;
+  suggestedFix: string;
+}
+
+interface AuditReport {
+  status: "healthy" | "warning" | "critical";
+  healthScore: number;
+  checks: AuditCheck[];
+  warnings: string[];
+  recommendations: string[];
+  generatedAt: string;
+  contactQualityDistribution: { high: number; medium: number; low: number; missing: number; total: number };
+  stageDistribution: Record<string, number>;
+  autoExecMetrics: { successRate: number; engagementRate: number; revenuePerAction: number; todayCount: number; maxPerDay: number };
+}
+
+function AuditTab() {
+  const { data: report, isLoading, refetch, isFetching } = useQuery<AuditReport>({
+    queryKey: ["/api/email-agent/audit"],
+    enabled: false,
+  });
+
+  const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  const sortedChecks = report ? [...report.checks].sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]) : [];
+
+  const severityBadge = (s: AuditCheck["severity"]) => {
+    const map = {
+      critical: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+      high: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+      medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+      low: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+    };
+    return map[s];
+  };
+
+  const statusColor = report
+    ? report.status === "healthy" ? "text-emerald-600 dark:text-emerald-400"
+    : report.status === "warning" ? "text-yellow-600 dark:text-yellow-400"
+    : "text-red-600 dark:text-red-400"
+    : "";
+
+  const StatusIcon = report
+    ? report.status === "healthy" ? ShieldCheck
+    : report.status === "warning" ? ShieldAlert
+    : ShieldX
+    : ShieldCheck;
+
+  return (
+    <div className="space-y-4" data-testid="audit-tab-content">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-sm">Email Agent Health Audit</h2>
+          <p className="text-xs text-muted-foreground">Verify your email agent is configured correctly and performing well.</p>
+        </div>
+        <Button size="sm" onClick={() => refetch()} disabled={isFetching} data-testid="button-run-audit">
+          {isFetching ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+          {report ? "Re-run Audit" : "Run Audit"}
+        </Button>
+      </div>
+
+      {isLoading || isFetching ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}
+        </div>
+      ) : !report ? (
+        <Card className="p-8 text-center text-muted-foreground">
+          <Activity className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm font-medium">No audit data yet</p>
+          <p className="text-xs mt-1">Click "Run Audit" to perform a full health check of your email agent.</p>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {/* Header Score */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <StatusIcon className={`h-8 w-8 ${statusColor}`} />
+                <div>
+                  <p className={`text-2xl font-bold ${statusColor}`} data-testid="text-audit-score">{report.healthScore}</p>
+                  <p className="text-xs text-muted-foreground">Health Score / 100</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold capitalize ${
+                  report.status === "healthy" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                  : report.status === "warning" ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                }`} data-testid="badge-audit-status">{report.status}</span>
+                <p className="text-xs text-muted-foreground mt-1">{new Date(report.generatedAt).toLocaleTimeString()}</p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Distribution Cards */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Contact Quality Distribution */}
+            <Card className="p-3">
+              <p className="text-xs font-semibold mb-2 flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Contact Quality</p>
+              <div className="space-y-1">
+                {[
+                  { label: "High Quality", count: report.contactQualityDistribution.high, className: "bg-emerald-500" },
+                  { label: "Medium Quality", count: report.contactQualityDistribution.medium, className: "bg-blue-500" },
+                  { label: "Low Quality", count: report.contactQualityDistribution.low, className: "bg-yellow-500" },
+                  { label: "Missing Email", count: report.contactQualityDistribution.missing, className: "bg-red-400" },
+                ].map(({ label, count, className }) => (
+                  <div key={label} className="flex items-center gap-2 text-xs">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: `var(--${className})` }}>
+                      <div className={`w-2 h-2 rounded-full ${className}`} />
+                    </div>
+                    <span className="text-muted-foreground flex-1">{label}</span>
+                    <span className="font-medium" data-testid={`text-quality-${label.toLowerCase().replace(/ /g,"-")}`}>{count}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Stage Distribution */}
+            <Card className="p-3">
+              <p className="text-xs font-semibold mb-2 flex items-center gap-1"><BarChart2 className="h-3.5 w-3.5" /> Stage Distribution</p>
+              <div className="space-y-1">
+                {Object.entries(report.stageDistribution)
+                  .sort(([, a], [, b]) => b - a)
+                  .slice(0, 5)
+                  .map(([stage, count]) => (
+                    <div key={stage} className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground flex-1 capitalize">{stage.replace(/_/g, " ")}</span>
+                      <span className="font-medium">{count}</span>
+                    </div>
+                  ))}
+              </div>
+            </Card>
+          </div>
+
+          {/* Auto-Exec Metrics */}
+          <Card className="p-3">
+            <p className="text-xs font-semibold mb-2 flex items-center gap-1"><Zap className="h-3.5 w-3.5" /> Auto-Execution Performance</p>
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="text-center">
+                <p className="text-lg font-bold text-primary" data-testid="text-audit-success-rate">{report.autoExecMetrics.successRate}%</p>
+                <p className="text-muted-foreground">Success Rate</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-blue-600 dark:text-blue-400" data-testid="text-audit-engagement-rate">{report.autoExecMetrics.engagementRate}%</p>
+                <p className="text-muted-foreground">Engagement Rate</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400" data-testid="text-audit-revenue-per-action">${report.autoExecMetrics.revenuePerAction}</p>
+                <p className="text-muted-foreground">Revenue/Action</p>
+              </div>
+            </div>
+            <div className="mt-2 pt-2 border-t flex items-center justify-between text-xs text-muted-foreground">
+              <span>Today: {report.autoExecMetrics.todayCount}/{report.autoExecMetrics.maxPerDay} auto-actions</span>
+            </div>
+          </Card>
+
+          {/* Warnings */}
+          {report.warnings.length > 0 && (
+            <Card className="p-3 border-yellow-200 dark:border-yellow-800">
+              <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400 mb-2 flex items-center gap-1">
+                <AlertCircle className="h-3.5 w-3.5" /> Warnings ({report.warnings.length})
+              </p>
+              <ul className="space-y-1">
+                {report.warnings.map((w, i) => (
+                  <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                    <span className="text-yellow-500 shrink-0 mt-0.5">•</span>
+                    {w}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Checks */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Checks ({sortedChecks.filter(c => c.pass).length}/{sortedChecks.length} passing)
+            </p>
+            {sortedChecks.map((check) => (
+              <Card key={check.name} className={`p-3 ${!check.pass && check.severity === "critical" ? "border-red-300 dark:border-red-800" : ""}`} data-testid={`card-audit-check-${check.name.toLowerCase().replace(/\s+/g, "-")}`}>
+                <div className="flex items-start gap-2">
+                  {check.pass
+                    ? <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                    : <XCircle className={`h-4 w-4 shrink-0 mt-0.5 ${check.severity === "critical" ? "text-red-500" : check.severity === "high" ? "text-orange-500" : "text-yellow-500"}`} />
+                  }
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-medium">{check.name}</span>
+                      {!check.pass && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase ${severityBadge(check.severity)}`}>
+                          {check.severity}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{check.details}</p>
+                    {!check.pass && check.suggestedFix && (
+                      <p className="text-xs text-primary mt-1 font-medium">Fix: {check.suggestedFix}</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Recommendations */}
+          {report.recommendations.length > 0 && (
+            <Card className="p-3">
+              <p className="text-xs font-semibold mb-2 flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5" /> Recommendations</p>
+              <ul className="space-y-1">
+                {report.recommendations.map((r, i) => (
+                  <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                    <span className="text-primary shrink-0 mt-0.5">→</span>
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -447,6 +747,9 @@ export default function AdminTeamTrainingLeadsPage() {
           <TabsTrigger value="drafts" data-testid="tab-drafts">
             Drafts ({drafts?.length || 0})
           </TabsTrigger>
+          <TabsTrigger value="audit" data-testid="tab-audit">
+            Audit
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="prospects" className="mt-4 space-y-4">
@@ -486,26 +789,16 @@ export default function AdminTeamTrainingLeadsPage() {
                 className="h-8 text-sm w-32"
                 data-testid="input-filter-city"
               />
-              {(filterSport !== "all" || filterStatus !== "all" || filterCity || searchText) && (
-                <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setFilterSport("all"); setFilterStatus("all"); setFilterCity(""); setSearchText(""); }} data-testid="button-clear-filters">
-                  Clear
-                </Button>
-              )}
             </div>
           </Card>
 
           {prospectsLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
-            </div>
+            <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
           ) : filteredProspects.length === 0 ? (
-            <Card className="p-12 text-center">
-              <Users className="h-10 w-10 mx-auto text-muted-foreground mb-3 opacity-40" />
-              <p className="font-medium text-muted-foreground" data-testid="text-empty-state">No leads found</p>
-              <p className="text-sm text-muted-foreground mt-1">Click "Research New Leads" to discover local sports organizations in your area.</p>
-              <Button className="mt-4" onClick={() => setResearchDialogOpen(true)} data-testid="button-research-empty">
-                <Search className="h-4 w-4 mr-2" /> Research New Leads
-              </Button>
+            <Card className="p-8 text-center text-muted-foreground">
+              <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium">No leads found</p>
+              <p className="text-xs mt-1">{prospects?.length === 0 ? "Click 'Research New Leads' to find local sports organizations." : "Try adjusting your filters."}</p>
             </Card>
           ) : (
             <div className="space-y-3">
@@ -513,9 +806,9 @@ export default function AdminTeamTrainingLeadsPage() {
                 <ProspectCard
                   key={p.id}
                   prospect={p}
-                  onStatusChange={(id, status) => updateProspectMutation.mutate({ id, data: { outreachStatus: status as any } })}
+                  onStatusChange={(id, status) => updateProspectMutation.mutate({ id, data: { outreachStatus: status as TeamTrainingProspect["outreachStatus"] } })}
                   onEdit={openEditProspect}
-                  onGenerateEmail={setGenerateEmailForProspect}
+                  onGenerateEmail={(p) => setGenerateEmailForProspect(p)}
                   onDelete={(id) => deleteProspectMutation.mutate(id)}
                   onMarkReplied={(id) => markRepliedMutation.mutate(id)}
                   onDoNotContact={(id) => doNotContactMutation.mutate(id)}
@@ -527,14 +820,12 @@ export default function AdminTeamTrainingLeadsPage() {
 
         <TabsContent value="drafts" className="mt-4 space-y-4">
           {draftsLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40" />)}
-            </div>
+            <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32" />)}</div>
           ) : !drafts || drafts.length === 0 ? (
-            <Card className="p-12 text-center">
-              <Mail className="h-10 w-10 mx-auto text-muted-foreground mb-3 opacity-40" />
-              <p className="font-medium text-muted-foreground" data-testid="text-empty-drafts">No email drafts yet</p>
-              <p className="text-sm text-muted-foreground mt-1">Generate an email draft from any lead card to start the approval process.</p>
+            <Card className="p-8 text-center text-muted-foreground">
+              <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium">No drafts yet</p>
+              <p className="text-xs mt-1">Generate an email from a lead card to create your first draft.</p>
             </Card>
           ) : (
             <div className="space-y-3">
@@ -550,211 +841,185 @@ export default function AdminTeamTrainingLeadsPage() {
             </div>
           )}
         </TabsContent>
+
+        <TabsContent value="audit" className="mt-4">
+          <AuditTab />
+        </TabsContent>
       </Tabs>
 
-      {/* Research dialog */}
+      {/* Research Dialog */}
       <Dialog open={researchDialogOpen} onOpenChange={setResearchDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Research New Leads</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">
-              The AI agent will search for local sports organizations near your location that are good candidates for team training partnerships.
-            </p>
+          <div className="space-y-4">
             <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Sport focus (optional)</label>
+              <p className="text-sm text-muted-foreground mb-2">Find local sports organizations to target for team training.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Sport (optional)</label>
               <Select value={researchSport} onValueChange={setResearchSport}>
                 <SelectTrigger data-testid="select-research-sport">
-                  <SelectValue placeholder="All sports" />
+                  <SelectValue placeholder="All Sports" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All sports</SelectItem>
+                  <SelectItem value="all">All Sports</SelectItem>
                   {SPORTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Number of leads to find</label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Number of leads to find</label>
               <Select value={researchLimit} onValueChange={setResearchLimit}>
                 <SelectTrigger data-testid="select-research-limit">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="5">5 leads</SelectItem>
-                  <SelectItem value="8">8 leads</SelectItem>
-                  <SelectItem value="12">12 leads</SelectItem>
-                  <SelectItem value="15">15 leads</SelectItem>
+                  {["5", "8", "10", "15", "20"].map((n) => <SelectItem key={n} value={n}>{n} leads</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-3 text-xs text-yellow-800 dark:text-yellow-300 flex gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>Prospects are added for review only. No emails are sent automatically. Always verify contact info before reaching out.</span>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setResearchDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => researchMutation.mutate({ sport: researchSport === "all" ? undefined : researchSport, limit: parseInt(researchLimit) })}
+                disabled={researchMutation.isPending}
+                data-testid="button-confirm-research"
+              >
+                {researchMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                Find Leads
+              </Button>
             </div>
-            <Button
-              className="w-full"
-              onClick={() => researchMutation.mutate({ sport: researchSport === "all" ? undefined : researchSport, limit: parseInt(researchLimit) })}
-              disabled={researchMutation.isPending}
-              data-testid="button-start-research"
-            >
-              {researchMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Researching...</>
-              ) : (
-                <><Search className="h-4 w-4 mr-2" /> Start Research</>
-              )}
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Generate email confirm dialog */}
-      <Dialog open={!!generateEmailForProspect} onOpenChange={(o) => !o && setGenerateEmailForProspect(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate Outreach Email</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">
-              Generate a personalized outreach email draft for <strong>{generateEmailForProspect?.prospectName}</strong>.
-              The draft will appear in the Drafts tab for your review before sending.
-            </p>
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-3 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>The email will not be sent until you review and approve it in the Drafts tab.</span>
+      {/* Edit Prospect Dialog */}
+      {editProspect && (
+        <Dialog open={!!editProspect} onOpenChange={() => setEditProspect(null)}>
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Prospect</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              {(["prospectName", "organizationType", "sport", "city", "state"] as const).map((field) => (
+                <div key={field}>
+                  <label className="text-xs font-medium capitalize">{field.replace(/([A-Z])/g, " $1")}</label>
+                  <Input
+                    value={(editProspectForm as any)[field] || ""}
+                    onChange={(e) => setEditProspectForm((f) => ({ ...f, [field]: e.target.value }))}
+                    className="mt-1 h-8 text-sm"
+                    data-testid={`input-edit-${field}`}
+                  />
+                </div>
+              ))}
+              {(["contactName", "contactRole", "contactEmail", "contactPhone", "websiteUrl", "sourceUrl"] as const).map((field) => (
+                <div key={field}>
+                  <label className="text-xs font-medium capitalize">{field.replace(/([A-Z])/g, " $1")}</label>
+                  <Input
+                    value={(editProspectForm as any)[field] || ""}
+                    onChange={(e) => setEditProspectForm((f) => ({ ...f, [field]: e.target.value }))}
+                    className="mt-1 h-8 text-sm"
+                    data-testid={`input-edit-${field}`}
+                  />
+                </div>
+              ))}
+              <div>
+                <label className="text-xs font-medium">Notes</label>
+                <Textarea
+                  value={editProspectForm.notes || ""}
+                  onChange={(e) => setEditProspectForm((f) => ({ ...f, notes: e.target.value }))}
+                  className="mt-1 text-sm"
+                  rows={3}
+                  data-testid="input-edit-notes"
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-2">
+                <Button variant="outline" onClick={() => setEditProspect(null)}>Cancel</Button>
+                <Button
+                  onClick={() => updateProspectMutation.mutate({ id: editProspect.id, data: editProspectForm })}
+                  disabled={updateProspectMutation.isPending}
+                  data-testid="button-save-prospect"
+                >
+                  {updateProspectMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Save Changes
+                </Button>
+              </div>
             </div>
-            <Button
-              className="w-full"
-              onClick={() => generateEmailForProspect && generateEmailMutation.mutate(generateEmailForProspect.id)}
-              disabled={generateEmailMutation.isPending}
-              data-testid="button-confirm-generate"
-            >
-              {generateEmailMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
-              ) : (
-                <><Mail className="h-4 w-4 mr-2" /> Generate Draft</>
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
 
-      {/* Edit prospect dialog */}
-      <Dialog open={!!editProspect} onOpenChange={(o) => !o && setEditProspect(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Prospect</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-2 max-h-[70vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground mb-1 block">Organization Name</label>
-                <Input value={editProspectForm.prospectName || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, prospectName: e.target.value }))} data-testid="input-edit-name" />
+      {/* Edit Draft Dialog */}
+      {editDraft && (
+        <Dialog open={!!editDraft} onOpenChange={() => setEditDraft(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Draft</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium">Subject</label>
+                <Input
+                  value={editDraftForm.subject}
+                  onChange={(e) => setEditDraftForm((f) => ({ ...f, subject: e.target.value }))}
+                  className="mt-1 h-8 text-sm"
+                  data-testid="input-edit-draft-subject"
+                />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Organization Type</label>
-                <Select value={editProspectForm.organizationType || ""} onValueChange={(v) => setEditProspectForm((f) => ({ ...f, organizationType: v }))}>
-                  <SelectTrigger className="text-sm" data-testid="select-edit-org-type">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ORG_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <label className="text-xs font-medium">Body</label>
+                <Textarea
+                  value={editDraftForm.body}
+                  onChange={(e) => setEditDraftForm((f) => ({ ...f, body: e.target.value }))}
+                  className="mt-1 text-sm font-mono"
+                  rows={12}
+                  data-testid="input-edit-draft-body"
+                />
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Sport</label>
-                <Select value={editProspectForm.sport || ""} onValueChange={(v) => setEditProspectForm((f) => ({ ...f, sport: v }))}>
-                  <SelectTrigger className="text-sm" data-testid="select-edit-sport">
-                    <SelectValue placeholder="Select sport" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SPORTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">City</label>
-                <Input value={editProspectForm.city || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, city: e.target.value }))} data-testid="input-edit-city" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">State</label>
-                <Input value={editProspectForm.state || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, state: e.target.value }))} maxLength={2} data-testid="input-edit-state" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Contact Name</label>
-                <Input value={editProspectForm.contactName || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, contactName: e.target.value }))} data-testid="input-edit-contact-name" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Contact Role</label>
-                <Input value={editProspectForm.contactRole || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, contactRole: e.target.value }))} data-testid="input-edit-contact-role" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Contact Email</label>
-                <Input type="email" value={editProspectForm.contactEmail || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, contactEmail: e.target.value }))} data-testid="input-edit-email" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Contact Phone</label>
-                <Input value={editProspectForm.contactPhone || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, contactPhone: e.target.value }))} data-testid="input-edit-phone" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground mb-1 block">Website URL</label>
-                <Input value={editProspectForm.websiteUrl || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, websiteUrl: e.target.value }))} data-testid="input-edit-website" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
-                <Textarea value={editProspectForm.notes || ""} onChange={(e) => setEditProspectForm((f) => ({ ...f, notes: e.target.value }))} rows={3} data-testid="input-edit-notes" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Status</label>
-                <Select value={editProspectForm.outreachStatus || "New"} onValueChange={(v) => setEditProspectForm((f) => ({ ...f, outreachStatus: v as any }))}>
-                  <SelectTrigger className="text-sm" data-testid="select-edit-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setEditDraft(null)}>Cancel</Button>
+                <Button
+                  onClick={() => updateDraftMutation.mutate({ id: editDraft.id, data: editDraftForm })}
+                  disabled={updateDraftMutation.isPending}
+                  data-testid="button-save-draft"
+                >
+                  {updateDraftMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Save Draft
+                </Button>
               </div>
             </div>
-            <Button
-              className="w-full"
-              onClick={() => editProspect && updateProspectMutation.mutate({ id: editProspect.id, data: editProspectForm })}
-              disabled={updateProspectMutation.isPending}
-              data-testid="button-save-prospect"
-            >
-              {updateProspectMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
 
-      {/* Edit draft dialog */}
-      <Dialog open={!!editDraft} onOpenChange={(o) => !o && setEditDraft(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Email Draft</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-2">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Subject</label>
-              <Input value={editDraftForm.subject} onChange={(e) => setEditDraftForm((f) => ({ ...f, subject: e.target.value }))} data-testid="input-edit-draft-subject" />
+      {/* Generate Email Confirmation */}
+      {generateEmailForProspect && (
+        <Dialog open={!!generateEmailForProspect} onOpenChange={() => setGenerateEmailForProspect(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Generate Email Draft</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Generate a personalized outreach email for <strong>{generateEmailForProspect.prospectName}</strong>. It will be added to your Drafts for review before sending.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setGenerateEmailForProspect(null)}>Cancel</Button>
+                <Button
+                  onClick={() => generateEmailMutation.mutate(generateEmailForProspect.id)}
+                  disabled={generateEmailMutation.isPending}
+                  data-testid="button-confirm-generate-email"
+                >
+                  {generateEmailMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                  Generate Email
+                </Button>
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Body</label>
-              <Textarea value={editDraftForm.body} onChange={(e) => setEditDraftForm((f) => ({ ...f, body: e.target.value }))} rows={12} className="font-mono text-sm" data-testid="input-edit-draft-body" />
-            </div>
-            <Button
-              className="w-full"
-              onClick={() => editDraft && updateDraftMutation.mutate({ id: editDraft.id, data: editDraftForm })}
-              disabled={updateDraftMutation.isPending}
-              data-testid="button-save-draft"
-            >
-              {updateDraftMutation.isPending ? "Saving..." : "Save Draft"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

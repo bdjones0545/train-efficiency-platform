@@ -2,8 +2,8 @@ import { storage } from "../storage";
 import { sendTeamTrainingOutreachEmail, type OrgBranding } from "../email";
 import { generateOutreachEmailFromVariant } from "../team-training-prospecting";
 
-// Follow-up sequence schedule: days after initial send
-const FOLLOW_UP_DAYS = [3, 7, 14];
+// Base follow-up sequence schedule: days after initial send
+const BASE_FOLLOW_UP_DAYS = [3, 7, 14];
 const MAX_FOLLOW_UPS = 3;
 
 const FOLLOW_UP_OPENERS = [
@@ -43,6 +43,42 @@ async function getCoachName(orgId: string): Promise<string> {
 }
 
 /**
+ * Compute adaptive follow-up days based on engagement signals (Phase 5).
+ */
+export function computeAdaptiveFollowUpDays(params: {
+  openCount: number;
+  clicked: boolean;
+  warmthScore: number;
+  fitScore: number;
+  riskScore: number;
+  cooldownDays?: number;
+}): number[] {
+  const { openCount, clicked, warmthScore, fitScore, riskScore, cooldownDays = 30 } = params;
+
+  let days = [...BASE_FOLLOW_UP_DAYS];
+
+  // High engagement: opened 2+ times or clicked → move next follow-up sooner by 1-2 days
+  if (clicked || openCount >= 2) {
+    days = days.map((d) => Math.max(1, d - 2));
+  } else if (openCount === 0) {
+    // No opens: delay by 2 days
+    days = days.map((d) => Math.min(cooldownDays - 1, d + 2));
+  }
+
+  // High warmth + fit: prioritize earlier
+  if (warmthScore >= 60 && fitScore >= 60) {
+    days = days.map((d) => Math.max(1, d - 1));
+  }
+
+  // High risk: delay or require manual approval (push back by 3 days)
+  if (riskScore >= 50) {
+    days = days.map((d) => Math.min(cooldownDays - 1, d + 3));
+  }
+
+  return days;
+}
+
+/**
  * Schedule follow-up steps for a newly-sent outreach draft.
  * Called right after the initial email is successfully sent.
  */
@@ -51,12 +87,31 @@ export async function scheduleFollowUpsForDraft(
   outreachDraftId: string,
   prospectId: string,
   sentAt: Date = new Date(),
+  engagementParams?: {
+    openCount?: number;
+    clicked?: boolean;
+    warmthScore?: number;
+    fitScore?: number;
+    riskScore?: number;
+  }
 ): Promise<void> {
   // Cancel any existing pending follow-ups for this draft (idempotent)
   await storage.cancelFollowUpSequence(outreachDraftId);
 
-  for (let i = 0; i < FOLLOW_UP_DAYS.length; i++) {
-    const scheduledFor = new Date(sentAt.getTime() + FOLLOW_UP_DAYS[i] * 24 * 60 * 60 * 1000);
+  const settings = await storage.getEmailAgentSettings(orgId);
+  const cooldownDays = settings.cooldownDays ?? 30;
+
+  const followUpDays = computeAdaptiveFollowUpDays({
+    openCount: engagementParams?.openCount ?? 0,
+    clicked: engagementParams?.clicked ?? false,
+    warmthScore: engagementParams?.warmthScore ?? 20,
+    fitScore: engagementParams?.fitScore ?? 50,
+    riskScore: engagementParams?.riskScore ?? 0,
+    cooldownDays,
+  });
+
+  for (let i = 0; i < followUpDays.length; i++) {
+    const scheduledFor = new Date(sentAt.getTime() + followUpDays[i] * 24 * 60 * 60 * 1000);
     await storage.createFollowUp({
       orgId,
       outreachDraftId,
@@ -67,7 +122,7 @@ export async function scheduleFollowUpsForDraft(
     });
   }
 
-  console.log(`[FollowUp] Scheduled ${FOLLOW_UP_DAYS.length} follow-ups for draft ${outreachDraftId}`);
+  console.log(`[FollowUp] Scheduled ${followUpDays.length} follow-ups for draft ${outreachDraftId} (days: ${followUpDays.join(", ")})`);
 }
 
 /**
@@ -102,11 +157,9 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         continue;
       }
 
-      // Phase 5: Check if there's an active deal for this prospect — if so, skip cold follow-ups
-      // (deal-aware messaging is handled through the deal pipeline directly)
+      // Stage-aware: Check if there's an active deal for this prospect — skip cold follow-ups
       const activeDeal = await storage.getTeamTrainingDealByProspect(followUp.prospectId, orgId).catch(() => null);
       if (activeDeal && !["won", "lost"].includes(activeDeal.status)) {
-        // Prospect is in active deal pipeline — skip automated cold follow-up
         await storage.updateFollowUp(followUp.id, { status: "skipped" });
         result.skipped++;
         continue;
@@ -119,14 +172,14 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         continue;
       }
 
-      // Check max follow-ups guard (step_number <= MAX_FOLLOW_UPS)
+      // Check max follow-ups guard
       if (followUp.stepNumber > MAX_FOLLOW_UPS) {
         await storage.updateFollowUp(followUp.id, { status: "cancelled" });
         result.skipped++;
         continue;
       }
 
-      // Generate follow-up body
+      // Generate follow-up body with stage-aware messaging
       let subject = followUp.subject;
       let body = followUp.body;
 
@@ -137,9 +190,18 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
 
         const opener = FOLLOW_UP_OPENERS[(followUp.stepNumber - 1) % FOLLOW_UP_OPENERS.length];
 
+        // Stage-aware closing lines
+        const sentDrafts = await storage.getOutreachDraftsByProspect(followUp.prospectId);
+        const openCount = sentDrafts.filter((d) => !!d.openedAt).length;
+        const clicked = sentDrafts.some((d) => !!d.clickedAt);
+
         const closingLines: Record<number, string> = {
-          1: "I'd love to connect and share how we've helped similar programs this season.",
-          2: "Would a quick 10-minute call make sense this week?",
+          1: openCount >= 1 || clicked
+            ? "I noticed you had a chance to look at my last message — would love to connect for a quick 10 minutes to share what we've done for similar programs."
+            : "I'd love to connect and share how we've helped similar programs this season.",
+          2: openCount >= 2 || clicked
+            ? "I can tell you've been looking into this — I'd love to show you exactly what a program would look like for your team."
+            : "Would a quick 10-minute call make sense this week?",
           3: "If now isn't the right time, no worries — I'll close this out. Otherwise, I'm happy to connect.",
         };
         const closingLine = closingLines[followUp.stepNumber] ?? closingLines[3];
@@ -213,7 +275,6 @@ export function initializeFollowUpCron(): void {
 
 async function runFollowUpCron(): Promise<void> {
   try {
-    // Get all orgs that have an enabled email agent
     const { appSettings } = await import("@shared/schema");
     const { db } = await import("../db");
     const { eq, like } = await import("drizzle-orm");

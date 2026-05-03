@@ -7627,27 +7627,25 @@ Business: ${org?.name ?? "Training Facility"}
     }
   });
 
-  // GET /api/email-agent/auto-execute/log — get execution log + stats
+  // GET /api/email-agent/auto-execute/log — get execution log + performance metrics (Phase 6)
   app.get("/api/email-agent/auto-execute/log", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
-      const { getExecutionLog } = await import("./email-agent/auto-execution-engine");
+      const { getExecutionLog, getAutoExecPerformanceMetrics } = await import("./email-agent/auto-execution-engine");
       const log = await getExecutionLog(profile.organizationId);
       const settings = await storage.getEmailAgentSettings(profile.organizationId);
-      const today = new Date().toDateString();
-      const todayCount = log.filter(
-        (e) => !e.undone && new Date(e.executedAt).toDateString() === today && e.outcome === "success"
-      ).length;
-      const maxPerDay = settings.autoExecuteMaxPerDay ?? 3;
-      const successCount = log.filter((e) => e.outcome === "success" && !e.undone).length;
-      const successRate = log.length > 0 ? Math.round((successCount / log.length) * 100) : 0;
+      const metrics = getAutoExecPerformanceMetrics(log, settings);
       res.json({
         log: log.slice(-20).reverse(),
-        todayCount,
-        maxPerDay,
-        successRate,
+        todayCount: metrics.todayCount,
+        maxPerDay: metrics.maxPerDay,
+        successRate: metrics.successRate,
+        engagementRate: metrics.engagementRate,
+        revenuePerAction: metrics.revenuePerAction,
+        totalExecuted: metrics.totalExecuted,
+        totalSucceeded: metrics.totalSucceeded,
         enabled: settings.autoExecuteEnabled === true,
       });
     } catch (err: any) {
@@ -7665,6 +7663,21 @@ Business: ${org?.name ?? "Training Facility"}
       const outcomes = await getRevenueOutcomes(profile.organizationId);
       res.json(outcomes);
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/email-agent/audit — Phase 1 full health audit
+  app.get("/api/email-agent/audit", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { runEmailAgentAudit } = await import("./email-agent/audit-engine");
+      const report = await runEmailAgentAudit(profile.organizationId);
+      res.json(report);
+    } catch (err: any) {
+      console.error("[Email Agent Audit]", err);
       res.status(500).json({ message: err.message });
     }
   });

@@ -25,6 +25,9 @@ export interface ImpactFeedItem {
   outcomeTimestamp?: string | null;
   timeToOutcomeHours?: number | null;
   createdAt: string;
+  attributionRole?: string | null;
+  attributionChainId?: string | null;
+  chainPosition?: number | null;
 }
 
 export interface RevenueOutcomes {
@@ -56,6 +59,9 @@ function toFeedItem(e: AiRevenueEvent): ImpactFeedItem {
     outcomeTimestamp: e.outcomeTimestamp ? new Date(e.outcomeTimestamp).toISOString() : null,
     timeToOutcomeHours: e.timeToOutcomeHours ?? null,
     createdAt: new Date(e.createdAt).toISOString(),
+    attributionRole: (e as any).attributionRole ?? "primary",
+    attributionChainId: (e as any).attributionChainId ?? null,
+    chainPosition: (e as any).chainPosition ?? 0,
   };
 }
 
@@ -95,6 +101,9 @@ export async function logActionAsEvent(
     sport?: string;
     executionLogId?: string;
     outcomeSource?: string;
+    attributionRole?: "primary" | "assist";
+    attributionChainId?: string;
+    chainPosition?: number;
   }
 ): Promise<void> {
   try {
@@ -109,9 +118,83 @@ export async function logActionAsEvent(
       outcomeSource: data.outcomeSource ?? data.actionType,
       prospectName: data.prospectName,
       sport: data.sport,
+      attributionRole: data.attributionRole ?? "primary",
+      attributionChainId: data.attributionChainId,
+      chainPosition: data.chainPosition ?? 0,
     });
   } catch (err: any) {
     console.warn("[RevenueEngine] logActionAsEvent failed:", err.message);
+  }
+}
+
+/**
+ * Phase 7: Log the full multi-touch attribution chain for a won deal.
+ * One event gets "primary" role (most recent / highest-impact action),
+ * prior actions get "assist" role. A shared attributionChainId ties them together.
+ */
+export async function logMultiTouchAttributionChain(
+  orgId: string,
+  prospectId: string,
+  wonValue: number,
+  source: string
+): Promise<void> {
+  try {
+    const chainId = crypto.randomUUID();
+
+    // Fetch all prior events for this prospect
+    const allEvents = await storage.getAiImpactFeed(orgId, 100);
+    const prospectEvents = allEvents
+      .filter((e) => e.prospectId === prospectId && e.outcomeStatus === "pending")
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    if (prospectEvents.length === 0) {
+      // No prior events — just attribute a single primary win
+      await logActionAsEvent(orgId, {
+        actionType: "deal_won",
+        actionSource: "manual",
+        prospectId,
+        outcomeSource: source,
+        attributionRole: "primary",
+        attributionChainId: chainId,
+        chainPosition: 1,
+      });
+      return;
+    }
+
+    const primaryEvent = prospectEvents[prospectEvents.length - 1];
+    const assistEvents = prospectEvents.slice(0, -1);
+
+    const now = new Date();
+    const createdAt = new Date(primaryEvent.createdAt);
+    const diffHours = Math.round((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60));
+
+    // Mark primary event as won
+    await storage.updateAiRevenueEvent(primaryEvent.id, {
+      outcomeStatus: "won",
+      outcomeValue: wonValue,
+      outcomeSource: source,
+      outcomeTimestamp: now,
+      timeToOutcomeHours: diffHours,
+      attributionRole: "primary",
+      attributionChainId: chainId,
+      chainPosition: prospectEvents.length,
+    });
+
+    // Mark assist events
+    for (let i = 0; i < assistEvents.length; i++) {
+      await storage.updateAiRevenueEvent(assistEvents[i].id, {
+        outcomeStatus: "won",
+        outcomeValue: 0,
+        outcomeSource: source,
+        outcomeTimestamp: now,
+        timeToOutcomeHours: null,
+        attributionRole: "assist",
+        attributionChainId: chainId,
+        chainPosition: i + 1,
+      });
+    }
+  } catch (err: any) {
+    console.warn("[RevenueEngine] logMultiTouchAttributionChain failed:", err.message);
   }
 }
 
@@ -123,6 +206,13 @@ export async function attributeOutcomeToProspect(
   source: string
 ): Promise<void> {
   try {
+    // Phase 7: For "won" outcomes, use multi-touch attribution chain
+    if (status === "won" && value > 0) {
+      await logMultiTouchAttributionChain(orgId, prospectId, value, source);
+      return;
+    }
+
+    // For non-won outcomes, use simple single-event attribution
     const event = await storage.findRecentAiEventForProspect(orgId, prospectId, 72);
     if (!event) return;
 

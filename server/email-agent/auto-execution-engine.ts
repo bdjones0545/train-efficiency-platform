@@ -23,6 +23,19 @@ export interface AutoExecution {
   outcome: "success" | "failed";
   error?: string;
   undone: boolean;
+  engagementOutcome?: boolean;
+  revenueAttributed?: number;
+}
+
+export interface AutoExecPerformanceMetrics {
+  successRate: number;
+  engagementRate: number;
+  revenuePerAction: number;
+  todayCount: number;
+  maxPerDay: number;
+  totalExecuted: number;
+  totalSucceeded: number;
+  recentActions: AutoExecution[];
 }
 
 export interface AutoExecuteResult {
@@ -255,6 +268,8 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
     executedAt: new Date().toISOString(),
     outcome: "success",
     undone: false,
+    engagementOutcome: false,
+    revenueAttributed: 0,
   };
 
   try {
@@ -344,31 +359,92 @@ export async function getExecutionLog(orgId: string): Promise<AutoExecution[]> {
   return getAutoExecutionLog(orgId);
 }
 
+/**
+ * Phase 6: Record engagement outcome for a past auto-execution (learning loop).
+ * Call this when a prospect opens/clicks after an auto-executed email.
+ */
+export async function recordAutoExecEngagement(orgId: string, prospectId: string): Promise<void> {
+  try {
+    const log = await getAutoExecutionLog(orgId);
+    const recentIdx = log.findIndex(
+      (e) => e.prospectId === prospectId && !e.undone && e.outcome === "success" && !e.engagementOutcome
+    );
+    if (recentIdx === -1) return;
+    log[recentIdx] = { ...log[recentIdx], engagementOutcome: true };
+    await saveAutoExecutionLog(orgId, log);
+  } catch {}
+}
+
+/**
+ * Phase 6: Record revenue attribution for a past auto-execution (learning loop).
+ */
+export async function recordAutoExecRevenue(orgId: string, prospectId: string, value: number): Promise<void> {
+  try {
+    const log = await getAutoExecutionLog(orgId);
+    const recentIdx = [...log].reverse().findIndex(
+      (e) => e.prospectId === prospectId && !e.undone && e.outcome === "success"
+    );
+    if (recentIdx === -1) return;
+    const actualIdx = log.length - 1 - recentIdx;
+    log[actualIdx] = { ...log[actualIdx], revenueAttributed: (log[actualIdx].revenueAttributed ?? 0) + value };
+    await saveAutoExecutionLog(orgId, log);
+  } catch {}
+}
+
+export function getAutoExecPerformanceMetrics(
+  log: AutoExecution[],
+  settings: Record<string, any>
+): AutoExecPerformanceMetrics {
+  const today = new Date().toDateString();
+  const todayExecs = log.filter(
+    (e) => !e.undone && new Date(e.executedAt).toDateString() === today && e.outcome === "success"
+  );
+  const successExecs = log.filter((e) => e.outcome === "success" && !e.undone);
+  const successRate = log.length > 0 ? Math.round((successExecs.length / log.length) * 100) : 100;
+  const engagedExecs = successExecs.filter((e) => e.engagementOutcome === true);
+  const engagementRate = successExecs.length > 0
+    ? Math.round((engagedExecs.length / successExecs.length) * 100)
+    : 0;
+  const totalRevenue = successExecs.reduce((sum, e) => sum + (e.revenueAttributed ?? 0), 0);
+  const revenuePerAction = successExecs.length > 0 ? Math.round(totalRevenue / successExecs.length) : 0;
+
+  return {
+    successRate,
+    engagementRate,
+    revenuePerAction,
+    todayCount: todayExecs.length,
+    maxPerDay: settings.autoExecuteMaxPerDay ?? MAX_AUTO_EXEC_PER_DAY,
+    totalExecuted: log.length,
+    totalSucceeded: successExecs.length,
+    recentActions: log.slice(-10).reverse(),
+  };
+}
+
 export function buildAutoExecContextString(
   log: AutoExecution[],
   settings: Record<string, any>
 ): string {
   const enabled = settings.autoExecuteEnabled === true;
-  const maxPerDay = settings.autoExecuteMaxPerDay ?? MAX_AUTO_EXEC_PER_DAY;
-  const today = new Date().toDateString();
-  const todayExecs = log.filter(
-    (e) => !e.undone && new Date(e.executedAt).toDateString() === today && e.outcome === "success"
-  );
-  const successCount = log.filter((e) => e.outcome === "success" && !e.undone).length;
-  const successRate = log.length > 0 ? Math.round((successCount / log.length) * 100) : 0;
+  const metrics = getAutoExecPerformanceMetrics(log, settings);
 
   const parts: string[] = [
-    `\nAUTO-EXECUTION STATUS: ${enabled ? "enabled" : "disabled"} | today: ${todayExecs.length}/${maxPerDay} | success rate: ${successRate}%`,
+    `\nAUTO-EXECUTION STATUS: ${enabled ? "enabled" : "disabled"} | today: ${metrics.todayCount}/${metrics.maxPerDay} | success rate: ${metrics.successRate}% | engagement rate: ${metrics.engagementRate}% | revenue/action: $${metrics.revenuePerAction}`,
   ];
 
-  if (todayExecs.length > 0) {
+  const todayActions = metrics.recentActions.filter(
+    (e) => new Date(e.executedAt).toDateString() === new Date().toDateString()
+  );
+  if (todayActions.length > 0) {
     parts.push(
-      "Recent auto-executions today: " +
-        todayExecs
-          .slice(-3)
-          .map((e) => `${e.title} (${e.actionType})`)
-          .join(", ")
+      "Today's auto-executions: " +
+        todayActions.slice(0, 3).map((e) => `${e.title} (${e.actionType})`).join(", ")
     );
+  }
+
+  if (metrics.engagementRate >= 40) {
+    parts.push(`Auto-execution is performing well — ${metrics.engagementRate}% of auto-sent emails are generating engagement.`);
+  } else if (metrics.engagementRate > 0 && metrics.engagementRate < 20) {
+    parts.push(`Auto-execution engagement rate is low (${metrics.engagementRate}%) — consider reviewing prospect quality.`);
   }
 
   return parts.join("\n");
