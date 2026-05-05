@@ -329,6 +329,12 @@ export interface IStorage {
   deleteTeamTrainingDeal(id: string): Promise<boolean>;
   getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number }>;
 
+  // Team Training Lead Settings
+  getTeamLeadSettings(orgId: string): Promise<import("@shared/schema").TeamTrainingLeadSettings | undefined>;
+  upsertTeamLeadSettings(orgId: string, input: Partial<import("@shared/schema").InsertTeamTrainingLeadSettings>): Promise<import("@shared/schema").TeamTrainingLeadSettings>;
+  updateTeamLeadLastRun(orgId: string, lastRunAt: Date, nextRunAt: Date | null): Promise<void>;
+  getOrganizationsDueForRecurringResearch(now: Date): Promise<import("@shared/schema").TeamTrainingLeadSettings[]>;
+
   // Per-org preferences
   getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null>;
   getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined>;
@@ -2659,6 +2665,48 @@ export class DatabaseStorage implements IStorage {
       .limit(opts.limit ?? 500);
 
     return query;
+  }
+
+  async getTeamLeadSettings(orgId: string) {
+    const { teamTrainingLeadSettings } = await import("@shared/schema");
+    const [row] = await db.select().from(teamTrainingLeadSettings).where(eq(teamTrainingLeadSettings.organizationId, orgId));
+    return row || undefined;
+  }
+
+  async upsertTeamLeadSettings(orgId: string, input: Partial<import("@shared/schema").InsertTeamTrainingLeadSettings>) {
+    const { teamTrainingLeadSettings } = await import("@shared/schema");
+    const now = new Date();
+    const [row] = await db
+      .insert(teamTrainingLeadSettings)
+      .values({ ...input, organizationId: orgId, updatedAt: now })
+      .onConflictDoUpdate({
+        target: teamTrainingLeadSettings.organizationId,
+        set: { ...input, updatedAt: now },
+      })
+      .returning();
+    return row;
+  }
+
+  async updateTeamLeadLastRun(orgId: string, lastRunAt: Date, nextRunAt: Date | null) {
+    const { teamTrainingLeadSettings } = await import("@shared/schema");
+    await db
+      .update(teamTrainingLeadSettings)
+      .set({ lastRunAt, nextRunAt, updatedAt: new Date() })
+      .where(eq(teamTrainingLeadSettings.organizationId, orgId));
+  }
+
+  async getOrganizationsDueForRecurringResearch(now: Date) {
+    const { teamTrainingLeadSettings } = await import("@shared/schema");
+    const rows = await db
+      .select()
+      .from(teamTrainingLeadSettings)
+      .where(
+        and(
+          eq(teamTrainingLeadSettings.recurringEnabled, true),
+          lte(teamTrainingLeadSettings.nextRunAt!, now)
+        )
+      );
+    return rows;
   }
 
   async getTriggerAuditSummary(orgId: string, windowHours = 24) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +18,7 @@ import {
   ExternalLink, Edit2, ChevronDown, ChevronUp, Target, TrendingUp,
   Users, SendHorizonal, AlertCircle, FileText, Trash2, Filter,
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
-  Activity, BarChart2, Zap
+  Activity, BarChart2, Zap, Settings2
 } from "lucide-react";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
 
@@ -523,6 +524,17 @@ export default function AdminTeamTrainingLeadsPage() {
   const [researchLocationTouched, setResearchLocationTouched] = useState(false);
   const [researchSport, setResearchSport] = useState("all");
   const [researchLimit, setResearchLimit] = useState("8");
+  const [researchRadius, setResearchRadius] = useState("25");
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    defaultLocation: "",
+    radiusMiles: "25",
+    recurringEnabled: false,
+    recurringFrequency: "weekly",
+    recurringLimit: "8",
+    recurringSport: "all",
+    recurringTime: "08:00",
+  });
   const [editProspect, setEditProspect] = useState<TeamTrainingProspect | null>(null);
   const [editDraft, setEditDraft] = useState<DraftWithProspect | null>(null);
   const [generateEmailForProspect, setGenerateEmailForProspect] = useState<TeamTrainingProspect | null>(null);
@@ -540,8 +552,33 @@ export default function AdminTeamTrainingLeadsPage() {
     queryKey: ["/api/admin/team-training/drafts"],
   });
 
+  const { data: savedSettings } = useQuery<{
+    defaultLocation: string; radiusMiles: number; recurringEnabled: boolean;
+    recurringFrequency: string; recurringLimit: number; recurringSport: string; recurringTime: string;
+    lastRunAt: string | null; nextRunAt: string | null;
+  }>({
+    queryKey: ["/api/team-training-leads/settings"],
+  });
+
+  // Pre-fill modal location + radius from saved settings
+  useEffect(() => {
+    if (savedSettings) {
+      if (savedSettings.defaultLocation) setResearchLocation(savedSettings.defaultLocation);
+      if (savedSettings.radiusMiles) setResearchRadius(String(savedSettings.radiusMiles));
+      setSettingsForm({
+        defaultLocation: savedSettings.defaultLocation || "",
+        radiusMiles: String(savedSettings.radiusMiles ?? 25),
+        recurringEnabled: savedSettings.recurringEnabled ?? false,
+        recurringFrequency: savedSettings.recurringFrequency || "weekly",
+        recurringLimit: String(savedSettings.recurringLimit ?? 8),
+        recurringSport: savedSettings.recurringSport || "all",
+        recurringTime: savedSettings.recurringTime || "08:00",
+      });
+    }
+  }, [savedSettings]);
+
   const researchMutation = useMutation({
-    mutationFn: async (data: { sport?: string; limit: number; location: string }) => {
+    mutationFn: async (data: { sport?: string; limit: number; location: string; radiusMiles: number }) => {
       const res = await apiRequest("POST", "/api/admin/team-training/research", data);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || json.message || "Unknown error");
@@ -551,8 +588,8 @@ export default function AdminTeamTrainingLeadsPage() {
       toast({ title: `Found ${data.count} new leads`, description: "Prospects added to your pipeline." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team-training-leads/settings"] });
       setResearchDialogOpen(false);
-      setResearchLocation("");
       setResearchLocationTouched(false);
     },
     onError: (err: Error) => {
@@ -565,6 +602,29 @@ export default function AdminTeamTrainingLeadsPage() {
       }
       toast({ title: "Research failed", description, variant: "destructive" });
     },
+  });
+
+  const settingsMutation = useMutation({
+    mutationFn: async (data: typeof settingsForm) => {
+      const res = await apiRequest("PATCH", "/api/team-training-leads/settings", {
+        defaultLocation: data.defaultLocation,
+        radiusMiles: parseInt(data.radiusMiles),
+        recurringEnabled: data.recurringEnabled,
+        recurringFrequency: data.recurringFrequency,
+        recurringLimit: parseInt(data.recurringLimit),
+        recurringSport: data.recurringSport,
+        recurringTime: data.recurringTime,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Failed to save settings");
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Settings saved", description: "Lead research settings updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/team-training-leads/settings"] });
+      setSettingsDialogOpen(false);
+    },
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
   });
 
   const updateProspectMutation = useMutation({
@@ -704,9 +764,14 @@ export default function AdminTeamTrainingLeadsPage() {
           <h1 className="text-2xl font-serif font-bold" data-testid="text-page-title">Team Training Leads</h1>
           <p className="text-muted-foreground mt-1 text-sm">Research and reach out to local sports organizations for team training partnerships.</p>
         </div>
-        <Button onClick={() => setResearchDialogOpen(true)} data-testid="button-research-leads">
-          <Search className="h-4 w-4 mr-2" /> Research New Leads
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setSettingsDialogOpen(true)} data-testid="button-lead-settings">
+            <Settings2 className="h-4 w-4 mr-2" /> Lead Settings
+          </Button>
+          <Button onClick={() => setResearchDialogOpen(true)} data-testid="button-research-leads">
+            <Search className="h-4 w-4 mr-2" /> Research New Leads
+          </Button>
+        </div>
       </div>
 
       {/* Dashboard stats */}
@@ -871,15 +936,13 @@ export default function AdminTeamTrainingLeadsPage() {
       </Tabs>
 
       {/* Research Dialog */}
-      <Dialog open={researchDialogOpen} onOpenChange={(open) => { setResearchDialogOpen(open); if (!open) { setResearchLocation(""); setResearchLocationTouched(false); } }}>
+      <Dialog open={researchDialogOpen} onOpenChange={(open) => { setResearchDialogOpen(open); if (!open) { setResearchLocationTouched(false); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Research New Leads</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Find local sports organizations to target for team training.</p>
-            </div>
+            <p className="text-sm text-muted-foreground">Find local sports organizations to target for team training.</p>
             <div className="space-y-2">
               <label className="text-sm font-medium">Location <span className="text-destructive">*</span></label>
               <input
@@ -894,6 +957,18 @@ export default function AdminTeamTrainingLeadsPage() {
               {researchLocationTouched && !researchLocation.trim() && (
                 <p className="text-xs text-destructive">Enter a city and state to research local teams.</p>
               )}
+              <p className="text-xs text-muted-foreground">Saved for this organization after each successful search.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Search Radius</label>
+              <Select value={researchRadius} onValueChange={setResearchRadius}>
+                <SelectTrigger data-testid="select-research-radius">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["10", "25", "50", "75", "100"].map((n) => <SelectItem key={n} value={n}>{n} miles</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Sport (optional)</label>
@@ -924,13 +999,128 @@ export default function AdminTeamTrainingLeadsPage() {
                 onClick={() => {
                   setResearchLocationTouched(true);
                   if (!researchLocation.trim()) return;
-                  researchMutation.mutate({ sport: researchSport === "all" ? undefined : researchSport, limit: parseInt(researchLimit), location: researchLocation.trim() });
+                  researchMutation.mutate({ sport: researchSport === "all" ? undefined : researchSport, limit: parseInt(researchLimit), location: researchLocation.trim(), radiusMiles: parseInt(researchRadius) });
                 }}
                 disabled={researchMutation.isPending || !researchLocation.trim()}
                 data-testid="button-confirm-research"
               >
                 {researchMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
                 Find Leads
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lead Settings Dialog */}
+      <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Lead Research Settings</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Default Location</label>
+              <input
+                type="text"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="Bluffton, SC"
+                value={settingsForm.defaultLocation}
+                onChange={(e) => setSettingsForm(f => ({ ...f, defaultLocation: e.target.value }))}
+                data-testid="input-settings-location"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Search Radius</label>
+              <Select value={settingsForm.radiusMiles} onValueChange={(v) => setSettingsForm(f => ({ ...f, radiusMiles: v }))}>
+                <SelectTrigger data-testid="select-settings-radius">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["10", "25", "50", "75", "100"].map((n) => <SelectItem key={n} value={n}>{n} miles</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Recurring Research</p>
+                <p className="text-xs text-muted-foreground">Automatically find new leads on a schedule</p>
+              </div>
+              <Switch
+                checked={settingsForm.recurringEnabled}
+                onCheckedChange={(v) => setSettingsForm(f => ({ ...f, recurringEnabled: v }))}
+                data-testid="switch-recurring-enabled"
+              />
+            </div>
+            {settingsForm.recurringEnabled && (
+              <div className="space-y-3 rounded-lg bg-muted/40 p-3 text-sm">
+                <p className="text-xs text-muted-foreground">TrainEfficiency will automatically research new team training leads using these settings.</p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Frequency</label>
+                  <Select value={settingsForm.recurringFrequency} onValueChange={(v) => setSettingsForm(f => ({ ...f, recurringFrequency: v }))}>
+                    <SelectTrigger data-testid="select-settings-frequency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Sport</label>
+                  <Select value={settingsForm.recurringSport} onValueChange={(v) => setSettingsForm(f => ({ ...f, recurringSport: v }))}>
+                    <SelectTrigger data-testid="select-settings-sport">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Sports</SelectItem>
+                      {SPORTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Leads per run</label>
+                  <Select value={settingsForm.recurringLimit} onValueChange={(v) => setSettingsForm(f => ({ ...f, recurringLimit: v }))}>
+                    <SelectTrigger data-testid="select-settings-limit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["5", "8", "10", "15", "20", "25"].map((n) => <SelectItem key={n} value={n}>{n} leads</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Preferred time</label>
+                  <input
+                    type="time"
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={settingsForm.recurringTime}
+                    onChange={(e) => setSettingsForm(f => ({ ...f, recurringTime: e.target.value }))}
+                    data-testid="input-settings-time"
+                  />
+                </div>
+                {savedSettings?.lastRunAt && (
+                  <p className="text-xs text-muted-foreground">Last run: {new Date(savedSettings.lastRunAt).toLocaleString()}</p>
+                )}
+                {savedSettings?.nextRunAt && (
+                  <p className="text-xs text-muted-foreground">Next run: {new Date(savedSettings.nextRunAt).toLocaleString()}</p>
+                )}
+              </div>
+            )}
+            {settingsForm.recurringEnabled && !settingsForm.defaultLocation.trim() && (
+              <p className="text-xs text-destructive">A default location is required to enable recurring research.</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setSettingsDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => settingsMutation.mutate(settingsForm)}
+                disabled={settingsMutation.isPending || (settingsForm.recurringEnabled && !settingsForm.defaultLocation.trim())}
+                data-testid="button-save-settings"
+              >
+                {settingsMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save Settings
               </Button>
             </div>
           </div>

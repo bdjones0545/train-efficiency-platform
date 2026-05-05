@@ -696,6 +696,12 @@ export const teamTrainingOutreachEventTypeEnum = pgEnum("team_outreach_event_typ
   "marked_do_not_contact",
   "research_run",
   "skipped",
+  "settings_updated",
+  "manual_research_started",
+  "manual_research_completed",
+  "recurring_research_started",
+  "recurring_research_completed",
+  "recurring_research_failed",
 ]);
 
 export const teamTrainingOutreachEvents = pgTable("team_training_outreach_events", {
@@ -716,6 +722,30 @@ export const prospectOptOuts = pgTable("prospect_opt_outs", {
   optedOutAt: timestamp("opted_out_at").defaultNow(),
   reason: text("reason"),
 });
+
+// ─── Team Training Lead Research Settings ─────────────────────────────────
+export const teamTrainingLeadSettings = pgTable("team_training_lead_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  defaultLocation: text("default_location").default(""),
+  radiusMiles: integer("radius_miles").default(25),
+  recurringEnabled: boolean("recurring_enabled").default(false),
+  recurringFrequency: varchar("recurring_frequency").default("weekly"),
+  recurringDayOfWeek: integer("recurring_day_of_week"),
+  recurringTime: varchar("recurring_time").default("08:00"),
+  recurringLimit: integer("recurring_limit").default(8),
+  recurringSport: varchar("recurring_sport").default("all"),
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  orgUnique: uniqueIndex("team_lead_settings_org_unique").on(t.organizationId),
+}));
+
+export const insertTeamTrainingLeadSettingsSchema = createInsertSchema(teamTrainingLeadSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type TeamTrainingLeadSettings = typeof teamTrainingLeadSettings.$inferSelect;
+export type InsertTeamTrainingLeadSettings = z.infer<typeof insertTeamTrainingLeadSettingsSchema>;
 
 export const insertTeamTrainingProspectSchema = createInsertSchema(teamTrainingProspects).omit({ id: true, createdAt: true, updatedAt: true });
 export type TeamTrainingProspect = typeof teamTrainingProspects.$inferSelect;

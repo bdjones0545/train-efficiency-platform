@@ -31,11 +31,11 @@ export async function researchProspects(
   org: Organization,
   location: string,
   sportFilter?: string,
-  limit: number = 10
+  limit: number = 10,
+  radiusMiles: number = 25
 ): Promise<ProspectResult[]> {
   const openai = getOpenAI();
 
-  const serviceRadius = (org as any).serviceRadius || "25";
   const specialties = (org as any).specialties || "speed, strength, agility, performance training";
 
   const sportContext = sportFilter && sportFilter !== "all"
@@ -46,6 +46,7 @@ export async function researchProspects(
 
 IMPORTANT RULES:
 - The location provided by the user is mandatory — always center your research on that city and state.
+- Find organizations within approximately ${radiusMiles} miles of ${location}.
 - Never invent specific contact emails or phone numbers. Use null for unknown contact info.
 - Use "unknown" for any field you cannot reliably determine.
 - Only include websiteUrl if you have a real, known URL for this type of organization.
@@ -54,7 +55,7 @@ IMPORTANT RULES:
 - Generate diverse organization types: youth clubs, high school programs, club teams, AAU teams, travel ball, academies, private sports programs, athletic departments.
 - Keep notes concise: explain why this prospect is a good fit for team training services.`;
 
-  const userPrompt = `Research up to ${limit} local sports organizations near ${location} (within ~${serviceRadius} miles) that would be strong leads for team training services: ${specialties}.
+  const userPrompt = `Find organizations within approximately ${radiusMiles} miles of ${location} that would be strong leads for team training services: ${specialties}. Research up to ${limit} organizations.
 
 ${sportContext}
 

@@ -6712,6 +6712,92 @@ export async function registerRoutes(
 
   // ─── Team Training Prospecting Routes ─────────────────────────────────────
 
+  // Get lead research settings
+  app.get("/api/team-training-leads/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const org = await storage.getOrganizationById(profile.organizationId);
+      const saved = await storage.getTeamLeadSettings(profile.organizationId);
+      const orgCity = (org as any)?.city || "";
+      const orgState = (org as any)?.state || "";
+      const fallbackLocation = [orgCity, orgState].filter(Boolean).join(", ");
+      if (saved) return res.json(saved);
+      return res.json({
+        organizationId: profile.organizationId,
+        defaultLocation: fallbackLocation,
+        radiusMiles: 25,
+        recurringEnabled: false,
+        recurringFrequency: "weekly",
+        recurringDayOfWeek: null,
+        recurringTime: "08:00",
+        recurringLimit: 8,
+        recurringSport: "all",
+        lastRunAt: null,
+        nextRunAt: null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Update lead research settings
+  app.patch("/api/team-training-leads/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const { defaultLocation, radiusMiles, recurringEnabled, recurringFrequency, recurringDayOfWeek, recurringTime, recurringLimit, recurringSport } = req.body;
+
+      if (recurringEnabled && (!defaultLocation || !defaultLocation.trim())) {
+        return res.status(400).json({ error: "Location required", message: "A default location is required to enable recurring research." });
+      }
+      if (radiusMiles !== undefined && (radiusMiles < 5 || radiusMiles > 100)) {
+        return res.status(400).json({ error: "Invalid radius", message: "Radius must be between 5 and 100 miles." });
+      }
+      if (recurringLimit !== undefined && (recurringLimit < 1 || recurringLimit > 25)) {
+        return res.status(400).json({ error: "Invalid limit", message: "Leads per run must be between 1 and 25." });
+      }
+      const validFrequencies = ["daily", "weekly", "monthly"];
+      if (recurringFrequency && !validFrequencies.includes(recurringFrequency)) {
+        return res.status(400).json({ error: "Invalid frequency", message: "Frequency must be daily, weekly, or monthly." });
+      }
+
+      // Compute nextRunAt when recurring is enabled
+      let nextRunAt: Date | null = null;
+      if (recurringEnabled) {
+        nextRunAt = new Date();
+        nextRunAt.setHours(nextRunAt.getHours() + 1);
+      }
+
+      const updated = await storage.upsertTeamLeadSettings(profile.organizationId, {
+        defaultLocation: defaultLocation ?? "",
+        radiusMiles: radiusMiles ?? 25,
+        recurringEnabled: recurringEnabled ?? false,
+        recurringFrequency: recurringFrequency ?? "weekly",
+        recurringDayOfWeek: recurringDayOfWeek ?? null,
+        recurringTime: recurringTime ?? "08:00",
+        recurringLimit: recurringLimit ?? 8,
+        recurringSport: recurringSport ?? "all",
+        ...(nextRunAt ? { nextRunAt } : {}),
+      });
+
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        eventType: "settings_updated",
+        description: `Lead research settings updated. Location: ${defaultLocation || "—"}, Radius: ${radiusMiles || 25}mi, Recurring: ${recurringEnabled ? recurringFrequency : "off"}`,
+        metadata: { defaultLocation, radiusMiles, recurringEnabled, recurringFrequency, recurringLimit, recurringSport },
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[TeamTraining Settings]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Get all prospects for org
   app.get("/api/admin/team-training/prospects", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
@@ -6752,9 +6838,15 @@ export async function registerRoutes(
       const org = await storage.getOrganizationById(profile.organizationId);
       if (!org) return res.status(404).json({ message: "Organization not found" });
 
-      const { sport, limit = 8, location } = req.body;
+      const savedSettings = await storage.getTeamLeadSettings(profile.organizationId);
+      const { sport, limit = 8 } = req.body;
+      let { location, radiusMiles } = req.body;
 
-      if (!location || typeof location !== "string" || !location.trim()) {
+      // Fall back to saved defaults
+      if (!location || !location.trim()) location = savedSettings?.defaultLocation || "";
+      if (!radiusMiles) radiusMiles = savedSettings?.radiusMiles || 25;
+
+      if (!location || !location.trim()) {
         return res.status(400).json({
           error: "Location required",
           message: "Enter a city and state to research local team training leads.",
@@ -6769,8 +6861,18 @@ export async function registerRoutes(
         });
       }
 
+      const locationTrimmed = location.trim();
+      const radiusNum = Math.max(5, Math.min(100, Number(radiusMiles) || 25));
+
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        eventType: "manual_research_started",
+        description: `Manual research started. Location: ${locationTrimmed}, Radius: ${radiusNum}mi${sport ? `, Sport: ${sport}` : ""}`,
+        metadata: { location: locationTrimmed, radiusMiles: radiusNum, sport: sport || null, limit: Number(limit) },
+      });
+
       const { researchProspects, scoreProspect } = await import("./team-training-prospecting");
-      const results = await researchProspects(org, location.trim(), sport || undefined, Number(limit));
+      const results = await researchProspects(org, locationTrimmed, sport || undefined, Number(limit), radiusNum);
 
       const created = [];
       for (const p of results) {
@@ -6795,11 +6897,17 @@ export async function registerRoutes(
         created.push(prospect);
       }
 
+      // Save location + radius as org defaults after successful search
+      await storage.upsertTeamLeadSettings(profile.organizationId, {
+        defaultLocation: locationTrimmed,
+        radiusMiles: radiusNum,
+      });
+
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
-        eventType: "research_run",
-        description: `Research run found ${created.length} prospects near ${location.trim()}${sport ? ` for sport: ${sport}` : ""}`,
-        metadata: { count: created.length, sport: sport || null, location: location.trim() },
+        eventType: "manual_research_completed",
+        description: `Manual research completed. Found ${created.length} prospects near ${locationTrimmed}${sport ? ` for sport: ${sport}` : ""}`,
+        metadata: { count: created.length, sport: sport || null, location: locationTrimmed, radiusMiles: radiusNum },
       });
 
       res.json({ count: created.length, prospects: created });

@@ -1,0 +1,169 @@
+Upgrade Team Training Leads research settings in TrainEfficiency.
+
+Goal:
+Coaches should not have to re-enter the same location every time. Each organization should be able to save default lead research settings:
+- default location
+- search radius in miles
+- optional recurring lead research
+
+Build this org-scoped and production-safe.
+
+1. Database / schema
+Create an org-scoped settings table, for example:
+
+team_training_lead_settings:
+- id
+- organization_id
+- default_location text
+- radius_miles integer default 25
+- recurring_enabled boolean default false
+- recurring_frequency text default 'weekly'
+- recurring_day_of_week integer nullable
+- recurring_time text nullable
+- recurring_limit integer default 8
+- recurring_sport text nullable
+- last_run_at timestamp nullable
+- next_run_at timestamp nullable
+- created_at
+- updated_at
+
+Rules:
+- One settings row per organization.
+- Add a unique constraint on organization_id.
+- Keep all reads/writes scoped to the authenticated user’s organizationId.
+
+2. Backend storage methods
+Add storage functions:
+- getTeamLeadSettings(orgId)
+- upsertTeamLeadSettings(orgId, input)
+- updateTeamLeadLastRun(orgId, timestamp)
+- getOrganizationsDueForRecurringTeamLeadResearch(now)
+
+Never allow one org to read or update another org’s settings.
+
+3. API routes
+Add:
+
+GET /api/team-training-leads/settings
+- Returns the current org settings.
+- If none exist, return sensible defaults:
+  location: org city/state if available, otherwise ""
+  radiusMiles: 25
+  recurringEnabled: false
+  recurringFrequency: "weekly"
+  recurringLimit: 8
+  recurringSport: "All Sports"
+
+PATCH /api/team-training-leads/settings
+- Updates defaultLocation, radiusMiles, recurringEnabled, recurringFrequency, recurringDayOfWeek, recurringTime, recurringLimit, recurringSport.
+- Validate:
+  defaultLocation required if recurringEnabled = true
+  radiusMiles between 5 and 100
+  recurringLimit between 1 and 25
+  recurringFrequency one of: daily, weekly, monthly
+
+4. Research request update
+Update the manual research route payload to accept:
+- location
+- radiusMiles
+- sport
+- limit
+
+Behavior:
+- If location is blank, fall back to saved defaultLocation.
+- If radiusMiles is blank, fall back to saved radiusMiles.
+- If both request location and saved defaultLocation are blank, return 400.
+- After a successful manual search, save the submitted location and radiusMiles as the org defaults.
+
+5. AI prompt update
+Update the lead research prompt to include:
+- location
+- radius in miles
+
+The prompt should say:
+"Find organizations within approximately {radiusMiles} miles of {location}."
+
+Make sure the returned leads include:
+- organizationName
+- sport
+- city
+- state
+- distanceEstimateMiles if inferable
+- website
+- contactName
+- contactEmail
+- contactPhone
+- leadType
+- confidence
+- reasoning
+- estimatedValueCents
+
+Do not invent emails or phone numbers. Use null if unknown.
+
+6. Frontend modal updates
+In the Research New Leads modal:
+- Pre-fill Location from saved settings.
+- Add Radius dropdown or input:
+  10 miles
+  25 miles
+  50 miles
+  75 miles
+  100 miles
+- Default to saved radiusMiles or 25.
+- Add small helper text:
+  "Saved for this organization after each successful search."
+
+7. Settings UI
+Add a small "Lead Settings" button/card on /team-training-leads.
+
+Settings panel should include:
+- Default Location
+- Search Radius
+- Recurring Research toggle
+- Frequency: Daily / Weekly / Monthly
+- Sport: All Sports or selected sport
+- Leads per run
+- Preferred time
+- Save Settings button
+
+When recurring is enabled, show:
+"TrainEfficiency will automatically research new team training leads using these settings."
+
+8. Recurring job
+Create a background job:
+- Runs every hour.
+- Finds orgs where recurringEnabled = true and nextRunAt <= now.
+- Runs researchProspects using saved settings.
+- Saves leads to the org.
+- Updates lastRunAt and computes nextRunAt.
+- Logs:
+  [Team Leads Recurring Research] orgId=... status=started
+  [Team Leads Recurring Research] orgId=... status=completed leads=...
+  [Team Leads Recurring Research] orgId=... status=failed error=...
+
+Safety:
+- Do not run if OPENAI_API_KEY is missing.
+- Do not run if defaultLocation is missing.
+- Prevent duplicate overlapping runs for the same org.
+- Respect existing daily send/research limits if applicable.
+
+9. Audit trail
+Add audit events for:
+- settings_updated
+- manual_research_started
+- manual_research_completed
+- recurring_research_started
+- recurring_research_completed
+- recurring_research_failed
+
+Include location, radiusMiles, sport, limit, and result count where appropriate.
+
+10. QA
+Test:
+- Saved location pre-fills the modal after refresh.
+- Radius saves and reloads.
+- Manual research uses saved defaults when fields are blank.
+- Successful manual research updates org defaults.
+- Recurring toggle requires location.
+- Background job only runs for due orgs.
+- No TypeScript errors.
