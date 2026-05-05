@@ -4,6 +4,10 @@ import type { Organization } from "@shared/schema";
 
 let openaiClient: OpenAI | null = null;
 function getOpenAI(): OpenAI {
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("[Team Leads Research] Missing OPENAI_API_KEY");
+    throw new Error("AI research is not configured");
+  }
   if (!openaiClient) {
     openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
@@ -28,47 +32,46 @@ export interface ProspectResult {
 
 export async function researchProspects(
   org: Organization,
+  location: string,
   sportFilter?: string,
   limit: number = 10
 ): Promise<ProspectResult[]> {
   const openai = getOpenAI();
 
-  const orgCity = (org as any).city || "";
-  const orgState = (org as any).state || "";
   const serviceRadius = (org as any).serviceRadius || "25";
   const specialties = (org as any).specialties || "speed, strength, agility, performance training";
 
-  const locationHint = [orgCity, orgState].filter(Boolean).join(", ") || "the local area";
-  const sportContext = sportFilter
-    ? `Focus specifically on ${sportFilter} organizations.`
-    : `Cover a variety of sports including youth football, basketball, soccer, volleyball, baseball, lacrosse, wrestling, track & field, swim teams, cheer programs, and martial arts gyms.`;
+  const sportContext = sportFilter && sportFilter !== "all"
+    ? `Prioritize ${sportFilter} organizations, but you may include closely related sports if needed to fill the list.`
+    : `Cover a broad variety of sports including youth football, basketball, soccer, volleyball, baseball, lacrosse, wrestling, track & field, swim teams, cheer programs, martial arts gyms, and athletic departments.`;
 
-  const systemPrompt = `You are a lead research assistant for a sports performance training business. Your job is to identify realistic, plausible local sports organizations that would be good team training leads.
+  const systemPrompt = `You are a lead research assistant for a sports performance training business. Your job is to identify realistic, plausible local sports organizations near a specific location that would be good team training leads.
 
 IMPORTANT RULES:
+- The location provided by the user is mandatory — always center your research on that city and state.
 - Never invent specific contact emails or phone numbers. Use null for unknown contact info.
 - Use "unknown" for any field you cannot reliably determine.
 - Only include websiteUrl if you have a real, known URL for this type of organization.
-- Set sourceUrl to a plausible search URL (e.g. a Google search link) so the admin can verify.
+- Set sourceUrl to a plausible Google search URL so the admin can verify.
 - Be honest about confidence. Score 80+ only if you have strong reason the org exists in that area.
-- Generate diverse organization types: youth teams, high school programs, club teams, AAU, travel ball, academies.
-- Keep notes concise: explain why this prospect is relevant to the training business.`;
+- Generate diverse organization types: youth clubs, high school programs, club teams, AAU teams, travel ball, academies, private sports programs, athletic departments.
+- Keep notes concise: explain why this prospect is a good fit for team training services.`;
 
-  const userPrompt = `Research up to ${limit} local sports organizations near ${locationHint} (within ~${serviceRadius} miles) that would be strong leads for team training services: ${specialties}.
+  const userPrompt = `Research up to ${limit} local sports organizations near ${location} (within ~${serviceRadius} miles) that would be strong leads for team training services: ${specialties}.
 
 ${sportContext}
 
 Return a JSON array of prospects. Each object must have:
 - prospectName: string (name of team/club/school program)
-- organizationType: string (e.g. "Youth Club", "High School Program", "AAU Team", "Travel Ball", "Martial Arts Gym", etc.)
+- organizationType: string (e.g. "Youth Club", "High School Program", "AAU Team", "Travel Ball", "Martial Arts Gym", "Athletic Department", "Private Academy", etc.)
 - sport: string (e.g. "Football", "Soccer", "Basketball", "Baseball", "Volleyball", "Lacrosse", "Wrestling", "Cheer", "Swimming", "Martial Arts")
 - city: string
 - state: string (2-letter abbreviation)
 - websiteUrl: string | null
 - contactName: string (use "unknown" if not known)
 - contactRole: string (use "unknown" if not known; e.g. "Head Coach", "Athletic Director", "Program Director")
-- contactEmail: null (never guess emails)
-- contactPhone: null (never guess phones)
+- contactEmail: null (never guess emails — always null)
+- contactPhone: null (never guess phones — always null)
 - sourceUrl: string | null (plausible Google search URL to find this org)
 - confidenceScore: number 1-100 (how confident you are this org exists in this area)
 - notes: string (1-2 sentences: why this is a good team training prospect)

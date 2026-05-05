@@ -519,6 +519,8 @@ export default function AdminTeamTrainingLeadsPage() {
   const [filterCity, setFilterCity] = useState("");
   const [searchText, setSearchText] = useState("");
   const [researchDialogOpen, setResearchDialogOpen] = useState(false);
+  const [researchLocation, setResearchLocation] = useState("");
+  const [researchLocationTouched, setResearchLocationTouched] = useState(false);
   const [researchSport, setResearchSport] = useState("all");
   const [researchLimit, setResearchLimit] = useState("8");
   const [editProspect, setEditProspect] = useState<TeamTrainingProspect | null>(null);
@@ -539,17 +541,30 @@ export default function AdminTeamTrainingLeadsPage() {
   });
 
   const researchMutation = useMutation({
-    mutationFn: async (data: { sport?: string; limit: number }) => {
+    mutationFn: async (data: { sport?: string; limit: number; location: string }) => {
       const res = await apiRequest("POST", "/api/admin/team-training/research", data);
-      return res.json();
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || json.message || "Unknown error");
+      return json;
     },
     onSuccess: (data) => {
       toast({ title: `Found ${data.count} new leads`, description: "Prospects added to your pipeline." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });
       setResearchDialogOpen(false);
+      setResearchLocation("");
+      setResearchLocationTouched(false);
     },
-    onError: (err: Error) => toast({ title: "Research failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => {
+      const msg = err.message;
+      let description = "Couldn't research leads. Please try again.";
+      if (msg === "AI research is not configured") {
+        description = "Lead research is not configured yet. Add your OpenAI API key on the server.";
+      } else if (msg === "Location required") {
+        description = "Enter a location before researching leads.";
+      }
+      toast({ title: "Research failed", description, variant: "destructive" });
+    },
   });
 
   const updateProspectMutation = useMutation({
@@ -856,7 +871,7 @@ export default function AdminTeamTrainingLeadsPage() {
       </Tabs>
 
       {/* Research Dialog */}
-      <Dialog open={researchDialogOpen} onOpenChange={setResearchDialogOpen}>
+      <Dialog open={researchDialogOpen} onOpenChange={(open) => { setResearchDialogOpen(open); if (!open) { setResearchLocation(""); setResearchLocationTouched(false); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Research New Leads</DialogTitle>
@@ -864,6 +879,21 @@ export default function AdminTeamTrainingLeadsPage() {
           <div className="space-y-4">
             <div>
               <p className="text-sm text-muted-foreground mb-2">Find local sports organizations to target for team training.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Location <span className="text-destructive">*</span></label>
+              <input
+                type="text"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="Bluffton, SC"
+                value={researchLocation}
+                onChange={(e) => setResearchLocation(e.target.value)}
+                onBlur={() => setResearchLocationTouched(true)}
+                data-testid="input-research-location"
+              />
+              {researchLocationTouched && !researchLocation.trim() && (
+                <p className="text-xs text-destructive">Enter a city and state to research local teams.</p>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Sport (optional)</label>
@@ -891,8 +921,12 @@ export default function AdminTeamTrainingLeadsPage() {
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setResearchDialogOpen(false)}>Cancel</Button>
               <Button
-                onClick={() => researchMutation.mutate({ sport: researchSport === "all" ? undefined : researchSport, limit: parseInt(researchLimit) })}
-                disabled={researchMutation.isPending}
+                onClick={() => {
+                  setResearchLocationTouched(true);
+                  if (!researchLocation.trim()) return;
+                  researchMutation.mutate({ sport: researchSport === "all" ? undefined : researchSport, limit: parseInt(researchLimit), location: researchLocation.trim() });
+                }}
+                disabled={researchMutation.isPending || !researchLocation.trim()}
                 data-testid="button-confirm-research"
               >
                 {researchMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}

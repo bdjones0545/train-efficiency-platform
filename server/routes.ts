@@ -6752,9 +6752,25 @@ export async function registerRoutes(
       const org = await storage.getOrganizationById(profile.organizationId);
       if (!org) return res.status(404).json({ message: "Organization not found" });
 
-      const { sport, limit = 8 } = req.body;
+      const { sport, limit = 8, location } = req.body;
+
+      if (!location || typeof location !== "string" || !location.trim()) {
+        return res.status(400).json({
+          error: "Location required",
+          message: "Enter a city and state to research local team training leads.",
+        });
+      }
+
+      if (!process.env.OPENAI_API_KEY) {
+        console.error("[Team Leads Research] Missing OPENAI_API_KEY");
+        return res.status(500).json({
+          error: "AI research is not configured",
+          message: "Missing OPENAI_API_KEY on the server.",
+        });
+      }
+
       const { researchProspects, scoreProspect } = await import("./team-training-prospecting");
-      const results = await researchProspects(org, sport || undefined, Number(limit));
+      const results = await researchProspects(org, location.trim(), sport || undefined, Number(limit));
 
       const created = [];
       for (const p of results) {
@@ -6782,13 +6798,19 @@ export async function registerRoutes(
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
         eventType: "research_run",
-        description: `Research run found ${created.length} prospects${sport ? ` for sport: ${sport}` : ""}`,
-        metadata: { count: created.length, sport: sport || null },
+        description: `Research run found ${created.length} prospects near ${location.trim()}${sport ? ` for sport: ${sport}` : ""}`,
+        metadata: { count: created.length, sport: sport || null, location: location.trim() },
       });
 
       res.json({ count: created.length, prospects: created });
     } catch (err: any) {
       console.error("[TeamTraining Research]", err);
+      if (err.message === "AI research is not configured") {
+        return res.status(500).json({
+          error: "AI research is not configured",
+          message: "Missing OPENAI_API_KEY on the server.",
+        });
+      }
       res.status(500).json({ message: err.message });
     }
   });
