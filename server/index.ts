@@ -176,6 +176,8 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
+  console.log("[ENV CHECK] OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY);
+
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {

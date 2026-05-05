@@ -2,16 +2,13 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import type { Organization } from "@shared/schema";
 
-let openaiClient: OpenAI | null = null;
 function getOpenAI(): OpenAI {
-  if (!process.env.OPENAI_API_KEY) {
-    console.error("[Team Leads Research] Missing OPENAI_API_KEY");
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    console.error("[Team Leads Research] Missing OPENAI_API_KEY at runtime");
     throw new Error("AI research is not configured");
   }
-  if (!openaiClient) {
-    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  }
-  return openaiClient;
+  return new OpenAI({ apiKey: key });
 }
 
 export interface ProspectResult {

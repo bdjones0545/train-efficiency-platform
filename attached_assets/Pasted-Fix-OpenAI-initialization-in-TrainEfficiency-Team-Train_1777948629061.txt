@@ -1,0 +1,69 @@
+Fix OpenAI initialization in TrainEfficiency Team Training Leads so the server correctly reads the OPENAI_API_KEY from environment variables in production.
+
+Problem:
+Even though OPENAI_API_KEY is set in Replit Secrets, the backend throws:
+"Missing OPENAI_API_KEY"
+This means the server process is not properly reading process.env or initialization is happening incorrectly.
+
+Tasks:
+
+1. Verify environment access
+- In server startup (index.ts / server.ts), add a temporary log:
+  console.log("[ENV CHECK] OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY)
+- This should print true in production logs.
+- If false, the issue is environment loading, not OpenAI.
+
+2. Fix OpenAI client initialization
+- Ensure OpenAI is initialized like this (server-side only):
+
+  import OpenAI from "openai";
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+- DO NOT:
+  - destructure process.env early (can break in some builds)
+  - use import.meta.env
+  - use VITE_ prefixed vars
+  - initialize outside of runtime if env might not be loaded yet
+
+3. Move initialization into function scope (important)
+- Instead of a top-level singleton, create a helper:
+
+  function getOpenAI() {
+    const key = process.env.OPENAI_API_KEY;
+
+    if (!key) {
+      console.error("[Team Leads Research] Missing OPENAI_API_KEY at runtime");
+      throw new Error("Missing OPENAI_API_KEY");
+    }
+
+    return new OpenAI({ apiKey: key });
+  }
+
+- Call getOpenAI() inside researchProspects(), not at file load.
+
+4. Check server vs client boundary
+- Confirm this code only runs in:
+  /server/*
+- Ensure no OpenAI import exists in client code.
+
+5. Restart requirement
+- After confirming the key exists in Secrets, fully restart the Replit app (not just hot reload).
+- Environment variables do NOT update without restart.
+
+6. Deployment check (critical)
+- If using Replit Deployments:
+  - Go to Deployment → Secrets
+  - Ensure OPENAI_API_KEY is also set there (not just in the workspace)
+- Many failures happen because:
+  Dev works → Deployment fails due to missing secret
+
+7. Final QA
+- Log should show:
+  [ENV CHECK] OPENAI_API_KEY exists: true
+- Clicking "Find Leads" should no longer throw 500
+- Leads should populate normally
+
+Do not change frontend behavior. Only fix environment + initialization.
