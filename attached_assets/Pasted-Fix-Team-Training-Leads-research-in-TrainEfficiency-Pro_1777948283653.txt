@@ -1,0 +1,84 @@
+Fix Team Training Leads research in TrainEfficiency.
+
+Problem:
+On /team-training-leads, clicking Research New Leads → Find Leads fails with:
+500: Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.
+
+Also the modal only asks for Sport and Number of leads. It needs a required Location field so the AI can research local sports organizations in the coach’s actual market.
+
+Tasks:
+
+1. Backend credential hardening
+- Find the Team Training Leads research endpoint/tool.
+- Verify it initializes OpenAI using process.env.OPENAI_API_KEY.
+- Add a startup/runtime guard:
+  - If OPENAI_API_KEY is missing, return a clean 500 JSON response:
+    {
+      error: "AI research is not configured",
+      message: "Missing OPENAI_API_KEY on the server."
+    }
+  - Do not expose raw OpenAI stack traces to the UI.
+- Add a server log with a clear prefix:
+  [Team Leads Research] Missing OPENAI_API_KEY
+
+2. Replit/production env check
+- Confirm the app expects the secret name exactly as OPENAI_API_KEY.
+- Do not hardcode the key.
+- Do not use VITE_OPENAI_API_KEY.
+- Make sure server-only code reads process.env.OPENAI_API_KEY.
+
+3. Add required Location field to the Research New Leads modal
+- Add a text input above Sport:
+  Label: Location
+  Placeholder: "Bluffton, SC"
+  Required.
+- Disable Find Leads unless location is filled.
+- Show inline validation:
+  "Enter a city and state to research local teams."
+- Keep Sport optional.
+- Keep Number of leads as-is.
+
+4. Send location through the request
+- Update frontend request payload to include:
+  location: string
+  sport?: string
+  limit: number
+- Update backend route schema/validation to require location.
+- Reject missing location with 400:
+  {
+    error: "Location required",
+    message: "Enter a city and state to research local team training leads."
+  }
+
+5. Improve AI prompt
+- Update the team lead research prompt so location is mandatory.
+- It should search for sports organizations, clubs, schools, academies, travel teams, private sports programs, and athletic departments near the provided location.
+- If sport is "All Sports", search broadly.
+- If a sport is selected, prioritize that sport.
+- Each generated lead should include:
+  organizationName
+  sport
+  location
+  website if available
+  contactName if available
+  contactEmail if available
+  contactPhone if available
+  leadType
+  confidence
+  reasoning
+  estimatedValueCents or estimatedValue
+- Do not invent contact emails. If unknown, leave null.
+
+6. UI error handling
+- Replace the raw red error JSON toast with a clean message:
+  "Lead research is not configured yet. Add your OpenAI API key on the server."
+- For missing location:
+  "Enter a location before researching leads."
+- For generic errors:
+  "Couldn’t research leads. Please try again."
+
+7. QA
+- Test missing location: Find Leads disabled and/or shows validation.
+- Test missing OPENAI_API_KEY: clean error, no raw JSON shown.
+- Test valid OPENAI_API_KEY + location: leads are created and visible in Leads tab.
+- Confirm no TypeScript errors.
