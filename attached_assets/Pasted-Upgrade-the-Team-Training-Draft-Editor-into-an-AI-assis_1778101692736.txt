@@ -1,0 +1,106 @@
+Upgrade the Team Training Draft Editor into an AI-assisted outreach editor.
+
+Current problem:
+The user can manually edit drafts, but there is no intelligent refinement layer. The system should help personalize outreach, improve tone, and add strategic offers like free demos or evaluations.
+
+Goal:
+Turn the draft editor into a collaborative AI outreach assistant.
+
+Required changes:
+
+1. Add “Edit With AI” section to the draft modal
+Inside the Edit Draft modal, add a new AI refinement section above the Save button.
+
+Include:
+- instruction textarea
+- quick action chips
+- refine button
+- preview loading state
+
+2. Suggested AI refinement chips
+Add selectable chips such as:
+- Make this more personal
+- Offer a free training demo
+- Mention speed and agility
+- Shorten the email
+- Make it more professional
+- Make it more conversational
+- Add social proof
+- Mention local training
+- Focus on injury prevention
+- Add a stronger CTA
+- Mention team performance
+- Mention athlete development
+
+3. AI refinement behavior
+When the user submits instructions:
+- send the current draft body + subject + lead context to the AI
+- preserve the original meaning
+- improve readability and personalization
+- optionally inject strategic offers or CTAs
+- return:
+  - updated subject
+  - updated body
+  - short explanation of what changed
+
+4. Context awareness
+Pass lead context into the AI prompt:
+- organization name
+- sport
+- city/state
+- decision-maker title
+- contact quality
+- estimated pipeline value
+- user business name (Efficiency Strength Training)
+
+The AI should reference these naturally.
+
+5. Free demo intelligence
+If the user requests a free training demo:
+- AI should intelligently position it
+Examples:
+- free speed assessment
+- complimentary team session
+- free combine prep evaluation
+- free movement screening
+- introductory performance session
+
+The AI should choose what fits the sport.
+
+6. Safety + quality rules
+Do not:
+- sound spammy
+- overpromise results
+- use fake urgency
+- generate exaggerated claims
+- use generic “Dear Sir/Madam” style language if a contact name exists
+
+Prefer:
+- concise
+- local
+- coach-to-coach tone
+- confident but human
+
+7. UX improvements
+Add:
+- “Revert to Original”
+- “Compare Changes”
+- loading shimmer while refining
+- “AI Improved” badge after refinement
+
+8. Mobile optimization
+The draft editor currently feels cramped on mobile.
+Improve:
+- textarea height behavior
+- sticky action footer
+- spacing between controls
+- chip scrolling UX
+- keyboard-safe layout
+
+9. Acceptance criteria
+- User can refine drafts conversationally.
+- AI can add offers like free demos intelligently.
+- Emails become more personalized to the organization and sport.
+- Original draft can be restored.
+- Mobile editing experience feels smooth.
+- No TypeScript errors.
