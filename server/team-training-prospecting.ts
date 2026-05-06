@@ -57,7 +57,7 @@ IMPORTANT RULES:
 - The location provided by the user is mandatory — always center your research on that city and state.
 - Find organizations within approximately ${radiusMiles} miles of ${location}.
 - Never invent specific contact emails or phone numbers. Use null for unknown contact info.
-- Use "unknown" for any field you cannot reliably determine.
+- NEVER use the string "unknown" — use null for any field you cannot reliably determine.
 - Only include websiteUrl if you have a real, known URL for this type of organization.
 - Set sourceUrl to a plausible Google search URL so the admin can verify.
 - Be honest about confidence. Score 80+ only if you have strong reason the org exists in that area.
@@ -75,6 +75,12 @@ Contact quality priority (use the highest tier you can find):
   3. general — General organization email (e.g., info@, contact@, office@)
   4. missing — No email found at all
 
+If a websiteUrl is found, infer a likely contact email from the domain:
+  - For schools/academies: athletics@domain or admissions@domain
+  - For sports teams/clubs: coach@domain or info@domain
+  - For general orgs: info@domain or contact@domain
+These inferred emails are acceptable — set contactQuality to "role_based" or "general" and mark them clearly.
+
 Set contactQuality to the tier achieved. Set contactConfidence 0-100 based on how certain you are about the contact.`;
 
   const userPrompt = `Find organizations within approximately ${radiusMiles} miles of ${location} that would be strong leads for team training services: ${specialties}. Research up to ${limit} organizations.
@@ -88,8 +94,8 @@ Return a JSON array of prospects. Each object must have:
 - city: string
 - state: string (2-letter abbreviation)
 - websiteUrl: string | null
-- contactName: string (use "unknown" if not known)
-- contactRole: string (use "unknown" if not known; e.g. "Head Coach", "Athletic Director", "Program Director")
+- contactName: string | null (null if not known — NEVER use "unknown")
+- contactRole: string | null (null if not known — NEVER use "unknown"; e.g. "Head Coach", "Athletic Director", "Program Director")
 - contactEmail: null (always null — we use decisionMakerEmail instead)
 - contactPhone: null (never guess phones — always null)
 - sourceUrl: string | null (plausible Google search URL to find this org)
@@ -97,8 +103,8 @@ Return a JSON array of prospects. Each object must have:
 - notes: string (1-2 sentences: why this is a good team training prospect)
 - decisionMakerName: string | null (first and last name of the best decision-maker contact you can find, or null)
 - decisionMakerTitle: string | null (their title, e.g. "Athletic Director", "Head Football Coach", "Program Director", or null)
-- decisionMakerEmail: string | null (their specific email if known, or a role-based email like director@clubname.org if plausible, or null)
-- contactConfidence: number 0-100 (confidence in the contact info quality)
+- decisionMakerEmail: string | null (a verified or role-based email like director@clubname.org, or inferred like coach@domain.com if a website is known — null only if no domain can be determined)
+- contactConfidence: number 0-100 (confidence in the contact info; 60-80 for inferred from domain, 80-95 for verified)
 - contactSourceUrl: string | null (a plausible search URL to verify this contact)
 - contactQuality: "decision_maker" | "role_based" | "general" | "missing"
 
@@ -128,25 +134,89 @@ Return only the JSON array. No markdown, no extra text.`;
   const validQuality: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
 
   parsed = parsed.map((p) => {
-    const dmEmail = p.decisionMakerEmail || null;
+    let dmEmail = normalizeNullable(p.decisionMakerEmail);
+
+    // If no email from AI but websiteUrl exists, infer from domain
+    let inferredContactSourceType: string | undefined;
+    let inferredVerificationStatus: string | undefined;
+    let inferredEnrichmentExplanation: string | undefined;
+    if (!isValidEmail(dmEmail) && p.websiteUrl) {
+      const domain = extractDomainFromUrl(p.websiteUrl);
+      if (domain) {
+        const inferred = inferEmailFromDomain(domain, p.organizationType, p.sport);
+        if (isValidEmail(inferred)) {
+          dmEmail = inferred;
+          inferredContactSourceType = "inferred";
+          inferredVerificationStatus = "inferred";
+          inferredEnrichmentExplanation = "No verified contact found during lead discovery. Email inferred from organization domain.";
+        }
+      }
+    }
+
     const rawQuality = p.contactQuality;
-    const contactQuality: ContactQuality = validQuality.includes(rawQuality) ? rawQuality : (dmEmail ? "general" : "missing");
+    const contactQuality: ContactQuality = validQuality.includes(rawQuality) ? rawQuality : (isValidEmail(dmEmail) ? "general" : "missing");
 
     return {
       ...p,
+      contactName: normalizeNullable(p.contactName),
+      contactRole: normalizeNullable(p.contactRole),
       contactEmail: null,
-      contactPhone: p.contactPhone || null,
+      contactPhone: null,
+      websiteUrl: normalizeNullable(p.websiteUrl),
+      sourceUrl: normalizeNullable(p.sourceUrl),
       confidenceScore: Math.max(1, Math.min(100, Math.round(p.confidenceScore || 50))),
-      decisionMakerName: p.decisionMakerName || null,
-      decisionMakerTitle: p.decisionMakerTitle || null,
+      decisionMakerName: normalizeNullable(p.decisionMakerName),
+      decisionMakerTitle: normalizeNullable(p.decisionMakerTitle),
       decisionMakerEmail: dmEmail,
-      contactConfidence: Math.max(0, Math.min(100, Math.round(p.contactConfidence || 0))),
-      contactSourceUrl: p.contactSourceUrl || null,
+      contactConfidence: Math.max(0, Math.min(100, Math.round(p.contactConfidence || (inferredContactSourceType ? 35 : 0)))),
+      contactSourceUrl: normalizeNullable(p.contactSourceUrl),
       contactQuality,
+      // Pass inferred metadata through so the route can save it
+      _inferredContactSourceType: inferredContactSourceType,
+      _inferredVerificationStatus: inferredVerificationStatus,
+      _inferredEnrichmentExplanation: inferredEnrichmentExplanation,
     };
   });
 
   return parsed as ProspectResult[];
+}
+
+// ─── Domain + Email Inference Helpers ──────────────────────────────────────
+
+export function extractDomainFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+export function inferEmailFromDomain(domain: string, orgType?: string | null, sport?: string | null): string | null {
+  const normalizedSport = (sport || "").toLowerCase();
+  const normalizedType = (orgType || "").toLowerCase();
+
+  let localPart = "info";
+
+  if (normalizedType.includes("academy") || normalizedType.includes("school") || normalizedType.includes("high school")) {
+    localPart = "athletics";
+  } else if (normalizedType.includes("college") || normalizedType.includes("university")) {
+    localPart = "athletics";
+  } else if (
+    normalizedSport.includes("basketball") ||
+    normalizedSport.includes("football") ||
+    normalizedSport.includes("baseball") ||
+    normalizedSport.includes("soccer") ||
+    normalizedSport.includes("lacrosse") ||
+    normalizedSport.includes("wrestling") ||
+    normalizedSport.includes("volleyball")
+  ) {
+    localPart = "coach";
+  }
+
+  const email = `${localPart}@${domain}`;
+  return isValidEmail(email) ? email : null;
 }
 
 export interface EmailDraftParams {
@@ -187,7 +257,7 @@ Coach/Owner: ${params.coachName}
 Prospect Team/Club: ${params.prospectName}
 Sport: ${params.sport}
 Location: ${params.city}
-Contact Name: ${params.contactName !== "unknown" ? params.contactName : "Coach/Director"}${stageNoteV}${qualityNoteV}
+Contact Name: ${params.contactName && params.contactName !== "unknown" ? params.contactName : "Coach/Director"}${stageNoteV}${qualityNoteV}
 
 Subject Template:
 ${variant.subjectTemplate}
@@ -221,7 +291,7 @@ Return only JSON. No markdown.`;
         .replace(/{prospectName}/g, params.prospectName)
         .replace(/{sport}/g, params.sport)
         .replace(/{city}/g, params.city)
-        .replace(/{contactName}/g, params.contactName !== "unknown" ? params.contactName : "Coach"),
+        .replace(/{contactName}/g, params.contactName && params.contactName !== "unknown" ? params.contactName : "Coach"),
     };
   }
 }
@@ -248,7 +318,7 @@ Coach/Owner: ${params.coachName}
 Prospect Team/Club: ${params.prospectName}
 Sport: ${params.sport}
 Location: ${params.city}
-Contact Name: ${params.contactName !== "unknown" ? params.contactName : "Coach/Director"}
+Contact Name: ${params.contactName && params.contactName !== "unknown" ? params.contactName : "Coach/Director"}
 Available Services: ${servicesList}${stageNote}${qualityNote}
 
 Rules:
@@ -281,7 +351,7 @@ Return only JSON. No markdown.`;
   } catch {
     return {
       subject: `Team training for ${params.prospectName}`,
-      body: `Hi ${params.contactName !== "unknown" ? params.contactName : "Coach"},\n\nI'm reaching out from ${params.businessName}. We work with athletes on speed, strength, movement quality, and performance training.\n\nI came across ${params.prospectName} and thought there may be a good fit for off-season or in-season team training.\n\nWould you be open to a quick conversation about team training options?\n\nBest,\n${params.coachName}\n${params.businessName}`,
+      body: `Hi ${params.contactName && params.contactName !== "unknown" ? params.contactName : "Coach"},\n\nI'm reaching out from ${params.businessName}. We work with athletes on speed, strength, movement quality, and performance training.\n\nI came across ${params.prospectName} and thought there may be a good fit for off-season or in-season team training.\n\nWould you be open to a quick conversation about team training options?\n\nBest,\n${params.coachName}\n${params.businessName}`,
     };
   }
 }
@@ -303,7 +373,7 @@ export function scoreProspect(prospect: ProspectResult): number {
 
   if (prospect.decisionMakerName) score = Math.min(100, score + 5);
   if (prospect.websiteUrl) score = Math.min(100, score + 5);
-  if (prospect.sport && prospect.sport !== "unknown") score = Math.min(100, score + 3);
+  if (prospect.sport) score = Math.min(100, score + 3);
   return Math.max(1, Math.round(score));
 }
 

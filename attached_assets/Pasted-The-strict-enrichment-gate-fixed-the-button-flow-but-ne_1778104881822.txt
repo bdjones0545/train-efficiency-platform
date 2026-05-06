@@ -1,0 +1,210 @@
+The strict enrichment gate fixed the button flow, but newly researched leads are still being created with contactName/contactRole = "unknown" and no email. Fix the lead creation pipeline, not just the enrichment button.
+
+Current issue:
+New leads discovered by the Team Training Research flow are being saved like this:
+- contactName: "unknown"
+- contactRole: "unknown"
+- contactEmail: empty/null
+- websiteUrl exists
+
+This makes the CRM look broken even before “Find Email Contact” is pressed.
+
+Goal:
+When new leads are created, do NOT save "unknown" into contact fields. Save null instead. Also, whenever the research agent discovers a lead with a usable website/domain, it should attempt to produce at least one contact email during research OR mark contact fields as missing cleanly.
+
+Required fixes:
+
+1. Find every place new team training leads are created.
+
+Search for:
+- insertTeamTrainingLead
+- createTeamTrainingLead
+- saveTeamTrainingLead
+- teamTrainingLeads.insert
+- contactName
+- contactRole
+- contactEmail
+- "unknown"
+
+This likely includes:
+- server/team-training-prospecting.ts
+- server/routes.ts
+- server/storage.ts
+- shared/schema.ts
+- client/src/pages/admin-team-training-leads.tsx
+
+2. Add shared normalization before saving any lead.
+
+Create or reuse this helper:
+
+function normalizeNullable(value?: string | null): string | null {
+  if (!value) return null;
+
+  const cleaned = value.trim();
+  const lowered = cleaned.toLowerCase();
+
+  if (
+    lowered === "unknown" ||
+    lowered === "n/a" ||
+    lowered === "none" ||
+    lowered === "not found" ||
+    lowered === "unavailable" ||
+    lowered === "null" ||
+    lowered === "-"
+  ) {
+    return null;
+  }
+
+  return cleaned;
+}
+
+Use this on every contact field before insert/update:
+- contactName
+- contactRole
+- contactEmail
+- contactPhone
+- websiteUrl
+- sourceUrl
+
+Never persist the literal string "unknown" for contactName or contactRole.
+
+3. Update the lead discovery AI prompt.
+
+The research/discovery agent should not invent "unknown" values.
+
+Rules:
+- If contact name is not found, return null.
+- If contact role is not found, return null.
+- If contact email is not found, return null.
+- Never return the string "unknown".
+- If a website URL is found, attempt to infer a basic organization email from the domain.
+
+Allowed inferred organization emails:
+- info@domain
+- contact@domain
+- athletics@domain
+- coach@domain
+- admin@domain
+- admissions@domain for schools/private academies
+- basketball@domain when sport is basketball
+- teams@domain
+
+For schools or academies:
+- prioritize athletics@domain, admissions@domain, info@domain, contact@domain.
+
+For teams/clubs:
+- prioritize coach@domain, info@domain, contact@domain, teams@domain.
+
+4. Add contact enrichment during lead creation when possible.
+
+When the research flow creates a new lead:
+- If AI already returned a valid email, save it.
+- If AI returned no email but websiteUrl exists, infer a likely role/org email from the website domain.
+- Save inferred email only if syntactically valid.
+- Mark:
+  contact_source_type = "inferred"
+  verification_status = "inferred"
+  enrichment_explanation = "No verified contact was found during lead discovery, so this email was inferred from the organization domain."
+- If no domain exists, save contact fields as null and do not show success contact badges.
+
+5. Add domain extraction helper.
+
+function extractDomainFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+
+  try {
+    const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function inferEmailFromDomain(domain: string, leadType?: string | null, sport?: string | null): string | null {
+  const normalizedSport = sport?.toLowerCase() ?? "";
+  const normalizedType = leadType?.toLowerCase() ?? "";
+
+  let localPart = "info";
+
+  if (normalizedType.includes("academy") || normalizedType.includes("school")) {
+    localPart = "athletics";
+  } else if (normalizedSport.includes("basketball")) {
+    localPart = "coach";
+  } else if (normalizedSport.includes("baseball") || normalizedSport.includes("soccer") || normalizedSport.includes("football")) {
+    localPart = "coach";
+  }
+
+  return `${localPart}@${domain}`;
+}
+
+6. Validate inferred email before saving.
+
+function isValidEmail(value?: string | null): boolean {
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+Only save inferred email if valid.
+
+7. Update frontend display.
+
+For empty contact fields:
+- Display “Not found yet” in read-only cards.
+- In edit modal inputs, show placeholder “Not found yet” but keep the value empty/null.
+- Do not display the literal word “unknown.”
+
+If contactEmail is missing:
+- Button should say “Find Email Contact.”
+- No success badge should show.
+
+If inferred email exists:
+- Show email
+- Show orange Inferred badge
+- Show warning banner
+
+8. Add data cleanup migration/script.
+
+Run a one-time cleanup against existing bad rows:
+
+UPDATE team_training_leads
+SET contact_name = NULL
+WHERE LOWER(contact_name) IN ('unknown', 'n/a', 'none', 'not found', 'unavailable', 'null', '-');
+
+UPDATE team_training_leads
+SET contact_role = NULL
+WHERE LOWER(contact_role) IN ('unknown', 'n/a', 'none', 'not found', 'unavailable', 'null', '-');
+
+UPDATE team_training_leads
+SET contact_email = NULL
+WHERE LOWER(contact_email) IN ('unknown', 'n/a', 'none', 'not found', 'unavailable', 'null', '-');
+
+9. Add manual QA cases.
+
+Case A:
+Research creates Hilton Head Christian Academy with website https://www.hhca.org and no contact.
+Expected:
+- contactName = null
+- contactRole = null
+- contactEmail either inferred valid email like athletics@hhca.org OR null
+- UI never shows “unknown”
+
+Case B:
+Research creates AAU basketball team with website domain.
+Expected:
+- contactEmail inferred as coach@domain or info@domain
+- source type inferred
+- verification status inferred
+
+Case C:
+Research creates organization with no website and no email.
+Expected:
+- contact fields null
+- UI says Not found yet
+- button says Find Email Contact
+
+Final acceptance criteria:
+- New leads never save "unknown" into contactName/contactRole.
+- New leads with website domains attempt email inference during creation.
+- Existing bad rows are cleaned.
+- UI never displays “unknown.”
+- Missing contact info is shown honestly as “Not found yet.”

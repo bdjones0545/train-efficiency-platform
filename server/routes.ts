@@ -6976,6 +6976,37 @@ export async function registerRoutes(
         }
 
         // gate.action === "save"
+        const { normalizeNullable: nn, isValidEmail: ive, extractDomainFromUrl, inferEmailFromDomain } = await import("./team-training-prospecting");
+
+        // Normalize all contact fields — never persist sentinel strings
+        const safeContactName = nn(p.contactName);
+        const safeContactRole = nn(p.contactRole);
+        const safeContactEmail = nn(p.contactEmail);
+        const safeWebsiteUrl = nn(p.websiteUrl);
+        const safeSourceUrl = nn(p.sourceUrl);
+        let safeDmEmail = nn(p.decisionMakerEmail);
+        const safeDmName = nn(p.decisionMakerName);
+        const safeDmTitle = nn(p.decisionMakerTitle);
+
+        // If AI already inferred email via researchProspects, use its metadata
+        let contactSourceType = (p as any)._inferredContactSourceType || null;
+        let verificationStatus = (p as any)._inferredVerificationStatus || null;
+        let enrichmentExplanation = (p as any)._inferredEnrichmentExplanation || null;
+
+        // Defense in depth: if still no valid email but websiteUrl exists, infer now
+        if (!ive(safeDmEmail) && safeWebsiteUrl) {
+          const domain = extractDomainFromUrl(safeWebsiteUrl);
+          if (domain) {
+            const inferred = inferEmailFromDomain(domain, p.organizationType, p.sport);
+            if (ive(inferred)) {
+              safeDmEmail = inferred;
+              contactSourceType = "inferred";
+              verificationStatus = "inferred";
+              enrichmentExplanation = "No verified contact found during lead discovery. Email inferred from organization domain.";
+            }
+          }
+        }
+
         const prospect = await storage.createTeamTrainingProspect({
           orgId: profile.organizationId,
           prospectName: p.prospectName,
@@ -6983,21 +7014,24 @@ export async function registerRoutes(
           sport: p.sport,
           city: p.city,
           state: p.state,
-          websiteUrl: p.websiteUrl,
-          contactName: p.contactName,
-          contactRole: p.contactRole,
-          contactEmail: p.contactEmail,
-          contactPhone: p.contactPhone,
-          sourceUrl: p.sourceUrl,
+          websiteUrl: safeWebsiteUrl,
+          contactName: safeContactName,
+          contactRole: safeContactRole,
+          contactEmail: safeContactEmail,
+          contactPhone: null,
+          sourceUrl: safeSourceUrl,
           confidenceScore: scored,
           outreachStatus: "Needs Review",
           notes: p.notes,
-          decisionMakerName: p.decisionMakerName,
-          decisionMakerTitle: p.decisionMakerTitle,
-          decisionMakerEmail: p.decisionMakerEmail,
-          contactConfidence: p.contactConfidence,
-          contactSourceUrl: p.contactSourceUrl,
-          contactQuality: p.contactQuality,
+          decisionMakerName: safeDmName,
+          decisionMakerTitle: safeDmTitle,
+          decisionMakerEmail: safeDmEmail,
+          contactConfidence: p.contactConfidence || (safeDmEmail && contactSourceType === "inferred" ? 35 : 0),
+          contactSourceUrl: nn(p.contactSourceUrl),
+          contactQuality: ive(safeDmEmail) ? p.contactQuality : "missing",
+          ...(contactSourceType && { contactSourceType }),
+          ...(verificationStatus && { verificationStatus }),
+          ...(enrichmentExplanation && { enrichmentExplanation }),
         });
         created.push(prospect);
         existingNames.push(p.prospectName); // prevent intra-batch duplicates

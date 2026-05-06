@@ -351,10 +351,10 @@ function ProspectCard({
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <div><span className="text-muted-foreground">Contact:</span> {prospect.contactName}</div>
-            <div><span className="text-muted-foreground">Role:</span> {prospect.contactRole}</div>
-            <div><span className="text-muted-foreground">Email:</span> {displayEmail || <span className="italic text-muted-foreground">not set</span>}</div>
-            <div><span className="text-muted-foreground">Phone:</span> {prospect.contactPhone || <span className="italic text-muted-foreground">not set</span>}</div>
+            <div><span className="text-muted-foreground">Contact:</span> {prospect.contactName || <span className="italic text-muted-foreground">Not found yet</span>}</div>
+            <div><span className="text-muted-foreground">Role:</span> {prospect.contactRole || <span className="italic text-muted-foreground">Not found yet</span>}</div>
+            <div><span className="text-muted-foreground">Email:</span> {displayEmail || <span className="italic text-muted-foreground">Not found yet</span>}</div>
+            <div><span className="text-muted-foreground">Phone:</span> {prospect.contactPhone || <span className="italic text-muted-foreground">Not found yet</span>}</div>
             {prospect.lastContactedAt && (
               <div className="col-span-2">
                 <span className="text-muted-foreground">Last Contacted:</span>{" "}
