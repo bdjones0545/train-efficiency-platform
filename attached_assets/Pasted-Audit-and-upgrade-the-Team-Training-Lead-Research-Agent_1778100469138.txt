@@ -1,0 +1,90 @@
+Audit and upgrade the Team Training Lead Research Agent so generated leads prioritize decision-maker contact info.
+
+Current problem:
+The lead generator is finding organizations, but many leads have “No Email.” For outreach, the email should ideally belong to a decision maker, not just the business in general.
+
+Goal:
+Every lead should attempt to include a decision-maker contact or be clearly marked as incomplete.
+
+Required changes:
+
+1. Lead research prompt / agent logic
+Update the research instructions so the agent searches for:
+- owner
+- director
+- athletic director
+- head coach
+- program director
+- team director
+- operations manager
+- training coordinator
+- general manager
+
+For each lead, prioritize emails in this order:
+1. named decision-maker email
+2. role-based decision-maker email, such as director@, coach@, athletics@, teams@, info@ if clearly connected to team/program decision-making
+3. general organization email
+4. no email found
+
+2. Add decision-maker fields to saved leads
+Add or support these fields:
+- decisionMakerName
+- decisionMakerTitle
+- decisionMakerEmail
+- contactConfidence
+- contactSourceUrl
+- contactQuality
+
+contactQuality should be one of:
+- decision_maker
+- role_based
+- general
+- missing
+
+3. Scoring update
+A lead with no email should not receive an 80%+ score unless it has very strong other signals.
+Update scoring:
+- decision-maker email: strong positive signal
+- role-based email: moderate positive signal
+- general email: small positive signal
+- missing email: strong penalty
+
+4. UI update
+Replace the current “No Email” badge with clearer contact status:
+- “Decision Maker”
+- “Role Email”
+- “General Email”
+- “Needs Contact”
+
+For “Needs Contact,” show a secondary action:
+- “Find Contact”
+This should trigger a contact enrichment attempt for that specific lead.
+
+5. Email generation guardrail
+Disable or warn on “Generate Email” when no usable email exists.
+Instead of generating an email immediately, show:
+“Contact needed before outreach.”
+Button should become:
+“Find Decision Maker”
+
+6. Contact enrichment route
+Add an endpoint/action to enrich one existing lead:
+POST /api/team-training-leads/:id/enrich-contact
+
+This should search for a decision-maker contact for the saved organization and update the lead if found.
+
+7. Agent transparency
+When expanded, the lead card should show:
+- contact type
+- decision maker name/title if available
+- source URL
+- confidence
+- “No verified contact found yet” if missing
+
+Acceptance criteria:
+- New leads strongly prefer decision-maker emails.
+- Leads with no email are marked “Needs Contact,” not treated like ready outreach leads.
+- “Generate Email” is blocked or redirected to contact enrichment when no email exists.
+- Lead score drops when email is missing.
+- Individual leads can be enriched after creation.
+- No TypeScript errors.
