@@ -7220,6 +7220,111 @@ export async function registerRoutes(
     }
   });
 
+  // AI Refine Draft
+  app.post("/api/admin/team-training/drafts/:id/refine", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(500).json({ message: "AI is not configured — missing OPENAI_API_KEY" });
+      }
+
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const prospect = await storage.getTeamTrainingProspect(draft.prospectId);
+      const org = await storage.getOrganizationById(profile.organizationId);
+
+      const { instructions, currentSubject, currentBody } = req.body;
+      if (!instructions?.trim()) return res.status(400).json({ message: "Instructions are required" });
+
+      const contactQualityLabel =
+        prospect?.contactQuality === "decision_maker" ? "Decision Maker" :
+        prospect?.contactQuality === "role_based" ? "Role-Based Email" :
+        prospect?.contactQuality === "general" ? "General Email" : "Unknown";
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const systemPrompt = `You are a professional outreach specialist for ${org?.name || "Efficiency Strength Training"}, a strength and conditioning business. You help refine outreach emails for team training partnerships with local schools, clubs, and athletic programs.
+
+QUALITY RULES:
+- Do NOT sound spammy or salesy
+- Do NOT overpromise results
+- Do NOT use fake urgency ("Act now!", "Limited time!")
+- Do NOT make exaggerated performance claims
+- Do NOT use generic "Dear Sir/Madam" if a real contact name is known
+- DO use a confident, coach-to-coach, human tone
+- DO be concise and locally-aware
+- DO write professionally but conversationally
+
+LEAD CONTEXT:
+- Your business: ${org?.name || "Efficiency Strength Training"}
+- Prospect organization: ${prospect?.prospectName || "Unknown"}
+- Sport: ${prospect?.sport || "Unknown"}
+- Location: ${prospect?.city || ""}${prospect?.state ? ", " + prospect.state : ""}
+- Contact quality: ${contactQualityLabel}
+- Contact name: ${prospect?.decisionMakerName || prospect?.contactName || "unknown"}
+- Contact title: ${prospect?.decisionMakerTitle || prospect?.contactRole || "unknown"}
+
+FREE DEMO INTELLIGENCE — if the user requests a free demo offer, choose what fits the sport naturally:
+- Football / Basketball / Soccer: "free speed and agility assessment"
+- Baseball / Softball: "free combine prep evaluation"
+- Wrestling / Martial Arts: "free movement screening"
+- Swimming / Track & Field / Cross Country: "free performance evaluation"
+- Volleyball / Lacrosse / Cheer: "complimentary team session"
+- General / Unknown: "introductory performance session"
+
+Return ONLY valid JSON with this exact shape:
+{
+  "subject": "updated subject line",
+  "body": "updated email body with proper line breaks",
+  "explanation": "1-2 sentences describing what you changed and why"
+}`;
+
+      const userPrompt = `Here is the current email draft:
+
+SUBJECT: ${currentSubject || draft.subject}
+
+BODY:
+${currentBody || draft.body}
+
+---
+USER INSTRUCTION: ${instructions}
+
+Refine this email following the instruction above. Preserve the core message and meaning. Make it feel natural and human. Return the result as JSON.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+        max_tokens: 1200,
+      });
+
+      const raw = response.choices[0]?.message?.content || "{}";
+      const result = JSON.parse(raw);
+
+      if (!result.subject || !result.body) {
+        return res.status(500).json({ message: "AI returned an incomplete response" });
+      }
+
+      res.json({
+        subject: result.subject,
+        body: result.body,
+        explanation: result.explanation || "Email refined based on your instructions.",
+      });
+    } catch (err: any) {
+      console.error("[TeamTraining RefineDraft]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Update draft (edit body/subject)
   app.patch("/api/admin/team-training/drafts/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {

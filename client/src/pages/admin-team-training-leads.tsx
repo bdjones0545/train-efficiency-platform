@@ -18,9 +18,25 @@ import {
   ExternalLink, Edit2, ChevronDown, ChevronUp, Target, TrendingUp,
   Users, SendHorizonal, AlertCircle, FileText, Trash2, Filter,
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
-  Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX
+  Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX,
+  Sparkles, RotateCcw
 } from "lucide-react";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
+
+const AI_CHIPS = [
+  "Make this more personal",
+  "Offer a free training demo",
+  "Mention speed and agility",
+  "Shorten the email",
+  "Make it more professional",
+  "Make it more conversational",
+  "Add social proof",
+  "Mention local training",
+  "Focus on injury prevention",
+  "Add a stronger CTA",
+  "Mention team performance",
+  "Mention athlete development",
+];
 
 const STATUS_COLORS: Record<string, string> = {
   "New": "bg-blue-500/15 text-blue-700 dark:text-blue-400",
@@ -797,10 +813,30 @@ export default function AdminTeamTrainingLeadsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
-      setEditDraft(null);
+      closeDraftEditor();
       toast({ title: "Draft updated" });
     },
     onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  const refineDraftMutation = useMutation({
+    mutationFn: async ({ id, instructions, currentSubject, currentBody }: { id: string; instructions: string; currentSubject: string; currentBody: string }) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/drafts/${id}/refine`, { instructions, currentSubject, currentBody });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Refinement failed");
+      return json as { subject: string; body: string; explanation: string };
+    },
+    onSuccess: (data) => {
+      setEditDraftForm({ subject: data.subject, body: data.body });
+      setIsAiRefined(true);
+      setAiExplanation(data.explanation || "");
+      setIsRefining(false);
+      toast({ title: "Draft refined", description: data.explanation });
+    },
+    onError: (err: Error) => {
+      setIsRefining(false);
+      toast({ title: "Refinement failed", description: err.message, variant: "destructive" });
+    },
   });
 
   const markRepliedMutation = useMutation({
@@ -876,10 +912,61 @@ export default function AdminTeamTrainingLeadsPage() {
   };
 
   const [editDraftForm, setEditDraftForm] = useState<{ subject: string; body: string }>({ subject: "", body: "" });
+  const [aiInstruction, setAiInstruction] = useState("");
+  const [selectedChips, setSelectedChips] = useState<string[]>([]);
+  const [originalDraftForm, setOriginalDraftForm] = useState<{ subject: string; body: string } | null>(null);
+  const [isAiRefined, setIsAiRefined] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState("");
+  const [isRefining, setIsRefining] = useState(false);
 
   const openEditDraft = (d: DraftWithProspect) => {
     setEditDraft(d);
     setEditDraftForm({ subject: d.subject, body: d.body });
+    setAiInstruction("");
+    setSelectedChips([]);
+    setOriginalDraftForm(null);
+    setIsAiRefined(false);
+    setShowComparison(false);
+    setAiExplanation("");
+    setIsRefining(false);
+  };
+
+  const closeDraftEditor = () => {
+    setEditDraft(null);
+    setAiInstruction("");
+    setSelectedChips([]);
+    setOriginalDraftForm(null);
+    setIsAiRefined(false);
+    setShowComparison(false);
+    setAiExplanation("");
+    setIsRefining(false);
+  };
+
+  const handleAiRefine = () => {
+    if (!editDraft || !aiInstruction.trim()) return;
+    if (!originalDraftForm) {
+      setOriginalDraftForm({ ...editDraftForm });
+    }
+    setIsRefining(true);
+    refineDraftMutation.mutate({
+      id: editDraft.id,
+      instructions: aiInstruction,
+      currentSubject: editDraftForm.subject,
+      currentBody: editDraftForm.body,
+    });
+  };
+
+  const toggleChip = (chip: string) => {
+    setSelectedChips((prev) => {
+      const isSelected = prev.includes(chip);
+      if (isSelected) {
+        return prev.filter((c) => c !== chip);
+      } else {
+        setAiInstruction((ins) => ins ? `${ins}, ${chip.toLowerCase()}` : chip);
+        return [...prev, chip];
+      }
+    });
   };
 
   return (
@@ -1342,44 +1429,177 @@ export default function AdminTeamTrainingLeadsPage() {
         </Dialog>
       )}
 
-      {/* Edit Draft Dialog */}
+      {/* Edit Draft Dialog — AI-Assisted */}
       {editDraft && (
-        <Dialog open={!!editDraft} onOpenChange={() => setEditDraft(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Edit Draft</DialogTitle>
+        <Dialog open={!!editDraft} onOpenChange={closeDraftEditor}>
+          <DialogContent className="max-w-2xl w-full flex flex-col p-0 max-h-[92dvh] sm:max-h-[88vh]">
+            <DialogHeader className="px-4 pt-4 pb-3 border-b shrink-0">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                Edit Draft
+                {isAiRefined && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs px-2 py-0.5 font-medium">
+                    <Sparkles className="h-3 w-3" /> AI Improved
+                  </span>
+                )}
+              </DialogTitle>
             </DialogHeader>
-            <div className="space-y-3">
+
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              {/* Subject */}
               <div>
-                <label className="text-xs font-medium">Subject</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</label>
                 <Input
                   value={editDraftForm.subject}
                   onChange={(e) => setEditDraftForm((f) => ({ ...f, subject: e.target.value }))}
-                  className="mt-1 h-8 text-sm"
+                  className="mt-1.5 h-9 text-sm"
                   data-testid="input-edit-draft-subject"
                 />
               </div>
+
+              {/* Body */}
               <div>
-                <label className="text-xs font-medium">Body</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</label>
+                  {isAiRefined && originalDraftForm && (
+                    <button
+                      className="text-xs text-primary underline underline-offset-2"
+                      onClick={() => setShowComparison((v) => !v)}
+                      data-testid="button-toggle-comparison"
+                    >
+                      {showComparison ? "Hide comparison" : "Compare changes"}
+                    </button>
+                  )}
+                </div>
+
+                {showComparison && originalDraftForm ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Original</p>
+                      <div className="text-xs bg-muted/60 rounded-md border p-2.5 whitespace-pre-wrap font-mono h-52 overflow-y-auto leading-relaxed">
+                        {originalDraftForm.body}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-green-600 dark:text-green-400 mb-1">AI Improved</p>
+                      <div className="text-xs bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-md p-2.5 whitespace-pre-wrap font-mono h-52 overflow-y-auto leading-relaxed">
+                        {editDraftForm.body}
+                      </div>
+                    </div>
+                  </div>
+                ) : isRefining ? (
+                  <div className="space-y-2 mt-1">
+                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="h-3.5 w-5/6" />
+                    <Skeleton className="h-3.5 w-4/6" />
+                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="h-3.5 w-3/6" />
+                    <Skeleton className="h-3.5 w-5/6" />
+                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="h-3.5 w-4/6" />
+                    <Skeleton className="h-3.5 w-2/6" />
+                  </div>
+                ) : (
+                  <Textarea
+                    value={editDraftForm.body}
+                    onChange={(e) => setEditDraftForm((f) => ({ ...f, body: e.target.value }))}
+                    className="mt-0.5 text-sm font-mono min-h-[200px] resize-y leading-relaxed"
+                    rows={10}
+                    data-testid="input-edit-draft-body"
+                  />
+                )}
+              </div>
+
+              {/* AI explanation banner */}
+              {aiExplanation && isAiRefined && (
+                <div className="flex items-start gap-2 rounded-md border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 px-3 py-2">
+                  <Sparkles className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-purple-700 dark:text-purple-300 leading-relaxed">{aiExplanation}</p>
+                </div>
+              )}
+
+              {/* ── Edit With AI ── */}
+              <div className="rounded-lg border bg-muted/20 p-3.5 space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <p className="text-xs font-semibold">Edit With AI</p>
+                </div>
+
+                {/* Quick action chips */}
+                <div className="flex flex-wrap gap-1.5" data-testid="ai-chips-container">
+                  {AI_CHIPS.map((chip) => (
+                    <button
+                      key={chip}
+                      onClick={() => toggleChip(chip)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                        selectedChips.includes(chip)
+                          ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                          : "bg-background border-border hover:border-primary hover:text-primary"
+                      }`}
+                      data-testid={`chip-ai-${chip.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Instruction textarea */}
                 <Textarea
-                  value={editDraftForm.body}
-                  onChange={(e) => setEditDraftForm((f) => ({ ...f, body: e.target.value }))}
-                  className="mt-1 text-sm font-mono"
-                  rows={12}
-                  data-testid="input-edit-draft-body"
+                  placeholder="Describe how you want to improve this email... (e.g. 'Make it warmer and mention we work with local high school teams')"
+                  value={aiInstruction}
+                  onChange={(e) => setAiInstruction(e.target.value)}
+                  className="text-sm min-h-[80px] resize-none"
+                  rows={3}
+                  data-testid="textarea-ai-instruction"
                 />
+
+                {/* Refine + Revert buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleAiRefine}
+                    disabled={isRefining || !aiInstruction.trim()}
+                    className="flex-1 sm:flex-none"
+                    data-testid="button-ai-refine"
+                  >
+                    {isRefining ? (
+                      <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Refining…</>
+                    ) : (
+                      <><Sparkles className="h-3.5 w-3.5 mr-1.5" />Refine with AI</>
+                    )}
+                  </Button>
+
+                  {isAiRefined && originalDraftForm && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditDraftForm(originalDraftForm);
+                        setIsAiRefined(false);
+                        setShowComparison(false);
+                        setAiExplanation("");
+                      }}
+                      data-testid="button-revert-original"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1.5" />Revert to Original
+                    </Button>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setEditDraft(null)}>Cancel</Button>
-                <Button
-                  onClick={() => updateDraftMutation.mutate({ id: editDraft.id, data: editDraftForm })}
-                  disabled={updateDraftMutation.isPending}
-                  data-testid="button-save-draft"
-                >
-                  {updateDraftMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Save Draft
-                </Button>
-              </div>
+            </div>
+
+            {/* Sticky footer */}
+            <div className="flex gap-2 justify-end px-4 py-3 border-t bg-background shrink-0">
+              <Button variant="outline" onClick={closeDraftEditor} data-testid="button-cancel-draft">
+                Cancel
+              </Button>
+              <Button
+                onClick={() => updateDraftMutation.mutate({ id: editDraft.id, data: editDraftForm })}
+                disabled={updateDraftMutation.isPending}
+                data-testid="button-save-draft"
+              >
+                {updateDraftMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save Draft
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
