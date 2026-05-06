@@ -335,6 +335,10 @@ export interface IStorage {
   updateTeamLeadLastRun(orgId: string, lastRunAt: Date, nextRunAt: Date | null): Promise<void>;
   getOrganizationsDueForRecurringResearch(now: Date): Promise<import("@shared/schema").TeamTrainingLeadSettings[]>;
 
+  // Discovery Log
+  logDiscoveryAttempt(data: import("@shared/schema").InsertTeamTrainingDiscoveryLog): Promise<import("@shared/schema").TeamTrainingDiscoveryLog>;
+  getDiscoveryLog(orgId: string, limit?: number): Promise<import("@shared/schema").TeamTrainingDiscoveryLog[]>;
+
   // Per-org preferences
   getOrgContextForUser(userId: string): Promise<{ orgId: string; source: string } | null>;
   getUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences | undefined>;
@@ -2200,6 +2204,20 @@ export class DatabaseStorage implements IStorage {
       sentThisWeek: weekEvents.filter((e) => e.eventType === "sent").length,
       replies: weekEvents.filter((e) => e.eventType === "replied").length,
     };
+  }
+
+  async logDiscoveryAttempt(data: import("@shared/schema").InsertTeamTrainingDiscoveryLog) {
+    const { teamTrainingDiscoveryLog } = await import("@shared/schema");
+    const [row] = await db.insert(teamTrainingDiscoveryLog).values(data).returning();
+    return row;
+  }
+
+  async getDiscoveryLog(orgId: string, limit = 100) {
+    const { teamTrainingDiscoveryLog } = await import("@shared/schema");
+    return db.select().from(teamTrainingDiscoveryLog)
+      .where(eq(teamTrainingDiscoveryLog.orgId, orgId))
+      .orderBy(desc(teamTrainingDiscoveryLog.attemptedAt))
+      .limit(limit);
   }
 
   async backfillUserOrgPreferences(): Promise<{ created: number; skipped: number }> {

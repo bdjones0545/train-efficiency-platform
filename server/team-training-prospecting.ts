@@ -13,15 +13,19 @@ function getOpenAI(): OpenAI {
 
 export type ContactQuality = "decision_maker" | "role_based" | "general" | "missing";
 
+export type LeadDiscoverySourceType = "website" | "search_result" | "directory" | "social" | "manual";
+export type LeadDiscoveryMethod = "google_search" | "web_search" | "directory_scan" | "social_discovery" | "manual";
+export type LeadValidationStatus = "verified" | "likely_valid" | "weak" | "stale" | "rejected";
+
 export interface ProspectResult {
   prospectName: string;
-  organizationType: string;
-  sport: string;
-  city: string;
-  state: string;
+  organizationType: string | null;
+  sport: string | null;
+  city: string | null;
+  state: string | null;
   websiteUrl: string | null;
-  contactName: string;
-  contactRole: string;
+  contactName: string | null;
+  contactRole: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
   sourceUrl: string | null;
@@ -34,6 +38,66 @@ export interface ProspectResult {
   contactConfidence: number;
   contactSourceUrl: string | null;
   contactQuality: ContactQuality;
+  // Lead Discovery Evidence Layer
+  discoverySourceType: LeadDiscoverySourceType;
+  discoverySourceUrl: string | null;
+  discoverySourceTitle: string | null;
+  discoverySourceSnippet: string | null;
+  discoveryQuery: string | null;
+  discoveryMethod: LeadDiscoveryMethod;
+  discoveryConfidenceScore: number;
+  leadValidationStatus: LeadValidationStatus;
+}
+
+const VALID_QUALITY: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
+const VALID_DISCOVERY_SOURCE: LeadDiscoverySourceType[] = ["website", "search_result", "directory", "social", "manual"];
+const VALID_DISCOVERY_METHOD: LeadDiscoveryMethod[] = ["google_search", "web_search", "directory_scan", "social_discovery", "manual"];
+const VALID_VALIDATION_STATUS: LeadValidationStatus[] = ["verified", "likely_valid", "weak", "stale", "rejected"];
+
+function normalizeProspect(p: any): ProspectResult {
+  const dmEmail = normalizeNullable(p.decisionMakerEmail);
+  const dmEmailValid = isValidEmail(dmEmail);
+  const rawQuality = p.contactQuality;
+  const contactQuality: ContactQuality = VALID_QUALITY.includes(rawQuality) ? rawQuality : (dmEmailValid ? "general" : "missing");
+
+  const rawDst = p.discoverySourceType;
+  const discoverySourceType: LeadDiscoverySourceType = VALID_DISCOVERY_SOURCE.includes(rawDst) ? rawDst : "search_result";
+  const rawDm = p.discoveryMethod;
+  const discoveryMethod: LeadDiscoveryMethod = VALID_DISCOVERY_METHOD.includes(rawDm) ? rawDm : "web_search";
+  const rawVs = p.leadValidationStatus;
+  const leadValidationStatus: LeadValidationStatus = VALID_VALIDATION_STATUS.includes(rawVs) ? rawVs : "likely_valid";
+  const rawDcs = p.discoveryConfidenceScore;
+  const discoveryConfidenceScore = typeof rawDcs === "number" ? Math.max(0, Math.min(1, rawDcs)) : 0.5;
+
+  return {
+    prospectName: p.organizationName || p.prospectName || "Unknown",
+    organizationType: p.organizationType || "Sports Organization",
+    sport: p.sport || "General",
+    city: p.city || "",
+    state: p.state || "",
+    websiteUrl: normalizeNullable(p.websiteUrl),
+    contactName: normalizeNullable(p.contactName),
+    contactRole: normalizeNullable(p.contactRole),
+    contactEmail: null,
+    contactPhone: null,
+    sourceUrl: normalizeNullable(p.discoverySourceUrl || p.sourceUrl),
+    confidenceScore: Math.max(1, Math.min(100, Math.round((discoveryConfidenceScore * 100) || p.confidenceScore || 50))),
+    notes: p.notes || "",
+    decisionMakerName: null,
+    decisionMakerTitle: null,
+    decisionMakerEmail: null,
+    contactConfidence: 0,
+    contactSourceUrl: null,
+    contactQuality: "missing",
+    discoverySourceType,
+    discoverySourceUrl: normalizeNullable(p.discoverySourceUrl || p.sourceUrl),
+    discoverySourceTitle: normalizeNullable(p.discoverySourceTitle),
+    discoverySourceSnippet: normalizeNullable(p.discoverySourceSnippet),
+    discoveryQuery: normalizeNullable(p.discoveryQuery),
+    discoveryMethod,
+    discoveryConfidenceScore,
+    leadValidationStatus,
+  };
 }
 
 export async function researchProspects(
@@ -44,122 +108,182 @@ export async function researchProspects(
   radiusMiles: number = 25
 ): Promise<ProspectResult[]> {
   const openai = getOpenAI();
-
   const specialties = (org as any).specialties || "speed, strength, agility, performance training";
 
   const sportContext = sportFilter && sportFilter !== "all"
-    ? `Prioritize ${sportFilter} organizations, but you may include closely related sports if needed to fill the list.`
-    : `Cover a broad variety of sports including youth football, basketball, soccer, volleyball, baseball, lacrosse, wrestling, track & field, swim teams, cheer programs, martial arts gyms, and athletic departments.`;
+    ? `Focus specifically on ${sportFilter} organizations. You may include adjacent sports if needed.`
+    : `Cover a broad variety of sports: youth football, basketball, soccer, volleyball, baseball, lacrosse, wrestling, track & field, swim teams, cheer, martial arts gyms, athletic departments.`;
 
-  const systemPrompt = `You are a lead research assistant for a sports performance training business. Your job is to identify realistic, plausible local sports organizations near a specific location that would be good team training leads.
+  const searchInput = `You are a B2B lead research intelligence system for a sports performance training company. Your task is to find REAL, verifiable sports organizations near ${location} that would be strong prospects for team training services (${specialties}).
 
-IMPORTANT RULES:
-- The location provided by the user is mandatory — always center your research on that city and state.
-- Find organizations within approximately ${radiusMiles} miles of ${location}.
-- Never invent specific contact emails or phone numbers. Use null for unknown contact info.
-- NEVER use the string "unknown" — use null for any field you cannot reliably determine.
-- Only include websiteUrl if you have a real, known URL for this type of organization.
-- Set sourceUrl to a plausible Google search URL so the admin can verify.
-- Be honest about confidence. Score 80+ only if you have strong reason the org exists in that area.
-- Generate diverse organization types: youth clubs, high school programs, club teams, AAU teams, travel ball, academies, private sports programs, athletic departments.
-- Keep notes concise: explain why this prospect is a good fit for team training services.
-
-DECISION-MAKER CONTACT RESEARCH:
-For every lead, actively attempt to identify a decision-maker. Search for:
-  - Owner, Director, Athletic Director, Head Coach, Program Director
-  - Team Director, Operations Manager, Training Coordinator, General Manager
-
-Contact quality priority (use the highest tier you can find):
-  1. decision_maker — Named individual with a known direct email (e.g., john.smith@clubname.org)
-  2. role_based — Role-based inbox clearly tied to team/program decisions (e.g., director@, coach@, athletics@, teams@, headcoach@)
-  3. general — General organization email (e.g., info@, contact@, office@)
-  4. missing — No email found at all
-
-If a websiteUrl is found, infer a likely contact email from the domain:
-  - For schools/academies: athletics@domain or admissions@domain
-  - For sports teams/clubs: coach@domain or info@domain
-  - For general orgs: info@domain or contact@domain
-These inferred emails are acceptable — set contactQuality to "role_based" or "general" and mark them clearly.
-
-Set contactQuality to the tier achieved. Set contactConfidence 0-100 based on how certain you are about the contact.`;
-
-  const userPrompt = `Find organizations within approximately ${radiusMiles} miles of ${location} that would be strong leads for team training services: ${specialties}. Research up to ${limit} organizations.
+CRITICAL — YOU MUST SEARCH THE WEB:
+1. Run these searches and visit the pages you find:
+   - "${location} youth sports clubs"
+   - "${location} ${sportFilter && sportFilter !== "all" ? sportFilter : "travel"} teams site directory"
+   - "${location} high school athletics"
+   - "${location} AAU ${sportFilter && sportFilter !== "all" ? sportFilter : "basketball"} teams"
+   - "${location} recreational sports clubs"
+2. For each result, click through to the actual organization website/page to confirm it's real.
+3. Verify location — only include orgs within ${radiusMiles} miles of ${location}.
 
 ${sportContext}
 
-Return a JSON array of prospects. Each object must have:
-- prospectName: string (name of team/club/school program)
-- organizationType: string (e.g. "Youth Club", "High School Program", "AAU Team", "Travel Ball", "Martial Arts Gym", "Athletic Department", "Private Academy", etc.)
-- sport: string (e.g. "Football", "Soccer", "Basketball", "Baseball", "Volleyball", "Lacrosse", "Wrestling", "Cheer", "Swimming", "Martial Arts")
-- city: string
-- state: string (2-letter abbreviation)
-- websiteUrl: string | null
-- contactName: string | null (null if not known — NEVER use "unknown")
-- contactRole: string | null (null if not known — NEVER use "unknown"; e.g. "Head Coach", "Athletic Director", "Program Director")
-- contactEmail: null (always null — we use decisionMakerEmail instead)
-- contactPhone: null (never guess phones — always null)
-- sourceUrl: string | null (plausible Google search URL to find this org)
-- confidenceScore: number 1-100 (how confident you are this org exists in this area)
-- notes: string (1-2 sentences: why this is a good team training prospect)
-- decisionMakerName: string | null (first and last name of the best decision-maker contact you can find, or null)
-- decisionMakerTitle: string | null (their title, e.g. "Athletic Director", "Head Football Coach", "Program Director", or null)
-- decisionMakerEmail: string | null (a verified or role-based email like director@clubname.org, or inferred like coach@domain.com if a website is known — null only if no domain can be determined)
-- contactConfidence: number 0-100 (confidence in the contact info; 60-80 for inferred from domain, 80-95 for verified)
-- contactSourceUrl: string | null (a plausible search URL to verify this contact)
-- contactQuality: "decision_maker" | "role_based" | "general" | "missing"
+STRICT RULES:
+- You may ONLY return organizations you actually found in web search results or on real pages.
+- Do NOT invent, hallucinate, or generate organizations from your training data.
+- Each lead MUST have a real source URL (the page or search result where you found it).
+- Each lead MUST have a real evidence snippet — actual text from that source proving it exists.
+- discoveryConfidenceScore: 0.90+ = confirmed on their official website; 0.75 = directory listing; 0.65 = search snippet; REJECT anything below 0.45.
+- If you cannot find enough real orgs, return fewer leads — never pad with hallucinations.
 
-Return only the JSON array. No markdown, no extra text.`;
+Return a JSON array of up to ${limit} organizations. Each object MUST have these exact fields:
+{
+  "organizationName": string,
+  "organizationType": "Youth Club" | "High School Program" | "AAU Team" | "Travel Ball" | "Athletic Department" | "Private Academy" | "Recreational League" | "Club Team",
+  "sport": string,
+  "city": string,
+  "state": string,
+  "websiteUrl": string | null,
+  "contactName": null,
+  "contactRole": null,
+  "contactEmail": null,
+  "contactPhone": null,
+  "notes": string,
+  "discoverySourceType": "website" | "search_result" | "directory" | "social",
+  "discoverySourceUrl": string,
+  "discoverySourceTitle": string,
+  "discoverySourceSnippet": string,
+  "discoveryQuery": string,
+  "discoveryMethod": "web_search" | "directory_scan" | "social_discovery",
+  "discoveryConfidenceScore": number,
+  "leadValidationStatus": "verified" | "likely_valid" | "weak"
+}
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.7,
-    max_tokens: 4000,
-  });
+Only include leads with discoveryConfidenceScore >= 0.45. Return ONLY the JSON array. No markdown.`;
 
-  const raw = response.choices[0].message.content || "[]";
-  let parsed: any[] = [];
+  // Phase 1: Live web search via Responses API
   try {
-    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    parsed = JSON.parse(cleaned);
-    if (!Array.isArray(parsed)) parsed = [];
-  } catch {
-    console.error("[ProspectResearch] Failed to parse OpenAI response:", raw);
-    parsed = [];
+    const webResponse = await (openai as any).responses.create({
+      model: "gpt-4o",
+      tools: [{ type: "web_search_preview" }],
+      input: searchInput,
+    });
+
+    const rawText: string = webResponse.output_text || "";
+    console.log(`[ProspectResearch] Web search response for ${location}: ${rawText.length} chars`);
+
+    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      let parsed: any[] = [];
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(parsed)) parsed = [];
+      } catch {
+        console.error("[ProspectResearch] Failed to parse JSON array from web search");
+        parsed = [];
+      }
+
+      // Apply confidence gate and normalize
+      const results = parsed
+        .filter((p) => {
+          const score = typeof p.discoveryConfidenceScore === "number" ? p.discoveryConfidenceScore : 0;
+          if (score < 0.45) {
+            console.log(`[ProspectResearch] Rejecting ${p.organizationName || "unknown"} — confidence ${score} < 0.45`);
+            return false;
+          }
+          if (!p.discoverySourceUrl && !p.websiteUrl) {
+            console.log(`[ProspectResearch] Rejecting ${p.organizationName || "unknown"} — no source URL`);
+            return false;
+          }
+          if (!p.discoverySourceSnippet) {
+            console.log(`[ProspectResearch] Rejecting ${p.organizationName || "unknown"} — no evidence snippet`);
+            return false;
+          }
+          return true;
+        })
+        .map(normalizeProspect);
+
+      console.log(`[ProspectResearch] Returning ${results.length} verified leads from web search`);
+      return results;
+    }
+
+    console.error("[ProspectResearch] No JSON array found in web search response");
+  } catch (err: any) {
+    console.error("[ProspectResearch] Web search failed:", err?.message || err);
   }
 
-  const validQuality: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
+  // Phase 2: Fallback — clearly labeled as lower-confidence
+  console.warn("[ProspectResearch] Falling back to chat completions (no live web access)");
+  return await researchProspectsFallback(openai, location, sportFilter, limit, radiusMiles, specialties);
+}
 
-  parsed = parsed.map((p) => {
-    let dmEmail = normalizeNullable(p.decisionMakerEmail);
+async function researchProspectsFallback(
+  openai: OpenAI,
+  location: string,
+  sportFilter: string | undefined,
+  limit: number,
+  radiusMiles: number,
+  specialties: string
+): Promise<ProspectResult[]> {
+  const sportContext = sportFilter && sportFilter !== "all"
+    ? `Focus specifically on ${sportFilter} organizations.`
+    : `Cover a broad variety of sports: youth football, basketball, soccer, volleyball, baseball, lacrosse, wrestling, track & field, swim teams, cheer, martial arts.`;
 
-    const rawQuality = p.contactQuality;
-    // Only count email as present if AI returned a verified/real email for the decision maker
-    const dmEmailValid = isValidEmail(dmEmail);
-    const contactQuality: ContactQuality = validQuality.includes(rawQuality) ? rawQuality : (dmEmailValid ? "general" : "missing");
+  const systemPrompt = `You are a lead research assistant for a sports performance training business. Find real, known sports organizations near ${location}. Only include organizations you have genuine knowledge of from training data — no made-up names. Mark all leads with discoveryConfidenceScore 0.50-0.65 to reflect limited web verification.`;
 
-    return {
-      ...p,
-      contactName: normalizeNullable(p.contactName),
-      contactRole: normalizeNullable(p.contactRole),
-      contactEmail: null,
-      contactPhone: null,
-      websiteUrl: normalizeNullable(p.websiteUrl),
-      sourceUrl: normalizeNullable(p.sourceUrl),
-      confidenceScore: Math.max(1, Math.min(100, Math.round(p.confidenceScore || 50))),
-      decisionMakerName: normalizeNullable(p.decisionMakerName),
-      decisionMakerTitle: normalizeNullable(p.decisionMakerTitle),
-      decisionMakerEmail: dmEmail,
-      contactConfidence: Math.max(0, Math.min(100, Math.round(p.contactConfidence || 0))),
-      contactSourceUrl: normalizeNullable(p.contactSourceUrl),
-      contactQuality,
-    };
-  });
+  const userPrompt = `Find up to ${limit} real sports organizations within ${radiusMiles} miles of ${location}. ${sportContext}
 
-  return parsed as ProspectResult[];
+Return a JSON array. Each object must have:
+- "organizationName": string
+- "organizationType": string
+- "sport": string
+- "city": string
+- "state": string
+- "websiteUrl": string | null
+- "contactName": null
+- "contactRole": null
+- "contactEmail": null
+- "contactPhone": null
+- "notes": string
+- "discoverySourceType": "search_result"
+- "discoverySourceUrl": null
+- "discoverySourceTitle": null
+- "discoverySourceSnippet": null
+- "discoveryQuery": "fallback research - ${location}"
+- "discoveryMethod": "web_search"
+- "discoveryConfidenceScore": number (0.50-0.65 for training data, lower if uncertain)
+- "leadValidationStatus": "likely_valid" | "weak"
+
+Only include orgs you have strong reason to believe exist. Return ONLY the JSON array.`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.3,
+      max_tokens: 3000,
+    });
+
+    const raw = response.choices[0].message.content || "[]";
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    let parsed: any[] = [];
+    try {
+      parsed = JSON.parse(cleaned);
+      if (!Array.isArray(parsed)) parsed = [];
+    } catch {
+      parsed = [];
+    }
+
+    return parsed
+      .filter((p) => typeof p.discoveryConfidenceScore !== "number" || p.discoveryConfidenceScore >= 0.45)
+      .map(normalizeProspect);
+  } catch (err) {
+    console.error("[ProspectResearch] Fallback also failed:", err);
+    return [];
+  }
 }
 
 // ─── Domain + Email Inference Helpers ──────────────────────────────────────
@@ -401,23 +525,21 @@ Return only JSON. No markdown.`;
 }
 
 export function scoreProspect(prospect: ProspectResult): number {
-  let score = prospect.confidenceScore || 50;
+  // Base score from discovery confidence (0-1 → 0-100)
+  let score = Math.round(prospect.discoveryConfidenceScore * 100) || prospect.confidenceScore || 50;
 
-  // Decision-maker contact scoring
-  if (prospect.contactQuality === "decision_maker") {
-    score = Math.min(100, score + 20);
-  } else if (prospect.contactQuality === "role_based") {
-    score = Math.min(100, score + 10);
-  } else if (prospect.contactQuality === "general") {
-    score = Math.min(100, score + 3);
-  } else {
-    // missing email — strong penalty; cap at 75 regardless of other signals
-    score = Math.min(75, score - 15);
-  }
-
-  if (prospect.decisionMakerName) score = Math.min(100, score + 5);
+  // Evidence quality bonuses
+  if (prospect.discoverySourceSnippet) score = Math.min(100, score + 5);
+  if (prospect.discoverySourceUrl) score = Math.min(100, score + 3);
   if (prospect.websiteUrl) score = Math.min(100, score + 5);
-  if (prospect.sport) score = Math.min(100, score + 3);
+  if (prospect.sport) score = Math.min(100, score + 2);
+
+  // Validation status modifiers
+  if (prospect.leadValidationStatus === "verified") score = Math.min(100, score + 10);
+  else if (prospect.leadValidationStatus === "weak") score = Math.max(1, score - 15);
+  else if (prospect.leadValidationStatus === "stale") score = Math.max(1, score - 20);
+  else if (prospect.leadValidationStatus === "rejected") return 0;
+
   return Math.max(1, Math.round(score));
 }
 
@@ -434,20 +556,26 @@ export interface GateResult {
 /**
  * Apply a quality gate to a scored prospect before persisting it.
  *
- * Weakness dimensions (each counts as 1):
- *   - contactQuality === "missing"
- *   - score < 60
- *   - no sourceUrl
- *   - organizationType is unknown/missing
- *
- * Reject if 2+ weaknesses. Duplicate if name already exists in the org pipeline
- * (case-insensitive, normalised). needsContact = true when saved but email is missing.
+ * Primary gate: discoveryConfidenceScore < 0.45 → immediate reject (no evidence).
+ * Secondary: duplicate check by normalized name.
+ * Weakness dimensions: missing source, missing snippet, score < 50, unknown org type.
  */
 export function applyLeadQualityGate(
   prospect: ProspectResult,
   score: number,
   existingNames: string[]
 ): GateResult {
+  // ── Hard reject — below minimum discovery confidence ──────────────────────
+  if (prospect.discoveryConfidenceScore < 0.45 || prospect.leadValidationStatus === "rejected") {
+    return {
+      action: "reject",
+      needsContact: false,
+      reason: `Discovery confidence too low (${Math.round(prospect.discoveryConfidenceScore * 100)}%) — no verifiable evidence`,
+      weaknessCount: 1,
+      weaknesses: ["discovery confidence below minimum threshold"],
+    };
+  }
+
   // ── Duplicate check ──────────────────────────────────────────────────────
   const normalise = (s: string) =>
     s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
@@ -465,15 +593,15 @@ export function applyLeadQualityGate(
 
   // ── Weakness scoring ─────────────────────────────────────────────────────
   const weaknesses: string[] = [];
-  if (prospect.contactQuality === "missing") weaknesses.push("no contact email found");
-  if (score < 60) weaknesses.push(`low confidence score (${score})`);
-  if (!prospect.sourceUrl) weaknesses.push("no source URL to verify");
+  if (!prospect.discoverySourceUrl) weaknesses.push("no source URL to verify");
+  if (!prospect.discoverySourceSnippet) weaknesses.push("no evidence snippet from source");
+  if (score < 50) weaknesses.push(`low confidence score (${score})`);
   const orgType = (prospect.organizationType || "").toLowerCase().trim();
   if (!orgType || orgType === "unknown") weaknesses.push("organization type unclear");
 
   const weaknessCount = weaknesses.length;
 
-  if (weaknessCount >= 2) {
+  if (weaknessCount >= 3) {
     return {
       action: "reject",
       needsContact: false,

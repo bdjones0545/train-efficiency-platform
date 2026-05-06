@@ -1,0 +1,370 @@
+Refactor the Team Training Research + Recurring Research pipelines to follow the same source-backed trust architecture as contact enrichment.
+
+Goal:
+Every lead in TrainEfficiency must be:
+- discovered from a real source
+- evidence-backed
+- confidence-scored
+- explainable
+- traceable
+
+No hallucinated organizations.
+No unverifiable leads.
+No “AI guessed this exists.”
+
+The CRM should behave like a real research intelligence system.
+
+====================================================
+1. CORE PRINCIPLE
+====================================================
+
+Every lead must answer:
+- Why does this lead exist?
+- Where was it found?
+- What query found it?
+- What evidence supports it?
+- How trustworthy is it?
+- When was it discovered?
+- Has it been revalidated?
+
+Research and recurring research must use:
+- OpenAI Responses API
+- web_search_preview tool
+- live browsing/searching
+- real source extraction
+
+The AI may NOT invent organizations.
+
+====================================================
+2. DATABASE / SCHEMA
+====================================================
+
+Add the following fields to team_training_prospects:
+
+discovery_source_type VARCHAR
+discovery_source_url TEXT
+discovery_source_title TEXT
+discovery_source_snippet TEXT
+discovery_query TEXT
+discovery_method VARCHAR
+discovery_confidence_score DOUBLE PRECISION
+
+discovered_at TIMESTAMP
+last_validated_at TIMESTAMP
+
+lead_validation_status VARCHAR
+
+Allowed discovery_source_type:
+- website
+- search_result
+- directory
+- social
+- manual
+
+Allowed discovery_method:
+- google_search
+- web_search
+- directory_scan
+- social_discovery
+- manual
+
+Allowed lead_validation_status:
+- verified
+- likely_valid
+- weak
+- stale
+- rejected
+
+====================================================
+3. RESEARCH PIPELINE REWRITE
+====================================================
+
+Update:
+- researchProspects()
+- recurring research jobs
+- lead generation routes
+
+All lead discovery must use:
+Responses API + web_search_preview.
+
+The AI should:
+1. Run real searches
+2. Visit source pages
+3. Extract organization information
+4. Return evidence
+5. Return source metadata
+6. Score confidence
+
+====================================================
+4. AI PROMPT REQUIREMENTS
+====================================================
+
+The AI is NOT allowed to invent organizations.
+
+A lead may only be returned if:
+- a real website exists
+OR
+- a real directory entry exists
+OR
+- a real social/business presence exists
+
+The AI must provide:
+- source URL
+- source title
+- evidence snippet
+- search query used
+- confidence score
+- discovery method
+
+Required schema:
+
+{
+  "organizationName": string,
+  "organizationType": string | null,
+  "sport": string | null,
+
+  "websiteUrl": string | null,
+  "sourceUrl": string | null,
+
+  "city": string | null,
+  "state": string | null,
+
+  "discoverySourceType":
+    | "website"
+    | "search_result"
+    | "directory"
+    | "social"
+    | "manual",
+
+  "discoverySourceUrl": string | null,
+  "discoverySourceTitle": string | null,
+  "discoverySourceSnippet": string | null,
+
+  "discoveryQuery": string | null,
+
+  "discoveryMethod":
+    | "google_search"
+    | "web_search"
+    | "directory_scan"
+    | "social_discovery"
+    | "manual",
+
+  "discoveryConfidenceScore": number,
+
+  "leadValidationStatus":
+    | "verified"
+    | "likely_valid"
+    | "weak"
+    | "stale"
+    | "rejected"
+}
+
+Rules:
+- confidence must be between 0 and 1
+- no organization without evidence
+- no placeholder websites
+- no fake cities/states
+- no fake social profiles
+- if confidence < 0.45, reject the lead
+- if source snippet is missing, lower confidence
+- if website/social/source exists, confidence increases
+
+====================================================
+5. LEAD INSERTION SAFETY GATE
+====================================================
+
+Before creating a lead:
+
+Reject insertion if:
+- organizationName missing
+- no source URL
+- no evidence snippet
+- confidence < 0.45
+- duplicate detected
+- invalid website
+
+No weak/hallucinated leads should enter the CRM.
+
+====================================================
+6. DEDUPLICATION ENGINE
+====================================================
+
+Before insertion:
+check:
+- organization name similarity
+- normalized website domain
+- social URLs
+- city/state overlap
+
+If likely duplicate:
+- update existing lead
+- refresh validation timestamp
+- append discovery history
+- do NOT create duplicate row
+
+====================================================
+7. DISCOVERY HISTORY
+====================================================
+
+Add a lightweight discovery history log.
+
+Each discovery attempt stores:
+- timestamp
+- query used
+- source URL
+- confidence
+- result
+- created/update/no_match/duplicate
+
+This should exist even when no lead is created.
+
+====================================================
+8. RECURRING RESEARCH BEHAVIOR
+====================================================
+
+Recurring research should:
+- refresh stale leads
+- discover new organizations
+- revalidate old organizations
+- update confidence scores
+- detect dead websites
+- detect broken domains
+- detect inactive orgs
+
+If a website is dead:
+leadValidationStatus = "stale"
+
+If confidence drops:
+show warning in UI.
+
+====================================================
+9. FRONTEND — DISCOVERY EVIDENCE PANEL
+====================================================
+
+Add a “Lead Discovery Evidence” section.
+
+Example:
+
+--------------------------------------------------
+Lead Discovery Evidence
+--------------------------------------------------
+
+Found From:
+Google Search
+
+Query:
+"Bluffton SC volleyball clubs"
+
+Source:
+savannahvolleyballclub.com
+
+Snippet:
+“Competitive volleyball training and travel teams in the Savannah area.”
+
+Confidence:
+91%
+
+Discovered:
+May 6, 2026 at 8:14 PM
+--------------------------------------------------
+
+Requirements:
+- clickable source URL
+- snippet block
+- readable discovery method labels
+- confidence color coding
+- stale warning if >90 days old
+
+====================================================
+10. LEAD QUALITY BADGES
+====================================================
+
+Add badges:
+- Verified Lead
+- Likely Valid
+- Weak Evidence
+- Stale Lead
+
+Rules:
+Verified Lead:
+- confidence ≥ 0.85
+- real website
+- source evidence present
+
+Likely Valid:
+- confidence 0.65–0.84
+
+Weak Evidence:
+- confidence < 0.65
+
+Stale Lead:
+- last validated > 90 days
+
+====================================================
+11. OBSERVABILITY / DEBUGGING
+====================================================
+
+Create a developer/admin debug panel.
+
+Show:
+- searches performed
+- URLs checked
+- extraction failures
+- rejected leads
+- duplicate decisions
+- confidence scoring logic
+- timing metrics
+
+This is critical for debugging recurring research quality.
+
+====================================================
+12. ACCEPTANCE TESTS
+====================================================
+
+Test A — real volleyball club
+
+Expected:
+- source-backed lead
+- confidence > 0.80
+- evidence panel populated
+
+Test B — fake/nonexistent org
+
+Expected:
+- rejected
+- no insertion
+
+Test C — duplicate discovery
+
+Expected:
+- existing lead updated
+- no duplicate row
+
+Test D — dead website
+
+Expected:
+- stale status
+- warning shown
+
+====================================================
+13. FINAL PRODUCT GOAL
+====================================================
+
+TrainEfficiency should not feel like:
+- an AI lead scraper
+
+It should feel like:
+- an AI market intelligence platform for coaching businesses
+
+Every lead should have:
+- provenance
+- evidence
+- confidence
+- validation
+- traceability
+
+The user should always understand:
+- where the lead came from
+- why it was added
+- how trustworthy it is
+- when it was last validated

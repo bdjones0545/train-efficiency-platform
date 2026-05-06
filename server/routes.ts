@@ -6987,6 +6987,7 @@ export async function registerRoutes(
         const safeDmName = nn(p.decisionMakerName);
         const safeDmTitle = nn(p.decisionMakerTitle);
 
+        const now = new Date();
         const prospect = await storage.createTeamTrainingProspect({
           orgId: profile.organizationId,
           prospectName: p.prospectName,
@@ -7009,8 +7010,35 @@ export async function registerRoutes(
           contactConfidence: ive(safeDmEmail) ? (p.contactConfidence || 0) : 0,
           contactSourceUrl: nn(p.contactSourceUrl),
           contactQuality: ive(safeDmEmail) ? p.contactQuality : "missing",
-        });
+          // Lead Discovery Evidence
+          discoverySourceType: p.discoverySourceType || null,
+          discoverySourceUrl: p.discoverySourceUrl || null,
+          discoverySourceTitle: p.discoverySourceTitle || null,
+          discoverySourceSnippet: p.discoverySourceSnippet || null,
+          discoveryQuery: p.discoveryQuery || null,
+          discoveryMethod: p.discoveryMethod || null,
+          discoveryConfidenceScore: p.discoveryConfidenceScore ?? null,
+          discoveredAt: now,
+          lastValidatedAt: now,
+          leadValidationStatus: p.leadValidationStatus || "likely_valid",
+        } as any);
         created.push(prospect);
+
+        // Log discovery attempt for observability
+        try {
+          await storage.logDiscoveryAttempt({
+            orgId: profile.organizationId,
+            prospectId: prospect.id,
+            prospectName: p.prospectName,
+            query: p.discoveryQuery || null,
+            sourceUrl: p.discoverySourceUrl || null,
+            confidence: p.discoveryConfidenceScore ?? null,
+            result: "created",
+            action: "research_pipeline",
+            notes: `Confidence: ${Math.round((p.discoveryConfidenceScore || 0) * 100)}% | Method: ${p.discoveryMethod || "unknown"} | Status: ${p.leadValidationStatus || "likely_valid"}`,
+          });
+        } catch {}
+
         existingNames.push(p.prospectName); // prevent intra-batch duplicates
         if (gate.needsContact) needsContactCount++;
       }
@@ -7047,6 +7075,20 @@ export async function registerRoutes(
           message: "Missing OPENAI_API_KEY on the server.",
         });
       }
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Discovery log for a given org
+  app.get("/api/admin/team-training/discovery-log", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const limit = Math.min(parseInt((req.query.limit as string) || "100"), 200);
+      const log = await storage.getDiscoveryLog(profile.organizationId, limit);
+      res.json(log);
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });

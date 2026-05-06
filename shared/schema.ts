@@ -628,9 +628,37 @@ export const teamTrainingProspects = pgTable("team_training_prospects", {
   contactConfidenceScore: doublePrecision("contact_confidence_score"),
   lastDiscoveryAttemptAt: timestamp("last_discovery_attempt_at"),
   lastDiscoveryResult: varchar("last_discovery_result"),
+  // Lead Discovery Evidence Layer
+  discoverySourceType: varchar("discovery_source_type"),
+  discoverySourceUrl: text("discovery_source_url"),
+  discoverySourceTitle: text("discovery_source_title"),
+  discoverySourceSnippet: text("discovery_source_snippet"),
+  discoveryQuery: text("discovery_query"),
+  discoveryMethod: varchar("discovery_method"),
+  discoveryConfidenceScore: doublePrecision("discovery_confidence_score"),
+  discoveredAt: timestamp("discovered_at"),
+  lastValidatedAt: timestamp("last_validated_at"),
+  leadValidationStatus: varchar("lead_validation_status").default("likely_valid"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export const teamTrainingDiscoveryLog = pgTable("team_training_discovery_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  prospectId: varchar("prospect_id"),
+  prospectName: varchar("prospect_name"),
+  attemptedAt: timestamp("attempted_at").defaultNow(),
+  query: text("query"),
+  sourceUrl: text("source_url"),
+  confidence: doublePrecision("confidence"),
+  result: varchar("result"),
+  action: varchar("action"),
+  notes: text("notes"),
+});
+
+export type TeamTrainingDiscoveryLog = typeof teamTrainingDiscoveryLog.$inferSelect;
+export type InsertTeamTrainingDiscoveryLog = typeof teamTrainingDiscoveryLog.$inferInsert;
 
 export const emailMessageVariants = pgTable("email_message_variants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

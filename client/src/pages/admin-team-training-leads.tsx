@@ -225,6 +225,131 @@ function ContactEvidencePanel({ prospect }: { prospect: TeamTrainingProspect }) 
   );
 }
 
+// ─── Lead Validation Status Badge ───────────────────────────────────────────
+function LeadValidationBadge({ status }: { status?: string | null }) {
+  if (!status) return null;
+  const cfg: Record<string, { label: string; className: string }> = {
+    verified:     { label: "Verified",      className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" },
+    likely_valid: { label: "Likely Valid",  className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800" },
+    weak:         { label: "Weak",          className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-800 border border-yellow-200 dark:border-yellow-700" },
+    stale:        { label: "Stale",         className: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-200 dark:border-orange-800" },
+    rejected:     { label: "Rejected",      className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800" },
+  };
+  const c = cfg[status] || { label: status, className: "bg-muted text-muted-foreground border border-border" };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${c.className}`}>
+      {c.label}
+    </span>
+  );
+}
+
+// ─── Lead Discovery Evidence Panel ──────────────────────────────────────────
+function LeadDiscoveryEvidencePanel({ prospect }: { prospect: TeamTrainingProspect }) {
+  const p = prospect as any;
+  const sourceUrl: string | null = p.discoverySourceUrl || null;
+  const sourceTitle: string | null = p.discoverySourceTitle || null;
+  const sourceSnippet: string | null = p.discoverySourceSnippet || null;
+  const discoveryMethod: string | null = p.discoveryMethod || null;
+  const discoveryQuery: string | null = p.discoveryQuery || null;
+  const confidenceScore: number | null = p.discoveryConfidenceScore ?? null;
+  const discoveredAt: string | null = p.discoveredAt || null;
+  const validationStatus: string | null = p.leadValidationStatus || null;
+
+  if (!sourceUrl && !sourceSnippet && !validationStatus) return null;
+
+  const confidencePct = confidenceScore !== null ? Math.round(confidenceScore * 100) : null;
+  const confidenceColor =
+    confidencePct === null ? "text-muted-foreground" :
+    confidencePct >= 85 ? "text-emerald-600 dark:text-emerald-400" :
+    confidencePct >= 65 ? "text-yellow-600 dark:text-yellow-400" :
+    "text-red-500 dark:text-red-400";
+  const confidenceBg =
+    confidencePct === null ? "bg-muted/60 border-border" :
+    confidencePct >= 85 ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800" :
+    confidencePct >= 65 ? "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800" :
+    "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800";
+
+  const isStale = discoveredAt ? (Date.now() - new Date(discoveredAt).getTime()) > 90 * 24 * 60 * 60 * 1000 : false;
+
+  return (
+    <div className="rounded-md border bg-card p-2.5 space-y-2">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <FileSearch className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+        <p className="font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Lead Discovery Evidence</p>
+        <div className="flex items-center gap-1 ml-auto flex-wrap">
+          {validationStatus && <LeadValidationBadge status={validationStatus} />}
+          {confidencePct !== null && (
+            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${confidenceBg} ${confidenceColor}`}>
+              {confidencePct}% Confidence
+            </span>
+          )}
+        </div>
+      </div>
+
+      {isStale && (
+        <div className="flex items-start gap-1.5 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-2 py-1.5">
+          <Clock className="h-3 w-3 text-amber-500 mt-0.5 shrink-0" />
+          <p className="text-amber-700 dark:text-amber-400 text-[10px] leading-tight">
+            Discovery data may be outdated (90+ days old). Consider re-researching this lead.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-1.5 text-xs">
+        {sourceUrl && (
+          <div className="flex items-start gap-1.5">
+            <MapPin className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Discovered On</p>
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline underline-offset-2 break-all text-[11px] inline-flex items-center gap-0.5"
+                data-testid={`link-discovery-source-${prospect.id}`}
+              >
+                {sourceUrl.replace(/^https?:\/\//, "")}
+                <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {sourceTitle && (
+          <div>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Page Title</p>
+            <p className="text-foreground/80 leading-tight">{sourceTitle}</p>
+          </div>
+        )}
+
+        {sourceSnippet && (
+          <div>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Evidence Snippet</p>
+            <blockquote className="border-l-2 border-indigo-400/50 pl-2 text-muted-foreground italic leading-relaxed">
+              &ldquo;{sourceSnippet}&rdquo;
+            </blockquote>
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 flex-wrap text-[10px] text-muted-foreground pt-0.5">
+          {discoveryMethod && (
+            <span><span className="font-medium uppercase tracking-wide">Method:</span> {discoveryMethod.replace(/_/g, " ")}</span>
+          )}
+          {discoveryQuery && (
+            <span className="truncate max-w-xs"><span className="font-medium uppercase tracking-wide">Query:</span> {discoveryQuery}</span>
+          )}
+          {discoveredAt && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-2.5 w-2.5" />
+              {new Date(discoveredAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfidenceBar({ score }: { score: number }) {
   const color = score >= 75 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-400";
   return (
@@ -277,6 +402,7 @@ function ProspectCard({
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${stage.className}`} data-testid={`badge-stage-${prospect.id}`}>
               {stage.label}
             </span>
+            <LeadValidationBadge status={(prospect as any).leadValidationStatus} />
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {prospect.organizationType} · {prospect.sport} · {prospect.city}, {prospect.state}
@@ -460,6 +586,9 @@ function ProspectCard({
 
             {/* Contact Evidence Panel */}
             <ContactEvidencePanel prospect={prospect} />
+
+            {/* Lead Discovery Evidence Panel */}
+            <LeadDiscoveryEvidencePanel prospect={prospect} />
 
             {/* Run enrichment button */}
             <Button
@@ -802,6 +931,116 @@ function AuditTab() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Discovery Log Tab ───────────────────────────────────────────────────────
+type DiscoveryLogEntry = {
+  id: string;
+  orgId: string;
+  prospectId: string | null;
+  prospectName: string | null;
+  attemptedAt: string | null;
+  query: string | null;
+  sourceUrl: string | null;
+  confidence: number | null;
+  result: string | null;
+  action: string | null;
+  notes: string | null;
+};
+
+function DiscoveryLogTab() {
+  const { data: log, isLoading } = useQuery<DiscoveryLogEntry[]>({
+    queryKey: ["/api/admin/team-training/discovery-log"],
+  });
+
+  const resultColor = (result: string | null) => {
+    if (result === "created") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
+    if (result === "rejected") return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+    if (result === "duplicate") return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
+    return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
+  };
+
+  if (isLoading) return (
+    <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
+  );
+
+  if (!log || log.length === 0) return (
+    <Card className="p-8 text-center text-muted-foreground">
+      <FileSearch className="h-10 w-10 mx-auto mb-3 opacity-30" />
+      <p className="text-sm font-medium">No discovery log entries yet</p>
+      <p className="text-xs mt-1">Discovery attempts will appear here once you run lead research.</p>
+    </Card>
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-2">
+        <FileSearch className="h-4 w-4 text-indigo-500" />
+        <p className="text-sm font-semibold">Discovery Log</p>
+        <span className="text-xs text-muted-foreground ml-auto">{log.length} entries</span>
+      </div>
+      {log.map((entry) => (
+        <Card key={entry.id} className="p-3" data-testid={`card-discovery-log-${entry.id}`}>
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-sm font-medium truncate" data-testid={`text-discovery-prospect-${entry.id}`}>
+                  {entry.prospectName || "Unknown Prospect"}
+                </p>
+                {entry.result && (
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold capitalize ${resultColor(entry.result)}`}
+                    data-testid={`badge-discovery-result-${entry.id}`}>
+                    {entry.result}
+                  </span>
+                )}
+                {entry.action && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] text-muted-foreground bg-muted">
+                    {entry.action.replace(/_/g, " ")}
+                  </span>
+                )}
+              </div>
+              {entry.query && (
+                <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                  <span className="font-medium">Query:</span> {entry.query}
+                </p>
+              )}
+              {entry.notes && (
+                <p className="text-[10px] text-muted-foreground mt-0.5">{entry.notes}</p>
+              )}
+            </div>
+            <div className="text-right shrink-0 space-y-0.5">
+              {entry.confidence !== null && entry.confidence !== undefined && (
+                <p className={`text-xs font-semibold ${
+                  entry.confidence >= 0.85 ? "text-emerald-600 dark:text-emerald-400" :
+                  entry.confidence >= 0.65 ? "text-yellow-600 dark:text-yellow-400" :
+                  "text-red-500 dark:text-red-400"
+                }`} data-testid={`text-discovery-confidence-${entry.id}`}>
+                  {Math.round(entry.confidence * 100)}% conf
+                </p>
+              )}
+              {entry.attemptedAt && (
+                <p className="text-[10px] text-muted-foreground">
+                  {new Date(entry.attemptedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </p>
+              )}
+            </div>
+          </div>
+          {entry.sourceUrl && (
+            <a
+              href={entry.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1.5 flex items-center gap-1 text-[10px] text-primary underline underline-offset-2 truncate"
+              data-testid={`link-discovery-source-log-${entry.id}`}
+            >
+              <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+              {entry.sourceUrl.replace(/^https?:\/\//, "")}
+            </a>
+          )}
+        </Card>
+      ))}
     </div>
   );
 }
@@ -1304,6 +1543,9 @@ export default function AdminTeamTrainingLeadsPage() {
           <TabsTrigger value="audit" data-testid="tab-audit">
             Audit
           </TabsTrigger>
+          <TabsTrigger value="discovery" data-testid="tab-discovery">
+            Discovery Log
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="prospects" className="mt-4 space-y-4">
@@ -1400,6 +1642,10 @@ export default function AdminTeamTrainingLeadsPage() {
 
         <TabsContent value="audit" className="mt-4">
           <AuditTab />
+        </TabsContent>
+
+        <TabsContent value="discovery" className="mt-4">
+          <DiscoveryLogTab />
         </TabsContent>
       </Tabs>
 
