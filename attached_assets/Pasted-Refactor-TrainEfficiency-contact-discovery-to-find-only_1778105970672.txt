@@ -1,0 +1,112 @@
+Refactor TrainEfficiency contact discovery to find only real, source-backed emails. Remove all guessed, inferred, or generated email behavior.
+
+Goal:
+The system must only save and show emails that were actually found from a real source:
+- official website
+- contact page
+- staff/team/coaches page
+- athletics page
+- directory page
+- social profile/contact link
+- public search result snippet
+
+No guessing. No pattern generation. No inferred emails.
+
+Remove/disable:
+- inferEmailFromDomain
+- buildEmailCandidates inferred outputs
+- inferred email fallback pass
+- info@domain generation
+- coach@domain generation
+- director@domain generation
+- athletics@domain generation
+- alternativeContacts based on guessed patterns
+- “Inferred Email” badge
+- “Role Email” if it was inferred
+- “Email guesses generated”
+- any verificationStatus = "inferred" for new enrichment results
+
+Backend rules:
+1. contactEmail can only be saved if the email was explicitly found in source content.
+2. Every saved email must include:
+   - contactEmail
+   - contactSourceType
+   - verificationStatus
+   - sourceUrl or source explanation
+   - enrichmentExplanation
+3. If no real email is found, return:
+{
+  success: false,
+  reason: "no_real_email_found",
+  message: "No real email found from available sources.",
+  prospect: updatedLead
+}
+4. Do not save a guessed email under any circumstance.
+5. Do not save “unknown” for name or role. Use null.
+
+AI prompt rules:
+- You may only return an email if it appears explicitly in the source material.
+- Do not invent, infer, predict, or generate email addresses.
+- Do not create role-based emails from a domain.
+- If no email appears in the available source material, return contactEmail: null.
+- foundRealEmail must be true only when an email was explicitly found.
+- Include the source URL or explanation for where the email appeared.
+
+Expected response schema:
+{
+  "foundRealEmail": boolean,
+  "contactName": string | null,
+  "contactRole": string | null,
+  "contactEmail": string | null,
+  "contactPhone": string | null,
+  "contactSourceType": "website" | "social" | "directory" | "search_result" | "manual" | null,
+  "verificationStatus": "verified" | "unverified" | null,
+  "sourceUrl": string | null,
+  "enrichmentExplanation": string | null,
+  "alternativeContacts": [
+    {
+      "email": string,
+      "name": string | null,
+      "role": string | null,
+      "sourceType": "website" | "social" | "directory" | "search_result",
+      "sourceUrl": string | null,
+      "confidence": number,
+      "explanation": string
+    }
+  ]
+}
+
+Alternative contacts:
+- Allowed only if those emails were also explicitly found.
+- No inferred alternatives.
+
+Frontend rules:
+1. Button labels:
+   - No email: “Find Real Email”
+   - Real email exists: “Re-run Discovery”
+2. Success toast:
+   - “Real email found.”
+3. Failure toast:
+   - “No real email found from available sources.”
+4. Remove:
+   - Inferred Email badge
+   - Email Guesses UI
+   - Role Email badge for guessed emails
+   - General Email badge for guessed emails
+5. Generate Email should only be enabled when contactEmail exists.
+6. The UI should never imply an email was found unless it was source-backed.
+
+Data cleanup:
+Run a cleanup migration:
+- Set contact_email = null where verification_status = 'inferred'
+- Set verification_status = null where verification_status = 'inferred'
+- Set contact_source_type = null where contact_source_type = 'inferred'
+- Clear alternative_contacts that contain inferred/generated emails
+- Keep manually entered emails intact
+
+Acceptance criteria:
+- No guessed emails are created anywhere.
+- No inferred emails are saved anywhere.
+- “Found” means found from a source.
+- If the system can’t find a real email, it says so honestly.
+- Generate Email only appears/enables when a real or manual email exists.

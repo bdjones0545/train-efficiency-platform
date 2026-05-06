@@ -6976,38 +6976,16 @@ export async function registerRoutes(
         }
 
         // gate.action === "save"
-        const { normalizeNullable: nn, isValidEmail: ive, extractDomainFromUrl, buildEmailCandidates } = await import("./team-training-prospecting");
+        const { normalizeNullable: nn, isValidEmail: ive } = await import("./team-training-prospecting");
 
         // Normalize all contact fields — never persist sentinel strings
         const safeContactName = nn(p.contactName);
         const safeContactRole = nn(p.contactRole);
-        const safeContactEmail = nn(p.contactEmail);
         const safeWebsiteUrl = nn(p.websiteUrl);
         const safeSourceUrl = nn(p.sourceUrl);
-        let safeDmEmail = nn(p.decisionMakerEmail);
+        const safeDmEmail = nn(p.decisionMakerEmail);
         const safeDmName = nn(p.decisionMakerName);
         const safeDmTitle = nn(p.decisionMakerTitle);
-
-        // If AI already inferred email via researchProspects, use its metadata
-        let contactSourceType = (p as any)._inferredContactSourceType || null;
-        let verificationStatus = (p as any)._inferredVerificationStatus || null;
-        let enrichmentExplanation = (p as any)._inferredEnrichmentExplanation || null;
-        let alternativeContacts: any[] = (p as any)._inferredAlternatives || [];
-
-        // Defense in depth: if still no valid email but websiteUrl exists, infer now
-        if (!ive(safeDmEmail) && safeWebsiteUrl) {
-          const domain = extractDomainFromUrl(safeWebsiteUrl);
-          if (domain) {
-            const candidates = buildEmailCandidates(domain, p.organizationType, p.sport, p.prospectName);
-            if (candidates.length > 0) {
-              safeDmEmail = candidates[0].email;
-              contactSourceType = "inferred";
-              verificationStatus = "inferred";
-              enrichmentExplanation = "No verified contact found during lead discovery. Email inferred from organization domain.";
-              alternativeContacts = candidates.slice(1, 5);
-            }
-          }
-        }
 
         const prospect = await storage.createTeamTrainingProspect({
           orgId: profile.organizationId,
@@ -7019,7 +6997,7 @@ export async function registerRoutes(
           websiteUrl: safeWebsiteUrl,
           contactName: safeContactName,
           contactRole: safeContactRole,
-          contactEmail: safeContactEmail,
+          contactEmail: null,
           contactPhone: null,
           sourceUrl: safeSourceUrl,
           confidenceScore: scored,
@@ -7027,14 +7005,10 @@ export async function registerRoutes(
           notes: p.notes,
           decisionMakerName: safeDmName,
           decisionMakerTitle: safeDmTitle,
-          decisionMakerEmail: safeDmEmail,
-          contactConfidence: p.contactConfidence || (safeDmEmail && contactSourceType === "inferred" ? 35 : 0),
+          decisionMakerEmail: ive(safeDmEmail) ? safeDmEmail : null,
+          contactConfidence: ive(safeDmEmail) ? (p.contactConfidence || 0) : 0,
           contactSourceUrl: nn(p.contactSourceUrl),
           contactQuality: ive(safeDmEmail) ? p.contactQuality : "missing",
-          ...(contactSourceType && { contactSourceType }),
-          ...(verificationStatus && { verificationStatus }),
-          ...(enrichmentExplanation && { enrichmentExplanation }),
-          ...(alternativeContacts.length > 0 && { alternativeContacts: JSON.stringify(alternativeContacts) }),
         });
         created.push(prospect);
         existingNames.push(p.prospectName); // prevent intra-batch duplicates
@@ -7214,22 +7188,15 @@ export async function registerRoutes(
         prospect.websiteUrl || null
       );
 
-      // Strict email gate — do not save or return success without a valid email
+      // Strict email gate — only save if a real email was found
       const normalizedEmail = normalizeNullable(enriched.decisionMakerEmail);
       if (!isValidEmail(normalizedEmail)) {
-        console.warn("[TeamTraining EnrichContact] No valid email found for prospect:", prospect.prospectName);
-        return res.status(404).json({
+        console.warn("[TeamTraining EnrichContact] No real email found for prospect:", prospect.prospectName);
+        return res.json({
           success: false,
-          message: "No email contact found for this team or organization.",
-          reason: "email_required",
-          enrichmentAttempted: true,
-          debug: {
-            prospectName: prospect.prospectName,
-            attemptedRole: enriched.decisionMakerTitle ?? null,
-            attemptedName: enriched.decisionMakerName ?? null,
-            websiteUrl: prospect.websiteUrl ?? null,
-            sourceUrl: prospect.sourceUrl ?? null,
-          },
+          reason: "no_real_email_found",
+          message: "No real email found from available sources.",
+          prospect,
         });
       }
 

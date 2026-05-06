@@ -64,49 +64,42 @@ function getClientStage(prospect: TeamTrainingProspect): { label: string; classN
 }
 
 // ─── Client-side Contact Quality Computation ───────────────────────────────
-type ContactQualityLabel = "Decision Maker" | "Role Email" | "General Email" | "Inferred Email" | "Needs Contact";
+type ContactQualityLabel = "Decision Maker" | "Role Email" | "General Email" | "Needs Contact";
 
-function getClientQuality(prospect: TeamTrainingProspect): { label: ContactQualityLabel; className: string; score: number; hasEmail: boolean; isInferred: boolean } {
+function getClientQuality(prospect: TeamTrainingProspect): { label: ContactQualityLabel; className: string; score: number; hasEmail: boolean } {
   const quality = prospect.contactQuality as string | null;
-  const verStatus = (prospect as any).verificationStatus as string | null;
   const dmEmail = (prospect.decisionMakerEmail || "").trim();
   const contactEmail = (prospect.contactEmail || "").trim();
   const hasEmail = !!(dmEmail || contactEmail);
-  const isInferred = verStatus === "inferred" || (prospect as any).contactSourceType === "inferred";
 
-  if (quality === "decision_maker") {
-    return { label: "Decision Maker", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: prospect.contactConfidence || 85, hasEmail: true, isInferred: false };
+  if (quality === "decision_maker" && hasEmail) {
+    return { label: "Decision Maker", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: prospect.contactConfidence || 85, hasEmail: true };
   }
-  if (quality === "role_based") {
-    if (isInferred) {
-      return { label: "Inferred Email", className: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300", score: prospect.contactConfidence || 45, hasEmail: true, isInferred: true };
-    }
-    return { label: "Role Email", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: prospect.contactConfidence || 60, hasEmail: true, isInferred: false };
+  if (quality === "role_based" && hasEmail) {
+    return { label: "Role Email", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: prospect.contactConfidence || 60, hasEmail: true };
   }
-  if (quality === "general") {
-    if (isInferred) {
-      return { label: "Inferred Email", className: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300", score: prospect.contactConfidence || 30, hasEmail: true, isInferred: true };
-    }
-    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: prospect.contactConfidence || 35, hasEmail: true, isInferred: false };
+  if (quality === "general" && hasEmail) {
+    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: prospect.contactConfidence || 35, hasEmail: true };
   }
-  // Legacy fallback: if contactEmail exists but contactQuality wasn't set
   if (hasEmail) {
-    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: 30, hasEmail: true, isInferred: false };
+    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: 30, hasEmail: true };
   }
-  return { label: "Needs Contact", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0, hasEmail: false, isInferred: false };
+  return { label: "Needs Contact", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0, hasEmail: false };
 }
 
 // ─── Contact Source Badge ────────────────────────────────────────────────────
 function ContactSourceBadge({ sourceType, verificationStatus }: { sourceType?: string | null; verificationStatus?: string | null }) {
-  if (!sourceType || sourceType === "unverified") return null;
+  if (!sourceType || sourceType === "unverified" || sourceType === "inferred" || sourceType === "manual") return null;
   const configs: Record<string, { label: string; className: string }> = {
     verified: { label: "Verified", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" },
     scraped: { label: "Website", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800" },
+    website: { label: "Website", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800" },
     social: { label: "Social", className: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800" },
-    inferred: { label: "Inferred", className: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800" },
-    manual: { label: "Manual", className: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700" },
+    directory: { label: "Directory", className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800" },
+    search_result: { label: "Search", className: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border border-teal-200 dark:border-teal-800" },
   };
-  const cfg = configs[sourceType] || configs.inferred;
+  const cfg = configs[sourceType];
+  if (!cfg) return null;
   return (
     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.className}`}>
       {cfg.label}
@@ -215,10 +208,10 @@ function ProspectCard({
             className="h-7 text-xs border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
             onClick={() => onEnrichContact(prospect.id)}
             disabled={isEnriching}
-            data-testid={`button-find-email-contact-${prospect.id}`}
+            data-testid={`button-find-real-email-${prospect.id}`}
           >
             {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
-            Find Email Contact
+            Find Real Email
           </Button>
         )}
         {prospect.outreachStatus !== "Replied" && (
@@ -267,12 +260,12 @@ function ProspectCard({
               )}
             </div>
 
-            {/* Inferred warning */}
-            {quality.isInferred && prospect.decisionMakerEmail && (
-              <div className="flex items-start gap-1.5 rounded bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 px-2 py-1.5">
-                <AlertCircle className="h-3 w-3 text-orange-500 mt-0.5 shrink-0" />
-                <p className="text-orange-700 dark:text-orange-400 text-[10px] leading-tight">
-                  This email is <strong>inferred</strong> — not confirmed. Verify before sending. Outreach is still allowed.
+            {/* Source-backed email confirmation */}
+            {prospect.decisionMakerEmail && (prospect as any).verificationStatus === "verified" && (
+              <div className="flex items-start gap-1.5 rounded bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 px-2 py-1.5">
+                <AlertCircle className="h-3 w-3 text-emerald-500 mt-0.5 shrink-0" />
+                <p className="text-emerald-700 dark:text-emerald-400 text-[10px] leading-tight">
+                  This email was <strong>found from a real source</strong> and is ready for outreach.
                 </p>
               </div>
             )}
@@ -346,7 +339,7 @@ function ProspectCard({
               data-testid={`button-enrich-expanded-${prospect.id}`}
             >
               {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
-              {quality.hasEmail ? "Re-run Discovery" : "Find Email Contact"}
+              {quality.hasEmail ? "Re-run Discovery" : "Find Real Email"}
             </Button>
           </div>
 
@@ -964,6 +957,16 @@ export default function AdminTeamTrainingLeadsPage() {
     onSuccess: (data) => {
       setEnrichingId(null);
 
+      // If the backend found no real email, show honest failure — no cache update
+      if (data.success === false) {
+        toast({
+          title: "No real email found",
+          description: "No real email found from available sources. Try adding a website URL to this lead.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Extract the full updated lead returned by the backend
       const updatedLead: TeamTrainingProspect | null = data.prospect ?? data.lead ?? null;
 
@@ -997,24 +1000,14 @@ export default function AdminTeamTrainingLeadsPage() {
       const q = updatedLead?.contactQuality ?? data.enriched?.contactQuality;
       const name = updatedLead?.decisionMakerName ?? data.enriched?.decisionMakerName;
       const email = updatedLead?.decisionMakerEmail ?? data.enriched?.decisionMakerEmail;
-      const isInferred = (updatedLead as any)?.verificationStatus === "inferred" || data.enriched?.verificationStatus === "inferred";
       const qualityLabel = q === "decision_maker" ? "Decision Maker" : q === "role_based" ? "Role Email" : "General Email";
       toast({
-        title: isInferred ? "Email contact found (inferred)" : "Email contact found",
+        title: "Real email found",
         description: name ? `${name} — ${qualityLabel}` : email ? `${qualityLabel}: ${email}` : qualityLabel,
       });
     },
     onError: (err: Error) => {
       setEnrichingId(null);
-      const reason = (err as any).reason;
-      if (reason === "email_required") {
-        toast({
-          title: "No email found yet",
-          description: "Try adding a website URL or source URL to this lead, then re-run discovery.",
-          variant: "destructive",
-        });
-        return;
-      }
       toast({
         title: "Discovery failed",
         description: err.message || "An unexpected error occurred. Please try again.",
@@ -1769,7 +1762,7 @@ export default function AdminTeamTrainingLeadsPage() {
                           data-testid="button-find-dm-from-dialog"
                         >
                           {enrichContactMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-                          Find Email Contact
+                          Find Real Email
                         </Button>
                       </div>
                     </>
