@@ -48,33 +48,28 @@ function getClientStage(prospect: TeamTrainingProspect): { label: string; classN
 }
 
 // ─── Client-side Contact Quality Computation ───────────────────────────────
-function getClientQuality(prospect: TeamTrainingProspect): { label: string; className: string; score: number } {
-  const email = (prospect.contactEmail || "").trim().toLowerCase();
-  const role = (prospect.contactRole || "").toLowerCase();
+type ContactQualityLabel = "Decision Maker" | "Role Email" | "General Email" | "Needs Contact";
 
-  if (!email) return { label: "No Email", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0 };
-  if (!email.includes("@")) return { label: "Invalid", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0 };
+function getClientQuality(prospect: TeamTrainingProspect): { label: ContactQualityLabel; className: string; score: number; hasEmail: boolean } {
+  const quality = prospect.contactQuality as string | null;
+  const dmEmail = (prospect.decisionMakerEmail || "").trim();
+  const contactEmail = (prospect.contactEmail || "").trim();
+  const hasEmail = !!(dmEmail || contactEmail);
 
-  const coachRoles = ["head coach", "coach", "assistant coach", "strength", "trainer"];
-  if (coachRoles.some((r) => role.includes(r)) || email.includes("coach") || email.includes("trainer")) {
-    return { label: "High Quality", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: 92 };
+  if (quality === "decision_maker") {
+    return { label: "Decision Maker", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: prospect.contactConfidence || 85, hasEmail: true };
   }
-
-  const adRoles = ["athletic director", "athletics director", "director of athletics"];
-  if (adRoles.some((r) => role.includes(r)) || email.includes("athleticdirector") || email.split("@")[0] === "ad") {
-    return { label: "High Quality", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: 80 };
+  if (quality === "role_based") {
+    return { label: "Role Email", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: prospect.contactConfidence || 60, hasEmail: true };
   }
-
-  if (email.includes("athletics@") || email.includes("sports@") || email.includes("athletic@")) {
-    return { label: "Medium Quality", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: 62 };
+  if (quality === "general") {
+    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: prospect.contactConfidence || 35, hasEmail: true };
   }
-
-  const emailUser = email.split("@")[0];
-  if (["info", "office", "admin", "contact", "hello", "general", "school", "main"].some((g) => emailUser === g || emailUser.startsWith(g + "."))) {
-    return { label: "Low Quality", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: 38 };
+  // Legacy fallback: if contactEmail exists but contactQuality wasn't set
+  if (hasEmail) {
+    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: 30, hasEmail: true };
   }
-
-  return { label: "Medium Quality", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: 55 };
+  return { label: "Needs Contact", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0, hasEmail: false };
 }
 
 function ConfidenceBar({ score }: { score: number }) {
@@ -97,6 +92,8 @@ function ProspectCard({
   onDelete,
   onMarkReplied,
   onDoNotContact,
+  onEnrichContact,
+  enrichingId,
 }: {
   prospect: TeamTrainingProspect;
   onStatusChange: (id: string, status: string) => void;
@@ -105,10 +102,15 @@ function ProspectCard({
   onDelete: (id: string) => void;
   onMarkReplied: (id: string) => void;
   onDoNotContact: (id: string) => void;
+  onEnrichContact: (id: string) => void;
+  enrichingId: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const stage = getClientStage(prospect);
   const quality = getClientQuality(prospect);
+  const isEnriching = enrichingId === prospect.id;
+
+  const displayEmail = prospect.decisionMakerEmail || prospect.contactEmail;
 
   return (
     <Card className="p-4 space-y-3" data-testid={`card-prospect-${prospect.id}`}>
@@ -128,8 +130,12 @@ function ProspectCard({
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quality.className}`} data-testid={`badge-quality-${prospect.id}`} title={`Email Quality Score: ${quality.score}/100`}>
-            {quality.score > 0 ? `Q:${quality.score}` : quality.label}
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quality.className}`}
+            data-testid={`badge-quality-${prospect.id}`}
+            title={quality.hasEmail ? `Contact confidence: ${quality.score}/100` : "No usable email — enrichment needed"}
+          >
+            {quality.label}
           </span>
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit(prospect)} data-testid={`button-edit-${prospect.id}`}>
             <Edit2 className="h-3.5 w-3.5" />
@@ -143,9 +149,36 @@ function ProspectCard({
       <ConfidenceBar score={prospect.confidenceScore || 50} />
 
       <div className="flex items-center gap-2 flex-wrap">
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onGenerateEmail(prospect)} data-testid={`button-generate-email-${prospect.id}`}>
-          <Mail className="h-3 w-3 mr-1" /> Generate Email
-        </Button>
+        {quality.hasEmail ? (
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onGenerateEmail(prospect)} data-testid={`button-generate-email-${prospect.id}`}>
+            <Mail className="h-3 w-3 mr-1" /> Generate Email
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+            onClick={() => onEnrichContact(prospect.id)}
+            disabled={isEnriching}
+            data-testid={`button-find-decision-maker-${prospect.id}`}
+          >
+            {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
+            Find Decision Maker
+          </Button>
+        )}
+        {quality.label === "Needs Contact" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={() => onEnrichContact(prospect.id)}
+            disabled={isEnriching}
+            data-testid={`button-find-contact-${prospect.id}`}
+          >
+            {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Users className="h-3 w-3 mr-1" />}
+            Find Contact
+          </Button>
+        )}
         {prospect.outreachStatus !== "Replied" && (
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onMarkReplied(prospect.id)} data-testid={`button-mark-replied-${prospect.id}`}>
             <MessageSquare className="h-3 w-3 mr-1" /> Mark Replied
@@ -174,10 +207,56 @@ function ProspectCard({
 
       {expanded && (
         <div className="space-y-2 pt-2 border-t text-xs">
+          {/* Decision-maker contact block */}
+          <div className="rounded-md bg-muted/40 border p-2 space-y-1">
+            <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">Contact Details</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quality.className}`}>
+                {quality.label}
+              </span>
+              {quality.score > 0 && (
+                <span className="text-muted-foreground">Confidence: {quality.score}%</span>
+              )}
+            </div>
+            {(prospect.decisionMakerName || prospect.decisionMakerTitle) ? (
+              <div className="space-y-0.5">
+                {prospect.decisionMakerName && (
+                  <p><span className="text-muted-foreground">Decision Maker:</span> <span className="font-medium">{prospect.decisionMakerName}</span></p>
+                )}
+                {prospect.decisionMakerTitle && (
+                  <p><span className="text-muted-foreground">Title:</span> {prospect.decisionMakerTitle}</p>
+                )}
+                {prospect.decisionMakerEmail && (
+                  <p><span className="text-muted-foreground">DM Email:</span> <span className="font-mono">{prospect.decisionMakerEmail}</span></p>
+                )}
+              </div>
+            ) : !quality.hasEmail ? (
+              <p className="italic text-muted-foreground">No verified contact found yet.</p>
+            ) : null}
+            {prospect.contactSourceUrl && (
+              <a href={prospect.contactSourceUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 inline-flex items-center gap-0.5">
+                <ExternalLink className="h-3 w-3" /> Verify contact source
+              </a>
+            )}
+            {!quality.hasEmail && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs mt-1 border-amber-400 text-amber-700 dark:text-amber-400"
+                onClick={() => onEnrichContact(prospect.id)}
+                disabled={isEnriching}
+                data-testid={`button-enrich-expanded-${prospect.id}`}
+              >
+                {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
+                Find Decision Maker
+              </Button>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
             <div><span className="text-muted-foreground">Contact:</span> {prospect.contactName}</div>
             <div><span className="text-muted-foreground">Role:</span> {prospect.contactRole}</div>
-            <div><span className="text-muted-foreground">Email:</span> {prospect.contactEmail || <span className="italic text-muted-foreground">not set</span>}</div>
+            <div><span className="text-muted-foreground">Email:</span> {displayEmail || <span className="italic text-muted-foreground">not set</span>}</div>
             <div><span className="text-muted-foreground">Phone:</span> {prospect.contactPhone || <span className="italic text-muted-foreground">not set</span>}</div>
             {prospect.lastContactedAt && (
               <div className="col-span-2">
@@ -193,13 +272,6 @@ function ProspectCard({
               <p className="text-muted-foreground">{getMessagingGuidance(stage.label)}</p>
             </div>
           )}
-          {/* Contact quality detail */}
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quality.className}`}>
-              {quality.label}
-            </span>
-            <span className="text-muted-foreground">Score: {quality.score}/100</span>
-          </div>
           {prospect.notes && (
             <p className="text-muted-foreground italic border-l-2 pl-2">{prospect.notes}</p>
           )}
@@ -747,6 +819,35 @@ export default function AdminTeamTrainingLeadsPage() {
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
 
+  const [enrichingId, setEnrichingId] = useState<string | null>(null);
+
+  const enrichContactMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setEnrichingId(id);
+      const res = await apiRequest("POST", `/api/team-training-leads/${id}/enrich-contact`, {});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Enrichment failed");
+      return json;
+    },
+    onSuccess: (data) => {
+      setEnrichingId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
+      const q = data.enriched?.contactQuality;
+      const name = data.enriched?.decisionMakerName;
+      const qualityLabel = q === "decision_maker" ? "Decision Maker" : q === "role_based" ? "Role Email" : q === "general" ? "General Email" : "No contact found";
+      toast({
+        title: q === "missing" ? "No contact found" : "Contact found",
+        description: q === "missing"
+          ? "The AI could not find a decision-maker contact for this lead."
+          : name ? `${name} — ${qualityLabel}` : qualityLabel,
+      });
+    },
+    onError: (err: Error) => {
+      setEnrichingId(null);
+      toast({ title: "Enrichment failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const filteredProspects = (prospects || []).filter((p) => {
     if (filterSport && filterSport !== "all" && p.sport?.toLowerCase() !== filterSport.toLowerCase()) return false;
     if (filterStatus && filterStatus !== "all" && p.outreachStatus !== filterStatus) return false;
@@ -914,6 +1015,8 @@ export default function AdminTeamTrainingLeadsPage() {
                   onDelete={(id) => deleteProspectMutation.mutate(id)}
                   onMarkReplied={(id) => markRepliedMutation.mutate(id)}
                   onDoNotContact={(id) => doNotContactMutation.mutate(id)}
+                  onEnrichContact={(id) => enrichContactMutation.mutate(id)}
+                  enrichingId={enrichingId}
                 />
               ))}
             </div>
@@ -1280,20 +1383,63 @@ export default function AdminTeamTrainingLeadsPage() {
               <DialogTitle>Generate Email Draft</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Generate a personalized outreach email for <strong>{generateEmailForProspect.prospectName}</strong>. It will be added to your Drafts for review before sending.
-              </p>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setGenerateEmailForProspect(null)}>Cancel</Button>
-                <Button
-                  onClick={() => generateEmailMutation.mutate(generateEmailForProspect.id)}
-                  disabled={generateEmailMutation.isPending}
-                  data-testid="button-confirm-generate-email"
-                >
-                  {generateEmailMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
-                  Generate Email
-                </Button>
-              </div>
+              {(() => {
+                const q = getClientQuality(generateEmailForProspect);
+                if (!q.hasEmail) {
+                  return (
+                    <>
+                      <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3">
+                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 shrink-0" />
+                          Contact needed before outreach
+                        </p>
+                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                          <strong>{generateEmailForProspect.prospectName}</strong> has no usable email address. Find a decision-maker contact before generating an email.
+                        </p>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <Button variant="outline" onClick={() => setGenerateEmailForProspect(null)}>Cancel</Button>
+                        <Button
+                          className="bg-amber-600 hover:bg-amber-700 text-white"
+                          onClick={() => {
+                            setGenerateEmailForProspect(null);
+                            enrichContactMutation.mutate(generateEmailForProspect.id);
+                          }}
+                          disabled={enrichContactMutation.isPending}
+                          data-testid="button-find-dm-from-dialog"
+                        >
+                          {enrichContactMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                          Find Decision Maker
+                        </Button>
+                      </div>
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Generate a personalized outreach email for <strong>{generateEmailForProspect.prospectName}</strong>. It will be added to your Drafts for review before sending.
+                    </p>
+                    {q.label === "General Email" && (
+                      <div className="rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950/30 p-2 text-xs text-yellow-800 dark:text-yellow-300">
+                        <AlertCircle className="h-3 w-3 inline mr-1" />
+                        This lead has a general email only. Consider finding a decision-maker contact for better outreach.
+                      </div>
+                    )}
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="outline" onClick={() => setGenerateEmailForProspect(null)}>Cancel</Button>
+                      <Button
+                        onClick={() => generateEmailMutation.mutate(generateEmailForProspect.id)}
+                        disabled={generateEmailMutation.isPending}
+                        data-testid="button-confirm-generate-email"
+                      >
+                        {generateEmailMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                        Generate Email
+                      </Button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </DialogContent>
         </Dialog>

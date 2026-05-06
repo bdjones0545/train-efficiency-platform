@@ -37,6 +37,7 @@ _Populate as you build_
 - **Intelligence Engines:** Includes Operations, Revenue, and Client Intelligence Engines for data analysis and a Goal-Oriented Optimization Engine for target-setting. A Global Priority Engine ranks cross-system actions, and a High-Confidence Auto-Execution Layer automates top-priority actions.
 - **Revenue Outcome Engine:** Ties every AI action to real revenue outcomes via `ai_revenue_events` for multi-touch attribution.
 - **Email Agent Upgrade (Phases 1-10):** Enhances email outreach with features like Audit Engine, Contact Quality Scoring, Conversation Stage Tracking, Adaptive Follow-Up Timing, and Auto-Execution Learning Loop.
+- **Decision-Maker Contact Layer:** Lead research agent now actively searches for decision-makers (owner, AD, head coach, director, etc.) and scores leads by contact quality: `decision_maker` > `role_based` > `general` > `missing`. Leads with no email are penalized in scoring and blocked from email generation until enriched. `POST /api/team-training-leads/:id/enrich-contact` allows per-lead AI contact enrichment after creation.
 
 ## Product
 - Multi-tenant scheduling platform for strength and conditioning businesses.

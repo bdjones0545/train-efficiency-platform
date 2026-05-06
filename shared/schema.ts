@@ -608,6 +608,13 @@ export const teamTrainingProspects = pgTable("team_training_prospects", {
   lastContactedAt: timestamp("last_contacted_at"),
   queuedForTodayAt: timestamp("queued_for_today_at"),
   notes: text("notes").default(""),
+  // Decision-maker contact fields
+  decisionMakerName: varchar("decision_maker_name"),
+  decisionMakerTitle: varchar("decision_maker_title"),
+  decisionMakerEmail: varchar("decision_maker_email"),
+  contactConfidence: integer("contact_confidence").default(0),
+  contactSourceUrl: text("contact_source_url"),
+  contactQuality: varchar("contact_quality").default("missing"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

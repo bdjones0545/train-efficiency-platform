@@ -6971,6 +6971,12 @@ export async function registerRoutes(
           confidenceScore: scored,
           outreachStatus: "Needs Review",
           notes: p.notes,
+          decisionMakerName: p.decisionMakerName,
+          decisionMakerTitle: p.decisionMakerTitle,
+          decisionMakerEmail: p.decisionMakerEmail,
+          contactConfidence: p.contactConfidence,
+          contactSourceUrl: p.contactSourceUrl,
+          contactQuality: p.contactQuality,
         });
         created.push(prospect);
       }
@@ -7107,6 +7113,76 @@ export async function registerRoutes(
       res.json(saved);
     } catch (err: any) {
       console.error("[TeamTraining GenerateEmail]", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Enrich a lead's contact info via AI
+  app.post("/api/team-training-leads/:id/enrich-contact", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const org = await storage.getOrganizationById(profile.organizationId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const prospect = await storage.getTeamTrainingProspect(req.params.id);
+      if (!prospect) return res.status(404).json({ message: "Prospect not found" });
+
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(500).json({ error: "AI research is not configured", message: "Missing OPENAI_API_KEY on the server." });
+      }
+
+      const { enrichProspectContact } = await import("./team-training-prospecting");
+      const enriched = await enrichProspectContact(
+        org,
+        prospect.prospectName,
+        prospect.city || "unknown",
+        prospect.state || "unknown",
+        prospect.sport || "unknown",
+        prospect.organizationType || "unknown"
+      );
+
+      // Compute new score incorporating the enriched contact quality
+      const { scoreProspect } = await import("./team-training-prospecting");
+      const newScore = scoreProspect({
+        prospectName: prospect.prospectName,
+        organizationType: prospect.organizationType || "unknown",
+        sport: prospect.sport || "unknown",
+        city: prospect.city || "unknown",
+        state: prospect.state || "unknown",
+        websiteUrl: prospect.websiteUrl || null,
+        contactName: prospect.contactName || "unknown",
+        contactRole: prospect.contactRole || "unknown",
+        contactEmail: null,
+        contactPhone: null,
+        sourceUrl: prospect.sourceUrl || null,
+        confidenceScore: prospect.confidenceScore || 50,
+        notes: prospect.notes || "",
+        ...enriched,
+      });
+
+      const updated = await storage.updateTeamTrainingProspect(prospect.id, {
+        decisionMakerName: enriched.decisionMakerName,
+        decisionMakerTitle: enriched.decisionMakerTitle,
+        decisionMakerEmail: enriched.decisionMakerEmail,
+        contactConfidence: enriched.contactConfidence,
+        contactSourceUrl: enriched.contactSourceUrl,
+        contactQuality: enriched.contactQuality,
+        confidenceScore: newScore,
+      });
+
+      await storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        prospectId: prospect.id,
+        eventType: "contact_enriched",
+        description: `Contact enriched for ${prospect.prospectName}: ${enriched.contactQuality} quality${enriched.decisionMakerName ? ` — ${enriched.decisionMakerName}` : ""}`,
+        metadata: { contactQuality: enriched.contactQuality, decisionMakerName: enriched.decisionMakerName },
+      });
+
+      res.json({ prospect: updated, enriched });
+    } catch (err: any) {
+      console.error("[TeamTraining EnrichContact]", err);
       res.status(500).json({ message: err.message });
     }
   });
