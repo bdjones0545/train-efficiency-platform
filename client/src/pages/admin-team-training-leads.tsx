@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -19,7 +19,7 @@ import {
   Users, SendHorizonal, AlertCircle, FileText, Trash2, Filter,
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
   Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX,
-  Sparkles, RotateCcw, Clock, MapPin, FileSearch
+  Sparkles, RotateCcw, Clock, MapPin, FileSearch, Minimize2, X as XIcon
 } from "lucide-react";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
 
@@ -1045,6 +1045,156 @@ function DiscoveryLogTab() {
   );
 }
 
+// ─── Research Progress Panel ─────────────────────────────────────────────────
+type ResearchStep = {
+  id: string;
+  label: string;
+  state: "pending" | "active" | "done";
+};
+
+type ResearchProgressState = {
+  status: "idle" | "running" | "done" | "error";
+  location: string;
+  steps: ResearchStep[];
+  result?: { saved: number; rejected: number; duplicates: number };
+  error?: string;
+  minimized: boolean;
+};
+
+const STEP_DEFINITIONS = [
+  { id: "search",    label: "Search results analyzed" },
+  { id: "validate",  label: "Websites validated" },
+  { id: "contacts",  label: "Contact pages scanned" },
+  { id: "score",     label: "Confidence scored" },
+];
+
+function makeSteps(activeId?: string): ResearchStep[] {
+  let passed = !activeId;
+  return STEP_DEFINITIONS.map((s) => {
+    if (passed) return { ...s, state: "pending" as const };
+    if (s.id === activeId) { passed = false; return { ...s, state: "active" as const }; }
+    return { ...s, state: "done" as const };
+  });
+}
+
+function ResearchProgressPanel({
+  progress,
+  onMinimize,
+  onDismiss,
+}: {
+  progress: ResearchProgressState;
+  onMinimize: () => void;
+  onDismiss: () => void;
+}) {
+  if (progress.status === "idle") return null;
+
+  const isDone = progress.status === "done";
+  const isError = progress.status === "error";
+
+  return (
+    <div
+      className="fixed bottom-5 right-5 z-50 w-72 rounded-xl border bg-card shadow-2xl overflow-hidden transition-all"
+      data-testid="panel-research-progress"
+    >
+      {/* Header */}
+      <div className={`flex items-center gap-2 px-3 py-2.5 ${isDone ? "bg-emerald-600 dark:bg-emerald-700" : isError ? "bg-red-600 dark:bg-red-700" : "bg-primary"}`}>
+        {isDone ? (
+          <CheckCircle className="h-4 w-4 text-white shrink-0" />
+        ) : isError ? (
+          <XCircle className="h-4 w-4 text-white shrink-0" />
+        ) : (
+          <Loader2 className="h-4 w-4 text-white shrink-0 animate-spin" />
+        )}
+        <p className="text-sm font-semibold text-white flex-1 truncate">
+          {isDone ? "Research Complete" : isError ? "Research Failed" : `Researching ${progress.location}…`}
+        </p>
+        <button
+          className="text-white/70 hover:text-white transition-colors"
+          onClick={onMinimize}
+          aria-label="Minimize"
+          data-testid="button-progress-minimize"
+        >
+          <Minimize2 className="h-3.5 w-3.5" />
+        </button>
+        {(isDone || isError) && (
+          <button
+            className="text-white/70 hover:text-white transition-colors ml-0.5"
+            onClick={onDismiss}
+            aria-label="Dismiss"
+            data-testid="button-progress-dismiss"
+          >
+            <XIcon className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Body */}
+      {!progress.minimized && (
+        <div className="px-3 py-3 space-y-1.5">
+          {/* Steps */}
+          {progress.steps.map((step) => (
+            <div key={step.id} className="flex items-center gap-2" data-testid={`step-${step.id}`}>
+              {step.state === "done" ? (
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              ) : step.state === "active" ? (
+                <Loader2 className="h-3.5 w-3.5 text-primary shrink-0 animate-spin" />
+              ) : (
+                <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 shrink-0" />
+              )}
+              <span className={`text-xs ${step.state === "done" ? "text-foreground" : step.state === "active" ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                {step.label}
+              </span>
+            </div>
+          ))}
+
+          {/* Result line */}
+          {isDone && progress.result && (
+            <>
+              <div className="my-1.5 border-t" />
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400" data-testid="text-progress-saved">
+                  {progress.result.saved} lead{progress.result.saved !== 1 ? "s" : ""} added
+                </span>
+              </div>
+              {progress.result.rejected > 0 && (
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground" data-testid="text-progress-rejected">
+                    {progress.result.rejected} rejected
+                  </span>
+                </div>
+              )}
+              {progress.result.duplicates > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {progress.result.duplicates} duplicate{progress.result.duplicates !== 1 ? "s" : ""} skipped
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Error */}
+          {isError && progress.error && (
+            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{progress.error}</p>
+          )}
+
+          {/* Footer note when still running */}
+          {!isDone && !isError && (
+            <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+              You can browse the page while this runs. Results appear in the Leads tab.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminTeamTrainingLeadsPage() {
   const { toast } = useToast();
 
@@ -1078,6 +1228,37 @@ export default function AdminTeamTrainingLeadsPage() {
   } | null>(null);
   const [generateEmailForProspect, setGenerateEmailForProspect] = useState<TeamTrainingProspect | null>(null);
   const [estimatedValue, setEstimatedValue] = useState("500");
+
+  // ─── Research Progress Panel state ───────────────────────────────────────
+  const [researchProgress, setResearchProgress] = useState<ResearchProgressState>({
+    status: "idle", location: "", steps: makeSteps(), minimized: false,
+  });
+  const stepTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearStepTimers = useCallback(() => {
+    stepTimers.current.forEach(clearTimeout);
+    stepTimers.current = [];
+  }, []);
+
+  const startProgressSteps = useCallback((location: string) => {
+    clearStepTimers();
+    // Step timing schedule (approximate for a 30–60 s web-search call)
+    const schedule: Array<{ delay: number; activeId: string }> = [
+      { delay: 0,     activeId: "search" },
+      { delay: 5000,  activeId: "validate" },
+      { delay: 13000, activeId: "contacts" },
+      { delay: 22000, activeId: "score" },
+    ];
+    schedule.forEach(({ delay, activeId }) => {
+      const t = setTimeout(() => {
+        setResearchProgress((prev) => {
+          if (prev.status !== "running") return prev;
+          return { ...prev, steps: makeSteps(activeId) };
+        });
+      }, delay);
+      stepTimers.current.push(t);
+    });
+  }, [clearStepTimers]);
 
   const { data: stats, isLoading: statsLoading } = useQuery<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>({
     queryKey: ["/api/admin/team-training/stats"],
@@ -1120,32 +1301,63 @@ export default function AdminTeamTrainingLeadsPage() {
 
   const researchMutation = useMutation({
     mutationFn: async (data: { sport?: string; limit: number; location: string; radiusMiles: number }) => {
+      // Close dialog + launch progress panel immediately
+      setResearchDialogOpen(false);
+      setResearchLocationTouched(false);
+      setResearchProgress({
+        status: "running",
+        location: data.location,
+        steps: makeSteps("search"),
+        minimized: false,
+      });
+      startProgressSteps(data.location);
+
       const res = await apiRequest("POST", "/api/admin/team-training/research", data);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || json.message || "Unknown error");
       return json;
     },
     onSuccess: (data) => {
+      clearStepTimers();
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/team-training-leads/settings"] });
-      setResearchDialogOpen(false);
-      setResearchLocationTouched(false);
-      if (data.summary) {
-        setResearchSummary(data.summary);
-      } else {
-        toast({ title: `Found ${data.count} new leads`, description: "Prospects added to your pipeline." });
-      }
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/discovery-log"] });
+
+      const saved = data.summary?.saved ?? data.count ?? 0;
+      const rejected = data.summary?.rejectedLowQuality ?? 0;
+      const duplicates = data.summary?.duplicatesSkipped ?? 0;
+
+      setResearchProgress((prev) => ({
+        ...prev,
+        status: "done",
+        steps: STEP_DEFINITIONS.map((s) => ({ ...s, state: "done" as const })),
+        result: { saved, rejected, duplicates },
+      }));
+
+      if (data.summary) setResearchSummary(data.summary);
+
+      // Auto-dismiss after 12 s
+      const t = setTimeout(() => {
+        setResearchProgress((prev) => prev.status === "done" ? { ...prev, status: "idle" } : prev);
+      }, 12000);
+      stepTimers.current.push(t);
     },
     onError: (err: Error) => {
+      clearStepTimers();
       const msg = err.message;
-      let description = "Couldn't research leads. Please try again.";
+      let friendly = "Couldn't research leads. Please try again.";
       if (msg === "AI research is not configured") {
-        description = "Lead research is not configured yet. Add your OpenAI API key on the server.";
+        friendly = "Lead research is not configured yet. Add your OpenAI API key on the server.";
       } else if (msg === "Location required") {
-        description = "Enter a location before researching leads.";
+        friendly = "Enter a location before researching leads.";
       }
-      toast({ title: "Research failed", description, variant: "destructive" });
+      setResearchProgress((prev) => ({
+        ...prev,
+        status: "error",
+        steps: prev.steps,
+        error: friendly,
+      }));
     },
   });
 
@@ -1715,10 +1927,10 @@ export default function AdminTeamTrainingLeadsPage() {
                   if (!researchLocation.trim()) return;
                   researchMutation.mutate({ sport: researchSport === "all" ? undefined : researchSport, limit: parseInt(researchLimit), location: researchLocation.trim(), radiusMiles: parseInt(researchRadius) });
                 }}
-                disabled={researchMutation.isPending || !researchLocation.trim()}
+                disabled={!researchLocation.trim()}
                 data-testid="button-confirm-research"
               >
-                {researchMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                <Search className="h-4 w-4 mr-2" />
                 Find Leads
               </Button>
             </div>
@@ -2258,6 +2470,16 @@ export default function AdminTeamTrainingLeadsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Floating Research Progress Panel */}
+      <ResearchProgressPanel
+        progress={researchProgress}
+        onMinimize={() => setResearchProgress((prev) => ({ ...prev, minimized: !prev.minimized }))}
+        onDismiss={() => {
+          clearStepTimers();
+          setResearchProgress({ status: "idle", location: "", steps: makeSteps(), minimized: false });
+        }}
+      />
     </div>
   );
 }
