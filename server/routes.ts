@@ -6713,35 +6713,59 @@ export async function registerRoutes(
   // ─── Team Training Prospecting Routes ─────────────────────────────────────
 
   /** Compute the next scheduled run timestamp based on preferred time and frequency. */
-  function computeNextRunAt(preferredTime: string, frequency: string): Date {
+  const FALLBACK_TZ = "America/New_York";
+
+  function resolveOrgTimezone(org: any): string {
+    return org?.timezone || FALLBACK_TZ;
+  }
+
+  /**
+   * Compute the next UTC timestamp at which recurring research should fire.
+   * All wall-clock arithmetic is done in the org's timezone so "8:00 AM"
+   * always means 8:00 AM local time, regardless of server timezone.
+   */
+  function computeNextRunAt(preferredTime: string, frequency: string, timezone: string): Date {
     const [hStr, mStr] = (preferredTime || "08:00").split(":");
     const h = parseInt(hStr, 10) || 8;
     const m = parseInt(mStr, 10) || 0;
-    const now = new Date();
-    const candidate = new Date(now);
-    candidate.setHours(h, m, 0, 0);
-    if (candidate <= now) {
-      if (frequency === "daily") candidate.setDate(candidate.getDate() + 1);
-      else if (frequency === "monthly") candidate.setMonth(candidate.getMonth() + 1);
-      else candidate.setDate(candidate.getDate() + 7);
+
+    const nowUtc = new Date();
+    // Represent "now" as a Date whose .getHours()/.getDate() etc. reflect local org time
+    const nowLocal = toZonedTime(nowUtc, timezone);
+
+    const candidateLocal = new Date(nowLocal);
+    candidateLocal.setHours(h, m, 0, 0);
+
+    // If that local time has already passed today, advance by one period
+    if (candidateLocal <= nowLocal) {
+      if (frequency === "daily") candidateLocal.setDate(candidateLocal.getDate() + 1);
+      else if (frequency === "monthly") candidateLocal.setMonth(candidateLocal.getMonth() + 1);
+      else candidateLocal.setDate(candidateLocal.getDate() + 7);
     }
-    return candidate;
+
+    // Convert the local candidate back to a real UTC instant
+    return fromZonedTime(candidateLocal, timezone);
   }
 
-  /** Build a human-readable label for the next run time. */
-  function buildNextRunLabel(nextRunAt: Date): string {
-    const now = new Date();
-    const todayMidnight = new Date(now); todayMidnight.setHours(0, 0, 0, 0);
+  /**
+   * Build a human-readable label ("Today at 8:00 AM", "Tomorrow at 8:00 AM", …)
+   * relative to the org's local timezone so it matches the stored nextRunAt.
+   */
+  function buildNextRunLabel(nextRunAtUtc: Date, timezone: string): string {
+    const nowLocal = toZonedTime(new Date(), timezone);
+    const nextLocal = toZonedTime(nextRunAtUtc, timezone);
+
+    const todayMidnight = new Date(nowLocal); todayMidnight.setHours(0, 0, 0, 0);
     const tomorrowMidnight = new Date(todayMidnight); tomorrowMidnight.setDate(todayMidnight.getDate() + 1);
-    const afterTomorrowMidnight = new Date(tomorrowMidnight); afterTomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
-    const runMidnight = new Date(nextRunAt); runMidnight.setHours(0, 0, 0, 0);
-    const timeStr = nextRunAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-    if (runMidnight.getTime() === todayMidnight.getTime()) return `Today at ${timeStr}`;
-    if (runMidnight.getTime() === tomorrowMidnight.getTime()) return `Tomorrow at ${timeStr}`;
-    return nextRunAt.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }) + ` at ${timeStr}`;
+    const nextMidnight = new Date(nextLocal); nextMidnight.setHours(0, 0, 0, 0);
+
+    const timeStr = nextLocal.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    if (nextMidnight.getTime() === todayMidnight.getTime()) return `Today at ${timeStr}`;
+    if (nextMidnight.getTime() === tomorrowMidnight.getTime()) return `Tomorrow at ${timeStr}`;
+    return nextLocal.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }) + ` at ${timeStr}`;
   }
 
-  /** Format an HH:MM string as 12-hour time. */
+  /** Format an HH:MM string as 12-hour time (e.g. "08:00" → "8:00 AM"). */
   function formatTime12h(time: string): string {
     const [hStr, mStr] = (time || "08:00").split(":");
     const h = parseInt(hStr, 10) || 8;
@@ -6762,10 +6786,11 @@ export async function registerRoutes(
       const orgCity = (org as any)?.city || "";
       const orgState = (org as any)?.state || "";
       const fallbackLocation = [orgCity, orgState].filter(Boolean).join(", ");
+      const orgTz = resolveOrgTimezone(org);
       if (saved) {
-        const nextRunLabel = saved.recurringEnabled && saved.nextRunAt ? buildNextRunLabel(new Date(saved.nextRunAt)) : null;
+        const nextRunLabel = saved.recurringEnabled && saved.nextRunAt ? buildNextRunLabel(new Date(saved.nextRunAt), orgTz) : null;
         const preferredTimeLabel = saved.recurringTime ? formatTime12h(saved.recurringTime) : "8:00 AM";
-        return res.json({ ...saved, nextRunLabel, preferredTimeLabel });
+        return res.json({ ...saved, nextRunLabel, preferredTimeLabel, timezone: orgTz });
       }
       return res.json({
         organizationId: profile.organizationId,
@@ -6781,6 +6806,7 @@ export async function registerRoutes(
         nextRunAt: null,
         nextRunLabel: null,
         preferredTimeLabel: "8:00 AM",
+        timezone: orgTz,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -6810,12 +6836,16 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid frequency", message: "Frequency must be daily, weekly, or monthly." });
       }
 
-      // Compute nextRunAt properly from preferred time + frequency
+      // Fetch org to get its timezone for accurate scheduling
+      const org = await storage.getOrganizationById(profile.organizationId);
+      const orgTz = resolveOrgTimezone(org);
+
+      // Compute nextRunAt in org's local timezone so "8:00 AM" means 8:00 AM there
       const effectiveTime = recurringTime ?? "08:00";
       const effectiveFreq = recurringFrequency ?? "weekly";
       let nextRunAt: Date | null = null;
       if (recurringEnabled) {
-        nextRunAt = computeNextRunAt(effectiveTime, effectiveFreq);
+        nextRunAt = computeNextRunAt(effectiveTime, effectiveFreq, orgTz);
       }
 
       const updated = await storage.upsertTeamLeadSettings(profile.organizationId, {
@@ -6837,9 +6867,9 @@ export async function registerRoutes(
         metadata: { defaultLocation, radiusMiles, recurringEnabled, recurringFrequency, recurringLimit, recurringSport },
       });
 
-      const nextRunLabel = recurringEnabled && nextRunAt ? buildNextRunLabel(nextRunAt) : null;
+      const nextRunLabel = recurringEnabled && nextRunAt ? buildNextRunLabel(nextRunAt, orgTz) : null;
       const preferredTimeLabel = formatTime12h(effectiveTime);
-      res.json({ ...updated, nextRunLabel, preferredTimeLabel });
+      res.json({ ...updated, nextRunLabel, preferredTimeLabel, timezone: orgTz });
     } catch (err: any) {
       console.error("[TeamTraining Settings]", err);
       res.status(500).json({ message: err.message });

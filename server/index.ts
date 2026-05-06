@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { runMigrations } from 'stripe-replit-sync';
 import { getStripeSync } from './stripeClient';
 import { WebhookHandlers } from './webhookHandlers';
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 
 const app = express();
 const httpServer = createServer(app);
@@ -209,19 +210,27 @@ app.use((req, res, next) => {
             created++;
           }
 
-          // Compute next run time — preserve the saved preferred hour:minute
-          const now = new Date();
+          // Compute next run time in the org's local timezone so "8:00 AM"
+          // always means 8:00 AM org-local time, stored as UTC in the DB.
+          const nowUtc = new Date();
           const freq = settings.recurringFrequency || "weekly";
-          const [hStr, mStr] = (settings.recurringTime || "08:00").split(":");
+          const preferredTime = settings.recurringTime || "08:00";
+          const [hStr, mStr] = preferredTime.split(":");
           const prefH = parseInt(hStr, 10) || 8;
           const prefM = parseInt(mStr, 10) || 0;
-          const nextRunAt = new Date(now);
-          if (freq === "daily") nextRunAt.setDate(nextRunAt.getDate() + 1);
-          else if (freq === "monthly") nextRunAt.setMonth(nextRunAt.getMonth() + 1);
-          else nextRunAt.setDate(nextRunAt.getDate() + 7);
-          nextRunAt.setHours(prefH, prefM, 0, 0);
+          const orgTz = (org as any).timezone || "America/New_York";
 
-          await st.updateTeamLeadLastRun(orgId, now, nextRunAt);
+          // Advance from today in local time, then set preferred H:M
+          const nowLocal = toZonedTime(nowUtc, orgTz);
+          const nextLocal = new Date(nowLocal);
+          if (freq === "daily") nextLocal.setDate(nextLocal.getDate() + 1);
+          else if (freq === "monthly") nextLocal.setMonth(nextLocal.getMonth() + 1);
+          else nextLocal.setDate(nextLocal.getDate() + 7);
+          nextLocal.setHours(prefH, prefM, 0, 0);
+          // Convert local candidate back to UTC for DB storage
+          const nextRunAt = fromZonedTime(nextLocal, orgTz);
+
+          await st.updateTeamLeadLastRun(orgId, nowUtc, nextRunAt);
 
           await st.logOutreachEvent({
             orgId,
