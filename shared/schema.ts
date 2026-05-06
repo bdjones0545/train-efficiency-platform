@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, jsonb, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -615,11 +615,19 @@ export const teamTrainingProspects = pgTable("team_training_prospects", {
   contactConfidence: integer("contact_confidence").default(0),
   contactSourceUrl: text("contact_source_url"),
   contactQuality: varchar("contact_quality").default("missing"),
-  // Enrichment pipeline fields (Phase 1-8 upgrade)
+  // Enrichment pipeline fields
   contactSourceType: varchar("contact_source_type").default("unverified"),
   verificationStatus: varchar("verification_status").default("unverified"),
   enrichmentExplanation: text("enrichment_explanation"),
   alternativeContacts: text("alternative_contacts"),
+  // Contact Evidence Layer
+  contactSourceTitle: text("contact_source_title"),
+  contactSourceSnippet: text("contact_source_snippet"),
+  contactDiscoveredAt: timestamp("contact_discovered_at"),
+  contactDiscoveryMethod: varchar("contact_discovery_method"),
+  contactConfidenceScore: doublePrecision("contact_confidence_score"),
+  lastDiscoveryAttemptAt: timestamp("last_discovery_attempt_at"),
+  lastDiscoveryResult: varchar("last_discovery_result"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

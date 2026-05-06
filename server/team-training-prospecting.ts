@@ -501,12 +501,37 @@ export interface AlternativeContact {
   name?: string | null;
 }
 
+export type DiscoveryMethod =
+  | "website_contact_page"
+  | "website_staff_page"
+  | "athletics_page"
+  | "directory_listing"
+  | "social_profile"
+  | "search_result"
+  | "manual";
+
+export interface AlternativeContactFull {
+  email: string;
+  name: string | null;
+  role: string | null;
+  sourceType: string;
+  sourceUrl: string | null;
+  sourceTitle: string | null;
+  sourceSnippet: string | null;
+  confidence: number;
+  explanation: string;
+}
+
 export interface EnrichedContact {
   decisionMakerName: string | null;
   decisionMakerTitle: string | null;
   decisionMakerEmail: string | null;
   contactConfidence: number;
   contactSourceUrl: string | null;
+  contactSourceTitle: string | null;
+  contactSourceSnippet: string | null;
+  contactDiscoveryMethod: DiscoveryMethod | null;
+  contactConfidenceScore: number | null;
   contactQuality: ContactQuality;
   contactSourceType: ContactSourceType;
   verificationStatus: VerificationStatus;
@@ -536,6 +561,10 @@ function emptyEnrichment(): EnrichedContact {
     decisionMakerEmail: null,
     contactConfidence: 0,
     contactSourceUrl: null,
+    contactSourceTitle: null,
+    contactSourceSnippet: null,
+    contactDiscoveryMethod: null,
+    contactConfidenceScore: null,
     contactQuality: "missing",
     contactSourceType: "manual",
     verificationStatus: "unverified",
@@ -584,6 +613,18 @@ Search these sources:
 - Published staff/coaching directories
 - Google search snippets that show the email explicitly
 
+For every email found, record:
+- The exact source URL where the email appeared
+- The page title (e.g. "Contact Us | Savannah Volleyball Club")
+- A 1-2 sentence snippet from the page that shows the email in context
+- The discovery method (how you found it)
+- A confidence score from 0.00 to 1.00 based on source quality:
+  * 1.00 = explicit email on official staff/contact page
+  * 0.90 = official athletics page
+  * 0.80 = directory listing
+  * 0.70 = social bio/contact link
+  * 0.60 = search result snippet
+
 Return ONLY this JSON (no markdown):
 {
   "foundRealEmail": boolean,
@@ -593,7 +634,11 @@ Return ONLY this JSON (no markdown):
   "contactPhone": string | null,
   "contactSourceType": "website" | "social" | "directory" | "search_result" | null,
   "verificationStatus": "verified" | "unverified" | null,
-  "sourceUrl": string | null,
+  "contactSourceUrl": string | null,
+  "contactSourceTitle": string | null,
+  "contactSourceSnippet": string | null,
+  "contactDiscoveryMethod": "website_contact_page" | "website_staff_page" | "athletics_page" | "directory_listing" | "social_profile" | "search_result" | null,
+  "contactConfidenceScore": number | null,
   "enrichmentExplanation": string | null,
   "alternativeContacts": [
     {
@@ -602,20 +647,24 @@ Return ONLY this JSON (no markdown):
       "role": string | null,
       "sourceType": "website" | "social" | "directory" | "search_result",
       "sourceUrl": string | null,
+      "sourceTitle": string | null,
+      "sourceSnippet": string | null,
       "confidence": number,
       "explanation": string
     }
   ]
 }
 
-Rules for alternativeContacts:
-- Only include emails that were explicitly found in a real source.
+Rules:
+- Only include emails explicitly found in a real source.
 - Do NOT include inferred or pattern-generated emails.
-- If none found, return an empty array.`;
+- If no real email found, set foundRealEmail: false and all contact fields to null.
+- Return empty array for alternativeContacts if none found.`;
 
   const validQuality: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
   const validSourceTypes: ContactSourceType[] = ["verified", "scraped", "social", "website", "directory", "search_result", "manual"];
   const validVerification: VerificationStatus[] = ["verified", "unverified"];
+  const validDiscoveryMethods: DiscoveryMethod[] = ["website_contact_page", "website_staff_page", "athletics_page", "directory_listing", "social_profile", "search_result", "manual"];
 
   function parseEnrichedResult(parsed: any): EnrichedContact | null {
     if (!parsed.foundRealEmail) return null;
@@ -627,6 +676,10 @@ Rules for alternativeContacts:
     const contactSourceType: ContactSourceType = validSourceTypes.includes(rawSourceType) ? rawSourceType : "website";
     const rawVerification = parsed.verificationStatus;
     const verificationStatus: VerificationStatus = validVerification.includes(rawVerification) ? rawVerification : "unverified";
+    const rawMethod = parsed.contactDiscoveryMethod;
+    const contactDiscoveryMethod: DiscoveryMethod | null = validDiscoveryMethods.includes(rawMethod) ? rawMethod : null;
+    const rawScore = parsed.contactConfidenceScore;
+    const contactConfidenceScore = typeof rawScore === "number" ? Math.max(0, Math.min(1, rawScore)) : null;
 
     const alternativeContacts: AlternativeContact[] = Array.isArray(parsed.alternativeContacts)
       ? parsed.alternativeContacts
@@ -639,12 +692,21 @@ Rules for alternativeContacts:
           }))
       : [];
 
+    // Derive integer confidence from decimal score when not explicitly set
+    const scoreInt = contactConfidenceScore !== null
+      ? Math.round(contactConfidenceScore * 100)
+      : Math.max(0, Math.min(100, Math.round(parsed.contactConfidence || parsed.confidence || 70)));
+
     return {
       decisionMakerName: normalizeNullable(parsed.contactName),
       decisionMakerTitle: normalizeNullable(parsed.contactRole),
       decisionMakerEmail: contactEmail,
-      contactConfidence: Math.max(0, Math.min(100, Math.round(parsed.contactConfidence || parsed.confidence || 70))),
-      contactSourceUrl: normalizeNullable(parsed.sourceUrl || parsed.contactSourceUrl) || null,
+      contactConfidence: scoreInt,
+      contactSourceUrl: normalizeNullable(parsed.contactSourceUrl || parsed.sourceUrl) || null,
+      contactSourceTitle: normalizeNullable(parsed.contactSourceTitle) || null,
+      contactSourceSnippet: normalizeNullable(parsed.contactSourceSnippet) || null,
+      contactDiscoveryMethod,
+      contactConfidenceScore,
       contactQuality,
       contactSourceType,
       verificationStatus,

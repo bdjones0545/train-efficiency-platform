@@ -19,7 +19,7 @@ import {
   Users, SendHorizonal, AlertCircle, FileText, Trash2, Filter,
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
   Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX,
-  Sparkles, RotateCcw
+  Sparkles, RotateCcw, Clock, MapPin, FileSearch
 } from "lucide-react";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
 
@@ -107,6 +107,124 @@ function ContactSourceBadge({ sourceType, verificationStatus }: { sourceType?: s
   );
 }
 
+// ─── Discovery Method Label ──────────────────────────────────────────────────
+function formatDiscoveryMethod(method?: string | null): string {
+  const labels: Record<string, string> = {
+    website_contact_page: "Website Contact Page",
+    website_staff_page: "Website Staff Page",
+    athletics_page: "Athletics Page",
+    directory_listing: "Directory Listing",
+    social_profile: "Social Profile",
+    search_result: "Search Result",
+    manual: "Manual Entry",
+  };
+  return method ? (labels[method] ?? method.replace(/_/g, " ")) : "Unknown";
+}
+
+// ─── Contact Evidence Panel ──────────────────────────────────────────────────
+function ContactEvidencePanel({ prospect }: { prospect: TeamTrainingProspect }) {
+  const p = prospect as any;
+  const sourceUrl: string | null = p.contactSourceUrl || null;
+  const sourceTitle: string | null = p.contactSourceTitle || null;
+  const sourceSnippet: string | null = p.contactSourceSnippet || null;
+  const discoveryMethod: string | null = p.contactDiscoveryMethod || null;
+  const confidenceScore: number | null = p.contactConfidenceScore ?? null;
+  const discoveredAt: string | null = p.contactDiscoveredAt || null;
+
+  if (!p.decisionMakerEmail) return null;
+
+  const confidencePct = confidenceScore !== null ? Math.round(confidenceScore * 100) : null;
+  const confidenceColor =
+    confidencePct === null ? "text-muted-foreground" :
+    confidencePct >= 85 ? "text-emerald-600 dark:text-emerald-400" :
+    confidencePct >= 65 ? "text-yellow-600 dark:text-yellow-400" :
+    "text-red-500 dark:text-red-400";
+  const confidenceBg =
+    confidencePct === null ? "bg-muted/60" :
+    confidencePct >= 85 ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800" :
+    confidencePct >= 65 ? "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800" :
+    "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800";
+
+  // Stale detection — 90 days
+  const isStale = discoveredAt ? (Date.now() - new Date(discoveredAt).getTime()) > 90 * 24 * 60 * 60 * 1000 : false;
+
+  return (
+    <div className="rounded-md border bg-card p-2.5 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <FileSearch className="h-3.5 w-3.5 text-primary shrink-0" />
+        <p className="font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Contact Evidence</p>
+        {confidencePct !== null && (
+          <span className={`ml-auto inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${confidenceBg} ${confidenceColor}`}>
+            {confidencePct}% Confidence
+          </span>
+        )}
+      </div>
+
+      {isStale && (
+        <div className="flex items-start gap-1.5 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-2 py-1.5">
+          <Clock className="h-3 w-3 text-amber-500 mt-0.5 shrink-0" />
+          <p className="text-amber-700 dark:text-amber-400 text-[10px] leading-tight">
+            Contact may be outdated. Re-run discovery to refresh.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-1.5 text-xs">
+        {sourceUrl && (
+          <div className="flex items-start gap-1.5">
+            <MapPin className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Found On</p>
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline underline-offset-2 break-all text-[11px] inline-flex items-center gap-0.5"
+                data-testid={`link-evidence-source-${prospect.id}`}
+              >
+                {sourceUrl.replace(/^https?:\/\//, "")}
+                <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {sourceTitle && (
+          <div>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Page</p>
+            <p className="text-foreground/80 leading-tight">{sourceTitle}</p>
+          </div>
+        )}
+
+        {sourceSnippet && (
+          <div>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Snippet</p>
+            <blockquote className="border-l-2 border-primary/30 pl-2 text-muted-foreground italic leading-relaxed">
+              &ldquo;{sourceSnippet}&rdquo;
+            </blockquote>
+          </div>
+        )}
+
+        {discoveryMethod && (
+          <div className="flex items-center gap-1.5">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Method</p>
+            <span className="text-foreground/80">{formatDiscoveryMethod(discoveryMethod)}</span>
+          </div>
+        )}
+
+        {discoveredAt && (
+          <div className="flex items-center gap-1.5">
+            <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+            <p className="text-[10px] text-muted-foreground">
+              Discovered {new Date(discoveredAt).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ConfidenceBar({ score }: { score: number }) {
   const color = score >= 75 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-400";
   return (
@@ -186,9 +304,27 @@ function ProspectCard({
       <div className="flex items-center gap-2 flex-wrap">
         {quality.hasEmail ? (
           <>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onGenerateEmail(prospect)} data-testid={`button-generate-email-${prospect.id}`}>
-              <Mail className="h-3 w-3 mr-1" /> Generate Email
-            </Button>
+            {(() => {
+              const p = prospect as any;
+              const score: number | null = p.contactConfidenceScore ?? null;
+              const isVerified = p.verificationStatus === "verified";
+              const isManual = p.contactSourceType === "manual";
+              const passesConfidence = score === null || score >= 0.65;
+              const canGenerate = passesConfidence || isVerified || isManual;
+              return (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => onGenerateEmail(prospect)}
+                  disabled={!canGenerate}
+                  title={!canGenerate ? "Contact confidence too low. Re-run discovery or enter manually." : undefined}
+                  data-testid={`button-generate-email-${prospect.id}`}
+                >
+                  <Mail className="h-3 w-3 mr-1" /> Generate Email
+                </Button>
+              );
+            })()}
             <Button
               size="sm"
               variant="ghost"
@@ -322,12 +458,8 @@ function ProspectCard({
               );
             })()}
 
-            {/* Source URL */}
-            {prospect.contactSourceUrl && (
-              <a href={prospect.contactSourceUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 inline-flex items-center gap-0.5 text-[10px]">
-                <ExternalLink className="h-3 w-3" /> Verify contact source
-              </a>
-            )}
+            {/* Contact Evidence Panel */}
+            <ContactEvidencePanel prospect={prospect} />
 
             {/* Run enrichment button */}
             <Button

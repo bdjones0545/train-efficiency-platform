@@ -7192,6 +7192,11 @@ export async function registerRoutes(
       const normalizedEmail = normalizeNullable(enriched.decisionMakerEmail);
       if (!isValidEmail(normalizedEmail)) {
         console.warn("[TeamTraining EnrichContact] No real email found for prospect:", prospect.prospectName);
+        // Still track the failed attempt
+        await storage.updateTeamTrainingProspect(prospect.id, {
+          lastDiscoveryAttemptAt: new Date(),
+          lastDiscoveryResult: "no_real_email_found",
+        } as any).catch(() => {});
         return res.json({
           success: false,
           reason: "no_real_email_found",
@@ -7233,6 +7238,13 @@ export async function registerRoutes(
         decisionMakerEmail: safeEnriched.decisionMakerEmail,
         contactConfidence: safeEnriched.contactConfidence,
         contactSourceUrl: safeEnriched.contactSourceUrl,
+        contactSourceTitle: safeEnriched.contactSourceTitle,
+        contactSourceSnippet: safeEnriched.contactSourceSnippet,
+        contactDiscoveryMethod: safeEnriched.contactDiscoveryMethod,
+        contactConfidenceScore: safeEnriched.contactConfidenceScore,
+        contactDiscoveredAt: new Date(),
+        lastDiscoveryAttemptAt: new Date(),
+        lastDiscoveryResult: "success",
         contactQuality: safeEnriched.contactQuality,
         contactSourceType: safeEnriched.contactSourceType,
         verificationStatus: safeEnriched.verificationStatus,

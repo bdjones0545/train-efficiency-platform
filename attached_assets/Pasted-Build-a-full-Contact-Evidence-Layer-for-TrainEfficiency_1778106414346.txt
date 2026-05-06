@@ -1,0 +1,316 @@
+Build a full Contact Evidence Layer for TrainEfficiency so every discovered email is source-backed, explainable, and trustworthy.
+
+Goal:
+Transform contact enrichment from:
+- “AI found an email”
+
+into:
+- “AI researched and verified this contact from a real source.”
+
+Every discovered email should have evidence attached to it:
+- where it came from
+- how it was found
+- why it was trusted
+- when it was discovered
+
+This should work across:
+- website contact pages
+- staff/team pages
+- athletics pages
+- directories
+- search result snippets
+- social bios/contact links
+
+Core Principle:
+No email should appear in the CRM without visible evidence.
+
+====================================================
+1. DATABASE / SCHEMA
+====================================================
+
+Add new fields to team_training_leads:
+
+contact_source_url TEXT
+contact_source_title TEXT
+contact_source_snippet TEXT
+contact_discovered_at TIMESTAMP
+contact_discovery_method TEXT
+contact_confidence_score NUMERIC(3,2)
+
+Allowed discovery methods:
+- website_contact_page
+- website_staff_page
+- athletics_page
+- directory_listing
+- social_profile
+- search_result
+- manual
+
+Confidence score examples:
+1.00 = explicit email on official staff/contact page
+0.90 = official athletics page
+0.80 = directory listing
+0.70 = social bio/contact
+0.60 = search result snippet
+0.50 = manually entered
+
+Also extend alternativeContacts JSON objects:
+
+{
+  email: string,
+  name: string | null,
+  role: string | null,
+  sourceType: string,
+  sourceUrl: string | null,
+  sourceTitle: string | null,
+  sourceSnippet: string | null,
+  confidence: number,
+  explanation: string
+}
+
+====================================================
+2. AI ENRICHMENT PROMPT
+====================================================
+
+Update enrichProspectContact prompt.
+
+New requirements:
+
+For every email discovered:
+- include where it was found
+- include the page title if possible
+- include a short source snippet
+- include the discovery method
+- include confidence score
+
+The AI must ONLY return emails explicitly visible in source material.
+
+Example valid evidence:
+- Contact page containing email
+- Staff directory
+- Athletics coach page
+- Footer/header contact section
+- Social profile bio
+- Search result snippet
+
+The AI response schema:
+
+{
+  "foundRealEmail": boolean,
+  "contactName": string | null,
+  "contactRole": string | null,
+  "contactEmail": string | null,
+  "contactPhone": string | null,
+
+  "contactSourceType": "website" | "social" | "directory" | "search_result" | "manual" | null,
+
+  "verificationStatus": "verified" | "unverified" | null,
+
+  "contactSourceUrl": string | null,
+  "contactSourceTitle": string | null,
+  "contactSourceSnippet": string | null,
+
+  "contactDiscoveryMethod":
+    | "website_contact_page"
+    | "website_staff_page"
+    | "athletics_page"
+    | "directory_listing"
+    | "social_profile"
+    | "search_result"
+    | "manual"
+    | null,
+
+  "contactConfidenceScore": number | null,
+
+  "enrichmentExplanation": string | null,
+
+  "alternativeContacts": [...]
+}
+
+Rules:
+- contactSourceSnippet should be short (1-2 lines max)
+- confidence score must reflect source quality
+- source URL required for verified contacts whenever possible
+- if source evidence is weak, mark unverified
+- if no real email exists, foundRealEmail = false
+
+====================================================
+3. BACKEND STORAGE
+====================================================
+
+Update:
+- enrich route
+- researchProspects()
+- storage update/create methods
+- schema validators
+
+Persist all evidence fields.
+
+Normalize:
+- snippets trimmed
+- confidence clamped between 0 and 1
+- timestamps auto-generated on successful enrichment
+
+When a new real email is saved:
+contact_discovered_at = new Date()
+
+====================================================
+4. FRONTEND — CONTACT EVIDENCE PANEL
+====================================================
+
+Add a new expandable UI section:
+“Contact Evidence”
+
+Visible only when contactEmail exists.
+
+Example UI:
+
+--------------------------------------------------
+Contact Evidence
+--------------------------------------------------
+
+Found On:
+savannahvolleyballclub.com/contact
+
+Page:
+Contact Us | Savannah Volleyball Club
+
+Snippet:
+“Questions? Email director@savannahvolleyballclub.com”
+
+Method:
+Website Contact Page
+
+Confidence:
+92%
+
+Discovered:
+May 6, 2026 at 7:42 PM
+--------------------------------------------------
+
+Requirements:
+- source URL clickable
+- snippet visually separated
+- confidence badge colored:
+  - green ≥ 0.85
+  - yellow 0.65–0.84
+  - red < 0.65
+- method displayed as readable text
+- timestamps formatted nicely
+
+====================================================
+5. LEAD CARD IMPROVEMENTS
+====================================================
+
+On expanded cards:
+show:
+- source badge
+- confidence %
+- “Found on Website”
+- “Found on Directory”
+- “Found on Social”
+
+Examples:
+[Verified Website Contact]
+92% Confidence
+
+[Directory Contact]
+78% Confidence
+
+====================================================
+6. DISCOVERY HISTORY
+====================================================
+
+Add:
+lastDiscoveryAttemptAt
+lastDiscoveryResult
+
+Track:
+- success
+- no_real_email_found
+- manual_override
+- deleted
+- stale_contact
+
+When enrichment runs:
+update these fields.
+
+====================================================
+7. STALE CONTACT DETECTION
+====================================================
+
+Add optional stale logic:
+
+If contact_discovered_at > 90 days old:
+show:
+“Contact may be outdated. Re-run discovery.”
+
+Do not auto-delete.
+
+====================================================
+8. OUTREACH SAFETY
+====================================================
+
+Generate Email button rules:
+
+Enabled only if:
+- contactEmail exists
+AND
+- confidence ≥ 0.65
+OR
+- verificationStatus === "verified"
+OR
+- sourceType === "manual"
+
+Otherwise:
+show disabled tooltip:
+“Contact confidence too low.”
+
+====================================================
+9. QA / ACCEPTANCE TESTS
+====================================================
+
+Test A — website contact page
+
+Expected:
+- source URL saved
+- snippet saved
+- confidence high
+- evidence panel visible
+
+Test B — social profile
+
+Expected:
+- source type social
+- confidence moderate
+- evidence panel visible
+
+Test C — no real email
+
+Expected:
+- no evidence panel
+- no contact email
+- no fake placeholders
+- “No real email found from available sources.”
+
+Test D — stale contact
+
+Expected:
+- warning banner after 90 days
+
+====================================================
+10. FINAL PRODUCT GOAL
+====================================================
+
+The CRM should feel like:
+- a real AI researcher
+- not a guessing engine
+
+Every email should answer:
+- where was this found?
+- why should I trust it?
+- how strong is the evidence?
+- when was it discovered?
+
+The user should never wonder:
+“Did the AI make this up?”
