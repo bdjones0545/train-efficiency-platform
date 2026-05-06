@@ -307,6 +307,76 @@ export function scoreProspect(prospect: ProspectResult): number {
   return Math.max(1, Math.round(score));
 }
 
+export type GateAction = "save" | "reject" | "duplicate";
+
+export interface GateResult {
+  action: GateAction;
+  needsContact: boolean;
+  reason?: string;
+  weaknessCount: number;
+  weaknesses: string[];
+}
+
+/**
+ * Apply a quality gate to a scored prospect before persisting it.
+ *
+ * Weakness dimensions (each counts as 1):
+ *   - contactQuality === "missing"
+ *   - score < 60
+ *   - no sourceUrl
+ *   - organizationType is unknown/missing
+ *
+ * Reject if 2+ weaknesses. Duplicate if name already exists in the org pipeline
+ * (case-insensitive, normalised). needsContact = true when saved but email is missing.
+ */
+export function applyLeadQualityGate(
+  prospect: ProspectResult,
+  score: number,
+  existingNames: string[]
+): GateResult {
+  // ── Duplicate check ──────────────────────────────────────────────────────
+  const normalise = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+  const candidateNorm = normalise(prospect.prospectName);
+  const isDuplicate = existingNames.some((n) => normalise(n) === candidateNorm);
+  if (isDuplicate) {
+    return {
+      action: "duplicate",
+      needsContact: false,
+      reason: "Duplicate — organization already exists in your pipeline",
+      weaknessCount: 0,
+      weaknesses: [],
+    };
+  }
+
+  // ── Weakness scoring ─────────────────────────────────────────────────────
+  const weaknesses: string[] = [];
+  if (prospect.contactQuality === "missing") weaknesses.push("no contact email found");
+  if (score < 60) weaknesses.push(`low confidence score (${score})`);
+  if (!prospect.sourceUrl) weaknesses.push("no source URL to verify");
+  const orgType = (prospect.organizationType || "").toLowerCase().trim();
+  if (!orgType || orgType === "unknown") weaknesses.push("organization type unclear");
+
+  const weaknessCount = weaknesses.length;
+
+  if (weaknessCount >= 2) {
+    return {
+      action: "reject",
+      needsContact: false,
+      reason: `Too many weak signals: ${weaknesses.join("; ")}`,
+      weaknessCount,
+      weaknesses,
+    };
+  }
+
+  return {
+    action: "save",
+    needsContact: prospect.contactQuality === "missing",
+    weaknessCount,
+    weaknesses,
+  };
+}
+
 export async function enrichProspectContact(
   org: Organization,
   prospectName: string,

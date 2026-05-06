@@ -6949,12 +6949,33 @@ export async function registerRoutes(
         metadata: { location: locationTrimmed, radiusMiles: radiusNum, sport: sport || null, limit: Number(limit) },
       });
 
-      const { researchProspects, scoreProspect } = await import("./team-training-prospecting");
+      const { researchProspects, scoreProspect, applyLeadQualityGate } = await import("./team-training-prospecting");
       const results = await researchProspects(org, locationTrimmed, sport || undefined, Number(limit), radiusNum);
 
-      const created = [];
+      // Load existing prospect names for duplicate detection
+      const existingProspects = await storage.getTeamTrainingProspects(profile.organizationId);
+      const existingNames = existingProspects.map((p) => p.prospectName);
+
+      const created: any[] = [];
+      const rejected: { name: string; reason: string; score: number }[] = [];
+      const duplicates: { name: string }[] = [];
+      let needsContactCount = 0;
+
       for (const p of results) {
         const scored = scoreProspect(p);
+        const gate = applyLeadQualityGate(p, scored, existingNames);
+
+        if (gate.action === "duplicate") {
+          duplicates.push({ name: p.prospectName });
+          continue;
+        }
+
+        if (gate.action === "reject") {
+          rejected.push({ name: p.prospectName, reason: gate.reason || "Low quality", score: scored });
+          continue;
+        }
+
+        // gate.action === "save"
         const prospect = await storage.createTeamTrainingProspect({
           orgId: profile.organizationId,
           prospectName: p.prospectName,
@@ -6979,6 +7000,8 @@ export async function registerRoutes(
           contactQuality: p.contactQuality,
         });
         created.push(prospect);
+        existingNames.push(p.prospectName); // prevent intra-batch duplicates
+        if (gate.needsContact) needsContactCount++;
       }
 
       // Save location + radius as org defaults after successful search
@@ -6987,14 +7010,24 @@ export async function registerRoutes(
         radiusMiles: radiusNum,
       });
 
+      const summary = {
+        total: results.length,
+        saved: created.length,
+        needsContact: needsContactCount,
+        rejectedLowQuality: rejected.length,
+        duplicatesSkipped: duplicates.length,
+        rejected,
+        duplicates,
+      };
+
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
         eventType: "manual_research_completed",
-        description: `Manual research completed. Found ${created.length} prospects near ${locationTrimmed}${sport ? ` for sport: ${sport}` : ""}`,
-        metadata: { count: created.length, sport: sport || null, location: locationTrimmed, radiusMiles: radiusNum },
+        description: `Manual research completed. Saved ${created.length}, rejected ${rejected.length}, skipped ${duplicates.length} duplicates near ${locationTrimmed}${sport ? ` for sport: ${sport}` : ""}`,
+        metadata: { ...summary, sport: sport || null, location: locationTrimmed, radiusMiles: radiusNum },
       });
 
-      res.json({ count: created.length, prospects: created });
+      res.json({ count: created.length, prospects: created, summary });
     } catch (err: any) {
       console.error("[TeamTraining Research]", err);
       if (err.message === "AI research is not configured") {

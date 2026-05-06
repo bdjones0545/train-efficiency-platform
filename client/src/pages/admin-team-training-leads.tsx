@@ -18,7 +18,7 @@ import {
   ExternalLink, Edit2, ChevronDown, ChevronUp, Target, TrendingUp,
   Users, SendHorizonal, AlertCircle, FileText, Trash2, Filter,
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
-  Activity, BarChart2, Zap, Settings2
+  Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX
 } from "lucide-react";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
 
@@ -609,6 +609,12 @@ export default function AdminTeamTrainingLeadsPage() {
   });
   const [editProspect, setEditProspect] = useState<TeamTrainingProspect | null>(null);
   const [editDraft, setEditDraft] = useState<DraftWithProspect | null>(null);
+  const [researchSummary, setResearchSummary] = useState<{
+    total: number; saved: number; needsContact: number;
+    rejectedLowQuality: number; duplicatesSkipped: number;
+    rejected: { name: string; reason: string; score: number }[];
+    duplicates: { name: string }[];
+  } | null>(null);
   const [generateEmailForProspect, setGenerateEmailForProspect] = useState<TeamTrainingProspect | null>(null);
   const [estimatedValue, setEstimatedValue] = useState("500");
 
@@ -659,12 +665,16 @@ export default function AdminTeamTrainingLeadsPage() {
       return json;
     },
     onSuccess: (data) => {
-      toast({ title: `Found ${data.count} new leads`, description: "Prospects added to your pipeline." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/team-training-leads/settings"] });
       setResearchDialogOpen(false);
       setResearchLocationTouched(false);
+      if (data.summary) {
+        setResearchSummary(data.summary);
+      } else {
+        toast({ title: `Found ${data.count} new leads`, description: "Prospects added to your pipeline." });
+      }
     },
     onError: (err: Error) => {
       const msg = err.message;
@@ -1444,6 +1454,89 @@ export default function AdminTeamTrainingLeadsPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Research Summary Dialog */}
+      <Dialog open={!!researchSummary} onOpenChange={(open) => { if (!open) setResearchSummary(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart2 className="h-5 w-5 text-primary" />
+              Research Results
+            </DialogTitle>
+          </DialogHeader>
+          {researchSummary && (
+            <div className="space-y-4">
+              {/* Summary stat tiles */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 p-3 text-center">
+                  <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400" data-testid="summary-saved">{researchSummary.saved}</div>
+                  <div className="text-xs text-emerald-600 dark:text-emerald-500 font-medium flex items-center justify-center gap-1 mt-1">
+                    <CheckCircle2 className="h-3 w-3" /> Saved to Pipeline
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-700 dark:text-amber-400" data-testid="summary-needs-contact">{researchSummary.needsContact}</div>
+                  <div className="text-xs text-amber-600 dark:text-amber-500 font-medium flex items-center justify-center gap-1 mt-1">
+                    <UserX className="h-3 w-3" /> Needs Contact
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 p-3 text-center">
+                  <div className="text-2xl font-bold text-red-700 dark:text-red-400" data-testid="summary-rejected">{researchSummary.rejectedLowQuality}</div>
+                  <div className="text-xs text-red-600 dark:text-red-500 font-medium flex items-center justify-center gap-1 mt-1">
+                    <Ban className="h-3 w-3" /> Rejected (Low Quality)
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 p-3 text-center">
+                  <div className="text-2xl font-bold text-slate-600 dark:text-slate-400" data-testid="summary-duplicates">{researchSummary.duplicatesSkipped}</div>
+                  <div className="text-xs text-slate-500 font-medium flex items-center justify-center gap-1 mt-1">
+                    <Copy className="h-3 w-3" /> Duplicates Skipped
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center">
+                Analyzed {researchSummary.total} candidate{researchSummary.total !== 1 ? "s" : ""} from AI research
+              </p>
+
+              {/* Rejected leads detail */}
+              {researchSummary.rejected.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Why leads were rejected</p>
+                  <div className="rounded-md border divide-y max-h-44 overflow-y-auto">
+                    {researchSummary.rejected.map((r, i) => (
+                      <div key={i} className="px-3 py-2 text-xs" data-testid={`rejected-lead-${i}`}>
+                        <span className="font-medium">{r.name}</span>
+                        <span className="text-muted-foreground ml-1">· score {r.score}</span>
+                        <p className="text-red-600 dark:text-red-400 mt-0.5">{r.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Duplicate leads detail */}
+              {researchSummary.duplicates.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Duplicates skipped</p>
+                  <div className="rounded-md border divide-y max-h-28 overflow-y-auto">
+                    {researchSummary.duplicates.map((d, i) => (
+                      <div key={i} className="px-3 py-2 text-xs text-muted-foreground" data-testid={`duplicate-lead-${i}`}>
+                        {d.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button onClick={() => setResearchSummary(null)} data-testid="button-close-summary">
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

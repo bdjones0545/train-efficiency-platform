@@ -178,7 +178,7 @@ app.use((req, res, next) => {
           const org = await st.getOrganizationById(orgId);
           if (!org) continue;
 
-          const { researchProspects, scoreProspect } = await import("./team-training-prospecting");
+          const { researchProspects, scoreProspect, applyLeadQualityGate } = await import("./team-training-prospecting");
           const results = await researchProspects(
             org,
             settings.defaultLocation,
@@ -187,9 +187,22 @@ app.use((req, res, next) => {
             settings.radiusMiles ?? 25
           );
 
+          // Load existing names for duplicate detection
+          const existingProspects = await st.getTeamTrainingProspects(orgId);
+          const existingNames = existingProspects.map((p: any) => p.prospectName);
+
           let created = 0;
+          let rejected = 0;
+          let duplicates = 0;
+          let needsContact = 0;
+
           for (const p of results) {
             const scored = scoreProspect(p);
+            const gate = applyLeadQualityGate(p, scored, existingNames);
+
+            if (gate.action === "duplicate") { duplicates++; continue; }
+            if (gate.action === "reject") { rejected++; continue; }
+
             await st.createTeamTrainingProspect({
               orgId,
               prospectName: p.prospectName,
@@ -206,8 +219,16 @@ app.use((req, res, next) => {
               confidenceScore: scored,
               outreachStatus: "Needs Review",
               notes: p.notes,
+              decisionMakerName: p.decisionMakerName,
+              decisionMakerTitle: p.decisionMakerTitle,
+              decisionMakerEmail: p.decisionMakerEmail,
+              contactConfidence: p.contactConfidence,
+              contactSourceUrl: p.contactSourceUrl,
+              contactQuality: p.contactQuality,
             });
+            existingNames.push(p.prospectName);
             created++;
+            if (gate.needsContact) needsContact++;
           }
 
           // Compute next run time in the org's local timezone so "8:00 AM"
@@ -235,11 +256,11 @@ app.use((req, res, next) => {
           await st.logOutreachEvent({
             orgId,
             eventType: "recurring_research_completed",
-            description: `Recurring research completed. Found ${created} prospects near ${settings.defaultLocation}`,
-            metadata: { count: created, location: settings.defaultLocation, radiusMiles: settings.radiusMiles, sport: settings.recurringSport },
+            description: `Recurring research completed. Saved ${created}, rejected ${rejected}, skipped ${duplicates} duplicates near ${settings.defaultLocation}`,
+            metadata: { count: created, rejected, duplicates, needsContact, location: settings.defaultLocation, radiusMiles: settings.radiusMiles, sport: settings.recurringSport },
           });
 
-          console.log(`[Team Leads Recurring Research] orgId=${orgId} status=completed leads=${created}`);
+          console.log(`[Team Leads Recurring Research] orgId=${orgId} status=completed leads=${created} rejected=${rejected} duplicates=${duplicates}`);
         } catch (err: any) {
           console.error(`[Team Leads Recurring Research] orgId=${orgId} status=failed error=${err.message}`);
           try {
