@@ -709,6 +709,7 @@ export const teamTrainingOutreachEventTypeEnum = pgEnum("team_outreach_event_typ
   "recurring_research_started",
   "recurring_research_completed",
   "recurring_research_failed",
+  "contact_enriched",
 ]);
 
 export const teamTrainingOutreachEvents = pgTable("team_training_outreach_events", {

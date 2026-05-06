@@ -890,7 +890,14 @@ export default function AdminTeamTrainingLeadsPage() {
     },
     onError: (err: Error) => {
       setEnrichingId(null);
-      toast({ title: "Enrichment failed", description: err.message, variant: "destructive" });
+      const isAuditError = err.message?.toLowerCase().includes("enum") || err.message?.toLowerCase().includes("invalid input");
+      toast({
+        title: isAuditError ? "Log error" : "No contact found",
+        description: isAuditError
+          ? "Couldn't save enrichment log, but contact search may have completed. Please refresh."
+          : "No decision-maker contact found yet.",
+        variant: "destructive",
+      });
     },
   });
 

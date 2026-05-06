@@ -7205,13 +7205,17 @@ export async function registerRoutes(
         confidenceScore: newScore,
       });
 
-      await storage.logOutreachEvent({
-        orgId: profile.organizationId,
-        prospectId: prospect.id,
-        eventType: "contact_enriched",
-        description: `Contact enriched for ${prospect.prospectName}: ${enriched.contactQuality} quality${enriched.decisionMakerName ? ` — ${enriched.decisionMakerName}` : ""}`,
-        metadata: { contactQuality: enriched.contactQuality, decisionMakerName: enriched.decisionMakerName },
-      });
+      try {
+        await storage.logOutreachEvent({
+          orgId: profile.organizationId,
+          prospectId: prospect.id,
+          eventType: "contact_enriched",
+          description: `Contact enriched for ${prospect.prospectName}: ${enriched.contactQuality} quality${enriched.decisionMakerName ? ` — ${enriched.decisionMakerName}` : ""}`,
+          metadata: { contactQuality: enriched.contactQuality, decisionMakerName: enriched.decisionMakerName },
+        });
+      } catch (auditErr: any) {
+        console.error("[TeamTraining EnrichContact] Audit log failed (non-fatal):", auditErr.message);
+      }
 
       res.json({ prospect: updated, enriched });
     } catch (err: any) {
