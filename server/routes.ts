@@ -6976,7 +6976,7 @@ export async function registerRoutes(
         }
 
         // gate.action === "save"
-        const { normalizeNullable: nn, isValidEmail: ive, extractDomainFromUrl, inferEmailFromDomain } = await import("./team-training-prospecting");
+        const { normalizeNullable: nn, isValidEmail: ive, extractDomainFromUrl, buildEmailCandidates } = await import("./team-training-prospecting");
 
         // Normalize all contact fields — never persist sentinel strings
         const safeContactName = nn(p.contactName);
@@ -6992,17 +6992,19 @@ export async function registerRoutes(
         let contactSourceType = (p as any)._inferredContactSourceType || null;
         let verificationStatus = (p as any)._inferredVerificationStatus || null;
         let enrichmentExplanation = (p as any)._inferredEnrichmentExplanation || null;
+        let alternativeContacts: any[] = (p as any)._inferredAlternatives || [];
 
         // Defense in depth: if still no valid email but websiteUrl exists, infer now
         if (!ive(safeDmEmail) && safeWebsiteUrl) {
           const domain = extractDomainFromUrl(safeWebsiteUrl);
           if (domain) {
-            const inferred = inferEmailFromDomain(domain, p.organizationType, p.sport);
-            if (ive(inferred)) {
-              safeDmEmail = inferred;
+            const candidates = buildEmailCandidates(domain, p.organizationType, p.sport, p.prospectName);
+            if (candidates.length > 0) {
+              safeDmEmail = candidates[0].email;
               contactSourceType = "inferred";
               verificationStatus = "inferred";
               enrichmentExplanation = "No verified contact found during lead discovery. Email inferred from organization domain.";
+              alternativeContacts = candidates.slice(1, 5);
             }
           }
         }
@@ -7032,6 +7034,7 @@ export async function registerRoutes(
           ...(contactSourceType && { contactSourceType }),
           ...(verificationStatus && { verificationStatus }),
           ...(enrichmentExplanation && { enrichmentExplanation }),
+          ...(alternativeContacts.length > 0 && { alternativeContacts: JSON.stringify(alternativeContacts) }),
         });
         created.push(prospect);
         existingNames.push(p.prospectName); // prevent intra-batch duplicates
@@ -7242,13 +7245,13 @@ export async function registerRoutes(
       const { scoreProspect } = await import("./team-training-prospecting");
       const newScore = scoreProspect({
         prospectName: prospect.prospectName,
-        organizationType: prospect.organizationType || "unknown",
-        sport: prospect.sport || "unknown",
-        city: prospect.city || "unknown",
-        state: prospect.state || "unknown",
+        organizationType: prospect.organizationType || null,
+        sport: prospect.sport || null,
+        city: prospect.city || null,
+        state: prospect.state || null,
         websiteUrl: prospect.websiteUrl || null,
-        contactName: prospect.contactName || "unknown",
-        contactRole: prospect.contactRole || "unknown",
+        contactName: prospect.contactName || null,
+        contactRole: prospect.contactRole || null,
         contactEmail: null,
         contactPhone: null,
         sourceUrl: prospect.sourceUrl || null,

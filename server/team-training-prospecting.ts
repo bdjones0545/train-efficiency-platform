@@ -140,15 +140,18 @@ Return only the JSON array. No markdown, no extra text.`;
     let inferredContactSourceType: string | undefined;
     let inferredVerificationStatus: string | undefined;
     let inferredEnrichmentExplanation: string | undefined;
+    let inferredAlternatives: EmailCandidate[] = [];
+
     if (!isValidEmail(dmEmail) && p.websiteUrl) {
       const domain = extractDomainFromUrl(p.websiteUrl);
       if (domain) {
-        const inferred = inferEmailFromDomain(domain, p.organizationType, p.sport);
-        if (isValidEmail(inferred)) {
-          dmEmail = inferred;
+        const candidates = buildEmailCandidates(domain, p.organizationType, p.sport, p.prospectName);
+        if (candidates.length > 0) {
+          dmEmail = candidates[0].email;
           inferredContactSourceType = "inferred";
           inferredVerificationStatus = "inferred";
           inferredEnrichmentExplanation = "No verified contact found during lead discovery. Email inferred from organization domain.";
+          inferredAlternatives = candidates.slice(1, 5);
         }
       }
     }
@@ -175,6 +178,7 @@ Return only the JSON array. No markdown, no extra text.`;
       _inferredContactSourceType: inferredContactSourceType,
       _inferredVerificationStatus: inferredVerificationStatus,
       _inferredEnrichmentExplanation: inferredEnrichmentExplanation,
+      _inferredAlternatives: inferredAlternatives,
     };
   });
 
@@ -193,30 +197,93 @@ export function extractDomainFromUrl(url?: string | null): string | null {
   }
 }
 
-export function inferEmailFromDomain(domain: string, orgType?: string | null, sport?: string | null): string | null {
-  const normalizedSport = (sport || "").toLowerCase();
-  const normalizedType = (orgType || "").toLowerCase();
+export interface EmailCandidate {
+  email: string;
+  label: string;
+  sourceType: string;
+}
 
-  let localPart = "info";
+function makeCandidate(local: string, domain: string, label: string): EmailCandidate | null {
+  const email = `${local}@${domain}`;
+  return isValidEmail(email) ? { email, label, sourceType: "inferred" } : null;
+}
 
-  if (normalizedType.includes("academy") || normalizedType.includes("school") || normalizedType.includes("high school")) {
-    localPart = "athletics";
-  } else if (normalizedType.includes("college") || normalizedType.includes("university")) {
-    localPart = "athletics";
-  } else if (
-    normalizedSport.includes("basketball") ||
-    normalizedSport.includes("football") ||
-    normalizedSport.includes("baseball") ||
-    normalizedSport.includes("soccer") ||
-    normalizedSport.includes("lacrosse") ||
-    normalizedSport.includes("wrestling") ||
-    normalizedSport.includes("volleyball")
-  ) {
-    localPart = "coach";
+export function buildEmailCandidates(
+  domain: string,
+  orgType?: string | null,
+  sport?: string | null,
+  orgName?: string | null
+): EmailCandidate[] {
+  const t = (orgType || "").toLowerCase();
+  const s = (sport || "").toLowerCase();
+  const n = (orgName || "").toLowerCase();
+
+  const c = (local: string, label: string) => makeCandidate(local, domain, label);
+
+  let ranked: (EmailCandidate | null)[];
+
+  const isSchool = t.includes("academy") || t.includes("school") || t.includes("high school") || t.includes("college") || t.includes("university") || t.includes("private");
+  const isVolleyball = s.includes("volleyball") || n.includes("volleyball");
+  const isBasketball = s.includes("basketball") || n.includes("aau") || t.includes("aau") || s.includes("aau");
+  const isMartialArts = t.includes("martial arts") || t.includes("gym") || s.includes("martial arts") || s.includes("mma") || s.includes("jiu-jitsu") || s.includes("karate");
+  const isTeamSport = s.includes("football") || s.includes("baseball") || s.includes("soccer") || s.includes("lacrosse") || s.includes("wrestling") || s.includes("cheer") || s.includes("swim");
+
+  if (isSchool) {
+    ranked = [
+      c("athletics", "Athletics Dept"),
+      c("athleticdirector", "Athletic Director"),
+      c("admissions", "Admissions"),
+      c("contact", "General Contact"),
+      c("info", "General Info"),
+    ];
+  } else if (isVolleyball) {
+    ranked = [
+      c("director", "Club Director"),
+      c("coach", "Head Coach"),
+      c("volleyball", "Volleyball Inbox"),
+      c("club", "Club Contact"),
+      c("contact", "General Contact"),
+      c("info", "General Info"),
+    ];
+  } else if (isBasketball) {
+    ranked = [
+      c("director", "Club Director"),
+      c("coach", "Head Coach"),
+      c("basketball", "Basketball Inbox"),
+      c("aau", "AAU Contact"),
+      c("teams", "Teams Inbox"),
+      c("contact", "General Contact"),
+      c("info", "General Info"),
+    ];
+  } else if (isMartialArts) {
+    ranked = [
+      c("instructor", "Lead Instructor"),
+      c("coach", "Head Coach"),
+      c("training", "Training Inbox"),
+      c("contact", "General Contact"),
+      c("info", "General Info"),
+    ];
+  } else if (isTeamSport) {
+    ranked = [
+      c("coach", "Head Coach"),
+      c("director", "Program Director"),
+      c("contact", "General Contact"),
+      c("info", "General Info"),
+    ];
+  } else {
+    ranked = [
+      c("contact", "General Contact"),
+      c("admin", "Admin"),
+      c("info", "General Info"),
+    ];
   }
 
-  const email = `${localPart}@${domain}`;
-  return isValidEmail(email) ? email : null;
+  return ranked.filter((x): x is EmailCandidate => x !== null);
+}
+
+export function inferEmailFromDomain(domain: string, orgType?: string | null, sport?: string | null, orgName?: string | null): string | null {
+  const candidates = buildEmailCandidates(domain, orgType, sport, orgName);
+  return candidates.length > 0 ? candidates[0].email : null;
 }
 
 export interface EmailDraftParams {

@@ -1,0 +1,208 @@
+Fix two issues in TrainEfficiency lead contact enrichment:
+
+1. The system is overusing info@domain.com.
+2. The edit modal still shows old/null contact fields after enrichment succeeds.
+
+Current behavior:
+- Card/toast says “Email contact found (inferred)” with info@savannahvolleyballclub.com.
+- But when opening edit, Contact Name/Role still show "unknown" and Contact Email is empty.
+- This means the enrichment response/state is not being merged into the selected lead/edit form correctly.
+- Also, the inference logic is defaulting too often to info@, which is lower value than sport/org-specific role emails.
+
+Goal:
+When enrichment succeeds, the saved lead, React Query cache, expanded card, and edit modal must all show the same updated email/contact metadata immediately. Also, inferred emails should prioritize relevant role emails before info@.
+
+Required fixes:
+
+1. Fix frontend state/cache after enrichment success.
+
+In admin-team-training-leads.tsx, locate the enrichment mutation onSuccess.
+
+After a successful enrichment response, immediately merge the returned updated lead into:
+- the leads list cache
+- selected/expanded lead state
+- edit form state if the modal is open
+- any local leads state used by the page
+
+Do not only show a toast.
+
+Example logic:
+
+const updatedLead = data.prospect ?? data.lead ?? data.updatedLead ?? data;
+
+queryClient.setQueryData(["team-training-leads", filters], (old: any) => {
+  if (!old) return old;
+
+  if (Array.isArray(old)) {
+    return old.map((lead) =>
+      lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead
+    );
+  }
+
+  if (Array.isArray(old.leads)) {
+    return {
+      ...old,
+      leads: old.leads.map((lead) =>
+        lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead
+      ),
+    };
+  }
+
+  return old;
+});
+
+Then call queryClient.invalidateQueries({ queryKey: ["team-training-leads"] });
+
+If selectedLead?.id === updatedLead.id:
+setSelectedLead(prev => prev ? { ...prev, ...updatedLead } : prev);
+
+If editingLead?.id === updatedLead.id:
+setEditingLead(prev => prev ? { ...prev, ...updatedLead } : prev);
+
+If the edit form has separate form state:
+setEditForm(prev => ({
+  ...prev,
+  contactName: updatedLead.contactName ?? "",
+  contactRole: updatedLead.contactRole ?? "",
+  contactEmail: updatedLead.contactEmail ?? "",
+  contactPhone: updatedLead.contactPhone ?? "",
+  websiteUrl: updatedLead.websiteUrl ?? "",
+  sourceUrl: updatedLead.sourceUrl ?? "",
+}));
+
+Important:
+The edit modal should never keep stale values after enrichment succeeds.
+
+2. Ensure backend enrichment response returns the full updated lead.
+
+In the enrichment route, after updating the DB, return the updated row from the database, not only a small enrichment payload.
+
+Example:
+
+const updatedLead = await storage.updateTeamTrainingProspect(prospectId, safeEnrichedFields);
+
+return res.json({
+  success: true,
+  prospect: updatedLead,
+  message: safeEnrichedFields.verificationStatus === "inferred"
+    ? "Email contact found (inferred)"
+    : "Email contact found"
+});
+
+If updateTeamTrainingProspect does not return the updated row, fetch it immediately after update.
+
+3. Stop writing "unknown" into edit form values.
+
+Find the edit modal initialization logic.
+
+Replace any fallback like:
+contactName: lead.contactName || "unknown"
+contactRole: lead.contactRole || "unknown"
+
+with:
+contactName: lead.contactName ?? ""
+contactRole: lead.contactRole ?? ""
+
+Use placeholder text “Not found yet,” not actual input value.
+
+4. Improve inferred email priority.
+
+Update inferEmailFromDomain(domain, orgType, sport, organizationName?) so it does NOT default to info@ first.
+
+Priority should be:
+
+For schools/private academies:
+1. athletics@domain
+2. athleticdirector@domain
+3. admissions@domain
+4. contact@domain
+5. info@domain
+
+For volleyball clubs:
+1. director@domain
+2. coach@domain
+3. volleyball@domain
+4. club@domain
+5. contact@domain
+6. info@domain
+
+For basketball/AAU:
+1. director@domain
+2. coach@domain
+3. basketball@domain
+4. aau@domain
+5. teams@domain
+6. contact@domain
+7. info@domain
+
+For martial arts gyms:
+1. instructor@domain
+2. coach@domain
+3. training@domain
+4. contact@domain
+5. info@domain
+
+For generic organizations:
+1. contact@domain
+2. admin@domain
+3. info@domain
+
+Do not automatically pick info@ unless no better contextual option exists.
+
+5. Return multiple alternative inferred contacts.
+
+When inferring from a domain, generate a ranked list, not just one email.
+
+Example:
+
+const candidates = buildEmailCandidates(domain, orgType, sport, organizationName);
+
+contactEmail = candidates[0].email;
+alternativeContacts = candidates.slice(1, 5);
+
+For Savannah Volleyball Club, expected primary should be closer to:
+director@savannahvolleyballclub.com
+or coach@savannahvolleyballclub.com
+
+Not:
+info@savannahvolleyballclub.com
+
+6. Update labels.
+
+If email is inferred from a role pattern:
+- “Role Email” is okay for coach@, director@, athletics@
+- “General Email” should only be used for info@ or contact@
+
+So:
+info@domain = General Email
+contact@domain = General Email
+coach@domain = Role Email
+director@domain = Role Email
+athletics@domain = Role Email
+instructor@domain = Role Email
+
+7. Regression test manually.
+
+Test A:
+Run enrichment on Savannah Volleyball Club.
+Expected:
+- primary inferred email is director@, coach@, or volleyball@ before info@
+- toast/card/edit modal all show the same email immediately
+
+Test B:
+Open edit modal after enrichment.
+Expected:
+- Contact Email is populated
+- Contact Name/Role are blank or meaningful, never "unknown"
+
+Test C:
+Run enrichment on Hilton Head Christian Academy.
+Expected:
+- primary inferred email prefers athletics@hhca.org before info@hhca.org
+
+Final acceptance criteria:
+- No successful enrichment leaves edit modal email blank.
+- No UI input displays "unknown."
+- The card and edit modal stay synchronized after enrichment.
+- info@ is fallback only, not the default.
+- Alternative contacts are stored/displayed when available.

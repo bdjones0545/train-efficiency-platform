@@ -963,11 +963,41 @@ export default function AdminTeamTrainingLeadsPage() {
     },
     onSuccess: (data) => {
       setEnrichingId(null);
+
+      // Extract the full updated lead returned by the backend
+      const updatedLead: TeamTrainingProspect | null = data.prospect ?? data.lead ?? null;
+
+      // Immediately patch the React Query cache so the card reflects the new email
+      if (updatedLead) {
+        queryClient.setQueryData(["/api/admin/team-training/prospects"], (old: any) => {
+          if (!old) return old;
+          if (Array.isArray(old)) {
+            return old.map((lead: TeamTrainingProspect) =>
+              lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead
+            );
+          }
+          if (Array.isArray(old?.prospects)) {
+            return { ...old, prospects: old.prospects.map((lead: TeamTrainingProspect) =>
+              lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead
+            )};
+          }
+          return old;
+        });
+
+        // Sync the edit modal if it's open for this lead
+        if (editProspect?.id === updatedLead.id) {
+          setEditProspect((prev) => prev ? { ...prev, ...updatedLead } : prev);
+          setEditProspectForm((prev) => ({ ...prev, ...updatedLead }));
+        }
+      }
+
+      // Always invalidate to ensure eventual consistency
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
-      const q = data.enriched?.contactQuality;
-      const name = data.enriched?.decisionMakerName;
-      const email = data.enriched?.decisionMakerEmail;
-      const isInferred = data.enriched?.verificationStatus === "inferred";
+
+      const q = updatedLead?.contactQuality ?? data.enriched?.contactQuality;
+      const name = updatedLead?.decisionMakerName ?? data.enriched?.decisionMakerName;
+      const email = updatedLead?.decisionMakerEmail ?? data.enriched?.decisionMakerEmail;
+      const isInferred = (updatedLead as any)?.verificationStatus === "inferred" || data.enriched?.verificationStatus === "inferred";
       const qualityLabel = q === "decision_maker" ? "Decision Maker" : q === "role_based" ? "Role Email" : "General Email";
       toast({
         title: isInferred ? "Email contact found (inferred)" : "Email contact found",
@@ -1495,9 +1525,10 @@ export default function AdminTeamTrainingLeadsPage() {
                 <div key={field}>
                   <label className="text-xs font-medium capitalize">{field.replace(/([A-Z])/g, " $1")}</label>
                   <Input
-                    value={(editProspectForm as any)[field] || ""}
+                    value={(editProspectForm as any)[field] ?? ""}
                     onChange={(e) => setEditProspectForm((f) => ({ ...f, [field]: e.target.value }))}
                     className="mt-1 h-8 text-sm"
+                    placeholder="Not found yet"
                     data-testid={`input-edit-${field}`}
                   />
                 </div>
