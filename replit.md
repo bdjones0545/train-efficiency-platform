@@ -1,9 +1,57 @@
 # Train Efficiency Business Solutions
 
-## Overview
-Train Efficiency Business Solutions is a multi-tenant, white-label scheduling platform designed for strength and conditioning coaching businesses. Its primary purpose is to streamline operations for business owners, enabling them to manage coaches, clients, and sessions efficiently under their own brand. The platform aims to enhance client engagement, provide robust administrative tools, and become the leading scheduling and management solution in the specialized strength and conditioning market. Key capabilities include multi-tenancy, role-based access control, dynamic content customization, and integrated payment processing.
+Train Efficiency Business Solutions is a multi-tenant, white-label scheduling platform that helps strength and conditioning coaching businesses manage coaches, clients, and sessions efficiently under their own brand.
 
-## User Preferences
+## Run & Operate
+_Populate as you build_
+
+## Stack
+- **Frontend:** React, TypeScript, Tailwind CSS, Shadcn UI, Vite, Wouter
+- **Backend:** Express.js (TypeScript)
+- **Database:** PostgreSQL (Drizzle ORM)
+- **Authentication:** Replit Auth (OpenID Connect for clients), custom email/password (bcryptjs for coaches)
+- **AI:** OpenAI API
+- **Email:** SendGrid
+- **Payments:** Stripe
+
+## Where things live
+- `server/`: Backend API and business logic.
+- `client/`: Frontend React application.
+- `drizzle/`: Drizzle ORM schema and migrations.
+- `server/db/schema.ts`: Database schema definition (source of truth).
+- `server/email-agent/`: Email agent logic (e.g., `reply-classifier.ts`, `follow-up-cron.ts`).
+- `server/email-agent/audit-engine.ts`: Email Agent health audit.
+- `server/email-agent/auto-execution-engine.ts`: Auto-execution layer for AI actions.
+- `server/email-agent/global-priority-engine.ts`: Ranks all actions into a single queue.
+- `server/email-agent/revenue-outcome-engine.ts`: Tracks AI action revenue outcomes.
+- `server/email-agent/trigger-logger.ts`: Logs all email trigger decisions.
+- `client/src/pages/`: Frontend pages (e.g., `admin-team-training-leads.tsx`).
+- `client/src/components/`: Reusable React components.
+- `client/src/assets/`: Static assets (e.g., logos, images).
+
+## Architecture decisions
+- **Multi-Tenancy:** Organizations are isolated using an `organization_id` for distinct branded environments and dynamic landing pages.
+- **Role-Based Access Control (RBAC):** Implements `CLIENT`, `COACH`, `ADMIN`, and `STAFF` roles for secure access.
+- **Dynamic Content & White-Labeling:** Allows extensive customization of branding (logos, taglines, colors).
+- **AI Integration:** An AI Scheduling Assistant chatbot, powered by OpenAI's function calling, facilitates conversational scheduling and booking. Additionally, an AI-driven Team Training Prospecting Agent assists with lead generation and outreach, and a Unified Business Agent combines these functionalities.
+- **Intelligence Engines:** Includes Operations, Revenue, and Client Intelligence Engines for data analysis and a Goal-Oriented Optimization Engine for target-setting. A Global Priority Engine ranks cross-system actions, and a High-Confidence Auto-Execution Layer automates top-priority actions.
+- **Revenue Outcome Engine:** Ties every AI action to real revenue outcomes via `ai_revenue_events` for multi-touch attribution.
+- **Email Agent Upgrade (Phases 1-10):** Enhances email outreach with features like Audit Engine, Contact Quality Scoring, Conversation Stage Tracking, Adaptive Follow-Up Timing, and Auto-Execution Learning Loop.
+
+## Product
+- Multi-tenant scheduling platform for strength and conditioning businesses.
+- Coach, client, and session management.
+- Custom branding and dynamic content customization.
+- Integrated payment processing (Stripe) for subscriptions and session payments.
+- AI-powered scheduling and team training prospecting.
+- Role-based access control.
+- Notification system (SendGrid).
+- Comprehensive admin tools and dashboards.
+- Mobile-first "Today's Business Command Center" for real-time insights and quick actions.
+- Deal Pipeline and Close Engine for managing team training prospects.
+- Email Trigger Audit and Debug Panel for observability, with proactive Trigger Alerts and System Warnings.
+
+## User preferences
 I prefer iterative development with regular check-ins.
 Please use clear and concise language in all explanations.
 Focus on delivering functional features quickly.
@@ -11,63 +59,16 @@ I appreciate detailed explanations for complex architectural decisions.
 Do not make changes to the folder `node_modules`.
 Do not make changes to the file `.env`.
 
-## System Architecture
-The application employs a client-server architecture. The frontend is developed using **React, TypeScript, Tailwind CSS, and Shadcn UI** with Vite. The backend is an **Express.js** application (TypeScript) handling API requests and business logic. **PostgreSQL** serves as the database, accessed via **Drizzle ORM**. Authentication for clients uses **Replit Auth (OpenID Connect)**, while coaches utilize a custom email/password system (`bcryptjs`). Client-side routing is managed by **Wouter**.
+## Gotchas
+_Populate as you build_
 
-**Core Architectural Decisions:**
--   **Multi-Tenancy:** Organizations are isolated using an `organization_id` for distinct branded environments and dynamic landing pages.
--   **Role-Based Access Control (RBAC):** Implements `CLIENT`, `COACH`, `ADMIN`, and `STAFF` roles for secure access.
--   **UI/UX Design:** Features a dark mode with a vibrant green primary color, Inter font, and consistent design through Shadcn UI components.
--   **Dynamic Content & White-Labeling:** Allows extensive customization of branding (logos, taglines, colors).
--   **Payment Processing:** Integrates with **Stripe** for organizational subscriptions and individual session payments.
--   **Notification System:** Utilizes **SendGrid** for email communications.
--   **Forgot/Reset Password System:** A secure, unified password reset flow with expiring, single-use, hashed tokens.
--   **AI Integration:** An AI Scheduling Assistant chatbot, powered by **OpenAI's** function calling, facilitates conversational scheduling and booking.
--   **Booking System:** Supports 1:1, semi-private, and team training sessions, with coach availability management and session redemption.
--   **Admin Tools:** Provides dashboards for user management, service configuration, booking oversight, and CSV data export.
--   **Athletic Scheduling:** A multi-organizational, multi-program system for managing athletic programs.
--   **Wallet & Transactions:** Coaches have a "Transactions" page detailing financial activities, with admin control over visibility.
--   **Subscription Management:** Organizations can enable Stripe subscriptions, track products, and manage client subscriptions.
--   **Operations Intelligence Engine:** Computes an organizational operations digest (coach utilization, revenue opportunities, inactive clients).
--   **Revenue Intelligence Engine:** Calculates comprehensive revenue analytics (LTV, churn risks, upsell opportunities).
--   **Client Intelligence Engine:** Powers per-client behavioral profiling, including response profiles, segmentation, LTV scores, and strategic recommendations.
--   **Goal-Oriented Optimization Engine:** Enables weekly performance target-setting and goal-driven action prioritization, integrating with the AI agent.
--   **Global Coach Agent Launcher:** A floating UI component that provides quick access to the AI agent in an overlay, with context-aware prompts and badging for high-priority items.
--   **Session Category System:** A robust system for classifying services (e.g., `paid`, `intro`, `membership`) with detailed operational columns for revenue recognition, coach payouts, utilization tracking, and booking access control.
--   **Organization Media System:** A multi-tenant media library for uploading and displaying images/videos across public landing pages, with dedicated admin UI and API routes.
--   **Team Training Prospecting Agent:** A backend admin agent for discovering and outreaching to local sports organizations, featuring lead management, AI-driven research, email draft generation, and a secure two-step approval/send process.
--   **Email Agent (Outreach Command Center):** Located at `/coach/communications` (sidebar: "Email Agent"). Full 7-tab command center: Overview, Prospects, Drafts, Sent, Follow-Ups, Settings. Features: open/click/reply tracking, A/B variant testing with auto-optimization every 50 emails, reply intelligence (AI classifies replies as interested/not_interested/ask_info/referral/wrong_contact/out_of_office/unknown), automated 3-step follow-up sequences (Day 3/7/14) that stop on reply/DNC/opt-out. Follow-up cron runs hourly. AI scheduling agent receives email performance + follow-up context. Schema: `email_follow_ups` table, `email_message_variants` table, tracking columns on `team_training_outreach_drafts`. New files: `server/email-agent/reply-classifier.ts`, `server/email-agent/follow-up-cron.ts`.
--   **Team Training Deal Pipeline & Close Engine:** Located at `/admin/team-training-deals` (sidebar: "Deal Pipeline" under Growth). Kanban board with columns: New, Interested, Call Scheduled, Proposal Sent, Won, Lost. Drag-and-drop to update deal status. Each card shows team name, sport, estimated value, last activity, next action, probability. Auto-creates deals when a prospect reply is classified as `interested` or `ask_info`. AI Close Assistant per deal: "Generate Response", "Suggest Next Step", "Create Proposal" — powered by GPT-4o-mini with full deal + prospect context. Deal-aware follow-up cron skips cold follow-ups for prospects already in active deals. When a deal is marked "Won", logs an outreach event and updates the revenue dashboard. Deal pipeline stats (active, interested, negotiating, projected revenue) injected into agent context — if pipeline is full (5+ active deals), agent prioritizes closing over new cold outreach. Schema: `team_training_deals` table, `deal_status` enum. Routes: GET/POST/PATCH/DELETE `/api/admin/team-training/deals[/:id]`, POST `/api/admin/team-training/deals/:id/ai-action`, GET `/api/admin/team-training/deals/pipeline-stats`.
--   **Unified Business Agent (TrainEfficiency Business Agent):** Consolidates the Scheduling Agent and Team Training Prospecting Agent into a single co-pilot, sharing tools and UI surfaces for both scheduling and B2B prospecting.
--   **Today's Business Command Center:** A mobile-first dashboard at `/command-center` surfacing real-time revenue snapshots (today's bookings, open slot value, month-to-date), the single best action recommendation (from the scored action queue), schedule gap cards with fill-value estimates, client opportunity alerts (churn risk, renewal, upsell), team training pipeline summary, and one-tap agent quick-action buttons. Monthly revenue goal with progress bar, set via POST /api/business-command-center/monthly-goal. Backend context is also injected into the scheduling agent system prompt for richer AI responses.
--   **High-Confidence Auto-Execution Layer:** Sits on top of the Global Priority Engine and automatically executes top-priority actions when safety thresholds are met. Engine: `server/email-agent/auto-execution-engine.ts`. Logic: `isAutoExecutable()` checks confidence=high, riskScore<40, action type is `send_follow_up`/`generate_draft`/`send_initial_email`, daily count < max (default 3), no DNC/opted-out. `runAutoExecution(orgId)` finds the first eligible action from the global queue and executes it (sends follow-up via full cron logic, or generates draft with optional auto-send). Execution log stored in `app_settings` key `auto_execution_log_${orgId}` (last 50 entries). Undo: `undoAutoExecution()` cancels follow-up sequences or marks drafts as unprocessed. Agent context: `buildAutoExecContextString()` injects enabled status, today count, success rate into the AI system prompt. Routes: `POST /api/email-agent/auto-execute/run`, `POST /api/email-agent/auto-execute/undo/:executionId`, `GET /api/email-agent/auto-execute/log`. Settings: new `autoExecuteEnabled` (default false) and `autoExecuteMaxPerDay` (default 3) fields on `EmailAgentSettings`. UI: Toggle in Email Agent Settings tab; `AutoExecLogSection` in Overview tab shows stats (today/max, success rate, all-time count) + scrollable log with per-entry Undo buttons; `useAutoExecution()` hook mounted on both Command Center and Email Agent pages — fires once per session 2s after load if enabled, shows toast "AI executed: [Action Type] — [Title]" with 8-second Undo button. Guardrails: blocked action types include `create_deal`, `schedule_call`, `create_proposal`, `generate_response`, `mark_do_not_contact`, `stop_sequence`.
--   **Global Priority Engine:** A unified cross-system priority ranking engine (`server/email-agent/global-priority-engine.ts`) that ranks ALL possible actions across prospects, follow-ups, deals, outreach, and risks into a single `globalActionQueue[]`. Scoring formula: `priorityScore = (revenue * 0.35) + (urgency * 0.25) + (likelihood * 0.25) - (risk * 0.15) + effort_bonus`. API: `GET /api/email-agent/intelligence/global-priority` returns `{ topAction, topThree, fullQueue }`. UI: A "Top Priority" fire card with "Execute Now" button is rendered at the VERY TOP of both the Command Center (`/command-center`) and Email Agent (`/coach/communications`) pages. Agent injection: global priority context (top action + why + top 3) is injected into the AI scheduling agent system prompt so it always recommends the top priority action first. Guardrails: never surfaces DNC/opted-out prospects, caps display at 5 actions, high-value warm leads always outrank cold outreach.
--   **Revenue Outcome Engine:** Ties every AI action to real revenue outcomes via a new `ai_revenue_events` DB table. Engine: `server/email-agent/revenue-outcome-engine.ts`. Flow: (1) Every `runAutoExecution` success calls `logActionAsEvent()` creating a pending `ai_revenue_events` row. (2) When a deal is marked "won", `attributeOutcomeToProspect()` finds the most recent pending event for that prospect within a 72-hour attribution window and marks it `won` + stores `finalValue` + `timeToOutcomeHours`. (3) When a reply is received (mark-replied route), the event is marked `engaged`. Stats method `getAiRevenueStats()` aggregates today/week/month revenue, action counts, auto-vs-manual breakdown, and per-action-type metrics — all in-memory from a single DB fetch. Route: `GET /api/email-agent/revenue-outcomes` returns `{ today, week, month, autoVsManual, byActionType, impactFeed }`. Agent context: `buildRevenueContextString()` injects MTD/weekly/today totals, best action type, and auto-multiplier into the AI system prompt. UI: `AiRevenuePanel` component mounted at the very top of the Command Center (3 stat cards: Today/This Week/This Month + scrollable Impact Feed showing action→outcome chains with "Auto" badges and time-to-close). `PerformanceInsightsSection` mounted in the Email Agent OverviewTab after `AutoExecLogSection` — shows the same 3 period cards, a "Revenue by Action Type" bar chart, an "Auto vs Manual" comparison block, and "Recent AI-Attributed Wins" feed. Schema: `ai_revenue_events` table (15 columns, including `attribution_role`, `attribution_chain_id`, `chain_position` for multi-touch attribution). Drizzle types: `AiRevenueEvent`, `InsertAiRevenueEvent`. Attribution window: 72 hours. Phase 7 multi-touch: `logMultiTouchAttributionChain()` gives the last action "primary" attribution and all prior pending events "assist" role — tied by a shared `attributionChainId` UUID. `attributeOutcomeToProspect()` routes won-deals through this chain instead of single-event attribution.
--   **Email Trigger Audit + Debug Panel:** Full observability system for every email trigger decision. Schema: `email_trigger_events` table with 4 enums (`trigger_type`, `trigger_source`, `trigger_action_type`, `block_reason`). Engine: `server/email-agent/trigger-logger.ts` — `logTriggerEvent()`, `updateTriggerEvent()`, `detectTriggerCollision()`, `logMissedOpportunity()`, `buildTriggerContextForProspect()`. All three trigger points instrumented: `scheduled-email-agent.ts` (daily_outreach), `follow-up-cron.ts` (follow_up_cron), `auto-execution-engine.ts` (auto_execution) — each logs before + updates after execution decision with standardized block reasons. API: `GET /api/email-agent/trigger-audit` (full summary with timeline, block reasons, collision/missed counts), `GET /api/email-agent/trigger-audit/prospect/:prospectId` (per-prospect trace). UI: `/admin/trigger-audit` page (sidebar: "Trigger Audit" under Growth) — summary cards (sent/blocked/exec rate/top trigger), trigger breakdown bar chart, block reason tags, action type breakdown, expandable timeline feed with collision/missed badges. Per-prospect trace view activated via `?prospect_id=xxx` URL param (linked from "View Trigger" button on sent email draft cards). Phase 9 agent context: `buildTriggerContextForProspect()` injects 7-day trigger history (sent count, block reasons, collision count) into each prospect's reasoning string before evaluation. Manual run (`POST /api/email-agent/run-daily-job`) now passes `"user_click"` trigger source.
--   **Trigger Alerts + System Warnings:** Proactive alert engine (`server/email-agent/trigger-alerts.ts`) that analyzes the last 24h of trigger events and surfaces critical issues before they need manual discovery. Detects 9 alert types: HIGH_BLOCK_RATE (>30% blocked → warning, >50% → critical), REPEATED_COOLDOWN_BLOCKS (≥3 cooldown blocks), DAILY_LIMIT_REACHED (cap hit today), MISSED_OPPORTUNITIES (≥2 missed high-priority actions), NO_EMAILS_SENT (zero sent when evaluations ran), AUTO_EXEC_LOW_SUCCESS (success rate <40% with ≥5 executions), TRIGGER_COLLISIONS (≥2 collision events), DNC_QUEUE_POLLUTION (≥3 DNC prospects in eval queue), AGENT_DISABLED (agent off but evaluations running). Each alert has `type`, `severity` (critical/warning/info), `message`, `affectedCount`, `suggestedAction`. API: `GET /api/email-agent/trigger-alerts` returns `{ alerts, hasActive, criticalCount, warningCount, topRisk }`. UI: `TriggerAlertsPanel` component at the very top of the Command Center — only renders when alerts exist, shows severity-colored cards (red=critical, yellow=warning, blue=info) with dismiss (×) per card and "View" links to `/admin/trigger-audit`. Section header is clickable → navigates to Trigger Audit. Refreshes every 2 minutes. Phase 4 agent context: `buildTriggerAlertsContextString()` injected into `buildCommandCenterContextString()` with rule: always surface CRITICAL alerts before any outreach recommendations.
--   **Email Agent Upgrade — Phases 1–10:**
-    -   **Phase 1 (Audit Engine):** `server/email-agent/audit-engine.ts` — full health audit covering 12 checks (prospect discovery, duplicates, email coverage, DNC enforcement, daily caps, draft tracking, follow-up scheduling, sequence stop on reply/DNC, reply classification, interested-reply-to-deal conversion, next-best-actions, auto-execution safety, revenue double-count prevention). Returns `healthScore` (0–100), `status` (healthy/warning/critical), check list with severity (low/medium/high/critical) + `suggestedFix`, contact quality distribution, stage distribution, auto-exec metrics. Route: `GET /api/email-agent/audit`.
-    -   **Phase 2 (Contact Quality Scoring):** `server/email-agent/contact-quality.ts` — scores each prospect's contactability (0–100) based on email pattern (coach/AD emails score 90+, generic inboxes score 30–50, missing emails score 0), role, and bounce history.
-    -   **Phase 3 (Conversation Stage Tracking):** `server/email-agent/conversation-stage.ts` — 9-stage pipeline (cold → contacted → engaged → interested → deal_open → proposal → won → lost → do_not_contact) computed per-prospect from outreach history, reply classification, and deal status. `getStageInfo()` returns badge classes; `getStageMessageingGuidance()` returns stage-specific copy guidance; `getStageSendingBlocked()` blocks outreach for DNC/won/lost.
-    -   **Phase 4 (Stage-Aware Messaging):** `follow-up-cron.ts` generates stage-specific close lines — "interested" gets urgency close, "engaged" gets value-proof CTA, "contacted" gets simple bump.
-    -   **Phase 5 (Adaptive Follow-Up Timing):** `computeAdaptiveFollowUpDays()` in `follow-up-cron.ts` — step 1 default 3 days → 2 if open/click, 5 if cold no-open; step 2 default 7 → 5 if open/click; step 3 default 14. Prospects with open deals are skipped entirely.
-    -   **Phase 6 (Auto-Execution Learning Loop):** `auto-execution-engine.ts` — `AutoExecution` interface extended with `engagementOutcome` and `revenueAttributed`. `recordAutoExecEngagement()` and `recordAutoExecRevenue()` update log entries. `getAutoExecPerformanceMetrics()` computes successRate, engagementRate, revenuePerAction, todayCount, maxPerDay, totalExecuted, totalSucceeded — returned by `GET /api/email-agent/auto-execute/log`. `buildAutoExecContextString()` injects engagement rate + revenue/action into the AI prompt.
-    -   **Phase 7 (Multi-Touch Attribution):** See Revenue Outcome Engine above.
-    -   **Phase 8 (UI Updates):** `client/src/pages/admin-team-training-leads.tsx` — ProspectCard shows conversation stage badge + contact quality score badge (computed client-side). Expanded view shows messaging guidance for non-cold stages. New "Audit" tab with `AuditTab` component: run-on-demand health check, health score card, status badge, contact quality distribution, stage distribution, auto-exec performance metrics (success rate, engagement rate, revenue/action), warnings list, sorted check list with severity badges + suggested fixes, recommendations list.
-    -   **Phase 9 (Agent Context Injection):** `scheduled-email-agent.ts` computes `conversationStage`, `contactQualityScore`, and `stageContext` per prospect before email generation. These are passed to `generateOutreachEmail()` / `generateOutreachEmailFromVariant()` as new `EmailDraftParams` fields. Both generation functions inject stage note and quality note into the GPT-4o prompt — stage-aware rules (acknowledge prior contact if "contacted"/"follow_up"; address role directly for high-quality contacts; keep brief for generic inboxes).
-    -   **Phase 10 (QA):** All TypeScript errors in modified files resolved (0 errors). DB migrations applied for `attribution_role`, `attribution_chain_id`, `chain_position` on `ai_revenue_events`, and `skipped` added to `team_outreach_event_type` enum. Server starts cleanly with no runtime errors. All routes return 401 for unauthenticated requests (confirming registration).
-
-## External Dependencies
--   **PostgreSQL:** Database.
--   **Express.js:** Backend framework.
--   **React:** Frontend library.
--   **Tailwind CSS:** Styling framework.
--   **Shadcn UI:** UI component library.
--   **Vite:** Frontend build tool.
--   **Wouter:** Client-side router.
--   **Drizzle ORM:** ORM for TypeScript.
--   **Replit Auth (OpenID Connect):** Client authentication.
--   **Stripe:** Payment gateway and subscription management.
--   **bcryptjs:** Password hashing.
--   **SendGrid:** Email service.
--   **OpenAI API:** AI chatbot integration.
+## Pointers
+- **React Documentation:** `https://react.dev/`
+- **Express.js Documentation:** `https://expressjs.com/`
+- **Drizzle ORM Documentation:** `https://orm.drizzle.team/`
+- **Tailwind CSS Documentation:** `https://tailwindcss.com/docs`
+- **Shadcn UI Documentation:** `https://ui.shadcn.com/docs`
+- **Replit Auth Documentation:** _(Link to Replit Auth docs)_
+- **Stripe API Documentation:** `https://stripe.com/docs/api`
+- **OpenAI API Documentation:** `https://platform.openai.com/docs/api-reference`
+- **Wouter Documentation:** `https://www.npmjs.com/package/wouter`
