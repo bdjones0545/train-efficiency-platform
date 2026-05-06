@@ -584,83 +584,6 @@ export async function enrichProspectContact(
 ): Promise<EnrichedContact> {
   const openai = getOpenAI();
 
-  const knownWebsite = websiteUrl
-    ? `Known Website: ${websiteUrl}`
-    : `Known Website: None provided. Only search using the organization name and location.`;
-
-  const systemPrompt = `You are a professional B2B contact researcher for a sports performance training company. Your job is to find real, source-backed email addresses for sports organizations.
-
-STRICT RULES — NEVER VIOLATE:
-- You may ONLY return an email address that explicitly appears in a real source (website, contact page, social bio, staff directory, public search result).
-- You must NOT invent, guess, infer, generate, or pattern-match email addresses from domains.
-- You must NOT create role-based emails like coach@domain.com or info@domain.com unless that exact email appears in a public source.
-- If no real email is found in available sources, set foundRealEmail to false and contactEmail to null.
-- Never use "unknown", "n/a", or "not found" for name or role — use null.
-- foundRealEmail must be true ONLY when a real email was explicitly discovered.`;
-
-  const userPrompt = `Search for a real, publicly available outreach email for this organization.
-
-Organization: ${prospectName}
-Type: ${organizationType}
-Sport/Program: ${sport}
-Location: ${city}, ${state}
-${knownWebsite}
-
-Search these sources:
-- Website contact page (/contact, /staff, /coaches, /about, /athletics, /directory, /leadership)
-- Social bios (Instagram, Facebook, Linktree)
-- LinkedIn company page or staff profiles
-- Published staff/coaching directories
-- Google search snippets that show the email explicitly
-
-For every email found, record:
-- The exact source URL where the email appeared
-- The page title (e.g. "Contact Us | Savannah Volleyball Club")
-- A 1-2 sentence snippet from the page that shows the email in context
-- The discovery method (how you found it)
-- A confidence score from 0.00 to 1.00 based on source quality:
-  * 1.00 = explicit email on official staff/contact page
-  * 0.90 = official athletics page
-  * 0.80 = directory listing
-  * 0.70 = social bio/contact link
-  * 0.60 = search result snippet
-
-Return ONLY this JSON (no markdown):
-{
-  "foundRealEmail": boolean,
-  "contactName": string | null,
-  "contactRole": string | null,
-  "contactEmail": string | null,
-  "contactPhone": string | null,
-  "contactSourceType": "website" | "social" | "directory" | "search_result" | null,
-  "verificationStatus": "verified" | "unverified" | null,
-  "contactSourceUrl": string | null,
-  "contactSourceTitle": string | null,
-  "contactSourceSnippet": string | null,
-  "contactDiscoveryMethod": "website_contact_page" | "website_staff_page" | "athletics_page" | "directory_listing" | "social_profile" | "search_result" | null,
-  "contactConfidenceScore": number | null,
-  "enrichmentExplanation": string | null,
-  "alternativeContacts": [
-    {
-      "email": string,
-      "name": string | null,
-      "role": string | null,
-      "sourceType": "website" | "social" | "directory" | "search_result",
-      "sourceUrl": string | null,
-      "sourceTitle": string | null,
-      "sourceSnippet": string | null,
-      "confidence": number,
-      "explanation": string
-    }
-  ]
-}
-
-Rules:
-- Only include emails explicitly found in a real source.
-- Do NOT include inferred or pattern-generated emails.
-- If no real email found, set foundRealEmail: false and all contact fields to null.
-- Return empty array for alternativeContacts if none found.`;
-
   const validQuality: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
   const validSourceTypes: ContactSourceType[] = ["verified", "scraped", "social", "website", "directory", "search_result", "manual"];
   const validVerification: VerificationStatus[] = ["verified", "unverified"];
@@ -692,7 +615,6 @@ Rules:
           }))
       : [];
 
-    // Derive integer confidence from decimal score when not explicitly set
     const scoreInt = contactConfidenceScore !== null
       ? Math.round(contactConfidenceScore * 100)
       : Math.max(0, Math.min(100, Math.round(parsed.contactConfidence || parsed.confidence || 70)));
@@ -710,29 +632,134 @@ Rules:
       contactQuality,
       contactSourceType,
       verificationStatus,
-      enrichmentExplanation: parsed.enrichmentExplanation || "Email found via source research.",
+      enrichmentExplanation: parsed.enrichmentExplanation || "Email found via live web search.",
       alternativeContacts,
     };
   }
 
+  // Build search queries — most targeted first
+  const websitePart = websiteUrl ? `Website: ${websiteUrl}.` : "";
+  const searchInput = `You are a B2B contact researcher. Search the web RIGHT NOW to find a real, publicly listed email address for this sports organization.
+
+Organization: ${prospectName}
+Type: ${organizationType}
+Sport: ${sport}
+Location: ${city}, ${state}
+${websitePart}
+
+STEP 1 — Run these web searches in order until you find an email:
+1. Search: "${prospectName} ${city} ${state} contact email"
+2. Search: "${prospectName} ${sport} staff directory email"
+3. If websiteUrl exists, visit: ${websiteUrl || "(none)"}/contact and ${websiteUrl || "(none)"}/staff and ${websiteUrl || "(none)"}/about
+4. Search: site:${websiteUrl ? websiteUrl.replace(/^https?:\/\//, "").split("/")[0] : prospectName.toLowerCase().replace(/\s+/g, "")} email
+5. Search: "${prospectName}" email "@"
+
+STEP 2 — For each page you visit or search result snippet you read, look for:
+- Any email address visible in the page text, header, footer, or contact section
+- Staff/coach names with email addresses
+- "Contact us at X@Y.com" type language
+
+STRICT RULES:
+- You may ONLY report an email that you actually SEE in the page content you fetched or the search snippet returned.
+- Do NOT invent, guess, or construct email addresses.
+- Do NOT create role-based emails like info@domain.com or coach@domain.com unless that exact string appears in what you read.
+- If you genuinely cannot find a real email after searching, set foundRealEmail: false.
+
+STEP 3 — Return ONLY this JSON (no markdown, no explanation outside the JSON):
+{
+  "foundRealEmail": boolean,
+  "contactName": string | null,
+  "contactRole": string | null,
+  "contactEmail": string | null,
+  "contactPhone": string | null,
+  "contactQuality": "decision_maker" | "role_based" | "general" | "missing",
+  "contactSourceType": "website" | "social" | "directory" | "search_result" | null,
+  "verificationStatus": "verified" | "unverified" | null,
+  "contactSourceUrl": string | null,
+  "contactSourceTitle": string | null,
+  "contactSourceSnippet": string | null,
+  "contactDiscoveryMethod": "website_contact_page" | "website_staff_page" | "athletics_page" | "directory_listing" | "social_profile" | "search_result" | null,
+  "contactConfidenceScore": number | null,
+  "enrichmentExplanation": string | null,
+  "alternativeContacts": []
+}
+
+Confidence score guide:
+- 1.00 = email explicitly on official contact/staff page you fetched
+- 0.90 = athletics or team directory page
+- 0.80 = directory listing site
+- 0.70 = social profile bio
+- 0.60 = search result snippet showing email`;
+
+  // Phase 1: Live web search via Responses API
   try {
-    const response = await openai.chat.completions.create({
+    const webResponse = await (openai as any).responses.create({
       model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-      max_tokens: 700,
+      tools: [{ type: "web_search_preview" }],
+      input: searchInput,
     });
 
-    const raw = response.choices[0].message.content || "{}";
-    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned);
-    const result = parseEnrichedResult(parsed);
-    if (result) return result;
-  } catch (err) {
-    console.error("[EnrichContact] Discovery failed:", err);
+    const rawText: string = webResponse.output_text || "";
+    console.log(`[EnrichContact] Web search raw output for ${prospectName}:`, rawText.slice(0, 300));
+
+    // Extract JSON block from response
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const result = parseEnrichedResult(parsed);
+      if (result) {
+        console.log(`[EnrichContact] Found real email for ${prospectName}: ${result.decisionMakerEmail} (confidence: ${result.contactConfidenceScore})`);
+        return result;
+      }
+    }
+    console.log(`[EnrichContact] No real email found via web search for ${prospectName}`);
+  } catch (err: any) {
+    console.error("[EnrichContact] Web search failed:", err?.message || err);
+
+    // Phase 2: Fallback to chat completions if Responses API fails
+    try {
+      const fallbackResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a contact researcher. Only report emails you have seen in your training data for this specific organization. Never invent or construct email addresses. If you don't know a real email, return foundRealEmail: false.`,
+          },
+          {
+            role: "user",
+            content: `Do you have a known, real contact email for "${prospectName}" located in ${city}, ${state}? This is a ${organizationType} for ${sport}.${websiteUrl ? ` Their website is ${websiteUrl}.` : ""}
+
+Return ONLY JSON:
+{
+  "foundRealEmail": boolean,
+  "contactName": string | null,
+  "contactRole": string | null,
+  "contactEmail": string | null,
+  "contactQuality": "decision_maker" | "role_based" | "general" | "missing",
+  "contactSourceType": "website" | "search_result" | null,
+  "verificationStatus": "unverified",
+  "contactSourceUrl": null,
+  "contactSourceTitle": null,
+  "contactSourceSnippet": null,
+  "contactDiscoveryMethod": "search_result",
+  "contactConfidenceScore": 0.60,
+  "enrichmentExplanation": string | null,
+  "alternativeContacts": []
+}`,
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 400,
+      });
+
+      const raw2 = fallbackResponse.choices[0].message.content || "{}";
+      const cleaned2 = raw2.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const parsed2 = JSON.parse(cleaned2);
+      const fallbackResult = parseEnrichedResult(parsed2);
+      if (fallbackResult) return fallbackResult;
+    } catch (fallbackErr) {
+      console.error("[EnrichContact] Fallback also failed:", fallbackErr);
+    }
   }
 
   return emptyEnrichment();
