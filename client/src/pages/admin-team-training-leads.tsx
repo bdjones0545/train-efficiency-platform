@@ -192,9 +192,22 @@ function ProspectCard({
 
       <div className="flex items-center gap-2 flex-wrap">
         {quality.hasEmail ? (
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onGenerateEmail(prospect)} data-testid={`button-generate-email-${prospect.id}`}>
-            <Mail className="h-3 w-3 mr-1" /> Generate Email
-          </Button>
+          <>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onGenerateEmail(prospect)} data-testid={`button-generate-email-${prospect.id}`}>
+              <Mail className="h-3 w-3 mr-1" /> Generate Email
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs text-muted-foreground"
+              onClick={() => onEnrichContact(prospect.id)}
+              disabled={isEnriching}
+              data-testid={`button-rerun-discovery-${prospect.id}`}
+            >
+              {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RotateCcw className="h-3 w-3 mr-1" />}
+              Re-run Discovery
+            </Button>
+          </>
         ) : (
           <Button
             size="sm"
@@ -202,23 +215,10 @@ function ProspectCard({
             className="h-7 text-xs border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
             onClick={() => onEnrichContact(prospect.id)}
             disabled={isEnriching}
-            data-testid={`button-find-decision-maker-${prospect.id}`}
+            data-testid={`button-find-email-contact-${prospect.id}`}
           >
             {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
-            Find Decision Maker
-          </Button>
-        )}
-        {quality.label === "Needs Contact" && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs text-muted-foreground"
-            onClick={() => onEnrichContact(prospect.id)}
-            disabled={isEnriching}
-            data-testid={`button-find-contact-${prospect.id}`}
-          >
-            {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Users className="h-3 w-3 mr-1" />}
-            Find Contact
+            Find Email Contact
           </Button>
         )}
         {prospect.outreachStatus !== "Replied" && (
@@ -346,7 +346,7 @@ function ProspectCard({
               data-testid={`button-enrich-expanded-${prospect.id}`}
             >
               {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
-              {quality.hasEmail ? "Re-run Discovery" : "Find Decision Maker"}
+              {quality.hasEmail ? "Re-run Discovery" : "Find Email Contact"}
             </Button>
           </div>
 
@@ -953,7 +953,12 @@ export default function AdminTeamTrainingLeadsPage() {
       setEnrichingId(id);
       const res = await apiRequest("POST", `/api/team-training-leads/${id}/enrich-contact`, {});
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message || "Enrichment failed");
+      if (!res.ok) {
+        const err = new Error(json.message || "Enrichment failed");
+        (err as any).reason = json.reason;
+        (err as any).enrichmentAttempted = json.enrichmentAttempted;
+        throw err;
+      }
       return json;
     },
     onSuccess: (data) => {
@@ -961,22 +966,28 @@ export default function AdminTeamTrainingLeadsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
       const q = data.enriched?.contactQuality;
       const name = data.enriched?.decisionMakerName;
-      const qualityLabel = q === "decision_maker" ? "Decision Maker" : q === "role_based" ? "Role Email" : q === "general" ? "General Email" : "No contact found";
+      const email = data.enriched?.decisionMakerEmail;
+      const isInferred = data.enriched?.verificationStatus === "inferred";
+      const qualityLabel = q === "decision_maker" ? "Decision Maker" : q === "role_based" ? "Role Email" : "General Email";
       toast({
-        title: q === "missing" ? "No contact found" : "Contact found",
-        description: q === "missing"
-          ? "The AI could not find a decision-maker contact for this lead."
-          : name ? `${name} — ${qualityLabel}` : qualityLabel,
+        title: isInferred ? "Email contact found (inferred)" : "Email contact found",
+        description: name ? `${name} — ${qualityLabel}` : email ? `${qualityLabel}: ${email}` : qualityLabel,
       });
     },
     onError: (err: Error) => {
       setEnrichingId(null);
-      const isAuditError = err.message?.toLowerCase().includes("enum") || err.message?.toLowerCase().includes("invalid input");
+      const reason = (err as any).reason;
+      if (reason === "email_required") {
+        toast({
+          title: "No email found yet",
+          description: "Try adding a website URL or source URL to this lead, then re-run discovery.",
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
-        title: isAuditError ? "Log error" : "No contact found",
-        description: isAuditError
-          ? "Couldn't save enrichment log, but contact search may have completed. Please refresh."
-          : "No decision-maker contact found yet.",
+        title: "Discovery failed",
+        description: err.message || "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
     },
@@ -1727,7 +1738,7 @@ export default function AdminTeamTrainingLeadsPage() {
                           data-testid="button-find-dm-from-dialog"
                         >
                           {enrichContactMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-                          Find Decision Maker
+                          Find Email Contact
                         </Button>
                       </div>
                     </>

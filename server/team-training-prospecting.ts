@@ -400,6 +400,21 @@ export interface EnrichedContact {
   alternativeContacts: AlternativeContact[];
 }
 
+export function normalizeNullable(value?: string | null): string | null {
+  if (!value) return null;
+  const cleaned = value.trim();
+  const lowered = cleaned.toLowerCase();
+  if (["unknown", "n/a", "none", "not found", "unavailable", "null", ""].includes(lowered)) {
+    return null;
+  }
+  return cleaned;
+}
+
+export function isValidEmail(value?: string | null): boolean {
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 function emptyEnrichment(): EnrichedContact {
   return {
     decisionMakerName: null,
@@ -426,11 +441,11 @@ export async function enrichProspectContact(
 ): Promise<EnrichedContact> {
   const openai = getOpenAI();
 
-  const knownWebsite = websiteUrl ? `Known Website: ${websiteUrl}` : `Known Website: Unknown — determine the most likely domain from the org name and location`;
+  const knownWebsite = websiteUrl ? `Known Website: ${websiteUrl}` : `Known Website: Unknown — infer the most likely domain from the org name and location`;
 
-  const systemPrompt = `You are a professional B2B contact researcher specializing in finding decision-maker contacts for sports and athletic organizations. Your job is to find at least one usable outreach email through a structured multi-phase discovery process. You are aggressive and thorough — you do NOT give up easily.`;
+  const systemPrompt = `You are a professional B2B contact researcher for a sports performance training company. Your ONLY job is to find a usable outreach email address for a given sports organization. You MUST return a valid email — verified, scraped, social, or inferred. You are aggressive and never give up without trying email pattern inference on the organization's domain.`;
 
-  const userPrompt = `Find the best outreach contact for this organization using a structured 6-phase discovery process.
+  const userPrompt = `Find the best outreach email for this organization. A valid email address is REQUIRED in your response.
 
 Organization: ${prospectName}
 Type: ${organizationType}
@@ -438,74 +453,101 @@ Sport/Program: ${sport}
 Location: ${city}, ${state}
 ${knownWebsite}
 
-Work through these phases in order:
+Work through all phases before responding:
 
-PHASE 1 — WEBSITE DISCOVERY
-- Determine the most likely domain (e.g., prospectname.com, orgname.org, teamname.net)
-- Identify likely contact page URLs: /contact, /staff, /coaches, /about, /athletics, /team, /directory, /leadership
-- What emails would typically be listed on these pages for a ${organizationType}?
-- Search URL to recommend for verification (e.g., site:domain.com contact OR "contact" site:domain.com)
+PHASE 1 — DIRECT EMAIL SEARCH
+Search for any direct email addresses for this organization:
+- Website contact page (/contact, /staff, /coaches, /about, /athletics, /team, /directory, /leadership)
+- Social bios (Instagram, Facebook, Linktree)
+- LinkedIn company page or staff profiles
+- Any published coaching staff directory
 
-PHASE 2 — SOCIAL MEDIA SIGNALS
-- Instagram: What handle would this org use? Do ${organizationType}s in ${sport} typically post contact info in their bio?
-- Facebook: Does this type of org usually have a Facebook page with contact info?
-- LinkedIn: Is there a company page? Would a coach/director have a LinkedIn?
-- Linktree or link-in-bio tools: Common for youth sports and athletic programs
-
-PHASE 3 — DECISION MAKER IDENTIFICATION
+PHASE 2 — DECISION MAKER IDENTIFICATION
 For a ${organizationType} focused on ${sport} in ${city}, ${state}:
-- Who is the typical decision maker for outside vendor contracts like team performance training?
-- Most likely titles: (e.g., Athletic Director, Head Coach, Program Director, Owner, Strength Coordinator)
-- Based on the region and org type, what first/last names are common for this role?
-- Best decision-maker role to target for outreach
+- Most likely decision-maker title: Athletic Director, Head Coach, Program Director, Owner, Strength Coordinator
+- Most common staff roles at this type of organization
+- If a named person exists publicly, identify them
 
-PHASE 4 — EMAIL PATTERN GENERATION
-Based on the likely domain, generate the most probable email addresses even if not verified:
-Priority order:
-1. firstname.lastname@domain (e.g., john.smith@orgname.com)
-2. coach@domain
-3. director@domain
-4. athletics@domain
-5. admin@domain
-6. info@domain
-7. contact@domain
-These INFERRED emails are acceptable — label them clearly as inferred/unverified.
+PHASE 3 — EMAIL PATTERN INFERENCE (ALWAYS RUN THIS)
+Based on the organization's most likely domain:
+1. Determine the most likely domain (use org name + common TLDs: .com, .org, .net, .edu)
+2. Generate ranked email patterns:
+   - coach@domain
+   - director@domain
+   - athletics@domain
+   - info@domain
+   - contact@domain
+   - admin@domain
+   - recruiting@domain
+   - training@domain
+   - teams@domain
+   - firstname.lastname@domain (if person identified)
+3. Select the single best pattern as the primary email
+4. Include 3-4 alternatives
 
-PHASE 5 — CONTACT RANKING
-Rank your discovered/inferred contacts:
-- decision_maker: Named person with direct email (highest priority)
-- role_based: Role-specific inbox (director@, coach@, athletics@)
-- general: General inbox (info@, contact@, office@)
-- IMPORTANT: Only use "missing" if you literally cannot guess a domain for this organization
+IMPORTANT RULES:
+- "found" must be true only if contactEmail is a syntactically valid email (contains @ and a domain)
+- NEVER return contactName as "unknown", "n/a", or "not found" — use null instead
+- NEVER return a success with an empty or missing contactEmail
+- Inferred emails ARE allowed and preferred over returning found=false
+- Only set found=false if you cannot determine any plausible domain whatsoever
+- contactConfidence: verified/scraped=75-95, role-based inferred=40-65, general inferred=20-40
 
-PHASE 6 — SELECTION + EXPLANATION
-Select the single best contact and explain your reasoning in 1-2 sentences.
-
-Return ONLY this JSON (no markdown, no explanation outside JSON):
+Return ONLY this JSON (no markdown):
 {
-  "decisionMakerName": string | null,
-  "decisionMakerTitle": string | null,
-  "decisionMakerEmail": string,
-  "contactConfidence": number 0-100,
+  "found": true,
+  "contactName": string | null,
+  "contactRole": string | null,
+  "contactEmail": "valid@email.com",
   "contactSourceUrl": string | null,
   "contactQuality": "decision_maker" | "role_based" | "general" | "missing",
   "contactSourceType": "verified" | "scraped" | "social" | "inferred",
   "verificationStatus": "verified" | "inferred" | "unverified",
-  "enrichmentExplanation": "1-2 sentence explanation of where this email came from and why it was selected",
+  "contactConfidence": number,
+  "enrichmentExplanation": "1-2 sentences explaining where this email came from",
   "alternativeContacts": [
-    { "email": string, "label": string, "sourceType": "inferred" | "scraped" | "social" | "general", "name": string | null }
+    { "email": "alt@domain.com", "label": "General Inbox", "sourceType": "inferred", "name": null }
   ]
-}
+}`;
 
-CRITICAL RULES:
-- It is REQUIRED to return at least one email address unless you absolutely cannot determine any possible domain.
-- Inferred/pattern-generated emails are acceptable and preferred over returning "missing".
-- Most organizations have a guessable domain. Use it.
-- contactConfidence should reflect how certain you are: verified=75-95, role_based inferred=45-65, general inferred=25-45.
-- alternativeContacts should include 2-4 backup options beyond the primary selection.
-- verificationStatus must be "inferred" if the email is pattern-generated, "verified" if found on a real page.`;
+  const validQuality: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
+  const validSourceTypes: ContactSourceType[] = ["verified", "scraped", "social", "inferred", "manual"];
+  const validVerification: VerificationStatus[] = ["verified", "inferred", "unverified"];
 
-  // Phase 1-5: Primary discovery attempt
+  function parseEnrichedResult(parsed: any): EnrichedContact | null {
+    const contactEmail = normalizeNullable(parsed.contactEmail || parsed.decisionMakerEmail);
+    if (!isValidEmail(contactEmail)) return null;
+
+    const contactQuality: ContactQuality = validQuality.includes(parsed.contactQuality) ? parsed.contactQuality : "general";
+    const contactSourceType: ContactSourceType = validSourceTypes.includes(parsed.contactSourceType) ? parsed.contactSourceType : "inferred";
+    const verificationStatus: VerificationStatus = validVerification.includes(parsed.verificationStatus) ? parsed.verificationStatus : "inferred";
+
+    const alternativeContacts: AlternativeContact[] = Array.isArray(parsed.alternativeContacts)
+      ? parsed.alternativeContacts
+          .filter((c: any) => c?.email && isValidEmail(c.email))
+          .map((c: any) => ({
+            email: c.email.trim(),
+            label: c.label || "Alternative",
+            sourceType: validSourceTypes.includes(c.sourceType) ? c.sourceType : "inferred",
+            name: normalizeNullable(c.name),
+          }))
+      : [];
+
+    return {
+      decisionMakerName: normalizeNullable(parsed.contactName || parsed.decisionMakerName),
+      decisionMakerTitle: normalizeNullable(parsed.contactRole || parsed.decisionMakerTitle),
+      decisionMakerEmail: contactEmail,
+      contactConfidence: Math.max(0, Math.min(100, Math.round(parsed.contactConfidence || parsed.confidence || 0))),
+      contactSourceUrl: normalizeNullable(parsed.contactSourceUrl) || null,
+      contactQuality,
+      contactSourceType,
+      verificationStatus,
+      enrichmentExplanation: parsed.enrichmentExplanation || "Contact discovered via AI research pipeline.",
+      alternativeContacts,
+    };
+  }
+
+  // Primary discovery attempt
   let primaryResult: EnrichedContact | null = null;
   try {
     const response = await openai.chat.completions.create({
@@ -521,105 +563,65 @@ CRITICAL RULES:
     const raw = response.choices[0].message.content || "{}";
     const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     const parsed = JSON.parse(cleaned);
-
-    const validQuality: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
-    const contactQuality: ContactQuality = validQuality.includes(parsed.contactQuality) ? parsed.contactQuality : "general";
-    const validSourceTypes: ContactSourceType[] = ["verified", "scraped", "social", "inferred", "manual"];
-    const contactSourceType: ContactSourceType = validSourceTypes.includes(parsed.contactSourceType) ? parsed.contactSourceType : "inferred";
-    const validVerification: VerificationStatus[] = ["verified", "inferred", "unverified"];
-    const verificationStatus: VerificationStatus = validVerification.includes(parsed.verificationStatus) ? parsed.verificationStatus : "unverified";
-
-    const alternativeContacts: AlternativeContact[] = Array.isArray(parsed.alternativeContacts)
-      ? parsed.alternativeContacts
-          .filter((c: any) => c?.email && typeof c.email === "string")
-          .map((c: any) => ({
-            email: c.email,
-            label: c.label || "Alternative",
-            sourceType: validSourceTypes.includes(c.sourceType) ? c.sourceType : "inferred",
-            name: c.name || null,
-          }))
-      : [];
-
-    primaryResult = {
-      decisionMakerName: parsed.decisionMakerName || null,
-      decisionMakerTitle: parsed.decisionMakerTitle || null,
-      decisionMakerEmail: parsed.decisionMakerEmail || null,
-      contactConfidence: Math.max(0, Math.min(100, Math.round(parsed.contactConfidence || 0))),
-      contactSourceUrl: parsed.contactSourceUrl || null,
-      contactQuality,
-      contactSourceType,
-      verificationStatus,
-      enrichmentExplanation: parsed.enrichmentExplanation || "Contact discovered via AI research pipeline.",
-      alternativeContacts,
-    };
+    primaryResult = parseEnrichedResult(parsed);
   } catch (err) {
     console.error("[EnrichContact] Primary discovery failed:", err);
   }
 
-  // Phase 6: Fallback — pure pattern inference if primary returned missing or failed
-  if (!primaryResult || (primaryResult.contactQuality === "missing" && !primaryResult.decisionMakerEmail)) {
+  // Fallback: dedicated domain + email pattern inference
+  if (!primaryResult) {
     try {
-      const fallbackPrompt = `Generate plausible email patterns for this organization. Even if you cannot verify them, infer the most likely domain and email addresses.
+      const fallbackPrompt = `You must infer an outreach email for this organization using domain pattern matching. A valid email address is REQUIRED.
 
 Organization: ${prospectName}
 Type: ${organizationType}
 Location: ${city}, ${state}
+${knownWebsite}
 
-Determine:
-1. The most likely website domain
-2. 3-5 email patterns for the decision-maker (coach@, director@, athletics@, info@, contact@)
+Steps:
+1. Determine the most likely website domain (strip spaces, use common words, try .com/.org/.net/.edu)
+2. Generate the most plausible role-based email from that domain
+3. Include 3-4 alternatives
+
+Rules:
+- Always produce at least one syntactically valid email (must contain @ and a domain extension)
+- Set contactSourceType = "inferred"
+- Set verificationStatus = "inferred"
+- contactConfidence should be 20-45
 
 Return ONLY JSON:
 {
-  "domain": "guesseddomain.com",
-  "decisionMakerEmail": "best_guess@domain.com",
-  "contactQuality": "role_based" or "general",
-  "contactConfidence": 25,
+  "found": true,
+  "contactName": null,
+  "contactRole": "Coach / Program Director",
+  "contactEmail": "coach@inferreddomain.com",
+  "contactSourceUrl": "https://inferreddomain.com",
+  "contactQuality": "role_based",
+  "contactSourceType": "inferred",
+  "verificationStatus": "inferred",
+  "contactConfidence": 35,
+  "enrichmentExplanation": "No verified email found. Role-based email inferred from likely organization domain.",
   "alternativeContacts": [
-    { "email": "alt@domain.com", "label": "General Inbox", "sourceType": "inferred", "name": null }
-  ],
-  "enrichmentExplanation": "Domain inferred from organization name. Email patterns are unverified."
+    { "email": "info@inferreddomain.com", "label": "General Inbox", "sourceType": "inferred", "name": null },
+    { "email": "director@inferreddomain.com", "label": "Director Inbox", "sourceType": "inferred", "name": null }
+  ]
 }`;
 
       const fallbackResponse = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [{ role: "user", content: fallbackPrompt }],
         temperature: 0.2,
-        max_tokens: 300,
+        max_tokens: 400,
       });
 
       const raw2 = fallbackResponse.choices[0].message.content || "{}";
       const cleaned2 = raw2.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed2 = JSON.parse(cleaned2);
-
-      if (parsed2.decisionMakerEmail) {
-        const validQuality: ContactQuality[] = ["decision_maker", "role_based", "general", "missing"];
-        return {
-          decisionMakerName: null,
-          decisionMakerTitle: null,
-          decisionMakerEmail: parsed2.decisionMakerEmail,
-          contactConfidence: Math.max(0, Math.min(100, Math.round(parsed2.contactConfidence || 25))),
-          contactSourceUrl: parsed2.domain ? `https://${parsed2.domain}` : null,
-          contactQuality: validQuality.includes(parsed2.contactQuality) ? parsed2.contactQuality : "general",
-          contactSourceType: "inferred",
-          verificationStatus: "inferred",
-          enrichmentExplanation: parsed2.enrichmentExplanation || "Email pattern inferred from organization domain.",
-          alternativeContacts: Array.isArray(parsed2.alternativeContacts)
-            ? parsed2.alternativeContacts.filter((c: any) => c?.email).map((c: any) => ({
-                email: c.email,
-                label: c.label || "Alternative",
-                sourceType: "inferred" as ContactSourceType,
-                name: c.name || null,
-              }))
-            : [],
-        };
-      }
+      primaryResult = parseEnrichedResult(parsed2);
     } catch (err) {
       console.error("[EnrichContact] Fallback inference failed:", err);
     }
-
-    return primaryResult || emptyEnrichment();
   }
 
-  return primaryResult;
+  return primaryResult || emptyEnrichment();
 }

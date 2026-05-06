@@ -7166,7 +7166,7 @@ export async function registerRoutes(
         return res.status(500).json({ error: "AI research is not configured", message: "Missing OPENAI_API_KEY on the server." });
       }
 
-      const { enrichProspectContact } = await import("./team-training-prospecting");
+      const { enrichProspectContact, normalizeNullable, isValidEmail } = await import("./team-training-prospecting");
       const enriched = await enrichProspectContact(
         org,
         prospect.prospectName,
@@ -7176,6 +7176,33 @@ export async function registerRoutes(
         prospect.organizationType || "unknown",
         prospect.websiteUrl || null
       );
+
+      // Strict email gate — do not save or return success without a valid email
+      const normalizedEmail = normalizeNullable(enriched.decisionMakerEmail);
+      if (!isValidEmail(normalizedEmail)) {
+        console.warn("[TeamTraining EnrichContact] No valid email found for prospect:", prospect.prospectName);
+        return res.status(404).json({
+          success: false,
+          message: "No email contact found for this team or organization.",
+          reason: "email_required",
+          enrichmentAttempted: true,
+          debug: {
+            prospectName: prospect.prospectName,
+            attemptedRole: enriched.decisionMakerTitle ?? null,
+            attemptedName: enriched.decisionMakerName ?? null,
+            websiteUrl: prospect.websiteUrl ?? null,
+            sourceUrl: prospect.sourceUrl ?? null,
+          },
+        });
+      }
+
+      // Normalize all string fields to remove sentinel values
+      const safeEnriched = {
+        ...enriched,
+        decisionMakerEmail: normalizedEmail,
+        decisionMakerName: normalizeNullable(enriched.decisionMakerName),
+        decisionMakerTitle: normalizeNullable(enriched.decisionMakerTitle),
+      };
 
       // Compute new score incorporating the enriched contact quality
       const { scoreProspect } = await import("./team-training-prospecting");
@@ -7193,21 +7220,21 @@ export async function registerRoutes(
         sourceUrl: prospect.sourceUrl || null,
         confidenceScore: prospect.confidenceScore || 50,
         notes: prospect.notes || "",
-        ...enriched,
+        ...safeEnriched,
       });
 
       const updated = await storage.updateTeamTrainingProspect(prospect.id, {
-        decisionMakerName: enriched.decisionMakerName,
-        decisionMakerTitle: enriched.decisionMakerTitle,
-        decisionMakerEmail: enriched.decisionMakerEmail,
-        contactConfidence: enriched.contactConfidence,
-        contactSourceUrl: enriched.contactSourceUrl,
-        contactQuality: enriched.contactQuality,
-        contactSourceType: enriched.contactSourceType,
-        verificationStatus: enriched.verificationStatus,
-        enrichmentExplanation: enriched.enrichmentExplanation,
-        alternativeContacts: enriched.alternativeContacts.length > 0
-          ? JSON.stringify(enriched.alternativeContacts)
+        decisionMakerName: safeEnriched.decisionMakerName,
+        decisionMakerTitle: safeEnriched.decisionMakerTitle,
+        decisionMakerEmail: safeEnriched.decisionMakerEmail,
+        contactConfidence: safeEnriched.contactConfidence,
+        contactSourceUrl: safeEnriched.contactSourceUrl,
+        contactQuality: safeEnriched.contactQuality,
+        contactSourceType: safeEnriched.contactSourceType,
+        verificationStatus: safeEnriched.verificationStatus,
+        enrichmentExplanation: safeEnriched.enrichmentExplanation,
+        alternativeContacts: safeEnriched.alternativeContacts.length > 0
+          ? JSON.stringify(safeEnriched.alternativeContacts)
           : null,
         confidenceScore: newScore,
       });
@@ -7217,14 +7244,14 @@ export async function registerRoutes(
           orgId: profile.organizationId,
           prospectId: prospect.id,
           eventType: "contact_enriched",
-          description: `Contact enriched for ${prospect.prospectName}: ${enriched.contactQuality} quality${enriched.decisionMakerName ? ` — ${enriched.decisionMakerName}` : ""}`,
-          metadata: { contactQuality: enriched.contactQuality, decisionMakerName: enriched.decisionMakerName },
+          description: `Contact enriched for ${prospect.prospectName}: ${safeEnriched.contactQuality} quality${safeEnriched.decisionMakerName ? ` — ${safeEnriched.decisionMakerName}` : ""} — ${safeEnriched.decisionMakerEmail}`,
+          metadata: { contactQuality: safeEnriched.contactQuality, decisionMakerName: safeEnriched.decisionMakerName, email: safeEnriched.decisionMakerEmail },
         });
       } catch (auditErr: any) {
         console.error("[TeamTraining EnrichContact] Audit log failed (non-fatal):", auditErr.message);
       }
 
-      res.json({ prospect: updated, enriched });
+      res.json({ prospect: updated, enriched: safeEnriched });
     } catch (err: any) {
       console.error("[TeamTraining EnrichContact]", err);
       res.status(500).json({ message: err.message });

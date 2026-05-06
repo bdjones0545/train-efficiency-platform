@@ -1,0 +1,231 @@
+Fix the TrainEfficiency “Find Decision Maker / Re-run Discovery” enrichment flow so it only counts as “contact found” when the system actually finds or infers an actionable email address for the team, person, school, club, or organization.
+
+Current bug:
+The UI says contact found, but the edit modal shows:
+- contactName = unknown
+- contactRole = Coach
+- contactEmail = empty
+- contactPhone = empty
+
+That should never be treated as a successful enrichment.
+
+Goal:
+The enrichment system must aggressively search for or infer an email address. It can return verified, scraped, social, role-based, or inferred emails, but it must not return success without an email.
+
+Required backend changes:
+
+1. Add a strict email-required success gate inside the enrichment route/service.
+
+After enrichProspectContact returns, normalize the result before saving.
+
+Treat these values as null:
+- unknown
+- Unknown
+- n/a
+- none
+- not found
+- unavailable
+- empty strings
+
+Add helper:
+
+function normalizeNullable(value?: string | null): string | null {
+  if (!value) return null;
+  const cleaned = value.trim();
+  const lowered = cleaned.toLowerCase();
+
+  if (
+    lowered === "unknown" ||
+    lowered === "n/a" ||
+    lowered === "none" ||
+    lowered === "not found" ||
+    lowered === "unavailable" ||
+    lowered === "null"
+  ) {
+    return null;
+  }
+
+  return cleaned;
+}
+
+2. Add email validation:
+
+function isValidEmail(value?: string | null): boolean {
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+3. Enrichment should only succeed if contactEmail is valid.
+
+const normalizedEmail = normalizeNullable(enrichment.contactEmail);
+
+if (!isValidEmail(normalizedEmail)) {
+  return res.status(404).json({
+    success: false,
+    message: "No email contact found for this team or organization.",
+    reason: "email_required",
+    enrichmentAttempted: true,
+    debug: {
+      organizationName: prospect.organizationName,
+      attemptedRole: enrichment.contactRole ?? null,
+      attemptedName: enrichment.contactName ?? null,
+      websiteUrl: prospect.websiteUrl ?? null,
+      sourceUrl: prospect.sourceUrl ?? null
+    }
+  });
+}
+
+Do not save partial enrichment data if email is missing.
+
+4. Update the AI enrichment prompt.
+
+The AI must prioritize finding or inferring an email address.
+
+Prompt requirements:
+- Search for a direct email for the organization/team first.
+- Search for coach/director/staff/contact emails second.
+- Search website/contact/social/about/team/staff pages.
+- If no person-specific email exists, infer likely role emails from a detected domain:
+  - coach@
+  - info@
+  - contact@
+  - director@
+  - athletics@
+  - admin@
+  - recruiting@
+  - teams@
+  - basketball@
+  - training@
+- If the organization has no website domain, use source URL, Google result context, social handles, or organization name to identify a likely domain.
+- If no domain can be found, return missing.
+- Never return contactName “unknown” as a successful result.
+- Never return success with an empty contactEmail.
+- Inferred emails are allowed, but must be clearly labeled:
+  contact_source_type = "inferred"
+  verification_status = "inferred"
+
+5. Update the AI JSON schema/contract.
+
+The service should expect:
+
+{
+  "found": boolean,
+  "contactName": string | null,
+  "contactRole": string | null,
+  "contactEmail": string | null,
+  "contactPhone": string | null,
+  "websiteUrl": string | null,
+  "sourceUrl": string | null,
+  "contactSourceType": "verified" | "scraped" | "social" | "inferred" | "manual" | "missing",
+  "verificationStatus": "verified" | "inferred" | "unverified",
+  "confidence": number,
+  "enrichmentExplanation": string,
+  "alternativeContacts": Array<{
+    "email": string,
+    "label": string,
+    "sourceType": "verified" | "scraped" | "social" | "inferred",
+    "verificationStatus": "verified" | "inferred" | "unverified"
+  }>
+}
+
+Rules:
+- found must be false if contactEmail is null or invalid.
+- found may be true for inferred emails.
+- Alternative contacts must only include valid email addresses.
+- If only a role was found but no email, found must be false.
+
+6. Update fallback inference.
+
+Fallback inference should not just infer “Coach.”
+It must infer an email pattern.
+
+Good fallback:
+{
+  found: true,
+  contactName: null,
+  contactRole: "Coach / Program Director",
+  contactEmail: "coach@exampleteam.com",
+  contactSourceType: "inferred",
+  verificationStatus: "inferred",
+  confidence: 0.45,
+  enrichmentExplanation: "No verified staff email was found, so this role-based email was inferred from the organization domain."
+}
+
+Bad fallback:
+{
+  found: true,
+  contactName: "unknown",
+  contactRole: "Coach",
+  contactEmail: null
+}
+
+Reject the bad fallback.
+
+7. Update frontend behavior.
+
+If the API returns 404 with reason = "email_required":
+- Do not show “contact found.”
+- Do not auto-open the edit modal as if enrichment succeeded.
+- Show toast:
+  “No email found yet. Try adding a website URL or source URL, then re-run discovery.”
+- Keep the manual edit option available.
+
+If enrichment succeeds:
+- Show “Email contact found.”
+- Open/update the contact panel with the email visible.
+- Show source/verification badges.
+
+8. Update the button label logic.
+
+If no email exists:
+- Button label: “Find Email Contact”
+
+If an email exists:
+- Button label: “Re-run Discovery”
+
+9. Add regression tests or manual test cases.
+
+Test case A:
+AI returns:
+{
+  found: true,
+  contactName: "unknown",
+  contactRole: "Coach",
+  contactEmail: ""
+}
+Expected:
+- API returns 404
+- no DB contact update
+- frontend shows no-email toast
+
+Test case B:
+AI returns:
+{
+  found: true,
+  contactRole: "Coach",
+  contactEmail: "coach@example.com",
+  contactSourceType: "inferred"
+}
+Expected:
+- API succeeds
+- DB saves email
+- UI shows inferred warning
+
+Test case C:
+AI returns verified staff email.
+Expected:
+- API succeeds
+- UI shows verified/scraped badge
+
+Test case D:
+No website URL exists but sourceUrl contains a Google search.
+Expected:
+- AI attempts organization-domain inference
+- succeeds only if it can produce a valid email
+
+Final acceptance criteria:
+- “Contact found” never appears unless a valid email exists.
+- The modal never shows unknown + empty email as a successful contact.
+- The system finds or infers an email whenever a usable organization domain exists.
+- Inferred emails are allowed but always clearly labeled.
+- Empty email = failed enrichment, not success.
