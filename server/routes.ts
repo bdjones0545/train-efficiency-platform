@@ -6712,6 +6712,45 @@ export async function registerRoutes(
 
   // ─── Team Training Prospecting Routes ─────────────────────────────────────
 
+  /** Compute the next scheduled run timestamp based on preferred time and frequency. */
+  function computeNextRunAt(preferredTime: string, frequency: string): Date {
+    const [hStr, mStr] = (preferredTime || "08:00").split(":");
+    const h = parseInt(hStr, 10) || 8;
+    const m = parseInt(mStr, 10) || 0;
+    const now = new Date();
+    const candidate = new Date(now);
+    candidate.setHours(h, m, 0, 0);
+    if (candidate <= now) {
+      if (frequency === "daily") candidate.setDate(candidate.getDate() + 1);
+      else if (frequency === "monthly") candidate.setMonth(candidate.getMonth() + 1);
+      else candidate.setDate(candidate.getDate() + 7);
+    }
+    return candidate;
+  }
+
+  /** Build a human-readable label for the next run time. */
+  function buildNextRunLabel(nextRunAt: Date): string {
+    const now = new Date();
+    const todayMidnight = new Date(now); todayMidnight.setHours(0, 0, 0, 0);
+    const tomorrowMidnight = new Date(todayMidnight); tomorrowMidnight.setDate(todayMidnight.getDate() + 1);
+    const afterTomorrowMidnight = new Date(tomorrowMidnight); afterTomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
+    const runMidnight = new Date(nextRunAt); runMidnight.setHours(0, 0, 0, 0);
+    const timeStr = nextRunAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    if (runMidnight.getTime() === todayMidnight.getTime()) return `Today at ${timeStr}`;
+    if (runMidnight.getTime() === tomorrowMidnight.getTime()) return `Tomorrow at ${timeStr}`;
+    return nextRunAt.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }) + ` at ${timeStr}`;
+  }
+
+  /** Format an HH:MM string as 12-hour time. */
+  function formatTime12h(time: string): string {
+    const [hStr, mStr] = (time || "08:00").split(":");
+    const h = parseInt(hStr, 10) || 8;
+    const m = parseInt(mStr, 10) || 0;
+    const suffix = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+  }
+
   // Get lead research settings
   app.get("/api/team-training-leads/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
@@ -6723,7 +6762,11 @@ export async function registerRoutes(
       const orgCity = (org as any)?.city || "";
       const orgState = (org as any)?.state || "";
       const fallbackLocation = [orgCity, orgState].filter(Boolean).join(", ");
-      if (saved) return res.json(saved);
+      if (saved) {
+        const nextRunLabel = saved.recurringEnabled && saved.nextRunAt ? buildNextRunLabel(new Date(saved.nextRunAt)) : null;
+        const preferredTimeLabel = saved.recurringTime ? formatTime12h(saved.recurringTime) : "8:00 AM";
+        return res.json({ ...saved, nextRunLabel, preferredTimeLabel });
+      }
       return res.json({
         organizationId: profile.organizationId,
         defaultLocation: fallbackLocation,
@@ -6736,6 +6779,8 @@ export async function registerRoutes(
         recurringSport: "all",
         lastRunAt: null,
         nextRunAt: null,
+        nextRunLabel: null,
+        preferredTimeLabel: "8:00 AM",
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -6765,33 +6810,36 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid frequency", message: "Frequency must be daily, weekly, or monthly." });
       }
 
-      // Compute nextRunAt when recurring is enabled
+      // Compute nextRunAt properly from preferred time + frequency
+      const effectiveTime = recurringTime ?? "08:00";
+      const effectiveFreq = recurringFrequency ?? "weekly";
       let nextRunAt: Date | null = null;
       if (recurringEnabled) {
-        nextRunAt = new Date();
-        nextRunAt.setHours(nextRunAt.getHours() + 1);
+        nextRunAt = computeNextRunAt(effectiveTime, effectiveFreq);
       }
 
       const updated = await storage.upsertTeamLeadSettings(profile.organizationId, {
         defaultLocation: defaultLocation ?? "",
         radiusMiles: radiusMiles ?? 25,
         recurringEnabled: recurringEnabled ?? false,
-        recurringFrequency: recurringFrequency ?? "weekly",
+        recurringFrequency: effectiveFreq,
         recurringDayOfWeek: recurringDayOfWeek ?? null,
-        recurringTime: recurringTime ?? "08:00",
+        recurringTime: effectiveTime,
         recurringLimit: recurringLimit ?? 8,
         recurringSport: recurringSport ?? "all",
-        ...(nextRunAt ? { nextRunAt } : {}),
+        nextRunAt: recurringEnabled ? nextRunAt : null,
       });
 
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
         eventType: "settings_updated",
-        description: `Lead research settings updated. Location: ${defaultLocation || "—"}, Radius: ${radiusMiles || 25}mi, Recurring: ${recurringEnabled ? recurringFrequency : "off"}`,
+        description: `Lead research settings updated. Location: ${defaultLocation || "—"}, Radius: ${radiusMiles || 25}mi, Recurring: ${recurringEnabled ? `${effectiveFreq} at ${effectiveTime}` : "off"}`,
         metadata: { defaultLocation, radiusMiles, recurringEnabled, recurringFrequency, recurringLimit, recurringSport },
       });
 
-      res.json(updated);
+      const nextRunLabel = recurringEnabled && nextRunAt ? buildNextRunLabel(nextRunAt) : null;
+      const preferredTimeLabel = formatTime12h(effectiveTime);
+      res.json({ ...updated, nextRunLabel, preferredTimeLabel });
     } catch (err: any) {
       console.error("[TeamTraining Settings]", err);
       res.status(500).json({ message: err.message });

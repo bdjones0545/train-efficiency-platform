@@ -1,0 +1,66 @@
+Audit and fix the Team Training Lead Research Settings modal.
+
+Problem:
+The user can set a preferred recurring research time, such as 8:00 AM, but the UI displays “Next run: 5/6/2026, 5:30:28 PM.” This makes it look like the saved time is ignored. Also, after saving settings, there is no clear confirmation that recurring research is enabled and scheduled.
+
+Goals:
+1. Make the schedule status clear.
+2. Make the next run time match the selected preferred time whenever possible.
+3. Add a clear save confirmation.
+4. Avoid showing confusing backend timestamps.
+
+Required changes:
+
+Frontend:
+- In the Lead Research Settings modal, replace the current “Next run” display with a clearer status block.
+- Show:
+  - “Recurring research: On”
+  - “Scheduled time: 8:00 AM”
+  - “Frequency: Daily”
+  - “Next scheduled run: Tomorrow at 8:00 AM” or “Today at 8:00 AM” if still upcoming.
+- If recurring research is off, show:
+  - “Recurring research is off”
+  - “Turn this on to automatically find new leads.”
+- After clicking Save Settings, show a toast or inline success message:
+  - “Lead research scheduled.”
+  - Subtext: “TrainEfficiency will look for 8 new leads daily at 8:00 AM.”
+- Disable the Save Settings button while saving and show “Saving…”
+- After a successful save, close the modal only after the success state is visible, or keep the modal open and show a saved badge.
+
+Backend:
+- Audit the recurring lead settings logic.
+- Ensure preferredTime is saved consistently.
+- Ensure nextRunAt is recalculated from:
+  - frequency
+  - preferredTime
+  - user/org timezone
+- If the selected time today has already passed, nextRunAt should be tomorrow at the preferred time.
+- If the selected time today is still upcoming, nextRunAt should be today at the preferred time.
+- Do not use “now + delay” or the current server time as the displayed next run.
+- Store and return nextRunAt in a format the frontend can display clearly.
+- Include timezone in the response if available.
+
+Recurring job:
+- Confirm the hourly recurring job respects nextRunAt.
+- After a recurring run completes, update nextRunAt to the next valid scheduled time based on the saved preferredTime and frequency.
+
+API response:
+Make GET /api/team-training-leads/settings return:
+{
+  recurringEnabled,
+  frequency,
+  sport,
+  limit,
+  preferredTime,
+  timezone,
+  nextRunAt,
+  nextRunLabel
+}
+
+Acceptance criteria:
+- If I select Daily at 8:00 AM and save, the UI does not show a random current timestamp.
+- The modal clearly says the lead research is scheduled.
+- The displayed next run matches the selected preferred time.
+- The save button gives immediate feedback.
+- Refreshing the page still shows the correct saved schedule.
+- The recurring job still runs automatically when nextRunAt is due.

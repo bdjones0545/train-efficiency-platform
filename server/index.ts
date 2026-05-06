@@ -209,13 +209,17 @@ app.use((req, res, next) => {
             created++;
           }
 
-          // Compute next run time
+          // Compute next run time — preserve the saved preferred hour:minute
           const now = new Date();
-          const nextRunAt = new Date(now);
           const freq = settings.recurringFrequency || "weekly";
-          if (freq === "daily") nextRunAt.setDate(now.getDate() + 1);
-          else if (freq === "monthly") nextRunAt.setMonth(now.getMonth() + 1);
-          else nextRunAt.setDate(now.getDate() + 7);
+          const [hStr, mStr] = (settings.recurringTime || "08:00").split(":");
+          const prefH = parseInt(hStr, 10) || 8;
+          const prefM = parseInt(mStr, 10) || 0;
+          const nextRunAt = new Date(now);
+          if (freq === "daily") nextRunAt.setDate(nextRunAt.getDate() + 1);
+          else if (freq === "monthly") nextRunAt.setMonth(nextRunAt.getMonth() + 1);
+          else nextRunAt.setDate(nextRunAt.getDate() + 7);
+          nextRunAt.setHours(prefH, prefM, 0, 0);
 
           await st.updateTeamLeadLastRun(orgId, now, nextRunAt);
 

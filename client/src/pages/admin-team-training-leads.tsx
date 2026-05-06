@@ -552,10 +552,12 @@ export default function AdminTeamTrainingLeadsPage() {
     queryKey: ["/api/admin/team-training/drafts"],
   });
 
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
   const { data: savedSettings } = useQuery<{
     defaultLocation: string; radiusMiles: number; recurringEnabled: boolean;
     recurringFrequency: string; recurringLimit: number; recurringSport: string; recurringTime: string;
-    lastRunAt: string | null; nextRunAt: string | null;
+    lastRunAt: string | null; nextRunAt: string | null; nextRunLabel: string | null; preferredTimeLabel: string;
   }>({
     queryKey: ["/api/team-training-leads/settings"],
   });
@@ -619,10 +621,22 @@ export default function AdminTeamTrainingLeadsPage() {
       if (!res.ok) throw new Error(json.message || "Failed to save settings");
       return json;
     },
-    onSuccess: () => {
-      toast({ title: "Settings saved", description: "Lead research settings updated." });
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/team-training-leads/settings"] });
-      setSettingsDialogOpen(false);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 4000);
+      if (result.recurringEnabled) {
+        const freq = result.recurringFrequency || settingsForm.recurringFrequency;
+        const timeLabel = result.preferredTimeLabel || settingsForm.recurringTime;
+        const limit = result.recurringLimit ?? settingsForm.recurringLimit;
+        const sport = (result.recurringSport || settingsForm.recurringSport) === "all" ? "leads" : `${result.recurringSport || settingsForm.recurringSport} leads`;
+        toast({
+          title: "Lead research scheduled.",
+          description: `TrainEfficiency will look for ${limit} new ${sport} ${freq} at ${timeLabel}.`,
+        });
+      } else {
+        toast({ title: "Settings saved.", description: "Recurring research is off." });
+      }
     },
     onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
   });
@@ -1101,26 +1115,58 @@ export default function AdminTeamTrainingLeadsPage() {
                     data-testid="input-settings-time"
                   />
                 </div>
-                {savedSettings?.lastRunAt && (
-                  <p className="text-xs text-muted-foreground">Last run: {new Date(savedSettings.lastRunAt).toLocaleString()}</p>
-                )}
-                {savedSettings?.nextRunAt && (
-                  <p className="text-xs text-muted-foreground">Next run: {new Date(savedSettings.nextRunAt).toLocaleString()}</p>
-                )}
               </div>
             )}
+
+            {/* Schedule status block */}
+            <div className={`rounded-lg border p-3 text-sm space-y-1 ${settingsForm.recurringEnabled ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30" : "bg-muted/40"}`}>
+              {settingsForm.recurringEnabled ? (
+                <>
+                  <p className="font-medium text-green-700 dark:text-green-400">Recurring research: On</p>
+                  <p className="text-muted-foreground">
+                    Scheduled time: {(() => {
+                      const [hStr, mStr] = (settingsForm.recurringTime || "08:00").split(":");
+                      const h = parseInt(hStr, 10) || 8;
+                      const m = parseInt(mStr, 10) || 0;
+                      const suffix = h >= 12 ? "PM" : "AM";
+                      const h12 = h % 12 || 12;
+                      return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+                    })()}
+                  </p>
+                  <p className="text-muted-foreground capitalize">Frequency: {settingsForm.recurringFrequency}</p>
+                  {savedSettings?.nextRunLabel && savedSettings.recurringEnabled && (
+                    <p className="text-muted-foreground">Next scheduled run: {savedSettings.nextRunLabel}</p>
+                  )}
+                  {savedSettings?.lastRunAt && (
+                    <p className="text-xs text-muted-foreground">Last run: {new Date(savedSettings.lastRunAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-muted-foreground">Recurring research is off</p>
+                  <p className="text-xs text-muted-foreground">Turn this on to automatically find new leads.</p>
+                </>
+              )}
+            </div>
+
             {settingsForm.recurringEnabled && !settingsForm.defaultLocation.trim() && (
               <p className="text-xs text-destructive">A default location is required to enable recurring research.</p>
             )}
+
+            {settingsSaved && (
+              <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30 px-3 py-2 text-sm text-green-700 dark:text-green-400 font-medium" data-testid="status-settings-saved">
+                Settings saved successfully.
+              </div>
+            )}
+
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setSettingsDialogOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => { setSettingsDialogOpen(false); setSettingsSaved(false); }}>Close</Button>
               <Button
                 onClick={() => settingsMutation.mutate(settingsForm)}
                 disabled={settingsMutation.isPending || (settingsForm.recurringEnabled && !settingsForm.defaultLocation.trim())}
                 data-testid="button-save-settings"
               >
-                {settingsMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Save Settings
+                {settingsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : "Save Settings"}
               </Button>
             </div>
           </div>
