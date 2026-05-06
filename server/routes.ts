@@ -7173,7 +7173,8 @@ export async function registerRoutes(
         prospect.city || "unknown",
         prospect.state || "unknown",
         prospect.sport || "unknown",
-        prospect.organizationType || "unknown"
+        prospect.organizationType || "unknown",
+        prospect.websiteUrl || null
       );
 
       // Compute new score incorporating the enriched contact quality
@@ -7202,6 +7203,12 @@ export async function registerRoutes(
         contactConfidence: enriched.contactConfidence,
         contactSourceUrl: enriched.contactSourceUrl,
         contactQuality: enriched.contactQuality,
+        contactSourceType: enriched.contactSourceType,
+        verificationStatus: enriched.verificationStatus,
+        enrichmentExplanation: enriched.enrichmentExplanation,
+        alternativeContacts: enriched.alternativeContacts.length > 0
+          ? JSON.stringify(enriched.alternativeContacts)
+          : null,
         confidenceScore: newScore,
       });
 

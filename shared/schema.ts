@@ -615,6 +615,11 @@ export const teamTrainingProspects = pgTable("team_training_prospects", {
   contactConfidence: integer("contact_confidence").default(0),
   contactSourceUrl: text("contact_source_url"),
   contactQuality: varchar("contact_quality").default("missing"),
+  // Enrichment pipeline fields (Phase 1-8 upgrade)
+  contactSourceType: varchar("contact_source_type").default("unverified"),
+  verificationStatus: varchar("verification_status").default("unverified"),
+  enrichmentExplanation: text("enrichment_explanation"),
+  alternativeContacts: text("alternative_contacts"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

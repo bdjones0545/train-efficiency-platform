@@ -64,28 +64,54 @@ function getClientStage(prospect: TeamTrainingProspect): { label: string; classN
 }
 
 // ─── Client-side Contact Quality Computation ───────────────────────────────
-type ContactQualityLabel = "Decision Maker" | "Role Email" | "General Email" | "Needs Contact";
+type ContactQualityLabel = "Decision Maker" | "Role Email" | "General Email" | "Inferred Email" | "Needs Contact";
 
-function getClientQuality(prospect: TeamTrainingProspect): { label: ContactQualityLabel; className: string; score: number; hasEmail: boolean } {
+function getClientQuality(prospect: TeamTrainingProspect): { label: ContactQualityLabel; className: string; score: number; hasEmail: boolean; isInferred: boolean } {
   const quality = prospect.contactQuality as string | null;
+  const verStatus = (prospect as any).verificationStatus as string | null;
   const dmEmail = (prospect.decisionMakerEmail || "").trim();
   const contactEmail = (prospect.contactEmail || "").trim();
   const hasEmail = !!(dmEmail || contactEmail);
+  const isInferred = verStatus === "inferred" || (prospect as any).contactSourceType === "inferred";
 
   if (quality === "decision_maker") {
-    return { label: "Decision Maker", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: prospect.contactConfidence || 85, hasEmail: true };
+    return { label: "Decision Maker", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", score: prospect.contactConfidence || 85, hasEmail: true, isInferred: false };
   }
   if (quality === "role_based") {
-    return { label: "Role Email", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: prospect.contactConfidence || 60, hasEmail: true };
+    if (isInferred) {
+      return { label: "Inferred Email", className: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300", score: prospect.contactConfidence || 45, hasEmail: true, isInferred: true };
+    }
+    return { label: "Role Email", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300", score: prospect.contactConfidence || 60, hasEmail: true, isInferred: false };
   }
   if (quality === "general") {
-    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: prospect.contactConfidence || 35, hasEmail: true };
+    if (isInferred) {
+      return { label: "Inferred Email", className: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300", score: prospect.contactConfidence || 30, hasEmail: true, isInferred: true };
+    }
+    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: prospect.contactConfidence || 35, hasEmail: true, isInferred: false };
   }
   // Legacy fallback: if contactEmail exists but contactQuality wasn't set
   if (hasEmail) {
-    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: 30, hasEmail: true };
+    return { label: "General Email", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300", score: 30, hasEmail: true, isInferred: false };
   }
-  return { label: "Needs Contact", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0, hasEmail: false };
+  return { label: "Needs Contact", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", score: 0, hasEmail: false, isInferred: false };
+}
+
+// ─── Contact Source Badge ────────────────────────────────────────────────────
+function ContactSourceBadge({ sourceType, verificationStatus }: { sourceType?: string | null; verificationStatus?: string | null }) {
+  if (!sourceType || sourceType === "unverified") return null;
+  const configs: Record<string, { label: string; className: string }> = {
+    verified: { label: "Verified", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" },
+    scraped: { label: "Website", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800" },
+    social: { label: "Social", className: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800" },
+    inferred: { label: "Inferred", className: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800" },
+    manual: { label: "Manual", className: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700" },
+  };
+  const cfg = configs[sourceType] || configs.inferred;
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
 }
 
 function ConfidenceBar({ score }: { score: number }) {
@@ -224,49 +250,104 @@ function ProspectCard({
       {expanded && (
         <div className="space-y-2 pt-2 border-t text-xs">
           {/* Decision-maker contact block */}
-          <div className="rounded-md bg-muted/40 border p-2 space-y-1">
-            <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">Contact Details</p>
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="rounded-md bg-muted/40 border p-2 space-y-2">
+            <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">Contact Discovery</p>
+
+            {/* Quality + source badges */}
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${quality.className}`}>
                 {quality.label}
               </span>
+              <ContactSourceBadge
+                sourceType={(prospect as any).contactSourceType}
+                verificationStatus={(prospect as any).verificationStatus}
+              />
               {quality.score > 0 && (
-                <span className="text-muted-foreground">Confidence: {quality.score}%</span>
+                <span className="text-muted-foreground text-[10px]">Confidence: {quality.score}%</span>
               )}
             </div>
-            {(prospect.decisionMakerName || prospect.decisionMakerTitle) ? (
+
+            {/* Inferred warning */}
+            {quality.isInferred && prospect.decisionMakerEmail && (
+              <div className="flex items-start gap-1.5 rounded bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 px-2 py-1.5">
+                <AlertCircle className="h-3 w-3 text-orange-500 mt-0.5 shrink-0" />
+                <p className="text-orange-700 dark:text-orange-400 text-[10px] leading-tight">
+                  This email is <strong>inferred</strong> — not confirmed. Verify before sending. Outreach is still allowed.
+                </p>
+              </div>
+            )}
+
+            {/* Primary contact details */}
+            {(prospect.decisionMakerName || prospect.decisionMakerEmail) ? (
               <div className="space-y-0.5">
                 {prospect.decisionMakerName && (
-                  <p><span className="text-muted-foreground">Decision Maker:</span> <span className="font-medium">{prospect.decisionMakerName}</span></p>
+                  <p><span className="text-muted-foreground">Name:</span> <span className="font-medium">{prospect.decisionMakerName}</span></p>
                 )}
                 {prospect.decisionMakerTitle && (
                   <p><span className="text-muted-foreground">Title:</span> {prospect.decisionMakerTitle}</p>
                 )}
                 {prospect.decisionMakerEmail && (
-                  <p><span className="text-muted-foreground">DM Email:</span> <span className="font-mono">{prospect.decisionMakerEmail}</span></p>
+                  <p className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-muted-foreground">Email:</span>
+                    <span className="font-mono text-[11px]">{prospect.decisionMakerEmail}</span>
+                  </p>
                 )}
               </div>
             ) : !quality.hasEmail ? (
-              <p className="italic text-muted-foreground">No verified contact found yet.</p>
+              <p className="italic text-muted-foreground">No contact found yet — run pipeline below.</p>
             ) : null}
+
+            {/* AI Explanation */}
+            {(prospect as any).enrichmentExplanation && (
+              <div className="rounded bg-muted/60 px-2 py-1.5 border-l-2 border-primary/30">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Why this contact</p>
+                <p className="text-muted-foreground leading-relaxed">{(prospect as any).enrichmentExplanation}</p>
+              </div>
+            )}
+
+            {/* Alternative contacts */}
+            {(() => {
+              let alts: Array<{ email: string; label: string; sourceType: string; name?: string | null }> = [];
+              try {
+                const raw = (prospect as any).alternativeContacts;
+                if (raw) alts = JSON.parse(raw);
+              } catch {}
+              if (alts.length === 0) return null;
+              return (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Alternative Contacts</p>
+                  <div className="space-y-0.5">
+                    {alts.map((alt, i) => (
+                      <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-[11px] text-foreground/80">{alt.email}</span>
+                        <ContactSourceBadge sourceType={alt.sourceType} verificationStatus={null} />
+                        <span className="text-muted-foreground text-[10px]">{alt.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Source URL */}
             {prospect.contactSourceUrl && (
-              <a href={prospect.contactSourceUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 inline-flex items-center gap-0.5">
+              <a href={prospect.contactSourceUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 inline-flex items-center gap-0.5 text-[10px]">
                 <ExternalLink className="h-3 w-3" /> Verify contact source
               </a>
             )}
-            {!quality.hasEmail && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs mt-1 border-amber-400 text-amber-700 dark:text-amber-400"
-                onClick={() => onEnrichContact(prospect.id)}
-                disabled={isEnriching}
-                data-testid={`button-enrich-expanded-${prospect.id}`}
-              >
-                {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
-                Find Decision Maker
-              </Button>
-            )}
+
+            {/* Run enrichment button */}
+            <Button
+              size="sm"
+              variant="outline"
+              className={`h-7 text-xs mt-0.5 ${!quality.hasEmail ? "border-amber-400 text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}
+              onClick={() => onEnrichContact(prospect.id)}
+              disabled={isEnriching}
+              data-testid={`button-enrich-expanded-${prospect.id}`}
+            >
+              {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
+              {quality.hasEmail ? "Re-run Discovery" : "Find Decision Maker"}
+            </Button>
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">

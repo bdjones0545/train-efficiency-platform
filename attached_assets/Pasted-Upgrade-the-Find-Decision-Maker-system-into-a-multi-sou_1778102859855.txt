@@ -1,0 +1,110 @@
+Upgrade the Find Decision Maker system into a multi-source contact discovery pipeline.
+
+Current problem:
+The enrichment agent frequently returns “No contact found” because it relies too heavily on a shallow website lookup or single AI pass.
+
+Goal:
+Aggressively discover at least one usable outreach email for local organizations.
+
+Required architecture:
+
+PHASE 1 — Structured Web Discovery
+Search for:
+- official website
+- contact page
+- staff/coaches page
+- athletics page
+- team directory
+- leadership page
+
+Extract:
+- all visible emails
+- names/titles
+- mailto links
+- embedded contact cards
+
+PHASE 2 — Social Discovery
+Search:
+- Instagram bio
+- Facebook page
+- LinkedIn organization page
+- Linktree/contact tools
+
+Extract:
+- bio emails
+- booking emails
+- coaching/admin contacts
+- linked websites
+
+PHASE 3 — AI Decision-Maker Resolution
+Use AI to determine:
+- best outreach contact
+- decision-maker likelihood
+- role/title mapping
+- contact confidence
+
+Priority:
+1. named decision maker
+2. role-based team email
+3. general organization email
+
+PHASE 4 — Pattern Generation
+If the org domain exists but no email is visible:
+- intelligently infer possible addresses:
+  - coach@
+  - info@
+  - athletics@
+  - admin@
+  - first.last@
+- ONLY mark as inferred, not verified
+
+PHASE 5 — Validation Layer
+Each contact gets:
+- verified
+- inferred
+- scraped
+- social
+- manual
+
+Add:
+- contactSourceType
+- verificationStatus
+- confidenceScore
+
+PHASE 6 — Enrichment Strategy
+The agent should not stop after one failed lookup.
+Run:
+1. website search
+2. social search
+3. AI extraction
+4. fallback inference
+
+Only return “No contact found” after all phases fail.
+
+PHASE 7 — UI
+Show:
+- Verified Contact
+- Social Contact
+- Inferred Contact
+- General Contact
+
+Allow outreach to:
+- verified
+- social
+- general
+Warn but still allow inferred.
+
+PHASE 8 — Logging + Explainability
+Expanded panel should show:
+- where the email came from
+- why it was selected
+- confidence
+- verified vs inferred
+
+Acceptance criteria:
+- Most local organizations end up with at least one usable outreach contact.
+- The agent searches beyond the main website.
+- The pipeline attempts multiple discovery strategies before failing.
+- Inferred emails are clearly labeled.
+- Contact discovery success rate improves substantially.
+- No TypeScript errors.
