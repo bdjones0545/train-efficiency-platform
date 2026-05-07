@@ -88,7 +88,7 @@ const SECTIONS: {
   { key: "training_showcase", label: "Training Photos", shortLabel: "Training", limit: 20, hint: "Used in training sections, coach proof, athlete results, and service previews.", priority: true, completionMin: 3 },
   { key: "facility", label: "Facility Photos", shortLabel: "Facility", limit: 20, hint: "Used to show your gym, equipment, space, and training environment.", priority: true, completionMin: 2 },
   { key: "coaches", label: "Coaches", shortLabel: "Coaches", limit: 10, hint: "Showcase your coaching team. Up to 10 items.", priority: false, completionMin: 1 },
-  { key: "testimonials", label: "Testimonials", shortLabel: "Testimonials", limit: 10, hint: "Client testimonials and success stories. Up to 10 items.", priority: false, completionMin: 1 },
+  { key: "testimonials", label: "Testimonials / Athlete Proof", shortLabel: "Testimonials", limit: 20, hint: "Upload testimonial graphics, athlete proof, client quotes, parent feedback, results screenshots, and credibility images. These are displayed as social proof on your landing page.", priority: true, completionMin: 2 },
   { key: "results", label: "Results", shortLabel: "Results", limit: 10, hint: "Athlete highlights and results. Up to 10 items.", priority: false, completionMin: 1 },
 ];
 
@@ -115,8 +115,8 @@ const EMPTY_STATE_CONTENT: Record<MediaSection, { heading: string; sub: string; 
   },
   testimonials: {
     heading: "Let your athletes speak for you",
-    sub: "Social proof is your most powerful sales tool.",
-    suggestions: ["Short video testimonials", "Athlete talking about results", "Before & after moments"],
+    sub: "Testimonial graphics and athlete proof are your most powerful conversion tool.",
+    suggestions: ["Quote graphics & client cards", "Draft-profile / achievement graphics", "Parent feedback screenshots", "Results screenshots & transformations", "Athlete credibility images"],
   },
   results: {
     heading: "Show the transformation",
@@ -129,6 +129,7 @@ function MediaBuildProgress({ grouped }: { grouped: Record<string, OrgMedia[]> }
   const heroActive = (grouped?.hero || []).filter(m => m.isActive).length;
   const trainingActive = (grouped?.training_showcase || []).filter(m => m.isActive).length;
   const facilityActive = (grouped?.facility || []).filter(m => m.isActive).length;
+  const testimonialsActive = (grouped?.testimonials || []).filter(m => m.isActive).length;
 
   const steps = [
     {
@@ -139,6 +140,15 @@ function MediaBuildProgress({ grouped }: { grouped: Record<string, OrgMedia[]> }
       done: heroActive >= 1,
       count: heroActive,
       target: 1,
+    },
+    {
+      key: "testimonials",
+      label: "Testimonials / Athlete Proof",
+      desc: "Upload quote graphics, screenshots, or athlete proof cards",
+      required: false,
+      done: testimonialsActive >= 2,
+      count: testimonialsActive,
+      target: 2,
     },
     {
       key: "training",
@@ -612,6 +622,13 @@ export default function AdminMediaPage() {
                           <p className="text-sm font-medium">Upload hero background media</p>
                           <p className="text-xs text-muted-foreground">
                             This becomes the top background image or video on your landing page.
+                          </p>
+                        </>
+                      ) : sec.key === "testimonials" ? (
+                        <>
+                          <p className="text-sm font-medium">Upload testimonial or athlete proof</p>
+                          <p className="text-xs text-muted-foreground">
+                            Best for quote graphics, screenshots, athlete achievements, results, and client feedback. These are shown in proof cards, not used as cropped backgrounds.
                           </p>
                         </>
                       ) : (

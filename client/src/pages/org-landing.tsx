@@ -634,6 +634,56 @@ export default function OrgLandingPage() {
         </div>
       </section>
 
+      {testimonialsMedia.length > 0 && (
+        <section className="py-20 px-6 bg-card/40" data-testid="section-testimonials">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12 space-y-3">
+              <h2 className="text-3xl font-bold" data-testid="text-testimonials-heading">Proof From Athletes We've Helped</h2>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Real feedback, real athletes, real performance results.
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {testimonialsMedia.map(item => (
+                <div
+                  key={item.id}
+                  className="rounded-xl overflow-hidden bg-card border border-border shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => setSelectedMedia(item)}
+                  data-testid={`card-testimonial-${item.id}`}
+                >
+                  {item.mediaType === "image" ? (
+                    <div className="bg-black flex items-center justify-center" style={{ minHeight: 200 }}>
+                      <img
+                        src={item.url}
+                        alt={item.altText || item.caption || "Testimonial"}
+                        className="w-full object-contain"
+                        style={{ maxHeight: 320 }}
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-black relative" style={{ minHeight: 200 }}>
+                      <video src={item.url} className="w-full object-contain" style={{ maxHeight: 320 }} muted playsInline preload="metadata" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <div className="rounded-full bg-white/20 p-3">
+                          <Play className="h-6 w-6 text-white" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {item.caption && (
+                    <div className="p-4 flex gap-2 items-start">
+                      <Quote className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                      <p className="text-sm text-muted-foreground italic leading-relaxed">{item.caption}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section id="features" className="py-20 px-6 bg-card/50">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12 space-y-3">
@@ -776,48 +826,6 @@ export default function OrgLandingPage() {
               </p>
             </div>
             <MediaGrid items={coachesMedia} onOpen={setSelectedMedia} />
-          </div>
-        </section>
-      )}
-
-      {testimonialsMedia.length > 0 && (
-        <section className="py-20 px-6" data-testid="section-testimonials">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
-              <h2 className="text-3xl font-bold" data-testid="text-testimonials-heading">What Our Athletes Are Saying</h2>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                Real results from real athletes.
-              </p>
-            </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {testimonialsMedia.map(item => (
-                <Card
-                  key={item.id}
-                  className="p-6 space-y-4 cursor-pointer hover-elevate"
-                  onClick={() => setSelectedMedia(item)}
-                  data-testid={`card-testimonial-${item.id}`}
-                >
-                  <div className="aspect-video rounded-md overflow-hidden bg-muted">
-                    {item.mediaType === "image" ? (
-                      <img src={item.url} alt={item.altText || ""} className="w-full h-full object-cover" loading="lazy" />
-                    ) : (
-                      <div className="w-full h-full bg-black flex items-center justify-center relative">
-                        <video src={item.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                          <Play className="h-8 w-8 text-white" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {item.caption && (
-                    <div className="flex gap-2">
-                      <Quote className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                      <p className="text-sm text-muted-foreground italic leading-relaxed">{item.caption}</p>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
           </div>
         </section>
       )}
