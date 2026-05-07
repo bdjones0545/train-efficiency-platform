@@ -1,0 +1,71 @@
+Audit and improve the TrainEfficiency landing page Media Library UX.
+
+Problem:
+The current Media Library has tabs like:
+- Hero
+- Training
+- Facility
+
+But users do not clearly understand what each upload affects. The Hero upload becomes the background media for the top landing-page hero/main slide, and there are cropping issues on mobile. The UI should make this explicit.
+
+Implement the following:
+
+1. Rename / clarify the media tabs:
+- Hero → Main Background / Hero Slide
+- Training → Training Photos
+- Facility → Facility Photos
+
+2. Update helper copy under each tab:
+For Main Background / Hero Slide:
+“Displayed as the large background media at the top of your public landing page. Use a wide action photo or short video. This area will be cropped differently on mobile.”
+
+For Training Photos:
+“Used in training sections, coach proof, athlete results, and service previews.”
+
+For Facility Photos:
+“Used to show your gym, equipment, space, and training environment.”
+
+3. Add an aspect-ratio guidance card for Hero uploads:
+Title: “Best for Hero Background”
+Copy:
+“Use wide landscape media. Recommended: 16:9 or 4:5 safe-center composition. Keep important text, faces, and logos near the center because the background crops on mobile.”
+
+4. Add a visual crop preview after upload:
+Show two previews:
+- Desktop hero crop
+- Mobile hero crop
+
+The mobile preview should show how the background will appear behind the headline and CTA.
+
+5. Improve the upload label for the Hero tab:
+Change:
+“Drop files here or click to upload”
+To:
+“Upload hero background media”
+
+Subtext:
+“This becomes the top background image or video on your landing page.”
+
+6. Add a small warning if the uploaded hero image contains text/logos near edges:
+“Text or logos near the edges may be cropped on phones.”
+
+7. Landing page rendering:
+Make sure hero background media uses:
+- object-fit: cover
+- object-position: center center by default
+- dark overlay for text readability
+- min-height that works on mobile
+- no awkward top/bottom clipping of key content when possible
+
+8. Add optional focal point controls for hero media:
+Allow user to choose:
+- Center
+- Top
+- Bottom
+- Left
+- Right
+
+Store this value with the media item and apply it to object-position on the public landing page.
+
+Goal:
+The user should immediately understand that Hero/Main Background controls the top landing-page slide background, while Training and Facility uploads feed supporting sections. The public landing page should look intentional on mobile and desktop, with fewer confusing crops.
