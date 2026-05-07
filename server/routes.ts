@@ -6347,13 +6347,14 @@ export async function registerRoutes(
       if (!item) return res.status(404).json({ message: "Not found" });
       if (item.organizationId !== profile.organizationId) return res.status(403).json({ message: "Forbidden" });
 
-      const { section, caption, altText, orderIndex, isActive } = req.body;
+      const { section, caption, altText, orderIndex, isActive, focalPoint } = req.body;
       const updateData: any = {};
       if (section !== undefined) updateData.section = section;
       if (caption !== undefined) updateData.caption = caption;
       if (altText !== undefined) updateData.altText = altText;
       if (orderIndex !== undefined) updateData.orderIndex = orderIndex;
       if (isActive !== undefined) updateData.isActive = isActive;
+      if (focalPoint !== undefined) updateData.focalPoint = focalPoint;
 
       const updated = await storage.updateOrgMedia(req.params.id, updateData);
       res.json(updated);

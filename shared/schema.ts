@@ -501,6 +501,7 @@ export const organizationMedia = pgTable("organization_media", {
   altText: text("alt_text"),
   orderIndex: integer("order_index").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
+  focalPoint: varchar("focal_point").default("center"),
   uploadedBy: varchar("uploaded_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

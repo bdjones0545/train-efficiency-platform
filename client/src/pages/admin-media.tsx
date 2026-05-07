@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 
 type MediaSection = "hero" | "training_showcase" | "facility" | "coaches" | "testimonials" | "results";
+type FocalPoint = "center" | "top" | "bottom" | "left" | "right";
 
 interface OrgMedia {
   id: string;
@@ -62,6 +63,7 @@ interface OrgMedia {
   altText: string | null;
   orderIndex: number;
   isActive: boolean;
+  focalPoint: FocalPoint | null;
   uploadedBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -76,17 +78,18 @@ interface OrgInfo {
 const SECTIONS: {
   key: MediaSection;
   label: string;
+  shortLabel: string;
   limit: number;
   hint: string;
   priority?: boolean;
   completionMin: number;
 }[] = [
-  { key: "hero", label: "Hero", limit: 5, hint: "Displayed at the top of your landing page. Up to 5 items.", priority: true, completionMin: 1 },
-  { key: "training_showcase", label: "Training", limit: 20, hint: "Show how you train. 3–5 clips recommended for best results.", priority: true, completionMin: 3 },
-  { key: "facility", label: "Facility", limit: 20, hint: "Show your gym, equipment, and environment. Up to 20 items.", priority: true, completionMin: 2 },
-  { key: "coaches", label: "Coaches", limit: 10, hint: "Showcase your coaching team. Up to 10 items.", priority: false, completionMin: 1 },
-  { key: "testimonials", label: "Testimonials", limit: 10, hint: "Client testimonials and success stories. Up to 10 items.", priority: false, completionMin: 1 },
-  { key: "results", label: "Results", limit: 10, hint: "Athlete highlights and results. Up to 10 items.", priority: false, completionMin: 1 },
+  { key: "hero", label: "Main Background / Hero Slide", shortLabel: "Hero", limit: 5, hint: "Displayed as the large background media at the top of your public landing page. Use a wide action photo or short video. This area will be cropped differently on mobile.", priority: true, completionMin: 1 },
+  { key: "training_showcase", label: "Training Photos", shortLabel: "Training", limit: 20, hint: "Used in training sections, coach proof, athlete results, and service previews.", priority: true, completionMin: 3 },
+  { key: "facility", label: "Facility Photos", shortLabel: "Facility", limit: 20, hint: "Used to show your gym, equipment, space, and training environment.", priority: true, completionMin: 2 },
+  { key: "coaches", label: "Coaches", shortLabel: "Coaches", limit: 10, hint: "Showcase your coaching team. Up to 10 items.", priority: false, completionMin: 1 },
+  { key: "testimonials", label: "Testimonials", shortLabel: "Testimonials", limit: 10, hint: "Client testimonials and success stories. Up to 10 items.", priority: false, completionMin: 1 },
+  { key: "results", label: "Results", shortLabel: "Results", limit: 10, hint: "Athlete highlights and results. Up to 10 items.", priority: false, completionMin: 1 },
 ];
 
 const EMPTY_STATE_CONTENT: Record<MediaSection, { heading: string; sub: string; suggestions: string[] }> = {
@@ -191,6 +194,62 @@ function MediaBuildProgress({ grouped }: { grouped: Record<string, OrgMedia[]> }
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+const FOCAL_POINTS: { value: FocalPoint; label: string }[] = [
+  { value: "center", label: "Center" },
+  { value: "top", label: "Top" },
+  { value: "bottom", label: "Bottom" },
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" },
+];
+
+function focalToObjectPosition(fp: FocalPoint | null | undefined): string {
+  switch (fp) {
+    case "top": return "center top";
+    case "bottom": return "center bottom";
+    case "left": return "left center";
+    case "right": return "right center";
+    default: return "center center";
+  }
+}
+
+function HeroCropPreview({ item }: { item: OrgMedia }) {
+  if (item.mediaType === "video") return null;
+  const objPos = focalToObjectPosition(item.focalPoint);
+  return (
+    <div className="space-y-2 pt-1" data-testid={`crop-preview-${item.id}`}>
+      <p className="text-xs font-medium text-muted-foreground">Crop Preview</p>
+      <div className="flex gap-2">
+        <div className="flex-1 space-y-1">
+          <p className="text-[10px] text-muted-foreground text-center">Desktop</p>
+          <div className="w-full rounded overflow-hidden border bg-black" style={{ aspectRatio: "16/5" }}>
+            <img
+              src={item.url}
+              alt="Desktop crop"
+              className="w-full h-full object-cover"
+              style={{ objectPosition: objPos }}
+            />
+          </div>
+        </div>
+        <div className="w-16 space-y-1">
+          <p className="text-[10px] text-muted-foreground text-center">Mobile</p>
+          <div className="w-full rounded overflow-hidden border bg-black" style={{ aspectRatio: "9/16", maxHeight: 72 }}>
+            <img
+              src={item.url}
+              alt="Mobile crop"
+              className="w-full h-full object-cover"
+              style={{ objectPosition: objPos }}
+            />
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 px-2 py-1">
+        <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+        <p className="text-[10px] text-amber-600 dark:text-amber-500">Text or logos near the edges may be cropped on phones.</p>
       </div>
     </div>
   );
@@ -450,7 +509,7 @@ export default function AdminMediaPage() {
               const status = getTabStatus(s);
               return (
                 <TabsTrigger key={s.key} value={s.key} data-testid={`tab-section-${s.key}`} className="text-xs relative">
-                  {s.label}
+                  {s.shortLabel}
                   <span className="ml-1.5 text-[10px] font-normal opacity-70">
                     {status.total}/{s.limit}
                   </span>
@@ -472,13 +531,16 @@ export default function AdminMediaPage() {
           return (
             <TabsContent key={sec.key} value={sec.key} className="space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm text-muted-foreground">{sec.hint}</p>
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold">{sec.label}</p>
+                  <p className="text-xs text-muted-foreground max-w-xl">{sec.hint}</p>
+                </div>
                 <Badge variant="outline">
                   {(grouped[sec.key]?.length ?? 0)} / {sec.limit}
                 </Badge>
               </div>
 
-              {/* Phase 3: Hero priority badge */}
+              {/* Hero priority badge */}
               {sec.key === "hero" && (
                 <div className="rounded-lg border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-3 flex items-start gap-2">
                   <Star className="h-4 w-4 mt-0.5 text-amber-500 shrink-0 fill-amber-500" />
@@ -491,6 +553,16 @@ export default function AdminMediaPage() {
                 </div>
               )}
 
+              {/* Hero aspect-ratio guidance card */}
+              {sec.key === "hero" && (
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-3 space-y-1" data-testid="hero-guidance-card">
+                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">Best for Hero Background</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-500">
+                    Use wide landscape media. Recommended: 16:9 or 4:5 safe-center composition. Keep important text, faces, and logos near the center because the background crops on mobile.
+                  </p>
+                </div>
+              )}
+
               {hasNoHero && sec.key !== "hero" && (
                 <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/10 p-3 flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-500 shrink-0" />
@@ -500,7 +572,7 @@ export default function AdminMediaPage() {
                 </div>
               )}
 
-              {/* Phase 5: Enhanced upload dropzone */}
+              {/* Enhanced upload dropzone */}
               <div
                 className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer select-none
                   ${dragOver && isActiveSec
@@ -535,10 +607,21 @@ export default function AdminMediaPage() {
                       <Camera className="h-6 w-6" />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-sm font-medium">Drop files here or click to upload</p>
-                      <p className="text-xs text-muted-foreground">
-                        Show your coaching, athletes, and facility in action
-                      </p>
+                      {sec.key === "hero" ? (
+                        <>
+                          <p className="text-sm font-medium">Upload hero background media</p>
+                          <p className="text-xs text-muted-foreground">
+                            This becomes the top background image or video on your landing page.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium">Drop files here or click to upload</p>
+                          <p className="text-xs text-muted-foreground">
+                            Show your coaching, athletes, and facility in action
+                          </p>
+                        </>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground/70">
                       Images (jpg, png, webp) up to 10MB · Videos (mp4, mov, webm) up to 100MB
@@ -610,6 +693,33 @@ export default function AdminMediaPage() {
                           {item.caption && (
                             <p className="text-xs text-muted-foreground truncate">{item.caption}</p>
                           )}
+
+                          {/* Focal point controls for hero items */}
+                          {sec.key === "hero" && (
+                            <div className="space-y-1.5" data-testid={`focal-point-controls-${item.id}`}>
+                              <p className="text-xs font-medium text-muted-foreground">Focal Point</p>
+                              <div className="flex flex-wrap gap-1">
+                                {FOCAL_POINTS.map(fp => (
+                                  <button
+                                    key={fp.value}
+                                    onClick={() => updateMutation.mutate({ id: item.id, data: { focalPoint: fp.value } })}
+                                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                                      (item.focalPoint || "center") === fp.value
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "bg-background text-muted-foreground border-border hover:border-primary/60"
+                                    }`}
+                                    data-testid={`focal-${fp.value}-${item.id}`}
+                                  >
+                                    {fp.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Crop preview for hero images */}
+                          {sec.key === "hero" && <HeroCropPreview item={item} />}
+
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5">
                               <Switch

@@ -24,6 +24,8 @@ import { setAuthToken } from "@/lib/authToken";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CoachWithUser } from "@/lib/types";
 
+type FocalPoint = "center" | "top" | "bottom" | "left" | "right";
+
 interface OrgMedia {
   id: string;
   mediaType: "image" | "video";
@@ -34,6 +36,17 @@ interface OrgMedia {
   altText: string | null;
   orderIndex: number;
   isActive: boolean;
+  focalPoint?: FocalPoint | null;
+}
+
+function focalToObjectPosition(fp?: FocalPoint | null): string {
+  switch (fp) {
+    case "top": return "center top";
+    case "bottom": return "center bottom";
+    case "left": return "left center";
+    case "right": return "right center";
+    default: return "center center";
+  }
 }
 
 function MediaCarousel({ items }: { items: OrgMedia[] }) {
@@ -53,6 +66,8 @@ function MediaCarousel({ items }: { items: OrgMedia[] }) {
   const next = () => setCurrent(i => (i + 1) % items.length);
   const item = items[current];
 
+  const objPos = focalToObjectPosition(item.focalPoint);
+
   return (
     <div className="relative w-full h-full" data-testid="hero-media-carousel">
       {item.mediaType === "video" ? (
@@ -61,6 +76,7 @@ function MediaCarousel({ items }: { items: OrgMedia[] }) {
           key={item.url}
           src={item.url}
           className="w-full h-full object-cover"
+          style={{ objectPosition: objPos }}
           autoPlay
           muted
           loop
@@ -72,6 +88,7 @@ function MediaCarousel({ items }: { items: OrgMedia[] }) {
           src={item.url}
           alt={item.altText || item.caption || "Hero media"}
           className="w-full h-full object-cover"
+          style={{ objectPosition: objPos }}
           data-testid="hero-image"
         />
       )}
@@ -483,7 +500,7 @@ export default function OrgLandingPage() {
         )}
       </nav>
 
-      <section className="relative pt-20 md:pt-32 pb-12 md:pb-20 px-6 overflow-hidden md:min-h-[70vh] flex items-start md:items-center" data-testid="section-hero">
+      <section className="relative pt-20 md:pt-32 pb-12 md:pb-20 px-6 overflow-hidden min-h-[60vh] md:min-h-[80vh] flex items-start md:items-center" data-testid="section-hero">
         {heroMedia.length > 0 ? (
           <>
             <div className="absolute inset-0 pointer-events-none overflow-hidden" data-testid="hero-media-bg">
