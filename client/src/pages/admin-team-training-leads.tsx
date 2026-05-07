@@ -19,7 +19,8 @@ import {
   Users, SendHorizonal, AlertCircle, FileText, Trash2, Filter,
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
   Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX,
-  Sparkles, RotateCcw, Clock, MapPin, FileSearch, Minimize2, X as XIcon
+  Sparkles, RotateCcw, Clock, MapPin, FileSearch, Minimize2, X as XIcon,
+  Upload, Download
 } from "lucide-react";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
 
@@ -1219,6 +1220,11 @@ export default function AdminTeamTrainingLeadsPage() {
   const [researchLimit, setResearchLimit] = useState("8");
   const [researchRadius, setResearchRadius] = useState("25");
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
+  const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
+  const [csvFileName, setCsvFileName] = useState("");
+  const [csvError, setCsvError] = useState("");
+  const csvFileRef = useRef<HTMLInputElement>(null);
   const [settingsForm, setSettingsForm] = useState({
     defaultLocation: "",
     radiusMiles: "25",
@@ -1652,6 +1658,102 @@ export default function AdminTeamTrainingLeadsPage() {
     },
   });
 
+  const csvImportMutation = useMutation({
+    mutationFn: async (rows: Record<string, string>[]) => {
+      const res = await apiRequest("POST", "/api/admin/team-training/prospects/csv-import", { rows });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Import failed");
+      return json as { imported: number; skipped: number; errors: string[] };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });
+      toast({
+        title: `${data.imported} lead${data.imported !== 1 ? "s" : ""} imported`,
+        description: data.skipped > 0 ? `${data.skipped} row${data.skipped !== 1 ? "s" : ""} skipped (missing name).` : undefined,
+      });
+      setCsvDialogOpen(false);
+      setCsvRows([]);
+      setCsvFileName("");
+      setCsvError("");
+    },
+    onError: (err: Error) => toast({ title: "Import failed", description: err.message, variant: "destructive" }),
+  });
+
+  function parseCSV(text: string): Record<string, string>[] {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "").trim());
+    return lines.slice(1).map((line) => {
+      const values = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g) || [];
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = (values[i] || "").replace(/^"|"$/g, "").trim();
+      });
+      return row;
+    });
+  }
+
+  const CSV_FIELD_MAP: Record<string, string> = {
+    "name": "prospectName",
+    "prospect name": "prospectName",
+    "organization": "prospectName",
+    "team name": "prospectName",
+    "school": "prospectName",
+    "org type": "organizationType",
+    "organization type": "organizationType",
+    "type": "organizationType",
+    "sport": "sport",
+    "city": "city",
+    "state": "state",
+    "website": "websiteUrl",
+    "website url": "websiteUrl",
+    "url": "websiteUrl",
+    "contact": "contactName",
+    "contact name": "contactName",
+    "coach": "contactName",
+    "role": "contactRole",
+    "contact role": "contactRole",
+    "title": "contactRole",
+    "email": "contactEmail",
+    "contact email": "contactEmail",
+    "phone": "contactPhone",
+    "contact phone": "contactPhone",
+    "notes": "notes",
+  };
+
+  function normalizeCSVRows(raw: Record<string, string>[]): Record<string, string>[] {
+    return raw.map((row) => {
+      const normalized: Record<string, string> = {};
+      for (const [key, val] of Object.entries(row)) {
+        const mapped = CSV_FIELD_MAP[key.toLowerCase()] || key;
+        normalized[mapped] = val;
+      }
+      return normalized;
+    });
+  }
+
+  function handleCSVFile(file: File) {
+    setCsvError("");
+    if (!file.name.endsWith(".csv")) {
+      setCsvError("Please upload a .csv file.");
+      return;
+    }
+    setCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const raw = parseCSV(text);
+      if (raw.length === 0) {
+        setCsvError("No data rows found. Make sure the CSV has a header row and at least one data row.");
+        return;
+      }
+      const normalized = normalizeCSVRows(raw);
+      setCsvRows(normalized);
+    };
+    reader.readAsText(file);
+  }
+
   const filteredProspects = (prospects || []).filter((p) => {
     if (filterSport && filterSport !== "all" && p.sport?.toLowerCase() !== filterSport.toLowerCase()) return false;
     if (filterStatus && filterStatus !== "all" && p.outreachStatus !== filterStatus) return false;
@@ -1734,9 +1836,16 @@ export default function AdminTeamTrainingLeadsPage() {
           <h1 className="text-2xl font-serif font-bold" data-testid="text-page-title">Team Training Leads</h1>
           <p className="text-muted-foreground mt-1 text-sm">Research and reach out to local sports organizations for team training partnerships.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={() => setSettingsDialogOpen(true)} data-testid="button-lead-settings">
             <Settings2 className="h-4 w-4 mr-2" /> Lead Settings
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => { setCsvRows([]); setCsvFileName(""); setCsvError(""); setCsvDialogOpen(true); }}
+            data-testid="button-upload-csv"
+          >
+            <Upload className="h-4 w-4 mr-2" /> Upload CSV
           </Button>
           <Button onClick={() => setResearchDialogOpen(true)} data-testid="button-research-leads">
             <Search className="h-4 w-4 mr-2" /> Research New Leads
@@ -1913,6 +2022,115 @@ export default function AdminTeamTrainingLeadsPage() {
           <DiscoveryLogTab />
         </TabsContent>
       </Tabs>
+
+      {/* CSV Upload Dialog */}
+      <Dialog open={csvDialogOpen} onOpenChange={(open) => { setCsvDialogOpen(open); if (!open) { setCsvRows([]); setCsvFileName(""); setCsvError(""); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Upload Leads from CSV</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 flex-1 overflow-y-auto">
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>Upload a CSV file with your existing leads. The first row must be a header row.</p>
+              <p className="text-xs">Supported columns: <span className="font-mono text-foreground">name, sport, city, state, email, phone, website, contact name, role, notes, org type</span></p>
+            </div>
+
+            {/* Download template */}
+            <a
+              href="data:text/csv;charset=utf-8,name,sport,city,state,email,phone,website,contact name,role,org type,notes"
+              download="leads-template.csv"
+              className="inline-flex items-center gap-1.5 text-xs text-primary underline underline-offset-2"
+              data-testid="link-download-template"
+            >
+              <Download className="h-3 w-3" /> Download template CSV
+            </a>
+
+            {/* Drop zone */}
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${csvFileName ? "border-primary/50 bg-primary/5" : "border-muted-foreground/30 hover:border-primary/40 hover:bg-muted/30"}`}
+              onClick={() => csvFileRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file) handleCSVFile(file); }}
+              data-testid="dropzone-csv"
+            >
+              <input
+                ref={csvFileRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => { const file = e.target.files?.[0]; if (file) handleCSVFile(file); }}
+                data-testid="input-csv-file"
+              />
+              {csvFileName ? (
+                <div className="space-y-1">
+                  <CheckCircle className="h-8 w-8 mx-auto text-primary" />
+                  <p className="text-sm font-medium">{csvFileName}</p>
+                  <p className="text-xs text-muted-foreground">{csvRows.length} row{csvRows.length !== 1 ? "s" : ""} ready to import</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Upload className="h-8 w-8 mx-auto text-muted-foreground/50" />
+                  <p className="text-sm font-medium">Drop your CSV here or click to browse</p>
+                  <p className="text-xs text-muted-foreground">.csv files only</p>
+                </div>
+              )}
+            </div>
+
+            {csvError && (
+              <p className="text-sm text-destructive flex items-center gap-1.5" data-testid="text-csv-error">
+                <AlertCircle className="h-4 w-4 shrink-0" /> {csvError}
+              </p>
+            )}
+
+            {/* Preview table */}
+            {csvRows.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Preview (first 5 rows)</p>
+                <div className="overflow-x-auto rounded border">
+                  <table className="text-xs w-full">
+                    <thead className="bg-muted/60">
+                      <tr>
+                        {["prospectName", "sport", "city", "state", "contactEmail", "contactName"].map((col) => (
+                          <th key={col} className="px-2 py-1.5 text-left font-semibold text-muted-foreground whitespace-nowrap">
+                            {col === "prospectName" ? "Name" : col === "contactEmail" ? "Email" : col === "contactName" ? "Contact" : col.charAt(0).toUpperCase() + col.slice(1)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.slice(0, 5).map((row, i) => (
+                        <tr key={i} className="border-t">
+                          <td className="px-2 py-1 max-w-[140px] truncate" data-testid={`csv-preview-name-${i}`}>{row.prospectName || <span className="text-destructive italic">missing</span>}</td>
+                          <td className="px-2 py-1">{row.sport || "—"}</td>
+                          <td className="px-2 py-1">{row.city || "—"}</td>
+                          <td className="px-2 py-1">{row.state || "—"}</td>
+                          <td className="px-2 py-1 max-w-[140px] truncate">{row.contactEmail || "—"}</td>
+                          <td className="px-2 py-1">{row.contactName || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {csvRows.length > 5 && (
+                  <p className="text-xs text-muted-foreground">… and {csvRows.length - 5} more row{csvRows.length - 5 !== 1 ? "s" : ""}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 justify-end pt-2 border-t mt-2">
+            <Button variant="outline" onClick={() => setCsvDialogOpen(false)} data-testid="button-csv-cancel">Cancel</Button>
+            <Button
+              onClick={() => csvImportMutation.mutate(csvRows)}
+              disabled={csvRows.length === 0 || csvImportMutation.isPending}
+              data-testid="button-csv-import"
+            >
+              {csvImportMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+              Import {csvRows.length > 0 ? `${csvRows.length} Lead${csvRows.length !== 1 ? "s" : ""}` : "Leads"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Research Dialog */}
       <Dialog open={researchDialogOpen} onOpenChange={(open) => { setResearchDialogOpen(open); if (!open) { setResearchLocationTouched(false); } }}>

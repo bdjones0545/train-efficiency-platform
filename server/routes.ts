@@ -7120,6 +7120,51 @@ export async function registerRoutes(
     }
   });
 
+  // CSV bulk import
+  app.post("/api/admin/team-training/prospects/csv-import", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const rows: any[] = req.body.rows;
+      if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ message: "No rows provided" });
+
+      let imported = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const row of rows) {
+        const name = (row.prospectName || "").trim();
+        if (!name) { skipped++; continue; }
+        try {
+          await storage.createTeamTrainingProspect({
+            orgId: profile.organizationId,
+            prospectName: name,
+            organizationType: (row.organizationType || "unknown").trim(),
+            sport: (row.sport || "unknown").trim(),
+            city: (row.city || "unknown").trim(),
+            state: (row.state || "unknown").trim(),
+            websiteUrl: (row.websiteUrl || "").trim() || null,
+            contactName: (row.contactName || "unknown").trim(),
+            contactRole: (row.contactRole || "unknown").trim(),
+            contactEmail: (row.contactEmail || "").trim() || null,
+            contactPhone: (row.contactPhone || "").trim() || null,
+            notes: (row.notes || "").trim(),
+            outreachStatus: "New",
+            contactQuality: (row.contactEmail || "").trim() ? "general" : "missing",
+          });
+          imported++;
+        } catch (rowErr: any) {
+          errors.push(`Row "${name}": ${rowErr.message}`);
+        }
+      }
+
+      res.json({ imported, skipped, errors });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Create prospect manually
   app.post("/api/admin/team-training/prospects", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
