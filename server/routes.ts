@@ -5,6 +5,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, delete
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { uploadMediaToCloud, deleteMediaFromCloud, serveMediaFromCloud } from "./mediaStorage";
 import express from "express";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -161,9 +162,6 @@ function generateTimeSlots(
   return days;
 }
 
-const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
 const ALLOWED_VIDEO_TYPES = [
   "video/mp4",
@@ -179,15 +177,6 @@ const ALLOWED_VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".m4v", ".mpeg", ".mp
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
 
-const mediaStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    cb(null, `${unique}${ext}`);
-  },
-});
-
 function isAllowedMediaFile(file: Express.Multer.File): boolean {
   if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) return true;
   if (ALLOWED_VIDEO_TYPES.includes(file.mimetype)) return true;
@@ -197,7 +186,7 @@ function isAllowedMediaFile(file: Express.Multer.File): boolean {
 }
 
 const mediaUpload = multer({
-  storage: mediaStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: VIDEO_MAX_BYTES },
   fileFilter: (_req, file, cb) => {
     if (isAllowedMediaFile(file)) cb(null, true);
@@ -233,8 +222,6 @@ export async function registerRoutes(
 ): Promise<Server> {
   await setupAuth(app);
   registerAuthRoutes(app);
-
-  app.use("/uploads", express.static(UPLOADS_DIR));
 
   const RESET_NEUTRAL_MSG = "If an account exists for that email, a password reset link has been sent.";
   const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -6313,6 +6300,14 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/media/:filename", async (req, res) => {
+    try {
+      await serveMediaFromCloud(req.params.filename, res);
+    } catch (err: any) {
+      if (!res.headersSent) res.status(500).json({ message: "Failed to serve file" });
+    }
+  });
+
   app.post("/api/org/media", isAuthenticated, requireRole("ADMIN", "COACH"), handleMulterUpload, async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
@@ -6328,23 +6323,21 @@ export async function registerRoutes(
       const isImage = ALLOWED_IMAGE_TYPES.includes(req.file.mimetype);
       const ext = path.extname(req.file.originalname).toLowerCase();
       const isVideo = ALLOWED_VIDEO_TYPES.includes(req.file.mimetype) || ALLOWED_VIDEO_EXTENSIONS.includes(ext);
+
       if (isImage && req.file.size > IMAGE_MAX_BYTES) {
-        fs.unlinkSync(req.file.path);
         return res.status(400).json({ message: "Image exceeds 10MB limit" });
       }
       if (!isImage && !isVideo) {
-        fs.unlinkSync(req.file.path);
         return res.status(400).json({ message: "Unsupported file type. Please upload jpg, png, webp, mp4, mov, or webm." });
       }
 
       const limit = SECTION_LIMITS[section] ?? 10;
       const existing = await storage.getOrgMediaBySection(profile.organizationId, section);
       if (existing.length >= limit) {
-        fs.unlinkSync(req.file.path);
         return res.status(400).json({ message: `Section "${section}" supports up to ${limit} items` });
       }
 
-      const fileUrl = `/uploads/${req.file.filename}`;
+      const fileUrl = await uploadMediaToCloud(req.file.buffer, req.file.originalname, req.file.mimetype);
       const mediaType = isImage ? "image" : "video";
       const maxOrder = existing.reduce((m, i) => Math.max(m, i.orderIndex), -1);
 
@@ -6363,7 +6356,6 @@ export async function registerRoutes(
 
       res.status(201).json(created);
     } catch (err: any) {
-      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       res.status(500).json({ message: err.message });
     }
   });
@@ -6406,9 +6398,8 @@ export async function registerRoutes(
 
       await storage.deleteOrgMedia(req.params.id);
 
-      if (item.url?.startsWith("/uploads/")) {
-        const filePath = path.join(UPLOADS_DIR, path.basename(item.url));
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (item.url?.startsWith("/api/media/")) {
+        await deleteMediaFromCloud(item.url).catch(() => {});
       }
 
       res.json({ success: true });
