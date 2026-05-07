@@ -13,11 +13,11 @@ import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
   UserPlus, Menu, X, DollarSign, CreditCard, BarChart3, Mail, Dumbbell,
   ClipboardList, UserCheck, Wallet, Receipt, Building2, CheckCircle2, ArrowRight, Sparkles,
+  ChevronRight, Star, Lock, Globe, Activity, Layers,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
-import logoImg from "@assets/423DAA2D-0186-4069-8E23-722C2692C9B2_1772067637913.jpeg";
 
 export default function LandingPage() {
   const [coachModalOpen, setCoachModalOpen] = useState(false);
@@ -49,7 +49,6 @@ export default function LandingPage() {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-
     try {
       const res = await apiRequest("POST", "/api/coach/login", { email, password });
       const data = await res.json();
@@ -70,15 +69,9 @@ export default function LandingPage() {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-
     try {
       const res = await apiRequest("POST", "/api/organizations/register", {
-        businessName,
-        slug,
-        email,
-        password,
-        firstName,
-        lastName,
+        businessName, slug, email, password, firstName, lastName,
       });
       const data = await res.json();
       if (data.success) {
@@ -109,438 +102,591 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/80 border-b">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-lg tracking-tight" data-testid="text-brand-name">
-              Train Efficiency Business Solutions
+    <div className="min-h-screen bg-background text-foreground">
+
+      {/* ── NAV ── */}
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-background/85 border-b border-border/60">
+        <div className="max-w-6xl mx-auto px-5 h-15 flex items-center justify-between gap-4" style={{ height: "60px" }}>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
+              <Dumbbell className="h-3.5 w-3.5 text-primary-foreground" />
+            </div>
+            <span className="font-semibold text-sm tracking-tight" data-testid="text-brand-name">
+              TrainEfficiency
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-3">
-            <a href="#features">
-              <Button variant="ghost" size="sm" data-testid="link-features">Features</Button>
+          <div className="hidden md:flex items-center gap-1">
+            <a href="#built-for-coaches">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-features">Why Coaches Use It</Button>
             </a>
-            <a href="#how-it-works">
-              <Button variant="ghost" size="sm" data-testid="link-how-it-works">How It Works</Button>
+            <a href="#features">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-platform">Platform</Button>
             </a>
             <a href="#pricing">
-              <Button variant="ghost" size="sm" data-testid="link-pricing">Pricing</Button>
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-pricing">Pricing</Button>
             </a>
             <a href="/portal">
-              <Button variant="ghost" size="sm" data-testid="link-client-portal">
-                <Dumbbell className="h-4 w-4 mr-1" />
-                Client Portal
-              </Button>
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-client-portal">Client Portal</Button>
             </a>
+            <div className="w-px h-4 bg-border/60 mx-1" />
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => setCoachModalOpen(true)}
+              className="text-xs"
               data-testid="button-coach-login"
             >
-              <LogIn className="h-4 w-4 mr-1" />
-              Coach Login
+              <LogIn className="h-3.5 w-3.5 mr-1.5" />
+              Sign In
             </Button>
             <Button
+              size="sm"
               onClick={() => openRegisterModal()}
+              className="text-xs"
               data-testid="button-get-started"
             >
-              <UserPlus className="h-4 w-4 mr-1" />
               Start Free Trial
+              <ChevronRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </div>
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden"
+            className="md:hidden h-8 w-8"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             data-testid="button-mobile-menu"
           >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </Button>
         </div>
         {mobileMenuOpen && (
-          <div className="md:hidden border-t bg-background/95 backdrop-blur-md px-6 py-4 flex flex-col gap-2" data-testid="mobile-menu">
-            <a href="#features" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-features-mobile">Features</Button>
+          <div className="md:hidden border-t border-border/60 bg-background/97 backdrop-blur-md px-5 py-4 flex flex-col gap-1.5" data-testid="mobile-menu">
+            <a href="#built-for-coaches" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-features-mobile">Why Coaches Use It</Button>
             </a>
-            <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-how-it-works-mobile">How It Works</Button>
+            <a href="#features" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-how-it-works-mobile">Platform</Button>
             </a>
             <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-pricing-mobile">Pricing</Button>
+              <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-pricing-mobile">Pricing</Button>
             </a>
             <a href="/portal" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="ghost" size="sm" className="w-full justify-start" data-testid="link-client-portal-mobile">
-                <Dumbbell className="h-4 w-4 mr-1" />
-                Client Portal
-              </Button>
+              <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-client-portal-mobile">Client Portal</Button>
             </a>
+            <div className="h-px bg-border/60 my-1" />
             <Button
               variant="outline"
               size="sm"
-              className="w-full justify-start"
+              className="w-full justify-start text-sm"
               onClick={() => { setCoachModalOpen(true); setMobileMenuOpen(false); }}
               data-testid="button-coach-login-mobile"
             >
-              <LogIn className="h-4 w-4 mr-1" />
-              Coach Login
+              <LogIn className="h-4 w-4 mr-2" />
+              Coach Sign In
             </Button>
             <Button
-              className="w-full justify-start"
+              size="sm"
+              className="w-full justify-start text-sm"
               onClick={() => { openRegisterModal(); setMobileMenuOpen(false); }}
               data-testid="button-get-started-mobile"
             >
-              <UserPlus className="h-4 w-4 mr-1" />
+              <UserPlus className="h-4 w-4 mr-2" />
               Start Free Trial
             </Button>
           </div>
         )}
       </nav>
 
-      <section className="relative pt-32 pb-24 px-6 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-primary/4 pointer-events-none" />
-        <div className="max-w-6xl mx-auto flex flex-col items-center text-center relative">
-          <div className="space-y-6 max-w-3xl">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight" data-testid="text-hero-heading">
-              Stop Using Studio Software.{" "}
+      {/* ── HERO ── */}
+      <section className="relative pt-28 pb-20 px-5 overflow-hidden">
+        {/* Subtle radial glow */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-primary/6 rounded-full blur-3xl" />
+        </div>
+
+        <div className="max-w-5xl mx-auto relative">
+          {/* Eyebrow */}
+          <div className="flex justify-center mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/25 bg-primary/8 text-xs font-medium text-primary">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              Built for strength & conditioning coaches
+            </div>
+          </div>
+
+          {/* Headline */}
+          <div className="text-center space-y-5 max-w-3xl mx-auto">
+            <h1 className="text-4xl sm:text-5xl lg:text-[3.4rem] font-bold tracking-tight leading-[1.1]" data-testid="text-hero-heading">
+              Stop Using Studio Software.<br />
               <span className="text-primary">Start Using Coaching Software.</span>
             </h1>
-            <div className="flex justify-center pt-2 pb-2">
-              <img
-                src={logoImg}
-                alt="TrainEfficiency.com"
-                className="w-full max-w-md object-contain"
-                data-testid="img-hero-logo"
-              />
-            </div>
-            <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto">
-              The all-in-one platform built for strength & conditioning coaches. Manage scheduling,
-              payments, clients, team contracts, and payouts — all from one dashboard.
+            <p className="text-base sm:text-lg text-muted-foreground leading-relaxed max-w-xl mx-auto">
+              TrainEfficiency is the operational platform purpose-built for S&C coaches — scheduling, session payouts, team contracts, client wallets, and coach management in one place.
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-              <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-hero-cta">
-                <ArrowRight className="h-4 w-4 mr-2" />
-                Start Free 3-Day Trial
-              </Button>
-              <Button variant="outline" size="lg" onClick={() => setCoachModalOpen(true)} data-testid="button-hero-login">
-                <LogIn className="h-4 w-4 mr-2" />
-                Coach Sign In
-              </Button>
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground pt-4">
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                3-day free trial
+          </div>
+
+          {/* CTAs */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-8">
+            <Button
+              size="lg"
+              onClick={() => openRegisterModal()}
+              className="w-full sm:w-auto px-7 h-11 text-sm font-medium"
+              data-testid="button-hero-cta"
+            >
+              Start Free 3-Day Trial
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => setCoachModalOpen(true)}
+              className="w-full sm:w-auto px-7 h-11 text-sm"
+              data-testid="button-hero-login"
+            >
+              <LogIn className="h-4 w-4 mr-2" />
+              Coach Sign In
+            </Button>
+          </div>
+
+          {/* Trust micro-signals */}
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground pt-6">
+            {["3-day free trial", "No credit card required", "Your own branded platform", "Set up in minutes"].map((t) => (
+              <span key={t} className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                {t}
               </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                Built for S&C coaches
-              </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                Set up in minutes
-              </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                Your own branded platform
-              </span>
+            ))}
+          </div>
+
+          {/* Dashboard Mockup */}
+          <div className="mt-14 relative">
+            <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none" />
+            <div
+              className="rounded-xl border border-border/70 overflow-hidden shadow-2xl"
+              style={{ background: "hsl(var(--card))" }}
+              data-testid="img-dashboard-mockup"
+            >
+              {/* Browser chrome */}
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60" style={{ background: "hsl(var(--background))" }}>
+                <div className="flex gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-border" />
+                  <div className="w-3 h-3 rounded-full bg-border" />
+                  <div className="w-3 h-3 rounded-full bg-border" />
+                </div>
+                <div className="flex-1 mx-4 h-5 rounded-md bg-muted/60 max-w-xs" />
+                <div className="w-16 h-5 rounded-md bg-primary/20" />
+              </div>
+
+              {/* Dashboard content */}
+              <div className="flex min-h-[320px] sm:min-h-[380px]">
+                {/* Sidebar */}
+                <div className="w-44 border-r border-border/50 p-3 flex-shrink-0 hidden sm:block" style={{ background: "hsl(var(--sidebar))" }}>
+                  <div className="flex items-center gap-2 mb-5 px-2">
+                    <div className="w-6 h-6 rounded-md bg-primary/20 flex items-center justify-center">
+                      <Dumbbell className="h-3 w-3 text-primary" />
+                    </div>
+                    <div className="h-3 rounded bg-muted w-20" />
+                  </div>
+                  {[Calendar, Users, DollarSign, BarChart3, Building2, Wallet].map((Icon, i) => (
+                    <div key={i} className={`flex items-center gap-2.5 px-2 py-2 rounded-md mb-0.5 ${i === 0 ? "bg-primary/10" : ""}`}>
+                      <Icon className={`h-3.5 w-3.5 ${i === 0 ? "text-primary" : "text-muted-foreground"}`} />
+                      <div className={`h-2.5 rounded w-14 ${i === 0 ? "bg-primary/40" : "bg-muted/70"}`} />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Main content */}
+                <div className="flex-1 p-4 sm:p-5 space-y-4">
+                  {/* Header row */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <div className="h-4 rounded bg-foreground/10 w-36" />
+                      <div className="h-2.5 rounded bg-muted/70 w-24" />
+                    </div>
+                    <div className="h-8 w-28 rounded-md bg-primary/20 border border-primary/30 flex items-center justify-center">
+                      <div className="h-2.5 w-16 rounded bg-primary/40" />
+                    </div>
+                  </div>
+
+                  {/* Stat cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: "Sessions Today", value: "8", accent: true },
+                      { label: "Pending Payouts", value: "$1,240" },
+                      { label: "Active Clients", value: "34" },
+                      { label: "This Month", value: "$6,890" },
+                    ].map(({ label, value, accent }) => (
+                      <div key={label} className={`rounded-lg border p-3 space-y-2 ${accent ? "border-primary/30 bg-primary/5" : "border-border/60"}`}>
+                        <div className={`h-2 rounded w-16 ${accent ? "bg-primary/30" : "bg-muted/60"}`} />
+                        <div className={`h-5 rounded w-12 font-bold ${accent ? "bg-primary/40" : "bg-foreground/10"}`} />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Session rows */}
+                  <div className="rounded-lg border border-border/60 overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-border/50 flex items-center justify-between">
+                      <div className="h-2.5 rounded bg-foreground/10 w-28" />
+                      <div className="h-2.5 rounded bg-muted/60 w-16" />
+                    </div>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="px-4 py-3 flex items-center gap-3 border-b border-border/40 last:border-0">
+                        <div className="w-7 h-7 rounded-full bg-primary/15 flex-shrink-0" />
+                        <div className="flex-1 space-y-1">
+                          <div className="h-2.5 rounded bg-foreground/10 w-28" />
+                          <div className="h-2 rounded bg-muted/60 w-20" />
+                        </div>
+                        <div className="h-6 w-16 rounded-full bg-primary/15 border border-primary/25" />
+                        <div className="h-2.5 rounded bg-foreground/8 w-12" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="py-16 px-6 bg-card/50 border-y">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-4 space-y-2">
-            <p className="text-sm font-medium text-primary uppercase tracking-wider">The Problem</p>
-            <h2 className="text-2xl sm:text-3xl font-bold" data-testid="text-problem-heading">
-              Generic fitness software wasn't built for coaches like you
+      {/* ── TRUST & AUTHORITY ── */}
+      <section id="built-for-coaches" className="py-16 px-5 border-y border-border/60">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10 space-y-3">
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest">Built Different</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="text-problem-heading">
+              Generic fitness software doesn't understand<br className="hidden sm:block" /> how coaching businesses actually run
             </h2>
-            <p className="text-muted-foreground max-w-xl mx-auto">
-              Studio and gym management tools are designed for yoga classes and group fitness.
-              You need software that understands private training, semi-privates, team contracts, and session-based payouts.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section id="features" className="py-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14 space-y-3">
-            <p className="text-sm font-medium text-primary uppercase tracking-wider">Platform Features</p>
-            <h2 className="text-3xl font-bold" data-testid="text-features-heading">Everything You Need to Run Your Coaching Business</h2>
-            <p className="text-muted-foreground max-w-lg mx-auto">
-              From booking your first client to managing team contracts — we've got you covered.
+            <p className="text-muted-foreground max-w-lg mx-auto text-sm leading-relaxed">
+              Studio apps are built for yoga classes and group fitness. TrainEfficiency was built by a working S&C coach — designed around the exact workflows you deal with every single day.
             </p>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
               {
-                icon: Calendar,
-                title: "Smart Scheduling",
-                description: "Set your availability by day, time, and location. Clients book directly from your open slots — no back-and-forth texting.",
+                icon: Receipt,
+                label: "Session-by-session payouts",
+                detail: "Mark a session complete, see exactly what you're owed. No spreadsheets, no guessing.",
               },
               {
                 icon: Users,
-                title: "Semi-Private Sessions",
-                description: "Run group training with configurable participant limits, age ranges, and skill levels. Clients sign up for open spots.",
+                label: "Semi-private scheduling",
+                detail: "Set capacity limits, age ranges, and skill levels for group sessions. Clients grab open spots.",
               },
               {
                 icon: Building2,
-                title: "Team Training Contracts",
-                description: "Generate team quotes with per-athlete pricing, multi-month invoicing through Stripe, and automatic recurring billing.",
-              },
-              {
-                icon: CreditCard,
-                title: "Stripe Payments Built In",
-                description: "Accept payments for session packages, team contracts, and wallet top-ups. Everything flows through your Stripe account.",
-              },
-              {
-                icon: Wallet,
-                title: "Client Wallet System",
-                description: "Clients prepay for session credits. Balances are tracked automatically. Coaches redeem sessions against wallet funds.",
-              },
-              {
-                icon: Receipt,
-                title: "Session Redemptions & Payouts",
-                description: "Mark sessions complete, track what you're owed, and request payouts. Full transparency on every dollar.",
-              },
-              {
-                icon: ClipboardList,
-                title: "Client Management",
-                description: "Manage your full client roster. View booking history, session credits, and contact info — all in one place.",
-              },
-              {
-                icon: Mail,
-                title: "Automated Email Notifications",
-                description: "Booking confirmations, payment receipts, team invoices, and reminder emails sent automatically via SendGrid.",
-              },
-              {
-                icon: BarChart3,
-                title: "Business Plan & Analytics",
-                description: "Set revenue goals, track sessions completed, and monitor your earnings. See your coaching business at a glance.",
+                label: "Team training contracts",
+                detail: "Quote a school or program, set per-athlete pricing, and bill monthly through Stripe automatically.",
               },
               {
                 icon: Clock,
-                title: "Session Cloning & Repeats",
-                description: "Clone sessions daily, weekly, or on specific days of the week. Build your recurring schedule in seconds.",
+                label: "Recurring schedule management",
+                detail: "Clone sessions by day or week. Build out months of programming in seconds.",
               },
               {
-                icon: UserCheck,
-                title: "Multi-Location Support",
-                description: "Manage sessions across different training locations. Clients see exactly where each session takes place.",
+                icon: UserCog,
+                label: "Multi-coach operations",
+                detail: "Add coaches, assign sessions, track individual earnings and payout history.",
               },
               {
-                icon: Shield,
-                title: "Role-Based Access",
-                description: "Separate dashboards for coaches, clients, and admins. Everyone sees exactly what they need — nothing more.",
+                icon: Wallet,
+                label: "Client wallet system",
+                detail: "Clients prepay for session credits. Balances are tracked automatically. No cash, no Venmo.",
               },
-              {
-                icon: Sparkles,
-                title: "Your Own Branded Landing Page",
-                description: "Get a custom-branded landing page at your own URL with your logo, colors, tagline, and social links. Clients sign up and book directly from your page.",
-              },
-            ].map(({ icon: Icon, title, description }) => (
-              <Card key={title} className="p-6 space-y-3 hover-elevate" data-testid={`card-feature-${title.toLowerCase().replace(/\s+/g, '-')}`}>
-                <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Icon className="h-5 w-5 text-primary" />
+            ].map(({ icon: Icon, label, detail }) => (
+              <div
+                key={label}
+                className="flex gap-3.5 p-4 rounded-lg border border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card transition-all duration-200"
+                data-testid={`card-trust-${label.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Icon className="h-4 w-4 text-primary" />
                 </div>
-                <h3 className="font-semibold">{title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="how-it-works" className="py-20 px-6 bg-card/50 border-y">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-14 space-y-3">
-            <p className="text-sm font-medium text-primary uppercase tracking-wider">How It Works</p>
-            <h2 className="text-3xl font-bold" data-testid="text-how-heading">Get Up and Running in 3 Steps</h2>
-          </div>
-
-          <div className="space-y-8">
-            {[
-              {
-                step: "1",
-                title: "Register Your Business",
-                description: "Sign up and get your own branded platform instantly. Add your logo, colors, and tagline — your clients will see your brand, not ours.",
-              },
-              {
-                step: "2",
-                title: "Set Up Your Team & Schedule",
-                description: "Add coaches, configure locations, set availability, and connect your Stripe account. Build your full schedule in minutes with session cloning.",
-              },
-              {
-                step: "3",
-                title: "Start Booking & Getting Paid",
-                description: "Share your branded link with clients. They sign up, book sessions, and pay through your Stripe account. Track everything from your admin dashboard.",
-              },
-            ].map(({ step, title, description }) => (
-              <div key={step} className="flex gap-5 items-start" data-testid={`step-${step}`}>
-                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold">
-                  {step}
-                </div>
-                <div className="space-y-1 pt-1">
-                  <h3 className="text-lg font-semibold">{title}</h3>
-                  <p className="text-muted-foreground leading-relaxed">{description}</p>
+                <div className="space-y-1 min-w-0">
+                  <p className="text-sm font-semibold leading-snug">{label}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{detail}</p>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="text-center mt-12">
-            <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-how-cta">
-              <ArrowRight className="h-4 w-4 mr-2" />
-              Start Free 3-Day Trial
-            </Button>
+          {/* Founder note */}
+          <div className="mt-8 p-5 rounded-xl border border-border/60 bg-card/50 flex gap-4 items-start max-w-2xl mx-auto">
+            <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+              <Dumbbell className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm leading-relaxed text-muted-foreground italic">
+                "I built this because I was managing clients through Google Sheets, collecting payments through Venmo, and sending invoices manually. Every other tool I tried was built for pilates studios. So I built what I actually needed."
+              </p>
+              <p className="text-sm font-semibold mt-2">Bryan Jones — S&C Coach & Founder, TrainEfficiency</p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="py-20 px-6">
-        <div className="max-w-4xl mx-auto">
+      {/* ── PLATFORM FEATURES ── */}
+      <section id="features" className="py-20 px-5">
+        <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14 space-y-3">
-            <p className="text-sm font-medium text-primary uppercase tracking-wider">Built Different</p>
-            <h2 className="text-3xl font-bold" data-testid="text-why-heading">Why Coaches Choose Train Efficiency</h2>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-6">
-            {[
-              {
-                icon: Dumbbell,
-                title: "Purpose-Built for S&C",
-                description: "Not a yoga studio app repurposed for trainers. Every feature is designed around how strength & conditioning coaches actually work.",
-              },
-              {
-                icon: DollarSign,
-                title: "One Simple Price",
-                description: "Just $49.99/month for everything — unlimited coaches, unlimited clients, no hidden fees. Start with a free 3-day trial.",
-              },
-              {
-                icon: TrendingUp,
-                title: "Scale from Solo to Team",
-                description: "Start with private sessions. Add semi-privates. Land a team contract. The platform grows with your business.",
-              },
-              {
-                icon: Zap,
-                title: "Fast & Simple",
-                description: "No 30-page setup wizard. Set your availability, share your link, and start booking clients today.",
-              },
-            ].map(({ icon: Icon, title, description }) => (
-              <Card key={title} className="p-6 space-y-3" data-testid={`card-why-${title.toLowerCase().replace(/\s+/g, '-')}`}>
-                <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Icon className="h-5 w-5 text-primary" />
-                </div>
-                <h3 className="font-semibold">{title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="pricing" className="py-20 px-6 border-y">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-14 space-y-3">
-            <p className="text-sm font-medium text-primary uppercase tracking-wider">Pricing</p>
-            <h2 className="text-3xl font-bold" data-testid="text-pricing-heading">One Plan. Everything Included.</h2>
-            <p className="text-muted-foreground max-w-lg mx-auto">
-              No tiers, no per-seat fees, no feature gates. Every business gets the full platform.
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest">The Platform</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="text-features-heading">
+              Every system your coaching business needs
+            </h2>
+            <p className="text-muted-foreground max-w-md mx-auto text-sm">
+              From booking your first private client to running a full team program — it's all here.
             </p>
           </div>
 
-          <Card className="max-w-lg mx-auto p-8 space-y-6 border-primary/30 shadow-lg" data-testid="card-pricing">
-            <div className="text-center space-y-2">
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-5xl font-bold" data-testid="text-pricing-amount">$49.99</span>
-                <span className="text-xl text-muted-foreground">/month</span>
-              </div>
-              <p className="text-muted-foreground">Start with a free 3-day trial — no charge until it ends</p>
-            </div>
-            <div className="space-y-3">
-              {[
-                "Unlimited coaches & clients",
-                "Your own branded landing page",
-                "Full scheduling & booking system",
-                "Stripe payment integration",
-                "Client wallet & session credits",
-                "Team training contracts & invoicing",
-                "Session redemptions & payout tracking",
-                "Automated email notifications",
-                "Business analytics dashboard",
-                "Multi-location support",
-              ].map((feature) => (
-                <div key={feature} className="flex items-center gap-2 text-sm">
-                  <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                  <span>{feature}</span>
+          {/* Feature Category: Scheduling */}
+          <div className="space-y-12">
+            {[
+              {
+                category: "Scheduling & Operations",
+                icon: Calendar,
+                tagline: "Built for Back-to-Back Coaching Days",
+                features: [
+                  { icon: Calendar, title: "Set your schedule, let clients book", description: "Configure availability by day, time, and location. Clients book directly from open slots — no back-and-forth texts." },
+                  { icon: Clock, title: "Clone sessions in seconds", description: "Repeat sessions daily, weekly, or on specific days. Build out your entire recurring schedule without manual entry." },
+                  { icon: UserCheck, title: "Multi-location support", description: "Manage sessions across different training sites. Clients always know exactly where to show up." },
+                ],
+              },
+              {
+                category: "Payments & Payouts",
+                icon: DollarSign,
+                tagline: "Know Exactly What Your Coaching Business Earns",
+                features: [
+                  { icon: CreditCard, title: "Stripe built in, money goes to you", description: "Accept session packages, team invoices, and wallet top-ups — all through your own Stripe account." },
+                  { icon: Wallet, title: "Client wallets & session credits", description: "Clients prepay, balances are tracked automatically. No cash, no Venmo. Just credits that get redeemed at sessions." },
+                  { icon: Receipt, title: "Session redemptions & payout requests", description: "Mark a session complete, see exactly what you're owed, and request a payout. Full transparency on every dollar." },
+                ],
+              },
+              {
+                category: "Team Training Infrastructure",
+                icon: Building2,
+                tagline: "Win School & Program Contracts Systematically",
+                features: [
+                  { icon: Building2, title: "Team contracts with per-athlete pricing", description: "Generate quotes, set per-athlete rates, multi-month invoicing. Everything automated through Stripe." },
+                  { icon: Users, title: "Semi-private session management", description: "Run group training with configurable capacity, age ranges, and skill levels. Clients sign up for open spots." },
+                  { icon: TrendingUp, title: "Scale from solo to full team", description: "Start with private 1-on-1s. Add semi-privates. Land a team contract. The platform grows with you." },
+                ],
+              },
+              {
+                category: "Coach & Client Management",
+                icon: UserCog,
+                tagline: "Run Your Business, Not Just Your Sessions",
+                features: [
+                  { icon: UserCog, title: "Multi-coach operations", description: "Add coaches, assign sessions, and track individual payout histories — all from one admin dashboard." },
+                  { icon: ClipboardList, title: "Full client roster", description: "View booking history, session credits, contact details, and wallet balances for every client in one place." },
+                  { icon: Shield, title: "Role-based access", description: "Coaches, clients, and admins each see exactly what they need. Permissions are automatic and air-tight." },
+                ],
+              },
+              {
+                category: "Your Brand, Not Ours",
+                icon: Globe,
+                tagline: "Clients See Your Business — Not Generic Software",
+                features: [
+                  { icon: Sparkles, title: "Custom branded landing page", description: "Your own URL, your logo, your colors, your tagline. Clients sign up directly from your branded page." },
+                  { icon: Mail, title: "Automated email notifications", description: "Booking confirmations, payment receipts, team invoices, and reminders sent automatically under your brand." },
+                  { icon: BarChart3, title: "Business analytics & revenue goals", description: "Set monthly targets, track sessions completed, monitor earnings. See your business at a real glance." },
+                ],
+              },
+            ].map(({ category, icon: CatIcon, tagline, features }) => (
+              <div key={category} className="space-y-5" data-testid={`section-${category.toLowerCase().replace(/\s+/g, '-')}`}>
+                <div className="flex items-start gap-3 pb-3 border-b border-border/60">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <CatIcon className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-0.5">{category}</p>
+                    <h3 className="text-lg font-bold tracking-tight">{tagline}</h3>
+                  </div>
                 </div>
-              ))}
-            </div>
-            <Button size="lg" className="w-full" onClick={() => openRegisterModal()} data-testid="button-pricing-cta">
-              <ArrowRight className="h-4 w-4 mr-2" />
-              Start Free 3-Day Trial
-            </Button>
-            <p className="text-xs text-center text-muted-foreground">No credit card required to start your trial</p>
-          </Card>
+                <div className="grid sm:grid-cols-3 gap-4">
+                  {features.map(({ icon: Icon, title, description }) => (
+                    <div
+                      key={title}
+                      className="p-4 rounded-lg border border-border/50 bg-card/60 hover:border-primary/25 hover:bg-card transition-all duration-200 space-y-2.5"
+                      data-testid={`card-feature-${title.toLowerCase().replace(/\s+/g, '-').slice(0, 30)}`}
+                    >
+                      <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
+                        <Icon className="h-4 w-4 text-primary" />
+                      </div>
+                      <p className="text-sm font-semibold leading-snug">{title}</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="py-20 px-6 bg-primary/5 border-y">
-        <div className="max-w-3xl mx-auto text-center space-y-6">
-          <h2 className="text-3xl font-bold" data-testid="text-cta-heading">Ready to Run Your Business Like a Pro?</h2>
-          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            Join coaches who are ditching spreadsheets, Venmo requests, and studio software that doesn't fit.
-            Start managing your coaching business the right way.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-            <Button size="lg" onClick={() => openRegisterModal()} data-testid="button-final-cta">
-              <ArrowRight className="h-4 w-4 mr-2" />
+      {/* ── HOW IT WORKS ── */}
+      <section id="how-it-works" className="py-20 px-5 border-y border-border/60 bg-card/30">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-12 space-y-3">
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest">Setup</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="text-how-heading">
+              Coaching infrastructure, live in a day
+            </h2>
+          </div>
+
+          <div className="space-y-6">
+            {[
+              {
+                step: "01",
+                title: "Register your coaching business",
+                description: "Sign up and your branded platform is live instantly. Add your logo, colors, and coaching URL — clients see your business, not ours.",
+              },
+              {
+                step: "02",
+                title: "Build your schedule and connect Stripe",
+                description: "Add coaches, configure locations, set your availability, and link your Stripe account. Clone sessions to fill out weeks of programming in minutes.",
+              },
+              {
+                step: "03",
+                title: "Share your link, start getting paid",
+                description: "Send clients your branded URL. They sign up, book sessions, and pay through Stripe. You track every dollar, every session, and every payout from one dashboard.",
+              },
+            ].map(({ step, title, description }) => (
+              <div key={step} className="flex gap-5 items-start" data-testid={`step-${step}`}>
+                <div className="flex-shrink-0 w-11 h-11 rounded-full border border-primary/30 bg-primary/8 flex items-center justify-center">
+                  <span className="text-xs font-bold text-primary">{step}</span>
+                </div>
+                <div className="space-y-1.5 pt-1.5 pb-2 border-b border-border/40 flex-1 last:border-0">
+                  <h3 className="text-base font-semibold">{title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center mt-10">
+            <Button size="lg" onClick={() => openRegisterModal()} className="px-8 h-11 text-sm" data-testid="button-how-cta">
               Start Free 3-Day Trial
+              <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
-            <Button variant="outline" size="lg" onClick={() => setCoachModalOpen(true)} data-testid="button-final-login">
+          </div>
+        </div>
+      </section>
+
+      {/* ── PRICING ── */}
+      <section id="pricing" className="py-20 px-5">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12 space-y-3">
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest">Pricing</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="text-pricing-heading">One plan. Everything included.</h2>
+            <p className="text-muted-foreground max-w-sm mx-auto text-sm">
+              No tiers, no per-seat fees, no feature gates. Every coaching business gets the full platform.
+            </p>
+          </div>
+
+          <div className="max-w-lg mx-auto">
+            <Card
+              className="p-8 border-primary/25 shadow-lg relative overflow-hidden"
+              data-testid="card-pricing"
+            >
+              <div className="absolute top-0 right-0 w-48 h-48 bg-primary/4 rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+              <div className="relative">
+                <div className="text-center space-y-2 mb-8">
+                  <div className="flex items-baseline justify-center gap-1.5">
+                    <span className="text-4xl sm:text-5xl font-bold" data-testid="text-pricing-amount">$49.99</span>
+                    <span className="text-lg text-muted-foreground">/month</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Start with a free 3-day trial — no charge until it ends</p>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-2.5 mb-8">
+                  {[
+                    "Unlimited coaches & clients",
+                    "Your own branded landing page",
+                    "Full scheduling & booking system",
+                    "Stripe payment integration",
+                    "Client wallet & session credits",
+                    "Team training contracts",
+                    "Session redemptions & payouts",
+                    "Automated email notifications",
+                    "Business analytics dashboard",
+                    "Multi-location support",
+                  ].map((feature) => (
+                    <div key={feature} className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <Button size="lg" className="w-full h-11 text-sm" onClick={() => openRegisterModal()} data-testid="button-pricing-cta">
+                  Start Free 3-Day Trial
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+                <p className="text-xs text-center text-muted-foreground mt-3">No credit card required to start your trial</p>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FINAL CTA ── */}
+      <section className="py-20 px-5 border-t border-border/60">
+        <div className="max-w-2xl mx-auto text-center space-y-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/25 bg-primary/8 text-xs font-medium text-primary mb-2">
+            <Activity className="h-3.5 w-3.5" />
+            Your coaching business, fully operational
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="text-cta-heading">
+            Ready to run your business<br className="hidden sm:block" /> like the professional you are?
+          </h2>
+          <p className="text-sm sm:text-base text-muted-foreground max-w-md mx-auto leading-relaxed">
+            Stop managing clients through spreadsheets and Venmo. Start using infrastructure that was built for exactly what you do.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <Button size="lg" onClick={() => openRegisterModal()} className="w-full sm:w-auto px-8 h-11 text-sm" data-testid="button-final-cta">
+              Start Free 3-Day Trial
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+            <Button variant="outline" size="lg" onClick={() => setCoachModalOpen(true)} className="w-full sm:w-auto px-8 h-11 text-sm" data-testid="button-final-login">
               <LogIn className="h-4 w-4 mr-2" />
               Already a Coach? Sign In
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Free for 3 days. Then $49.99/month. Cancel anytime.
+          </p>
         </div>
       </section>
 
-      <footer className="py-8 px-6 border-t">
-        <div className="max-w-6xl mx-auto space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
+      {/* ── FOOTER ── */}
+      <footer className="py-8 px-5 border-t border-border/50">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
-              <img src={logoImg} alt="TrainEfficiency" className="h-8 rounded-sm" data-testid="img-footer-logo" />
-              <span>Train Efficiency Business Solutions</span>
+              <div className="w-6 h-6 rounded-md bg-primary/15 flex items-center justify-center">
+                <Dumbbell className="h-3 w-3 text-primary" />
+              </div>
+              <span className="font-medium text-foreground/70">TrainEfficiency</span>
+              <span>— Built for S&C coaches</span>
             </div>
             <div className="flex items-center gap-4">
-              <a href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-privacy-policy">Privacy Policy</a>
-              <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms & Conditions</a>
+              <a href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-privacy-policy">Privacy</a>
+              <a href="/terms" className="hover:text-foreground transition-colors" data-testid="link-terms-conditions">Terms</a>
+              <a href="mailto:Bryan.jones@efficiencystrengthtraining.com" className="hover:text-foreground transition-colors flex items-center gap-1" data-testid="link-contact-support">
+                <Mail className="h-3 w-3" />
+                Contact
+              </a>
             </div>
           </div>
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Mail className="h-4 w-4" />
-            <span>Contact Support:</span>
-            <a href="mailto:Bryan.jones@efficiencystrengthtraining.com" className="hover:text-foreground transition-colors underline" data-testid="link-contact-support">Bryan.jones@efficiencystrengthtraining.com</a>
-          </div>
-          <div className="text-xs text-muted-foreground text-center">
-            <p>&copy; {new Date().getFullYear()} Train Efficiency Business Solutions. All rights reserved.</p>
+          <div className="text-xs text-muted-foreground/60 text-center mt-5">
+            &copy; {new Date().getFullYear()} Train Efficiency Business Solutions. All rights reserved.
           </div>
         </div>
       </footer>
 
+      {/* ── COACH LOGIN MODAL ── */}
       <Dialog open={coachModalOpen} onOpenChange={(open) => {
         setCoachModalOpen(open);
-        if (!open) {
-          setEmail("");
-          setPassword("");
-          setError("");
-          setShowPassword(false);
-        }
+        if (!open) { setEmail(""); setPassword(""); setError(""); setShowPassword(false); }
       }}>
         <DialogContent className="sm:max-w-md" data-testid="modal-coach-login">
           <DialogHeader>
@@ -568,11 +714,7 @@ export default function LandingPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label htmlFor="coach-password" className="text-sm font-medium">Password</label>
-                <a
-                  href="/forgot-password"
-                  className="text-sm text-primary hover:underline underline-offset-4"
-                  data-testid="link-forgot-password"
-                >
+                <a href="/forgot-password" className="text-sm text-primary hover:underline underline-offset-4" data-testid="link-forgot-password">
                   Forgot password?
                 </a>
               </div>
@@ -599,9 +741,7 @@ export default function LandingPage() {
                 </Button>
               </div>
             </div>
-            {error && (
-              <p className="text-sm text-destructive" data-testid="text-login-error">{error}</p>
-            )}
+            {error && <p className="text-sm text-destructive" data-testid="text-login-error">{error}</p>}
             <Button
               type="submit"
               className="w-full"
@@ -616,6 +756,7 @@ export default function LandingPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ── REGISTER MODAL ── */}
       <Dialog open={registerModalOpen} onOpenChange={(open) => {
         setRegisterModalOpen(open);
         if (!open) resetForm();
@@ -726,9 +867,7 @@ export default function LandingPage() {
                 </Button>
               </div>
             </div>
-            {error && (
-              <p className="text-sm text-destructive" data-testid="text-reg-error">{error}</p>
-            )}
+            {error && <p className="text-sm text-destructive" data-testid="text-reg-error">{error}</p>}
             <Button
               type="submit"
               className="w-full"
@@ -743,7 +882,15 @@ export default function LandingPage() {
               Free for 3 days, then $49.99/month. No credit card required to start.
             </p>
             <p className="text-center text-xs text-muted-foreground">
-              Already have an account? Use <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => { setRegisterModalOpen(false); setCoachModalOpen(true); }} data-testid="button-reg-to-login">Coach Sign In</button> instead.
+              Already have an account?{" "}
+              <button
+                type="button"
+                className="text-primary underline-offset-4 hover:underline"
+                onClick={() => { setRegisterModalOpen(false); setCoachModalOpen(true); }}
+                data-testid="button-reg-to-login"
+              >
+                Coach Sign In
+              </button>
             </p>
           </form>
         </DialogContent>
