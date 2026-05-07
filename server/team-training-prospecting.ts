@@ -666,6 +666,8 @@ export interface EnrichedContact {
   decisionMakerName: string | null;
   decisionMakerTitle: string | null;
   decisionMakerEmail: string | null;
+  contactPhone: string | null;
+  contactFormUrl: string | null;
   contactConfidence: number;
   contactSourceUrl: string | null;
   contactSourceTitle: string | null;
@@ -677,6 +679,7 @@ export interface EnrichedContact {
   verificationStatus: VerificationStatus;
   enrichmentExplanation: string;
   alternativeContacts: AlternativeContact[];
+  partial?: boolean;
 }
 
 export function normalizeNullable(value?: string | null): string | null {
@@ -699,6 +702,8 @@ function emptyEnrichment(): EnrichedContact {
     decisionMakerName: null,
     decisionMakerTitle: null,
     decisionMakerEmail: null,
+    contactPhone: null,
+    contactFormUrl: null,
     contactConfidence: 0,
     contactSourceUrl: null,
     contactSourceTitle: null,
@@ -730,11 +735,16 @@ export async function enrichProspectContact(
   const validDiscoveryMethods: DiscoveryMethod[] = ["website_contact_page", "website_staff_page", "athletics_page", "directory_listing", "social_profile", "search_result", "manual"];
 
   function parseEnrichedResult(parsed: any): EnrichedContact | null {
-    if (!parsed.foundRealEmail) return null;
     const contactEmail = normalizeNullable(parsed.contactEmail);
-    if (!isValidEmail(contactEmail)) return null;
+    const hasRealEmail = parsed.foundRealEmail && isValidEmail(contactEmail);
+    const contactPhone = normalizeNullable(parsed.contactPhone);
+    const contactFormUrl = normalizeNullable(parsed.contactFormUrl);
+    const contactName = normalizeNullable(parsed.contactName);
 
-    const contactQuality: ContactQuality = validQuality.includes(parsed.contactQuality) ? parsed.contactQuality : "general";
+    // If no email AND no partial data at all, return null
+    if (!hasRealEmail && !contactPhone && !contactFormUrl && !contactName) return null;
+
+    const contactQuality: ContactQuality = validQuality.includes(parsed.contactQuality) ? parsed.contactQuality : (hasRealEmail ? "general" : "missing");
     const rawSourceType = parsed.contactSourceType ?? parsed.sourceType;
     const contactSourceType: ContactSourceType = validSourceTypes.includes(rawSourceType) ? rawSourceType : "website";
     const rawVerification = parsed.verificationStatus;
@@ -757,12 +767,14 @@ export async function enrichProspectContact(
 
     const scoreInt = contactConfidenceScore !== null
       ? Math.round(contactConfidenceScore * 100)
-      : Math.max(0, Math.min(100, Math.round(parsed.contactConfidence || parsed.confidence || 70)));
+      : Math.max(0, Math.min(100, Math.round(parsed.contactConfidence || parsed.confidence || (hasRealEmail ? 70 : 30))));
 
     return {
-      decisionMakerName: normalizeNullable(parsed.contactName),
+      decisionMakerName: contactName,
       decisionMakerTitle: normalizeNullable(parsed.contactRole),
-      decisionMakerEmail: contactEmail,
+      decisionMakerEmail: hasRealEmail ? contactEmail : null,
+      contactPhone,
+      contactFormUrl,
       contactConfidence: scoreInt,
       contactSourceUrl: normalizeNullable(parsed.contactSourceUrl || parsed.sourceUrl) || null,
       contactSourceTitle: normalizeNullable(parsed.contactSourceTitle) || null,
@@ -772,14 +784,16 @@ export async function enrichProspectContact(
       contactQuality,
       contactSourceType,
       verificationStatus,
-      enrichmentExplanation: parsed.enrichmentExplanation || "Email found via live web search.",
+      enrichmentExplanation: parsed.enrichmentExplanation || (hasRealEmail ? "Email found via live web search." : "Partial contact info found — no email available."),
       alternativeContacts,
+      partial: !hasRealEmail,
     };
   }
 
   // Build search queries — most targeted first
   const websitePart = websiteUrl ? `Website: ${websiteUrl}.` : "";
-  const searchInput = `You are a B2B contact researcher. Search the web RIGHT NOW to find a real, publicly listed email address for this sports organization.
+  const domainPart = websiteUrl ? websiteUrl.replace(/^https?:\/\//, "").split("/")[0] : "";
+  const searchInput = `You are a B2B contact researcher. Search the web RIGHT NOW to find contact information for this sports organization.
 
 Organization: ${prospectName}
 Type: ${organizationType}
@@ -787,31 +801,40 @@ Sport: ${sport}
 Location: ${city}, ${state}
 ${websitePart}
 
-STEP 1 — Run these web searches in order until you find an email:
-1. Search: "${prospectName} ${city} ${state} contact email"
-2. Search: "${prospectName} ${sport} staff directory email"
-3. If websiteUrl exists, visit: ${websiteUrl || "(none)"}/contact and ${websiteUrl || "(none)"}/staff and ${websiteUrl || "(none)"}/about
-4. Search: site:${websiteUrl ? websiteUrl.replace(/^https?:\/\//, "").split("/")[0] : prospectName.toLowerCase().replace(/\s+/g, "")} email
-5. Search: "${prospectName}" email "@"
+STEP 1 — Run ALL of these searches (do not skip any):
+1. ${websiteUrl ? `Visit ${websiteUrl}/contact — look for email, phone, staff names` : `Search: "${prospectName} ${city} ${state} contact"`}
+2. ${websiteUrl ? `Visit ${websiteUrl}/staff and ${websiteUrl}/about` : `Search: "${prospectName} ${sport} staff directory"`}
+3. Search: "${prospectName} ${city} ${state} email"
+4. Search: "${prospectName} ${sport} coach director email"
+5. ${domainPart ? `Search: site:${domainPart} email contact` : `Search: "${prospectName}" "@" email`}
+6. Search: "${prospectName} ${city}" site:facebook.com — Facebook pages often list email in the About section
+7. Search: "${prospectName} ${sport}" site:maxpreps.com OR site:sportsengine.com OR site:teamsnap.com — sports directories list coach contacts
+8. Search: "${prospectName} ${state} ${sport} coach" site:linkedin.com
 
-STEP 2 — For each page you visit or search result snippet you read, look for:
-- Any email address visible in the page text, header, footer, or contact section
-- Staff/coach names with email addresses
-- "Contact us at X@Y.com" type language
+STEP 2 — Capture everything you find:
+- Email addresses (personal or general inbox)
+- Phone numbers
+- Staff/coach names and titles
+- The URL where you found each piece of info
 
-STRICT RULES:
-- You may ONLY report an email that you actually SEE in the page content you fetched or the search snippet returned.
-- Do NOT invent, guess, or construct email addresses.
-- Do NOT create role-based emails like info@domain.com or coach@domain.com unless that exact string appears in what you read.
-- If you genuinely cannot find a real email after searching, set foundRealEmail: false.
+EMAIL RULES:
+- You MAY report a personal email (coach@gmail.com, jsmith@schooldistrict.edu) if you see it on any page.
+- You MAY report a general/role-based inbox (info@, contact@, athletics@, office@) if it is EXPLICITLY LISTED on a page you fetched.
+- Do NOT construct or guess email addresses — only report what you literally see in text.
+- If you find only a general inbox, set contactQuality to "role_based".
+- If you cannot find any email after all searches, set foundRealEmail to false.
 
-STEP 3 — Return ONLY this JSON (no markdown, no explanation outside the JSON):
+PHONE RULES:
+- Always capture phone numbers if visible — even when no email is found.
+
+STEP 3 — Return ONLY this JSON (no markdown, no explanation):
 {
   "foundRealEmail": boolean,
   "contactName": string | null,
   "contactRole": string | null,
   "contactEmail": string | null,
   "contactPhone": string | null,
+  "contactFormUrl": string | null,
   "contactQuality": "decision_maker" | "role_based" | "general" | "missing",
   "contactSourceType": "website" | "social" | "directory" | "search_result" | null,
   "verificationStatus": "verified" | "unverified" | null,
@@ -820,16 +843,17 @@ STEP 3 — Return ONLY this JSON (no markdown, no explanation outside the JSON):
   "contactSourceSnippet": string | null,
   "contactDiscoveryMethod": "website_contact_page" | "website_staff_page" | "athletics_page" | "directory_listing" | "social_profile" | "search_result" | null,
   "contactConfidenceScore": number | null,
-  "enrichmentExplanation": string | null,
+  "enrichmentExplanation": string,
   "alternativeContacts": []
 }
 
 Confidence score guide:
-- 1.00 = email explicitly on official contact/staff page you fetched
-- 0.90 = athletics or team directory page
-- 0.80 = directory listing site
-- 0.70 = social profile bio
-- 0.60 = search result snippet showing email`;
+- 1.00 = personal email explicitly on official contact/staff page
+- 0.90 = personal email on athletics or team directory
+- 0.80 = personal email on directory listing site
+- 0.75 = general inbox (info@/contact@) explicitly listed on official page
+- 0.70 = email on social profile or search snippet
+- 0.60 = general inbox from search result snippet`;
 
   // Phase 1: Live web search via Responses API (60-second timeout)
   try {

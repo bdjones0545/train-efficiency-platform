@@ -7257,20 +7257,60 @@ export async function registerRoutes(
         prospect.websiteUrl || null
       );
 
-      // Strict email gate — only save if a real email was found
+      // Strict email gate — only save email if a real one was found
       const normalizedEmail = normalizeNullable(enriched.decisionMakerEmail);
-      if (!isValidEmail(normalizedEmail)) {
-        console.warn("[TeamTraining EnrichContact] No real email found for prospect:", prospect.prospectName);
-        // Still track the failed attempt
+      const hasRealEmail = isValidEmail(normalizedEmail);
+
+      // Even without an email, save any partial data found (phone, contact name, contact form URL)
+      const hasPartialData = !hasRealEmail && (enriched.contactPhone || (enriched as any).contactFormUrl || enriched.decisionMakerName);
+      if (hasPartialData) {
+        console.log("[TeamTraining EnrichContact] No email but partial data found for:", prospect.prospectName, {
+          phone: enriched.contactPhone,
+          contactFormUrl: (enriched as any).contactFormUrl,
+          name: enriched.decisionMakerName,
+        });
         await storage.updateTeamTrainingProspect(prospect.id, {
+          contactName: enriched.decisionMakerName || prospect.contactName,
+          contactRole: enriched.decisionMakerTitle || prospect.contactRole,
+          contactPhone: enriched.contactPhone || prospect.contactPhone,
           lastDiscoveryAttemptAt: new Date(),
-          lastDiscoveryResult: "no_real_email_found",
+          lastDiscoveryResult: "partial_contact_found",
         } as any).catch(() => {});
+      }
+
+      if (!hasRealEmail) {
+        console.warn("[TeamTraining EnrichContact] No real email found for prospect:", prospect.prospectName);
+        if (!hasPartialData) {
+          await storage.updateTeamTrainingProspect(prospect.id, {
+            lastDiscoveryAttemptAt: new Date(),
+            lastDiscoveryResult: "no_real_email_found",
+          } as any).catch(() => {});
+        }
+        const updatedProspect = hasPartialData
+          ? await storage.getTeamTrainingProspect(prospect.id)
+          : prospect;
+        const googleQuery = encodeURIComponent(`${prospect.prospectName} ${prospect.city || ""} ${prospect.state || ""} coach email contact`);
+        const linkedInQuery = encodeURIComponent(`${prospect.prospectName} ${prospect.sport || ""} coach director`);
         return res.json({
           success: false,
-          reason: "no_real_email_found",
-          message: "No real email found from available sources.",
-          prospect,
+          reason: hasPartialData ? "partial_contact_found" : "no_real_email_found",
+          message: hasPartialData
+            ? "No email found, but we saved a phone number or contact name we discovered."
+            : "No email found from any source.",
+          partialData: hasPartialData ? {
+            contactPhone: enriched.contactPhone,
+            contactFormUrl: (enriched as any).contactFormUrl,
+            contactName: enriched.decisionMakerName,
+            contactRole: enriched.decisionMakerTitle,
+          } : null,
+          manualResearchLinks: {
+            google: `https://www.google.com/search?q=${googleQuery}`,
+            linkedin: `https://www.linkedin.com/search/results/people/?keywords=${linkedInQuery}`,
+            maxpreps: `https://www.maxpreps.com/search/#q=${encodeURIComponent(prospect.prospectName)}`,
+            website: prospect.websiteUrl || null,
+          },
+          enrichmentExplanation: enriched.enrichmentExplanation,
+          prospect: updatedProspect ?? prospect,
         });
       }
 

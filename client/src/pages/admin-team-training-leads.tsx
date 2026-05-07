@@ -1546,6 +1546,12 @@ export default function AdminTeamTrainingLeadsPage() {
   });
 
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
+  const [enrichFailData, setEnrichFailData] = useState<{
+    hasPartial: boolean;
+    partialData: { contactPhone?: string | null; contactFormUrl?: string | null; contactName?: string | null; contactRole?: string | null } | null;
+    explanation?: string | null;
+    links: { google: string; linkedin: string; maxpreps: string; website: string | null } | null;
+  } | null>(null);
 
   const enrichContactMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -1563,12 +1569,27 @@ export default function AdminTeamTrainingLeadsPage() {
     onSuccess: (data) => {
       setEnrichingId(null);
 
-      // If the backend found no real email, show honest failure — no cache update
+      // If the backend found no real email, show actionable failure with manual research links
       if (data.success === false) {
-        toast({
-          title: "No real email found",
-          description: "No real email found from available sources. Try adding a website URL to this lead.",
-          variant: "destructive",
+        // If partial data was found (phone/name), still refresh the lead card
+        if (data.prospect) {
+          queryClient.setQueryData(["/api/admin/team-training/prospects"], (old: any) => {
+            if (!old) return old;
+            if (Array.isArray(old)) return old.map((l: TeamTrainingProspect) => l.id === data.prospect.id ? { ...l, ...data.prospect } : l);
+            if (Array.isArray(old?.prospects)) return { ...old, prospects: old.prospects.map((l: TeamTrainingProspect) => l.id === data.prospect.id ? { ...l, ...data.prospect } : l) };
+            return old;
+          });
+        }
+
+        const links = data.manualResearchLinks;
+        const hasPartial = data.reason === "partial_contact_found";
+
+        // Show enrichment failure dialog
+        setEnrichFailData({
+          hasPartial,
+          partialData: data.partialData,
+          explanation: data.enrichmentExplanation,
+          links,
         });
         return;
       }
@@ -2169,6 +2190,78 @@ export default function AdminTeamTrainingLeadsPage() {
                   {updateProspectMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                   Save Changes
                 </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Enrich Contact Failure Dialog */}
+      {enrichFailData && (
+        <Dialog open={!!enrichFailData} onOpenChange={() => setEnrichFailData(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {enrichFailData.hasPartial ? (
+                  <><span className="text-amber-500">⚡</span> Partial Info Found</>
+                ) : (
+                  <><span className="text-muted-foreground">🔍</span> No Email Found</>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 text-sm">
+              {enrichFailData.hasPartial && enrichFailData.partialData && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 space-y-1">
+                  <p className="font-medium text-amber-800 dark:text-amber-300 text-xs uppercase tracking-wide">Saved to lead</p>
+                  {enrichFailData.partialData.contactName && <p><span className="text-muted-foreground">Name:</span> {enrichFailData.partialData.contactName}</p>}
+                  {enrichFailData.partialData.contactRole && <p><span className="text-muted-foreground">Role:</span> {enrichFailData.partialData.contactRole}</p>}
+                  {enrichFailData.partialData.contactPhone && <p><span className="text-muted-foreground">Phone:</span> {enrichFailData.partialData.contactPhone}</p>}
+                  {enrichFailData.partialData.contactFormUrl && (
+                    <p><span className="text-muted-foreground">Contact form:</span>{" "}
+                      <a href={enrichFailData.partialData.contactFormUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline truncate inline-block max-w-[200px] align-bottom">
+                        {enrichFailData.partialData.contactFormUrl}
+                      </a>
+                    </p>
+                  )}
+                </div>
+              )}
+              {!enrichFailData.hasPartial && (
+                <p className="text-muted-foreground">No email or phone number was found for this organization across the website, Facebook, MaxPreps, LinkedIn, and sports directories.</p>
+              )}
+              {enrichFailData.explanation && (
+                <p className="text-xs text-muted-foreground italic border-l-2 border-muted pl-2">{enrichFailData.explanation}</p>
+              )}
+              <div>
+                <p className="font-medium mb-2">Search manually:</p>
+                <div className="space-y-2">
+                  {enrichFailData.links?.google && (
+                    <a href={enrichFailData.links.google} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-primary hover:underline text-xs" data-testid="link-manual-google">
+                      <span>🔍</span> Google Search
+                    </a>
+                  )}
+                  {enrichFailData.links?.linkedin && (
+                    <a href={enrichFailData.links.linkedin} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-primary hover:underline text-xs" data-testid="link-manual-linkedin">
+                      <span>💼</span> LinkedIn Search
+                    </a>
+                  )}
+                  {enrichFailData.links?.maxpreps && (
+                    <a href={enrichFailData.links.maxpreps} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-primary hover:underline text-xs" data-testid="link-manual-maxpreps">
+                      <span>🏆</span> MaxPreps Directory
+                    </a>
+                  )}
+                  {enrichFailData.links?.website && (
+                    <a href={enrichFailData.links.website} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-primary hover:underline text-xs" data-testid="link-manual-website">
+                      <span>🌐</span> Organization Website
+                    </a>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end pt-1">
+                <Button variant="outline" size="sm" onClick={() => setEnrichFailData(null)}>Close</Button>
               </div>
             </div>
           </DialogContent>
