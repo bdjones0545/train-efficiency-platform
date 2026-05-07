@@ -161,13 +161,17 @@ Return a JSON array of up to ${limit} organizations. Each object MUST have these
 
 Only include leads with discoveryConfidenceScore >= 0.45. Return ONLY the JSON array. No markdown.`;
 
-  // Phase 1: Live web search via Responses API
+  // Phase 1: Live web search via Responses API (90-second timeout)
   try {
-    const webResponse = await (openai as any).responses.create({
+    const webSearchPromise = (openai as any).responses.create({
       model: "gpt-4o",
       tools: [{ type: "web_search_preview" }],
       input: searchInput,
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("web_search_timeout")), 90000)
+    );
+    const webResponse = await Promise.race([webSearchPromise, timeoutPromise]);
 
     const rawText: string = webResponse.output_text || "";
     console.log(`[ProspectResearch] Web search response for ${location}: ${rawText.length} chars`);
@@ -819,13 +823,17 @@ Confidence score guide:
 - 0.70 = social profile bio
 - 0.60 = search result snippet showing email`;
 
-  // Phase 1: Live web search via Responses API
+  // Phase 1: Live web search via Responses API (60-second timeout)
   try {
-    const webResponse = await (openai as any).responses.create({
+    const enrichSearchPromise = (openai as any).responses.create({
       model: "gpt-4o",
       tools: [{ type: "web_search_preview" }],
       input: searchInput,
     });
+    const enrichTimeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("web_search_timeout")), 60000)
+    );
+    const webResponse = await Promise.race([enrichSearchPromise, enrichTimeoutPromise]);
 
     const rawText: string = webResponse.output_text || "";
     console.log(`[EnrichContact] Web search raw output for ${prospectName}:`, rawText.slice(0, 300));

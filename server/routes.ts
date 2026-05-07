@@ -7091,14 +7091,18 @@ export async function registerRoutes(
 
       res.json({ count: created.length, prospects: created, summary });
     } catch (err: any) {
-      console.error("[TeamTraining Research]", err);
-      if (err.message === "AI research is not configured") {
+      const errMsg: string = err?.message || String(err) || "Unknown error";
+      console.error("[TeamTraining Research] Error:", errMsg, err?.stack || "");
+      if (errMsg === "AI research is not configured") {
         return res.status(500).json({
           error: "AI research is not configured",
           message: "Missing OPENAI_API_KEY on the server.",
         });
       }
-      res.status(500).json({ message: err.message });
+      if (errMsg.includes("ECONNRESET") || errMsg.includes("socket hang up") || errMsg.includes("ETIMEDOUT")) {
+        return res.status(503).json({ error: "Network error", message: "Research service temporarily unavailable. Please try again." });
+      }
+      res.status(500).json({ message: errMsg });
     }
   });
 

@@ -1069,10 +1069,11 @@ const STEP_DEFINITIONS = [
 ];
 
 function makeSteps(activeId?: string): ResearchStep[] {
-  let passed = !activeId;
+  if (!activeId) return STEP_DEFINITIONS.map((s) => ({ ...s, state: "pending" as const }));
+  let foundActive = false;
   return STEP_DEFINITIONS.map((s) => {
-    if (passed) return { ...s, state: "pending" as const };
-    if (s.id === activeId) { passed = false; return { ...s, state: "active" as const }; }
+    if (foundActive) return { ...s, state: "pending" as const };
+    if (s.id === activeId) { foundActive = true; return { ...s, state: "active" as const }; }
     return { ...s, state: "done" as const };
   });
 }
@@ -1312,7 +1313,23 @@ export default function AdminTeamTrainingLeadsPage() {
       });
       startProgressSteps(data.location);
 
-      const res = await apiRequest("POST", "/api/admin/team-training/research", data);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      let res: Response;
+      try {
+        res = await fetch("/api/admin/team-training/research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(data),
+          signal: controller.signal,
+        });
+      } catch (fetchErr: any) {
+        if (fetchErr?.name === "AbortError") throw new Error("Request timed out");
+        throw new Error("Network error — check your connection and try again.");
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || json.message || "Unknown error");
       return json;
@@ -1345,17 +1362,23 @@ export default function AdminTeamTrainingLeadsPage() {
     },
     onError: (err: Error) => {
       clearStepTimers();
-      const msg = err.message;
-      let friendly = "Couldn't research leads. Please try again.";
+      const msg = err.message || "";
+      let friendly = "Research failed. Please try again.";
       if (msg === "AI research is not configured") {
         friendly = "Lead research is not configured yet. Add your OpenAI API key on the server.";
       } else if (msg === "Location required") {
         friendly = "Enter a location before researching leads.";
+      } else if (msg === "Request timed out") {
+        friendly = "Research took too long to respond. Please try again.";
+      } else if (msg.startsWith("Network error")) {
+        friendly = "Network error — check your connection and try again.";
+      } else if (msg && msg !== "Unknown error") {
+        friendly = msg;
       }
       setResearchProgress((prev) => ({
         ...prev,
         status: "error",
-        steps: prev.steps,
+        steps: STEP_DEFINITIONS.map((s) => ({ ...s, state: "done" as const })),
         error: friendly,
       }));
     },
