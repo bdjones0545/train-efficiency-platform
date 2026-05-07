@@ -18,6 +18,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
+import HeroDashboard from "@/components/HeroDashboard";
 
 export default function LandingPage() {
   const [coachModalOpen, setCoachModalOpen] = useState(false);
@@ -258,91 +259,9 @@ export default function LandingPage() {
           </div>
 
           {/* Dashboard Mockup */}
-          <div className="mt-14 relative">
-            <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none" />
-            <div
-              className="rounded-xl border border-border/70 overflow-hidden shadow-2xl"
-              style={{ background: "hsl(var(--card))" }}
-              data-testid="img-dashboard-mockup"
-            >
-              {/* Browser chrome */}
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60" style={{ background: "hsl(var(--background))" }}>
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-border" />
-                  <div className="w-3 h-3 rounded-full bg-border" />
-                  <div className="w-3 h-3 rounded-full bg-border" />
-                </div>
-                <div className="flex-1 mx-4 h-5 rounded-md bg-muted/60 max-w-xs" />
-                <div className="w-16 h-5 rounded-md bg-primary/20" />
-              </div>
-
-              {/* Dashboard content */}
-              <div className="flex min-h-[320px] sm:min-h-[380px]">
-                {/* Sidebar */}
-                <div className="w-44 border-r border-border/50 p-3 flex-shrink-0 hidden sm:block" style={{ background: "hsl(var(--sidebar))" }}>
-                  <div className="flex items-center gap-2 mb-5 px-2">
-                    <div className="w-6 h-6 rounded-md bg-primary/20 flex items-center justify-center">
-                      <Dumbbell className="h-3 w-3 text-primary" />
-                    </div>
-                    <div className="h-3 rounded bg-muted w-20" />
-                  </div>
-                  {[Calendar, Users, DollarSign, BarChart3, Building2, Wallet].map((Icon, i) => (
-                    <div key={i} className={`flex items-center gap-2.5 px-2 py-2 rounded-md mb-0.5 ${i === 0 ? "bg-primary/10" : ""}`}>
-                      <Icon className={`h-3.5 w-3.5 ${i === 0 ? "text-primary" : "text-muted-foreground"}`} />
-                      <div className={`h-2.5 rounded w-14 ${i === 0 ? "bg-primary/40" : "bg-muted/70"}`} />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Main content */}
-                <div className="flex-1 p-4 sm:p-5 space-y-4">
-                  {/* Header row */}
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <div className="h-4 rounded bg-foreground/10 w-36" />
-                      <div className="h-2.5 rounded bg-muted/70 w-24" />
-                    </div>
-                    <div className="h-8 w-28 rounded-md bg-primary/20 border border-primary/30 flex items-center justify-center">
-                      <div className="h-2.5 w-16 rounded bg-primary/40" />
-                    </div>
-                  </div>
-
-                  {/* Stat cards */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { label: "Sessions Today", value: "8", accent: true },
-                      { label: "Pending Payouts", value: "$1,240" },
-                      { label: "Active Clients", value: "34" },
-                      { label: "This Month", value: "$6,890" },
-                    ].map(({ label, value, accent }) => (
-                      <div key={label} className={`rounded-lg border p-3 space-y-2 ${accent ? "border-primary/30 bg-primary/5" : "border-border/60"}`}>
-                        <div className={`h-2 rounded w-16 ${accent ? "bg-primary/30" : "bg-muted/60"}`} />
-                        <div className={`h-5 rounded w-12 font-bold ${accent ? "bg-primary/40" : "bg-foreground/10"}`} />
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Session rows */}
-                  <div className="rounded-lg border border-border/60 overflow-hidden">
-                    <div className="px-4 py-2.5 border-b border-border/50 flex items-center justify-between">
-                      <div className="h-2.5 rounded bg-foreground/10 w-28" />
-                      <div className="h-2.5 rounded bg-muted/60 w-16" />
-                    </div>
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="px-4 py-3 flex items-center gap-3 border-b border-border/40 last:border-0">
-                        <div className="w-7 h-7 rounded-full bg-primary/15 flex-shrink-0" />
-                        <div className="flex-1 space-y-1">
-                          <div className="h-2.5 rounded bg-foreground/10 w-28" />
-                          <div className="h-2 rounded bg-muted/60 w-20" />
-                        </div>
-                        <div className="h-6 w-16 rounded-full bg-primary/15 border border-primary/25" />
-                        <div className="h-2.5 rounded bg-foreground/8 w-12" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="mt-14 relative" data-testid="img-dashboard-mockup">
+            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none rounded-b-xl" />
+            <HeroDashboard />
           </div>
         </div>
       </section>

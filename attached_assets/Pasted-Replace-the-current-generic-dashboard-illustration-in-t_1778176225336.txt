@@ -1,0 +1,124 @@
+Replace the current generic dashboard illustration in the TrainEfficiency landing page hero section with a premium, believable, operational SaaS dashboard that showcases TrainEfficiency’s AI-powered coaching business infrastructure.
+
+IMPORTANT:
+Do NOT create a fake “AI chat app” hero.
+Do NOT create a generic analytics dashboard.
+Do NOT create a cartoon AI assistant.
+
+The goal is to make TrainEfficiency feel like:
+“The operating system for modern coaching businesses.”
+
+DESIGN DIRECTION:
+The hero visual should look like a real high-end SaaS product actively managing a coaching business.
+
+Style inspiration:
+- Linear
+- Stripe
+- modern operational SaaS
+- premium admin infrastructure
+- dark mode enterprise dashboards
+
+The dashboard should feel:
+- intelligent
+- operational
+- real
+- high-value
+- trustworthy
+- built for serious coaches
+
+VISUAL STRUCTURE:
+Create a realistic dashboard mockup with:
+
+LEFT SIDEBAR:
+- Dashboard
+- Schedule
+- Clients
+- Team Training
+- Payments
+- Coaches
+- Outreach
+- Analytics
+
+TOP HEADER:
+- Revenue snapshot
+- Today’s sessions
+- Open slots
+- Notifications
+- Search
+- Coach profile/avatar
+
+MAIN CONTENT AREA:
+The core of the hero should showcase embedded AI operational intelligence throughout the interface.
+
+NOT a chatbot.
+
+Instead, AI should appear naturally integrated into the workflow.
+
+Include realistic operational cards such as:
+
+AI Recommendations:
+- “3 athletes overdue for package renewal”
+- “Thursday has 4 unfilled prime-hour slots”
+- “2 team invoices scheduled tomorrow”
+- “Projected monthly revenue up 14%”
+
+Team Training Pipeline:
+- Bluffton Football — Proposal Sent
+- Hilton Head Volleyball — Awaiting Reply
+- Beaufort Baseball — Lead Identified
+
+Scheduling Intelligence:
+- Session occupancy visualization
+- Back-to-back booking optimization
+- Coach utilization percentages
+
+Revenue & Payouts:
+- Pending coach payouts
+- Wallet balances
+- Session redemption summaries
+- Monthly revenue trend
+
+Recent Activity Feed:
+- New athlete signup
+- Session completed
+- Package renewed
+- Outreach draft generated
+
+VISUAL FEEL:
+- Dark UI with subtle green accents
+- Elegant depth and gradients
+- Premium shadows
+- Refined borders
+- Subtle glassmorphism where appropriate
+- Soft green glow accents (restrained)
+- Realistic spacing and typography
+- Modern enterprise-quality polish
+
+MOBILE REQUIREMENTS:
+The dashboard mockup must:
+- scale beautifully on mobile
+- remain readable
+- not feel cluttered
+- maintain premium composition
+- prioritize hierarchy over density
+
+ANIMATION:
+Add subtle motion:
+- soft pulse on live metrics
+- gentle hover movement
+- small activity transitions
+- ambient glow movement
+
+Keep motion restrained and premium.
+
+CRITICAL POSITIONING:
+The visual should communicate:
+“This software understands real coaching operations.”
+
+NOT:
+“Here’s an AI chatbot.”
+
+FINAL EMOTIONAL GOAL:
+When a coach lands on the page, the dashboard should immediately create the reaction:
+
+“This is way more advanced than the scheduling software I’m currently using.”
