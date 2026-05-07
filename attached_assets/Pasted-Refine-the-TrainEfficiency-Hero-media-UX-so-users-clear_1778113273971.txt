@@ -1,0 +1,84 @@
+Refine the TrainEfficiency Hero media UX so users clearly understand that Hero media is a responsive background underlay behind the first landing-page slide content.
+
+Problem:
+Users still think Hero uploads behave like normal images/cards, when they actually function as a full-screen responsive background layer behind the headline and CTA. This causes confusion about cropping and placement.
+
+Implement the following:
+
+1. Rename the Hero category again for clarity:
+Current:
+- Main Background / Hero Slide
+
+Change to:
+- Hero Background Underlay
+
+Short tab label:
+- Hero Background
+
+2. Update the helper description:
+Replace the current helper copy with:
+
+“This media appears behind the headline and buttons on the first landing-page slide. It behaves as a responsive full-screen background underlay and will crop differently across devices.”
+
+3. Add a visual behavior explanation card under the upload area.
+
+Title:
+“How Hero Backgrounds Work”
+
+Include 3 mini preview states side-by-side:
+
+A.
+Desktop Background
+- wide crop preview
+- label: “Desktop layout”
+
+B.
+Mobile Background
+- centered/taller crop preview
+- label: “Mobile layout”
+
+C.
+Overlay Preview
+- same image with sample headline + CTA overlayed
+- label: “Text appears on top”
+
+4. Add a small badge above the upload area:
+Badge text:
+“Background Layer”
+
+Subtext:
+“Not displayed like a normal image card.”
+
+5. Add an additional warning box:
+Title:
+“Important”
+Copy:
+“Hero backgrounds are designed to create atmosphere and branding behind your landing-page content. Avoid placing important text, logos, or faces near the edges of the image.”
+
+6. Update upload CTA:
+Current:
+“Upload hero background media”
+
+Change to:
+“Upload background media for your first landing-page slide”
+
+Subtext:
+“This becomes the responsive background underlay behind your headline and buttons.”
+
+7. Public landing page:
+Ensure hero media continues using:
+- object-fit: cover
+- responsive cropping
+- dark overlay
+- focal point positioning
+
+8. Add optional future-ready field in the UI (no backend logic required yet):
+Toggle:
+“Use as atmospheric background”
+(default ON)
+
+Helper text:
+“Best for action shots, training environments, and brand visuals rather than text-heavy graphics.”
+
+Goal:
+Users should immediately understand that Hero media is not a normal image section — it is a responsive background underlay that sits behind the first landing-page slide content.

@@ -84,7 +84,7 @@ const SECTIONS: {
   priority?: boolean;
   completionMin: number;
 }[] = [
-  { key: "hero", label: "Main Background / Hero Slide", shortLabel: "Hero", limit: 5, hint: "Displayed as the large background media at the top of your public landing page. Use a wide action photo or short video. This area will be cropped differently on mobile.", priority: true, completionMin: 1 },
+  { key: "hero", label: "Hero Background Underlay", shortLabel: "Hero Background", limit: 5, hint: "This media appears behind the headline and buttons on the first landing-page slide. It behaves as a responsive full-screen background underlay and will crop differently across devices.", priority: true, completionMin: 1 },
   { key: "training_showcase", label: "Training Photos", shortLabel: "Training", limit: 20, hint: "Used in training sections, coach proof, athlete results, and service previews.", priority: true, completionMin: 3 },
   { key: "facility", label: "Facility Photos", shortLabel: "Facility", limit: 20, hint: "Used to show your gym, equipment, space, and training environment.", priority: true, completionMin: 2 },
   { key: "coaches", label: "Coaches", shortLabel: "Coaches", limit: 10, hint: "Showcase your coaching team. Up to 10 items.", priority: false, completionMin: 1 },
@@ -550,26 +550,73 @@ export default function AdminMediaPage() {
                 </Badge>
               </div>
 
-              {/* Hero priority badge */}
+              {/* Hero: Background Layer badge */}
               {sec.key === "hero" && (
-                <div className="rounded-lg border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-3 flex items-start gap-2">
-                  <Star className="h-4 w-4 mt-0.5 text-amber-500 shrink-0 fill-amber-500" />
-                  <div>
-                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Most Important Section</p>
-                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
-                      This is the first thing clients see. Strong hero media — especially a short video — increases bookings.
-                    </p>
+                <div className="flex items-start gap-3 flex-wrap">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/8 px-3 py-1" data-testid="hero-bg-layer-badge">
+                    <Star className="h-3 w-3 text-primary fill-primary" />
+                    <span className="text-xs font-semibold text-primary">Background Layer</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground self-center">Not displayed like a normal image card.</p>
+                </div>
+              )}
+
+              {/* Hero: How Hero Backgrounds Work — 3-state visual card */}
+              {sec.key === "hero" && (
+                <div className="rounded-xl border bg-card p-4 space-y-3" data-testid="hero-behavior-card">
+                  <p className="text-xs font-semibold">How Hero Backgrounds Work</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* A — Desktop layout */}
+                    <div className="space-y-1.5">
+                      <div className="rounded-md overflow-hidden border bg-black" style={{ aspectRatio: "16/5" }}>
+                        <div className="w-full h-full bg-gradient-to-r from-slate-700 to-slate-800 flex items-end p-1.5">
+                          <div className="space-y-0.5 w-full">
+                            <div className="h-1 w-3/4 rounded-full bg-white/60" />
+                            <div className="h-0.5 w-1/2 rounded-full bg-white/30" />
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground text-center font-medium">Desktop layout</p>
+                    </div>
+                    {/* B — Mobile layout */}
+                    <div className="space-y-1.5 flex flex-col items-center">
+                      <div className="rounded-md overflow-hidden border bg-black" style={{ aspectRatio: "9/14", width: "100%", maxWidth: 56 }}>
+                        <div className="w-full h-full bg-gradient-to-b from-slate-700 to-slate-900 flex items-end p-1.5">
+                          <div className="space-y-0.5 w-full">
+                            <div className="h-1 w-full rounded-full bg-white/60" />
+                            <div className="h-0.5 w-2/3 rounded-full bg-white/30" />
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground text-center font-medium">Mobile layout</p>
+                    </div>
+                    {/* C — Overlay preview */}
+                    <div className="space-y-1.5">
+                      <div className="rounded-md overflow-hidden border bg-black relative" style={{ aspectRatio: "16/5" }}>
+                        <div className="absolute inset-0 bg-gradient-to-r from-slate-700 to-slate-800" />
+                        <div className="absolute inset-0 bg-black/50" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 p-1">
+                          <div className="h-1 w-2/3 rounded-full bg-white/90" />
+                          <div className="h-0.5 w-1/2 rounded-full bg-white/60" />
+                          <div className="mt-0.5 h-2 w-1/3 rounded bg-white/80" />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground text-center font-medium">Text appears on top</p>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Hero aspect-ratio guidance card */}
+              {/* Hero: Important warning box */}
               {sec.key === "hero" && (
-                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-3 space-y-1" data-testid="hero-guidance-card">
-                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">Best for Hero Background</p>
-                  <p className="text-xs text-blue-600 dark:text-blue-500">
-                    Use wide landscape media. Recommended: 16:9 or 4:5 safe-center composition. Keep important text, faces, and logos near the center because the background crops on mobile.
-                  </p>
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-3 flex items-start gap-2" data-testid="hero-important-warning">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Important</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+                      Hero backgrounds are designed to create atmosphere and branding behind your landing-page content. Avoid placing important text, logos, or faces near the edges of the image.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -619,9 +666,9 @@ export default function AdminMediaPage() {
                     <div className="space-y-1">
                       {sec.key === "hero" ? (
                         <>
-                          <p className="text-sm font-medium">Upload hero background media</p>
+                          <p className="text-sm font-medium">Upload background media for your first landing-page slide</p>
                           <p className="text-xs text-muted-foreground">
-                            This becomes the top background image or video on your landing page.
+                            This becomes the responsive background underlay behind your headline and buttons.
                           </p>
                         </>
                       ) : sec.key === "testimonials" ? (
@@ -736,6 +783,17 @@ export default function AdminMediaPage() {
 
                           {/* Crop preview for hero images */}
                           {sec.key === "hero" && <HeroCropPreview item={item} />}
+
+                          {/* Atmospheric background toggle (UI-only, future-ready) */}
+                          {sec.key === "hero" && (
+                            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 space-y-0.5" data-testid={`atmospheric-toggle-${item.id}`}>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-medium">Use as atmospheric background</span>
+                                <Switch checked={true} disabled data-testid={`switch-atmospheric-${item.id}`} />
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">Best for action shots, training environments, and brand visuals rather than text-heavy graphics.</p>
+                            </div>
+                          )}
 
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5">
