@@ -362,7 +362,9 @@ export default function AdminMediaPage() {
       }
 
       const isImage = file.type.startsWith("image/");
-      const isVideo = file.type.startsWith("video/");
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      const videoExts = ["mp4", "mov", "webm", "m4v", "mpeg", "mpg", "avi"];
+      const isVideo = file.type.startsWith("video/") || videoExts.includes(ext);
 
       if (!isImage && !isVideo) {
         toast({ title: "Unsupported file type", description: "Please upload jpg, png, webp, mp4, mov, or webm files.", variant: "destructive" });
@@ -372,8 +374,8 @@ export default function AdminMediaPage() {
         toast({ title: "Image too large", description: "Images must be under 10MB.", variant: "destructive" });
         continue;
       }
-      if (isVideo && file.size > 100 * 1024 * 1024) {
-        toast({ title: "Video too large", description: "Videos must be under 100MB.", variant: "destructive" });
+      if (isVideo && file.size > 0 && file.size > 200 * 1024 * 1024) {
+        toast({ title: "Video too large", description: "Videos must be under 200MB.", variant: "destructive" });
         continue;
       }
 
@@ -387,14 +389,22 @@ export default function AdminMediaPage() {
       try {
         const res = await fetch("/api/org/media", { method: "POST", headers: getAuthHeaders(), body: formData });
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ message: "Upload failed" }));
-          toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+          const contentType = res.headers.get("content-type") || "";
+          let errMsg = "Upload failed";
+          if (contentType.includes("application/json")) {
+            const err = await res.json().catch(() => null);
+            errMsg = err?.message || errMsg;
+          } else {
+            if (res.status === 413) errMsg = "File too large. Videos must be under 200MB.";
+            else if (res.status === 400) errMsg = "Invalid file. Please upload a supported image or video format.";
+          }
+          toast({ title: "Upload failed", description: errMsg, variant: "destructive" });
         } else {
           queryClient.invalidateQueries({ queryKey: ["/api/org/media"] });
           toast({ title: "Uploaded!", description: `${file.name} added to ${sectionInfo?.label}.` });
         }
       } catch {
-        toast({ title: "Upload error", description: "Network error during upload.", variant: "destructive" });
+        toast({ title: "Upload error", description: "Network error during upload. Check your connection and try again.", variant: "destructive" });
       } finally {
         setUploading(false);
         setUploadProgress("");

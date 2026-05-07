@@ -165,9 +165,19 @@ const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
-const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
+const ALLOWED_VIDEO_TYPES = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+  "video/mov",
+  "video/mpeg",
+  "video/x-msvideo",
+  "application/octet-stream",
+];
+const ALLOWED_VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".m4v", ".mpeg", ".mpg", ".avi"];
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
 
 const mediaStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
@@ -178,15 +188,35 @@ const mediaStorage = multer.diskStorage({
   },
 });
 
+function isAllowedMediaFile(file: Express.Multer.File): boolean {
+  if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) return true;
+  if (ALLOWED_VIDEO_TYPES.includes(file.mimetype)) return true;
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (ALLOWED_VIDEO_EXTENSIONS.includes(ext)) return true;
+  return false;
+}
+
 const mediaUpload = multer({
   storage: mediaStorage,
   limits: { fileSize: VIDEO_MAX_BYTES },
   fileFilter: (_req, file, cb) => {
-    const allowed = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new Error(`Unsupported file type: ${file.mimetype}`));
+    if (isAllowedMediaFile(file)) cb(null, true);
+    else cb(new Error(`Unsupported file type: ${file.mimetype}. Please upload jpg, png, webp, mp4, mov, or webm files.`));
   },
 });
+
+function handleMulterUpload(req: any, res: any, next: any) {
+  mediaUpload.single("file")(req, res, (err: any) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ message: `File too large. Videos must be under ${VIDEO_MAX_BYTES / 1024 / 1024}MB and images under ${IMAGE_MAX_BYTES / 1024 / 1024}MB.` });
+    }
+    if (err.message?.includes("Unsupported file type")) {
+      return res.status(400).json({ message: err.message });
+    }
+    return res.status(400).json({ message: err.message || "File upload error" });
+  });
+}
 
 const SECTION_LIMITS: Record<string, number> = {
   hero: 5,
@@ -6283,7 +6313,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/org/media", isAuthenticated, requireRole("ADMIN", "COACH"), mediaUpload.single("file"), async (req: any, res) => {
+  app.post("/api/org/media", isAuthenticated, requireRole("ADMIN", "COACH"), handleMulterUpload, async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
@@ -6296,14 +6326,15 @@ export async function registerRoutes(
       if (!validSections.includes(section)) return res.status(400).json({ message: "Invalid section" });
 
       const isImage = ALLOWED_IMAGE_TYPES.includes(req.file.mimetype);
-      const isVideo = ALLOWED_VIDEO_TYPES.includes(req.file.mimetype);
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      const isVideo = ALLOWED_VIDEO_TYPES.includes(req.file.mimetype) || ALLOWED_VIDEO_EXTENSIONS.includes(ext);
       if (isImage && req.file.size > IMAGE_MAX_BYTES) {
         fs.unlinkSync(req.file.path);
         return res.status(400).json({ message: "Image exceeds 10MB limit" });
       }
       if (!isImage && !isVideo) {
         fs.unlinkSync(req.file.path);
-        return res.status(400).json({ message: "Unsupported file type" });
+        return res.status(400).json({ message: "Unsupported file type. Please upload jpg, png, webp, mp4, mov, or webm." });
       }
 
       const limit = SECTION_LIMITS[section] ?? 10;
