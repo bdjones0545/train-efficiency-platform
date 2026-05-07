@@ -1,0 +1,147 @@
+You are refining the TrainEfficiency landing page into a premium, modern SaaS experience specifically built for strength & conditioning coaches.
+
+The current landing page structure, sections, and dark theme are strong. Do NOT redesign the site from scratch. This is a refinement and elevation pass focused on polish, trust, perceived product maturity, and conversion quality.
+
+CORE GOAL:
+Make TrainEfficiency feel like the operational system behind serious coaching businesses — not generic gym software or a template SaaS.
+
+VISUAL DIRECTION:
+- Premium modern SaaS aesthetic
+- Clean black/dark UI with restrained green accents
+- More “Linear / Stripe / modern performance tech” energy
+- Remove anything that feels dated, template-based, overly glowy, or “fitness marketing”
+- Increase perceived product quality and trust
+
+GLOBAL UI IMPROVEMENTS:
+- Tighten vertical spacing consistency
+- Improve typography hierarchy and readability on mobile
+- Increase sophistication of hover states and transitions
+- Add subtle depth and premium feel without heavy effects
+- Improve card consistency and visual rhythm
+- Ensure every section feels intentional and high-end
+- Add subtle gradient lighting/glow only where appropriate
+- Improve CTA button polish and interaction feedback
+- Improve section separation with elegant dividers or gradients
+
+HERO SECTION IMPROVEMENTS:
+The hero needs to feel more category-defining and premium.
+
+KEEP the positioning:
+“Stop Using Studio Software. Start Using Coaching Software.”
+
+But elevate the execution.
+
+Requirements:
+- Remove or redesign the current rectangular TrainEfficiency graphic/logo banner if it feels dated
+- Replace with a cleaner, more premium wordmark treatment
+- Add subtle UI/dashboard preview imagery beneath or beside the hero
+- Introduce stronger visual trust immediately
+- Make the hero feel like a real SaaS product with infrastructure behind it
+- Add subtle animated background depth (very restrained)
+- Improve spacing and visual flow on mobile
+
+TRUST & AUTHORITY SECTION:
+Add a new section near the top of the page focused on credibility.
+
+Messaging direction:
+- Built by a real strength & conditioning coach
+- Designed around real coaching operations
+- Solves problems generic fitness software ignores
+- Built from actual day-to-day coaching workflows
+
+Possible examples:
+- session payouts
+- semi-private scheduling
+- team contracts
+- recurring schedules
+- coach management
+- client wallets
+
+This section should feel authentic and operational — not guru-marketing.
+
+PRODUCT VISUALS:
+Add premium mockups or UI screenshots throughout the page:
+- scheduling dashboard
+- coach dashboard
+- payouts
+- wallet system
+- team training contracts
+- client management
+
+These should:
+- feel real
+- feel functional
+- match the dark theme
+- increase perceived legitimacy
+- help users visualize the product
+
+FEATURE SECTION REFINEMENT:
+Current feature cards are good but too “feature-list.”
+
+Improve them by:
+- grouping related features into categories
+- reducing repetitive visual rhythm
+- making sections feel more strategic
+- adding stronger headings tied to coaching operations
+
+Examples:
+Scheduling & Operations
+Payments & Payouts
+Team Training Infrastructure
+Coach Management
+Client Experience
+
+COPY REFINEMENT:
+Avoid generic SaaS language.
+
+Replace generic feature naming with operational language coaches emotionally relate to.
+
+Examples:
+Instead of:
+“Smart Scheduling”
+
+Use:
+“Built for Back-to-Back Coaching Days”
+
+Instead of:
+“Business Analytics”
+
+Use:
+“Know Exactly What Your Coaching Business Earns”
+
+The copy should sound like:
+- a coach built this
+- the software understands the industry
+- this was designed from real operational pain points
+
+MOBILE POLISH:
+This landing page will primarily convert on mobile.
+
+Focus heavily on:
+- mobile spacing
+- thumb-friendly interactions
+- premium mobile typography
+- reduced visual clutter
+- stronger content flow
+- cleaner stacking of sections/cards
+
+FINAL GOAL:
+The final result should feel:
+- premium
+- operational
+- trustworthy
+- specialized
+- scalable
+- modern
+- built for serious coaches
+
+It should NOT feel:
+- like a generic gym management tool
+- like a template
+- overly “fitness industry”
+- overdesigned
+- AI-generated
+- gimmicky
+
+The finished landing page should make a coach immediately think:
+“This software actually understands how coaching businesses work.”
