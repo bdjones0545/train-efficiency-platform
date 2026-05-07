@@ -1,0 +1,159 @@
+Refine and polish the TrainEfficiency Client Portal experience into a premium organization-entry flow that feels modern, trustworthy, and operationally mature.
+
+IMPORTANT:
+Do NOT redesign the entire experience.
+This is a refinement/elevation pass focused on:
+- trust
+- organization identity
+- premium SaaS feel
+- mobile polish
+- onboarding psychology
+
+Also fix the broken organization routing issue:
+The Efficiency Strength Training organization card is NOT correctly routing to the /org/ path.
+Ensure all organization cards correctly navigate to their respective:
+/org/:slug
+or equivalent tenant route.
+
+The portal must feel production-ready and trustworthy.
+
+VISUAL DIRECTION:
+Current page feels too much like:
+- a simple directory
+- a search page
+- an unfinished selector
+
+The new goal:
+Make it feel like the user is entering their coaching organization workspace.
+
+Style inspiration:
+- Notion workspace switcher
+- Slack organization selection
+- Linear team/workspace entry
+- premium SaaS onboarding
+
+PAGE STRUCTURE:
+Keep the current:
+- title
+- search
+- organization list
+
+But elevate the experience dramatically.
+
+HEADER IMPROVEMENTS:
+Current:
+“Client Portal”
+
+Refine into a more premium onboarding experience.
+
+Potential structure:
+Headline:
+“Access Your Coaching Portal”
+
+Supporting text:
+“Find your training organization to view schedules, sessions, payments, and coaching updates.”
+
+Improve spacing and typography hierarchy.
+
+SEARCH EXPERIENCE:
+Polish the search bar:
+- softer premium borders
+- subtle focus glow
+- better icon alignment
+- improved placeholder styling
+- refined padding/radius
+- more premium dark-mode treatment
+
+ORGANIZATION CARDS:
+This is the biggest improvement area.
+
+Current cards feel too generic.
+
+Make them feel like branded coaching organizations.
+
+Each card should include:
+- organization logo/avatar
+- organization name
+- short branded tagline
+- subtle hover/tap feedback
+- cleaner spacing
+- stronger hierarchy
+- premium depth
+- clearer click affordance
+
+Potential additions:
+- athlete count
+- “Active Organization”
+- coach count
+- verified badge
+- “Powered by TrainEfficiency” subtle footer
+
+The cards should feel:
+- premium
+- trustworthy
+- established
+- real
+
+NOT like a temporary list UI.
+
+MOBILE POLISH:
+This page will primarily be used on mobile.
+
+Improve:
+- vertical spacing
+- tap targets
+- card responsiveness
+- organization card sizing
+- typography scaling
+- viewport composition
+
+The first screen should feel polished and intentional.
+
+ANIMATION:
+Add restrained premium motion:
+- subtle hover elevation
+- smooth tap scaling
+- fade-in stagger for organization cards
+- search focus transition
+- slight glow on active selection
+
+Keep animations subtle and premium.
+
+TRUST IMPROVEMENTS:
+This page is psychologically important.
+
+Users are deciding:
+“Is this a real platform?”
+
+Add subtle production-quality details:
+- smooth transitions
+- premium loading states
+- polished empty states
+- organization logos rendered consistently
+- better visual balance
+
+ROUTING FIX:
+Critical:
+Ensure every organization card routes correctly into the organization portal.
+
+Current issue:
+Efficiency Strength Training does not correctly navigate to /org/...
+
+Audit:
+- slug generation
+- routing
+- organization lookup
+- navigation handlers
+- production path generation
+- mobile Safari navigation behavior
+
+FINAL GOAL:
+The client portal should feel like:
+- entering a real coaching ecosystem
+- a premium SaaS workspace
+- an established coaching infrastructure platform
+
+NOT:
+- a basic search page
+- a placeholder tenant selector
+- an unfinished onboarding screen
