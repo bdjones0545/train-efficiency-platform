@@ -78,8 +78,8 @@ function normalizeProspect(p: any): ProspectResult {
     websiteUrl: normalizeNullable(p.websiteUrl),
     contactName: normalizeNullable(p.contactName),
     contactRole: normalizeNullable(p.contactRole),
-    contactEmail: null,
-    contactPhone: null,
+    contactEmail: normalizeNullable(p.contactEmail),
+    contactPhone: normalizeNullable(p.contactPhone),
     sourceUrl: normalizeNullable(p.discoverySourceUrl || p.sourceUrl),
     confidenceScore: Math.max(1, Math.min(100, Math.round((discoveryConfidenceScore * 100) || p.confidenceScore || 50))),
     notes: p.notes || "",
@@ -144,10 +144,10 @@ Return a JSON array of up to ${limit} organizations. Each object MUST have these
   "city": string,
   "state": string,
   "websiteUrl": string | null,
-  "contactName": null,
-  "contactRole": null,
-  "contactEmail": null,
-  "contactPhone": null,
+  "contactName": string | null,
+  "contactRole": string | null,
+  "contactEmail": string | null,
+  "contactPhone": string | null,
   "notes": string,
   "discoverySourceType": "website" | "search_result" | "directory" | "social",
   "discoverySourceUrl": string,
@@ -158,6 +158,14 @@ Return a JSON array of up to ${limit} organizations. Each object MUST have these
   "discoveryConfidenceScore": number,
   "leadValidationStatus": "verified" | "likely_valid" | "weak"
 }
+
+CONTACT INFO RULES:
+- When you visit an organization's website or directory page, look for the contact person's name, title/role, phone number, or email address. Capture anything you can clearly see.
+- "contactName": the name of the coach, director, athletic director, or primary contact if visible on the page — otherwise null.
+- "contactRole": their title or role (e.g. "Head Coach", "Club Director", "Athletic Director") — otherwise null.
+- "contactPhone": their phone number if listed publicly on the site — otherwise null.
+- "contactEmail": their email address ONLY if it is explicitly listed on the page (not inferred or guessed) — otherwise null.
+- Do NOT guess or infer contact details. Only capture what is explicitly shown.
 
 Only include leads with discoveryConfidenceScore >= 0.45. Return ONLY the JSON array. No markdown.`;
 
@@ -244,8 +252,8 @@ Return a JSON array. Each object must have:
 - "city": string
 - "state": string
 - "websiteUrl": string | null
-- "contactName": null
-- "contactRole": null
+- "contactName": string | null — name of the head coach, director, or athletic director if you know it from training data
+- "contactRole": string | null — their title or role if known (e.g. "Head Coach", "Athletic Director")
 - "contactEmail": null
 - "contactPhone": null
 - "notes": string

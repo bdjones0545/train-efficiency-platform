@@ -605,10 +605,10 @@ function ProspectCard({
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <div><span className="text-muted-foreground">Contact:</span> {prospect.contactName || <span className="italic text-muted-foreground">Not found yet</span>}</div>
-            <div><span className="text-muted-foreground">Role:</span> {prospect.contactRole || <span className="italic text-muted-foreground">Not found yet</span>}</div>
-            <div><span className="text-muted-foreground">Email:</span> {displayEmail || <span className="italic text-muted-foreground">Not found yet</span>}</div>
-            <div><span className="text-muted-foreground">Phone:</span> {prospect.contactPhone || <span className="italic text-muted-foreground">Not found yet</span>}</div>
+            <div><span className="text-muted-foreground">Contact:</span> {prospect.contactName || <span className="italic text-muted-foreground/60">—</span>}</div>
+            <div><span className="text-muted-foreground">Role:</span> {prospect.contactRole || <span className="italic text-muted-foreground/60">—</span>}</div>
+            <div><span className="text-muted-foreground">Email:</span> {displayEmail || <span className="italic text-muted-foreground/60">Run contact research ↑</span>}</div>
+            <div><span className="text-muted-foreground">Phone:</span> {prospect.contactPhone || <span className="italic text-muted-foreground/60">—</span>}</div>
             {prospect.lastContactedAt && (
               <div className="col-span-2">
                 <span className="text-muted-foreground">Last Contacted:</span>{" "}
@@ -2127,18 +2127,28 @@ export default function AdminTeamTrainingLeadsPage() {
                   />
                 </div>
               ))}
-              {(["contactName", "contactRole", "contactEmail", "contactPhone", "websiteUrl", "sourceUrl"] as const).map((field) => (
-                <div key={field}>
-                  <label className="text-xs font-medium capitalize">{field.replace(/([A-Z])/g, " $1")}</label>
-                  <Input
-                    value={(editProspectForm as any)[field] ?? ""}
-                    onChange={(e) => setEditProspectForm((f) => ({ ...f, [field]: e.target.value }))}
-                    className="mt-1 h-8 text-sm"
-                    placeholder="Not found yet"
-                    data-testid={`input-edit-${field}`}
-                  />
-                </div>
-              ))}
+              {(["contactName", "contactRole", "contactEmail", "contactPhone", "websiteUrl", "sourceUrl"] as const).map((field) => {
+                const placeholders: Record<string, string> = {
+                  contactName: "e.g. John Smith",
+                  contactRole: "e.g. Athletic Director",
+                  contactEmail: "e.g. coach@org.com",
+                  contactPhone: "e.g. (555) 123-4567",
+                  websiteUrl: "https://",
+                  sourceUrl: "https://",
+                };
+                return (
+                  <div key={field}>
+                    <label className="text-xs font-medium capitalize">{field.replace(/([A-Z])/g, " $1")}</label>
+                    <Input
+                      value={(editProspectForm as any)[field] ?? ""}
+                      onChange={(e) => setEditProspectForm((f) => ({ ...f, [field]: e.target.value }))}
+                      className="mt-1 h-8 text-sm"
+                      placeholder={placeholders[field] ?? ""}
+                      data-testid={`input-edit-${field}`}
+                    />
+                  </div>
+                );
+              })}
               <div>
                 <label className="text-xs font-medium">Notes</label>
                 <Textarea
