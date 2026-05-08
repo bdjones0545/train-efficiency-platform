@@ -7184,7 +7184,15 @@ export async function registerRoutes(
   // Update prospect
   app.patch("/api/admin/team-training/prospects/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
-      const updated = await storage.updateTeamTrainingProspect(req.params.id, req.body);
+      // Strip non-editable fields and timestamps (JSON sends dates as strings; Drizzle expects Date objects)
+      const {
+        id: _id, orgId: _orgId, createdAt: _ca, updatedAt: _ua,
+        lastContactedAt: _lca, queuedForTodayAt: _qfta,
+        contactDiscoveredAt: _cda, lastDiscoveryAttemptAt: _ldaa,
+        discoveredAt: _da, lastValidatedAt: _lva,
+        ...safeBody
+      } = req.body;
+      const updated = await storage.updateTeamTrainingProspect(req.params.id, safeBody);
       if (!updated) return res.status(404).json({ message: "Prospect not found" });
       res.json(updated);
     } catch (err: any) {
