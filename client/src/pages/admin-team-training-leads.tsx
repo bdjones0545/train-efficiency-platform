@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import {
   Search, Plus, Loader2, RefreshCw, Mail, CheckCircle, XCircle,
   ExternalLink, Edit2, ChevronDown, ChevronUp, Target, TrendingUp,
@@ -1334,7 +1335,7 @@ export default function AdminTeamTrainingLeadsPage() {
       try {
         res = await fetch("/api/admin/team-training/research", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           credentials: "include",
           body: JSON.stringify(data),
           signal: controller.signal,
