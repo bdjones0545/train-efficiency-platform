@@ -2201,7 +2201,7 @@ export class DatabaseStorage implements IStorage {
 
     const [allProspects, allDrafts, weekEvents] = await Promise.all([
       db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId)),
-      db.select().from(teamTrainingOutreachDrafts).where(and(eq(teamTrainingOutreachDrafts.orgId, orgId), eq(teamTrainingOutreachDrafts.approved, false))),
+      db.select().from(teamTrainingOutreachDrafts).where(and(eq(teamTrainingOutreachDrafts.orgId, orgId), isNull(teamTrainingOutreachDrafts.sentAt))),
       db.select().from(teamTrainingOutreachEvents).where(and(eq(teamTrainingOutreachEvents.orgId, orgId), gte(teamTrainingOutreachEvents.createdAt!, weekStart))),
     ]);
 

@@ -679,7 +679,7 @@ function DraftCard({ draft, onApprove, onSend, onEdit, onDelete }: {
     <Card className="p-4 space-y-3" data-testid={`card-draft-${draft.id}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-medium text-sm">{draft.prospect?.prospectName || "Unknown Prospect"}</p>
+          <p className="font-medium text-sm">{draft.prospect?.prospectName || <span className="text-muted-foreground italic">Prospect removed</span>}</p>
           <p className="text-xs text-muted-foreground">{draft.subject}</p>
         </div>
         <div className="flex items-center gap-1 text-xs shrink-0">
