@@ -1562,6 +1562,33 @@ export default function AdminTeamTrainingLeadsPage() {
   });
 
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
+  const [deepSearch, setDeepSearch] = useState<{ running: boolean; current: number; total: number; found: number; currentName: string } | null>(null);
+
+  const runDeepSearch = async () => {
+    const missing = (prospects || []).filter((p) => !p.decisionMakerEmail && p.contactQuality === "missing");
+    if (missing.length === 0) return;
+    setDeepSearch({ running: true, current: 0, total: missing.length, found: 0, currentName: "" });
+    let found = 0;
+    for (let i = 0; i < missing.length; i++) {
+      const p = missing[i];
+      setDeepSearch({ running: true, current: i + 1, total: missing.length, found, currentName: p.prospectName });
+      try {
+        const res = await apiRequest("POST", `/api/team-training-leads/${p.id}/enrich-contact`, {});
+        const json = await res.json();
+        if (json.success && json.prospect) {
+          found++;
+          queryClient.setQueryData(["/api/admin/team-training/prospects"], (old: any) => {
+            if (!old) return old;
+            if (Array.isArray(old)) return old.map((l: any) => l.id === json.prospect.id ? { ...l, ...json.prospect } : l);
+            return old;
+          });
+        }
+      } catch {}
+    }
+    setDeepSearch({ running: false, current: missing.length, total: missing.length, found, currentName: "" });
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
+    setTimeout(() => setDeepSearch(null), 6000);
+  };
   const [enrichFailData, setEnrichFailData] = useState<{
     hasPartial: boolean;
     partialData: { contactPhone?: string | null; contactFormUrl?: string | null; contactName?: string | null; contactRole?: string | null } | null;
@@ -1960,8 +1987,55 @@ export default function AdminTeamTrainingLeadsPage() {
                 className="h-8 text-sm w-32"
                 data-testid="input-filter-city"
               />
+              {(() => {
+                const missingCount = (prospects || []).filter((p) => !p.decisionMakerEmail && p.contactQuality === "missing").length;
+                if (missingCount === 0) return null;
+                return (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs ml-auto border-blue-500 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
+                    onClick={runDeepSearch}
+                    disabled={deepSearch?.running}
+                    data-testid="button-deep-search"
+                  >
+                    {deepSearch?.running ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Search className="h-3 w-3 mr-1.5" />}
+                    Deep Search ({missingCount})
+                  </Button>
+                );
+              })()}
             </div>
           </Card>
+
+          {/* Deep search progress banner */}
+          {deepSearch && (
+            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  {deepSearch.running ? (
+                    <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                  )}
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                    {deepSearch.running ? "Deep Search Running…" : "Deep Search Complete"}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {deepSearch.current}/{deepSearch.total} searched · {deepSearch.found} contact{deepSearch.found !== 1 ? "s" : ""} found
+                </span>
+              </div>
+              <div className="w-full bg-blue-100 dark:bg-blue-900 rounded-full h-1.5">
+                <div
+                  className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${deepSearch.total > 0 ? (deepSearch.current / deepSearch.total) * 100 : 0}%` }}
+                />
+              </div>
+              {deepSearch.running && deepSearch.currentName && (
+                <p className="text-xs text-muted-foreground mt-1.5 truncate">Searching: {deepSearch.currentName}</p>
+              )}
+            </div>
+          )}
 
           {prospectsLoading ? (
             <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
