@@ -2206,7 +2206,7 @@ export class DatabaseStorage implements IStorage {
     ]);
 
     return {
-      newLeads: allProspects.filter((p) => p.outreachStatus === "New").length,
+      newLeads: allProspects.filter((p) => p.outreachStatus === "New" || p.outreachStatus === "Needs Review").length,
       pendingApproval: allDrafts.length,
       sentThisWeek: weekEvents.filter((e) => e.eventType === "sent").length,
       replies: weekEvents.filter((e) => e.eventType === "replied").length,
