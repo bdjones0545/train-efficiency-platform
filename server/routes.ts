@@ -7394,6 +7394,12 @@ export async function registerRoutes(
         ...safeEnriched,
       });
 
+      // Backfill websiteUrl and sourceUrl from contactSourceUrl if not already set
+      const backfillWebsite = !prospect.websiteUrl && safeEnriched.contactSourceUrl
+        ? safeEnriched.contactSourceUrl : undefined;
+      const backfillSource = !prospect.sourceUrl && safeEnriched.contactSourceUrl
+        ? safeEnriched.contactSourceUrl : undefined;
+
       const updated = await storage.updateTeamTrainingProspect(prospect.id, {
         decisionMakerName: safeEnriched.decisionMakerName,
         decisionMakerTitle: safeEnriched.decisionMakerTitle,
@@ -7415,6 +7421,8 @@ export async function registerRoutes(
           ? JSON.stringify(safeEnriched.alternativeContacts)
           : null,
         confidenceScore: newScore,
+        ...(backfillWebsite ? { websiteUrl: backfillWebsite } : {}),
+        ...(backfillSource ? { sourceUrl: backfillSource } : {}),
       });
 
       try {

@@ -159,6 +159,14 @@ Return a JSON array of up to ${limit} organizations. Each object MUST have these
   "leadValidationStatus": "verified" | "likely_valid" | "weak"
 }
 
+URL RULES (critical):
+- "websiteUrl": the organization's OWN official website (e.g. "https://hhba.org"). If you visited their site, put it here. null only if they truly have no website.
+- "discoverySourceUrl": the exact URL of the page or search result where you first confirmed this org exists. NEVER null — use the URL you actually visited.
+
+NOTES RULES (critical — do NOT write generic text):
+- "notes" must be 2-3 specific sentences describing: (1) what age groups or competitive level they serve, (2) how many athletes/teams if visible, (3) why they are a strong candidate for speed/strength/agility training. Example: "Competitive travel baseball club with 8 teams across 10U-18U divisions. Roughly 150+ athletes in the Beaufort area based on their roster pages. High-volume multi-team program ideal for team training packages."
+- Do NOT write vague filler like "Provides baseball programs for youth." Include real, specific details from the pages you visited.
+
 CONTACT INFO RULES:
 - When you visit an organization's website or directory page, look for the contact person's name, title/role, phone number, or email address. Capture anything you can clearly see.
 - "contactName": the name of the coach, director, athletic director, or primary contact if visible on the page — otherwise null.
