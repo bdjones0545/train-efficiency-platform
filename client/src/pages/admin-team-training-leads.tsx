@@ -1793,10 +1793,32 @@ export default function AdminTeamTrainingLeadsPage() {
   const pipelineValue = (prospects || []).filter((p) => !["Do Not Contact", "Not Interested"].includes(p.outreachStatus || "")).length * (parseInt(estimatedValue) || 500);
 
   const [editProspectForm, setEditProspectForm] = useState<Partial<TeamTrainingProspect>>({});
+  const [editEnriching, setEditEnriching] = useState(false);
 
   const openEditProspect = (p: TeamTrainingProspect) => {
     setEditProspect(p);
     setEditProspectForm(p);
+  };
+
+  const runEditEnrichment = async () => {
+    if (!editProspect) return;
+    setEditEnriching(true);
+    try {
+      const res = await apiRequest("POST", `/api/team-training-leads/${editProspect.id}/enrich-contact`, {});
+      const json = await res.json();
+      if (json.prospect) {
+        const p = json.prospect;
+        setEditProspectForm((prev) => ({
+          ...prev,
+          contactName: prev.contactName || p.contactName || prev.contactName,
+          contactRole: prev.contactRole || p.contactRole || prev.contactRole,
+          contactEmail: prev.contactEmail || p.decisionMakerEmail || p.contactEmail || prev.contactEmail,
+          contactPhone: prev.contactPhone || p.contactPhone || prev.contactPhone,
+          websiteUrl: prev.websiteUrl || p.websiteUrl || prev.websiteUrl,
+        }));
+      }
+    } catch {}
+    setEditEnriching(false);
   };
 
   const [editDraftForm, setEditDraftForm] = useState<{ subject: string; body: string }>({ subject: "", body: "" });
@@ -2450,6 +2472,27 @@ export default function AdminTeamTrainingLeadsPage() {
                   />
                 </div>
               ))}
+              {/* Contact fields header with auto-fill button */}
+              {(() => {
+                const searchableFields = ["contactName", "contactRole", "contactEmail", "contactPhone", "websiteUrl"] as const;
+                const hasAnyEmpty = searchableFields.some((f) => !(editProspectForm as any)[f]);
+                return hasAnyEmpty ? (
+                  <div className="flex items-center justify-between pt-1 pb-0.5">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contact Info</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-xs px-2 border-blue-400 text-blue-600 dark:text-blue-400"
+                      onClick={runEditEnrichment}
+                      disabled={editEnriching}
+                      data-testid="button-autofill-contact"
+                    >
+                      {editEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
+                      {editEnriching ? "Searching…" : "Auto-fill empty fields"}
+                    </Button>
+                  </div>
+                ) : null;
+              })()}
               {(["contactName", "contactRole", "contactEmail", "contactPhone", "websiteUrl", "sourceUrl"] as const).map((field) => {
                 const placeholders: Record<string, string> = {
                   contactName: "e.g. John Smith",
@@ -2459,16 +2502,33 @@ export default function AdminTeamTrainingLeadsPage() {
                   websiteUrl: "https://",
                   sourceUrl: "https://",
                 };
+                const searchable = ["contactName", "contactRole", "contactEmail", "contactPhone", "websiteUrl"].includes(field);
+                const isEmpty = !(editProspectForm as any)[field];
                 return (
                   <div key={field}>
                     <label className="text-xs font-medium capitalize">{field.replace(/([A-Z])/g, " $1")}</label>
-                    <Input
-                      value={(editProspectForm as any)[field] ?? ""}
-                      onChange={(e) => setEditProspectForm((f) => ({ ...f, [field]: e.target.value }))}
-                      className="mt-1 h-8 text-sm"
-                      placeholder={placeholders[field] ?? ""}
-                      data-testid={`input-edit-${field}`}
-                    />
+                    <div className="flex gap-1.5 mt-1">
+                      <Input
+                        value={(editProspectForm as any)[field] ?? ""}
+                        onChange={(e) => setEditProspectForm((f) => ({ ...f, [field]: e.target.value }))}
+                        className="h-8 text-sm"
+                        placeholder={placeholders[field] ?? ""}
+                        data-testid={`input-edit-${field}`}
+                      />
+                      {searchable && isEmpty && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 shrink-0 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
+                          onClick={runEditEnrichment}
+                          disabled={editEnriching}
+                          title={`Search for ${field.replace(/([A-Z])/g, " $1").toLowerCase()}`}
+                          data-testid={`button-search-${field}`}
+                        >
+                          {editEnriching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
