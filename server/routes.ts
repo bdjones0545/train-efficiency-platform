@@ -7011,6 +7011,8 @@ export async function registerRoutes(
         const safeDmName = nn(p.decisionMakerName);
         const safeDmTitle = nn(p.decisionMakerTitle);
 
+        const safeContactPhone = nn(p.contactPhone);
+
         const now = new Date();
         const prospect = await storage.createTeamTrainingProspect({
           orgId: profile.organizationId,
@@ -7022,8 +7024,8 @@ export async function registerRoutes(
           websiteUrl: safeWebsiteUrl,
           contactName: safeContactName,
           contactRole: safeContactRole,
-          contactEmail: null,
-          contactPhone: null,
+          contactEmail: null,               // never persist unverified email
+          contactPhone: safeContactPhone,   // save phone if research AI found it
           sourceUrl: safeSourceUrl,
           confidenceScore: scored,
           outreachStatus: "Needs Review",
@@ -7033,7 +7035,8 @@ export async function registerRoutes(
           decisionMakerEmail: ive(safeDmEmail) ? safeDmEmail : null,
           contactConfidence: ive(safeDmEmail) ? (p.contactConfidence || 0) : 0,
           contactSourceUrl: nn(p.contactSourceUrl),
-          contactQuality: ive(safeDmEmail) ? p.contactQuality : "missing",
+          // If research found a named contact/phone, mark as general quality, not missing
+          contactQuality: ive(safeDmEmail) ? p.contactQuality : p.contactQuality,
           // Lead Discovery Evidence
           discoverySourceType: p.discoverySourceType || null,
           discoverySourceUrl: p.discoverySourceUrl || null,
@@ -7323,12 +7326,25 @@ export async function registerRoutes(
           contactFormUrl: (enriched as any).contactFormUrl,
           name: enriched.decisionMakerName,
         });
+        // Backfill websiteUrl/sourceUrl from contactSourceUrl if currently missing
+        const partialBackfillWebsite = !prospect.websiteUrl && enriched.contactSourceUrl ? enriched.contactSourceUrl : undefined;
+        const partialBackfillSource = !prospect.sourceUrl && enriched.contactSourceUrl ? enriched.contactSourceUrl : undefined;
         await storage.updateTeamTrainingProspect(prospect.id, {
-          contactName: enriched.decisionMakerName || prospect.contactName,
-          contactRole: enriched.decisionMakerTitle || prospect.contactRole,
-          contactPhone: enriched.contactPhone || prospect.contactPhone,
+          contactName: enriched.decisionMakerName || prospect.contactName || undefined,
+          contactRole: enriched.decisionMakerTitle || prospect.contactRole || undefined,
+          contactPhone: enriched.contactPhone || prospect.contactPhone || undefined,
+          // Save all evidence fields even on partial results
+          contactSourceUrl: enriched.contactSourceUrl || prospect.contactSourceUrl || undefined,
+          contactSourceTitle: enriched.contactSourceTitle || prospect.contactSourceTitle || undefined,
+          contactSourceSnippet: enriched.contactSourceSnippet || prospect.contactSourceSnippet || undefined,
+          contactDiscoveryMethod: enriched.contactDiscoveryMethod || undefined,
+          contactConfidenceScore: enriched.contactConfidenceScore ?? undefined,
+          verificationStatus: enriched.verificationStatus || undefined,
+          enrichmentExplanation: enriched.enrichmentExplanation || undefined,
           lastDiscoveryAttemptAt: new Date(),
           lastDiscoveryResult: "partial_contact_found",
+          ...(partialBackfillWebsite ? { websiteUrl: partialBackfillWebsite } : {}),
+          ...(partialBackfillSource ? { sourceUrl: partialBackfillSource } : {}),
         } as any).catch(() => {});
       }
 
@@ -7338,6 +7354,7 @@ export async function registerRoutes(
           await storage.updateTeamTrainingProspect(prospect.id, {
             lastDiscoveryAttemptAt: new Date(),
             lastDiscoveryResult: "no_real_email_found",
+            enrichmentExplanation: enriched.enrichmentExplanation || undefined,
           } as any).catch(() => {});
         }
         const updatedProspect = hasPartialData

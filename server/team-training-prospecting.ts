@@ -69,17 +69,24 @@ function normalizeProspect(p: any): ProspectResult {
   const rawDcs = p.discoveryConfidenceScore;
   const discoveryConfidenceScore = typeof rawDcs === "number" ? Math.max(0, Math.min(1, rawDcs)) : 0.5;
 
+  const contactName = normalizeNullable(p.contactName);
+  const contactRole = normalizeNullable(p.contactRole);
+  const contactPhone = normalizeNullable(p.contactPhone);
+  // If the research AI found a named contact or phone, reflect that in contactQuality
+  const researchContactQuality: ContactQuality = contactName || contactPhone ? "general" : "missing";
+
   return {
     prospectName: p.organizationName || p.prospectName || "Unknown",
     organizationType: p.organizationType || "Sports Organization",
     sport: p.sport || "General",
     city: p.city || "",
     state: p.state || "",
-    websiteUrl: normalizeNullable(p.websiteUrl),
-    contactName: normalizeNullable(p.contactName),
-    contactRole: normalizeNullable(p.contactRole),
+    // Use discoverySourceUrl as fallback so websiteUrl is never blank when a source was found
+    websiteUrl: normalizeNullable(p.websiteUrl) || normalizeNullable(p.discoverySourceUrl) || null,
+    contactName,
+    contactRole,
     contactEmail: normalizeNullable(p.contactEmail),
-    contactPhone: normalizeNullable(p.contactPhone),
+    contactPhone,
     sourceUrl: normalizeNullable(p.discoverySourceUrl || p.sourceUrl),
     confidenceScore: Math.max(1, Math.min(100, Math.round((discoveryConfidenceScore * 100) || p.confidenceScore || 50))),
     notes: p.notes || "",
@@ -88,7 +95,7 @@ function normalizeProspect(p: any): ProspectResult {
     decisionMakerEmail: null,
     contactConfidence: 0,
     contactSourceUrl: null,
-    contactQuality: "missing",
+    contactQuality: researchContactQuality,
     discoverySourceType,
     discoverySourceUrl: normalizeNullable(p.discoverySourceUrl || p.sourceUrl),
     discoverySourceTitle: normalizeNullable(p.discoverySourceTitle),
