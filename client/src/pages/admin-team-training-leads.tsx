@@ -462,7 +462,7 @@ function ProspectCard({
               data-testid={`button-rerun-discovery-${prospect.id}`}
             >
               {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RotateCcw className="h-3 w-3 mr-1" />}
-              Re-run Discovery
+              Deep Search
             </Button>
           </>
         ) : (
@@ -475,7 +475,7 @@ function ProspectCard({
             data-testid={`button-find-real-email-${prospect.id}`}
           >
             {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
-            Find Real Email
+            Deep Search
           </Button>
         )}
         {prospect.outreachStatus !== "Replied" && (
@@ -611,7 +611,7 @@ function ProspectCard({
               data-testid={`button-enrich-expanded-${prospect.id}`}
             >
               {isEnriching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
-              {quality.hasEmail ? "Re-run Discovery" : "Find Real Email"}
+              {quality.hasEmail ? "Deep Search" : "Deep Search"}
             </Button>
           </div>
 
@@ -2780,7 +2780,7 @@ export default function AdminTeamTrainingLeadsPage() {
                           data-testid="button-find-dm-from-dialog"
                         >
                           {enrichContactMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-                          Find Real Email
+                          Deep Search
                         </Button>
                       </div>
                     </>
