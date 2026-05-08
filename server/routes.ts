@@ -94,7 +94,7 @@ async function getCoachId(userId: string): Promise<string | null> {
 
 function requireRole(...roles: string[]) {
   return async (req: any, res: any, next: any) => {
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.claims?.sub ?? req.user?.id;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
     const role = await getUserRole(userId);
     if (!roles.includes(role)) return res.status(403).json({ message: "Forbidden" });
