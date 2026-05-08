@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useBusinessAgentVoice } from "@/hooks/use-business-agent-voice";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Mic,
   Calendar,
   BarChart3,
   UserX,
@@ -767,10 +769,29 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [alertDropdownOpen]);
 
-  const sendMessage = useCallback(async (text?: string) => {
-    const content = (text ?? input).trim();
+  const submitBusinessAgentMessage = useCallback(async ({
+    message,
+    source,
+  }: {
+    message: string;
+    source: "typed" | "enter" | "quick-action" | "tap-to-dictate" | "push-to-talk";
+  }) => {
+    const content = message.trim();
     if (!content || isLoading) return;
     if (isDemo) return;
+
+    const profileState = qc.getQueryState(["/api/profile"]);
+    const organizationId = (profileState?.data as any)?.organizationId ?? "unknown";
+
+    console.log("[TrainEfficiency Voice Agent Submit]", {
+      source,
+      message: content,
+      organizationId,
+      activeTab,
+      route: "/api/scheduling-agent/chat",
+      mode,
+    });
+
     setInput("");
     setShowQuickActions(false);
     setPendingConfirmation(null);
@@ -802,7 +823,6 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
         full = await response.text();
       }
 
-      // Parse and strip the CONFIRM marker before displaying
       const confirmMatch = full.match(CONFIRM_MARKER_RE);
       if (confirmMatch) {
         try {
@@ -813,7 +833,6 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
       const displayFull = stripConfirmMarker(full);
       setMessages([...newMessages, { role: "assistant", content: displayFull }]);
 
-      // Cache invalidation using centralized patterns
       const actionDetected = ACTION_SUCCESS_PATTERNS.some(p => p.test(full));
       if (actionDetected) {
         qc.invalidateQueries({ queryKey: ["/api/bookings"] });
@@ -829,15 +848,48 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     } finally {
       setIsLoading(false);
     }
-  }, [input, messages, isLoading, toast, isDemo]);
+  }, [input, messages, isLoading, toast, isDemo, activeTab, mode]);
+
+  const sendMessage = useCallback(async (text?: string) => {
+    const content = (text ?? input).trim();
+    if (!content) return;
+    await submitBusinessAgentMessage({ message: content, source: text ? "quick-action" : "typed" });
+  }, [input, submitBusinessAgentMessage]);
+
+  const {
+    voiceState,
+    voiceError,
+    transcript,
+    isSupported: voiceSupported,
+    handleMicClick,
+    handleMicPointerDown,
+    handleMicPointerUp,
+    handleMicPointerLeave,
+    stopListening,
+  } = useBusinessAgentVoice({
+    onSubmit: (text) => {
+      stopListening();
+      submitBusinessAgentMessage({ message: text, source: voiceState === "push-to-talk" ? "push-to-talk" : "tap-to-dictate" });
+    },
+    isAgentResponding: isLoading,
+    disabled: isDemo,
+  });
+
+  useEffect(() => {
+    if (isLoading) stopListening();
+  }, [isLoading, stopListening]);
 
   const handleOpsAction = (prompt: string) => {
     setActiveTab("chat");
-    setTimeout(() => sendMessage(prompt), 100);
+    setTimeout(() => submitBusinessAgentMessage({ message: prompt, source: "quick-action" }), 100);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const content = input.trim();
+      if (content) submitBusinessAgentMessage({ message: content, source: "enter" });
+    }
   };
 
   const tabs = [
@@ -1455,6 +1507,45 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
             {/* Sticky chat input at the bottom */}
             <div className="border-t bg-background px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+              {/* Voice status strip */}
+              {!isDemo && (voiceState === "listening" || voiceState === "push-to-talk" || voiceState === "error") && (
+                <div
+                  className={`mb-1.5 rounded-lg px-3 py-1.5 text-xs flex items-center gap-2 transition-all ${
+                    voiceState === "error"
+                      ? "bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-400"
+                      : "bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-700 dark:text-green-400"
+                  }`}
+                  data-testid="voice-status-strip"
+                >
+                  {voiceState === "listening" && (
+                    <>
+                      <span className="relative flex h-2 w-2 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                      </span>
+                      <span className="font-medium">Listening…</span>
+                      {transcript && <span className="truncate text-green-600 dark:text-green-300 ml-1 flex-1">{transcript}</span>}
+                    </>
+                  )}
+                  {voiceState === "push-to-talk" && (
+                    <>
+                      <span className="relative flex h-2 w-2 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                      </span>
+                      <span className="font-medium">Release to command</span>
+                      {transcript && <span className="truncate text-green-600 dark:text-green-300 ml-1 flex-1">{transcript}</span>}
+                    </>
+                  )}
+                  {voiceState === "error" && (
+                    <>
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      <span>{voiceError ?? "Voice error"}</span>
+                    </>
+                  )}
+                </div>
+              )}
+
               {isDemo ? (
                 <div className="flex items-center gap-2 py-1" data-testid="demo-chat-blocked">
                   <div className="flex-1 rounded-lg border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
@@ -1465,12 +1556,22 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                   </Link>
                 </div>
               ) : (
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <Input
                     data-testid="chat-input"
-                    placeholder={isStaff ? "Ask about revenue, retention, schedule, or growth..." : "Ask about your schedule or bookings..."}
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
+                    placeholder={
+                      voiceState === "listening"
+                        ? "Listening…"
+                        : voiceState === "push-to-talk"
+                        ? "Release to command"
+                        : isStaff
+                        ? "Ask about revenue, retention, schedule, or growth..."
+                        : "Ask about your schedule or bookings..."
+                    }
+                    value={voiceState === "listening" || voiceState === "push-to-talk" ? transcript : input}
+                    onChange={e => {
+                      if (voiceState === "idle" || voiceState === "error") setInput(e.target.value);
+                    }}
                     onKeyDown={handleKeyDown}
                     disabled={isLoading}
                     className="flex-1"
@@ -1478,7 +1579,46 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     autoCapitalize="off"
                     spellCheck={false}
                   />
-                  <Button data-testid="send-message" onClick={() => sendMessage()} disabled={isLoading || !input.trim()} size="icon" className="shrink-0">
+                  {voiceSupported && (
+                    <Button
+                      data-testid="voice-mic-button"
+                      size="icon"
+                      variant="ghost"
+                      className={`shrink-0 transition-all select-none touch-none ${
+                        voiceState === "push-to-talk"
+                          ? "text-green-600 shadow-[0_0_0_3px_rgba(34,197,94,0.35)] bg-green-50 dark:bg-green-950/40"
+                          : voiceState === "listening"
+                          ? "text-green-500 shadow-[0_0_0_2px_rgba(34,197,94,0.25)] bg-green-50 dark:bg-green-950/30"
+                          : voiceState === "error"
+                          ? "text-amber-500"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      disabled={isLoading}
+                      onClick={handleMicClick}
+                      onPointerDown={handleMicPointerDown}
+                      onPointerUp={handleMicPointerUp}
+                      onPointerLeave={handleMicPointerLeave}
+                      aria-label={
+                        voiceState === "listening"
+                          ? "Stop listening"
+                          : voiceState === "push-to-talk"
+                          ? "Release to send"
+                          : "Start voice input"
+                      }
+                    >
+                      <Mic className={`h-4 w-4 ${voiceState === "listening" || voiceState === "push-to-talk" ? "animate-pulse" : ""}`} />
+                    </Button>
+                  )}
+                  <Button
+                    data-testid="send-message"
+                    onClick={() => {
+                      const content = input.trim();
+                      if (content) submitBusinessAgentMessage({ message: content, source: "typed" });
+                    }}
+                    disabled={isLoading || (!input.trim() && voiceState === "idle")}
+                    size="icon"
+                    className="shrink-0"
+                  >
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </Button>
                 </div>
