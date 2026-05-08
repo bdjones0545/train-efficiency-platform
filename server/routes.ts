@@ -7462,6 +7462,16 @@ export async function registerRoutes(
     }
   });
 
+  // Delete draft
+  app.delete("/api/admin/team-training/drafts/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      await storage.deleteOutreachDraft(req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // AI Refine Draft
   app.post("/api/admin/team-training/drafts/:id/refine", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {

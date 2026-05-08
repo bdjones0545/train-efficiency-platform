@@ -295,6 +295,7 @@ export interface IStorage {
   getOutreachDraft(id: string): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
   createOutreachDraft(data: import("@shared/schema").InsertTeamTrainingOutreachDraft): Promise<import("@shared/schema").TeamTrainingOutreachDraft>;
   updateOutreachDraft(id: string, data: Partial<import("@shared/schema").TeamTrainingOutreachDraft>): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
+  deleteOutreachDraft(id: string): Promise<boolean>;
   logOutreachEvent(data: import("@shared/schema").InsertTeamTrainingOutreachEvent): Promise<import("@shared/schema").TeamTrainingOutreachEvent>;
   getOutreachEvents(orgId: string, prospectId?: string): Promise<import("@shared/schema").TeamTrainingOutreachEvent[]>;
   isProspectOptedOut(orgId: string, email: string): Promise<boolean>;
@@ -2159,6 +2160,12 @@ export class DatabaseStorage implements IStorage {
     delete updateData.createdAt;
     const [row] = await db.update(teamTrainingOutreachDrafts).set(updateData).where(eq(teamTrainingOutreachDrafts.id, id)).returning();
     return row || undefined;
+  }
+
+  async deleteOutreachDraft(id: string): Promise<boolean> {
+    const { teamTrainingOutreachDrafts } = await import("@shared/schema");
+    await db.delete(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.id, id));
+    return true;
   }
 
   async logOutreachEvent(data: import("@shared/schema").InsertTeamTrainingOutreachEvent) {

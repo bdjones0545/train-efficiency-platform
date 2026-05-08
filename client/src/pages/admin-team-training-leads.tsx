@@ -666,12 +666,15 @@ function getMessagingGuidance(stageLabel: string): string {
   return map[stageLabel] || "Reference their prior engagement. Offer something specific.";
 }
 
-function DraftCard({ draft, onApprove, onSend, onEdit }: {
+function DraftCard({ draft, onApprove, onSend, onEdit, onDelete }: {
   draft: DraftWithProspect;
   onApprove: (id: string) => void;
   onSend: (id: string) => void;
   onEdit: (draft: DraftWithProspect) => void;
+  onDelete: (id: string) => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   return (
     <Card className="p-4 space-y-3" data-testid={`card-draft-${draft.id}`}>
       <div className="flex items-start justify-between gap-2">
@@ -690,7 +693,7 @@ function DraftCard({ draft, onApprove, onSend, onEdit }: {
         </div>
       </div>
       <pre className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/50 rounded p-2 max-h-32 overflow-y-auto font-sans">{draft.body}</pre>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         {!draft.sentAt && (
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onEdit(draft)} data-testid={`button-edit-draft-${draft.id}`}>
             <Edit2 className="h-3 w-3 mr-1" /> Edit
@@ -712,6 +715,21 @@ function DraftCard({ draft, onApprove, onSend, onEdit }: {
               <Activity className="h-3 w-3 mr-1" /> View Trigger
             </Button>
           </Link>
+        )}
+        {/* Delete — confirm on first tap, execute on second */}
+        {confirmDelete ? (
+          <div className="flex gap-1 ml-auto">
+            <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => { onDelete(draft.id); setConfirmDelete(false); }} data-testid={`button-confirm-delete-draft-${draft.id}`}>
+              Confirm Delete
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmDelete(false)} data-testid={`button-cancel-delete-draft-${draft.id}`}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-auto text-muted-foreground hover:text-destructive" onClick={() => setConfirmDelete(true)} data-testid={`button-delete-draft-${draft.id}`}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         )}
       </div>
     </Card>
@@ -1515,6 +1533,18 @@ export default function AdminTeamTrainingLeadsPage() {
     onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
   });
 
+  const deleteDraftMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/team-training/drafts/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
+      toast({ title: "Draft deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
   const refineDraftMutation = useMutation({
     mutationFn: async ({ id, instructions, currentSubject, currentBody }: { id: string; instructions: string; currentSubject: string; currentBody: string }) => {
       const res = await apiRequest("POST", `/api/admin/team-training/drafts/${id}/refine`, { instructions, currentSubject, currentBody });
@@ -2130,6 +2160,7 @@ export default function AdminTeamTrainingLeadsPage() {
                   onApprove={(id) => approveDraftMutation.mutate(id)}
                   onSend={(id) => sendDraftMutation.mutate(id)}
                   onEdit={openEditDraft}
+                  onDelete={(id) => deleteDraftMutation.mutate(id)}
                 />
               ))}
             </div>
