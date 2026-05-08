@@ -1,0 +1,104 @@
+Add voice command input to the TrainEfficiency Agent dashboard.
+
+Goal:
+Users should be able to speak commands to the EfficiencyStrength / TrainEfficiency business agent the same way they can in TrainChat.
+
+Apply to:
+- Agent Dashboard chat input
+- Revenue tab agent input if separate
+- Ops tab agent input if separate
+- Any floating business agent input
+
+Voice behavior:
+- tap mic → dictate into the input
+- user can edit text before sending
+- hold mic 350ms+ → push-to-talk
+- release → auto-submit command
+- play the existing subtle voice audio cues
+- stop listening and clear input after successful send
+
+UX:
+- Add mic icon inside the bottom input bar, before the send icon.
+- Idle state: muted mic.
+- Listening state: green glow to match TrainEfficiency.
+- Push-to-talk state: stronger green glow.
+- Listening label: “Listening…”
+- Hold label: “Release to command”
+- Error state: amber message.
+
+Business-agent scope:
+Voice commands must use the exact same send pipeline as typed commands.
+Do not create a separate voice route.
+Do not change the agent prompt based on voice.
+Voice should only populate/submit the same text input.
+
+Unified function:
+Create or use:
+
+submitBusinessAgentMessage({
+  message,
+  source,
+  organizationId,
+  activeTab,
+})
+
+All sends must use this:
+- typed send
+- Enter key
+- quick actions
+- tap-to-dictate send
+- push-to-talk auto-submit
+
+Normalization:
+Reuse spoken number normalization:
+- “show me week one” → “week 1”
+- “draft ten outreach messages” → “draft 10 outreach messages”
+- “fill three open slots” → “fill 3 open slots”
+
+Lifecycle:
+After successful send:
+- stop listening
+- abort recognition if needed
+- reset transcript
+- clear input
+- clear push-to-talk refs
+- hide waveform/status strip
+- prevent transcript from reappearing while the agent is responding
+
+If send fails:
+- preserve input text
+- show existing error state
+
+Audio cues:
+Reuse existing voiceSoundCues utility:
+- start cue when listening begins
+- stop cue when listening stops
+- submit cue on successful voice submit
+- error cue on voice error
+
+Guardrails:
+- Do not trigger voice on login, billing, account, or settings form fields.
+- Do not auto-send if message is empty.
+- Do not auto-send while the agent is already responding.
+- Respect unsupported browser and mic permission errors.
+
+Dev logging:
+Add temporary log:
+
+console.log("[TrainEfficiency Voice Agent Submit]", {
+  source,
+  message,
+  organizationId,
+  activeTab,
+  route,
+  mode,
+});
+
+Acceptance criteria:
+- User can tap mic and dictate business-agent commands.
+- User can hold mic, speak, release, and auto-submit.
+- Voice and typed commands hit the same business agent route.
+- Quick actions still work.
+- Input clears after successful send.
+- Mic stops after successful send.
+- No TypeScript errors.
