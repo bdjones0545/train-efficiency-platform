@@ -1575,8 +1575,11 @@ export default function AdminTeamTrainingLeadsPage() {
       try {
         const res = await apiRequest("POST", `/api/team-training-leads/${p.id}/enrich-contact`, {});
         const json = await res.json();
-        if (json.success && json.prospect) {
-          found++;
+        // Server returns { prospect } on email found, { success: false, reason, prospect } on partial/miss
+        const hasEmail = !!json.prospect?.decisionMakerEmail;
+        const hasPartial = json.reason === "partial_contact_found";
+        if (hasEmail || hasPartial) found++;
+        if (json.prospect) {
           queryClient.setQueryData(["/api/admin/team-training/prospects"], (old: any) => {
             if (!old) return old;
             if (Array.isArray(old)) return old.map((l: any) => l.id === json.prospect.id ? { ...l, ...json.prospect } : l);
@@ -1806,15 +1809,17 @@ export default function AdminTeamTrainingLeadsPage() {
     try {
       const res = await apiRequest("POST", `/api/team-training-leads/${editProspect.id}/enrich-contact`, {});
       const json = await res.json();
-      if (json.prospect) {
-        const p = json.prospect;
+      // Merge whatever was found — email-found path returns { prospect }, partial path returns { success:false, prospect, partialData }
+      const p = json.prospect;
+      const partial = json.partialData;
+      if (p || partial) {
         setEditProspectForm((prev) => ({
           ...prev,
-          contactName: prev.contactName || p.contactName || prev.contactName,
-          contactRole: prev.contactRole || p.contactRole || prev.contactRole,
-          contactEmail: prev.contactEmail || p.decisionMakerEmail || p.contactEmail || prev.contactEmail,
-          contactPhone: prev.contactPhone || p.contactPhone || prev.contactPhone,
-          websiteUrl: prev.websiteUrl || p.websiteUrl || prev.websiteUrl,
+          contactName: prev.contactName || p?.contactName || partial?.contactName || undefined,
+          contactRole: prev.contactRole || p?.contactRole || partial?.contactRole || undefined,
+          contactEmail: prev.contactEmail || p?.decisionMakerEmail || p?.contactEmail || undefined,
+          contactPhone: prev.contactPhone || p?.contactPhone || partial?.contactPhone || undefined,
+          websiteUrl: prev.websiteUrl || p?.websiteUrl || undefined,
         }));
       }
     } catch {}
