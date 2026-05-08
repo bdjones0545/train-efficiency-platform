@@ -7004,8 +7004,9 @@ export async function registerRoutes(
         // Normalize all contact fields — never persist sentinel strings
         const safeContactName = nn(p.contactName);
         const safeContactRole = nn(p.contactRole);
-        const safeWebsiteUrl = nn(p.websiteUrl);
-        const safeSourceUrl = nn(p.sourceUrl);
+        // Use discoverySourceUrl as fallback if websiteUrl/sourceUrl not returned by AI
+        const safeWebsiteUrl = nn(p.websiteUrl) || nn(p.discoverySourceUrl) || null;
+        const safeSourceUrl = nn(p.sourceUrl) || nn(p.discoverySourceUrl) || null;
         const safeDmEmail = nn(p.decisionMakerEmail);
         const safeDmName = nn(p.decisionMakerName);
         const safeDmTitle = nn(p.decisionMakerTitle);
