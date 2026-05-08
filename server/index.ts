@@ -200,10 +200,42 @@ app.use((req, res, next) => {
             const scored = scoreProspect(p);
             const gate = applyLeadQualityGate(p, scored, existingNames);
 
-            if (gate.action === "duplicate") { duplicates++; continue; }
-            if (gate.action === "reject") { rejected++; continue; }
+            if (gate.action === "duplicate") {
+              duplicates++;
+              try {
+                await st.logDiscoveryAttempt({
+                  orgId,
+                  prospectId: null,
+                  prospectName: p.prospectName,
+                  query: p.discoveryQuery || null,
+                  sourceUrl: p.discoverySourceUrl || null,
+                  confidence: p.discoveryConfidenceScore ?? null,
+                  result: "duplicate",
+                  action: "recurring_research",
+                  notes: `Recurring: duplicate skipped`,
+                });
+              } catch {}
+              continue;
+            }
+            if (gate.action === "reject") {
+              rejected++;
+              try {
+                await st.logDiscoveryAttempt({
+                  orgId,
+                  prospectId: null,
+                  prospectName: p.prospectName,
+                  query: p.discoveryQuery || null,
+                  sourceUrl: p.discoverySourceUrl || null,
+                  confidence: p.discoveryConfidenceScore ?? null,
+                  result: "rejected",
+                  action: "recurring_research",
+                  notes: `Recurring: rejected — ${gate.reason || "low quality"}`,
+                });
+              } catch {}
+              continue;
+            }
 
-            await st.createTeamTrainingProspect({
+            const prospect = await st.createTeamTrainingProspect({
               orgId,
               prospectName: p.prospectName,
               organizationType: p.organizationType,
@@ -229,6 +261,20 @@ app.use((req, res, next) => {
             existingNames.push(p.prospectName);
             created++;
             if (gate.needsContact) needsContact++;
+
+            try {
+              await st.logDiscoveryAttempt({
+                orgId,
+                prospectId: prospect.id,
+                prospectName: p.prospectName,
+                query: p.discoveryQuery || null,
+                sourceUrl: p.discoverySourceUrl || null,
+                confidence: p.discoveryConfidenceScore ?? null,
+                result: "created",
+                action: "recurring_research",
+                notes: `Recurring: Confidence ${Math.round((p.discoveryConfidenceScore || 0) * 100)}% | Method: ${p.discoveryMethod || "unknown"} | Status: ${p.leadValidationStatus || "likely_valid"}`,
+              });
+            } catch {}
           }
 
           // Compute next run time in the org's local timezone so "8:00 AM"
@@ -280,6 +326,8 @@ app.use((req, res, next) => {
   };
 
   setInterval(runRecurringTeamLeadResearch, 60 * 60 * 1000); // every hour
+  // Also check for any missed runs shortly after startup (in case server restarted during a scheduled window)
+  setTimeout(runRecurringTeamLeadResearch, 2 * 60 * 1000); // 2 minutes after start
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
   await registerRoutes(httpServer, app);
