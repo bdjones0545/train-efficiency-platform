@@ -1663,7 +1663,17 @@ export default function AdminTeamTrainingLeadsPage() {
         // Sync the edit modal if it's open for this lead
         if (editProspect?.id === updatedLead.id) {
           setEditProspect((prev) => prev ? { ...prev, ...updatedLead } : prev);
-          setEditProspectForm((prev) => ({ ...prev, ...updatedLead }));
+          setEditProspectForm((prev) => ({
+            ...prev,
+            ...updatedLead,
+            // Map decisionMaker fields into the basic contact fields shown in the form
+            contactName: prev.contactName || updatedLead.contactName || (updatedLead as any).decisionMakerName || undefined,
+            contactRole: prev.contactRole || updatedLead.contactRole || (updatedLead as any).decisionMakerTitle || undefined,
+            contactEmail: prev.contactEmail || updatedLead.contactEmail || (updatedLead as any).decisionMakerEmail || undefined,
+            contactPhone: prev.contactPhone || updatedLead.contactPhone || undefined,
+            websiteUrl: prev.websiteUrl || updatedLead.websiteUrl || (updatedLead as any).contactSourceUrl || undefined,
+            sourceUrl: prev.sourceUrl || updatedLead.sourceUrl || (updatedLead as any).discoverySourceUrl || undefined,
+          }));
         }
       }
 
@@ -1800,7 +1810,16 @@ export default function AdminTeamTrainingLeadsPage() {
 
   const openEditProspect = (p: TeamTrainingProspect) => {
     setEditProspect(p);
-    setEditProspectForm(p);
+    // Merge decisionMaker fields into the basic contact fields so Deep Search results show up
+    setEditProspectForm({
+      ...p,
+      contactName: p.contactName || (p as any).decisionMakerName || undefined,
+      contactRole: p.contactRole || (p as any).decisionMakerTitle || undefined,
+      contactEmail: p.contactEmail || (p as any).decisionMakerEmail || undefined,
+      contactPhone: p.contactPhone || undefined,
+      websiteUrl: p.websiteUrl || (p as any).contactSourceUrl || undefined,
+      sourceUrl: p.sourceUrl || (p as any).discoverySourceUrl || undefined,
+    });
   };
 
   const runEditEnrichment = async () => {
@@ -1815,11 +1834,12 @@ export default function AdminTeamTrainingLeadsPage() {
       if (p || partial) {
         setEditProspectForm((prev) => ({
           ...prev,
-          contactName: prev.contactName || p?.contactName || partial?.contactName || undefined,
-          contactRole: prev.contactRole || p?.contactRole || partial?.contactRole || undefined,
-          contactEmail: prev.contactEmail || p?.decisionMakerEmail || p?.contactEmail || undefined,
+          contactName: prev.contactName || p?.contactName || p?.decisionMakerName || partial?.contactName || undefined,
+          contactRole: prev.contactRole || p?.contactRole || p?.decisionMakerTitle || partial?.contactRole || undefined,
+          contactEmail: prev.contactEmail || p?.contactEmail || p?.decisionMakerEmail || undefined,
           contactPhone: prev.contactPhone || p?.contactPhone || partial?.contactPhone || undefined,
-          websiteUrl: prev.websiteUrl || p?.websiteUrl || undefined,
+          websiteUrl: prev.websiteUrl || p?.websiteUrl || p?.contactSourceUrl || undefined,
+          sourceUrl: prev.sourceUrl || p?.sourceUrl || p?.discoverySourceUrl || undefined,
         }));
       }
     } catch {}
