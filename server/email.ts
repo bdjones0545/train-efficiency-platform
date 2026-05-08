@@ -136,7 +136,7 @@ async function getUncachableSendGridClient() {
   return { client: sgMail, fromEmail: email };
 }
 
-async function sendEmail(to: string, subject: string, html: string, senderName?: string, logCtx?: EmailLogContext) {
+async function sendEmail(to: string, subject: string, html: string, senderName?: string, logCtx?: EmailLogContext, replyTo?: string) {
   let finalHtml = html;
 
   if (logCtx?.recipientUserId) {
@@ -214,6 +214,7 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
     await client.send({
       to,
       from: { email: fromEmail, name: senderName || 'Train Efficiency' },
+      ...(replyTo ? { replyTo: replyTo } : {}),
       subject,
       html: finalHtml,
     });
@@ -1096,6 +1097,7 @@ export async function sendTeamTrainingOutreachEmail(
   body: string,
   org?: OrgBranding,
   emailId?: string,
+  replyTo?: string,
 ) {
   const b = brand(org);
   let html = emailShell(subject, `
@@ -1105,7 +1107,7 @@ export async function sendTeamTrainingOutreachEmail(
     html = injectTrackingPixel(html, emailId, APP_BASE_URL);
     html = wrapLinksForTracking(html, emailId, APP_BASE_URL);
   }
-  await sendEmail(toEmail, subject, html, b.name);
+  await sendEmail(toEmail, subject, html, b.name, undefined, replyTo);
 }
 
 export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {

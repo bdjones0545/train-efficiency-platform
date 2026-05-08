@@ -7667,6 +7667,7 @@ Refine this email following the instruction above. Preserve the core message and
           draft.body,
           branding,
           draft.id,
+          branding.ownerEmail,
         );
       } catch (sendErr: any) {
         console.error("[TeamTraining Send]", sendErr);
@@ -8533,6 +8534,134 @@ Business: ${org?.name ?? "Training Facility"}
       res.json({ deal, prospect, intelligence: intel });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── SendGrid Inbound Parse Webhook ────────────────────────────────────────
+  // Receives replies to outreach emails automatically. No auth — must return 200 fast.
+  // Setup: In SendGrid → Settings → Inbound Parse → add your domain and point webhook to:
+  //   https://[your-domain]/api/webhooks/sendgrid-inbound
+  app.post("/api/webhooks/sendgrid-inbound", express.urlencoded({ extended: true }), async (req: any, res: any) => {
+    // Always 200 immediately so SendGrid does not retry
+    res.status(200).json({ ok: true });
+
+    try {
+      // Extract sender email — prefer envelope JSON (cleanest), fallback to parsing from header
+      let senderEmail: string | null = null;
+      try {
+        const envelope = typeof req.body.envelope === "string"
+          ? JSON.parse(req.body.envelope)
+          : req.body.envelope;
+        senderEmail = envelope?.from || null;
+      } catch {}
+
+      if (!senderEmail && req.body.from) {
+        const match = (req.body.from as string).match(/<([^>]+)>/);
+        senderEmail = match ? match[1] : (req.body.from as string).trim();
+      }
+
+      if (!senderEmail) {
+        console.log("[InboundParse] Could not extract sender email — skipping");
+        return;
+      }
+
+      senderEmail = senderEmail.toLowerCase().trim();
+      const replyText = ((req.body.text as string) || "").slice(0, 2000);
+
+      // Find the prospect whose contactEmail or decisionMakerEmail matches the sender
+      const found = await storage.findProspectByContactEmail(senderEmail);
+      if (!found) {
+        console.log(`[InboundParse] No prospect found for sender: ${senderEmail}`);
+        return;
+      }
+
+      const { prospect, orgId } = found;
+
+      // Don't double-process
+      if (prospect.outreachStatus === "Replied") {
+        console.log(`[InboundParse] Prospect ${prospect.id} already marked replied — skipping`);
+        return;
+      }
+
+      // AI-classify the reply intent
+      let classification: string | null = null;
+      if (replyText) {
+        try {
+          const { classifyReply } = await import("./email-agent/reply-classifier");
+          classification = await classifyReply(replyText);
+        } catch {}
+      }
+
+      // Mark the prospect replied
+      await storage.updateTeamTrainingProspect(prospect.id, { outreachStatus: "Replied" });
+
+      // Stamp repliedAt on the most recent sent draft, cancel follow-ups
+      const drafts = await storage.getOutreachDraftsByProspect(prospect.id);
+      const sentDraft = drafts.find(d => !!d.sentAt && !d.repliedAt);
+      if (sentDraft) {
+        await storage.updateOutreachDraft(sentDraft.id, {
+          repliedAt: new Date(),
+          replyText: replyText || null,
+          replyClassification: classification,
+        });
+        await storage.cancelFollowUpSequence(sentDraft.id);
+        if (sentDraft.messageVariantId) {
+          try {
+            const variant = await storage.getEmailMessageVariant(sentDraft.messageVariantId);
+            if (variant) {
+              await storage.updateEmailMessageVariant(variant.id, {
+                replies: (variant.replies ?? 0) + 1,
+                conversions: (variant.conversions ?? 0) + 1,
+              });
+            }
+          } catch {}
+        }
+      }
+
+      // Log the event
+      await storage.logOutreachEvent({
+        orgId,
+        prospectId: prospect.id,
+        eventType: "replied",
+        description: classification
+          ? `Auto-detected inbound reply (${classification})`
+          : "Auto-detected inbound reply via SendGrid",
+        metadata: {
+          replyText: replyText.slice(0, 500) || null,
+          classification,
+          source: "sendgrid_inbound",
+        },
+      });
+
+      // Revenue attribution
+      try {
+        const { attributeOutcomeToProspect } = await import("./email-agent/revenue-outcome-engine");
+        await attributeOutcomeToProspect(orgId, prospect.id, "engaged", 0, "reply");
+      } catch {}
+
+      // Auto-create deal when prospect seems interested
+      if (classification === "interested" || classification === "ask_info") {
+        const existingDeal = await storage.getTeamTrainingDealByProspect(prospect.id, orgId);
+        if (!existingDeal) {
+          await storage.createTeamTrainingDeal({
+            organizationId: orgId,
+            prospectId: prospect.id,
+            outreachDraftId: sentDraft?.id ?? null,
+            status: "interested",
+            estimatedValue: prospect.estimatedValue ?? 0,
+            probability: 40,
+            nextAction: classification === "ask_info"
+              ? "Send information and schedule a call"
+              : "Schedule a discovery call",
+            notes: replyText ? `Auto-detected reply: ${replyText.slice(0, 300)}` : "",
+            lastActivityAt: new Date(),
+          });
+        }
+      }
+
+      console.log(`[InboundParse] Reply processed — prospect: ${prospect.prospectName} (${prospect.id}), classification: ${classification}`);
+    } catch (err: any) {
+      console.error("[InboundParse] Error processing inbound email:", err.message);
     }
   });
 

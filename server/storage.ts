@@ -301,6 +301,7 @@ export interface IStorage {
   isProspectOptedOut(orgId: string, email: string): Promise<boolean>;
   addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void>;
   getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>;
+  findProspectByContactEmail(email: string): Promise<{ prospect: import("@shared/schema").TeamTrainingProspect; orgId: string } | undefined>;
   getOutreachDraftsByOrg(orgId: string): Promise<(import("@shared/schema").TeamTrainingOutreachDraft & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
   getEmailPerformanceStats(orgId: string): Promise<{ sent: number; opened: number; clicked: number; replied: number; openRate: number; clickRate: number; replyRate: number; conversionRate: number; bestVariant: import("@shared/schema").EmailMessageVariant | null }>;
   getEmailMessageVariants(orgId: string): Promise<import("@shared/schema").EmailMessageVariant[]>;
@@ -2128,6 +2129,19 @@ export class DatabaseStorage implements IStorage {
   async getOutreachDraftsByProspect(prospectId: string) {
     const { teamTrainingOutreachDrafts } = await import("@shared/schema");
     return db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.prospectId, prospectId)).orderBy(desc(teamTrainingOutreachDrafts.createdAt));
+  }
+
+  async findProspectByContactEmail(email: string) {
+    const { teamTrainingProspects } = await import("@shared/schema");
+    const lowerEmail = email.toLowerCase().trim();
+    const rows = await db.select().from(teamTrainingProspects).where(
+      or(
+        sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
+        sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+      )
+    );
+    if (rows.length === 0) return undefined;
+    return { prospect: rows[0], orgId: rows[0].orgId };
   }
 
   async getOutreachDraftsByOrg(orgId: string) {
