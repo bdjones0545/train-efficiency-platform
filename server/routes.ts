@@ -273,7 +273,7 @@ export async function registerRoutes(
 
       const rawToken = crypto.randomBytes(32).toString("hex");
       const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
       await storage.createPasswordResetToken({
         email: normalizedEmail,
