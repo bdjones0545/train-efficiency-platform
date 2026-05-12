@@ -7,6 +7,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar, MapPin } from "lucide-react";
 import { useLocation } from "wouter";
 import type { CoachWithUser } from "@/lib/types";
+import {
+  PortalPageHero,
+  PortalFadeUp,
+  PortalStaggerGrid,
+  PortalStaggerItem,
+  PremiumCard,
+  BookingCTAWrap,
+} from "@/components/ClientPortalMotion";
 
 export default function CoachesPage() {
   const [, navigate] = useLocation();
@@ -26,12 +34,19 @@ export default function CoachesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-serif font-bold" data-testid="text-coaches-title">Our Coaches</h1>
-        <p className="text-muted-foreground mt-1">
-          Choose a coach and view their available schedule
-        </p>
-      </div>
+      <PortalPageHero className="rounded-xl mb-2 px-5 py-6 border border-border/40 bg-card/50">
+        <PortalFadeUp>
+          <h1
+            className="text-2xl font-serif font-bold"
+            data-testid="text-coaches-title"
+          >
+            Our Coaches
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Choose a coach and view their available schedule
+          </p>
+        </PortalFadeUp>
+      </PortalPageHero>
 
       {isLoading ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -50,57 +65,70 @@ export default function CoachesPage() {
           ))}
         </div>
       ) : coaches && coaches.length > 0 ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <PortalStaggerGrid className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {coaches.map((coach) => (
-            <Card key={coach.id} className="p-6 space-y-4 hover-elevate" data-testid={`card-coach-${coach.id}`}>
-              <div className="flex items-center gap-3">
-                <Avatar className="h-12 w-12">
-                  <AvatarImage src={coach.photoUrl || coach.user?.profileImageUrl || undefined} />
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                    {(coach.user?.firstName?.[0] || "C").toUpperCase()}
-                    {(coach.user?.lastName?.[0] || "").toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <h3 className="font-semibold" data-testid={`text-coach-name-${coach.id}`}>
-                    {coach.user?.firstName} {coach.user?.lastName}
-                  </h3>
-                  {(coach.location || coach.timezone) && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {coach.location || coach.timezone?.replace("_", " ")}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {coach.bio && (
-                <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
-                  {coach.bio}
-                </p>
-              )}
-
-              {coach.specialties && coach.specialties.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {coach.specialties.map((spec) => (
-                    <Badge key={spec} variant="secondary" className="text-xs">
-                      {spec}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
-              <Button
-                className="w-full"
-                onClick={() => navigate(`/coaches/${coach.id}`)}
-                data-testid={`button-view-schedule-${coach.id}`}
+            <PortalStaggerItem key={coach.id}>
+              <PremiumCard
+                className="rounded-lg border border-border bg-card p-6 space-y-4 h-full"
+                glowOnHover
+                data-testid={`card-coach-${coach.id}`}
               >
-                <Calendar className="h-4 w-4 mr-2" />
-                View Schedule
-              </Button>
-            </Card>
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage
+                      src={coach.photoUrl || coach.user?.profileImageUrl || undefined}
+                    />
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                      {(coach.user?.firstName?.[0] || "C").toUpperCase()}
+                      {(coach.user?.lastName?.[0] || "").toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h3
+                      className="font-semibold"
+                      data-testid={`text-coach-name-${coach.id}`}
+                    >
+                      {coach.user?.firstName} {coach.user?.lastName}
+                    </h3>
+                    {(coach.location || coach.timezone) && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {coach.location || coach.timezone?.replace("_", " ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {coach.bio && (
+                  <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+                    {coach.bio}
+                  </p>
+                )}
+
+                {coach.specialties && coach.specialties.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {coach.specialties.map((spec) => (
+                      <Badge key={spec} variant="secondary" className="text-xs">
+                        {spec}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                <BookingCTAWrap>
+                  <Button
+                    className="w-full"
+                    onClick={() => navigate(`/coaches/${coach.id}`)}
+                    data-testid={`button-view-schedule-${coach.id}`}
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    View Schedule
+                  </Button>
+                </BookingCTAWrap>
+              </PremiumCard>
+            </PortalStaggerItem>
           ))}
-        </div>
+        </PortalStaggerGrid>
       ) : (
         <Card className="p-12 text-center">
           <p className="text-muted-foreground">No coaches available at the moment.</p>

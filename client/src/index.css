@@ -353,6 +353,244 @@
   }
 }
 
+/* ── Client Portal Premium Motion System ─────────────────────────────────────
+   Calm · Athletic · Professional · Luxury Fitness SaaS
+   GPU-accelerated: transform + opacity only — zero layout shifts.
+   All animations respect prefers-reduced-motion.
+   Mobile: reduced intensity via media query.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Grid drift — hero/header only, never behind readable content */
+@keyframes portal-grid-drift {
+  0%   { transform: translate(0, 0); }
+  100% { transform: translate(32px, 32px); }
+}
+
+/* Ambient light sweep — slow shimmer across premium card surfaces */
+@keyframes portal-sweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+/* Edge trace — soft line traces top border of session/featured cards */
+@keyframes portal-edge-trace {
+  0%        { transform: scaleX(0); opacity: 0; transform-origin: left; }
+  15%       { opacity: 0.6; }
+  40%, 60%  { transform: scaleX(1); transform-origin: left; opacity: 0.55; }
+  85%       { opacity: 0; }
+  100%      { transform: scaleX(0); opacity: 0; transform-origin: right; }
+}
+
+/* CTA glow — gentle breathe on booking / payment buttons */
+@keyframes portal-cta-glow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent, 0 1px 3px hsl(var(--primary) / 0.08); }
+  50%       { box-shadow: 0 0 14px 2px hsl(var(--primary) / 0.16), 0 2px 10px hsl(var(--primary) / 0.10); }
+}
+
+/* Wallet breathe — very subtle ambient glow on balance card */
+@keyframes portal-wallet-breathe {
+  0%, 100% { box-shadow: 0 1px 4px hsl(var(--primary) / 0.04); }
+  50%       { box-shadow: 0 2px 20px -4px hsl(var(--primary) / 0.09), 0 1px 4px hsl(var(--primary) / 0.04); }
+}
+
+/* Session pulse ring — small indicator dot for upcoming sessions */
+@keyframes portal-pulse-ring {
+  0%   { transform: scale(1); opacity: 0.65; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* ── Grid ── */
+.portal-hero-grid {
+  background-image:
+    linear-gradient(hsl(var(--primary) / 0.032) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.032) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: portal-grid-drift 28s linear infinite;
+  will-change: transform;
+}
+
+/* ── Premium card — ambient sweep + edge trace ── */
+.portal-premium-card {
+  position: relative;
+  overflow: hidden;
+}
+
+/* ambient sweep shimmer */
+.portal-premium-card::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 35%;
+  height: 100%;
+  background: linear-gradient(
+    108deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.035) 50%,
+    transparent 100%
+  );
+  animation: portal-sweep 11s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform;
+  z-index: 0;
+}
+
+/* soft top-edge trace */
+.portal-premium-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.38) 38%,
+    hsl(var(--primary) / 0.38) 62%,
+    transparent 100%
+  );
+  animation: portal-edge-trace 8s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ensure content stays above pseudo-elements */
+.portal-premium-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* hover border glow (CSS fallback for reduced-motion) */
+.portal-card-hover-glow {
+  transition: box-shadow 0.22s ease, border-color 0.22s ease;
+}
+.portal-card-hover-glow:hover {
+  box-shadow: 0 4px 22px -6px hsl(var(--primary) / 0.12);
+  border-color: hsl(var(--primary) / 0.22);
+}
+
+/* ── Session card — edge trace with slightly more presence ── */
+.portal-session-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.portal-session-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.42) 35%,
+    hsl(var(--primary) / 0.42) 65%,
+    transparent 100%
+  );
+  animation: portal-edge-trace 7s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.portal-session-card::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(
+    108deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.028) 50%,
+    transparent 100%
+  );
+  animation: portal-sweep 13s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform;
+  z-index: 0;
+}
+
+.portal-session-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* ── Wallet card — slow ambient breathe ── */
+.portal-wallet-card {
+  animation: portal-wallet-breathe 5s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+/* ── CTA button glow wrap ── */
+.portal-cta-wrap {
+  position: relative;
+  display: contents;
+}
+
+.portal-cta-wrap > * {
+  animation: portal-cta-glow 3.6s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+/* ── Session pulse dot ── */
+.portal-pulse-ring {
+  animation: portal-pulse-ring 1.8s ease-out infinite;
+  will-change: transform, opacity;
+}
+
+/* ── Focus section ── */
+.portal-focus-section {
+  transition: box-shadow 0.3s ease;
+  border-radius: var(--radius);
+}
+
+.portal-focus-active {
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.12), 0 4px 24px -8px hsl(var(--primary) / 0.08);
+}
+
+/* ── Mobile: reduce intensity ── */
+@media (max-width: 768px) {
+  .portal-hero-grid {
+    animation-duration: 40s;
+    opacity: 0.7;
+  }
+  .portal-premium-card::after,
+  .portal-session-card::after {
+    animation-duration: 16s;
+  }
+  .portal-premium-card::before,
+  .portal-session-card::before {
+    animation-duration: 10s;
+    opacity: 0.8;
+  }
+  .portal-wallet-card {
+    animation-duration: 7s;
+  }
+  .portal-cta-wrap > * {
+    animation-duration: 5s;
+  }
+}
+
+/* ── Respect prefers-reduced-motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .portal-hero-grid,
+  .portal-wallet-card,
+  .portal-pulse-ring {
+    animation: none !important;
+  }
+  .portal-premium-card::before,
+  .portal-premium-card::after,
+  .portal-session-card::before,
+  .portal-session-card::after {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .portal-cta-wrap > * {
+    animation: none !important;
+    box-shadow: none !important;
+  }
+}
+
 /**
  * Using the elevate system.
  * Automatic contrast adjustment.
