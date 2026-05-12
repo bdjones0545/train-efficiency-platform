@@ -1,0 +1,69 @@
+Add “Active Search Angle” visibility to the TrainEfficiency lead research UX so users can see exactly what the AI is researching during manual and recurring lead discovery.
+
+Goal:
+Display the currently active category + location combination in the floating research progress UI and results modal.
+
+Examples:
+- Searching: Private Schools • Hilton Head Island
+- Searching: Volleyball Clubs • Savannah
+- Searching: Martial Arts Academies • Beaufort
+
+Backend changes:
+
+1. Include active search metadata in the research response:
+   - activeCategory
+   - activeLocation
+   - searchAttempt (primary or fallback)
+   - diversified (boolean)
+
+2. If fallback search runs:
+   - update metadata to reflect the fallback category/location
+   - include both:
+     primarySearchAngle
+     fallbackSearchAngle
+
+3. Add this metadata to:
+   - manual research response
+   - recurring research logs/events
+   - floating progress state payloads
+
+Frontend changes:
+
+Floating Research Panel:
+1. Add a small “SEARCH ANGLE” section under the progress steps.
+2. Display:
+   Searching: {category} • {location}
+3. If fallback triggered:
+   - show:
+     “Expanded Search”
+     {fallbackCategory} • {fallbackLocation}
+   - subtle animated transition between primary and fallback angle
+
+Results Modal:
+1. Add a compact summary block:
+   Search Angle:
+   Private Schools • Hilton Head Island
+
+2. If fallback was used:
+   Primary Search:
+   Youth Sports Clubs • Bluffton
+
+   Expanded Search:
+   Dance Studios • Savannah
+
+3. If all results were duplicates:
+   show:
+   “Next search rotation will automatically move to a new category and nearby market.”
+
+UI/UX polish:
+- Use subtle cyan/green accent text
+- Keep it compact and premium-looking
+- Mobile-friendly
+- Avoid increasing modal height too much
+- Animate angle updates smoothly during fallback transitions
+
+Acceptance tests:
+- Users can always see what category/location the AI is currently researching
+- Fallback search visibly updates the angle
+- Recurring and manual research both expose the active angle
+- UI remains clean on mobile

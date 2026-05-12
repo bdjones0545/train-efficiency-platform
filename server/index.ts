@@ -338,8 +338,13 @@ app.use((req, res, next) => {
           await st.logOutreachEvent({
             orgId,
             eventType: "recurring_research_completed",
-            description: `Recurring research completed. Saved ${created}, rejected ${rejected}, skipped ${duplicates} duplicates near ${settings.defaultLocation}`,
-            metadata: { count: created, rejected, duplicates, needsContact, location: settings.defaultLocation, radiusMiles: settings.radiusMiles, sport: settings.recurringSport },
+            description: `Recurring research completed. Saved ${created}, rejected ${rejected}, skipped ${duplicates} duplicates near ${settings.defaultLocation}. Angle: ${searchCategory} • ${searchLocation}`,
+            metadata: {
+              count: created, rejected, duplicates, needsContact,
+              location: settings.defaultLocation, radiusMiles: settings.radiusMiles, sport: settings.recurringSport,
+              primarySearchAngle: { category: searchCategory, location: searchLocation },
+              activeCategory: searchCategory, activeLocation: searchLocation,
+            },
           });
 
           console.log(`[Team Leads Recurring Research] orgId=${orgId} status=completed leads=${created} rejected=${rejected} duplicates=${duplicates}`);

@@ -6837,10 +6837,16 @@ export async function registerRoutes(
       const orgState = (org as any)?.state || "";
       const fallbackLocation = [orgCity, orgState].filter(Boolean).join(", ");
       const orgTz = resolveOrgTimezone(org);
+      const { getRotatedCategory: grc, getRotatedLocation: grl } = await import("./team-training-prospecting");
       if (saved) {
         const nextRunLabel = saved.recurringEnabled && saved.nextRunAt ? buildNextRunLabel(new Date(saved.nextRunAt), orgTz) : null;
         const preferredTimeLabel = saved.recurringTime ? formatTime12h(saved.recurringTime) : "8:00 AM";
-        return res.json({ ...saved, nextRunLabel, preferredTimeLabel, timezone: orgTz });
+        const loc = saved.defaultLocation || fallbackLocation;
+        const nextSearchAngle = loc ? {
+          category: grc(saved.lastSearchCategoryIndex ?? 0),
+          location: grl(loc, saved.lastSearchLocationIndex ?? 0),
+        } : null;
+        return res.json({ ...saved, nextRunLabel, preferredTimeLabel, timezone: orgTz, nextSearchAngle });
       }
       return res.json({
         organizationId: profile.organizationId,
@@ -6857,6 +6863,7 @@ export async function registerRoutes(
         nextRunLabel: null,
         preferredTimeLabel: "8:00 AM",
         timezone: orgTz,
+        nextSearchAngle: fallbackLocation ? { category: grc(0), location: grl(fallbackLocation, 0) } : null,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -7069,11 +7076,13 @@ export async function registerRoutes(
       // If ALL first-pass results were duplicates, run one automatic fallback with a different category/location
       const allDuplicates = results.length > 0 && saveableBatch.length === 0 && rejected.length === 0 && duplicates.length === results.length;
       let usedFallback = false;
+      let fallbackCategory: string | null = null;
+      let fallbackLocation: string | null = null;
 
       if (allDuplicates && !forceDiversify) {
         console.log(`[TeamTraining Research] All ${duplicates.length} results were duplicates — running diversified fallback`);
-        const fallbackCategory = getRotatedCategory((catIdx + 1) % 20);
-        const fallbackLocation = getRotatedLocation(locationTrimmed, (locIdx + 1) % 10);
+        fallbackCategory = getRotatedCategory((catIdx + 1) % 20);
+        fallbackLocation = getRotatedLocation(locationTrimmed, (locIdx + 1) % 10);
         const fallbackResults = await runResearch(fallbackCategory, fallbackLocation);
 
         for (const p of fallbackResults) {
@@ -7192,6 +7201,14 @@ export async function registerRoutes(
         usedFallback,
         searchCategory,
         searchLocation,
+        primarySearchAngle: { category: searchCategory, location: searchLocation },
+        fallbackSearchAngle: usedFallback && fallbackCategory && fallbackLocation
+          ? { category: fallbackCategory, location: fallbackLocation }
+          : null,
+        activeCategory: usedFallback && fallbackCategory ? fallbackCategory : searchCategory,
+        activeLocation: usedFallback && fallbackLocation ? fallbackLocation : searchLocation,
+        searchAttempt: usedFallback ? "fallback" : "primary",
+        diversified: !!forceDiversify,
       };
 
       await storage.logOutreachEvent({

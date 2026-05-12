@@ -1081,11 +1081,23 @@ type ResearchStep = {
   state: "pending" | "active" | "done";
 };
 
+type SearchAngle = { category: string; location: string };
+
 type ResearchProgressState = {
   status: "idle" | "running" | "done" | "error";
   location: string;
   steps: ResearchStep[];
-  result?: { saved: number; rejected: number; duplicates: number; allDuplicates?: boolean };
+  result?: {
+    saved: number;
+    rejected: number;
+    duplicates: number;
+    allDuplicates?: boolean;
+    primarySearchAngle?: SearchAngle;
+    fallbackSearchAngle?: SearchAngle | null;
+    searchAttempt?: "primary" | "fallback";
+    diversified?: boolean;
+  };
+  currentAngle?: SearchAngle;
   error?: string;
   minimized: boolean;
 };
@@ -1179,56 +1191,104 @@ function ResearchProgressPanel({
             </div>
           ))}
 
+          {/* Active Search Angle — shown while running and when done */}
+          {progress.currentAngle && !isDone && (
+            <>
+              <div className="mt-2 pt-2 border-t border-border/50">
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-cyan-600 dark:text-cyan-400 mb-1">Search Angle</p>
+                <p className="text-[11px] text-cyan-700 dark:text-cyan-300 font-medium leading-snug" data-testid="text-search-angle-running">
+                  {progress.currentAngle.category}
+                  <span className="text-cyan-500 dark:text-cyan-500 mx-1">•</span>
+                  {progress.currentAngle.location}
+                </p>
+              </div>
+            </>
+          )}
+
           {/* Result line */}
           {isDone && progress.result && (
             <>
               <div className="my-1.5 border-t" />
-              {progress.result.allDuplicates ? (
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2">
-                    <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center mt-0.5">
-                      <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+
+              {/* Search angle result summary */}
+              {progress.result.primarySearchAngle && (
+                <div className="mb-1.5" data-testid="section-search-angle-done">
+                  {progress.result.fallbackSearchAngle ? (
+                    <div className="space-y-1">
+                      <p className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">Primary Search</p>
+                      <p className="text-[11px] text-muted-foreground leading-snug line-through opacity-60">
+                        {progress.result.primarySearchAngle.category}
+                        <span className="mx-1">•</span>
+                        {progress.result.primarySearchAngle.location}
+                      </p>
+                      <p className="text-[9px] font-semibold uppercase tracking-widest text-cyan-600 dark:text-cyan-400">Expanded Search</p>
+                      <p className="text-[11px] text-cyan-700 dark:text-cyan-300 font-medium leading-snug" data-testid="text-fallback-angle">
+                        {progress.result.fallbackSearchAngle.category}
+                        <span className="text-cyan-500 mx-1">•</span>
+                        {progress.result.fallbackSearchAngle.location}
+                      </p>
                     </div>
-                    <span className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed" data-testid="text-all-duplicates">
-                      We found only organizations already in your pipeline. Next run will search a new category &amp; location.
-                    </span>
-                  </div>
-                  <button
-                    className="w-full text-xs text-primary underline underline-offset-2 text-left hover:opacity-80 transition-opacity"
-                    onClick={onFindDifferent}
-                    data-testid="button-find-different"
-                  >
-                    Find different leads now →
-                  </button>
+                  ) : (
+                    <div>
+                      <p className="text-[9px] font-semibold uppercase tracking-widest text-cyan-600 dark:text-cyan-400 mb-0.5">Search Angle</p>
+                      <p className="text-[11px] text-cyan-700 dark:text-cyan-300 font-medium leading-snug" data-testid="text-primary-angle">
+                        {progress.result.primarySearchAngle.category}
+                        <span className="text-cyan-500 mx-1">•</span>
+                        {progress.result.primarySearchAngle.location}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400" data-testid="text-progress-saved">
-                      {progress.result.saved} lead{progress.result.saved !== 1 ? "s" : ""} added
-                    </span>
-                  </div>
-                  {progress.result.rejected > 0 && (
-                    <div className="flex items-center gap-2">
-                      <XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-xs text-muted-foreground" data-testid="text-progress-rejected">
-                        {progress.result.rejected} rejected
-                      </span>
-                    </div>
-                  )}
-                  {progress.result.duplicates > 0 && (
-                    <div className="flex items-center gap-2">
-                      <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
-                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {progress.result.duplicates} duplicate{progress.result.duplicates !== 1 ? "s" : ""} skipped
-                      </span>
-                    </div>
-                  )}
-                </>
               )}
+
+              <div className="border-t border-border/50 pt-1.5 space-y-1">
+                {progress.result.allDuplicates ? (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center mt-0.5">
+                        <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                      </div>
+                      <span className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed" data-testid="text-all-duplicates">
+                        We found only organizations already in your pipeline. Next search rotation will automatically move to a new category and nearby market.
+                      </span>
+                    </div>
+                    <button
+                      className="w-full text-xs text-primary underline underline-offset-2 text-left hover:opacity-80 transition-opacity"
+                      onClick={onFindDifferent}
+                      data-testid="button-find-different"
+                    >
+                      Find different leads now →
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400" data-testid="text-progress-saved">
+                        {progress.result.saved} lead{progress.result.saved !== 1 ? "s" : ""} added
+                      </span>
+                    </div>
+                    {progress.result.rejected > 0 && (
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-xs text-muted-foreground" data-testid="text-progress-rejected">
+                          {progress.result.rejected} rejected
+                        </span>
+                      </div>
+                    )}
+                    {progress.result.duplicates > 0 && (
+                      <div className="flex items-center gap-2">
+                        <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {progress.result.duplicates} duplicate{progress.result.duplicates !== 1 ? "s" : ""} skipped
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </>
           )}
 
@@ -1337,6 +1397,7 @@ export default function AdminTeamTrainingLeadsPage() {
     defaultLocation: string; radiusMiles: number; recurringEnabled: boolean;
     recurringFrequency: string; recurringLimit: number; recurringSport: string; recurringTime: string;
     lastRunAt: string | null; nextRunAt: string | null; nextRunLabel: string | null; preferredTimeLabel: string;
+    nextSearchAngle: { category: string; location: string } | null;
   }>({
     queryKey: ["/api/team-training-leads/settings"],
   });
@@ -1368,6 +1429,7 @@ export default function AdminTeamTrainingLeadsPage() {
         location: data.location,
         steps: makeSteps("search"),
         minimized: false,
+        currentAngle: savedSettings?.nextSearchAngle ?? undefined,
       });
       startProgressSteps(data.location);
 
@@ -1403,12 +1465,23 @@ export default function AdminTeamTrainingLeadsPage() {
       const rejected = data.summary?.rejectedLowQuality ?? 0;
       const duplicates = data.summary?.duplicatesSkipped ?? 0;
       const allDuplicates = data.summary?.allDuplicates ?? false;
+      const primarySearchAngle = data.summary?.primarySearchAngle ?? null;
+      const fallbackSearchAngle = data.summary?.fallbackSearchAngle ?? null;
+      const searchAttempt = data.summary?.searchAttempt ?? "primary";
+      const diversified = data.summary?.diversified ?? false;
 
       setResearchProgress((prev) => ({
         ...prev,
         status: "done",
         steps: STEP_DEFINITIONS.map((s) => ({ ...s, state: "done" as const })),
-        result: { saved, rejected, duplicates, allDuplicates },
+        currentAngle: undefined,
+        result: {
+          saved, rejected, duplicates, allDuplicates,
+          primarySearchAngle: primarySearchAngle ?? undefined,
+          fallbackSearchAngle,
+          searchAttempt,
+          diversified,
+        },
       }));
 
       if (data.summary) setResearchSummary(data.summary);
