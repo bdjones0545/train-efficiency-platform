@@ -1,0 +1,87 @@
+Fix TrainEfficiency team lead research so recurring/manual lead discovery does not repeatedly return the same duplicate leads.
+
+Current issue:
+- Research analyzes 5 candidates.
+- All 5 are duplicates skipped.
+- Same organizations keep appearing repeatedly: Bluffton Rush Soccer Club, Boys & Girls Club of Bluffton, Bluffton Youth Sports, etc.
+- Duplicate skipping works, but the AI search pool is stale and keeps producing the same obvious leads.
+
+Goal:
+Make lead research novelty-aware so each run searches beyond existing leads.
+
+Backend changes:
+
+1. Before running AI research, load existing team training leads for the organization:
+   - names
+   - websites/domains
+   - locations
+   - rejected leads if stored
+   - duplicates previously skipped if logged
+
+2. Pass an exclusion list into the AI research prompt:
+   “Do NOT return any of these already-known organizations/domains: ...”
+
+3. Add search diversification:
+   - Rotate search categories each run:
+     youth sports clubs
+     private schools
+     charter schools
+     high schools
+     dance studios
+     martial arts academies
+     volleyball clubs
+     soccer clubs
+     baseball/softball academies
+     swim teams
+     gymnastics gyms
+     lacrosse clubs
+     basketball programs
+     tennis academies
+     country club junior programs
+   - Rotate nearby towns based on radius:
+     Bluffton
+     Hilton Head Island
+     Hardeeville
+     Okatie
+     Beaufort
+     Ridgeland
+     Savannah
+   - Store the last category/location searched in lead settings or audit metadata so the next recurring run changes angle.
+
+4. Add a “novelty requirement” to the AI prompt:
+   - Return only organizations not already in the database.
+   - Prefer lesser-known but verifiable programs.
+   - Must include a website, social page, or directory source.
+   - If fewer than X new leads are found in the main city, expand to nearby cities inside the radius.
+
+5. Improve duplicate detection:
+   - Normalize names:
+     lowercase
+     remove punctuation
+     remove words like “the”, “inc”, “llc”, “club”, “academy”, “association”
+   - Normalize domains:
+     strip https://, www., trailing slash
+   - Check duplicate by:
+     normalized name exact match
+     domain exact match
+     strong fuzzy name similarity
+     same phone/email if available
+
+6. Research result behavior:
+   - If all candidates are duplicates, automatically run one fallback pass with a different category/location combination.
+   - Example:
+     first pass: “youth soccer Bluffton”
+     fallback: “private schools athletic programs Hilton Head / Okatie”
+   - Only show final modal after fallback completes.
+
+7. UI improvement:
+   - If 0 leads added and duplicates were skipped, show:
+     “We found only organizations already in your pipeline. Next run will search a new category/location.”
+   - Add a “Find different leads” button that triggers research with forceDiversify=true.
+
+Acceptance tests:
+- Running research twice in a row should not keep returning the same 5 leads.
+- If duplicates are found, backend attempts a diversified fallback.
+- Recurring research rotates category/location instead of repeating the same query.
+- Duplicate detection still prevents saving existing organizations.
+- Modal clearly explains whether the issue was no market inventory or duplicate-heavy results.
