@@ -721,13 +721,18 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "send_drafted_outreach_sms",
-      description: "Send a previously drafted outreach message as an SMS to a client. Use after draft_client_outreach returns an agentActionId. Only available when the client has opted in to SMS and has a valid phone number. Use the two-call handshake: first call with confirmed: false to preview the SMS and get a pendingActionId, present the message to the user and ask them to confirm, then call again with confirmed: true and the pendingActionId. Never invent a pendingActionId or agentActionId.",
+      description: "Send a previously drafted outreach message as an SMS to a client. Use after draft_client_outreach returns an agentActionId. Requires the client to have a valid phone number. Use the two-call handshake: first call with confirmed: false to preview the SMS and get a pendingActionId, present the message to the user and ask them to confirm, then call again with confirmed: true and the pendingActionId. Never invent a pendingActionId or agentActionId. Set messagePurpose to 'operational' for manual one-to-one coach messages (scheduling, check-ins, reminders, session updates — no opt-in required). Set messagePurpose to 'marketing' for bulk promotions or sales offers (opt-in required). Defaults to 'operational'.",
       parameters: {
         type: "object",
         properties: {
           agentActionId: { type: "string", description: "The agentActionId returned by draft_client_outreach" },
           confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
           pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
+          messagePurpose: {
+            type: "string",
+            enum: ["operational", "marketing", "automated_outreach"],
+            description: "Purpose of the SMS. 'operational' = manual one-to-one coach message (scheduling, check-ins, reminders, coaching communication) — no opt-in required as long as client has a phone number. 'marketing' or 'automated_outreach' = promotions, bulk campaigns, sales offers — requires explicit SMS opt-in. Default: 'operational'.",
+          },
         },
         required: ["agentActionId", "confirmed"],
       },
@@ -3230,16 +3235,21 @@ Return a JSON object with exactly these keys:
           if (!clientUser?.phone) {
             return JSON.stringify({ error: "Client has no phone number on file. Cannot send SMS." });
           }
-          // Phase 8: Check org-level smsOptIn if organizationId available, fallback to user-level
-          let effectiveSmsOptIn = clientUser.smsOptIn;
-          if (organizationId) {
-            try {
-              const orgPrefs = await storage.getUserOrgPreferences(agentAction.clientId, organizationId);
-              if (orgPrefs) effectiveSmsOptIn = orgPrefs.smsOptIn;
-            } catch (e) { /* fallback to user-level */ }
-          }
-          if (!effectiveSmsOptIn) {
-            return JSON.stringify({ error: "Client has not opted in to SMS. Cannot send SMS outreach." });
+          const messagePurpose: string = args.messagePurpose ?? "operational";
+          const isMarketingSms = messagePurpose === "marketing" || messagePurpose === "automated_outreach";
+
+          if (isMarketingSms) {
+            // Marketing/promotional SMS requires explicit opt-in
+            let effectiveSmsOptIn = clientUser.smsOptIn;
+            if (organizationId) {
+              try {
+                const orgPrefs = await storage.getUserOrgPreferences(agentAction.clientId, organizationId);
+                if (orgPrefs) effectiveSmsOptIn = orgPrefs.smsOptIn;
+              } catch (e) { /* fallback to user-level */ }
+            }
+            if (!effectiveSmsOptIn) {
+              return JSON.stringify({ error: `Client has not opted in to SMS. Marketing and promotional messages require explicit SMS opt-in. If this is an operational message (scheduling, check-in, reminder, coaching communication), set messagePurpose to 'operational' to send without opt-in.` });
+            }
           }
           const mc = agentAction.messageContent as any;
           const smsBody = mc?.smsBody ?? mc?.emailBody ?? "(no message)";
@@ -3293,6 +3303,10 @@ Return a JSON object with exactly these keys:
         const orgNameSms = orgBrandingSms?.name || "TrainEfficiency";
 
         try {
+          const smsPurpose: "operational" | "marketing" | "automated_outreach" =
+            args.messagePurpose === "marketing" || args.messagePurpose === "automated_outreach"
+              ? args.messagePurpose
+              : "operational";
           const smsResult = await sendSms({
             to: clientUserSms.phone,
             body: smsOutreach({ clientFirstName: clientFirstNameSms, message: smsBody, orgName: orgNameSms }),
@@ -3303,6 +3317,7 @@ Return a JSON object with exactly these keys:
               coachId: agentActionSms.coachId || undefined,
               agentActionId: agentActionId_sms,
               recipientUserId: clientUserSms.id,
+              messagePurpose: smsPurpose,
             },
           });
           if (smsResult.sent) {
@@ -4196,12 +4211,18 @@ After draft_client_outreach returns an agentActionId, always offer to send the S
 When a coach says "text [client] asking [X]" or "send [client] a text" → this is a DIRECT TEXT REQUEST. Do NOT say you lack texting permissions. Instead:
 1. Call find_client to resolve the name
 2. Call draft_client_outreach(reason: "general", goal: "check_in", context: "[X]")
-3. Immediately call send_drafted_outreach_sms with confirmed: false to show the SMS preview
-4. Ask the coach to confirm, then send with confirmed: true
+3. Immediately call send_drafted_outreach_sms with confirmed: false and messagePurpose: "operational" to show the SMS preview
+4. Ask the coach to confirm, then send with confirmed: true and messagePurpose: "operational"
 
-When the coach says "send it", "yes text them", or "confirm" after an SMS preview → call send_drafted_outreach_sms with confirmed: true and the pendingActionId.
+**SMS messagePurpose classification (IMPORTANT):**
+- Always set messagePurpose: "operational" for manual one-to-one coach messages: scheduling, check-ins, reminders, coaching questions, "is this working?", session updates, payment/account notices, any direct coach-to-client communication. Operational SMS does NOT require the client to have opted in to SMS — only a valid phone number is required.
+- Set messagePurpose: "marketing" only for bulk promotions, sales offers, or mass campaigns. Marketing SMS requires explicit SMS opt-in.
+- Set messagePurpose: "automated_outreach" only for automated recurring sequences or system-generated campaigns.
+- Default to "operational" when in doubt for any manual, one-to-one coach-initiated message.
+
+When the coach says "send it", "yes text them", or "confirm" after an SMS preview → call send_drafted_outreach_sms with confirmed: true and the pendingActionId (preserve the same messagePurpose from the first call).
 If the client has no phone number → say "I found [name] but they don't have a phone number on file."
-If the client has not opted in to SMS → say "[name] hasn't opted in to SMS. Want me to send the message as an email instead?"
+If the client has not opted in to SMS but this is a marketing message → say "[name] hasn't opted in to marketing SMS. Want me to send this as an email instead, or send it as an operational message if it's coaching communication?"
 
 ## Daily Action Queue (get_daily_action_queue — most important feature)
 Use **get_daily_action_queue** when the coach asks:

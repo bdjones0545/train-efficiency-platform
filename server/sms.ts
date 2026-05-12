@@ -58,6 +58,7 @@ export interface SmsContext {
   bookingId?: string;
   agentActionId?: string;
   recipientUserId?: string;
+  messagePurpose?: "operational" | "marketing" | "automated_outreach";
 }
 
 interface SmsLogPayload {
@@ -142,15 +143,20 @@ export async function sendSms(params: {
       effectiveNotifPrefs = user?.notificationPreferences as any;
     }
 
-    if (!effectiveSmsOptIn) {
+    // Operational messages (manual coach-to-client) bypass the opt-in gate.
+    // Only marketing and automated outreach require explicit SMS opt-in.
+    const isOperational = ctx.messagePurpose === "operational" || (!ctx.messagePurpose && ctx.type !== "marketing" && ctx.type !== "automated_outreach");
+    if (!isOperational && !effectiveSmsOptIn) {
       const reason = 'sms_not_opted_in';
-      console.log(`[SMS] Skipped: ${reason} for ${normalizedPhone}`);
+      console.log(`[SMS] Skipped: ${reason} for ${normalizedPhone} (purpose: ${ctx.messagePurpose ?? ctx.type})`);
       await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'skipped', provider: 'twilio', errorMessage: reason });
       return { sent: false, skipped: reason };
     }
 
     const prefKey = SMS_TYPE_TO_PREF_KEY[ctx.type];
-    if (prefKey) {
+    // Operational messages bypass per-type notification preference checks too.
+    // Marketing and automated outreach must still respect granular preferences.
+    if (prefKey && !isOperational) {
       const smsPrefs = effectiveNotifPrefs?.sms ?? DEFAULT_SMS_PREFS;
       const enabled = smsPrefs[prefKey] ?? DEFAULT_SMS_PREFS[prefKey] ?? false;
       if (!enabled) {
