@@ -4124,7 +4124,10 @@ When the coach asks for outreach help, use **draft_client_outreach** to generate
     The drafted SMS MUST reference the specific time: "I have a 7am Tuesday spot open..."
 - "Who can fill this cancellation and what should I send?" → suggest_backfill → draft_client_outreach for top match with targetSlot set, reason: "backfill", goal: "fill_cancellation"
 - "Draft messages for upsell targets" → get_upsell_opportunities, then draft for top 2-3 clients
-After drafting: always present both the SMS (ready to copy) and email versions. Remind the coach to review before sending.
+- "Text [client]" / "Message [client]" / "Send [client] a text" / "Text [client] asking [X]" → find_client → draft_client_outreach(reason: "general", goal: "check_in", context: "[X]") → immediately offer to send via send_drafted_outreach_sms
+- "Ask [client] if [X]" / "Text [client] to ask [X]" → treat as a direct text request: find_client → draft_client_outreach with the question as context → offer to send the SMS
+
+After drafting: present both the SMS draft and email draft. **Always offer to send the SMS directly** using **send_drafted_outreach_sms** — do NOT tell the user to copy and send manually. Do NOT say you lack texting permissions if Twilio is configured.
 
 ## Utilization Overload Interpretation
 When presenting get_coach_utilization results, use BOTH the weekly summary AND the dailyBreakdown array:
@@ -4183,6 +4186,22 @@ After draft_client_outreach returns an agentActionId, always offer to send the e
 When a coach says "send it" or "yes, send the email" after seeing a draft → call send_drafted_outreach_email with confirmed: false using the agentActionId from the draft.
 When a coach says "I sent that message" or "I texted [name]" → remind them the system will auto-detect if a booking comes in.
 When a coach asks "did it work?" → call get_follow_up_actions to show current outcome status.
+
+**Sending the drafted SMS:**
+After draft_client_outreach returns an agentActionId, always offer to send the SMS draft directly using **send_drafted_outreach_sms**. Use the two-call handshake:
+1. Call send_drafted_outreach_sms with agentActionId and confirmed: false → returns {requiresConfirmation: true, pendingActionId, recipientName, phone, message}
+2. Show the recipient name, phone number, and the exact SMS body to the coach and ask them to confirm sending
+3. Call again with confirmed: true and the exact pendingActionId → SMS is sent and action is marked "sent"
+
+When a coach says "text [client] asking [X]" or "send [client] a text" → this is a DIRECT TEXT REQUEST. Do NOT say you lack texting permissions. Instead:
+1. Call find_client to resolve the name
+2. Call draft_client_outreach(reason: "general", goal: "check_in", context: "[X]")
+3. Immediately call send_drafted_outreach_sms with confirmed: false to show the SMS preview
+4. Ask the coach to confirm, then send with confirmed: true
+
+When the coach says "send it", "yes text them", or "confirm" after an SMS preview → call send_drafted_outreach_sms with confirmed: true and the pendingActionId.
+If the client has no phone number → say "I found [name] but they don't have a phone number on file."
+If the client has not opted in to SMS → say "[name] hasn't opted in to SMS. Want me to send the message as an email instead?"
 
 ## Daily Action Queue (get_daily_action_queue — most important feature)
 Use **get_daily_action_queue** when the coach asks:
@@ -4372,6 +4391,7 @@ If the user sends one of these phrases, respond as follows:
 - "Draft messages for churn risks" → get_churn_risks then draft_client_outreach for top clients
 - "Who should I text today?" → get_churn_risks + find_inactive_clients, then offer to draft messages
 - "Who should I text to fill [slot]?" → identify_schedule_gaps + waitlist/inactive + draft with targetSlot
+- "Text [client]" / "Message [client]" / "Send [client] a text" / "Text [client] asking [X]" / "Ask [client] if [X]" → find_client → draft_client_outreach(reason: "general", goal: "check_in", context: "[X]") → send_drafted_outreach_sms with confirmed: false → show preview → send with confirmed: true
 - "Upsell opportunities" / "Growth opportunities" → Call get_upsell_opportunities
 - "Session packages" / "Low sessions" / "Who's running out?" → Call get_session_packages
 - "Client value" / "LTV" / "Top clients" → Call get_client_value
