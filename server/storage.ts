@@ -89,7 +89,7 @@ export interface IStorage {
   updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null; phone?: string | null; smsOptIn?: boolean; smsOptInAt?: Date | null; smsOptOutAt?: Date | null; smsConsentSource?: string | null }): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
   deleteUser(id: string): Promise<boolean>;
-  getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
+  getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]>;
 
   getCoachProfiles(): Promise<(CoachProfile & { user: User })[]>;
   getCoachProfile(id: string): Promise<(CoachProfile & { user: User }) | undefined>;
@@ -457,19 +457,21 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]> {
+  async getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]> {
     const result = await db
       .select()
       .from(bookings)
       .leftJoin(services, eq(bookings.serviceId, services.id))
       .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
       .leftJoin(users, eq(coachProfiles.userId, users.id))
+      .leftJoin(redemptions, eq(redemptions.bookingId, bookings.id))
       .where(eq(bookings.clientId, userId))
       .orderBy(desc(bookings.startAt));
     return result.map(r => ({
       ...r.bookings,
       service: r.services || undefined,
       coach: r.coach_profiles ? { ...r.coach_profiles, user: r.users! } : undefined,
+      redemption: r.redemptions || undefined,
     }));
   }
 

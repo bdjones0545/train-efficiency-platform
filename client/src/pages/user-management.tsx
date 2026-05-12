@@ -14,9 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw, MessageSquare } from "lucide-react";
+import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw, MessageSquare, Lock, Phone, Mail, User as UserIcon, CreditCard, MessageCircle, StickyNote } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import type { UserProfile, Booking, Service } from "@shared/schema";
+import type { UserProfile, Booking, Service, Redemption } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 
 function parseCSV(text: string): Record<string, string>[] {
@@ -84,6 +84,7 @@ type UserWithProfile = User & { profile?: UserProfile };
 type UserBooking = Booking & {
   service?: Service;
   coach?: { user: User } & Record<string, any>;
+  redemption?: Redemption;
 };
 
 export default function UserManagementPage() {
@@ -422,8 +423,12 @@ export default function UserManagementPage() {
   };
 
   if (selectedUser) {
+    const isSubscribed = subscribedUserIds.has(selectedUser.id);
+    const walletDollars = selectedUser.balanceCents != null ? (selectedUser.balanceCents / 100).toFixed(2) : null;
+
     return (
       <div className="space-y-4">
+        {/* Header row */}
         <div className="flex items-center gap-3 flex-wrap">
           <Button variant="ghost" size="icon" onClick={() => setSelectedUser(null)} data-testid="button-back-to-users">
             <ChevronLeft className="h-4 w-4" />
@@ -447,11 +452,66 @@ export default function UserManagementPage() {
           <Badge variant="secondary" className="shrink-0">{selectedUser.profile?.role || "CLIENT"}</Badge>
         </div>
 
-        <h3 className="text-base font-medium" data-testid="text-sessions-header">Sessions</h3>
+        {/* User info card */}
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Client Info</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {selectedUser.email && (
+              <div className="flex items-center gap-2 text-sm" data-testid="text-user-email">
+                <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="truncate">{selectedUser.email}</span>
+              </div>
+            )}
+            {selectedUser.phone ? (
+              <div className="flex items-center gap-2 text-sm" data-testid="text-user-phone">
+                <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span>{selectedUser.phone}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="text-user-phone-missing">
+                <Phone className="h-4 w-4 shrink-0" />
+                <span>No phone on file</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-sm" data-testid="text-user-role">
+              <UserIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span>Role: <span className="font-medium">{selectedUser.profile?.role || "CLIENT"}</span></span>
+            </div>
+            <div className="flex items-center gap-2 text-sm" data-testid="text-user-account-status">
+              <CheckCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span>Account: <span className={`font-medium ${isSubscribed ? "text-green-600 dark:text-green-400" : ""}`}>
+                {isSubscribed ? "Subscribed" : selectedUser.lastSignInAt ? "Active" : "Pending"}
+              </span></span>
+            </div>
+            <div className="flex items-center gap-2 text-sm" data-testid="text-user-sms-status">
+              <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span>SMS: <span className={`font-medium ${selectedUser.smsOptIn ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+                {selectedUser.smsOptIn ? "Opted In" : selectedUser.phone ? "Not opted in" : "No phone"}
+              </span></span>
+            </div>
+            {walletDollars !== null && (
+              <div className="flex items-center gap-2 text-sm" data-testid="text-user-wallet">
+                <CreditCard className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span>Wallet: <span className={`font-medium ${selectedUser.balanceCents! > 0 ? "text-green-600 dark:text-green-400" : ""}`}>${walletDollars}</span></span>
+              </div>
+            )}
+          </div>
+          {selectedUser.notes && (
+            <div className="mt-3 pt-3 border-t flex items-start gap-2 text-sm" data-testid="text-user-notes">
+              <StickyNote className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              <div>
+                <span className="text-muted-foreground font-medium">Notes: </span>
+                <span>{selectedUser.notes}</span>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <h3 className="text-base font-medium" data-testid="text-sessions-header">Session History</h3>
 
         {bookingsLoading ? (
           <div className="space-y-2">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+            {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full" />)}
           </div>
         ) : !userBookings || userBookings.length === 0 ? (
           <Card className="p-6">
@@ -463,20 +523,55 @@ export default function UserManagementPage() {
               const startDt = parseISO(booking.startAt as unknown as string);
               const endDt = parseISO(booking.endAt as unknown as string);
               const isSemiPrivate = booking.maxParticipants && booking.maxParticipants > 1;
+              const isRedeemed = booking.status === "COMPLETED" || !!booking.redemption;
+              const isLocked = isRedeemed;
+
+              const statusVariant = booking.status === "CONFIRMED"
+                ? "default"
+                : booking.status === "COMPLETED"
+                ? "secondary"
+                : booking.status === "CANCELLED"
+                ? "outline"
+                : "outline";
+
+              const paymentLabel = booking.paymentMethod === "WALLET"
+                ? "Wallet credit"
+                : booking.paymentMethod === "VENMO"
+                ? "Venmo"
+                : booking.paymentMethod === "CASH"
+                ? "Cash"
+                : booking.subscriptionPlanId
+                ? "Subscription"
+                : null;
+
               return (
-                <Card key={booking.id} className="p-3">
+                <Card key={booking.id} className={`p-3 ${isLocked ? "opacity-90 border-muted" : ""}`}>
                   <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="space-y-1 min-w-0 flex-1">
+                    <div className="space-y-1.5 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium" data-testid={`text-booking-service-${booking.id}`}>
                           {booking.service?.name || "Session"}
                         </span>
                         <Badge
-                          variant={booking.status === "CONFIRMED" ? "default" : booking.status === "COMPLETED" ? "secondary" : "outline"}
+                          variant={statusVariant}
                           data-testid={`badge-status-${booking.id}`}
                         >
                           {booking.status}
                         </Badge>
+                        {isRedeemed ? (
+                          <Badge
+                            variant="secondary"
+                            className="gap-1 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                            data-testid={`badge-redeemed-${booking.id}`}
+                          >
+                            <Lock className="h-3 w-3" />
+                            Redeemed
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-green-700 dark:text-green-400 border-green-300 dark:border-green-700" data-testid={`badge-not-redeemed-${booking.id}`}>
+                            Not Redeemed
+                          </Badge>
+                        )}
                         {isSemiPrivate && <Badge variant="outline">Semi-Private</Badge>}
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
@@ -486,7 +581,7 @@ export default function UserManagementPage() {
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {format(startDt, "h:mm a")} - {format(endDt, "h:mm a")}
+                          {format(startDt, "h:mm a")} – {format(endDt, "h:mm a")}
                         </span>
                         {booking.location && (
                           <span className="flex items-center gap-1">
@@ -495,14 +590,20 @@ export default function UserManagementPage() {
                           </span>
                         )}
                       </div>
-                      {booking.coach?.user && (
-                        <p className="text-xs text-muted-foreground">
-                          Coach: {booking.coach.user.firstName} {booking.coach.user.lastName}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                        {booking.coach?.user && (
+                          <span>Coach: {booking.coach.user.firstName} {booking.coach.user.lastName}</span>
+                        )}
+                        {paymentLabel && (
+                          <span className="flex items-center gap-1">
+                            <CreditCard className="h-3 w-3" />
+                            {paymentLabel}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      {isSemiPrivate && (
+                      {isSemiPrivate && !isLocked && (
                         <Button
                           size="icon"
                           variant="ghost"
@@ -513,24 +614,39 @@ export default function UserManagementPage() {
                           <UserPlus className="h-4 w-4" />
                         </Button>
                       )}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => openEditBooking(booking)}
-                        title="Edit session"
-                        data-testid={`button-edit-booking-${booking.id}`}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => setDeleteBooking(booking)}
-                        title="Delete session"
-                        data-testid={`button-delete-booking-${booking.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {isLocked ? (
+                        <span title="Redeemed sessions are locked and cannot be changed.">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            disabled
+                            data-testid={`button-edit-booking-${booking.id}`}
+                          >
+                            <Lock className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </span>
+                      ) : (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => openEditBooking(booking)}
+                          title="Edit session"
+                          data-testid={`button-edit-booking-${booking.id}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {!isLocked && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setDeleteBooking(booking)}
+                          title="Delete session"
+                          data-testid={`button-delete-booking-${booking.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </Card>

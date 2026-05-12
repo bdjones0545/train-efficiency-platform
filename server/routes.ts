@@ -1864,6 +1864,16 @@ export async function registerRoutes(
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
 
+      if (booking.status === "COMPLETED" && status !== "COMPLETED") {
+        return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
+      }
+      if (booking.status === "COMPLETED") {
+        const redemption = await storage.getRedemptionByBookingId(bookingId);
+        if (redemption) {
+          return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
+        }
+      }
+
       const role = await getUserRole(userId);
       const coachProfile = await storage.getCoachProfileByUserId(userId);
 
@@ -2401,6 +2411,15 @@ export async function registerRoutes(
       const bookingId = req.params.id;
       const existing = await storage.getBooking(bookingId);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
+
+      if (existing.status === "COMPLETED") {
+        return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
+      }
+      const existingRedemption = await storage.getRedemptionByBookingId(bookingId);
+      if (existingRedemption) {
+        return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
+      }
+
       const bookingCoachId = existing.coachId;
 
       const { serviceId, startAt, notes, groupDescription, clientId, clientFirstName, clientLastName, paymentMethod, ageRange, skillLevel, sport, maxParticipants } = req.body;
@@ -2573,6 +2592,14 @@ export async function registerRoutes(
       const deleteGroup = req.query.deleteGroup === "true";
       const existing = await storage.getBooking(bookingId);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
+
+      if (existing.status === "COMPLETED") {
+        return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
+      }
+      const existingRedemption = await storage.getRedemptionByBookingId(bookingId);
+      if (existingRedemption) {
+        return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
+      }
 
       if (deleteGroup && existing.recurringGroupId) {
         const count = await storage.deleteBookingsByRecurringGroup(existing.recurringGroupId);
