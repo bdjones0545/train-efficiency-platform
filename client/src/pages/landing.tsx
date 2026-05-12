@@ -277,7 +277,7 @@ export default function LandingPage() {
           </div>
 
           {/* ── Laser Node Network ── */}
-          <div className="mt-10 mb-2">
+          <div className="mt-10 mb-0 overflow-hidden">
             <p className="text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/45 mb-5">
               All operations, one connected system
             </p>
@@ -285,7 +285,7 @@ export default function LandingPage() {
           </div>
 
           {/* Dashboard Mockup */}
-          <div className="mt-10 relative" data-testid="img-dashboard-mockup">
+          <div className="mt-14 relative" data-testid="img-dashboard-mockup">
             {/* Scan line overlay on dashboard */}
             <div className="absolute inset-0 overflow-hidden rounded-xl z-10 pointer-events-none" aria-hidden="true">
               <div className="laser-scan-line" />
