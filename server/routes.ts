@@ -6967,7 +6967,7 @@ export async function registerRoutes(
       if (!org) return res.status(404).json({ message: "Organization not found" });
 
       const savedSettings = await storage.getTeamLeadSettings(profile.organizationId);
-      const { sport, limit = 8 } = req.body;
+      const { sport, limit = 8, forceDiversify } = req.body;
       let { location, radiusMiles } = req.body;
 
       // Fall back to saved defaults
@@ -6995,38 +6995,113 @@ export async function registerRoutes(
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
         eventType: "manual_research_started",
-        description: `Manual research started. Location: ${locationTrimmed}, Radius: ${radiusNum}mi${sport ? `, Sport: ${sport}` : ""}`,
-        metadata: { location: locationTrimmed, radiusMiles: radiusNum, sport: sport || null, limit: Number(limit) },
+        description: `Manual research started. Location: ${locationTrimmed}, Radius: ${radiusNum}mi${sport ? `, Sport: ${sport}` : ""}${forceDiversify ? " [diversified]" : ""}`,
+        metadata: { location: locationTrimmed, radiusMiles: radiusNum, sport: sport || null, limit: Number(limit), forceDiversify: !!forceDiversify },
       });
 
-      const { researchProspects, scoreProspect, applyLeadQualityGate } = await import("./team-training-prospecting");
-      const results = await researchProspects(org, locationTrimmed, sport || undefined, Number(limit), radiusNum);
+      const { researchProspects, scoreProspect, applyLeadQualityGate, normalizeDomain,
+              getRotatedCategory, getRotatedLocation, nextCategoryIndex, nextLocationIndex } = await import("./team-training-prospecting");
 
-      // Load existing prospect names for duplicate detection
+      // Load existing prospects BEFORE research to build exclusion lists
       const existingProspects = await storage.getTeamTrainingProspects(profile.organizationId);
       const existingNames = existingProspects.map((p) => p.prospectName);
+      const existingDomains = existingProspects
+        .flatMap((p) => [normalizeDomain(p.websiteUrl), normalizeDomain(p.sourceUrl)])
+        .filter(Boolean) as string[];
+
+      // Determine search category + location using rotation indices
+      const catIdx = savedSettings?.lastSearchCategoryIndex ?? 0;
+      const locIdx = savedSettings?.lastSearchLocationIndex ?? 0;
+
+      const searchCategory = forceDiversify
+        ? getRotatedCategory((catIdx + 1) % 20)
+        : getRotatedCategory(catIdx);
+      const searchLocation = forceDiversify
+        ? getRotatedLocation(locationTrimmed, (locIdx + 1) % 10)
+        : getRotatedLocation(locationTrimmed, locIdx);
+
+      const runResearch = async (category: string, loc: string) =>
+        researchProspects(org, locationTrimmed, sport || undefined, Number(limit), radiusNum, {
+          excludeNames: existingNames,
+          excludeDomains: existingDomains,
+          searchCategory: category,
+          searchLocation: loc,
+          forceDiversify: !!forceDiversify,
+        });
+
+      let results = await runResearch(searchCategory, searchLocation);
 
       const created: any[] = [];
       const rejected: { name: string; reason: string; score: number }[] = [];
       const duplicates: { name: string }[] = [];
       let needsContactCount = 0;
 
-      for (const p of results) {
+      const processResults = (batch: typeof results) => {
+        for (const p of batch) {
+          const scored = scoreProspect(p);
+          const gate = applyLeadQualityGate(p, scored, existingNames, existingDomains);
+
+          if (gate.action === "duplicate") {
+            duplicates.push({ name: p.prospectName });
+          } else if (gate.action === "reject") {
+            rejected.push({ name: p.prospectName, reason: gate.reason || "Low quality", score: scored });
+          } else {
+            existingNames.push(p.prospectName);
+          }
+        }
+        return batch.filter((p) => {
+          const scored = scoreProspect(p);
+          const gate = applyLeadQualityGate(p, scored,
+            existingNames.filter((n) => n !== p.prospectName), existingDomains);
+          return gate.action === "save";
+        });
+      };
+
+      // First pass gate
+      let saveableBatch = results.filter((p) => {
         const scored = scoreProspect(p);
-        const gate = applyLeadQualityGate(p, scored, existingNames);
+        const gate = applyLeadQualityGate(p, scored, existingNames, existingDomains);
+        if (gate.action === "duplicate") duplicates.push({ name: p.prospectName });
+        else if (gate.action === "reject") rejected.push({ name: p.prospectName, reason: gate.reason || "Low quality", score: scored });
+        return gate.action === "save";
+      });
 
-        if (gate.action === "duplicate") {
-          duplicates.push({ name: p.prospectName });
-          continue;
+      // If ALL first-pass results were duplicates, run one automatic fallback with a different category/location
+      const allDuplicates = results.length > 0 && saveableBatch.length === 0 && rejected.length === 0 && duplicates.length === results.length;
+      let usedFallback = false;
+
+      if (allDuplicates && !forceDiversify) {
+        console.log(`[TeamTraining Research] All ${duplicates.length} results were duplicates — running diversified fallback`);
+        const fallbackCategory = getRotatedCategory((catIdx + 1) % 20);
+        const fallbackLocation = getRotatedLocation(locationTrimmed, (locIdx + 1) % 10);
+        const fallbackResults = await runResearch(fallbackCategory, fallbackLocation);
+
+        for (const p of fallbackResults) {
+          const scored = scoreProspect(p);
+          const gate = applyLeadQualityGate(p, scored, existingNames, existingDomains);
+          if (gate.action === "duplicate") duplicates.push({ name: p.prospectName });
+          else if (gate.action === "reject") rejected.push({ name: p.prospectName, reason: gate.reason || "Low quality", score: scored });
         }
 
-        if (gate.action === "reject") {
-          rejected.push({ name: p.prospectName, reason: gate.reason || "Low quality", score: scored });
-          continue;
-        }
+        saveableBatch = fallbackResults.filter((p) => {
+          const scored = scoreProspect(p);
+          const gate = applyLeadQualityGate(p, scored, existingNames, existingDomains);
+          return gate.action === "save";
+        });
+        results = fallbackResults;
+        usedFallback = true;
+      }
 
-        // gate.action === "save"
-        const { normalizeNullable: nn, isValidEmail: ive } = await import("./team-training-prospecting");
+      // Update rotation indices for next run (advance after each manual research)
+      await storage.upsertTeamLeadSettings(profile.organizationId, {
+        lastSearchCategoryIndex: nextCategoryIndex(catIdx),
+        lastSearchLocationIndex: nextLocationIndex(locationTrimmed, locIdx),
+      } as any);
+
+      const { normalizeNullable: nn, isValidEmail: ive } = await import("./team-training-prospecting");
+
+      for (const p of saveableBatch) {
+        const scored = scoreProspect(p);
 
         // Normalize all contact fields — never persist sentinel strings
         const safeContactName = nn(p.contactName);
@@ -7094,14 +7169,16 @@ export async function registerRoutes(
         } catch {}
 
         existingNames.push(p.prospectName); // prevent intra-batch duplicates
-        if (gate.needsContact) needsContactCount++;
+        if (scoreProspect(p) > 0) needsContactCount += (p.contactQuality === "missing" ? 1 : 0);
       }
 
-      // Save location + radius as org defaults after successful search
+      // Save location + radius as org defaults after successful search (merge with rotation indices already saved above)
       await storage.upsertTeamLeadSettings(profile.organizationId, {
         defaultLocation: locationTrimmed,
         radiusMiles: radiusNum,
-      });
+      } as any);
+
+      const allDuplicatesResult = results.length > 0 && created.length === 0 && rejected.length === 0 && duplicates.length === results.length;
 
       const summary = {
         total: results.length,
@@ -7111,12 +7188,16 @@ export async function registerRoutes(
         duplicatesSkipped: duplicates.length,
         rejected,
         duplicates,
+        allDuplicates: allDuplicatesResult,
+        usedFallback,
+        searchCategory,
+        searchLocation,
       };
 
       await storage.logOutreachEvent({
         orgId: profile.organizationId,
         eventType: "manual_research_completed",
-        description: `Manual research completed. Saved ${created.length}, rejected ${rejected.length}, skipped ${duplicates.length} duplicates near ${locationTrimmed}${sport ? ` for sport: ${sport}` : ""}`,
+        description: `Manual research completed. Saved ${created.length}, rejected ${rejected.length}, skipped ${duplicates.length} duplicates near ${locationTrimmed}${sport ? ` for sport: ${sport}` : ""}${usedFallback ? " (fallback used)" : ""}`,
         metadata: { ...summary, sport: sport || null, location: locationTrimmed, radiusMiles: radiusNum },
       });
 

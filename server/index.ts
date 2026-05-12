@@ -178,104 +178,140 @@ app.use((req, res, next) => {
           const org = await st.getOrganizationById(orgId);
           if (!org) continue;
 
-          const { researchProspects, scoreProspect, applyLeadQualityGate } = await import("./team-training-prospecting");
-          const results = await researchProspects(
-            org,
-            settings.defaultLocation,
-            settings.recurringSport && settings.recurringSport !== "all" ? settings.recurringSport : undefined,
-            settings.recurringLimit ?? 8,
-            settings.radiusMiles ?? 25
-          );
+          const { researchProspects, scoreProspect, applyLeadQualityGate, normalizeDomain,
+                  getRotatedCategory, getRotatedLocation, nextCategoryIndex, nextLocationIndex } = await import("./team-training-prospecting");
 
-          // Load existing names for duplicate detection
+          // Load existing leads BEFORE research for exclusion list + duplicate detection
           const existingProspects = await st.getTeamTrainingProspects(orgId);
           const existingNames = existingProspects.map((p: any) => p.prospectName);
+          const existingDomains = existingProspects
+            .flatMap((p: any) => [normalizeDomain(p.websiteUrl), normalizeDomain(p.sourceUrl)])
+            .filter(Boolean) as string[];
+
+          // Rotate category and location for this run
+          const catIdx = settings.lastSearchCategoryIndex ?? 0;
+          const locIdx = settings.lastSearchLocationIndex ?? 0;
+          const searchCategory = getRotatedCategory(catIdx);
+          const searchLocation = getRotatedLocation(settings.defaultLocation, locIdx);
+
+          console.log(`[Team Leads Recurring Research] orgId=${orgId} category="${searchCategory}" location="${searchLocation}"`);
+
+          const runResearch = async (category: string, loc: string) =>
+            researchProspects(
+              org,
+              settings.defaultLocation,
+              settings.recurringSport && settings.recurringSport !== "all" ? settings.recurringSport : undefined,
+              settings.recurringLimit ?? 8,
+              settings.radiusMiles ?? 25,
+              { excludeNames: existingNames, excludeDomains: existingDomains, searchCategory: category, searchLocation: loc }
+            );
+
+          let results = await runResearch(searchCategory, searchLocation);
 
           let created = 0;
           let rejected = 0;
           let duplicates = 0;
           let needsContact = 0;
 
-          for (const p of results) {
-            const scored = scoreProspect(p);
-            const gate = applyLeadQualityGate(p, scored, existingNames);
+          const processAndSave = async (batch: typeof results) => {
+            for (const p of batch) {
+              const scored = scoreProspect(p);
+              const gate = applyLeadQualityGate(p, scored, existingNames, existingDomains);
 
-            if (gate.action === "duplicate") {
-              duplicates++;
-              try {
-                await st.logDiscoveryAttempt({
-                  orgId,
-                  prospectId: null,
-                  prospectName: p.prospectName,
-                  query: p.discoveryQuery || null,
-                  sourceUrl: p.discoverySourceUrl || null,
-                  confidence: p.discoveryConfidenceScore ?? null,
-                  result: "duplicate",
-                  action: "recurring_research",
-                  notes: `Recurring: duplicate skipped`,
-                });
-              } catch {}
-              continue;
-            }
-            if (gate.action === "reject") {
-              rejected++;
-              try {
-                await st.logDiscoveryAttempt({
-                  orgId,
-                  prospectId: null,
-                  prospectName: p.prospectName,
-                  query: p.discoveryQuery || null,
-                  sourceUrl: p.discoverySourceUrl || null,
-                  confidence: p.discoveryConfidenceScore ?? null,
-                  result: "rejected",
-                  action: "recurring_research",
-                  notes: `Recurring: rejected — ${gate.reason || "low quality"}`,
-                });
-              } catch {}
-              continue;
-            }
+              if (gate.action === "duplicate") {
+                duplicates++;
+                try {
+                  await st.logDiscoveryAttempt({
+                    orgId,
+                    prospectId: null,
+                    prospectName: p.prospectName,
+                    query: p.discoveryQuery || null,
+                    sourceUrl: p.discoverySourceUrl || null,
+                    confidence: p.discoveryConfidenceScore ?? null,
+                    result: "duplicate",
+                    action: "recurring_research",
+                    notes: `Recurring: duplicate skipped`,
+                  });
+                } catch {}
+                continue;
+              }
+              if (gate.action === "reject") {
+                rejected++;
+                try {
+                  await st.logDiscoveryAttempt({
+                    orgId,
+                    prospectId: null,
+                    prospectName: p.prospectName,
+                    query: p.discoveryQuery || null,
+                    sourceUrl: p.discoverySourceUrl || null,
+                    confidence: p.discoveryConfidenceScore ?? null,
+                    result: "rejected",
+                    action: "recurring_research",
+                    notes: `Recurring: rejected — ${gate.reason || "low quality"}`,
+                  });
+                } catch {}
+                continue;
+              }
 
-            const prospect = await st.createTeamTrainingProspect({
-              orgId,
-              prospectName: p.prospectName,
-              organizationType: p.organizationType,
-              sport: p.sport,
-              city: p.city,
-              state: p.state,
-              websiteUrl: p.websiteUrl,
-              contactName: p.contactName,
-              contactRole: p.contactRole,
-              contactEmail: p.contactEmail,
-              contactPhone: p.contactPhone,
-              sourceUrl: p.sourceUrl,
-              confidenceScore: scored,
-              outreachStatus: "Needs Review",
-              notes: p.notes,
-              decisionMakerName: p.decisionMakerName,
-              decisionMakerTitle: p.decisionMakerTitle,
-              decisionMakerEmail: p.decisionMakerEmail,
-              contactConfidence: p.contactConfidence,
-              contactSourceUrl: p.contactSourceUrl,
-              contactQuality: p.contactQuality,
-            });
-            existingNames.push(p.prospectName);
-            created++;
-            if (gate.needsContact) needsContact++;
-
-            try {
-              await st.logDiscoveryAttempt({
+              const prospect = await st.createTeamTrainingProspect({
                 orgId,
-                prospectId: prospect.id,
                 prospectName: p.prospectName,
-                query: p.discoveryQuery || null,
-                sourceUrl: p.discoverySourceUrl || null,
-                confidence: p.discoveryConfidenceScore ?? null,
-                result: "created",
-                action: "recurring_research",
-                notes: `Recurring: Confidence ${Math.round((p.discoveryConfidenceScore || 0) * 100)}% | Method: ${p.discoveryMethod || "unknown"} | Status: ${p.leadValidationStatus || "likely_valid"}`,
+                organizationType: p.organizationType,
+                sport: p.sport,
+                city: p.city,
+                state: p.state,
+                websiteUrl: p.websiteUrl,
+                contactName: p.contactName,
+                contactRole: p.contactRole,
+                contactEmail: p.contactEmail,
+                contactPhone: p.contactPhone,
+                sourceUrl: p.sourceUrl,
+                confidenceScore: scored,
+                outreachStatus: "Needs Review",
+                notes: p.notes,
+                decisionMakerName: p.decisionMakerName,
+                decisionMakerTitle: p.decisionMakerTitle,
+                decisionMakerEmail: p.decisionMakerEmail,
+                contactConfidence: p.contactConfidence,
+                contactSourceUrl: p.contactSourceUrl,
+                contactQuality: p.contactQuality,
               });
-            } catch {}
+              existingNames.push(p.prospectName);
+              created++;
+              if (gate.needsContact) needsContact++;
+
+              try {
+                await st.logDiscoveryAttempt({
+                  orgId,
+                  prospectId: prospect.id,
+                  prospectName: p.prospectName,
+                  query: p.discoveryQuery || null,
+                  sourceUrl: p.discoverySourceUrl || null,
+                  confidence: p.discoveryConfidenceScore ?? null,
+                  result: "created",
+                  action: "recurring_research",
+                  notes: `Recurring: Confidence ${Math.round((p.discoveryConfidenceScore || 0) * 100)}% | Method: ${p.discoveryMethod || "unknown"} | Status: ${p.leadValidationStatus || "likely_valid"}`,
+                });
+              } catch {}
+            }
+          };
+
+          await processAndSave(results);
+
+          // If ALL were duplicates, run one fallback with a different category/location
+          if (results.length > 0 && created === 0 && rejected === 0 && duplicates === results.length) {
+            console.log(`[Team Leads Recurring Research] orgId=${orgId} all duplicates — running diversified fallback`);
+            const fallbackCategory = getRotatedCategory((catIdx + 1) % 20);
+            const fallbackLocation = getRotatedLocation(settings.defaultLocation, (locIdx + 1) % 10);
+            const fallbackResults = await runResearch(fallbackCategory, fallbackLocation);
+            await processAndSave(fallbackResults);
           }
+
+          // Advance rotation indices for next run
+          await st.upsertTeamLeadSettings(orgId, {
+            lastSearchCategoryIndex: nextCategoryIndex(catIdx),
+            lastSearchLocationIndex: nextLocationIndex(settings.defaultLocation, locIdx),
+          } as any);
 
           // Compute next run time in the org's local timezone so "8:00 AM"
           // always means 8:00 AM org-local time, stored as UTC in the DB.

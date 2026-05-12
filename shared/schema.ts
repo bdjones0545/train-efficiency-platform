@@ -787,6 +787,8 @@ export const teamTrainingLeadSettings = pgTable("team_training_lead_settings", {
   recurringSport: varchar("recurring_sport").default("all"),
   lastRunAt: timestamp("last_run_at"),
   nextRunAt: timestamp("next_run_at"),
+  lastSearchCategoryIndex: integer("last_search_category_index").default(0),
+  lastSearchLocationIndex: integer("last_search_location_index").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => ({

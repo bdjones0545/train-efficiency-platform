@@ -11,6 +11,125 @@ function getOpenAI(): OpenAI {
   return new OpenAI({ apiKey: key });
 }
 
+// ─── Search Diversification Constants ─────────────────────────────────────
+export const SEARCH_CATEGORIES = [
+  "youth sports clubs",
+  "private schools athletic programs",
+  "charter schools sports teams",
+  "high school athletics",
+  "dance studios",
+  "martial arts academies",
+  "volleyball clubs",
+  "soccer clubs",
+  "baseball softball academies",
+  "swim teams",
+  "gymnastics gyms",
+  "lacrosse clubs",
+  "basketball programs",
+  "tennis academies",
+  "country club junior programs",
+  "AAU travel teams",
+  "recreational sports leagues",
+  "wrestling clubs",
+  "track and field clubs",
+  "cheerleading programs",
+];
+
+export const NEARBY_LOCATION_SETS: Record<string, string[]> = {
+  default: [
+    "Bluffton, SC",
+    "Hilton Head Island, SC",
+    "Hardeeville, SC",
+    "Okatie, SC",
+    "Beaufort, SC",
+    "Ridgeland, SC",
+    "Savannah, GA",
+    "Pooler, GA",
+    "Port Royal, SC",
+    "Jasper County, SC",
+  ],
+};
+
+export function getNearbyLocations(primaryLocation: string): string[] {
+  const key = Object.keys(NEARBY_LOCATION_SETS).find((k) =>
+    primaryLocation.toLowerCase().includes(k.toLowerCase())
+  );
+  return NEARBY_LOCATION_SETS[key || "default"];
+}
+
+export function getRotatedCategory(index: number): string {
+  return SEARCH_CATEGORIES[index % SEARCH_CATEGORIES.length];
+}
+
+export function getRotatedLocation(primaryLocation: string, index: number): string {
+  const nearby = getNearbyLocations(primaryLocation);
+  const all = [primaryLocation, ...nearby.filter((l) => l.toLowerCase() !== primaryLocation.toLowerCase())];
+  return all[index % all.length];
+}
+
+export function nextCategoryIndex(current: number): number {
+  return (current + 1) % SEARCH_CATEGORIES.length;
+}
+
+export function nextLocationIndex(primaryLocation: string, current: number): number {
+  const nearby = getNearbyLocations(primaryLocation);
+  const all = [primaryLocation, ...nearby.filter((l) => l.toLowerCase() !== primaryLocation.toLowerCase())];
+  return (current + 1) % all.length;
+}
+
+// ─── Name / Domain Normalisation Helpers ──────────────────────────────────
+const STOP_WORDS = new Set(["the", "a", "an", "of", "and", "or", "in", "at", "for", "inc", "llc", "club", "academy", "association", "organization", "org", "youth", "junior", "jr", "sr", "sports", "athletic", "athletics"]);
+
+export function normalizeOrgName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0 && !STOP_WORDS.has(w))
+    .join(" ")
+    .trim();
+}
+
+export function normalizeDomain(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const withScheme = url.startsWith("http") ? url : `https://${url}`;
+    const parsed = new URL(withScheme);
+    return parsed.hostname.replace(/^www\./, "").replace(/\/$/, "").toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function isFuzzyDuplicate(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return true;
+  const dist = levenshtein(a, b);
+  return dist / maxLen <= 0.2; // ≤20% edit distance = fuzzy match
+}
+
+// ─── Research Options ──────────────────────────────────────────────────────
+export interface ResearchOptions {
+  excludeNames?: string[];
+  excludeDomains?: string[];
+  searchCategory?: string;
+  searchLocation?: string;
+  forceDiversify?: boolean;
+}
+
 export type ContactQuality = "decision_maker" | "role_based" | "general" | "missing";
 
 export type LeadDiscoverySourceType = "website" | "search_result" | "directory" | "social" | "manual";
@@ -112,26 +231,50 @@ export async function researchProspects(
   location: string,
   sportFilter?: string,
   limit: number = 10,
-  radiusMiles: number = 25
+  radiusMiles: number = 25,
+  options: ResearchOptions = {}
 ): Promise<ProspectResult[]> {
   const openai = getOpenAI();
   const specialties = (org as any).specialties || "speed, strength, agility, performance training";
 
-  const sportContext = sportFilter && sportFilter !== "all"
-    ? `Focus specifically on ${sportFilter} organizations. You may include adjacent sports if needed.`
+  const { excludeNames = [], excludeDomains = [], searchCategory, searchLocation, forceDiversify } = options;
+
+  // Use overridden location if provided (for diversification)
+  const effectiveLocation = searchLocation || location;
+
+  // Build the search category context
+  const categoryContext = searchCategory
+    ? `Focus your search specifically on: ${searchCategory}.`
     : `Cover a broad variety of sports: youth football, basketball, soccer, volleyball, baseball, lacrosse, wrestling, track & field, swim teams, cheer, martial arts gyms, athletic departments.`;
 
-  const searchInput = `You are a B2B lead research intelligence system for a sports performance training company. Your task is to find REAL, verifiable sports organizations near ${location} that would be strong prospects for team training services (${specialties}).
+  const sportContext = sportFilter && sportFilter !== "all"
+    ? `Focus specifically on ${sportFilter} organizations. You may include adjacent sports if needed.`
+    : categoryContext;
 
+  // Build exclusion list for prompt
+  const exclusionSection = excludeNames.length > 0
+    ? `\nNOVELTY REQUIREMENT — CRITICAL:
+- Do NOT return any of these organizations already in the database:
+${excludeNames.slice(0, 60).map((n) => `  • ${n}`).join("\n")}
+${excludeDomains.length > 0 ? `- Also exclude any organization with these domains: ${excludeDomains.slice(0, 30).join(", ")}` : ""}
+- Prefer lesser-known but verifiable programs that are NOT on this list.
+- If the primary city search returns mostly known organizations, expand to nearby towns within ${radiusMiles} miles.\n`
+    : "";
+
+  const primarySport = sportFilter && sportFilter !== "all" ? sportFilter : "travel";
+  const primarySport2 = sportFilter && sportFilter !== "all" ? sportFilter : "basketball";
+
+  const searchInput = `You are a B2B lead research intelligence system for a sports performance training company. Your task is to find REAL, verifiable sports organizations near ${effectiveLocation} that would be strong prospects for team training services (${specialties}).
+${exclusionSection}
 CRITICAL — YOU MUST SEARCH THE WEB:
 1. Run these searches and visit the pages you find:
-   - "${location} youth sports clubs"
-   - "${location} ${sportFilter && sportFilter !== "all" ? sportFilter : "travel"} teams site directory"
-   - "${location} high school athletics"
-   - "${location} AAU ${sportFilter && sportFilter !== "all" ? sportFilter : "basketball"} teams"
-   - "${location} recreational sports clubs"
+   - "${effectiveLocation} ${searchCategory || "youth sports clubs"}"
+   - "${effectiveLocation} ${primarySport} teams site directory"
+   - "${effectiveLocation} high school athletics"
+   - "${effectiveLocation} AAU ${primarySport2} teams"
+   - "${effectiveLocation} recreational sports clubs"
 2. For each result, click through to the actual organization website/page to confirm it's real.
-3. Verify location — only include orgs within ${radiusMiles} miles of ${location}.
+3. Verify location — only include orgs within ${radiusMiles} miles of ${effectiveLocation}.
 
 ${sportContext}
 
@@ -590,7 +733,8 @@ export interface GateResult {
 export function applyLeadQualityGate(
   prospect: ProspectResult,
   score: number,
-  existingNames: string[]
+  existingNames: string[],
+  existingDomains?: string[]
 ): GateResult {
   // ── Hard reject — below minimum discovery confidence ──────────────────────
   if (prospect.discoveryConfidenceScore < 0.45 || prospect.leadValidationStatus === "rejected") {
@@ -603,12 +747,30 @@ export function applyLeadQualityGate(
     };
   }
 
-  // ── Duplicate check ──────────────────────────────────────────────────────
-  const normalise = (s: string) =>
-    s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
-  const candidateNorm = normalise(prospect.prospectName);
-  const isDuplicate = existingNames.some((n) => normalise(n) === candidateNorm);
-  if (isDuplicate) {
+  // ── Improved Duplicate check ─────────────────────────────────────────────
+  // 1. Exact normalised name match (strip punctuation)
+  const rawNorm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+  const candidateRaw = rawNorm(prospect.prospectName);
+  const exactMatch = existingNames.some((n) => rawNorm(n) === candidateRaw);
+
+  // 2. Stop-word-stripped name match
+  const candidateStripped = normalizeOrgName(prospect.prospectName);
+  const strippedMatch = candidateStripped.length > 2 && existingNames.some((n) => {
+    const norm = normalizeOrgName(n);
+    return norm === candidateStripped;
+  });
+
+  // 3. Fuzzy name similarity (≤20% edit distance on stripped names)
+  const fuzzyMatch = candidateStripped.length > 3 && existingNames.some((n) => {
+    const norm = normalizeOrgName(n);
+    return norm.length > 3 && isFuzzyDuplicate(candidateStripped, norm);
+  });
+
+  // 4. Domain match
+  const candidateDomain = normalizeDomain(prospect.websiteUrl) || normalizeDomain(prospect.discoverySourceUrl);
+  const domainMatch = candidateDomain && (existingDomains || []).some((d) => d === candidateDomain);
+
+  if (exactMatch || strippedMatch || fuzzyMatch || domainMatch) {
     return {
       action: "duplicate",
       needsContact: false,

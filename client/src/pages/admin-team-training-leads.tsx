@@ -1085,7 +1085,7 @@ type ResearchProgressState = {
   status: "idle" | "running" | "done" | "error";
   location: string;
   steps: ResearchStep[];
-  result?: { saved: number; rejected: number; duplicates: number };
+  result?: { saved: number; rejected: number; duplicates: number; allDuplicates?: boolean };
   error?: string;
   minimized: boolean;
 };
@@ -1111,10 +1111,12 @@ function ResearchProgressPanel({
   progress,
   onMinimize,
   onDismiss,
+  onFindDifferent,
 }: {
   progress: ResearchProgressState;
   onMinimize: () => void;
   onDismiss: () => void;
+  onFindDifferent: () => void;
 }) {
   if (progress.status === "idle") return null;
 
@@ -1181,29 +1183,51 @@ function ResearchProgressPanel({
           {isDone && progress.result && (
             <>
               <div className="my-1.5 border-t" />
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400" data-testid="text-progress-saved">
-                  {progress.result.saved} lead{progress.result.saved !== 1 ? "s" : ""} added
-                </span>
-              </div>
-              {progress.result.rejected > 0 && (
-                <div className="flex items-center gap-2">
-                  <XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-xs text-muted-foreground" data-testid="text-progress-rejected">
-                    {progress.result.rejected} rejected
-                  </span>
-                </div>
-              )}
-              {progress.result.duplicates > 0 && (
-                <div className="flex items-center gap-2">
-                  <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
-                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+              {progress.result.allDuplicates ? (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center mt-0.5">
+                      <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    </div>
+                    <span className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed" data-testid="text-all-duplicates">
+                      We found only organizations already in your pipeline. Next run will search a new category &amp; location.
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {progress.result.duplicates} duplicate{progress.result.duplicates !== 1 ? "s" : ""} skipped
-                  </span>
+                  <button
+                    className="w-full text-xs text-primary underline underline-offset-2 text-left hover:opacity-80 transition-opacity"
+                    onClick={onFindDifferent}
+                    data-testid="button-find-different"
+                  >
+                    Find different leads now →
+                  </button>
                 </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400" data-testid="text-progress-saved">
+                      {progress.result.saved} lead{progress.result.saved !== 1 ? "s" : ""} added
+                    </span>
+                  </div>
+                  {progress.result.rejected > 0 && (
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-xs text-muted-foreground" data-testid="text-progress-rejected">
+                        {progress.result.rejected} rejected
+                      </span>
+                    </div>
+                  )}
+                  {progress.result.duplicates > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {progress.result.duplicates} duplicate{progress.result.duplicates !== 1 ? "s" : ""} skipped
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -1335,7 +1359,7 @@ export default function AdminTeamTrainingLeadsPage() {
   }, [savedSettings]);
 
   const researchMutation = useMutation({
-    mutationFn: async (data: { sport?: string; limit: number; location: string; radiusMiles: number }) => {
+    mutationFn: async (data: { sport?: string; limit: number; location: string; radiusMiles: number; forceDiversify?: boolean }) => {
       // Close dialog + launch progress panel immediately
       setResearchDialogOpen(false);
       setResearchLocationTouched(false);
@@ -1348,7 +1372,7 @@ export default function AdminTeamTrainingLeadsPage() {
       startProgressSteps(data.location);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
       let res: Response;
       try {
         res = await fetch("/api/admin/team-training/research", {
@@ -1378,12 +1402,13 @@ export default function AdminTeamTrainingLeadsPage() {
       const saved = data.summary?.saved ?? data.count ?? 0;
       const rejected = data.summary?.rejectedLowQuality ?? 0;
       const duplicates = data.summary?.duplicatesSkipped ?? 0;
+      const allDuplicates = data.summary?.allDuplicates ?? false;
 
       setResearchProgress((prev) => ({
         ...prev,
         status: "done",
         steps: STEP_DEFINITIONS.map((s) => ({ ...s, state: "done" as const })),
-        result: { saved, rejected, duplicates },
+        result: { saved, rejected, duplicates, allDuplicates },
       }));
 
       if (data.summary) setResearchSummary(data.summary);
@@ -3022,6 +3047,18 @@ export default function AdminTeamTrainingLeadsPage() {
         onDismiss={() => {
           clearStepTimers();
           setResearchProgress({ status: "idle", location: "", steps: makeSteps(), minimized: false });
+        }}
+        onFindDifferent={() => {
+          const loc = researchProgress.location || researchLocation.trim();
+          if (!loc) return;
+          setResearchProgress({ status: "idle", location: "", steps: makeSteps(), minimized: false });
+          researchMutation.mutate({
+            sport: researchSport === "all" ? undefined : researchSport,
+            limit: parseInt(researchLimit),
+            location: loc,
+            radiusMiles: parseInt(researchRadius),
+            forceDiversify: true,
+          });
         }}
       />
     </div>
