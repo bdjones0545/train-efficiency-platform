@@ -259,6 +259,100 @@
   }
 }
 
+/* ── Org Landing Motion System ─────────────────────────────── */
+
+/* Hero background grid — softer than the main platform grid */
+.org-hero-grid {
+  background-image:
+    linear-gradient(hsl(var(--primary) / 0.038) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.038) 1px, transparent 1px);
+  background-size: 52px 52px;
+  animation: laser-grid-drift 30s linear infinite;
+  will-change: transform;
+}
+
+/* CTA button glow — more restrained than the platform glow */
+.org-cta-glow {
+  animation: org-cta-breathe 3.8s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+@keyframes org-cta-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%       { box-shadow: 0 0 14px 2px hsl(var(--primary) / 0.18); }
+}
+
+/* Feature card ambient sweep — slow shimmer across the surface */
+@keyframes org-sweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
+}
+
+.org-feature-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.org-feature-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.04) 50%,
+    transparent 100%
+  );
+  animation: org-sweep 9s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform;
+  z-index: 0;
+}
+
+/* edge-trace line on CTA section top border */
+@keyframes org-edge-trace {
+  0%   { transform: scaleX(0); opacity: 0; transform-origin: left; }
+  30%  { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  70%  { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  100% { opacity: 0; transform: scaleX(1); transform-origin: right; }
+}
+
+.org-edge-trace::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    hsl(var(--primary) / 0.5) 40%,
+    hsl(var(--primary) / 0.5) 60%,
+    transparent
+  );
+  animation: org-edge-trace 6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* card hover border glow (CSS-only fallback for reduced-motion) */
+.org-card-hover {
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.org-card-hover:hover {
+  box-shadow: 0 4px 20px -4px hsl(var(--primary) / 0.1);
+  border-color: hsl(var(--primary) / 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-hero-grid,
+  .org-cta-glow,
+  .org-feature-card::after,
+  .org-edge-trace::before {
+    animation: none !important;
+  }
+}
+
 /**
  * Using the elevate system.
  * Automatic contrast adjustment.

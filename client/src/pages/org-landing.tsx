@@ -23,6 +23,16 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CoachWithUser } from "@/lib/types";
+import {
+  FadeUp,
+  HeroContent,
+  HeroItem,
+  StaggerGrid,
+  StaggerItem,
+  LiftCard,
+  AmbientCard,
+  PulseBookingDot,
+} from "@/components/OrgMotion";
 
 type FocalPoint = "center" | "top" | "bottom" | "left" | "right";
 
@@ -510,6 +520,16 @@ export default function OrgLandingPage() {
           </>
         ) : (
           <>
+            {/* Animated background grid — subtle, behind all content */}
+            <div className="org-hero-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
+            {/* Radial fade to keep grid from competing with text */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: "radial-gradient(ellipse 80% 70% at 50% 50%, transparent 30%, hsl(var(--background)) 100%)",
+              }}
+              aria-hidden="true"
+            />
             <div
               className="absolute inset-0 pointer-events-none"
               style={
@@ -526,8 +546,9 @@ export default function OrgLandingPage() {
           </>
         )}
         <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 items-center relative w-full">
-          <div className="space-y-6">
+          <HeroContent className="space-y-6">
             {(org.websiteUrl || org.instagramUrl || org.facebookUrl || org.youtubeUrl || org.tiktokUrl || org.linktreeUrl) && (
+              <HeroItem>
               <div className="flex items-center gap-3" data-testid="hero-social-links">
                 {org.websiteUrl && (
                   <a href={ensureUrl(org.websiteUrl)} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 text-sm transition-colors ${heroMedia.length > 0 ? "text-white/80 hover:text-white" : "text-muted-foreground hover:text-foreground"}`} data-testid="link-hero-website">
@@ -560,63 +581,79 @@ export default function OrgLandingPage() {
                   </a>
                 )}
               </div>
+              </HeroItem>
             )}
-            <div
-              className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium"
-              style={
-                heroMedia.length > 0
-                  ? { backgroundColor: "rgba(255,255,255,0.15)", color: "#fff" }
-                  : org.primaryColor
-                  ? { backgroundColor: `${org.primaryColor}1a`, color: org.primaryColor }
-                  : undefined
-              }
-            >
-              <Zap className="h-3.5 w-3.5" />
-              {org.tagline || "Elevate Your Game"}
-            </div>
-            <h1
-              className={`text-4xl sm:text-5xl font-bold tracking-tight leading-tight ${heroMedia.length > 0 ? "text-white" : ""}`}
-              data-testid="text-org-hero-heading"
-            >
-              Welcome to{" "}
-              <span
-                style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined}
-                className={heroMedia.length > 0 ? "text-white" : !org.primaryColor ? "text-primary" : ""}
-              >
-                {org.name}
-              </span>
-            </h1>
-            <p className={`text-lg leading-relaxed max-w-lg ${heroMedia.length > 0 ? "text-white/85" : "text-muted-foreground"}`}>
-              {org.tagline2 || "Book sessions with our expert coaches, manage your training schedule, and take your athletic performance to the next level."}
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                size="lg"
-                onClick={() => openClientModal(true)}
-                data-testid="button-org-hero-cta"
+            <HeroItem>
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium"
                 style={
                   heroMedia.length > 0
-                    ? { backgroundColor: org.primaryColor || "hsl(var(--primary))", borderColor: org.primaryColor || undefined }
+                    ? { backgroundColor: "rgba(255,255,255,0.15)", color: "#fff" }
                     : org.primaryColor
-                    ? { backgroundColor: org.primaryColor, borderColor: org.primaryColor }
+                    ? { backgroundColor: `${org.primaryColor}1a`, color: org.primaryColor }
                     : undefined
                 }
               >
-                <Calendar className="h-4 w-4 mr-2" />
-                Book a Session
-              </Button>
-            </div>
-            <div className={`flex items-center gap-4 text-sm pt-2 ${heroMedia.length > 0 ? "text-white/70" : "text-muted-foreground"}`}>
-              <span className="flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5" style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined} />
-                Free to browse
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5" style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined} />
-                Instant booking
-              </span>
-            </div>
-          </div>
+                <Zap className="h-3.5 w-3.5" />
+                {org.tagline || "Elevate Your Game"}
+              </div>
+            </HeroItem>
+            <HeroItem>
+              <h1
+                className={`text-4xl sm:text-5xl font-bold tracking-tight leading-tight ${heroMedia.length > 0 ? "text-white" : ""}`}
+                data-testid="text-org-hero-heading"
+              >
+                Welcome to{" "}
+                <span
+                  style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined}
+                  className={heroMedia.length > 0 ? "text-white" : !org.primaryColor ? "text-primary" : ""}
+                >
+                  {org.name}
+                </span>
+              </h1>
+            </HeroItem>
+            <HeroItem>
+              <p className={`text-lg leading-relaxed max-w-lg ${heroMedia.length > 0 ? "text-white/85" : "text-muted-foreground"}`}>
+                {org.tagline2 || "Book sessions with our expert coaches, manage your training schedule, and take your athletic performance to the next level."}
+              </p>
+            </HeroItem>
+            <HeroItem>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  size="lg"
+                  onClick={() => openClientModal(true)}
+                  data-testid="button-org-hero-cta"
+                  className="org-cta-glow"
+                  style={
+                    heroMedia.length > 0
+                      ? { backgroundColor: org.primaryColor || "hsl(var(--primary))", borderColor: org.primaryColor || undefined }
+                      : org.primaryColor
+                      ? { backgroundColor: org.primaryColor, borderColor: org.primaryColor }
+                      : undefined
+                  }
+                >
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Book a Session
+                </Button>
+              </div>
+            </HeroItem>
+            <HeroItem>
+              <div className={`flex items-center gap-4 text-sm pt-2 ${heroMedia.length > 0 ? "text-white/70" : "text-muted-foreground"}`}>
+                <span className="flex items-center gap-1.5">
+                  <PulseBookingDot />
+                  Live availability
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5" style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined} />
+                  Free to browse
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" style={heroMedia.length > 0 ? undefined : org.primaryColor ? { color: org.primaryColor } : undefined} />
+                  Instant booking
+                </span>
+              </div>
+            </HeroItem>
+          </HeroContent>
 
           {org.logoUrl && heroMedia.length === 0 && (
             <div className="relative hidden lg:flex items-center justify-center">
@@ -637,63 +674,64 @@ export default function OrgLandingPage() {
       {testimonialsMedia.length > 0 && (
         <section className="py-20 px-6 bg-card/40" data-testid="section-testimonials">
           <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
+            <FadeUp className="text-center mb-12 space-y-3">
               <h2 className="text-3xl font-bold" data-testid="text-testimonials-heading">Proof From Athletes We've Helped</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
                 Real feedback, real athletes, real performance results.
               </p>
-            </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            </FadeUp>
+            <StaggerGrid className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {testimonialsMedia.map(item => (
-                <div
+                <LiftCard
                   key={item.id}
-                  className="rounded-xl overflow-hidden bg-card border border-border shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                  className="rounded-xl overflow-hidden bg-card border border-border shadow-sm cursor-pointer org-card-hover"
                   onClick={() => setSelectedMedia(item)}
-                  data-testid={`card-testimonial-${item.id}`}
                 >
-                  {item.mediaType === "image" ? (
-                    <div className="bg-black flex items-center justify-center" style={{ minHeight: 200 }}>
-                      <img
-                        src={item.url}
-                        alt={item.altText || item.caption || "Testimonial"}
-                        className="w-full object-contain"
-                        style={{ maxHeight: 320 }}
-                        loading="lazy"
-                      />
-                    </div>
-                  ) : (
-                    <div className="bg-black relative" style={{ minHeight: 200 }}>
-                      <video src={item.url} className="w-full object-contain" style={{ maxHeight: 320 }} muted playsInline preload="metadata" />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                        <div className="rounded-full bg-white/20 p-3">
-                          <Play className="h-6 w-6 text-white" />
+                  <div data-testid={`card-testimonial-${item.id}`}>
+                    {item.mediaType === "image" ? (
+                      <div className="bg-black flex items-center justify-center" style={{ minHeight: 200 }}>
+                        <img
+                          src={item.url}
+                          alt={item.altText || item.caption || "Testimonial"}
+                          className="w-full object-contain"
+                          style={{ maxHeight: 320 }}
+                          loading="lazy"
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-black relative" style={{ minHeight: 200 }}>
+                        <video src={item.url} className="w-full object-contain" style={{ maxHeight: 320 }} muted playsInline preload="metadata" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <div className="rounded-full bg-white/20 p-3">
+                            <Play className="h-6 w-6 text-white" />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                  {item.caption && (
-                    <div className="p-4 flex gap-2 items-start">
-                      <Quote className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                      <p className="text-sm text-muted-foreground italic leading-relaxed">{item.caption}</p>
-                    </div>
-                  )}
-                </div>
+                    )}
+                    {item.caption && (
+                      <div className="p-4 flex gap-2 items-start">
+                        <Quote className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                        <p className="text-sm text-muted-foreground italic leading-relaxed">{item.caption}</p>
+                      </div>
+                    )}
+                  </div>
+                </LiftCard>
               ))}
-            </div>
+            </StaggerGrid>
           </div>
         </section>
       )}
 
       <section id="features" className="py-20 px-6 bg-card/50">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12 space-y-3">
+          <FadeUp className="text-center mb-12 space-y-3">
             <h2 className="text-3xl font-bold" data-testid="text-org-features-heading">Everything You Need</h2>
             <p className="text-muted-foreground max-w-md mx-auto">
               A complete platform for sports performance and strength & conditioning scheduling.
             </p>
-          </div>
+          </FadeUp>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <StaggerGrid className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
                 icon: Calendar,
@@ -726,64 +764,73 @@ export default function OrgLandingPage() {
                 description: "View your session history and stay on top of your performance journey.",
               },
             ].map(({ icon: Icon, title, description }) => (
-              <Card key={title} className="p-6 space-y-3 hover-elevate">
-                <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
-                  <Icon className="h-5 w-5 text-primary" />
-                </div>
-                <h3 className="font-semibold">{title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-              </Card>
+              <AmbientCard key={title}>
+                <Card className="p-6 space-y-3 h-full border bg-card org-card-hover">
+                  <div className="relative z-10 w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
+                    <Icon className="h-5 w-5 text-primary" />
+                  </div>
+                  <h3 className="relative z-10 font-semibold">{title}</h3>
+                  <p className="relative z-10 text-sm text-muted-foreground leading-relaxed">{description}</p>
+                </Card>
+              </AmbientCard>
             ))}
-          </div>
+          </StaggerGrid>
         </div>
       </section>
 
       {coaches && coaches.length > 0 && (
         <section className="py-20 px-6">
           <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
+            <FadeUp className="text-center mb-12 space-y-3">
               <h2 className="text-3xl font-bold" data-testid="text-org-coaches-heading">Meet Our Coaches</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
                 Train with experienced strength & conditioning professionals dedicated to your athletic development.
               </p>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
+            </FadeUp>
+            <StaggerGrid className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
               {coaches.map((coach: any) => (
-                <Card key={coach.id} className="p-6 space-y-4" data-testid={`card-org-coach-${coach.id}`}>
-                  <div className="flex items-center gap-4">
-                    <Avatar className="h-16 w-16">
-                      <AvatarImage src={coach.photoUrl || coach.user?.profileImageUrl || undefined} />
-                      <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
-                        {(coach.user?.firstName?.[0] || "C").toUpperCase()}
-                        {(coach.user?.lastName?.[0] || "").toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        {coach.user?.firstName} {coach.user?.lastName}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">Strength & Conditioning Coach</p>
+                <LiftCard key={coach.id} className="h-full">
+                  <Card className="p-6 space-y-4 h-full org-card-hover" data-testid={`card-org-coach-${coach.id}`}>
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-16 w-16">
+                        <AvatarImage src={coach.photoUrl || coach.user?.profileImageUrl || undefined} />
+                        <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
+                          {(coach.user?.firstName?.[0] || "C").toUpperCase()}
+                          {(coach.user?.lastName?.[0] || "").toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="text-lg font-semibold">
+                          {coach.user?.firstName} {coach.user?.lastName}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">Strength & Conditioning Coach</p>
+                      </div>
                     </div>
-                  </div>
-                  {coach.bio && (
-                    <p className="text-sm text-muted-foreground leading-relaxed">{coach.bio}</p>
-                  )}
-                  {coach.specialties && coach.specialties.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {coach.specialties.map((spec: string) => (
-                        <Badge key={spec} variant="secondary" className="text-xs">{spec}</Badge>
-                      ))}
-                    </div>
-                  )}
-                </Card>
+                    {coach.bio && (
+                      <p className="text-sm text-muted-foreground leading-relaxed">{coach.bio}</p>
+                    )}
+                    {coach.specialties && coach.specialties.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {coach.specialties.map((spec: string) => (
+                          <Badge key={spec} variant="secondary" className="text-xs">{spec}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </LiftCard>
               ))}
-            </div>
-            <div className="text-center mt-8">
-              <Button size="lg" onClick={() => openClientModal(true)} data-testid="button-org-coaches-cta">
+            </StaggerGrid>
+            <FadeUp className="text-center mt-10">
+              <Button
+                size="lg"
+                onClick={() => openClientModal(true)}
+                data-testid="button-org-coaches-cta"
+                className="org-cta-glow"
+              >
                 <Calendar className="h-4 w-4 mr-2" />
                 Sign Up to Book a Session
               </Button>
-            </div>
+            </FadeUp>
           </div>
         </section>
       )}
@@ -791,13 +838,15 @@ export default function OrgLandingPage() {
       {trainingMedia.length > 0 && (
         <section className="py-20 px-6 bg-card/30" data-testid="section-training-showcase">
           <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
+            <FadeUp className="text-center mb-12 space-y-3">
               <h2 className="text-3xl font-bold" data-testid="text-training-heading">How We Train</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
                 See our training philosophy in action.
               </p>
-            </div>
-            <MediaGrid items={trainingMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
+            <FadeUp delay={0.1}>
+              <MediaGrid items={trainingMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
           </div>
         </section>
       )}
@@ -805,13 +854,15 @@ export default function OrgLandingPage() {
       {facilityMedia.length > 0 && (
         <section className="py-20 px-6" data-testid="section-facility">
           <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
+            <FadeUp className="text-center mb-12 space-y-3">
               <h2 className="text-3xl font-bold" data-testid="text-facility-heading">Where You'll Train</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
                 A facility built for performance. Come see what we've built for you.
               </p>
-            </div>
-            <MediaGrid items={facilityMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
+            <FadeUp delay={0.1}>
+              <MediaGrid items={facilityMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
           </div>
         </section>
       )}
@@ -819,13 +870,15 @@ export default function OrgLandingPage() {
       {coachesMedia.length > 0 && (
         <section className="py-20 px-6 bg-card/30" data-testid="section-coaches-media">
           <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
+            <FadeUp className="text-center mb-12 space-y-3">
               <h2 className="text-3xl font-bold" data-testid="text-coaches-media-heading">Our Coaching Team</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
                 The people behind your progress.
               </p>
-            </div>
-            <MediaGrid items={coachesMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
+            <FadeUp delay={0.1}>
+              <MediaGrid items={coachesMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
           </div>
         </section>
       )}
@@ -833,13 +886,15 @@ export default function OrgLandingPage() {
       {resultsMedia.length > 0 && (
         <section className="py-20 px-6 bg-card/30" data-testid="section-results">
           <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12 space-y-3">
+            <FadeUp className="text-center mb-12 space-y-3">
               <h2 className="text-3xl font-bold" data-testid="text-results-heading">Athlete Highlights</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
                 Client results and success stories.
               </p>
-            </div>
-            <MediaGrid items={resultsMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
+            <FadeUp delay={0.1}>
+              <MediaGrid items={resultsMedia} onOpen={setSelectedMedia} />
+            </FadeUp>
           </div>
         </section>
       )}
