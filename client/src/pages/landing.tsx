@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { setAuthToken } from "@/lib/authToken";
 import HeroDashboard from "@/components/HeroDashboard";
+import LaserNodes from "@/components/LaserNodes";
 
 export default function LandingPage() {
   const [coachModalOpen, setCoachModalOpen] = useState(false);
@@ -200,9 +201,23 @@ export default function LandingPage() {
 
       {/* ── HERO ── */}
       <section className="relative pt-28 pb-20 px-5 overflow-hidden">
-        {/* Subtle radial glow */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-primary/6 rounded-full blur-3xl" />
+
+        {/* ── Animated laser grid background ── */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+          <div className="laser-grid absolute inset-0 opacity-100" />
+          {/* Radial fade so grid stays subtle at edges */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 70% 60% at 50% 0%, transparent 40%, hsl(var(--background)) 100%)",
+            }}
+          />
+        </div>
+
+        {/* Soft radial glow */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[680px] h-[360px] bg-primary/7 rounded-full blur-3xl" />
         </div>
 
         <div className="max-w-5xl mx-auto relative">
@@ -210,18 +225,21 @@ export default function LandingPage() {
           <div className="flex justify-center mb-8">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/25 bg-primary/8 text-xs font-medium text-primary">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              Built for strength & conditioning coaches
+              Precision business infrastructure for S&C coaches
             </div>
           </div>
 
           {/* Headline */}
           <div className="text-center space-y-5 max-w-3xl mx-auto">
-            <h1 className="text-4xl sm:text-5xl lg:text-[3.4rem] font-bold tracking-tight leading-[1.1]" data-testid="text-hero-heading">
-              Stop Using Studio Software.<br />
-              <span className="text-primary">Start Using Coaching Software.</span>
+            <h1
+              className="text-4xl sm:text-5xl lg:text-[3.4rem] font-bold tracking-tight leading-[1.1]"
+              data-testid="text-hero-heading"
+            >
+              Run Your Fitness Business<br />
+              <span className="text-primary">With Precision.</span>
             </h1>
             <p className="text-base sm:text-lg text-muted-foreground leading-relaxed max-w-xl mx-auto">
-              TrainEfficiency is the operational platform purpose-built for S&C coaches — scheduling, session payouts, team contracts, client wallets, and coach management in one place.
+              TrainEfficiency connects scheduling, payments, clients, outreach, and AI-powered operations into one intelligent business system.
             </p>
           </div>
 
@@ -230,7 +248,7 @@ export default function LandingPage() {
             <Button
               size="lg"
               onClick={() => openRegisterModal()}
-              className="w-full sm:w-auto px-7 h-11 text-sm font-medium"
+              className="laser-cta-glow w-full sm:w-auto px-7 h-11 text-sm font-medium"
               data-testid="button-hero-cta"
             >
               Start Free 3-Day Trial
@@ -258,9 +276,29 @@ export default function LandingPage() {
             ))}
           </div>
 
+          {/* ── Laser Node Network ── */}
+          <div className="mt-10 mb-2">
+            <p className="text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/45 mb-5">
+              All operations, one connected system
+            </p>
+            <LaserNodes />
+          </div>
+
           {/* Dashboard Mockup */}
-          <div className="mt-14 relative" data-testid="img-dashboard-mockup">
-            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none rounded-b-xl" />
+          <div className="mt-10 relative" data-testid="img-dashboard-mockup">
+            {/* Scan line overlay on dashboard */}
+            <div className="absolute inset-0 overflow-hidden rounded-xl z-10 pointer-events-none" aria-hidden="true">
+              <div className="laser-scan-line" />
+            </div>
+            {/* Edge highlight on dashboard frame */}
+            <div
+              className="absolute inset-0 rounded-xl pointer-events-none z-10"
+              style={{
+                boxShadow: "0 0 0 1px hsl(var(--primary) / 0.12), 0 0 30px hsl(var(--primary) / 0.06)",
+              }}
+              aria-hidden="true"
+            />
+            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent z-20 pointer-events-none rounded-b-xl" />
             <HeroDashboard />
           </div>
         </div>
@@ -363,6 +401,7 @@ export default function LandingPage() {
                 category: "Scheduling & Operations",
                 icon: Calendar,
                 tagline: "Built for Back-to-Back Coaching Days",
+                laser: true,
                 features: [
                   { icon: Calendar, title: "Set your schedule, let clients book", description: "Configure availability by day, time, and location. Clients book directly from open slots — no back-and-forth texts." },
                   { icon: Clock, title: "Clone sessions in seconds", description: "Repeat sessions daily, weekly, or on specific days. Build out your entire recurring schedule without manual entry." },
@@ -373,6 +412,7 @@ export default function LandingPage() {
                 category: "Payments & Payouts",
                 icon: DollarSign,
                 tagline: "Know Exactly What Your Coaching Business Earns",
+                laser: true,
                 features: [
                   { icon: CreditCard, title: "Stripe built in, money goes to you", description: "Accept session packages, team invoices, and wallet top-ups — all through your own Stripe account." },
                   { icon: Wallet, title: "Client wallets & session credits", description: "Clients prepay, balances are tracked automatically. No cash, no Venmo. Just credits that get redeemed at sessions." },
@@ -383,6 +423,7 @@ export default function LandingPage() {
                 category: "Team Training Infrastructure",
                 icon: Building2,
                 tagline: "Win School & Program Contracts Systematically",
+                laser: true,
                 features: [
                   { icon: Building2, title: "Team contracts with per-athlete pricing", description: "Generate quotes, set per-athlete rates, multi-month invoicing. Everything automated through Stripe." },
                   { icon: Users, title: "Semi-private session management", description: "Run group training with configurable capacity, age ranges, and skill levels. Clients sign up for open spots." },
@@ -393,6 +434,7 @@ export default function LandingPage() {
                 category: "Coach & Client Management",
                 icon: UserCog,
                 tagline: "Run Your Business, Not Just Your Sessions",
+                laser: false,
                 features: [
                   { icon: UserCog, title: "Multi-coach operations", description: "Add coaches, assign sessions, and track individual payout histories — all from one admin dashboard." },
                   { icon: ClipboardList, title: "Full client roster", description: "View booking history, session credits, contact details, and wallet balances for every client in one place." },
@@ -403,15 +445,27 @@ export default function LandingPage() {
                 category: "Your Brand, Not Ours",
                 icon: Globe,
                 tagline: "Clients See Your Business — Not Generic Software",
+                laser: false,
                 features: [
                   { icon: Sparkles, title: "Custom branded landing page", description: "Your own URL, your logo, your colors, your tagline. Clients sign up directly from your branded page." },
                   { icon: Mail, title: "Automated email notifications", description: "Booking confirmations, payment receipts, team invoices, and reminders sent automatically under your brand." },
                   { icon: BarChart3, title: "Business analytics & revenue goals", description: "Set monthly targets, track sessions completed, monitor earnings. See your business at a real glance." },
                 ],
               },
-            ].map(({ category, icon: CatIcon, tagline, features }) => (
+            ].map(({ category, icon: CatIcon, tagline, laser, features }) => (
               <div key={category} className="space-y-5" data-testid={`section-${category.toLowerCase().replace(/\s+/g, '-')}`}>
-                <div className="flex items-start gap-3 pb-3 border-b border-border/60">
+                {/* Section header with optional laser edge accent */}
+                <div className="relative flex items-start gap-3 pb-3 border-b border-border/60">
+                  {laser && (
+                    <div
+                      className="absolute bottom-0 left-0 h-px w-1/3 pointer-events-none"
+                      style={{
+                        background: "linear-gradient(90deg, hsl(var(--primary) / 0.6), transparent)",
+                        animation: "laser-edge-trace 5s ease-in-out infinite",
+                      }}
+                      aria-hidden="true"
+                    />
+                  )}
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
                     <CatIcon className="h-4 w-4 text-primary" />
                   </div>
@@ -421,10 +475,12 @@ export default function LandingPage() {
                   </div>
                 </div>
                 <div className="grid sm:grid-cols-3 gap-4">
-                  {features.map(({ icon: Icon, title, description }) => (
+                  {features.map(({ icon: Icon, title, description }, fi) => (
                     <div
                       key={title}
-                      className="p-4 rounded-lg border border-border/50 bg-card/60 hover:border-primary/25 hover:bg-card transition-all duration-200 space-y-2.5"
+                      className={`p-4 rounded-lg border bg-card/60 hover:border-primary/25 hover:bg-card transition-all duration-200 space-y-2.5 ${
+                        laser && fi === 0 ? "laser-card-active border-primary/20" : "border-border/50"
+                      }`}
                       data-testid={`card-feature-${title.toLowerCase().replace(/\s+/g, '-').slice(0, 30)}`}
                     >
                       <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
@@ -482,7 +538,7 @@ export default function LandingPage() {
           </div>
 
           <div className="text-center mt-10">
-            <Button size="lg" onClick={() => openRegisterModal()} className="px-8 h-11 text-sm" data-testid="button-how-cta">
+            <Button size="lg" onClick={() => openRegisterModal()} className="laser-cta-glow px-8 h-11 text-sm" data-testid="button-how-cta">
               Start Free 3-Day Trial
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
@@ -536,7 +592,7 @@ export default function LandingPage() {
                   ))}
                 </div>
 
-                <Button size="lg" className="w-full h-11 text-sm" onClick={() => openRegisterModal()} data-testid="button-pricing-cta">
+                <Button size="lg" className="laser-cta-glow w-full h-11 text-sm" onClick={() => openRegisterModal()} data-testid="button-pricing-cta">
                   Start Free 3-Day Trial
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
@@ -561,7 +617,7 @@ export default function LandingPage() {
             Stop managing clients through spreadsheets and Venmo. Start using infrastructure that was built for exactly what you do.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-            <Button size="lg" onClick={() => openRegisterModal()} className="w-full sm:w-auto px-8 h-11 text-sm" data-testid="button-final-cta">
+            <Button size="lg" onClick={() => openRegisterModal()} className="laser-cta-glow w-full sm:w-auto px-8 h-11 text-sm" data-testid="button-final-cta">
               Start Free 3-Day Trial
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>

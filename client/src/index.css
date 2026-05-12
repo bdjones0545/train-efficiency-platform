@@ -175,6 +175,90 @@
   }
 }
 
+/* ── Laser Intelligence Animations ── */
+@keyframes laser-grid-drift {
+  0%   { transform: translate(0, 0); }
+  100% { transform: translate(40px, 40px); }
+}
+
+@keyframes laser-scan-sweep {
+  0%   { transform: translateY(-8px); opacity: 0; }
+  5%   { opacity: 1; }
+  92%  { opacity: 0.7; }
+  100% { transform: translateY(420px); opacity: 0; }
+}
+
+@keyframes laser-edge-trace {
+  0%, 100% { opacity: 0; transform: scaleX(0); transform-origin: left; }
+  20%       { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  80%       { opacity: 1; transform: scaleX(1); transform-origin: left; }
+}
+
+@keyframes laser-cta-glow {
+  0%, 100% { box-shadow: 0 0 0px 0px hsl(var(--primary) / 0); }
+  50%       { box-shadow: 0 0 18px 3px hsl(var(--primary) / 0.22); }
+}
+
+@keyframes laser-card-breathe {
+  0%, 100% { box-shadow: 0 0 0px 0px hsl(var(--primary) / 0); }
+  50%       { box-shadow: 0 0 12px 1px hsl(var(--primary) / 0.1), inset 0 0 0 1px hsl(var(--primary) / 0.06); }
+}
+
+@keyframes laser-node-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes laser-beam-flow {
+  0%   { stroke-dashoffset: 100; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.laser-grid {
+  background-image:
+    linear-gradient(hsl(var(--primary) / 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.055) 1px, transparent 1px);
+  background-size: 44px 44px;
+  animation: laser-grid-drift 22s linear infinite;
+  will-change: transform;
+}
+
+.laser-cta-glow {
+  animation: laser-cta-glow 3s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+.laser-card-active {
+  animation: laser-card-breathe 4s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+.laser-scan-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 1.5px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.5) 20%,
+    hsl(var(--primary) / 0.8) 50%,
+    hsl(var(--primary) / 0.5) 80%,
+    transparent 100%
+  );
+  animation: laser-scan-sweep 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+  z-index: 20;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .laser-grid,
+  .laser-cta-glow,
+  .laser-card-active,
+  .laser-scan-line {
+    animation: none !important;
+  }
+}
+
 /**
  * Using the elevate system.
  * Automatic contrast adjustment.

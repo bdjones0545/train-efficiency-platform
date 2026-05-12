@@ -69,6 +69,21 @@ export default function HeroDashboard() {
       {/* Soft ambient glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-24 bg-primary/6 blur-3xl pointer-events-none z-0" />
 
+      {/* ── Laser scan line ── */}
+      <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden" aria-hidden="true">
+        <div className="laser-scan-line" />
+      </div>
+
+      {/* ── Corner precision marks ── */}
+      <div className="absolute top-2 left-2 w-4 h-4 pointer-events-none z-30" aria-hidden="true"
+        style={{ borderTop: "1px solid hsl(var(--primary) / 0.3)", borderLeft: "1px solid hsl(var(--primary) / 0.3)" }} />
+      <div className="absolute top-2 right-2 w-4 h-4 pointer-events-none z-30" aria-hidden="true"
+        style={{ borderTop: "1px solid hsl(var(--primary) / 0.3)", borderRight: "1px solid hsl(var(--primary) / 0.3)" }} />
+      <div className="absolute bottom-2 left-2 w-4 h-4 pointer-events-none z-30" aria-hidden="true"
+        style={{ borderBottom: "1px solid hsl(var(--primary) / 0.3)", borderLeft: "1px solid hsl(var(--primary) / 0.3)" }} />
+      <div className="absolute bottom-2 right-2 w-4 h-4 pointer-events-none z-30" aria-hidden="true"
+        style={{ borderBottom: "1px solid hsl(var(--primary) / 0.3)", borderRight: "1px solid hsl(var(--primary) / 0.3)" }} />
+
       {/* ── Browser chrome ── */}
       <div
         className="relative z-10 flex items-center gap-2 px-4 py-2.5 border-b border-border/60"
