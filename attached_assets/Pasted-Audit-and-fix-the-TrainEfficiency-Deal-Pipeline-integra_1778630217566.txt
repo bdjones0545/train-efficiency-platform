@@ -1,0 +1,87 @@
+Audit and fix the TrainEfficiency Deal Pipeline integration with Team Training Leads.
+
+Current issue:
+On mobile/admin Deal Pipeline, the pipeline columns say “Drop deals here.” When clicked, nothing happens. There is no obvious way for a prospect/lead to enter the deal pipeline, no visible deal cards, and no clear relationship between Team Training Leads and Deal Pipeline.
+
+Goal:
+Make Deal Pipeline a real prospect-to-client workflow, not just an empty Kanban UI.
+
+Audit these areas:
+1. Team Training Leads page
+   - How leads are stored
+   - Current lead statuses
+   - Whether interested/contacted/won/lost states exist
+   - Whether there is a “Create Deal” or “Move to Pipeline” action
+   - Whether enriched/contacted leads can become pipeline deals
+
+2. Deal Pipeline page
+   - Data source for deals
+   - Whether it loads deals from team training leads or a separate deals table
+   - Whether empty columns are only visual placeholders
+   - Whether clicking a column/card should open a deal drawer/modal
+   - Whether drag-and-drop actually updates status
+
+3. Backend/API
+   - Check routes for pipeline/deals/team-training-leads
+   - Confirm whether creating/updating a deal exists
+   - Confirm whether lead status changes sync into pipeline
+   - Add missing endpoints if needed
+
+Expected behavior:
+A Team Training Lead should be able to travel like this:
+
+New Lead
+→ Contacted
+→ Interested
+→ Deal Created
+→ Proposal/Quote Sent
+→ Follow-Up
+→ Won or Lost
+
+Deal Pipeline should show actual deal cards with:
+- Organization/team name
+- Contact person if available
+- Email/phone if available
+- Estimated deal value
+- Stage
+- Last contact date
+- Next follow-up date
+- Source lead status
+- Quick actions
+
+Required fixes:
+1. Add “Move to Deal Pipeline” / “Create Deal” button on Team Training Lead cards.
+2. When clicked, create a pipeline deal from that lead.
+3. Prevent duplicate deals from the same lead.
+4. Update the lead status to something like “deal_created” or “in_pipeline.”
+5. Deal Pipeline columns should render real deal cards.
+6. Empty columns should say something helpful like “No deals in this stage yet” instead of acting clickable.
+7. Clicking a deal card should open a deal detail drawer/modal.
+8. Dragging a deal between columns should persist the new stage to the database.
+9. Won deals should update projected/won revenue cards.
+10. Lost deals should stay visible in Lost/Archived or be filterable.
+11. Mobile layout should be usable horizontally or convert to stacked stage sections.
+
+Add/verify stages:
+- New
+- Interested
+- Proposal Sent
+- Follow-Up
+- Won
+- Lost
+
+Also add empty-state CTA:
+If there are no deals:
+“Start by moving an interested team training lead into the pipeline.”
+Button: “Go to Team Training Leads”
+
+Acceptance test:
+- Find or create a team training lead
+- Click “Create Deal”
+- Confirm it appears in Deal Pipeline under New or Interested
+- Click the deal card and view details
+- Drag to Proposal Sent
+- Refresh page
+- Confirm it remains in Proposal Sent
+- Mark as Won
+- Confirm Won Revenue updates
