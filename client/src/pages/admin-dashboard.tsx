@@ -1,4 +1,9 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  DashPageHeader,
+  DashStaggerList,
+  DashStatCard,
+} from "@/components/DashboardMotion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -228,33 +233,43 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-serif font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Manage coaches, services, and view reports</p>
-      </div>
+      <DashPageHeader>
+        <div>
+          <h1 className="text-2xl font-serif font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Manage coaches, services, and view reports</p>
+        </div>
+      </DashPageHeader>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-4 text-center">
-          <Users className="h-5 w-5 mx-auto text-primary mb-1" />
-          <p className="text-2xl font-bold" data-testid="text-total-users">{allUsers?.length || 0}</p>
-          <p className="text-xs text-muted-foreground">Total Users</p>
-        </Card>
-        <Card className="p-4 text-center">
-          <Settings className="h-5 w-5 mx-auto text-primary mb-1" />
-          <p className="text-2xl font-bold" data-testid="text-total-coaches">{coaches?.length || 0}</p>
-          <p className="text-xs text-muted-foreground">Active Coaches</p>
-        </Card>
-        <Card className="p-4 text-center">
-          <Calendar className="h-5 w-5 mx-auto text-primary mb-1" />
-          <p className="text-2xl font-bold" data-testid="text-total-bookings">{allBookings?.length || 0}</p>
-          <p className="text-xs text-muted-foreground">Total Bookings</p>
-        </Card>
-        <Card className="p-4 text-center">
-          <DollarSign className="h-5 w-5 mx-auto text-primary mb-1" />
-          <p className="text-2xl font-bold" data-testid="text-total-revenue">${(totalRevenue / 100).toFixed(2)}</p>
-          <p className="text-xs text-muted-foreground">Total Redeemed</p>
-        </Card>
-      </div>
+      <DashStaggerList className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <DashStatCard scanLine>
+          <Card className="p-4 text-center">
+            <Users className="h-5 w-5 mx-auto text-primary mb-1" />
+            <p className="text-2xl font-bold" data-testid="text-total-users">{allUsers?.length || 0}</p>
+            <p className="text-xs text-muted-foreground">Total Users</p>
+          </Card>
+        </DashStatCard>
+        <DashStatCard scanLine>
+          <Card className="p-4 text-center">
+            <Settings className="h-5 w-5 mx-auto text-primary mb-1" />
+            <p className="text-2xl font-bold" data-testid="text-total-coaches">{coaches?.length || 0}</p>
+            <p className="text-xs text-muted-foreground">Active Coaches</p>
+          </Card>
+        </DashStatCard>
+        <DashStatCard scanLine>
+          <Card className="p-4 text-center">
+            <Calendar className="h-5 w-5 mx-auto text-primary mb-1" />
+            <p className="text-2xl font-bold" data-testid="text-total-bookings">{allBookings?.length || 0}</p>
+            <p className="text-xs text-muted-foreground">Total Bookings</p>
+          </Card>
+        </DashStatCard>
+        <DashStatCard scanLine>
+          <Card className="p-4 text-center">
+            <DollarSign className="h-5 w-5 mx-auto text-primary mb-1" />
+            <p className="text-2xl font-bold" data-testid="text-total-revenue">${(totalRevenue / 100).toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">Total Redeemed</p>
+          </Card>
+        </DashStatCard>
+      </DashStaggerList>
 
       <Tabs defaultValue="users">
         <TabsList className="flex-wrap">

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { DashPageHeader, DashSectionReveal } from "@/components/DashboardMotion";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -428,6 +429,7 @@ export default function CoachDashboardPage() {
   return (
     <div className="space-y-4">
       {/* Title + action buttons */}
+      <DashPageHeader>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-serif font-bold" data-testid="text-coach-dashboard-title">
@@ -460,6 +462,7 @@ export default function CoachDashboardPage() {
           />
         </div>
       </div>
+      </DashPageHeader>
 
       {/* Coach selector */}
       {coaches && coaches.length > 1 && (
@@ -493,6 +496,7 @@ export default function CoachDashboardPage() {
       )}
 
       {/* Date navigation */}
+      <DashSectionReveal>
       <div className="flex items-center gap-2 flex-wrap">
         <Button
           variant="outline"
@@ -539,6 +543,7 @@ export default function CoachDashboardPage() {
           Today
         </Button>
       </div>
+      </DashSectionReveal>
 
       {/* Quick scroll controls */}
       <div className="flex items-center gap-2">

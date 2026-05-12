@@ -1,0 +1,69 @@
+Create a premium “Laser Intelligence” motion system for the logged-in TrainEfficiency organization admin dashboard.
+
+Goal:
+Make the organization dashboard feel like an intelligent business operating system for fitness professionals — scheduling, payments, clients, staff, outreach, and AI-powered operations all connected in one command center.
+
+Visual direction:
+- Premium SaaS
+- Athletic
+- Professional
+- Operational intelligence
+- Precision-focused
+- Fast and responsive
+- Modern command-center energy
+- Dark UI aesthetic
+
+This should feel more advanced than the client portal, but still clean and trustworthy — not cyberpunk or gaming UI.
+
+Add motion/effects to:
+- Dashboard hero
+- Revenue cards
+- Scheduling panel
+- AI agent activity areas
+- Lead/outreach sections
+- Staff/team cards
+- Command Center recommendations
+- Pipeline/prospect widgets
+- CTA buttons
+
+Visual effects:
+- Thin animated precision scan lines
+- Soft operational connection beams between related widgets
+- Animated status nodes for:
+  Revenue
+  Leads
+  Scheduling
+  Payments
+  Client activity
+  AI actions
+- Edge-tracing animations on high-priority cards
+- Ambient light sweeps across dashboard sections
+- Small pulse indicators for active AI operations
+- Subtle animated background grid in top dashboard areas
+
+Behavior:
+- Motion should feel purposeful and intelligent
+- Effects should reinforce operational clarity and business control
+- Important cards can receive slightly stronger emphasis
+- Motion intensity should reduce on smaller mobile screens
+- Effects should calm during heavy interaction/scrolling
+- Respect prefers-reduced-motion
+
+Do NOT add:
+- giant laser beams
+- excessive glow
+- hologram aesthetics
+- distracting animation
+- neon overload
+- gaming/cyberpunk visuals
+
+Technical requirements:
+- GPU-accelerated transforms only
+- Framer Motion preferred
+- No heavy canvas rendering
+- Maintain strong mobile performance
+- No layout shifts
+- Preserve readability/accessibility
+
+Design philosophy:
+The organization dashboard should feel like a high-performance operational command center for modern fitness businesses powered by intelligent automation and precision systems.

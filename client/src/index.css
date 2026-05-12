@@ -591,6 +591,120 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Dashboard Intelligence Motion System ("Laser Intelligence")
+   ─────────────────────────────────────────────────────────────────
+   Use: admin-dashboard, coach-dashboard, business-command-center
+   DO NOT use on client portal pages (use portal-* classes instead)
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── Keyframes ── */
+
+@keyframes dash-pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.65; }
+  70%  { transform: scale(2.1); opacity: 0; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+@keyframes dash-intel-scan {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  12%  { opacity: 0.9; }
+  88%  { opacity: 0.9; }
+  100% { transform: translateX(220%);  opacity: 0; }
+}
+
+@keyframes dash-priority-breathe {
+  0%,  100% {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.18),
+      0 0 10px hsl(var(--primary) / 0.04);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.34),
+      0 0 18px hsl(var(--primary) / 0.09);
+  }
+}
+
+@keyframes dash-priority-breathe-orange {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px hsl(27 96% 61% / 0.22),
+      0 0 10px hsl(27 96% 61% / 0.04);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px hsl(27 96% 61% / 0.40),
+      0 0 18px hsl(27 96% 61% / 0.09);
+  }
+}
+
+/* ── Live data pulse indicator ── */
+.dash-pulse-ring {
+  animation: dash-pulse-ring 2.4s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+  will-change: transform, opacity;
+}
+
+/* ── Intel scan line — precision sweep across stat cards ── */
+.dash-intel-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.dash-intel-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.055) 50%,
+    transparent 100%
+  );
+  animation: dash-intel-scan 9s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+  will-change: transform, opacity;
+}
+
+/* ── Priority card — breathing attention border ── */
+.dash-priority-card {
+  border-radius: var(--radius);
+  animation: dash-priority-breathe 5s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+.dash-priority-card--orange {
+  animation: dash-priority-breathe-orange 5s ease-in-out infinite;
+}
+
+/* ── Mobile: reduce intensity ── */
+@media (max-width: 768px) {
+  .dash-intel-card::after {
+    animation-duration: 14s;
+    opacity: 0.65;
+  }
+  .dash-priority-card,
+  .dash-priority-card--orange {
+    animation-duration: 7s;
+  }
+}
+
+/* ── Respect prefers-reduced-motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .dash-pulse-ring,
+  .dash-priority-card,
+  .dash-priority-card--orange {
+    animation: none !important;
+  }
+  .dash-intel-card::after {
+    animation: none !important;
+    display: none;
+  }
+}
+
 /**
  * Using the elevate system.
  * Automatic contrast adjustment.

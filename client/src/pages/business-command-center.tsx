@@ -1,4 +1,16 @@
 import { useState, useEffect, useRef } from "react";
+import {
+  DashPageHeader,
+  DashSectionReveal,
+  DashStaggerList,
+  DashStatCard,
+  DashActionRow,
+  DashPriorityCard,
+  DashQuickActionGrid,
+  DashQuickActionItem,
+  DashAlertReveal,
+  IntelPulseDot,
+} from "@/components/DashboardMotion";
 import { useAiRevenueToasts } from "@/hooks/use-ai-revenue-toasts";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -339,6 +351,7 @@ function GlobalPriorityPanel() {
       </h2>
 
       {/* Primary focus card */}
+      <DashPriorityCard variant="orange">
       <Card
         className="p-4 border-orange-400/50 bg-gradient-to-br from-orange-500/10 to-red-500/5 dark:from-orange-500/15 dark:to-red-500/10"
         data-testid="card-top-priority"
@@ -382,15 +395,16 @@ function GlobalPriorityPanel() {
           Execute Now
         </Button>
       </Card>
+      </DashPriorityCard>
 
       {/* Next best actions */}
       {nextTwo.length > 0 && (
         <div className="mt-3">
           <p className="text-xs font-medium text-muted-foreground mb-2">Next Best Actions</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="list-next-best-actions">
+          <DashStaggerList className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="list-next-best-actions">
             {nextTwo.map((action, i) => (
+              <DashStaggerItem key={action.id} clickable>
               <Card
-                key={action.id}
                 className="p-3 flex items-start gap-3 hover:border-primary/40 transition-colors cursor-pointer"
                 onClick={() => execute(action)}
                 data-testid={`card-next-action-${i}`}
@@ -411,8 +425,9 @@ function GlobalPriorityPanel() {
                   {action.priorityScore}
                 </Badge>
               </Card>
+              </DashStaggerItem>
             ))}
-          </div>
+          </DashStaggerList>
         </div>
       )}
     </section>
@@ -608,54 +623,60 @@ function AiRevenuePanel() {
       )}
 
       {/* Revenue stat cards */}
-      <div className="grid grid-cols-3 gap-3 mb-3">
+      <DashStaggerList className="grid grid-cols-3 gap-3 mb-3">
         {/* Today */}
-        <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-today">
-          <p className="text-xs text-muted-foreground">Today</p>
-          {isLoading ? (
-            <Skeleton className="h-6 w-16" />
-          ) : (
-            <p className="text-xl font-bold text-foreground">
-              {fmtDollars(data?.today.revenue ?? 0)}
+        <DashStatCard scanLine>
+          <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-today">
+            <p className="text-xs text-muted-foreground">Today</p>
+            {isLoading ? (
+              <Skeleton className="h-6 w-16" />
+            ) : (
+              <p className="text-xl font-bold text-foreground">
+                {fmtDollars(data?.today.revenue ?? 0)}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {isLoading ? "—" : `${data?.today.wonActions ?? 0} won · ${data?.today.engagedActions ?? 0} engaged`}
             </p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {isLoading ? "—" : `${data?.today.wonActions ?? 0} won · ${data?.today.engagedActions ?? 0} engaged`}
-          </p>
-        </Card>
+          </Card>
+        </DashStatCard>
 
         {/* This Week */}
-        <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-week">
-          <p className="text-xs text-muted-foreground">This Week</p>
-          {isLoading ? (
-            <Skeleton className="h-6 w-16" />
-          ) : (
-            <p className="text-xl font-bold text-foreground">
-              {fmtDollars(data?.week.revenue ?? 0)}
+        <DashStatCard scanLine>
+          <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-week">
+            <p className="text-xs text-muted-foreground">This Week</p>
+            {isLoading ? (
+              <Skeleton className="h-6 w-16" />
+            ) : (
+              <p className="text-xl font-bold text-foreground">
+                {fmtDollars(data?.week.revenue ?? 0)}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {isLoading ? "—" : `${data?.week.actions ?? 0} actions tracked`}
             </p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {isLoading ? "—" : `${data?.week.actions ?? 0} actions tracked`}
-          </p>
-        </Card>
+          </Card>
+        </DashStatCard>
 
         {/* This Month */}
-        <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-month">
-          <p className="text-xs text-muted-foreground">This Month</p>
-          {isLoading ? (
-            <Skeleton className="h-6 w-16" />
-          ) : (
-            <p className="text-xl font-bold text-primary">
-              {fmtDollars(data?.month.revenue ?? 0)}
+        <DashStatCard scanLine>
+          <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-month">
+            <p className="text-xs text-muted-foreground">This Month</p>
+            {isLoading ? (
+              <Skeleton className="h-6 w-16" />
+            ) : (
+              <p className="text-xl font-bold text-primary">
+                {fmtDollars(data?.month.revenue ?? 0)}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {isLoading ? "—" : data?.month.avgPerAction && data.month.wonActions > 0
+                ? `avg ${fmtDollars(data.month.avgPerAction)}/win`
+                : `${data?.month.actions ?? 0} actions`}
             </p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {isLoading ? "—" : data?.month.avgPerAction && data.month.wonActions > 0
-              ? `avg ${fmtDollars(data.month.avgPerAction)}/win`
-              : `${data?.month.actions ?? 0} actions`}
-          </p>
-        </Card>
-      </div>
+          </Card>
+        </DashStatCard>
+      </DashStaggerList>
 
       {/* Impact Feed */}
       {!isLoading && !hasAnyRevenue && (
@@ -851,51 +872,65 @@ export default function BusinessCommandCenterPage() {
   return (
     <div className="space-y-5 pb-24 sm:pb-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-command-center-title">Today's Command Center</h1>
-          <p className="text-sm text-muted-foreground">
-            {format(new Date(), "EEEE, MMMM d")} · {data.daysRemainingInMonth} days left this month
-          </p>
+      <DashPageHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-command-center-title">Today's Command Center</h1>
+            <p className="text-sm text-muted-foreground">
+              {format(new Date(), "EEEE, MMMM d")} · {data.daysRemainingInMonth} days left this month
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="shrink-0"
+            data-testid="button-refresh-command-center"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isRefetching}
-          className="shrink-0"
-          data-testid="button-refresh-command-center"
-        >
-          <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
-        </Button>
-      </div>
+      </DashPageHeader>
 
       {/* ─── Trigger System Alerts ────────────────────────────────────────── */}
-      <TriggerAlertsPanel />
+      <DashAlertReveal>
+        <TriggerAlertsPanel />
+      </DashAlertReveal>
 
       {/* ─── AI Revenue Outcome Engine ────────────────────────────────────── */}
-      <AiRevenuePanel />
+      <DashSectionReveal>
+        <AiRevenuePanel />
+      </DashSectionReveal>
 
       {/* ─── Global Priority Engine ───────────────────────────────────────── */}
-      <GlobalPriorityPanel />
+      <DashSectionReveal delay={0.04}>
+        <GlobalPriorityPanel />
+      </DashSectionReveal>
 
       {/* ─── Revenue Snapshot ─────────────────────────────────────────────── */}
       <section>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Revenue Snapshot</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <Card className="p-4 space-y-1" data-testid="card-revenue-today">
-            <p className="text-xs text-muted-foreground">Booked Today</p>
-            <p className="text-xl font-bold text-foreground">{fmt$(data.todayRevenueCents)}</p>
-          </Card>
-          <Card className="p-4 space-y-1" data-testid="card-open-slot-value">
-            <p className="text-xs text-muted-foreground">Open Slot Value Today</p>
-            <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{fmt$(data.openSlotValueTodayCents)}</p>
-          </Card>
-          <Card className="p-4 space-y-1 col-span-2 sm:col-span-1" data-testid="card-month-revenue">
-            <p className="text-xs text-muted-foreground">Month to Date</p>
-            <p className="text-xl font-bold">{fmt$(data.monthRevenueCents)}</p>
-          </Card>
-        </div>
+        <DashStaggerList className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <DashStatCard scanLine>
+            <Card className="p-4 space-y-1" data-testid="card-revenue-today">
+              <p className="text-xs text-muted-foreground">Booked Today</p>
+              <p className="text-xl font-bold text-foreground">{fmt$(data.todayRevenueCents)}</p>
+            </Card>
+          </DashStatCard>
+          <DashStatCard scanLine>
+            <Card className="p-4 space-y-1" data-testid="card-open-slot-value">
+              <p className="text-xs text-muted-foreground">Open Slot Value Today</p>
+              <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{fmt$(data.openSlotValueTodayCents)}</p>
+            </Card>
+          </DashStatCard>
+          <DashStatCard className="col-span-2 sm:col-span-1" scanLine>
+            <Card className="p-4 space-y-1" data-testid="card-month-revenue">
+              <p className="text-xs text-muted-foreground">Month to Date</p>
+              <p className="text-xl font-bold">{fmt$(data.monthRevenueCents)}</p>
+            </Card>
+          </DashStatCard>
+        </DashStaggerList>
 
         {hasGoal ? (
           <Card className="p-4 mt-3 space-y-3" data-testid="card-revenue-goal">
@@ -933,6 +968,7 @@ export default function BusinessCommandCenterPage() {
       {data.bestAction ? (
         <section>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Best Action Today</h2>
+          <DashPriorityCard>
           <Card className="p-4 border-primary/40 bg-primary/5 dark:bg-primary/10" data-testid="card-best-action">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 rounded-full bg-primary/20 p-2 shrink-0">
@@ -969,6 +1005,7 @@ export default function BusinessCommandCenterPage() {
               </Button>
             </div>
           </Card>
+          </DashPriorityCard>
         </section>
       ) : null}
 
@@ -987,7 +1024,8 @@ export default function BusinessCommandCenterPage() {
         ) : (
           <div className="space-y-2" data-testid="list-schedule-gaps">
             {allOpenSlots.slice(0, 8).map((slot, i) => (
-              <Card key={`${slot.startISO}-${i}`} className="p-3 flex items-center gap-3" data-testid={`card-slot-${i}`}>
+              <DashActionRow key={`${slot.startISO}-${i}`}>
+              <Card className="p-3 flex items-center gap-3" data-testid={`card-slot-${i}`}>
                 <div className="rounded-lg bg-orange-500/10 p-2 shrink-0">
                   <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                 </div>
@@ -1011,6 +1049,7 @@ export default function BusinessCommandCenterPage() {
                   </Button>
                 </div>
               </Card>
+              </DashActionRow>
             ))}
           </div>
         )}
@@ -1029,7 +1068,8 @@ export default function BusinessCommandCenterPage() {
         ) : (
           <div className="space-y-2" data-testid="list-client-opportunities">
             {data.clientOpportunities.slice(0, 8).map((opp, i) => (
-              <Card key={`${opp.clientId}-${opp.type}-${i}`} className="p-3 flex items-start gap-3" data-testid={`card-opportunity-${i}`}>
+              <DashActionRow key={`${opp.clientId}-${opp.type}-${i}`}>
+              <Card className="p-3 flex items-start gap-3" data-testid={`card-opportunity-${i}`}>
                 <div className={`mt-0.5 shrink-0 ${urgencyColor(opp.urgency)}`}>
                   <AlertTriangle className="h-4 w-4" />
                 </div>
@@ -1053,6 +1093,7 @@ export default function BusinessCommandCenterPage() {
                   </Button>
                 </div>
               </Card>
+              </DashActionRow>
             ))}
           </div>
         )}
@@ -1064,24 +1105,32 @@ export default function BusinessCommandCenterPage() {
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Team Training Pipeline</h2>
           <Badge variant="outline" className="text-xs text-muted-foreground">Potential — not booked</Badge>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-          <Card className="p-3 text-center" data-testid="card-pipeline-total">
-            <p className="text-lg font-bold">{data.teamPipeline.totalProspects}</p>
-            <p className="text-xs text-muted-foreground">Total Leads</p>
-          </Card>
-          <Card className="p-3 text-center" data-testid="card-pipeline-highconf">
-            <p className="text-lg font-bold text-primary">{data.teamPipeline.highConfidenceLeads}</p>
-            <p className="text-xs text-muted-foreground">High Confidence</p>
-          </Card>
-          <Card className="p-3 text-center" data-testid="card-pipeline-drafts">
-            <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{data.teamPipeline.draftsAwaitingApproval}</p>
-            <p className="text-xs text-muted-foreground">Drafts Pending</p>
-          </Card>
-          <Card className="p-3 text-center" data-testid="card-pipeline-replies">
-            <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{data.teamPipeline.repliesNeedingFollowUp}</p>
-            <p className="text-xs text-muted-foreground">Replies</p>
-          </Card>
-        </div>
+        <DashStaggerList className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+          <DashStatCard>
+            <Card className="p-3 text-center" data-testid="card-pipeline-total">
+              <p className="text-lg font-bold">{data.teamPipeline.totalProspects}</p>
+              <p className="text-xs text-muted-foreground">Total Leads</p>
+            </Card>
+          </DashStatCard>
+          <DashStatCard>
+            <Card className="p-3 text-center" data-testid="card-pipeline-highconf">
+              <p className="text-lg font-bold text-primary">{data.teamPipeline.highConfidenceLeads}</p>
+              <p className="text-xs text-muted-foreground">High Confidence</p>
+            </Card>
+          </DashStatCard>
+          <DashStatCard>
+            <Card className="p-3 text-center" data-testid="card-pipeline-drafts">
+              <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{data.teamPipeline.draftsAwaitingApproval}</p>
+              <p className="text-xs text-muted-foreground">Drafts Pending</p>
+            </Card>
+          </DashStatCard>
+          <DashStatCard>
+            <Card className="p-3 text-center" data-testid="card-pipeline-replies">
+              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{data.teamPipeline.repliesNeedingFollowUp}</p>
+              <p className="text-xs text-muted-foreground">Replies</p>
+            </Card>
+          </DashStatCard>
+        </DashStaggerList>
 
         {data.teamPipeline.estimatedPipelineValueCents > 0 && (
           <Card className="p-3 mb-3 flex items-center gap-2" data-testid="card-pipeline-value">
@@ -1160,7 +1209,7 @@ export default function BusinessCommandCenterPage() {
       {/* ─── Agent Quick Actions ──────────────────────────────────────────── */}
       <section>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Agent Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <DashQuickActionGrid className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {[
             { label: "What should I do today?", icon: Flame, msg: "What should I do today to grow my revenue and fill my schedule?" },
             { label: "Fill open slots", icon: Calendar, msg: "Help me fill my open schedule slots for today and tomorrow." },
@@ -1169,18 +1218,19 @@ export default function BusinessCommandCenterPage() {
             { label: "Follow up with replies", icon: Users, msg: "Show me team training prospects who replied and need follow-up." },
             { label: "Show revenue gap", icon: TrendingUp, msg: "What is my current revenue gap and what's the fastest way to close it?" },
           ].map((action, i) => (
-            <Button
-              key={action.label}
-              variant="outline"
-              className="h-auto py-3 flex flex-col items-center gap-1.5 text-center"
-              onClick={() => openAgentWith(action.msg)}
-              data-testid={`button-quick-action-${i}`}
-            >
-              <action.icon className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs leading-tight">{action.label}</span>
-            </Button>
+            <DashQuickActionItem key={action.label}>
+              <Button
+                variant="outline"
+                className="w-full h-auto py-3 flex flex-col items-center gap-1.5 text-center"
+                onClick={() => openAgentWith(action.msg)}
+                data-testid={`button-quick-action-${i}`}
+              >
+                <action.icon className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs leading-tight">{action.label}</span>
+              </Button>
+            </DashQuickActionItem>
           ))}
-        </div>
+        </DashQuickActionGrid>
       </section>
 
       {/* ─── Sticky bottom agent button (mobile) ─────────────────────────── */}
