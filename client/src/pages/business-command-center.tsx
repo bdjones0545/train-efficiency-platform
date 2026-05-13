@@ -249,6 +249,598 @@ type CommandCenterSummary = {
   totalPending: number;
 };
 
+// ─── Daily Operator Mode Types ────────────────────────────────────────────────
+
+type ChecklistTask = {
+  id: string;
+  rank: number;
+  category: "revenue" | "churn_prevention" | "schedule_gap" | "lead_follow_up" | "client_success";
+  title: string;
+  reason: string;
+  expectedImpact: number;
+  source: "brain" | "revenue_agent";
+  sourceId: string;
+  entityType: string | null;
+  entityId: string | null;
+  entityName: string | null;
+  deepLinkType: string | null;
+  deepLinkUrl: string | null;
+  deepLinkLabel: string | null;
+  status: "pending" | "done" | "dismissed";
+  priorityScore: number;
+  crossAgent: boolean;
+  severity: string;
+};
+
+type StartMyDayResult = {
+  tasks: ChecklistTask[];
+  totalGenerated: number;
+  healthScore: number | null;
+  generatedAt: string;
+};
+
+type DayReview = {
+  tasksCompleted: number;
+  revenueInfluenced: number;
+  followUpsSent: number;
+  clientsSaved: number;
+  dealsAdvanced: number;
+  missedOpportunities: number;
+  completedItems: { title: string; category: string; impact: number }[];
+};
+
+type OperatorScore = {
+  todayScore: number;
+  streakDays: number;
+  actionsHandledToday: number;
+  totalActionsToday: number;
+};
+
+// ─── Category config ──────────────────────────────────────────────────────────
+
+const CATEGORY_CONFIG = {
+  revenue: {
+    label: "Revenue Action",
+    icon: DollarSign,
+    color: "text-emerald-600 dark:text-emerald-400",
+    bg: "bg-emerald-500/15",
+    border: "border-emerald-500/30",
+  },
+  churn_prevention: {
+    label: "Prevent Churn",
+    icon: Shield,
+    color: "text-red-600 dark:text-red-400",
+    bg: "bg-red-500/15",
+    border: "border-red-500/30",
+  },
+  schedule_gap: {
+    label: "Fill Schedule",
+    icon: Calendar,
+    color: "text-blue-600 dark:text-blue-400",
+    bg: "bg-blue-500/15",
+    border: "border-blue-500/30",
+  },
+  lead_follow_up: {
+    label: "Follow Up Lead",
+    icon: Building2,
+    color: "text-purple-600 dark:text-purple-400",
+    bg: "bg-purple-500/15",
+    border: "border-purple-500/30",
+  },
+  client_success: {
+    label: "Client Success",
+    icon: Users,
+    color: "text-cyan-600 dark:text-cyan-400",
+    bg: "bg-cyan-500/15",
+    border: "border-cyan-500/30",
+  },
+} as const;
+
+// ─── Operator Score Bar ────────────────────────────────────────────────────────
+
+function OperatorScoreBar() {
+  const { data, isLoading } = useQuery<OperatorScore>({
+    queryKey: ["/api/admin/operator-score"],
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  if (isLoading || !data) return null;
+
+  const { todayScore, streakDays, actionsHandledToday, totalActionsToday } = data;
+
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-muted/50 border border-border/60"
+      data-testid="card-operator-score"
+    >
+      {/* Streak */}
+      {streakDays >= 1 && (
+        <div className="flex items-center gap-1 shrink-0">
+          <Flame className="h-4 w-4 text-orange-500" />
+          <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{streakDays}</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">day streak</span>
+        </div>
+      )}
+
+      {/* Score bar */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-muted-foreground">
+            {actionsHandledToday}/{totalActionsToday} tasks handled today
+          </span>
+          <span className="text-xs font-semibold text-foreground">{todayScore}%</span>
+        </div>
+        <Progress value={todayScore} className="h-1.5" data-testid="progress-operator-score" />
+      </div>
+
+      {/* Score label */}
+      <div className="shrink-0 text-right">
+        <p className={`text-sm font-bold ${
+          todayScore >= 80 ? "text-emerald-600 dark:text-emerald-400" :
+          todayScore >= 50 ? "text-yellow-600 dark:text-yellow-400" :
+          "text-muted-foreground"
+        }`} data-testid="text-operator-score">
+          {todayScore >= 80 ? "Crushing it" : todayScore >= 50 ? "On track" : todayScore > 0 ? "Getting started" : "Ready to go"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Day Review Panel ─────────────────────────────────────────────────────────
+
+function DayReviewPanel() {
+  const { data, isLoading } = useQuery<DayReview>({
+    queryKey: ["/api/admin/day-review"],
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  if (isLoading) return <Skeleton className="h-40 rounded-xl" />;
+  if (!data) return null;
+
+  const { tasksCompleted, revenueInfluenced, followUpsSent, clientsSaved, dealsAdvanced, missedOpportunities, completedItems } = data;
+
+  const stats = [
+    { label: "Tasks Done", value: tasksCompleted, icon: CheckCircle, color: "text-emerald-600 dark:text-emerald-400" },
+    { label: "Revenue Influenced", value: revenueInfluenced > 0 ? `$${revenueInfluenced.toLocaleString()}` : "—", icon: DollarSign, color: "text-emerald-600 dark:text-emerald-400" },
+    { label: "Follow-ups Sent", value: followUpsSent, icon: Send, color: "text-blue-600 dark:text-blue-400" },
+    { label: "Clients Saved", value: clientsSaved, icon: Shield, color: "text-purple-600 dark:text-purple-400" },
+    { label: "Deals Advanced", value: dealsAdvanced, icon: TrendingUp, color: "text-primary" },
+    { label: "Missed Opps", value: missedOpportunities, icon: AlertTriangle, color: missedOpportunities > 0 ? "text-orange-500" : "text-muted-foreground" },
+  ];
+
+  return (
+    <div className="space-y-4" data-testid="section-day-review">
+      <div className="grid grid-cols-3 gap-2">
+        {stats.map((s, i) => (
+          <Card key={i} className="p-3 text-center" data-testid={`card-review-stat-${i}`}>
+            <s.icon className={`h-4 w-4 mx-auto mb-1 ${s.color}`} />
+            <p className="text-lg font-bold">{s.value}</p>
+            <p className="text-[10px] text-muted-foreground leading-tight">{s.label}</p>
+          </Card>
+        ))}
+      </div>
+
+      {completedItems.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Completed Today</p>
+          <div className="space-y-1.5">
+            {completedItems.map((item, i) => {
+              const cfg = CATEGORY_CONFIG[item.category as keyof typeof CATEGORY_CONFIG] ?? CATEGORY_CONFIG.revenue;
+              const Icon = cfg.icon;
+              return (
+                <div key={i} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-muted/40" data-testid={`row-completed-${i}`}>
+                  <Icon className={`h-3.5 w-3.5 shrink-0 ${cfg.color}`} />
+                  <p className="text-xs flex-1 min-w-0 truncate">{item.title}</p>
+                  {item.impact > 0 && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium shrink-0">
+                      ${item.impact.toLocaleString()}
+                    </p>
+                  )}
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tasksCompleted === 0 && (
+        <Card className="p-4 text-center border-dashed" data-testid="card-review-empty">
+          <p className="text-sm text-muted-foreground">No tasks completed yet today.</p>
+          <p className="text-xs text-muted-foreground mt-1">Complete actions from the checklist to see your impact here.</p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Daily Operator Mode ──────────────────────────────────────────────────────
+
+function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => void }) {
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const [showReview, setShowReview] = useState(false);
+
+  // Restore checklist from sessionStorage (same-day only)
+  const [tasks, setTasks] = useState<ChecklistTask[]>(() => {
+    try {
+      const stored = sessionStorage.getItem("daily_checklist");
+      if (stored) {
+        const p = JSON.parse(stored);
+        if (p.date === new Date().toISOString().slice(0, 10)) return p.tasks;
+      }
+    } catch {}
+    return [];
+  });
+
+  const [localStatus, setLocalStatus] = useState<Record<string, "pending" | "done" | "dismissed">>(() => {
+    try {
+      const stored = sessionStorage.getItem("daily_checklist_status");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return {};
+  });
+
+  function persistStatus(newStatus: Record<string, "pending" | "done" | "dismissed">) {
+    setLocalStatus(newStatus);
+    sessionStorage.setItem("daily_checklist_status", JSON.stringify(newStatus));
+  }
+
+  const startMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/start-my-day").then(r => r.json()),
+    onSuccess: (data: StartMyDayResult) => {
+      setTasks(data.tasks);
+      sessionStorage.setItem("daily_checklist", JSON.stringify({
+        date: new Date().toISOString().slice(0, 10),
+        tasks: data.tasks,
+      }));
+      sessionStorage.setItem("daily_checklist_status", JSON.stringify({}));
+      setLocalStatus({});
+      toast({
+        title: `Your day is ready`,
+        description: `${data.tasks.length} prioritized actions · Health score ${data.healthScore ?? "—"}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/operator-score"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/day-review"] });
+    },
+    onError: (e: Error) => toast({ title: "Analysis failed", description: e.message, variant: "destructive" }),
+  });
+
+  const executeBrainMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => r.json()),
+    onSuccess: (_, id) => {
+      const ns = { ...localStatus, [id]: "done" as const };
+      persistStatus(ns);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/operator-score"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/day-review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+    },
+  });
+
+  const dismissBrainMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/dismiss`).then(r => r.json()),
+    onSuccess: (_, id) => {
+      const ns = { ...localStatus, [id]: "dismissed" as const };
+      persistStatus(ns);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/operator-score"] });
+    },
+  });
+
+  const executeRevenueMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => r.json()),
+    onSuccess: (_, id) => {
+      const ns = { ...localStatus, [id]: "done" as const };
+      persistStatus(ns);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/operator-score"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/day-review"] });
+    },
+  });
+
+  const dismissRevenueMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`).then(r => r.json()),
+    onSuccess: (_, id) => {
+      const ns = { ...localStatus, [id]: "dismissed" as const };
+      persistStatus(ns);
+    },
+  });
+
+  function handleDone(task: ChecklistTask) {
+    if (task.source === "brain") executeBrainMutation.mutate(task.id);
+    else executeRevenueMutation.mutate(task.id);
+  }
+
+  function handleDismiss(task: ChecklistTask) {
+    if (task.source === "brain") dismissBrainMutation.mutate(task.id);
+    else dismissRevenueMutation.mutate(task.id);
+  }
+
+  function handleNavigate(task: ChecklistTask) {
+    if (!task.deepLinkUrl) { openAgentWith(`Help me with: ${task.title}`); return; }
+    if (task.deepLinkType === "deal" && task.entityId) sessionStorage.setItem("open_deal_id", task.entityId);
+    if (task.deepLinkType === "lead" && task.entityId) sessionStorage.setItem("open_lead_id", task.entityId);
+    if (task.deepLinkType === "client" && task.entityId) sessionStorage.setItem("open_client_id", task.entityId);
+    setLocation(task.deepLinkUrl);
+  }
+
+  const isRunning = startMutation.isPending;
+  const hasTasks = tasks.length > 0;
+  const visibleTasks = tasks.filter(t => (localStatus[t.id] ?? t.status) !== "dismissed");
+  const doneTasks = visibleTasks.filter(t => (localStatus[t.id] ?? t.status) === "done");
+  const pendingTasks = visibleTasks.filter(t => (localStatus[t.id] ?? t.status) === "pending");
+  const completionPct = hasTasks ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
+
+  return (
+    <section data-testid="section-daily-operator-mode" className="space-y-4">
+      {/* ─── Start My Day Hero Button ─────────────────────────── */}
+      {!hasTasks ? (
+        <Card
+          className="p-5 border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 to-transparent"
+          data-testid="card-start-my-day-empty"
+        >
+          <div className="text-center space-y-3">
+            <div className="inline-flex rounded-full bg-primary/10 p-3 mb-1">
+              <Brain className="h-7 w-7 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">Start Your Day</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Run a full analysis across all agents — get your ranked execution checklist in seconds.
+              </p>
+            </div>
+            <Button
+              size="lg"
+              className="w-full sm:w-auto px-8 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+              onClick={() => startMutation.mutate()}
+              disabled={isRunning}
+              data-testid="button-start-my-day"
+            >
+              {isRunning ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Analyzing your business…
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Start My Day
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Runs: Brain Analysis · Revenue Agent · Retention Scan · Schedule Gaps · Lead Follow-ups
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <>
+          {/* ─── Header row with score + refresh ─────────────── */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Brain className="h-4 w-4 text-primary shrink-0" />
+              <h2 className="text-sm font-semibold text-foreground">Today's Execution Checklist</h2>
+              <Badge
+                className={`text-xs py-0 px-1.5 ${
+                  completionPct === 100 ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" :
+                  completionPct > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                }`}
+                data-testid="badge-completion"
+              >
+                {doneTasks.length}/{tasks.length} done
+              </Badge>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs text-muted-foreground"
+                onClick={() => setShowReview(v => !v)}
+                data-testid="button-toggle-review"
+              >
+                {showReview ? <Brain className="h-3.5 w-3.5 mr-1" /> : <BarChart3 className="h-3.5 w-3.5 mr-1" />}
+                {showReview ? "Checklist" : "Day Review"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs text-muted-foreground"
+                onClick={() => startMutation.mutate()}
+                disabled={isRunning}
+                data-testid="button-restart-analysis"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isRunning ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
+          </div>
+
+          {/* ─── Completion progress ──────────────────────────── */}
+          {hasTasks && (
+            <div className="space-y-1">
+              <Progress value={completionPct} className="h-1.5" data-testid="progress-checklist" />
+              {completionPct === 100 && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium text-center">
+                  All tasks done! Great work today.
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ─── Operator Score Bar ───────────────────────────────── */}
+      {hasTasks && <OperatorScoreBar />}
+
+      {/* ─── Day Review Toggle ────────────────────────────────── */}
+      {showReview && hasTasks && (
+        <DashSectionReveal>
+          <div>
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <BarChart3 className="h-4 w-4" /> What Happened Today
+            </h3>
+            <DayReviewPanel />
+          </div>
+        </DashSectionReveal>
+      )}
+
+      {/* ─── Execution Checklist ─────────────────────────────── */}
+      {hasTasks && !showReview && (
+        <div className="space-y-2.5" data-testid="list-execution-checklist">
+          {pendingTasks.map((task) => {
+            const cfg = CATEGORY_CONFIG[task.category] ?? CATEGORY_CONFIG.revenue;
+            const Icon = cfg.icon;
+            const isPending = (localStatus[task.id] ?? task.status) === "pending";
+
+            return (
+              <DashStaggerItem key={task.id}>
+                <Card
+                  className={`p-4 border transition-all ${
+                    !isPending ? "opacity-60 bg-muted/30" :
+                    task.severity === "critical" ? "border-red-500/30 bg-red-500/3" :
+                    task.severity === "high" ? "border-orange-500/30 bg-orange-500/3" :
+                    "border-border"
+                  }`}
+                  data-testid={`card-checklist-task-${task.rank}`}
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Rank + category */}
+                    <div className="flex flex-col items-center gap-1 shrink-0 pt-0.5">
+                      <div className="text-xs font-black text-muted-foreground/60 leading-none w-5 text-center">
+                        {task.rank}
+                      </div>
+                      <div className={`rounded-full p-1.5 ${cfg.bg}`}>
+                        <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
+                      </div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start gap-2 flex-wrap mb-0.5">
+                        <Badge className={`text-[10px] px-1.5 py-0 border ${cfg.border} ${cfg.bg} ${cfg.color}`}>
+                          {cfg.label}
+                        </Badge>
+                        {task.crossAgent && (
+                          <Badge className="text-[10px] px-1 py-0 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+                            <Sparkles className="h-2.5 w-2.5 mr-0.5" /> Cross-Agent
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm font-semibold leading-snug" data-testid={`text-task-title-${task.rank}`}>
+                        {task.title}
+                      </p>
+                      {task.entityName && (
+                        <p className="text-xs text-muted-foreground mt-0.5">→ {task.entityName}</p>
+                      )}
+                      {task.reason && (
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed line-clamp-2">
+                          {task.reason}
+                        </p>
+                      )}
+                      {task.expectedImpact > 0 && (
+                        <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                          <DollarSign className="h-3 w-3" />
+                          ${task.expectedImpact.toLocaleString()} expected impact
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  {isPending && (
+                    <div className="flex gap-2 mt-3 pt-3 border-t border-border/50">
+                      <Button
+                        size="sm"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs"
+                        onClick={() => handleDone(task)}
+                        disabled={executeBrainMutation.isPending || executeRevenueMutation.isPending}
+                        data-testid={`button-done-task-${task.rank}`}
+                      >
+                        <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Done
+                      </Button>
+                      {task.deepLinkUrl && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-8 text-xs"
+                          onClick={() => handleNavigate(task)}
+                          data-testid={`button-open-task-${task.rank}`}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                          {task.deepLinkLabel ?? "Open"}
+                        </Button>
+                      )}
+                      {!task.deepLinkUrl && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-8 text-xs"
+                          onClick={() => openAgentWith(`Help me execute: ${task.title}. Context: ${task.reason}`)}
+                          data-testid={`button-ask-agent-task-${task.rank}`}
+                        >
+                          <Bot className="h-3.5 w-3.5 mr-1.5" /> Ask Agent
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-muted-foreground"
+                        onClick={() => handleDismiss(task)}
+                        data-testid={`button-dismiss-task-${task.rank}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Done overlay */}
+                  {!isPending && (
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/40">
+                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      <p className="text-xs text-muted-foreground">Handled</p>
+                    </div>
+                  )}
+                </Card>
+              </DashStaggerItem>
+            );
+          })}
+
+          {/* Completed tasks collapsed */}
+          {doneTasks.length > 0 && pendingTasks.length === 0 && (
+            <Card className="p-4 border-emerald-500/30 bg-emerald-500/5 text-center" data-testid="card-all-done">
+              <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+              <p className="text-sm font-semibold">All tasks complete!</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                You've handled every priority for today. Check the Day Review for your impact.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                onClick={() => setShowReview(true)}
+                data-testid="button-see-review"
+              >
+                <BarChart3 className="h-3.5 w-3.5 mr-1.5" /> See Day Review
+              </Button>
+            </Card>
+          )}
+
+          {doneTasks.length > 0 && pendingTasks.length > 0 && (
+            <div className="text-xs text-muted-foreground text-center py-1">
+              {doneTasks.length} completed · {pendingTasks.length} remaining
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Brain Brief Strip ────────────────────────────────────────────────────────
 
 function healthScoreColor(score: number | null) {
@@ -1495,8 +2087,13 @@ export default function BusinessCommandCenterPage() {
         </div>
       </DashPageHeader>
 
-      {/* ─── Business Brain Intelligence Strip ───────────────────────────── */}
+      {/* ─── Daily Operator Mode (Start My Day + Checklist) ──────────────── */}
       <DashSectionReveal>
+        <DailyOperatorMode openAgentWith={openAgentWith} />
+      </DashSectionReveal>
+
+      {/* ─── Business Brain Intelligence Strip ───────────────────────────── */}
+      <DashSectionReveal delay={0.01}>
         <BrainBriefStrip onRunBrain={handleRunBrain} />
       </DashSectionReveal>
 

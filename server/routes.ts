@@ -9601,6 +9601,263 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // ─── Daily Operator Mode ──────────────────────────────────────────────────
+
+  // POST /api/admin/start-my-day
+  // Runs all agents, returns a ranked daily execution checklist
+  app.post("/api/admin/start-my-day", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { runOrchestrator } = await import("./agents/executive-agent");
+      const brainResult = await runOrchestrator(orgId, "start_my_day");
+
+      const [brainRecs, revenueActionsRaw] = await Promise.all([
+        storage.getAgentRecommendations(orgId, "pending", 20),
+        (storage as any).getAgentActions(orgId, "pending"),
+      ]);
+
+      const ra: any[] = Array.isArray(revenueActionsRaw) ? revenueActionsRaw : [];
+
+      function toCategory(agentType: string, actionType: string): string {
+        if (agentType === "retention") return "churn_prevention";
+        if (agentType === "scheduling") return "schedule_gap";
+        if (agentType === "growth" || (actionType ?? "").includes("follow") || (actionType ?? "").includes("lead")) return "lead_follow_up";
+        if (agentType === "client_success") return "client_success";
+        return "revenue";
+      }
+
+      const allTasks: any[] = [];
+
+      for (const rec of brainRecs.slice(0, 15)) {
+        const et = rec.entityType as string | null;
+        let deepLinkType = null, deepLinkUrl = null, deepLinkLabel = null;
+        if (et === "client") { deepLinkType = "client"; deepLinkUrl = "/coach/users"; deepLinkLabel = "View Client"; }
+        else if (et === "deal") { deepLinkType = "deal"; deepLinkUrl = "/admin/team-training-deals"; deepLinkLabel = "Open Deal"; }
+        else if (et === "lead" || et === "prospect") { deepLinkType = "lead"; deepLinkUrl = "/admin/team-training-leads"; deepLinkLabel = "View Lead"; }
+        else if (et === "schedule") { deepLinkType = "schedule"; deepLinkUrl = "/command-center"; deepLinkLabel = "View Schedule"; }
+        allTasks.push({
+          id: rec.id,
+          category: toCategory(rec.agentType, rec.actionType ?? ""),
+          title: rec.title,
+          reason: rec.description ?? rec.reason ?? "",
+          expectedImpact: rec.estimatedImpact ?? 0,
+          source: "brain",
+          sourceId: rec.id,
+          entityType: et,
+          entityId: rec.entityId,
+          entityName: rec.entityName,
+          deepLinkType,
+          deepLinkUrl,
+          deepLinkLabel,
+          status: "pending",
+          priorityScore: rec.priorityScore ?? 50,
+          crossAgent: (rec.crossAgentTypes?.length ?? 0) > 0,
+          severity: rec.severity ?? "medium",
+        });
+      }
+
+      for (const action of ra.slice(0, 10)) {
+        let et: string | null = null, entityId = null, entityName = null;
+        let deepLinkType = null, deepLinkUrl = null, deepLinkLabel = null;
+        if (action.dealId) {
+          et = "deal"; entityId = action.dealId;
+          entityName = (action.metadata as any)?.prospectName ?? null;
+          deepLinkType = "deal"; deepLinkUrl = "/admin/team-training-deals"; deepLinkLabel = "Open Deal";
+        } else if (action.prospectId) {
+          et = "lead"; entityId = action.prospectId;
+          entityName = (action.metadata as any)?.prospectName ?? null;
+          deepLinkType = "lead"; deepLinkUrl = "/admin/team-training-leads"; deepLinkLabel = "View Lead";
+        }
+        allTasks.push({
+          id: action.id,
+          category: toCategory("revenue", action.actionType ?? ""),
+          title: action.reason ?? "Revenue opportunity",
+          reason: action.reason ?? "",
+          expectedImpact: action.estimatedValue ?? 0,
+          source: "revenue_agent",
+          sourceId: action.id,
+          entityType: et,
+          entityId,
+          entityName,
+          deepLinkType,
+          deepLinkUrl,
+          deepLinkLabel,
+          status: "pending",
+          priorityScore: action.priority ?? 50,
+          crossAgent: false,
+          severity: (action.priority ?? 50) >= 75 ? "high" : "medium",
+        });
+      }
+
+      allTasks.sort((a, b) => b.priorityScore - a.priorityScore);
+
+      // Category-balanced top 7
+      const categories = ["churn_prevention", "revenue", "schedule_gap", "lead_follow_up", "client_success"];
+      const balanced: any[] = [];
+      const used = new Set<string>();
+
+      for (const cat of categories) {
+        const best = allTasks.find(t => t.category === cat && !used.has(t.id));
+        if (best) { balanced.push(best); used.add(best.id); }
+      }
+      for (const t of allTasks) {
+        if (!used.has(t.id) && balanced.length < 7) {
+          balanced.push(t);
+          used.add(t.id);
+        }
+      }
+
+      balanced.forEach((t, i) => { t.rank = i + 1; });
+
+      res.json({
+        tasks: balanced,
+        totalGenerated: allTasks.length,
+        healthScore: brainResult.healthScore ?? null,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.error("[StartMyDay] Error:", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/admin/day-review
+  app.get("/api/admin/day-review", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { sql: sqlFn } = await import("drizzle-orm");
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+
+      const [brainDoneRaw, revDoneRaw, pendingRaw] = await Promise.all([
+        db.execute(sqlFn`
+          SELECT id, agent_type, title, action_type, estimated_impact
+          FROM agent_recommendations
+          WHERE org_id = ${orgId}
+            AND status = 'executed'
+            AND executed_at >= ${todayStart}
+            AND executed_at <= ${todayEnd}
+        `),
+        db.execute(sqlFn`
+          SELECT id, action_type, reason, estimated_value, outcome_value, deal_id, prospect_id
+          FROM revenue_agent_actions
+          WHERE org_id = ${orgId}
+            AND status = 'executed'
+            AND executed_at >= ${todayStart}
+            AND executed_at <= ${todayEnd}
+        `),
+        db.execute(sqlFn`
+          SELECT COUNT(*) as cnt
+          FROM agent_recommendations
+          WHERE org_id = ${orgId}
+            AND status = 'pending'
+            AND created_at >= ${todayStart}
+        `),
+      ]);
+
+      const brainDone = brainDoneRaw.rows as any[];
+      const revDone = revDoneRaw.rows as any[];
+
+      const tasksCompleted = brainDone.length + revDone.length;
+      const revenueInfluenced = revDone.reduce((s: number, a: any) => s + (a.outcome_value ?? a.estimated_value ?? 0), 0)
+        + brainDone.reduce((s: number, r: any) => s + (r.estimated_impact ?? 0), 0);
+      const followUpsSent = revDone.filter((a: any) => (a.action_type ?? "").includes("follow") || (a.action_type ?? "").includes("send")).length;
+      const clientsSaved = brainDone.filter((r: any) => r.agent_type === "retention" || r.agent_type === "client_success").length;
+      const dealsAdvanced = revDone.filter((a: any) => a.deal_id != null).length + brainDone.filter((r: any) => r.agent_type === "growth").length;
+      const missedOpportunities = parseInt((pendingRaw.rows[0] as any)?.cnt ?? "0");
+
+      const completedItems = [
+        ...brainDone.map((r: any) => ({
+          title: r.title,
+          category: r.agent_type === "retention" ? "churn_prevention" : r.agent_type === "growth" ? "lead_follow_up" : r.agent_type === "scheduling" ? "schedule_gap" : r.agent_type === "client_success" ? "client_success" : "revenue",
+          impact: r.estimated_impact ?? 0,
+        })),
+        ...revDone.map((a: any) => ({
+          title: a.reason ?? "Revenue action",
+          category: "revenue",
+          impact: a.outcome_value ?? a.estimated_value ?? 0,
+        })),
+      ];
+
+      res.json({ tasksCompleted, revenueInfluenced, followUpsSent, clientsSaved, dealsAdvanced, missedOpportunities, completedItems });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/admin/operator-score
+  app.get("/api/admin/operator-score", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { sql: sqlFn } = await import("drizzle-orm");
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+
+      const [handledRaw, totalRaw, streakRaw] = await Promise.all([
+        db.execute(sqlFn`
+          SELECT COUNT(*) as cnt FROM (
+            SELECT id FROM agent_recommendations
+              WHERE org_id = ${orgId} AND status IN ('executed','dismissed')
+                AND (executed_at >= ${todayStart} OR dismissed_at >= ${todayStart})
+            UNION ALL
+            SELECT id FROM revenue_agent_actions
+              WHERE org_id = ${orgId} AND status IN ('executed','dismissed')
+                AND (executed_at >= ${todayStart} OR dismissed_at >= ${todayStart})
+          ) t
+        `),
+        db.execute(sqlFn`
+          SELECT COUNT(*) as cnt FROM (
+            SELECT id FROM agent_recommendations WHERE org_id = ${orgId} AND created_at >= ${todayStart}
+            UNION ALL
+            SELECT id FROM revenue_agent_actions WHERE org_id = ${orgId} AND created_at >= ${todayStart}
+          ) t
+        `),
+        db.execute(sqlFn`
+          SELECT DISTINCT DATE(executed_at) as day FROM (
+            SELECT executed_at FROM agent_recommendations
+              WHERE org_id = ${orgId} AND status = 'executed' AND executed_at IS NOT NULL
+                AND executed_at >= NOW() - INTERVAL '30 days'
+            UNION ALL
+            SELECT executed_at FROM revenue_agent_actions
+              WHERE org_id = ${orgId} AND status = 'executed' AND executed_at IS NOT NULL
+                AND executed_at >= NOW() - INTERVAL '30 days'
+          ) t ORDER BY day DESC
+        `),
+      ]);
+
+      const handled = parseInt((handledRaw.rows[0] as any)?.cnt ?? "0");
+      const total = parseInt((totalRaw.rows[0] as any)?.cnt ?? "0");
+      const todayScore = total > 0 ? Math.min(100, Math.round((handled / total) * 100)) : 0;
+
+      const days = (streakRaw.rows as any[]).map((r: any) => {
+        const d = r.day;
+        if (d instanceof Date) return d.toISOString().slice(0, 10);
+        return String(d).slice(0, 10);
+      });
+
+      let streakDays = 0;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      if (days.includes(todayStr) || days.includes(yesterdayStr)) {
+        let checkDate = days.includes(todayStr) ? new Date() : new Date(Date.now() - 86400000);
+        for (let i = 0; i < 31; i++) {
+          const d = checkDate.toISOString().slice(0, 10);
+          if (days.includes(d)) { streakDays++; checkDate = new Date(checkDate.getTime() - 86400000); }
+          else break;
+        }
+      }
+
+      res.json({ todayScore, streakDays, actionsHandledToday: handled, totalActionsToday: total });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Start Business Brain cron
   const { startBusinessBrainCron } = await import("./agents/executive-agent");
   startBusinessBrainCron();
