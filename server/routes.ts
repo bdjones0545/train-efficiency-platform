@@ -8078,6 +8078,11 @@ Refine this email following the instruction above. Preserve the core message and
             outreachSequence,
           } as any);
         } catch {}
+        // Revenue Agent: attribute won outcome to any pending/executed actions
+        try {
+          const { attributeOutcomeToActions } = await import("./revenue-agent");
+          await attributeOutcomeToActions(profile.organizationId, deal.id, "won", updated?.finalValue ?? updated?.estimatedValue ?? 0);
+        } catch {}
       }
       if (req.body.status === "lost" && prevStatus !== "lost") {
         storage.createDealActivity({
@@ -8086,6 +8091,11 @@ Refine this email following the instruction above. Preserve the core message and
           activityType: "lost",
           description: "Deal marked as lost",
         }).catch(() => {});
+        // Revenue Agent: attribute lost outcome
+        try {
+          const { attributeOutcomeToActions } = await import("./revenue-agent");
+          await attributeOutcomeToActions(profile.organizationId, deal.id, "lost", 0);
+        } catch {}
       }
       res.json(updated);
     } catch (err: any) {
@@ -8546,7 +8556,158 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       // Update deal lastContactAt
       await storage.updateTeamTrainingDeal(deal.id, { lastContactAt: new Date() });
 
+      // Attribute outcome to any pending agent actions for this deal
+      const { attributeOutcomeToActions } = await import("./revenue-agent");
+      await attributeOutcomeToActions(profile.organizationId, deal.id, meetingBooked ? "meeting" : "reply");
+
       res.json({ ok: true, meetingBooked });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Revenue Agent Routes ─────────────────────────────────────────────────────
+
+  // GET /api/admin/team-training/revenue-agent/brief
+  app.get("/api/admin/team-training/revenue-agent/brief", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const [deals, prospects] = await Promise.all([
+        storage.getTeamTrainingDeals(orgId),
+        storage.getTeamTrainingProspects(orgId),
+      ]);
+      const { generateDailyBrief } = await import("./revenue-agent");
+      const brief = await generateDailyBrief(orgId, deals, prospects);
+      res.json(brief);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/team-training/revenue-agent/actions
+  app.get("/api/admin/team-training/revenue-agent/actions", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const status = (req.query.status as string) || undefined;
+      const actions = await storage.getAgentActions(profile.organizationId, status);
+      res.json(actions);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/team-training/revenue-agent/run — manual trigger
+  app.post("/api/admin/team-training/revenue-agent/run", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { runRevenueAgent } = await import("./revenue-agent");
+      const result = await runRevenueAgent(profile.organizationId, "manual");
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/team-training/revenue-agent/actions/:id/execute
+  app.post("/api/admin/team-training/revenue-agent/actions/:id/execute", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const action = await storage.updateAgentAction(req.params.id, {
+        status: "executed",
+        executedAt: new Date(),
+        acceptedAt: new Date(),
+      });
+      if (!action) return res.status(404).json({ message: "Action not found" });
+
+      // Log to deal activity if there's a deal
+      if (action.dealId) {
+        const actionLabels: Record<string, string> = {
+          send_followup: "Revenue Agent: follow-up queued via Priority Action Queue",
+          schedule_call: "Revenue Agent: call scheduled via Priority Action Queue",
+          mark_lost: "Revenue Agent: deal marked for review (stale)",
+          move_stage: "Revenue Agent: stage advance recommended",
+          re_engage: "Revenue Agent: re-engagement outreach queued",
+          create_deal: "Revenue Agent: deal creation triggered",
+        };
+        await storage.createDealActivity({
+          dealId: action.dealId,
+          organizationId: profile.organizationId,
+          activityType: "ai_action",
+          description: actionLabels[action.actionType] ?? `Revenue Agent: ${action.actionType} executed`,
+          metadata: { agentActionId: action.id, reason: action.reason },
+        });
+        await storage.updateTeamTrainingDeal(action.dealId, { lastActivityAt: new Date() });
+      }
+
+      res.json({ ok: true, action });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/team-training/revenue-agent/actions/:id/dismiss
+  app.post("/api/admin/team-training/revenue-agent/actions/:id/dismiss", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const action = await storage.updateAgentAction(req.params.id, {
+        status: "dismissed",
+        dismissedAt: new Date(),
+      });
+      if (!action) return res.status(404).json({ message: "Action not found" });
+      res.json({ ok: true, action });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/team-training/revenue-agent/settings
+  app.get("/api/admin/team-training/revenue-agent/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const settings = await storage.getAgentSettings(profile.organizationId);
+      res.json(settings ?? { autoSaveDrafts: false, autoScheduleFollowUp: false, autoLabelStale: false, dailyRunEnabled: true, dailyRunHour: 8, lastRunAt: null });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH /api/admin/team-training/revenue-agent/settings
+  app.patch("/api/admin/team-training/revenue-agent/settings", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { autoSaveDrafts, autoScheduleFollowUp, autoLabelStale, dailyRunEnabled, dailyRunHour } = req.body;
+      const settings = await storage.upsertAgentSettings(profile.organizationId, {
+        autoSaveDrafts, autoScheduleFollowUp, autoLabelStale, dailyRunEnabled, dailyRunHour,
+      });
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/team-training/revenue-agent/runs — recent agent run history
+  app.get("/api/admin/team-training/revenue-agent/runs", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const runs = await storage.getAgentRuns(profile.organizationId, 5);
+      res.json(runs);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -9222,6 +9383,19 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   const { initializeFollowUpCron } = await import("./email-agent/follow-up-cron");
   initializeFollowUpCron();
+
+  // Revenue Agent daily cron
+  const { startRevenueAgentCron } = await import("./revenue-agent");
+  startRevenueAgentCron(async () => {
+    try {
+      const { db } = await import("./db");
+      const { organizations } = await import("@shared/schema");
+      const orgs = await db.select({ id: organizations.id }).from(organizations);
+      return orgs.map((o: any) => o.id);
+    } catch {
+      return [];
+    }
+  });
 
   startWeeklyReminderJob();
   startSessionReminderJob();

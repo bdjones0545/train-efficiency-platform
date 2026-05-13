@@ -337,6 +337,13 @@ export interface IStorage {
   getConversionAnalytics(orgId: string): Promise<any>;
   markOutreachResponse(outreachDraftId: string, meetingBooked?: boolean): Promise<void>;
 
+  // Revenue Agent
+  getAgentSettings(orgId: string): Promise<import("@shared/schema").RevenueAgentSettings | undefined>;
+  upsertAgentSettings(orgId: string, data: Partial<import("@shared/schema").InsertRevenueAgentSettings>): Promise<import("@shared/schema").RevenueAgentSettings>;
+  getAgentActions(orgId: string, status?: string): Promise<import("@shared/schema").RevenueAgentAction[]>;
+  updateAgentAction(id: string, data: Partial<import("@shared/schema").RevenueAgentAction>): Promise<import("@shared/schema").RevenueAgentAction | undefined>;
+  getAgentRuns(orgId: string, limit?: number): Promise<import("@shared/schema").RevenueAgentRun[]>;
+
   // Team Training Lead Settings
   getTeamLeadSettings(orgId: string): Promise<import("@shared/schema").TeamTrainingLeadSettings | undefined>;
   upsertTeamLeadSettings(orgId: string, input: Partial<import("@shared/schema").InsertTeamTrainingLeadSettings>): Promise<import("@shared/schema").TeamTrainingLeadSettings>;
@@ -2585,6 +2592,45 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(dealActivities)
       .where(eq(dealActivities.dealId, dealId))
       .orderBy(desc(dealActivities.createdAt));
+  }
+
+  // ─── Revenue Agent ─────────────────────────────────────────────────────────
+  async getAgentSettings(orgId: string) {
+    const { revenueAgentSettings } = await import("@shared/schema");
+    const [row] = await db.select().from(revenueAgentSettings).where(eq(revenueAgentSettings.orgId, orgId)).limit(1);
+    return row;
+  }
+
+  async upsertAgentSettings(orgId: string, data: Partial<import("@shared/schema").InsertRevenueAgentSettings>) {
+    const { revenueAgentSettings } = await import("@shared/schema");
+    const [row] = await db.insert(revenueAgentSettings)
+      .values({ orgId, ...data } as any)
+      .onConflictDoUpdate({ target: revenueAgentSettings.orgId, set: { ...data, updatedAt: new Date() } as any })
+      .returning();
+    return row;
+  }
+
+  async getAgentActions(orgId: string, status?: string) {
+    const { revenueAgentActions } = await import("@shared/schema");
+    const { desc } = await import("drizzle-orm");
+    let q = db.select().from(revenueAgentActions).where(eq(revenueAgentActions.orgId, orgId)).$dynamic();
+    if (status) q = q.where(eq(revenueAgentActions.status, status)) as any;
+    return q.orderBy(desc(revenueAgentActions.priority), desc(revenueAgentActions.createdAt));
+  }
+
+  async updateAgentAction(id: string, data: Partial<import("@shared/schema").RevenueAgentAction>) {
+    const { revenueAgentActions } = await import("@shared/schema");
+    const [row] = await db.update(revenueAgentActions)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(revenueAgentActions.id, id))
+      .returning();
+    return row;
+  }
+
+  async getAgentRuns(orgId: string, limit = 10) {
+    const { revenueAgentRuns } = await import("@shared/schema");
+    const { desc } = await import("drizzle-orm");
+    return db.select().from(revenueAgentRuns).where(eq(revenueAgentRuns.orgId, orgId)).orderBy(desc(revenueAgentRuns.createdAt)).limit(limit);
   }
 
   async createDealRevenueAttribution(data: import("@shared/schema").InsertDealRevenueAttribution) {

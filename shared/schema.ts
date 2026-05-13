@@ -1021,3 +1021,63 @@ export const emailTriggerEvents = pgTable("email_trigger_events", {
 export const insertEmailTriggerEventSchema = createInsertSchema(emailTriggerEvents).omit({ id: true, createdAt: true, updatedAt: true });
 export type EmailTriggerEvent = typeof emailTriggerEvents.$inferSelect;
 export type InsertEmailTriggerEvent = z.infer<typeof insertEmailTriggerEventSchema>;
+
+// ─── Revenue Agent ─────────────────────────────────────────────────────────────
+export const revenueAgentActions = pgTable("revenue_agent_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  dealId: varchar("deal_id"),
+  prospectId: varchar("prospect_id"),
+  actionType: varchar("action_type").notNull(),
+  reason: text("reason").notNull(),
+  estimatedValue: integer("estimated_value").default(0),
+  confidence: integer("confidence").default(50),
+  priority: integer("priority").default(50),
+  status: varchar("status").notNull().default("pending"),
+  acceptedAt: timestamp("accepted_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  executedAt: timestamp("executed_at"),
+  outcomeType: varchar("outcome_type"),
+  outcomeValue: integer("outcome_value").default(0),
+  outcomeLoggedAt: timestamp("outcome_logged_at"),
+  metadata: jsonb("metadata").default({}),
+  agentRunId: varchar("agent_run_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type RevenueAgentAction = typeof revenueAgentActions.$inferSelect;
+export type InsertRevenueAgentAction = typeof revenueAgentActions.$inferInsert;
+
+export const revenueAgentSettings = pgTable("revenue_agent_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().unique(),
+  autoSaveDrafts: boolean("auto_save_drafts").default(false),
+  autoScheduleFollowUp: boolean("auto_schedule_follow_up").default(false),
+  autoLabelStale: boolean("auto_label_stale").default(false),
+  dailyRunEnabled: boolean("daily_run_enabled").default(true),
+  dailyRunHour: integer("daily_run_hour").default(8),
+  lastRunAt: timestamp("last_run_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type RevenueAgentSettings = typeof revenueAgentSettings.$inferSelect;
+export type InsertRevenueAgentSettings = typeof revenueAgentSettings.$inferInsert;
+
+export const revenueAgentRuns = pgTable("revenue_agent_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  triggeredBy: varchar("triggered_by").notNull().default("manual"),
+  actionsCreated: integer("actions_created").default(0),
+  draftsSaved: integer("drafts_saved").default(0),
+  followUpsScheduled: integer("follow_ups_scheduled").default(0),
+  staleLabeled: integer("stale_labeled").default(0),
+  status: varchar("status").notNull().default("running"),
+  completedAt: timestamp("completed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type RevenueAgentRun = typeof revenueAgentRuns.$inferSelect;
+export type InsertRevenueAgentRun = typeof revenueAgentRuns.$inferInsert;

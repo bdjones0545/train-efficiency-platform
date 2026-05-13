@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -18,6 +19,7 @@ import {
   Mail, MapPin, User, ArrowRight, Activity, Bell, TrendingDown,
   BarChart3, Award, Thermometer, ListFilter, SortAsc, Send, Smartphone,
   Lightbulb, RefreshCcw, ThumbsUp, Layers, BadgeCheck, Tag,
+  Bot, PlayCircle, Settings2, History, X, ChevronLeft, BookOpen, Cpu,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { TeamTrainingDeal, TeamTrainingProspect, DealActivity } from "@shared/schema";
@@ -1052,6 +1054,441 @@ function KanbanColumn({
   );
 }
 
+// ─── Revenue Agent Types ─────────────────────────────────────────────────────
+
+interface DailyBriefData {
+  followUpDueToday: { id: string; name: string; status: string; value: number; dueAt: string }[];
+  hotDeal: { id: string; name: string; value: number; probability: number; status: string } | null;
+  atRiskDeal: { id: string; name: string; value: number; inactiveDays: number; status: string } | null;
+  bestNextAction: string;
+  projectedRevenue: number;
+  wonThisMonth: number;
+  hotLeadsCount: number;
+  totalActive: number;
+}
+
+interface AgentAction {
+  id: string;
+  dealId?: string | null;
+  prospectId?: string | null;
+  actionType: string;
+  reason: string;
+  estimatedValue: number;
+  confidence: number;
+  priority: number;
+  status: string;
+  executedAt?: string | null;
+  dismissedAt?: string | null;
+  outcomeType?: string | null;
+  outcomeValue?: number;
+  metadata?: Record<string, any>;
+  createdAt: string;
+}
+
+interface AgentSettings {
+  autoSaveDrafts: boolean;
+  autoScheduleFollowUp: boolean;
+  autoLabelStale: boolean;
+  dailyRunEnabled: boolean;
+  dailyRunHour: number;
+  lastRunAt?: string | null;
+}
+
+const ACTION_TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string; bg: string }> = {
+  send_followup: { label: "Send Follow-Up", icon: Send, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30" },
+  schedule_call: { label: "Schedule Call", icon: Phone, color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30" },
+  mark_lost: { label: "Mark Lost", icon: XCircle, color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
+  move_stage: { label: "Advance Stage", icon: ArrowRight, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30" },
+  re_engage: { label: "Re-Engage", icon: RefreshCcw, color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-950/30" },
+  create_deal: { label: "Create Deal", icon: Plus, color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/30" },
+};
+
+const OUTCOME_CONFIG: Record<string, { label: string; color: string }> = {
+  reply: { label: "Got Reply", color: "text-blue-600" },
+  meeting: { label: "Meeting Booked", color: "text-purple-600" },
+  won: { label: "Deal Won", color: "text-green-600" },
+  lost: { label: "Deal Lost", color: "text-red-600" },
+  no_response: { label: "No Response", color: "text-muted-foreground" },
+};
+
+// ─── Daily Revenue Brief ─────────────────────────────────────────────────────
+
+function DailyRevenueBrief({ onRunAgent, isRunning }: { onRunAgent: () => void; isRunning: boolean }) {
+  const { data: brief, isLoading } = useQuery<DailyBriefData>({
+    queryKey: ["/api/admin/team-training/revenue-agent/brief"],
+    staleTime: 2 * 60 * 1000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="rounded-lg border bg-gradient-to-br from-slate-50/60 to-slate-100/30 dark:from-slate-900/40 dark:to-slate-800/20 p-4 space-y-3" data-testid="daily-brief-skeleton">
+        <div className="flex items-center gap-2">
+          <Bot className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">Revenue Agent</span>
+        </div>
+        <Skeleton className="h-6 w-3/4" />
+        <div className="grid grid-cols-3 gap-2">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (!brief) return null;
+
+  return (
+    <div className="rounded-lg border border-primary/20 bg-gradient-to-br from-primary/5 to-primary/[0.02] dark:from-primary/10 dark:to-primary/5 overflow-hidden" data-testid="daily-revenue-brief">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-primary/10">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded-md bg-primary/15 flex items-center justify-center">
+            <Bot className="h-3.5 w-3.5 text-primary" />
+          </div>
+          <span className="font-semibold text-sm">Daily Revenue Brief</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">· Autonomous Revenue Agent</span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+          onClick={onRunAgent}
+          disabled={isRunning}
+          data-testid="button-run-agent"
+        >
+          {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
+          {isRunning ? "Scanning..." : "Run Agent"}
+        </Button>
+      </div>
+
+      {/* Best Next Action */}
+      <div className="px-4 py-2.5 flex items-start gap-2 border-b border-primary/10 bg-primary/[0.03]">
+        <Zap className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+        <p className="text-sm font-medium text-foreground leading-snug">{brief.bestNextAction}</p>
+      </div>
+
+      {/* Key Numbers */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-y sm:divide-y-0 border-b border-primary/10">
+        {[
+          { label: "Follow-Ups Due", value: brief.followUpDueToday.length, icon: Bell, urgent: brief.followUpDueToday.length > 0, color: brief.followUpDueToday.length > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground" },
+          { label: "Active Deals", value: brief.totalActive, icon: Briefcase, urgent: false, color: "text-blue-600 dark:text-blue-400" },
+          { label: "Hot Leads", value: brief.hotLeadsCount, icon: Flame, urgent: brief.hotLeadsCount > 0, color: brief.hotLeadsCount > 0 ? "text-orange-600 dark:text-orange-400" : "text-muted-foreground" },
+          { label: "Proj. Revenue", value: `$${brief.projectedRevenue.toLocaleString()}`, icon: TrendingUp, urgent: false, color: "text-emerald-600 dark:text-emerald-400" },
+        ].map(({ label, value, icon: Icon, urgent, color }) => (
+          <div key={label} className="flex flex-col items-center justify-center py-3 px-2 text-center">
+            <Icon className={`h-3.5 w-3.5 mb-1 ${color}`} />
+            <p className={`text-lg font-bold leading-tight ${urgent ? color : "text-foreground"}`} data-testid={`brief-${label.toLowerCase().replace(/\s/g, "-")}`}>{value}</p>
+            <p className="text-xs text-muted-foreground leading-tight">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Hottest + At-Risk Deals */}
+      {(brief.hotDeal || brief.atRiskDeal) && (
+        <div className="px-4 py-2.5 flex flex-wrap gap-3">
+          {brief.hotDeal && (
+            <div className="flex items-center gap-2 text-xs" data-testid="brief-hot-deal">
+              <Flame className="h-3 w-3 text-orange-500 shrink-0" />
+              <span className="font-medium">{brief.hotDeal.name}</span>
+              <span className="text-muted-foreground">{brief.hotDeal.probability}% · ${brief.hotDeal.value.toLocaleString()}</span>
+              <Badge className="h-4 text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-0">Hottest</Badge>
+            </div>
+          )}
+          {brief.atRiskDeal && (
+            <div className="flex items-center gap-2 text-xs" data-testid="brief-at-risk-deal">
+              <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+              <span className="font-medium">{brief.atRiskDeal.name}</span>
+              <span className="text-muted-foreground">{brief.atRiskDeal.inactiveDays}d inactive · ${brief.atRiskDeal.value.toLocaleString()}</span>
+              <Badge className="h-4 text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-0">At Risk</Badge>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Priority Action Queue ────────────────────────────────────────────────────
+
+function PriorityActionQueue({
+  onNavigateToDeal,
+}: {
+  onNavigateToDeal?: (dealId: string) => void;
+}) {
+  const { toast } = useToast();
+  const [tab, setTab] = useState<"pending" | "history">("pending");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [localSettings, setLocalSettings] = useState<AgentSettings | null>(null);
+
+  const { data: pendingActions = [], isLoading: aLoading, refetch: refetchActions } = useQuery<AgentAction[]>({
+    queryKey: ["/api/admin/team-training/revenue-agent/actions", "pending"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/team-training/revenue-agent/actions?status=pending", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
+  const { data: historyActions = [], refetch: refetchHistory } = useQuery<AgentAction[]>({
+    queryKey: ["/api/admin/team-training/revenue-agent/actions", "history"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/team-training/revenue-agent/actions", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return (await res.json()).filter((a: AgentAction) => a.status !== "pending");
+    },
+    enabled: tab === "history",
+    staleTime: 60000,
+  });
+
+  const { data: settings } = useQuery<AgentSettings>({
+    queryKey: ["/api/admin/team-training/revenue-agent/settings"],
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (settings && !localSettings) setLocalSettings(settings);
+  }, [settings]);
+
+  const executeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      toast({ title: "Action executed", description: "Activity logged to the deal timeline." });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+      toast({ title: "Action dismissed" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const settingsMutation = useMutation({
+    mutationFn: async (data: Partial<AgentSettings>) => {
+      const res = await apiRequest("PATCH", "/api/admin/team-training/revenue-agent/settings", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/settings"] });
+      toast({ title: "Agent settings saved" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const handleSettingToggle = (key: keyof AgentSettings, value: boolean) => {
+    const updated = { ...localSettings, [key]: value } as AgentSettings;
+    setLocalSettings(updated);
+    settingsMutation.mutate({ [key]: value });
+  };
+
+  const confidenceColor = (c: number) => {
+    if (c >= 80) return "text-green-600 dark:text-green-400";
+    if (c >= 60) return "text-amber-600 dark:text-amber-400";
+    return "text-muted-foreground";
+  };
+
+  return (
+    <div className="rounded-lg border overflow-hidden" data-testid="priority-action-queue">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded-md bg-emerald-500/15 flex items-center justify-center">
+            <Cpu className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <span className="font-semibold text-sm">Priority Action Queue</span>
+          {pendingActions.length > 0 && (
+            <Badge className="h-5 text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-0" data-testid="badge-pending-count">
+              {pendingActions.length}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-md transition-colors ${tab === "pending" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setTab("pending")}
+            data-testid="tab-pending-actions"
+          >
+            <Zap className="h-3 w-3" /> Actions
+          </button>
+          <button
+            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-md transition-colors ${tab === "history" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setTab("history")}
+            data-testid="tab-action-history"
+          >
+            <History className="h-3 w-3" /> History
+          </button>
+          <button
+            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-md transition-colors ${settingsOpen ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setSettingsOpen(o => !o)}
+            data-testid="button-agent-settings"
+          >
+            <Settings2 className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      {settingsOpen && (
+        <div className="border-b bg-slate-50/60 dark:bg-slate-900/30 px-4 py-3 space-y-3" data-testid="agent-settings-panel">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Auto-Execution Settings</p>
+          <div className="space-y-2.5">
+            {[
+              { key: "autoSaveDrafts" as const, label: "Auto-save outreach drafts", description: "Agent pre-writes draft emails for follow-up actions" },
+              { key: "autoScheduleFollowUp" as const, label: "Auto-schedule follow-up reminders", description: "Automatically set follow-up dates on stale deals" },
+              { key: "autoLabelStale" as const, label: "Auto-label stale deals", description: "Append a stale note to deals inactive for 14+ days" },
+            ].map(({ key, label, description }) => (
+              <div key={key} className="flex items-center justify-between gap-3" data-testid={`setting-${key}`}>
+                <div>
+                  <p className="text-sm font-medium leading-tight">{label}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                </div>
+                <Switch
+                  checked={localSettings?.[key] ?? false}
+                  onCheckedChange={(v) => handleSettingToggle(key, v)}
+                  data-testid={`switch-${key}`}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground italic flex items-center gap-1">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            Messages are never sent automatically — every outreach requires manual confirmation.
+          </p>
+        </div>
+      )}
+
+      {/* Pending Actions */}
+      {tab === "pending" && (
+        <div data-testid="pending-actions-list">
+          {aLoading ? (
+            <div className="divide-y">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 m-3 rounded-lg" />)}
+            </div>
+          ) : pendingActions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center gap-2" data-testid="empty-action-queue">
+              <CheckCircle className="h-8 w-8 text-green-500/50" />
+              <p className="text-sm font-medium text-muted-foreground">No pending actions</p>
+              <p className="text-xs text-muted-foreground max-w-xs">Run the Revenue Agent to scan your pipeline and generate prioritized recommendations.</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {pendingActions.map((action) => {
+                const cfg = ACTION_TYPE_CONFIG[action.actionType] ?? ACTION_TYPE_CONFIG.send_followup;
+                const Icon = cfg.icon;
+                const dealName = (action.metadata as any)?.prospectName ?? (action.dealId ? `Deal ${action.dealId.slice(-6)}` : null);
+                return (
+                  <div key={action.id} className="px-4 py-3 flex items-start gap-3 hover:bg-muted/20 transition-colors" data-testid={`action-card-${action.id}`}>
+                    <div className={`h-7 w-7 rounded-md ${cfg.bg} flex items-center justify-center shrink-0 mt-0.5`}>
+                      <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold text-foreground">{cfg.label}</span>
+                        {dealName && <span className="text-xs text-muted-foreground truncate max-w-[140px]">· {dealName}</span>}
+                        <span className={`text-xs font-medium ml-auto shrink-0 ${confidenceColor(action.confidence)}`} data-testid={`confidence-${action.id}`}>
+                          {action.confidence}% confidence
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-snug">{action.reason}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {action.estimatedValue > 0 && (
+                          <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5">
+                            <DollarSign className="h-3 w-3" />{action.estimatedValue.toLocaleString()} at stake
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => executeMutation.mutate(action.id)}
+                        disabled={executeMutation.isPending}
+                        data-testid={`button-execute-${action.id}`}
+                      >
+                        {executeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                        Execute
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                        onClick={() => dismissMutation.mutate(action.id)}
+                        disabled={dismissMutation.isPending}
+                        data-testid={`button-dismiss-${action.id}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* History */}
+      {tab === "history" && (
+        <div data-testid="action-history-list">
+          {historyActions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+              <History className="h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">No action history yet</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {historyActions.slice(0, 20).map((action) => {
+                const cfg = ACTION_TYPE_CONFIG[action.actionType] ?? ACTION_TYPE_CONFIG.send_followup;
+                const Icon = cfg.icon;
+                const outcome = action.outcomeType ? OUTCOME_CONFIG[action.outcomeType] : null;
+                const statusConfig: Record<string, { label: string; color: string }> = {
+                  executed: { label: "Executed", color: "text-green-600 dark:text-green-400" },
+                  dismissed: { label: "Dismissed", color: "text-muted-foreground" },
+                  accepted: { label: "Accepted", color: "text-blue-600 dark:text-blue-400" },
+                  expired: { label: "Expired", color: "text-muted-foreground" },
+                };
+                const sc = statusConfig[action.status] ?? { label: action.status, color: "text-muted-foreground" };
+                return (
+                  <div key={action.id} className="px-4 py-2.5 flex items-start gap-3 opacity-80" data-testid={`history-card-${action.id}`}>
+                    <div className={`h-6 w-6 rounded-md ${cfg.bg} flex items-center justify-center shrink-0 mt-0.5`}>
+                      <Icon className={`h-3 w-3 ${cfg.color}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium">{cfg.label}</span>
+                        <span className={`text-xs font-medium ${sc.color}`}>{sc.label}</span>
+                        {outcome && (
+                          <span className={`text-xs font-medium ${outcome.color} flex items-center gap-0.5`}>
+                            <CheckCircle className="h-3 w-3" /> {outcome.label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{action.reason}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">{timeAgo(action.executedAt ?? action.dismissedAt ?? action.createdAt)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Revenue Intelligence Panel ──────────────────────────────────────────────
 
 interface AnalyticsSummary {
@@ -1378,6 +1815,23 @@ export default function AdminTeamTrainingDealsPage() {
     onError: (err: Error) => toast({ title: "Failed to log activity", description: err.message, variant: "destructive" }),
   });
 
+  const runAgentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/team-training/revenue-agent/run", {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/brief"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      toast({
+        title: "Revenue Agent Complete",
+        description: data.summary ?? `Created ${data.actionsCreated} prioritized actions.`,
+      });
+    },
+    onError: (err: Error) => toast({ title: "Agent run failed", description: err.message, variant: "destructive" }),
+  });
+
   const sortedDeals = useMemo(() => {
     const TIER_ORDER: Record<HealthTier, number> = { at_risk: 0, cold: 1, hot: 2, warm: 3 };
     const copy = [...deals];
@@ -1534,8 +1988,26 @@ export default function AdminTeamTrainingDealsPage() {
         )}
       </div>
 
+      {/* Daily Revenue Brief */}
+      {!isLoading && (
+        <DailyRevenueBrief
+          onRunAgent={() => runAgentMutation.mutate()}
+          isRunning={runAgentMutation.isPending}
+        />
+      )}
+
       {/* Command Center */}
       {!isLoading && deals.length > 0 && <CommandCenter deals={deals} />}
+
+      {/* Priority Action Queue */}
+      {!isLoading && (
+        <PriorityActionQueue
+          onNavigateToDeal={(dealId) => {
+            const deal = deals.find(d => d.id === dealId);
+            if (deal) setViewDeal(deal);
+          }}
+        />
+      )}
 
       {/* Revenue Intelligence Panel */}
       {!isLoading && <RevenueIntelligencePanel />}
