@@ -92,6 +92,17 @@ async function getCoachId(userId: string): Promise<string | null> {
   return profile?.id || null;
 }
 
+async function getAdminOrgId(req: any): Promise<string | null> {
+  try {
+    const userId = req.user?.claims?.sub ?? req.user?.id;
+    if (!userId) return null;
+    const profile = await storage.getUserProfile(userId);
+    return profile?.organizationId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function requireRole(...roles: string[]) {
   return async (req: any, res: any, next: any) => {
     const userId = req.user?.claims?.sub ?? req.user?.id;
@@ -9930,6 +9941,89 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const { cancelWorkflow } = await import("./workflows/index");
       const result = await cancelWorkflow(req.params.id, orgId);
       res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── Workflow Settings & Mapper ──────────────────────────────────────────
+
+  // GET /api/admin/workflows/settings
+  app.get("/api/admin/workflows/settings", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { workflowSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const { db } = await import("./db");
+      const [settings] = await db.select().from(workflowSettings).where(eq(workflowSettings.orgId, orgId));
+      res.json(settings ?? { orgId, autoStartSafeWorkflows: false, requireApprovalBeforeMessages: true, neverAutoSend: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflows/settings
+  app.post("/api/admin/workflows/settings", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { workflowSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const { db } = await import("./db");
+      const { autoStartSafeWorkflows, requireApprovalBeforeMessages, neverAutoSend } = req.body;
+      const [upserted] = await db.insert(workflowSettings).values({
+        orgId, autoStartSafeWorkflows, requireApprovalBeforeMessages, neverAutoSend, updatedAt: new Date(),
+      }).onConflictDoUpdate({ target: workflowSettings.orgId, set: { autoStartSafeWorkflows, requireApprovalBeforeMessages, neverAutoSend, updatedAt: new Date() } }).returning();
+      res.json(upserted);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflows/active-summary
+  // Returns active workflow counts + items needing approval for the status strip
+  app.get("/api/admin/workflows/active-summary", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { workflowRuns } = await import("@shared/schema");
+      const { eq, inArray } = await import("drizzle-orm");
+      const { db } = await import("./db");
+      const active = await db.select({
+        id: workflowRuns.id,
+        workflowType: workflowRuns.workflowType,
+        displayName: workflowRuns.displayName,
+        status: workflowRuns.status,
+        entityName: workflowRuns.entityName,
+        currentStepIndex: workflowRuns.currentStepIndex,
+        totalSteps: workflowRuns.totalSteps,
+      }).from(workflowRuns)
+        .where(eq(workflowRuns.orgId, orgId))
+        .orderBy(workflowRuns.createdAt);
+      const ACTIVE = ["pending","running","waiting_confirmation","waiting_response"];
+      const activeRuns = active.filter(r => ACTIVE.includes(r.status));
+      const needingApproval = activeRuns.filter(r => r.status === "waiting_confirmation").length;
+      res.json({ total: activeRuns.length, needingApproval, runs: activeRuns.slice(0, 5) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflows/eligibility
+  // Given a list of recommendation/action IDs, return workflow mapping metadata
+  app.post("/api/admin/workflows/eligibility", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { actions } = req.body as { actions: Array<{ id: string; agentType?: string; actionType?: string; entityId?: string | null; source: string }> };
+      if (!Array.isArray(actions)) return res.status(400).json({ error: "actions array required" });
+      const { getWorkflowTypeForRecommendation, getWorkflowTypeForRevenueAction, getWorkflowMeta, checkWorkflowDuplicate } = await import("./workflows/mapper");
+      const results: Record<string, { workflowType: string | null; workflowMeta: any | null; isDuplicate: boolean; existingRunId: string | null }> = {};
+      for (const a of actions) {
+        let wt: string | null = null;
+        if (a.source === "brain" && a.agentType) {
+          wt = getWorkflowTypeForRecommendation({ agentType: a.agentType, actionType: a.actionType });
+        } else if (a.source === "revenue_agent" && a.actionType) {
+          wt = getWorkflowTypeForRevenueAction({ actionType: a.actionType });
+        }
+        const meta = wt ? getWorkflowMeta(wt) : null;
+        const dup = wt && a.entityId ? await checkWorkflowDuplicate(orgId, wt, a.entityId) : { isDuplicate: false, existingRunId: null };
+        results[a.id] = { workflowType: wt, workflowMeta: meta, isDuplicate: dup.isDuplicate, existingRunId: dup.existingRunId };
+      }
+      res.json(results);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

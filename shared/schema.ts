@@ -1237,6 +1237,18 @@ export type InsertWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowStep = typeof workflowSteps.$inferSelect;
 export type InsertWorkflowStep = typeof workflowSteps.$inferInsert;
 
+export const workflowSettings = pgTable("workflow_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: varchar("org_id").notNull().unique(),
+  autoStartSafeWorkflows: boolean("auto_start_safe_workflows").default(false).notNull(),
+  requireApprovalBeforeMessages: boolean("require_approval_before_messages").default(true).notNull(),
+  neverAutoSend: boolean("never_auto_send").default(true).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type WorkflowSettings = typeof workflowSettings.$inferSelect;
+export type InsertWorkflowSettings = typeof workflowSettings.$inferInsert;
+
 export type AgentSignal = typeof agentSignals.$inferSelect;
 export type InsertAgentSignal = typeof agentSignals.$inferInsert;
 export type AgentRecommendation = typeof agentRecommendations.$inferSelect;

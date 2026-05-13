@@ -31,9 +31,18 @@ export type StartWorkflowInput = {
   initialContext?: Record<string, any>;
 };
 
-export async function startWorkflow(input: StartWorkflowInput): Promise<{ runId: string; started: boolean; error?: string }> {
+export async function startWorkflow(input: StartWorkflowInput): Promise<{ runId: string; started: boolean; error?: string; duplicate?: boolean; existingRunId?: string }> {
   const def = getWorkflowDefinition(input.workflowType);
   if (!def) return { runId: "", started: false, error: `Unknown workflow type: ${input.workflowType}` };
+
+  // ── Duplicate prevention ───────────────────────────────────────────────────
+  if (input.entityId) {
+    const { checkWorkflowDuplicate } = await import("./mapper");
+    const dup = await checkWorkflowDuplicate(input.orgId, input.workflowType, input.entityId);
+    if (dup.isDuplicate && dup.existingRunId) {
+      return { runId: dup.existingRunId, started: false, duplicate: true, error: `A ${input.workflowType} workflow is already active for this entity (status: ${dup.existingStatus})` };
+    }
+  }
 
   const context: WorkflowContext = {
     orgId: input.orgId,

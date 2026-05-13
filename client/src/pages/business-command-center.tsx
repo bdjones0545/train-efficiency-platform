@@ -57,6 +57,7 @@ import {
   ListChecks,
   BarChart3,
   Plug,
+  GitBranch,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -282,6 +283,80 @@ function PendingToolCallsStrip() {
         data-testid="button-review-tool-calls"
       >
         Review
+      </Button>
+    </div>
+  );
+}
+
+// ─── Workflow Status Strip ────────────────────────────────────────────────────
+
+type WorkflowActiveSummary = {
+  total: number;
+  needingApproval: number;
+  runs: Array<{
+    id: string;
+    workflowType: string;
+    displayName: string;
+    status: string;
+    entityName: string | null;
+    currentStepIndex: number | null;
+    totalSteps: number | null;
+  }>;
+};
+
+function WorkflowStatusStrip() {
+  const [, setLocation] = useLocation();
+
+  const { data } = useQuery<WorkflowActiveSummary>({
+    queryKey: ["/api/admin/workflows/active-summary"],
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  if (!data || data.total === 0) return null;
+
+  const approvalNeeded = data.needingApproval > 0;
+
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border ${
+        approvalNeeded
+          ? "bg-amber-500/10 border-amber-500/30"
+          : "bg-primary/5 border-primary/20"
+      }`}
+      data-testid="strip-workflow-status"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <GitBranch className={`h-4 w-4 shrink-0 ${approvalNeeded ? "text-amber-500" : "text-primary"}`} />
+        <div className="min-w-0">
+          <p className={`text-sm font-medium truncate ${approvalNeeded ? "text-amber-700 dark:text-amber-400" : "text-foreground"}`}>
+            <span className="font-bold">{data.total}</span> active workflow{data.total > 1 ? "s" : ""}
+            {approvalNeeded && (
+              <span className="ml-1.5 text-amber-600 dark:text-amber-400">
+                · <span className="font-bold">{data.needingApproval}</span> need{data.needingApproval === 1 ? "s" : ""} approval
+              </span>
+            )}
+          </p>
+          {data.runs.length > 0 && (
+            <p className="text-xs text-muted-foreground truncate">
+              {data.runs.slice(0, 2).map(r => r.displayName || r.workflowType).join(" · ")}
+              {data.runs.length > 2 && ` + ${data.runs.length - 2} more`}
+            </p>
+          )}
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className={`h-7 text-xs shrink-0 ${
+          approvalNeeded
+            ? "border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+            : "border-primary/30 text-primary hover:bg-primary/10"
+        }`}
+        onClick={() => setLocation("/admin/workflows")}
+        data-testid="button-view-workflows-strip"
+      >
+        View
       </Button>
     </div>
   );
@@ -1166,6 +1241,66 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
     },
   });
 
+  // ── Workflow eligibility ──────────────────────────────────────────────────
+  type WorkflowEligibility = {
+    workflowType: string | null;
+    workflowMeta: { workflowType: string; displayName: string; stepCount: number; approvalGates: number; estimatedDays: number } | null;
+    isDuplicate: boolean;
+    existingRunId: string | null;
+  };
+
+  const visibleForEligibility = (data?.topActions ?? []);
+  const { data: eligibilityMap = {} } = useQuery<Record<string, WorkflowEligibility>>({
+    queryKey: ["/api/admin/workflows/eligibility", visibleForEligibility.map(a => a.id).join(",")],
+    queryFn: async () => {
+      if (visibleForEligibility.length === 0) return {};
+      const res = await fetch("/api/admin/workflows/eligibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actions: visibleForEligibility.map(a => ({
+            id: a.id,
+            agentType: a.agentType,
+            actionType: a.actionType,
+            entityId: a.entityId,
+            source: a.source,
+          })),
+        }),
+      });
+      return res.json();
+    },
+    enabled: visibleForEligibility.length > 0,
+    staleTime: 30_000,
+  });
+
+  const startWorkflowMutation = useMutation({
+    mutationFn: (action: UnifiedAction) => {
+      const elig = eligibilityMap[action.id];
+      if (!elig?.workflowType) throw new Error("No workflow mapped for this action");
+      return apiRequest("POST", "/api/admin/workflows/trigger", {
+        workflowType: elig.workflowType,
+        entityId: action.entityId ?? undefined,
+        entityName: action.entityName ?? undefined,
+        entityType: action.entityType ?? undefined,
+        triggerReason: action.description || action.title,
+        triggerSource: action.source === "brain" ? "brain_recommendation" : "revenue_agent_action",
+        sourceRecommendationId: action.source === "brain" ? action.id : undefined,
+        sourceRevenueActionId: action.source === "revenue_agent" ? action.id : undefined,
+      }).then(r => r.json());
+    },
+    onSuccess: (result: any) => {
+      if (result.duplicate) {
+        toast({ title: "Workflow already running", description: result.error });
+      } else {
+        toast({ title: "Workflow started", description: "View progress in the Workflows timeline." });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows/active-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows/eligibility"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows/stats"] });
+    },
+    onError: (e: Error) => toast({ title: "Failed to start workflow", description: e.message, variant: "destructive" }),
+  });
+
   function handleExecute(action: UnifiedAction) {
     if (action.source === "brain") {
       executeBrainMutation.mutate(action.id);
@@ -1375,6 +1510,36 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
                 <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> {topAction.deepLinkLabel ?? "Open"}
               </Button>
             )}
+            {(() => {
+              const elig = eligibilityMap[topAction.id];
+              if (!elig?.workflowType) return null;
+              if (elig.isDuplicate) {
+                return (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 sm:flex-none border-emerald-400/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                    onClick={() => setLocation("/admin/workflows")}
+                    data-testid="button-view-workflow-top-unified"
+                  >
+                    <GitBranch className="h-3.5 w-3.5 mr-1.5" /> Workflow Active
+                  </Button>
+                );
+              }
+              return (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 sm:flex-none border-primary/40 text-primary hover:bg-primary/10"
+                  onClick={() => startWorkflowMutation.mutate(topAction)}
+                  disabled={startWorkflowMutation.isPending}
+                  data-testid="button-start-workflow-top-unified"
+                >
+                  <GitBranch className="h-3.5 w-3.5 mr-1.5" />
+                  {elig.workflowMeta ? elig.workflowMeta.displayName : "Start Workflow"}
+                </Button>
+              );
+            })()}
             <Button
               size="sm"
               variant="outline"
@@ -1454,6 +1619,37 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Button>
                   )}
+                  {(() => {
+                    const elig = eligibilityMap[action.id];
+                    if (!elig?.workflowType) return null;
+                    if (elig.isDuplicate) {
+                      return (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                          onClick={() => setLocation("/admin/workflows")}
+                          title="Workflow already running — view"
+                          data-testid={`button-workflow-active-action-${i}`}
+                        >
+                          <GitBranch className="h-3.5 w-3.5" />
+                        </Button>
+                      );
+                    }
+                    return (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-primary"
+                        onClick={() => startWorkflowMutation.mutate(action)}
+                        disabled={startWorkflowMutation.isPending}
+                        title={elig.workflowMeta ? `Start: ${elig.workflowMeta.displayName}` : "Start Workflow"}
+                        data-testid={`button-start-workflow-action-${i}`}
+                      >
+                        <GitBranch className="h-3.5 w-3.5" />
+                      </Button>
+                    );
+                  })()}
                   {toolCallFeedback[action.id] ? (
                     toolCallFeedback[action.id].requiresConfirmation ? (
                       <Button
@@ -2227,6 +2423,9 @@ export default function BusinessCommandCenterPage() {
 
       {/* ─── Pending Agent Tool Calls Alert ──────────────────────────────── */}
       <PendingToolCallsStrip />
+
+      {/* ─── Active Workflow Status Strip ────────────────────────────────── */}
+      <WorkflowStatusStrip />
 
       {/* ─── Daily Operator Mode (Start My Day + Checklist) ──────────────── */}
       <DashSectionReveal>

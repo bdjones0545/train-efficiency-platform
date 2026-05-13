@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,9 @@ import {
   BarChart3,
   UserCheck,
   CircleDot,
+  GitBranch,
+  Play,
+  ExternalLink,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -96,6 +100,22 @@ interface OrchestratorRun {
   createdAt: string;
 }
 
+type WorkflowMeta = {
+  workflowType: string;
+  displayName: string;
+  stepCount: number;
+  approvalGates: number;
+  estimatedDays: number;
+  category: string;
+};
+
+type WorkflowEligibility = {
+  workflowType: string | null;
+  workflowMeta: WorkflowMeta | null;
+  isDuplicate: boolean;
+  existingRunId: string | null;
+};
+
 // ─── Config maps ─────────────────────────────────────────────────────────────
 
 const AGENT_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; color: string; bg: string }> = {
@@ -157,22 +177,48 @@ function AgentBadge({ agentType }: { agentType: string }) {
   );
 }
 
+// ─── Workflow Pill ────────────────────────────────────────────────────────────
+
+function WorkflowPill({ meta, isDuplicate }: { meta: WorkflowMeta; isDuplicate: boolean }) {
+  if (isDuplicate) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+        <GitBranch className="w-2.5 h-2.5" /> Workflow active
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+      <GitBranch className="w-2.5 h-2.5" /> {meta.stepCount} steps · {meta.approvalGates} gate{meta.approvalGates !== 1 ? "s" : ""}
+    </span>
+  );
+}
+
 // ─── Recommendation Card ──────────────────────────────────────────────────────
 
 function RecommendationCard({
   rec,
+  eligibility,
   onExecute,
   onDismiss,
+  onStartWorkflow,
   isPending,
 }: {
   rec: AgentRecommendation;
+  eligibility?: WorkflowEligibility | null;
   onExecute: (id: string) => void;
   onDismiss: (id: string) => void;
+  onStartWorkflow: (rec: AgentRecommendation, workflowType: string) => void;
   isPending: boolean;
 }) {
+  const [, setLocation] = useLocation();
   const sevCfg = SEVERITY_CONFIG[rec.severity] || SEVERITY_CONFIG.medium;
   const isCrossAgent = rec.crossAgentTypes && rec.crossAgentTypes.length > 0;
   const [expanded, setExpanded] = useState(false);
+
+  const hasWorkflow = !!eligibility?.workflowType;
+  const isDuplicate = eligibility?.isDuplicate ?? false;
+  const meta = eligibility?.workflowMeta ?? null;
 
   return (
     <div
@@ -193,6 +239,7 @@ function RecommendationCard({
             {rec.entityName && (
               <span className="text-[10px] text-muted-foreground truncate">{rec.entityName}</span>
             )}
+            {hasWorkflow && meta && <WorkflowPill meta={meta} isDuplicate={isDuplicate} />}
           </div>
           <p className="font-semibold text-sm leading-snug">{rec.title}</p>
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{rec.description}</p>
@@ -219,6 +266,52 @@ function RecommendationCard({
               {rec.crossAgentTypes.map((t) => <AgentBadge key={t} agentType={t} />)}
             </div>
           )}
+          {hasWorkflow && meta && (
+            <div className="mt-2 pt-2 border-t border-border/50">
+              <p className="font-medium text-foreground mb-1 flex items-center gap-1">
+                <GitBranch className="w-3 h-3" /> Recommended workflow: {meta.displayName}
+              </p>
+              <p>{meta.stepCount} steps · {meta.approvalGates} approval gate{meta.approvalGates !== 1 ? "s" : ""} · ~{meta.estimatedDays} days</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Workflow start banner */}
+      {hasWorkflow && meta && !isDuplicate && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center gap-3"
+          data-testid={`workflow-banner-${rec.id}`}>
+          <GitBranch className="h-4 w-4 text-primary shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-foreground">{meta.displayName}</p>
+            <p className="text-[11px] text-muted-foreground">{meta.stepCount} steps · {meta.approvalGates} approval gate{meta.approvalGates !== 1 ? "s" : ""} · ~{meta.estimatedDays}d</p>
+          </div>
+          <Button
+            size="sm"
+            className="h-7 text-xs shrink-0"
+            onClick={() => onStartWorkflow(rec, eligibility!.workflowType!)}
+            disabled={isPending}
+            data-testid={`button-start-workflow-${rec.id}`}
+          >
+            <Play className="w-3 h-3 mr-1" /> Start Workflow
+          </Button>
+        </div>
+      )}
+
+      {hasWorkflow && isDuplicate && eligibility?.existingRunId && (
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-2 flex items-center gap-2"
+          data-testid={`workflow-active-banner-${rec.id}`}>
+          <GitBranch className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+          <p className="text-xs text-emerald-700 dark:text-emerald-300 flex-1">Workflow already running</p>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[11px] text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950"
+            onClick={() => setLocation("/admin/workflows")}
+            data-testid={`button-view-workflow-${rec.id}`}
+          >
+            View <ExternalLink className="w-2.5 h-2.5 ml-1" />
+          </Button>
         </div>
       )}
 
@@ -403,6 +496,7 @@ function AgentStatusPanel({ agentSummary }: { agentSummary: Record<string, { sig
 
 export default function BusinessBrainPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
 
   const { data: health, isLoading: healthLoading } = useQuery<HealthData>({
@@ -448,11 +542,61 @@ export default function BusinessBrainPage() {
     },
   });
 
+  // ── Workflow eligibility (batch check for visible recs) ──────────────────
   const recs = feedData?.recommendations || [];
   const signals = feedData?.signals || [];
   const pending = recs.filter((r) => r.status === "pending");
   const history = recs.filter((r) => r.status !== "pending");
   const crossAgentRecs = pending.filter((r) => r.crossAgentTypes && r.crossAgentTypes.length > 0);
+
+  const { data: eligibilityMap = {} } = useQuery<Record<string, WorkflowEligibility>>({
+    queryKey: ["/api/admin/workflows/eligibility", pending.map(r => r.id).join(",")],
+    queryFn: async () => {
+      if (pending.length === 0) return {};
+      const res = await fetch("/api/admin/workflows/eligibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actions: pending.map(r => ({
+            id: r.id,
+            agentType: r.agentType,
+            actionType: r.actionType,
+            entityId: r.entityId,
+            source: "brain",
+          })),
+        }),
+      });
+      return res.json();
+    },
+    enabled: pending.length > 0,
+    staleTime: 30_000,
+  });
+
+  const startWorkflowMutation = useMutation({
+    mutationFn: ({ rec, workflowType }: { rec: AgentRecommendation; workflowType: string }) =>
+      apiRequest("POST", "/api/admin/workflows/trigger", {
+        workflowType,
+        entityId: rec.entityId ?? undefined,
+        entityName: rec.entityName ?? undefined,
+        entityType: rec.entityType ?? undefined,
+        triggerReason: rec.description || rec.title,
+        triggerSource: "brain_recommendation",
+        sourceRecommendationId: rec.id,
+      }).then(r => r.json()),
+    onSuccess: (data: any) => {
+      if (data.duplicate) {
+        toast({ title: "Workflow already running", description: data.error, variant: "default" });
+      } else {
+        toast({ title: "Workflow started", description: "View it in the Workflows timeline." });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows/active-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows/eligibility"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows/stats"] });
+    },
+    onError: (e: Error) => toast({ title: "Failed to start workflow", description: e.message, variant: "destructive" }),
+  });
+
   const healthScore = health?.healthScore ?? null;
 
   const lastRunStr = health?.lastRunAt
@@ -474,18 +618,27 @@ export default function BusinessBrainPage() {
             </p>
           </div>
         </div>
-        <Button
-          className="sm:ml-auto"
-          onClick={() => runMutation.mutate()}
-          disabled={runMutation.isPending}
-          data-testid="button-run-brain"
-        >
-          {runMutation.isPending ? (
-            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Analyzing…</>
-          ) : (
-            <><Zap className="w-4 h-4 mr-2" />Run All Agents</>
-          )}
-        </Button>
+        <div className="flex gap-2 sm:ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setLocation("/admin/workflows")}
+            data-testid="button-view-workflows"
+          >
+            <GitBranch className="w-4 h-4 mr-1.5" /> Workflows
+          </Button>
+          <Button
+            onClick={() => runMutation.mutate()}
+            disabled={runMutation.isPending}
+            data-testid="button-run-brain"
+          >
+            {runMutation.isPending ? (
+              <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Analyzing…</>
+            ) : (
+              <><Zap className="w-4 h-4 mr-2" />Run All Agents</>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Health Score + Agent Summary */}
@@ -574,9 +727,11 @@ export default function BusinessBrainPage() {
                     <RecommendationCard
                       key={rec.id}
                       rec={rec}
+                      eligibility={eligibilityMap[rec.id] ?? null}
                       onExecute={(id) => executeMutation.mutate(id)}
                       onDismiss={(id) => dismissMutation.mutate(id)}
-                      isPending={executeMutation.isPending || dismissMutation.isPending}
+                      onStartWorkflow={(rec, wt) => startWorkflowMutation.mutate({ rec, workflowType: wt })}
+                      isPending={executeMutation.isPending || dismissMutation.isPending || startWorkflowMutation.isPending}
                     />
                   ))}
                 </div>
