@@ -329,7 +329,9 @@ export interface IStorage {
   createTeamTrainingDeal(data: import("@shared/schema").InsertTeamTrainingDeal): Promise<import("@shared/schema").TeamTrainingDeal>;
   updateTeamTrainingDeal(id: string, data: Partial<import("@shared/schema").TeamTrainingDeal>): Promise<import("@shared/schema").TeamTrainingDeal | undefined>;
   deleteTeamTrainingDeal(id: string): Promise<boolean>;
-  getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number }>;
+  getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number; stalledCount: number; followUpDueCount: number; avgDealSize: number; winRate: number }>;
+  createDealActivity(data: import("@shared/schema").InsertDealActivity): Promise<import("@shared/schema").DealActivity>;
+  getDealActivities(dealId: string): Promise<import("@shared/schema").DealActivity[]>;
 
   // Team Training Lead Settings
   getTeamLeadSettings(orgId: string): Promise<import("@shared/schema").TeamTrainingLeadSettings | undefined>;
@@ -2533,19 +2535,52 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number }> {
+  async getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number; stalledCount: number; followUpDueCount: number; avgDealSize: number; winRate: number }> {
     const { teamTrainingDeals } = await import("@shared/schema");
     const deals = await db.select().from(teamTrainingDeals).where(eq(teamTrainingDeals.organizationId, orgId));
-    const active = deals.filter(d => !["won", "lost"].includes(d.status)).length;
-    const interested = deals.filter(d => d.status === "interested").length;
-    const negotiating = deals.filter(d => d.status === "negotiating").length;
-    const projectedRevenue = deals
-      .filter(d => !["won", "lost"].includes(d.status))
-      .reduce((sum, d) => sum + Math.round((d.estimatedValue * d.probability) / 100), 0);
-    const wonRevenue = deals
-      .filter(d => d.status === "won")
-      .reduce((sum, d) => sum + (d.finalValue ?? d.estimatedValue), 0);
-    return { active, interested, negotiating, projectedRevenue, wonRevenue };
+    const now = new Date();
+    const active = deals.filter(d => !["won", "lost"].includes(d.status));
+    const won = deals.filter(d => d.status === "won");
+    const lost = deals.filter(d => d.status === "lost");
+    const projectedRevenue = active.reduce((sum, d) => sum + Math.round((d.estimatedValue * d.probability) / 100), 0);
+    const wonRevenue = won.reduce((sum, d) => sum + (d.finalValue ?? d.estimatedValue), 0);
+    const stalledCount = active.filter(d => {
+      const daysSince = (now.getTime() - new Date(d.lastActivityAt).getTime()) / 86400000;
+      return daysSince >= 7;
+    }).length;
+    const followUpDueCount = active.filter(d => {
+      if (!d.nextFollowUpAt) return false;
+      return new Date(d.nextFollowUpAt) <= now;
+    }).length;
+    const allClosed = won.length + lost.length;
+    const winRate = allClosed > 0 ? Math.round((won.length / allClosed) * 100) : 0;
+    const avgDealSize = won.length > 0
+      ? Math.round(won.reduce((s, d) => s + (d.finalValue ?? d.estimatedValue), 0) / won.length)
+      : (active.length > 0 ? Math.round(active.reduce((s, d) => s + d.estimatedValue, 0) / active.length) : 0);
+    return {
+      active: active.length,
+      interested: active.filter(d => d.status === "interested").length,
+      negotiating: active.filter(d => d.status === "negotiating").length,
+      projectedRevenue,
+      wonRevenue,
+      stalledCount,
+      followUpDueCount,
+      avgDealSize,
+      winRate,
+    };
+  }
+
+  async createDealActivity(data: import("@shared/schema").InsertDealActivity): Promise<import("@shared/schema").DealActivity> {
+    const { dealActivities } = await import("@shared/schema");
+    const [row] = await db.insert(dealActivities).values(data).returning();
+    return row;
+  }
+
+  async getDealActivities(dealId: string): Promise<import("@shared/schema").DealActivity[]> {
+    const { dealActivities } = await import("@shared/schema");
+    return db.select().from(dealActivities)
+      .where(eq(dealActivities.dealId, dealId))
+      .orderBy(desc(dealActivities.createdAt));
   }
 
   async createAiRevenueEvent(data: import("@shared/schema").InsertAiRevenueEvent) {

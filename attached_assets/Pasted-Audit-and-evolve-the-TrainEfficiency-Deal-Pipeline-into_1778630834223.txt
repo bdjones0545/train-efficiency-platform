@@ -1,0 +1,163 @@
+Audit and evolve the TrainEfficiency Deal Pipeline into an AI-driven sales operating system.
+
+Current state:
+- Team Training Leads can become Deals
+- Deal Pipeline stages exist
+- Deal cards and detail drawer exist
+- Won revenue tracking exists
+- Drag/drop and stage movement work
+
+Goal:
+Transform the pipeline from a static Kanban board into an active revenue-management system that tells the user:
+- what needs attention
+- what deals are at risk
+- what to do next
+- what revenue is likely to close
+- which leads are going cold
+
+Build these systems:
+
+1. Mandatory Follow-Up System
+Every active deal must have:
+- nextFollowUpAt
+- nextAction
+- lastContactAt
+
+If a deal has no follow-up scheduled:
+- show red warning badge
+- surface in “Needs Attention”
+
+2. AI Deal Health Scoring
+Create a dealHealth score:
+- hot
+- warm
+- cold
+- at_risk
+
+Factors:
+- days since last contact
+- response activity
+- stage stagnation
+- close probability
+- engagement activity
+- missing contact info
+
+Show:
+- colored health indicator on cards
+- explanation in detail drawer
+
+3. Pipeline Intelligence Dashboard
+Add top metrics:
+- Total pipeline value
+- Weighted projected revenue
+- Average days in stage
+- Stalled deals
+- Deals needing follow-up today
+- Conversion rate
+- Win rate
+- Avg deal size
+
+4. Stalled Deal Detection
+Automatically detect:
+- no activity in X days
+- stuck in same stage too long
+- missing next action
+
+Surface:
+- “Stalled Deals” panel
+- AI recommendation:
+  “Send follow-up”
+  “Schedule call”
+  “Move to lost”
+  etc.
+
+5. AI Next Best Action Engine
+Generate contextual recommendations:
+Examples:
+- “This lead has not been contacted in 8 days.”
+- “Proposal sent but no follow-up scheduled.”
+- “Strong fit based on school size and engagement.”
+
+Show:
+- on deal cards
+- in detail drawer
+- on dashboard
+
+6. Follow-Up Automation Layer
+Allow users to:
+- schedule reminders
+- generate outreach emails
+- generate SMS follow-ups
+- generate proposal follow-ups
+- create tasks
+
+Optional:
+- AI-generated follow-up copy
+
+7. Revenue Forecasting
+Add:
+- weighted pipeline forecast
+- likely close this month
+- likely close next month
+- stage-based revenue forecasting
+
+Formula example:
+projectedValue × probability
+
+8. Activity Timeline
+Each deal should maintain:
+- status changes
+- notes
+- emails sent
+- calls logged
+- follow-ups
+- AI actions
+- timestamps
+
+Display chronologically in detail drawer.
+
+9. Smart Sorting & Prioritization
+Sort active deals by:
+- urgency
+- projected value
+- likelihood to close
+- stale risk
+
+10. Mobile Optimization
+Pipeline must remain usable on mobile:
+- horizontal stage scrolling OR
+- stacked sections
+- sticky stage headers
+- compact cards
+
+11. Pipeline-Email Agent Integration
+Connect Deal Pipeline with Email Agent:
+- send outreach directly from deal
+- store email history in timeline
+- AI draft follow-ups using deal context
+
+12. Dashboard Command Center
+Top-level AI insights:
+Examples:
+- “3 deals require follow-up today”
+- “$12,500 likely to close this month”
+- “2 deals are at risk”
+- “Highest value opportunity: Bluffton Football”
+
+Architecture requirements:
+- Keep deal logic deterministic
+- AI only enhances prioritization/recommendations
+- Preserve audit logging
+- Avoid duplicate activity events
+- Ensure optimistic UI updates stay synced with DB
+
+Acceptance tests:
+- Create a deal
+- Add follow-up date
+- Leave untouched for several days (or simulate)
+- Confirm stalled status appears
+- Confirm AI recommendation appears
+- Send outreach from deal
+- Confirm timeline updates
+- Mark won
+- Forecast metrics update immediately

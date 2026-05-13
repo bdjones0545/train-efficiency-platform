@@ -860,6 +860,8 @@ export const teamTrainingDeals = pgTable("team_training_deals", {
   finalValue: integer("final_value"),
   probability: integer("probability").default(40).notNull(),
   lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+  lastContactAt: timestamp("last_contact_at"),
+  nextFollowUpAt: timestamp("next_follow_up_at"),
   nextAction: text("next_action").default("").notNull(),
   notes: text("notes").default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -869,6 +871,34 @@ export const teamTrainingDeals = pgTable("team_training_deals", {
 export const insertTeamTrainingDealSchema = createInsertSchema(teamTrainingDeals).omit({ id: true, createdAt: true, updatedAt: true });
 export type TeamTrainingDeal = typeof teamTrainingDeals.$inferSelect;
 export type InsertTeamTrainingDeal = z.infer<typeof insertTeamTrainingDealSchema>;
+
+// ─── Deal Activities (Timeline) ───────────────────────────────────────────────
+export const dealActivityTypeEnum = pgEnum("deal_activity_type", [
+  "deal_created",
+  "status_changed",
+  "note_added",
+  "email_sent",
+  "call_logged",
+  "follow_up_scheduled",
+  "follow_up_completed",
+  "ai_action",
+  "won",
+  "lost",
+  "manual",
+]);
+
+export const dealActivities = pgTable("deal_activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").notNull(),
+  organizationId: varchar("organization_id").notNull(),
+  activityType: dealActivityTypeEnum("activity_type").notNull(),
+  description: text("description").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DealActivity = typeof dealActivities.$inferSelect;
+export type InsertDealActivity = typeof dealActivities.$inferInsert;
 
 // ─── AI Revenue Events ────────────────────────────────────────────────────────
 export const aiRevenueEvents = pgTable("ai_revenue_events", {

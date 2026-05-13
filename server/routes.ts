@@ -7980,6 +7980,13 @@ Refine this email following the instruction above. Preserve the core message and
         notes: notes ?? "",
         lastActivityAt: new Date(),
       });
+      // Log creation activity (best-effort)
+      storage.createDealActivity({
+        dealId: deal.id,
+        organizationId: profile.organizationId,
+        activityType: "deal_created",
+        description: "Deal added to pipeline",
+      }).catch(() => {});
       res.json(deal);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -7995,6 +8002,24 @@ Refine this email following the instruction above. Preserve the core message and
       if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
       const prevStatus = deal.status;
       const updated = await storage.updateTeamTrainingDeal(req.params.id, req.body);
+      // Log status change activity
+      if (req.body.status && req.body.status !== prevStatus) {
+        storage.createDealActivity({
+          dealId: deal.id,
+          organizationId: profile.organizationId,
+          activityType: "status_changed",
+          description: `Stage: ${prevStatus} → ${req.body.status}`,
+        }).catch(() => {});
+      }
+      // Log follow-up scheduled
+      if (req.body.nextFollowUpAt && req.body.nextFollowUpAt !== deal.nextFollowUpAt?.toISOString()) {
+        storage.createDealActivity({
+          dealId: deal.id,
+          organizationId: profile.organizationId,
+          activityType: "follow_up_scheduled",
+          description: `Follow-up scheduled for ${new Date(req.body.nextFollowUpAt).toLocaleDateString()}`,
+        }).catch(() => {});
+      }
       // Phase 6: When deal marked "won", log outreach event and link to dashboard
       if (req.body.status === "won" && prevStatus !== "won") {
         await storage.logOutreachEvent({
@@ -8013,6 +8038,21 @@ Refine this email following the instruction above. Preserve the core message and
           const winValue = updated?.finalValue ?? updated?.estimatedValue ?? 0;
           await attributeOutcomeToProspect(profile.organizationId, deal.prospectId, "won", winValue, "deal_pipeline");
         } catch {}
+        // Log won activity
+        storage.createDealActivity({
+          dealId: deal.id,
+          organizationId: profile.organizationId,
+          activityType: "won",
+          description: `Deal won${updated?.finalValue ? ` — $${updated.finalValue}` : ""}`,
+        }).catch(() => {});
+      }
+      if (req.body.status === "lost" && prevStatus !== "lost") {
+        storage.createDealActivity({
+          dealId: deal.id,
+          organizationId: profile.organizationId,
+          activityType: "lost",
+          description: "Deal marked as lost",
+        }).catch(() => {});
       }
       res.json(updated);
     } catch (err: any) {
@@ -8107,6 +8147,46 @@ Business: ${org?.name ?? "Training Facility"}
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const stats = await storage.getDealPipelineStats(profile.organizationId);
       res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Deal activity timeline — GET
+  app.get("/api/admin/team-training/deals/:id/activities", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+      const activities = await storage.getDealActivities(req.params.id);
+      res.json(activities);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Deal activity timeline — POST (log a manual activity)
+  app.post("/api/admin/team-training/deals/:id/activities", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+      const { activityType, description, metadata } = req.body;
+      if (!activityType || !description) return res.status(400).json({ message: "activityType and description required" });
+      const activity = await storage.createDealActivity({
+        dealId: deal.id,
+        organizationId: profile.organizationId,
+        activityType,
+        description,
+        metadata: metadata ?? null,
+      });
+      // Touch lastActivityAt so stale detection resets
+      await storage.updateTeamTrainingDeal(deal.id, { lastActivityAt: new Date() });
+      res.json(activity);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

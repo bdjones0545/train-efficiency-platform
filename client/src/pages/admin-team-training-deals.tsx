@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,12 +15,27 @@ import {
   TrendingUp, Target, Briefcase, Loader2, MessageSquare,
   Phone, FileText, Sparkles, CheckCircle, XCircle, Plus,
   AlertTriangle, Flame, Clock, Copy, Brain, Info, ChevronDown, ChevronUp, AlertCircle,
-  Mail, MapPin, User, ArrowRight,
+  Mail, MapPin, User, ArrowRight, Activity, Bell, TrendingDown,
+  BarChart3, Award, Thermometer, ListFilter, SortAsc,
 } from "lucide-react";
 import { Link } from "wouter";
-import type { TeamTrainingDeal, TeamTrainingProspect } from "@shared/schema";
+import type { TeamTrainingDeal, TeamTrainingProspect, DealActivity } from "@shared/schema";
 
 type DealWithProspect = TeamTrainingDeal & { prospect?: TeamTrainingProspect };
+type HealthTier = "hot" | "warm" | "cold" | "at_risk";
+type SortMode = "urgency" | "value" | "recent";
+
+interface PipelineStats {
+  active: number;
+  interested: number;
+  negotiating: number;
+  projectedRevenue: number;
+  wonRevenue: number;
+  stalledCount: number;
+  followUpDueCount: number;
+  avgDealSize: number;
+  winRate: number;
+}
 
 const DEAL_STATUSES = [
   { key: "new", label: "New", color: "bg-blue-500/15 text-blue-700 dark:text-blue-400", border: "border-blue-200 dark:border-blue-800" },
@@ -42,6 +57,20 @@ const KANBAN_COLUMNS = [
   { key: "lost", label: "Lost" },
 ];
 
+const ACTIVITY_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+  deal_created: { label: "Added to pipeline", icon: Plus, color: "text-blue-500" },
+  status_changed: { label: "Stage changed", icon: ArrowRight, color: "text-purple-500" },
+  note_added: { label: "Note added", icon: FileText, color: "text-slate-500" },
+  email_sent: { label: "Email sent", icon: Mail, color: "text-blue-500" },
+  call_logged: { label: "Call logged", icon: Phone, color: "text-green-500" },
+  follow_up_scheduled: { label: "Follow-up scheduled", icon: Calendar, color: "text-orange-500" },
+  follow_up_completed: { label: "Follow-up completed", icon: CheckCircle, color: "text-green-600" },
+  ai_action: { label: "AI action", icon: Sparkles, color: "text-primary" },
+  won: { label: "Deal won", icon: Award, color: "text-green-600" },
+  lost: { label: "Deal lost", icon: XCircle, color: "text-red-500" },
+  manual: { label: "Activity logged", icon: Activity, color: "text-slate-500" },
+};
+
 function timeAgo(date: string | Date | null): string {
   if (!date) return "—";
   const d = new Date(date);
@@ -57,6 +86,38 @@ function staleDays(date: string | Date | null): number {
   if (!date) return 99;
   return Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
 }
+
+function formatDate(date: string | Date | null): string {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function toDatetimeLocal(date: string | Date | null | undefined): string {
+  if (!date) return "";
+  const d = new Date(date);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getHealthTier(deal: DealWithProspect): HealthTier {
+  if (deal.status === "won" || deal.status === "lost") return "warm";
+  const days = staleDays(deal.lastActivityAt);
+  if (days >= 14 || deal.probability < 20) return "at_risk";
+  if (days >= 7) return "cold";
+  if (
+    deal.status === "interested" ||
+    deal.status === "call_scheduled" ||
+    deal.probability >= 70
+  ) return "hot";
+  return "warm";
+}
+
+const HEALTH_TIER_CONFIG: Record<HealthTier, { label: string; className: string; dotClass: string }> = {
+  hot: { label: "Hot", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800", dotClass: "bg-red-500" },
+  warm: { label: "Warm", className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800", dotClass: "bg-amber-500" },
+  cold: { label: "Cold", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800", dotClass: "bg-blue-400" },
+  at_risk: { label: "At Risk", className: "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-500 border border-red-200 dark:border-red-900", dotClass: "bg-red-600 animate-pulse" },
+};
 
 interface DealExplanation {
   decision_reason: string;
@@ -160,9 +221,7 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
       move: "Schedule the kickoff session",
       explanation: {
         decision_reason: `${name} signed — congratulations! The next step is to deliver on what you promised and schedule the first training session.`,
-        supporting_signals: baseSignals,
-        risk_flags: [],
-        confidence_level: "high",
+        supporting_signals: baseSignals, risk_flags: [], confidence_level: "high",
         expected_outcome: "Successful kickoff and a happy client who may refer other teams.",
         alternative_action: "If scheduling is delayed, send a welcome message to maintain excitement and confirm the program details.",
       },
@@ -175,10 +234,8 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
       move: "Note reason and decide whether to re-engage later",
       explanation: {
         decision_reason: `This deal did not close. Reviewing what happened will help you improve your approach with future prospects.`,
-        supporting_signals: baseSignals,
-        risk_flags: ["Deal was marked as lost — avoid re-engaging without a clear change in circumstances"],
-        confidence_level: "high",
-        expected_outcome: "Capturing the loss reason improves future close rates and reveals patterns.",
+        supporting_signals: baseSignals, risk_flags: ["Deal was marked as lost — avoid re-engaging without a clear change in circumstances"],
+        confidence_level: "high", expected_outcome: "Capturing the loss reason improves future close rates and reveals patterns.",
         alternative_action: "If the reason was timing or budget, add a note to revisit in 3–6 months.",
       },
     };
@@ -209,10 +266,8 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
       move: "Follow up and re-confirm interest",
       explanation: {
         decision_reason: `The deal has been quiet for ${days} days. A timely follow-up keeps the momentum going before the prospect loses interest.`,
-        supporting_signals: baseSignals,
-        risk_flags: [`Deal inactive for ${days} days — risk of losing momentum`],
-        confidence_level: "medium",
-        expected_outcome: "A follow-up re-engages the prospect and moves the deal to the next stage.",
+        supporting_signals: baseSignals, risk_flags: [`Deal inactive for ${days} days — risk of losing momentum`],
+        confidence_level: "medium", expected_outcome: "A follow-up re-engages the prospect and moves the deal to the next stage.",
         alternative_action: "If a direct follow-up feels too soon, share a relevant article or update about your program as a soft touch.",
       },
     };
@@ -224,10 +279,8 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
       move: "Send a training proposal or book a call this week",
       explanation: {
         decision_reason: `${name} has expressed interest. Strike while the iron is hot — send a proposal or book a call before their attention shifts elsewhere.`,
-        supporting_signals: baseSignals,
-        risk_flags: days >= 3 ? [`Interest was expressed ${days} days ago — act before momentum fades`] : [],
-        confidence_level: "high",
-        expected_outcome: "A proposal or call this week can move this deal to negotiation or close within days.",
+        supporting_signals: baseSignals, risk_flags: days >= 3 ? [`Interest was expressed ${days} days ago — act before momentum fades`] : [],
+        confidence_level: "high", expected_outcome: "A proposal or call this week can move this deal to negotiation or close within days.",
         alternative_action: "If you need more time to prepare a full proposal, book a discovery call first to understand their specific needs.",
       },
     };
@@ -239,10 +292,8 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
       move: "Review org profile and prepare a custom program outline",
       explanation: {
         decision_reason: `A call is scheduled with ${name}. Preparation is the most impactful thing you can do right now — know their sport, team size, and goals.`,
-        supporting_signals: baseSignals,
-        risk_flags: [],
-        confidence_level: "high",
-        expected_outcome: "A well-prepared call builds confidence and often leads directly to a proposal request or verbal commitment.",
+        supporting_signals: baseSignals, risk_flags: [],
+        confidence_level: "high", expected_outcome: "A well-prepared call builds confidence and often leads directly to a proposal request or verbal commitment.",
         alternative_action: "If the call needs to be rescheduled, confirm the new time immediately so the deal doesn't go cold.",
       },
     };
@@ -255,8 +306,7 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
       move: `Follow up on the proposal${days >= 3 ? " — it has been " + days + " days" : ""}`,
       explanation: {
         decision_reason: `A proposal has been sent${days >= 3 ? ` ${days} days ago` : ""}. Following up shows professionalism and keeps you top of mind while they decide.`,
-        supporting_signals: baseSignals,
-        risk_flags: waitRisk ? [`Proposal has been pending for ${days} days — a follow-up is overdue`] : [],
+        supporting_signals: baseSignals, risk_flags: waitRisk ? [`Proposal has been pending for ${days} days — a follow-up is overdue`] : [],
         confidence_level: waitRisk ? "high" : "medium",
         expected_outcome: "A follow-up often prompts a decision — either moving forward or surfacing objections you can address.",
         alternative_action: "If you don't hear back after 2 follow-ups, try calling or reaching out via a different channel.",
@@ -270,10 +320,8 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
       move: "Address objections and ask for a commitment",
       explanation: {
         decision_reason: `${name} is in active negotiation. The goal now is to resolve any remaining objections and ask for a commitment.`,
-        supporting_signals: baseSignals,
-        risk_flags: days >= 5 ? [`Negotiation has been ongoing for ${days} days — prolonged negotiations can stall`] : [],
-        confidence_level: "medium",
-        expected_outcome: "Resolving objections and asking directly for a decision moves this deal to 'Won'.",
+        supporting_signals: baseSignals, risk_flags: days >= 5 ? [`Negotiation has been ongoing for ${days} days — prolonged negotiations can stall`] : [],
+        confidence_level: "medium", expected_outcome: "Resolving objections and asking directly for a decision moves this deal to 'Won'.",
         alternative_action: "If the negotiation is stalling on price, consider offering a tiered package or a limited-time incentive to move things forward.",
       },
     };
@@ -284,8 +332,7 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
     move: "Reach out and push to the next stage",
     explanation: {
       decision_reason: `This deal is active but needs to be advanced to the next stage. A proactive outreach now keeps the pipeline moving.`,
-      supporting_signals: baseSignals,
-      risk_flags: days >= 5 ? [`No activity for ${days} days — take action soon`] : [],
+      supporting_signals: baseSignals, risk_flags: days >= 5 ? [`No activity for ${days} days — take action soon`] : [],
       confidence_level: "low",
       expected_outcome: "Advancing the stage keeps revenue moving through your pipeline toward a close.",
       alternative_action: "If you are unsure of the next step, review the deal notes and identify the specific blocker holding it back.",
@@ -295,6 +342,210 @@ function getDealHealth(deal: DealWithProspect): { label: string; color: string; 
 
 function statusInfo(key: string) {
   return DEAL_STATUSES.find(s => s.key === key) ?? DEAL_STATUSES[0];
+}
+
+function HealthTierBadge({ tier }: { tier: HealthTier }) {
+  const cfg = HEALTH_TIER_CONFIG[tier];
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${cfg.className}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
+      {cfg.label}
+    </span>
+  );
+}
+
+function FollowUpBadge({ date }: { date: string | Date | null | undefined }) {
+  if (!date) return null;
+  const d = new Date(date);
+  const now = new Date();
+  const overdue = d < now;
+  const today = d.toDateString() === now.toDateString();
+  if (overdue) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400 font-medium" data-testid="badge-followup-overdue">
+        <Bell className="h-3 w-3 shrink-0" />
+        Follow-up overdue
+      </span>
+    );
+  }
+  if (today) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 font-medium" data-testid="badge-followup-today">
+        <Bell className="h-3 w-3 shrink-0" />
+        Follow-up today
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid="badge-followup-scheduled">
+      <Calendar className="h-3 w-3 shrink-0" />
+      {formatDate(d)}
+    </span>
+  );
+}
+
+function ActivityTimeline({ dealId }: { dealId: string }) {
+  const { data: activities = [], isLoading } = useQuery<DealActivity[]>({
+    queryKey: ["/api/admin/team-training/deals", dealId, "activities"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/team-training/deals/${dealId}/activities`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load activities");
+      return res.json();
+    },
+    enabled: !!dealId,
+  });
+
+  if (isLoading) return <div className="flex items-center gap-2 py-3"><Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /><span className="text-xs text-muted-foreground">Loading timeline...</span></div>;
+
+  if (activities.length === 0) {
+    return <p className="text-xs text-muted-foreground italic py-2">No activity recorded yet.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {activities.map((act) => {
+        const cfg = ACTIVITY_CONFIG[act.activityType] ?? ACTIVITY_CONFIG.manual;
+        const Icon = cfg.icon;
+        return (
+          <div key={act.id} className="flex items-start gap-2.5" data-testid={`activity-${act.id}`}>
+            <div className={`mt-0.5 shrink-0 ${cfg.color}`}>
+              <Icon className="h-3.5 w-3.5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-foreground">{act.description}</p>
+              <p className="text-xs text-muted-foreground">{act.createdAt ? timeAgo(act.createdAt) : "—"}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CommandCenter({ deals }: { deals: DealWithProspect[] }) {
+  const now = new Date();
+  const activeDeals = deals.filter(d => !["won", "lost"].includes(d.status));
+
+  const followUpDue = activeDeals.filter(d => d.nextFollowUpAt && new Date(d.nextFollowUpAt) <= now);
+  const atRisk = activeDeals.filter(d => getHealthTier(d) === "at_risk");
+  const stalled = activeDeals.filter(d => staleDays(d.lastActivityAt) >= 7);
+  const hotDeals = activeDeals.filter(d => getHealthTier(d) === "hot");
+
+  const insights: { icon: React.ElementType; text: string; color: string; urgent: boolean }[] = [];
+
+  if (followUpDue.length > 0) {
+    insights.push({ icon: Bell, text: `${followUpDue.length} follow-up${followUpDue.length > 1 ? "s" : ""} due today`, color: "text-red-600 dark:text-red-400", urgent: true });
+  }
+  if (atRisk.length > 0) {
+    insights.push({ icon: AlertTriangle, text: `${atRisk.length} deal${atRisk.length > 1 ? "s" : ""} at risk`, color: "text-red-500 dark:text-red-400", urgent: true });
+  }
+  if (stalled.length > 0 && stalled.length !== atRisk.length) {
+    const stalledOnly = stalled.filter(d => getHealthTier(d) !== "at_risk");
+    if (stalledOnly.length > 0) {
+      insights.push({ icon: Clock, text: `${stalledOnly.length} deal${stalledOnly.length > 1 ? "s" : ""} stalled (7+ days)`, color: "text-amber-600 dark:text-amber-400", urgent: false });
+    }
+  }
+  if (hotDeals.length > 0) {
+    insights.push({ icon: Flame, text: `${hotDeals.length} hot deal${hotDeals.length > 1 ? "s" : ""} — act now`, color: "text-orange-600 dark:text-orange-400", urgent: false });
+  }
+
+  const projectedThisMonth = activeDeals
+    .filter(d => d.probability >= 60 && staleDays(d.lastActivityAt) < 14)
+    .reduce((s, d) => s + Math.round((d.estimatedValue * d.probability) / 100), 0);
+
+  if (projectedThisMonth > 0) {
+    insights.push({ icon: TrendingUp, text: `$${projectedThisMonth.toLocaleString()} likely to close soon`, color: "text-emerald-600 dark:text-emerald-400", urgent: false });
+  }
+
+  if (insights.length === 0) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-4 py-2.5">
+        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+        <span className="text-sm text-muted-foreground">Pipeline looks healthy — no urgent items right now.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border bg-muted/20 divide-y" data-testid="command-center">
+      <div className="flex items-center gap-2 px-4 py-2.5">
+        <Brain className="h-4 w-4 text-primary shrink-0" />
+        <span className="text-sm font-semibold text-foreground">Pipeline Intelligence</span>
+        <span className="ml-auto text-xs text-muted-foreground">Real-time AI insights</span>
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-2 px-4 py-2.5">
+        {insights.map((insight, i) => {
+          const Icon = insight.icon;
+          return (
+            <div key={i} className={`flex items-center gap-1.5 text-sm ${insight.color}`} data-testid={`insight-${i}`}>
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span>{insight.text}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function StalledDealsPanel({
+  deals,
+  onView,
+  onQuickMove,
+}: {
+  deals: DealWithProspect[];
+  onView: (d: DealWithProspect) => void;
+  onQuickMove: (id: string, status: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const stalled = deals.filter(d => !["won", "lost"].includes(d.status) && staleDays(d.lastActivityAt) >= 7);
+  if (stalled.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/10" data-testid="stalled-deals-panel">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+        onClick={() => setOpen(o => !o)}
+        data-testid="button-stalled-toggle"
+      >
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            {stalled.length} Stalled Deal{stalled.length > 1 ? "s" : ""} — Need Attention
+          </span>
+          <span className="text-xs text-amber-600 dark:text-amber-400">No activity in 7+ days</span>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-amber-600" /> : <ChevronDown className="h-4 w-4 text-amber-600" />}
+      </button>
+      {open && (
+        <div className="border-t border-amber-200 dark:border-amber-900/50 divide-y divide-amber-100 dark:divide-amber-900/30">
+          {stalled.sort((a, b) => staleDays(b.lastActivityAt) - staleDays(a.lastActivityAt)).map(deal => {
+            const days = staleDays(deal.lastActivityAt);
+            const tier = getHealthTier(deal);
+            return (
+              <div key={deal.id} className="flex items-center gap-3 px-4 py-2.5" data-testid={`stalled-deal-${deal.id}`}>
+                <HealthTierBadge tier={tier} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{deal.prospect?.prospectName ?? "Unknown Team"}</p>
+                  <p className="text-xs text-muted-foreground">{statusInfo(deal.status).label} · {days}d inactive · ${deal.estimatedValue.toLocaleString()}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onView(deal)} data-testid={`button-stalled-view-${deal.id}`}>
+                    View
+                  </Button>
+                  {deal.status !== "negotiating" && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs text-amber-700 border-amber-300" onClick={() => onQuickMove(deal.id, "negotiating")} data-testid={`button-stalled-followup-${deal.id}`}>
+                      Follow Up
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DealCard({
@@ -318,6 +569,7 @@ function DealCard({
 }) {
   const { toast } = useToast();
   const health = getDealHealth(deal);
+  const tier = getHealthTier(deal);
   const HealthIcon = health.icon;
 
   function handleAskAgent() {
@@ -328,21 +580,27 @@ function DealCard({
     });
   }
 
+  const followUpOverdue = deal.nextFollowUpAt && new Date(deal.nextFollowUpAt) < new Date();
+  const followUpToday = deal.nextFollowUpAt && new Date(deal.nextFollowUpAt).toDateString() === new Date().toDateString();
+
   return (
     <Card
       draggable
       onDragStart={() => onDragStart(deal.id)}
       onDragEnd={onDragEnd}
       onClick={() => onView(deal)}
-      className={`p-3 space-y-2 cursor-pointer select-none transition-opacity hover:shadow-md hover:border-primary/30 ${isDragging ? "opacity-40 cursor-grab" : ""}`}
+      className={`p-3 space-y-2 cursor-pointer select-none transition-all hover:shadow-md hover:border-primary/30 ${isDragging ? "opacity-40 cursor-grab" : ""} ${followUpOverdue ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
       data-testid={`card-deal-${deal.id}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate" data-testid={`text-deal-name-${deal.id}`}>
-            {deal.prospect?.prospectName ?? "Unknown Team"}
-          </p>
-          <p className="text-xs text-muted-foreground">{deal.prospect?.sport ?? "—"} · {deal.prospect?.city ?? "—"}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="font-semibold text-sm truncate" data-testid={`text-deal-name-${deal.id}`}>
+              {deal.prospect?.prospectName ?? "Unknown Team"}
+            </p>
+            {!["won", "lost"].includes(deal.status) && <HealthTierBadge tier={tier} />}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">{deal.prospect?.sport ?? "—"} · {deal.prospect?.city ?? "—"}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); onEdit(deal); }} data-testid={`button-edit-deal-${deal.id}`}>
@@ -354,11 +612,16 @@ function DealCard({
         </div>
       </div>
 
-      {/* Deal health indicator */}
       <div className={`flex items-center gap-1.5 text-xs font-medium ${health.color}`} data-testid={`deal-health-${deal.id}`}>
         <HealthIcon className="h-3 w-3 shrink-0" />
         <span className="line-clamp-1">{health.label}</span>
       </div>
+
+      {(followUpOverdue || followUpToday) && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <FollowUpBadge date={deal.nextFollowUpAt} />
+        </div>
+      )}
 
       <div className="flex items-center justify-between text-xs">
         <span className="flex items-center gap-1 text-green-700 dark:text-green-400 font-medium">
@@ -368,7 +631,6 @@ function DealCard({
         <span className="text-muted-foreground">{deal.probability}% probability</span>
       </div>
 
-      {/* Suggested close move + why */}
       <div className="rounded border border-primary/20 bg-primary/5 px-2 py-1.5 space-y-1" data-testid={`deal-move-${deal.id}`}>
         <div className="flex items-start gap-1 text-xs">
           <Brain className="h-3 w-3 shrink-0 mt-0.5 text-primary" />
@@ -393,6 +655,12 @@ function DealCard({
           <Copy className="h-2.5 w-2.5" />
         </Button>
       </div>
+
+      {deal.nextFollowUpAt && !followUpOverdue && !followUpToday && (
+        <div className="text-xs text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+          <FollowUpBadge date={deal.nextFollowUpAt} />
+        </div>
+      )}
 
       <div className="flex gap-1 flex-wrap pt-1">
         <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={(e) => { e.stopPropagation(); onAiAction(deal, "generate_response"); }} data-testid={`button-ai-response-${deal.id}`}>
@@ -435,6 +703,10 @@ function KanbanColumn({
   const [isOver, setIsOver] = useState(false);
   const info = statusInfo(column.key);
   const colValue = deals.reduce((s, d) => s + d.estimatedValue, 0);
+  const urgentCount = deals.filter(d => {
+    const tier = getHealthTier(d);
+    return tier === "at_risk" || (d.nextFollowUpAt && new Date(d.nextFollowUpAt) <= new Date());
+  }).length;
 
   return (
     <div
@@ -448,6 +720,9 @@ function KanbanColumn({
         <div className="flex items-center gap-2">
           <span className={`inline-flex items-center justify-center rounded-full w-5 h-5 text-xs font-bold ${info.color}`}>{deals.length}</span>
           <span className="font-medium text-sm">{column.label}</span>
+          {urgentCount > 0 && (
+            <span className="inline-flex items-center justify-center rounded-full w-4 h-4 text-xs font-bold bg-red-500 text-white">{urgentCount}</span>
+          )}
         </div>
         {colValue > 0 && (
           <span className="text-xs text-muted-foreground">${colValue.toLocaleString()}</span>
@@ -480,16 +755,23 @@ function KanbanColumn({
 export default function AdminTeamTrainingDealsPage() {
   const { toast } = useToast();
   const [editDeal, setEditDeal] = useState<DealWithProspect | null>(null);
-  const [editForm, setEditForm] = useState<Partial<DealWithProspect>>({});
+  const [editForm, setEditForm] = useState<Partial<DealWithProspect & { nextFollowUpAtStr: string; lastContactAtStr: string }>>({});
   const [viewDeal, setViewDeal] = useState<DealWithProspect | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [aiResult, setAiResult] = useState("");
   const [aiActionLabel, setAiActionLabel] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("urgency");
+  const [logNote, setLogNote] = useState("");
+  const [logNoteOpen, setLogNoteOpen] = useState(false);
 
   const { data: deals = [], isLoading } = useQuery<DealWithProspect[]>({
     queryKey: ["/api/admin/team-training/deals"],
+  });
+
+  const { data: pipelineStats } = useQuery<PipelineStats>({
+    queryKey: ["/api/admin/team-training/deals/pipeline-stats"],
   });
 
   const updateDealMutation = useMutation({
@@ -499,6 +781,7 @@ export default function AdminTeamTrainingDealsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals/pipeline-stats"] });
       setEditDeal(null);
       toast({ title: "Deal updated" });
     },
@@ -511,10 +794,48 @@ export default function AdminTeamTrainingDealsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals/pipeline-stats"] });
       toast({ title: "Deal deleted" });
     },
     onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
   });
+
+  const logActivityMutation = useMutation({
+    mutationFn: async ({ id, activityType, description }: { id: string; activityType: string; description: string }) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/deals/${id}/activities`, { activityType, description });
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals", vars.id, "activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      setLogNote("");
+      setLogNoteOpen(false);
+      toast({ title: "Activity logged" });
+    },
+    onError: (err: Error) => toast({ title: "Failed to log activity", description: err.message, variant: "destructive" }),
+  });
+
+  const sortedDeals = useMemo(() => {
+    const TIER_ORDER: Record<HealthTier, number> = { at_risk: 0, cold: 1, hot: 2, warm: 3 };
+    const copy = [...deals];
+    if (sortMode === "urgency") {
+      return copy.sort((a, b) => {
+        const aStatus = ["won", "lost"].includes(a.status);
+        const bStatus = ["won", "lost"].includes(b.status);
+        if (aStatus !== bStatus) return aStatus ? 1 : -1;
+        const aTier = TIER_ORDER[getHealthTier(a)];
+        const bTier = TIER_ORDER[getHealthTier(b)];
+        if (aTier !== bTier) return aTier - bTier;
+        const aOverdue = a.nextFollowUpAt && new Date(a.nextFollowUpAt) <= new Date() ? -1 : 0;
+        const bOverdue = b.nextFollowUpAt && new Date(b.nextFollowUpAt) <= new Date() ? -1 : 0;
+        return aOverdue - bOverdue;
+      });
+    }
+    if (sortMode === "value") {
+      return copy.sort((a, b) => b.estimatedValue - a.estimatedValue);
+    }
+    return copy.sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
+  }, [deals, sortMode]);
 
   const handleDrop = (status: string) => {
     if (!draggingId || !status) return;
@@ -554,29 +875,56 @@ export default function AdminTeamTrainingDealsPage() {
       probability: d.probability,
       nextAction: d.nextAction,
       notes: d.notes ?? "",
+      nextFollowUpAtStr: toDatetimeLocal(d.nextFollowUpAt),
+      lastContactAtStr: toDatetimeLocal(d.lastContactAt),
     });
   };
 
-  // Stats
+  const handleSaveEdit = () => {
+    if (!editDeal) return;
+    const payload: Partial<TeamTrainingDeal> = {
+      status: editForm.status as TeamTrainingDeal["status"],
+      estimatedValue: editForm.estimatedValue,
+      finalValue: editForm.finalValue ?? null,
+      probability: editForm.probability,
+      nextAction: editForm.nextAction ?? "",
+      notes: editForm.notes ?? "",
+      nextFollowUpAt: editForm.nextFollowUpAtStr ? new Date(editForm.nextFollowUpAtStr) : null,
+      lastContactAt: editForm.lastContactAtStr ? new Date(editForm.lastContactAtStr) : null,
+    };
+    updateDealMutation.mutate({ id: editDeal.id, data: payload });
+  };
+
+  // Stats (use pipeline stats if available, fall back to client computed)
   const activeDeals = deals.filter(d => !["won", "lost"].includes(d.status));
   const wonDeals = deals.filter(d => d.status === "won");
-  const projectedRevenue = activeDeals.reduce((s, d) => s + Math.round((d.estimatedValue * d.probability) / 100), 0);
-  const wonRevenue = wonDeals.reduce((s, d) => s + (d.finalValue ?? d.estimatedValue), 0);
-  const interestedDeals = deals.filter(d => d.status === "interested").length;
+  const projectedRevenue = pipelineStats?.projectedRevenue ?? activeDeals.reduce((s, d) => s + Math.round((d.estimatedValue * d.probability) / 100), 0);
+  const wonRevenue = pipelineStats?.wonRevenue ?? wonDeals.reduce((s, d) => s + (d.finalValue ?? d.estimatedValue), 0);
+  const stalledCount = pipelineStats?.stalledCount ?? activeDeals.filter(d => staleDays(d.lastActivityAt) >= 7).length;
+  const followUpDueCount = pipelineStats?.followUpDueCount ?? activeDeals.filter(d => d.nextFollowUpAt && new Date(d.nextFollowUpAt) <= new Date()).length;
+  const winRate = pipelineStats?.winRate ?? 0;
+  const avgDealSize = pipelineStats?.avgDealSize ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-serif font-bold" data-testid="text-deals-title">Deal Pipeline</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Track and close team training deals from first contact to won.</p>
+          <p className="text-muted-foreground mt-1 text-sm">AI-driven deal intelligence. Track, score, and close team training deals.</p>
         </div>
+        <Link href="/admin/team-training-leads">
+          <Button variant="outline" size="sm" className="gap-1.5" data-testid="button-go-to-leads-header">
+            <Plus className="h-3.5 w-3.5" />
+            Add from Leads
+          </Button>
+        </Link>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="stats-grid">
         {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)
+          Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20" />)
         ) : (
           <>
             <Card className="p-3 text-center">
@@ -586,8 +934,8 @@ export default function AdminTeamTrainingDealsPage() {
             </Card>
             <Card className="p-3 text-center">
               <Target className="h-4 w-4 mx-auto text-emerald-500 mb-1" />
-              <p className="text-xl font-bold" data-testid="text-stat-interested">{interestedDeals}</p>
-              <p className="text-xs text-muted-foreground">Interested Leads</p>
+              <p className="text-xl font-bold" data-testid="text-stat-interested">{pipelineStats?.interested ?? deals.filter(d => d.status === "interested").length}</p>
+              <p className="text-xs text-muted-foreground">Interested</p>
             </Card>
             <Card className="p-3 text-center">
               <TrendingUp className="h-4 w-4 mx-auto text-purple-500 mb-1" />
@@ -599,9 +947,63 @@ export default function AdminTeamTrainingDealsPage() {
               <p className="text-xl font-bold" data-testid="text-stat-won">${wonRevenue.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground">Won Revenue</p>
             </Card>
+            <Card className="p-3 text-center">
+              <Award className="h-4 w-4 mx-auto text-yellow-500 mb-1" />
+              <p className="text-xl font-bold" data-testid="text-stat-win-rate">{winRate}%</p>
+              <p className="text-xs text-muted-foreground">Win Rate</p>
+            </Card>
+            <Card className="p-3 text-center">
+              <BarChart3 className="h-4 w-4 mx-auto text-indigo-500 mb-1" />
+              <p className="text-xl font-bold" data-testid="text-stat-avg-deal">${avgDealSize.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground">Avg Deal Size</p>
+            </Card>
+            <Card className={`p-3 text-center ${stalledCount > 0 ? "border-amber-200 dark:border-amber-900/50" : ""}`}>
+              <Clock className={`h-4 w-4 mx-auto mb-1 ${stalledCount > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
+              <p className={`text-xl font-bold ${stalledCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`} data-testid="text-stat-stalled">{stalledCount}</p>
+              <p className="text-xs text-muted-foreground">Stalled (7d+)</p>
+            </Card>
+            <Card className={`p-3 text-center ${followUpDueCount > 0 ? "border-red-200 dark:border-red-900/50" : ""}`}>
+              <Bell className={`h-4 w-4 mx-auto mb-1 ${followUpDueCount > 0 ? "text-red-500" : "text-muted-foreground"}`} />
+              <p className={`text-xl font-bold ${followUpDueCount > 0 ? "text-red-600 dark:text-red-400" : ""}`} data-testid="text-stat-followup-due">{followUpDueCount}</p>
+              <p className="text-xs text-muted-foreground">Follow-Up Due</p>
+            </Card>
           </>
         )}
       </div>
+
+      {/* Command Center */}
+      {!isLoading && deals.length > 0 && <CommandCenter deals={deals} />}
+
+      {/* Stalled Deals Panel */}
+      {!isLoading && (
+        <StalledDealsPanel
+          deals={deals}
+          onView={setViewDeal}
+          onQuickMove={(id, status) => updateDealMutation.mutate({ id, data: { status: status as TeamTrainingDeal["status"] } })}
+        />
+      )}
+
+      {/* Sort Controls */}
+      {!isLoading && deals.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap" data-testid="sort-controls">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <SortAsc className="h-3.5 w-3.5" />
+            Sort by:
+          </div>
+          {(["urgency", "value", "recent"] as SortMode[]).map(mode => (
+            <Button
+              key={mode}
+              size="sm"
+              variant={sortMode === mode ? "default" : "outline"}
+              className="h-7 text-xs capitalize"
+              onClick={() => setSortMode(mode)}
+              data-testid={`button-sort-${mode}`}
+            >
+              {mode === "urgency" ? "Urgency" : mode === "value" ? "Value" : "Recent"}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {/* Kanban Board */}
       {isLoading ? (
@@ -632,7 +1034,7 @@ export default function AdminTeamTrainingDealsPage() {
             <KanbanColumn
               key={col.key}
               column={col}
-              deals={deals.filter(d => d.status === col.key)}
+              deals={sortedDeals.filter(d => d.status === col.key)}
               onEdit={openEdit}
               onDelete={(id) => deleteDealMutation.mutate(id)}
               onAiAction={handleAiAction}
@@ -648,7 +1050,7 @@ export default function AdminTeamTrainingDealsPage() {
 
       {/* Edit Deal Dialog */}
       <Dialog open={!!editDeal} onOpenChange={(o) => !o && setEditDeal(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Deal — {editDeal?.prospect?.prospectName}</DialogTitle>
           </DialogHeader>
@@ -698,6 +1100,32 @@ export default function AdminTeamTrainingDealsPage() {
                 data-testid="input-probability"
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium flex items-center gap-1">
+                  <Bell className="h-3.5 w-3.5 text-orange-500" />
+                  Follow-up Date
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.nextFollowUpAtStr ?? ""}
+                  onChange={(e) => setEditForm(f => ({ ...f, nextFollowUpAtStr: e.target.value }))}
+                  data-testid="input-follow-up-date"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5 text-green-500" />
+                  Last Contact
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.lastContactAtStr ?? ""}
+                  onChange={(e) => setEditForm(f => ({ ...f, lastContactAtStr: e.target.value }))}
+                  data-testid="input-last-contact-date"
+                />
+              </div>
+            </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">Next Action</label>
               <Input
@@ -722,7 +1150,7 @@ export default function AdminTeamTrainingDealsPage() {
                 Cancel
               </Button>
               <Button
-                onClick={() => editDeal && updateDealMutation.mutate({ id: editDeal.id, data: editForm as Partial<TeamTrainingDeal> })}
+                onClick={handleSaveEdit}
                 disabled={updateDealMutation.isPending}
                 data-testid="button-save-deal"
               >
@@ -778,7 +1206,7 @@ export default function AdminTeamTrainingDealsPage() {
       </Dialog>
 
       {/* Deal Detail Drawer */}
-      <Dialog open={!!viewDeal} onOpenChange={(o) => !o && setViewDeal(null)}>
+      <Dialog open={!!viewDeal} onOpenChange={(o) => !o && (setViewDeal(null), setLogNoteOpen(false), setLogNote(""))}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
@@ -788,6 +1216,7 @@ export default function AdminTeamTrainingDealsPage() {
           </DialogHeader>
           {viewDeal && (() => {
             const health = getDealHealth(viewDeal);
+            const tier = getHealthTier(viewDeal);
             const HealthIcon = health.icon;
             const sInfo = statusInfo(viewDeal.status);
             const displayEmail = viewDeal.prospect?.decisionMakerEmail || viewDeal.prospect?.contactEmail;
@@ -799,6 +1228,7 @@ export default function AdminTeamTrainingDealsPage() {
                   <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${sInfo.color}`}>
                     {sInfo.label}
                   </span>
+                  {!["won", "lost"].includes(viewDeal.status) && <HealthTierBadge tier={tier} />}
                   <span className={`flex items-center gap-1 text-xs font-medium ${health.color}`}>
                     <HealthIcon className="h-3 w-3 shrink-0" />
                     {health.label}
@@ -831,6 +1261,18 @@ export default function AdminTeamTrainingDealsPage() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Sport</p>
                     <p>{viewDeal.prospect?.sport ?? "—"}</p>
                   </div>
+                  {viewDeal.nextFollowUpAt && (
+                    <div className="space-y-0.5 col-span-2">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Follow-Up Scheduled</p>
+                      <FollowUpBadge date={viewDeal.nextFollowUpAt} />
+                    </div>
+                  )}
+                  {viewDeal.lastContactAt && (
+                    <div className="space-y-0.5">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Last Contact</p>
+                      <p className="text-sm">{formatDate(viewDeal.lastContactAt)}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Contact details */}
@@ -869,13 +1311,7 @@ export default function AdminTeamTrainingDealsPage() {
                     {viewDeal.prospect?.websiteUrl && (
                       <>
                         <span>·</span>
-                        <a
-                          href={viewDeal.prospect.websiteUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline hover:text-foreground"
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <a href={viewDeal.prospect.websiteUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground" onClick={(e) => e.stopPropagation()}>
                           Website
                         </a>
                       </>
@@ -906,6 +1342,73 @@ export default function AdminTeamTrainingDealsPage() {
                     <p className="text-sm text-muted-foreground italic border-l-2 pl-2">{viewDeal.notes}</p>
                   </div>
                 )}
+
+                {/* Log Activity */}
+                <div className="space-y-2 pt-1 border-t">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Log Activity</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { type: "call_logged", label: "Call", icon: Phone },
+                      { type: "email_sent", label: "Email", icon: Mail },
+                      { type: "follow_up_completed", label: "Follow-up Done", icon: CheckCircle },
+                    ].map(({ type, label, icon: Icon }) => (
+                      <Button
+                        key={type}
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1"
+                        disabled={logActivityMutation.isPending}
+                        onClick={() => logActivityMutation.mutate({ id: viewDeal.id, activityType: type, description: label })}
+                        data-testid={`button-log-${type}`}
+                      >
+                        <Icon className="h-3 w-3" /> {label}
+                      </Button>
+                    ))}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setLogNoteOpen(o => !o)}
+                      data-testid="button-log-note-toggle"
+                    >
+                      <FileText className="h-3 w-3" /> Add Note
+                    </Button>
+                  </div>
+                  {logNoteOpen && (
+                    <div className="flex gap-2">
+                      <Input
+                        value={logNote}
+                        onChange={(e) => setLogNote(e.target.value)}
+                        placeholder="Note..."
+                        className="h-8 text-xs flex-1"
+                        data-testid="input-log-note"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && logNote.trim()) {
+                            logActivityMutation.mutate({ id: viewDeal.id, activityType: "note_added", description: logNote.trim() });
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-8 text-xs"
+                        disabled={!logNote.trim() || logActivityMutation.isPending}
+                        onClick={() => logNote.trim() && logActivityMutation.mutate({ id: viewDeal.id, activityType: "note_added", description: logNote.trim() })}
+                        data-testid="button-log-note-submit"
+                      >
+                        {logActivityMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Activity Timeline */}
+                <div className="space-y-2 border-t pt-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium flex items-center gap-1">
+                    <Activity className="h-3 w-3" />
+                    Activity Timeline
+                  </p>
+                  <ActivityTimeline dealId={viewDeal.id} />
+                </div>
 
                 {/* Quick stage move */}
                 <div className="space-y-2 pt-1 border-t">
