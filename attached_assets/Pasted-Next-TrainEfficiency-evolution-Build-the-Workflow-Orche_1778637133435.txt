@@ -1,0 +1,132 @@
+Next TrainEfficiency evolution:
+
+Build the Workflow Orchestration Layer.
+
+Goal:
+Support long-running, stateful, multi-step workflows coordinated across agents and tools.
+
+Current limitation:
+Agents execute mostly single-step actions.
+The system needs persistent workflows that:
+- maintain state
+- wait for outcomes
+- branch conditionally
+- retry safely
+- pause for confirmation
+- resume automatically
+
+Build:
+
+1. Workflow Engine
+Create:
+- workflow definitions
+- workflow runs
+- workflow steps
+- workflow state machine
+
+States:
+pending
+running
+waiting_confirmation
+waiting_response
+completed
+failed
+cancelled
+
+2. Workflow Types
+Start with:
+- reengage_inactive_client
+- recover_stalled_deal
+- fill_schedule_gap
+- onboarding_sequence
+- unpaid_session_recovery
+
+3. Multi-Step Execution
+Example:
+
+recover_stalled_deal:
+1. generate_email_draft
+2. wait_for_confirmation
+3. send_email
+4. wait 3 days
+5. check_response
+6. if no response:
+   generate_followup_sms
+7. wait_confirmation
+8. send_sms
+9. update_deal_health
+10. complete
+
+4. Workflow Persistence
+Store:
+- current step
+- completed steps
+- pending confirmation
+- retry count
+- outcome
+- timestamps
+- related entities
+
+5. Agent Collaboration
+Allow multiple agents to contribute:
+Revenue Agent:
+- identifies stalled deal
+
+Growth Agent:
+- recommends outreach strategy
+
+Scheduling Agent:
+- suggests available meeting slots
+
+Executive Agent:
+- prioritizes workflow
+
+6. Human Approval Gates
+Critical steps pause automatically:
+- send SMS
+- cancel sessions
+- financial actions
+
+Workflow resumes after approval.
+
+7. Event Triggers
+Support triggers:
+- deal stalled
+- client inactive
+- session missed
+- payment overdue
+- response received
+- meeting booked
+
+8. Workflow Timeline UI
+Create a visual workflow timeline:
+- completed steps
+- pending steps
+- waiting states
+- approvals
+- failures
+- retries
+
+9. Failure Recovery
+If SendGrid fails:
+- retry
+- log error
+- notify admin
+- allow manual retry
+
+10. Workflow Attribution
+Track:
+- which workflow generated revenue
+- which workflows reduced churn
+- avg completion rate
+- workflow ROI
+
+Acceptance tests:
+- Trigger stalled deal workflow
+- Confirm workflow persists
+- Pause at confirmation gate
+- Resume after approval
+- Simulate no response
+- Confirm follow-up branch executes
+- Complete workflow
+- Verify timeline + attribution

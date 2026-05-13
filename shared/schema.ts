@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, jsonb, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, jsonb, doublePrecision, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1184,6 +1184,58 @@ export const agentToolCalls = pgTable("agent_tool_calls", {
 
 export type AgentToolCall = typeof agentToolCalls.$inferSelect;
 export type InsertAgentToolCall = typeof agentToolCalls.$inferInsert;
+
+// ─── Workflow Orchestration ────────────────────────────────────────────────────
+
+export const workflowRuns = pgTable("workflow_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: varchar("org_id").notNull(),
+  workflowType: varchar("workflow_type").notNull(),
+  displayName: varchar("display_name").notNull(),
+  status: varchar("status").default("pending").notNull(),
+  currentStepIndex: integer("current_step_index").default(0).notNull(),
+  totalSteps: integer("total_steps").default(0).notNull(),
+  entityType: varchar("entity_type"),
+  entityId: varchar("entity_id"),
+  entityName: varchar("entity_name"),
+  triggerReason: text("trigger_reason"),
+  triggerSource: varchar("trigger_source"),
+  sourceRecommendationId: varchar("source_recommendation_id"),
+  sourceRevenueActionId: varchar("source_revenue_action_id"),
+  context: jsonb("context").default({}),
+  result: jsonb("result"),
+  error: text("error"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  nextCheckAt: timestamp("next_check_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const workflowSteps = pgTable("workflow_steps", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workflowRunId: uuid("workflow_run_id").notNull(),
+  orgId: varchar("org_id").notNull(),
+  stepIndex: integer("step_index").notNull(),
+  stepName: varchar("step_name").notNull(),
+  stepType: varchar("step_type").notNull(),
+  status: varchar("status").default("pending").notNull(),
+  input: jsonb("input"),
+  output: jsonb("output"),
+  error: text("error"),
+  toolCallId: varchar("tool_call_id"),
+  retryCount: integer("retry_count").default(0).notNull(),
+  confirmationStatus: varchar("confirmation_status"),
+  confirmedBy: varchar("confirmed_by"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type WorkflowRun = typeof workflowRuns.$inferSelect;
+export type InsertWorkflowRun = typeof workflowRuns.$inferInsert;
+export type WorkflowStep = typeof workflowSteps.$inferSelect;
+export type InsertWorkflowStep = typeof workflowSteps.$inferInsert;
 
 export type AgentSignal = typeof agentSignals.$inferSelect;
 export type InsertAgentSignal = typeof agentSignals.$inferInsert;

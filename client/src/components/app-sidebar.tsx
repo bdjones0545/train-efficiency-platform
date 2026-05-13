@@ -55,6 +55,7 @@ import {
   Activity,
   Brain,
   Plug,
+  GitBranch,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -302,6 +303,14 @@ export function AppSidebar() {
                       <Link href="/admin/agent-tools" onClick={handleNavClick} data-testid="nav-agent-tools">
                         <Plug className="h-4 w-4" />
                         <span>Agent Tools</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/workflows"}>
+                      <Link href="/admin/workflows" onClick={handleNavClick} data-testid="nav-workflows">
+                        <GitBranch className="h-4 w-4" />
+                        <span>Workflows</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

@@ -9829,6 +9829,110 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // ─── Workflow Orchestration ───────────────────────────────────────────────
+
+  // GET /api/admin/workflows/definitions
+  app.get("/api/admin/workflows/definitions", async (req, res) => {
+    try {
+      const { listWorkflowDefinitions } = await import("./workflows/index");
+      const defs = listWorkflowDefinitions();
+      res.json(defs.map(d => ({
+        type: d.type, displayName: d.displayName, description: d.description,
+        category: d.category, estimatedDays: d.estimatedDays, triggerEvent: d.triggerEvent,
+        totalSteps: d.steps.length,
+      })));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflows/stats
+  app.get("/api/admin/workflows/stats", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { getWorkflowStats } = await import("./workflows/index");
+      res.json(await getWorkflowStats(orgId));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflows
+  app.get("/api/admin/workflows", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { listWorkflowRuns } = await import("./workflows/index");
+      res.json(await listWorkflowRuns(orgId, 100));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflows/trigger
+  app.post("/api/admin/workflows/trigger", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { workflowType, triggerReason, entityType, entityId, entityName, triggerSource, sourceRecommendationId, sourceRevenueActionId, initialContext } = req.body;
+      if (!workflowType) return res.status(400).json({ error: "workflowType required" });
+      const { startWorkflow } = await import("./workflows/index");
+      const result = await startWorkflow({ orgId, workflowType, triggerReason, triggerSource: triggerSource ?? "manual", entityType, entityId, entityName, sourceRecommendationId, sourceRevenueActionId, initialContext });
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflows/resume-waiting
+  app.post("/api/admin/workflows/resume-waiting", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { resumeWaitingWorkflows } = await import("./workflows/index");
+      const count = await resumeWaitingWorkflows(orgId);
+      res.json({ resumed: count });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflows/:id
+  app.get("/api/admin/workflows/:id", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { getWorkflowRunWithSteps } = await import("./workflows/index");
+      const result = await getWorkflowRunWithSteps(req.params.id, orgId);
+      if (!result) return res.status(404).json({ error: "Not found" });
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflows/:id/approve
+  app.post("/api/admin/workflows/:id/approve", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { approveWorkflowStep } = await import("./workflows/index");
+      const result = await approveWorkflowStep(req.params.id, orgId, "admin");
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflows/:id/reject
+  app.post("/api/admin/workflows/:id/reject", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { rejectWorkflowStep } = await import("./workflows/index");
+      const result = await rejectWorkflowStep(req.params.id, orgId, "admin");
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflows/:id/cancel
+  app.post("/api/admin/workflows/:id/cancel", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { cancelWorkflow } = await import("./workflows/index");
+      const result = await cancelWorkflow(req.params.id, orgId);
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ─── Daily Operator Mode ──────────────────────────────────────────────────
 
   // POST /api/admin/start-my-day
