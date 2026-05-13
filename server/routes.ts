@@ -8192,6 +8192,185 @@ Business: ${org?.name ?? "Training Facility"}
     }
   });
 
+  // ─── Deal Outreach Integration ────────────────────────────────────────────────
+
+  // Generate AI follow-up email or SMS for a deal
+  app.post("/api/admin/team-training/deals/:id/generate-outreach", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+
+      const { channel = "email" } = req.body;
+      const prospect = await storage.getTeamTrainingProspect(deal.prospectId);
+      const org = await storage.getOrganizationById(profile.organizationId);
+
+      const contactName = prospect?.decisionMakerName || prospect?.contactName || "there";
+      const contactRole = prospect?.decisionMakerTitle || prospect?.contactRole || "";
+      const teamName = prospect?.prospectName || "your team";
+      const sport = prospect?.sport || "sport";
+      const city = prospect?.city || "";
+      const daysSince = Math.floor((Date.now() - new Date(deal.lastActivityAt).getTime()) / 86400000);
+
+      const contextBlock = `
+Business: ${org?.name ?? "Training Facility"}
+Deal stage: ${deal.status} | Probability: ${deal.probability}%
+Estimated value: $${deal.estimatedValue}
+Last activity: ${daysSince} day${daysSince !== 1 ? "s" : ""} ago
+Next planned action: ${deal.nextAction || "Not set"}
+Notes: ${deal.notes || "None"}
+Prospect: ${teamName}${sport ? " (" + sport + ")" : ""}${city ? " in " + city : ""}
+Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
+`.trim();
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI();
+
+      if (channel === "sms") {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You are a sports training business development expert. Write a short, warm, personal SMS follow-up to a sports team decision-maker. Keep it under 160 characters including sign-off. No generic openers. Be direct with a clear call to action. Sign off with the business name after a dash." },
+            { role: "user", content: `${contextBlock}\n\nWrite the best SMS follow-up for this deal right now. It should match the deal stage and encourage the very next step.` },
+          ],
+          max_tokens: 200,
+          temperature: 0.7,
+        });
+        return res.json({ channel: "sms", message: completion.choices[0]?.message?.content?.trim() ?? "" });
+      } else {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: 'You are a sports training business development expert. Write a personalized follow-up email to a sports team decision-maker. The email must be concise (under 200 words), warm, professional, and end with a clear single call to action. Return valid JSON with "subject" and "body" fields only. Body should be plain text with line breaks (no HTML).' },
+            { role: "user", content: `${contextBlock}\n\nWrite the best follow-up email for this deal right now. Match the tone to the deal stage and move the deal toward the next logical step. Return only valid JSON.` },
+          ],
+          max_tokens: 700,
+          temperature: 0.7,
+          response_format: { type: "json_object" },
+        });
+        let subject = "Following up — team training";
+        let message = "";
+        try {
+          const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+          subject = parsed.subject || subject;
+          message = parsed.body || "";
+        } catch {
+          message = completion.choices[0]?.message?.content?.trim() ?? "";
+        }
+        return res.json({ channel: "email", subject, message });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Send or save deal outreach as draft
+  app.post("/api/admin/team-training/deals/:id/send-outreach", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+
+      const { channel, subject, message, saveDraft, nextFollowUpAt } = req.body;
+      if (!channel || !message) return res.status(400).json({ message: "channel and message required" });
+
+      const prospect = await storage.getTeamTrainingProspect(deal.prospectId);
+      const org = await storage.getOrganizationById(profile.organizationId);
+
+      let sent = false;
+      let draftId: string | undefined;
+      let activityType: "email_sent" | "note_added" = "email_sent";
+      let activityDesc = "";
+
+      if (saveDraft) {
+        // Save to outreach drafts for later approval/sending
+        const draft = await storage.createOutreachDraft({
+          orgId: profile.organizationId,
+          prospectId: deal.prospectId,
+          subject: subject || "Follow-up",
+          body: message,
+          approved: false,
+        });
+        draftId = draft.id;
+        sent = false;
+        activityDesc = `Draft saved: "${subject || "Follow-up"}"`;
+        activityType = "note_added";
+      } else if (channel === "email") {
+        const toEmail = prospect?.decisionMakerEmail || prospect?.contactEmail;
+        if (!toEmail) return res.status(400).json({ message: "No email address on file for this prospect" });
+        // Record the draft as sent
+        const draft = await storage.createOutreachDraft({
+          orgId: profile.organizationId,
+          prospectId: deal.prospectId,
+          subject: subject || "Follow-up",
+          body: message,
+          approved: true,
+          approvedAt: new Date(),
+          sentAt: new Date(),
+        });
+        draftId = draft.id;
+        const { sendTeamTrainingOutreachEmail } = await import("./email");
+        const orgBranding = org ? { name: org.name ?? "TrainEfficiency", ownerEmail: org.ownerEmail ?? undefined } : undefined;
+        await sendTeamTrainingOutreachEmail(toEmail, subject || "Follow-up", message, orgBranding, draft.id);
+        sent = true;
+        activityDesc = `Email sent to ${toEmail}${subject ? `: "${subject}"` : ""}`;
+        activityType = "email_sent";
+      } else if (channel === "sms") {
+        const phone = prospect?.contactPhone;
+        if (!phone) return res.status(400).json({ message: "No phone number on file for this prospect" });
+        const { sendSms, isTwilioConfigured } = await import("./sms");
+        if (!isTwilioConfigured()) return res.status(400).json({ message: "SMS not configured — Twilio credentials missing" });
+        const result = await sendSms({ to: phone, body: message, ctx: { orgId: profile.organizationId, type: "outreach", messagePurpose: "operational" } });
+        if (!result.sent) return res.status(400).json({ message: result.error || result.skipped || "SMS delivery failed" });
+        sent = true;
+        activityDesc = `SMS sent to ${phone}`;
+        activityType = "email_sent";
+      }
+
+      // Update deal: lastContactAt + optional nextFollowUpAt (don't bump lastActivityAt here — the activity log does that)
+      const dealUpdate: any = { lastContactAt: new Date() };
+      if (nextFollowUpAt) dealUpdate.nextFollowUpAt = new Date(nextFollowUpAt);
+      await storage.updateTeamTrainingDeal(deal.id, dealUpdate);
+
+      // Log activity in timeline
+      await storage.createDealActivity({
+        dealId: deal.id,
+        organizationId: profile.organizationId,
+        activityType,
+        description: activityDesc,
+        metadata: { channel, sent, draftId: draftId ?? null },
+      });
+
+      // Log outreach event (best-effort)
+      storage.logOutreachEvent({
+        orgId: profile.organizationId,
+        prospectId: deal.prospectId,
+        draftId,
+        eventType: sent ? "sent" : "draft_created",
+        description: activityDesc,
+        metadata: { dealId: deal.id, channel, saveDraft: !!saveDraft },
+      } as any).catch(() => {});
+
+      // Log follow-up scheduled if a date was provided
+      if (nextFollowUpAt) {
+        storage.createDealActivity({
+          dealId: deal.id,
+          organizationId: profile.organizationId,
+          activityType: "follow_up_scheduled",
+          description: `Follow-up scheduled for ${new Date(nextFollowUpAt).toLocaleDateString()}`,
+        }).catch(() => {});
+      }
+
+      res.json({ ok: true, sent, channel, draftId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Get outreach events/audit log
   app.get("/api/admin/team-training/events", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {

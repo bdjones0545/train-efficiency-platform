@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
   Phone, FileText, Sparkles, CheckCircle, XCircle, Plus,
   AlertTriangle, Flame, Clock, Copy, Brain, Info, ChevronDown, ChevronUp, AlertCircle,
   Mail, MapPin, User, ArrowRight, Activity, Bell, TrendingDown,
-  BarChart3, Award, Thermometer, ListFilter, SortAsc,
+  BarChart3, Award, Thermometer, ListFilter, SortAsc, Send, Smartphone,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { TeamTrainingDeal, TeamTrainingProspect, DealActivity } from "@shared/schema";
@@ -548,6 +548,261 @@ function StalledDealsPanel({
   );
 }
 
+// ─── Outreach Modal ─────────────────────────────────────────────────────────────
+
+type OutreachChannel = "email" | "sms";
+type OutreachStep = "generate" | "preview" | "sent";
+
+function OutreachModal({ deal, onClose }: { deal: DealWithProspect | null; onClose: () => void }) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<OutreachStep>("generate");
+  const [channel, setChannel] = useState<OutreachChannel>("email");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
+  const [sentInfo, setSentInfo] = useState<{ sent: boolean } | null>(null);
+
+  const hasEmail = !!(deal?.prospect?.decisionMakerEmail || deal?.prospect?.contactEmail);
+  const hasPhone = !!(deal?.prospect?.contactPhone);
+
+  useEffect(() => {
+    if (!deal) return;
+    setStep("generate");
+    setSubject("");
+    setMessage("");
+    setFollowUpDate("");
+    setSentInfo(null);
+    setChannel(hasEmail ? "email" : "sms");
+  }, [deal?.id]);
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/admin/team-training/deals/${deal!.id}/generate-outreach`, { channel });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setSubject(data.subject || "");
+      setMessage(data.message || "");
+      setStep("preview");
+    },
+    onError: (err: Error) => toast({ title: "Generation failed", description: err.message, variant: "destructive" }),
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async (payload: { saveDraft: boolean; nextFollowUpAt?: string }) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/deals/${deal!.id}/send-outreach`, {
+        channel,
+        subject: channel === "email" ? subject : undefined,
+        message,
+        saveDraft: payload.saveDraft,
+        nextFollowUpAt: payload.nextFollowUpAt || undefined,
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.message || "Send failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data, vars) => {
+      setSentInfo({ sent: data.sent });
+      setStep("sent");
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals", deal!.id, "activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      toast({
+        title: vars.saveDraft ? "Draft saved" : (data.sent ? "Message sent!" : "Saved"),
+        description: vars.saveDraft
+          ? "Saved to outreach drafts for review"
+          : (data.sent ? `${channel === "email" ? "Email" : "SMS"} delivered and logged to timeline` : "Saved"),
+      });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const contactMissing = (channel === "email" && !hasEmail) || (channel === "sms" && !hasPhone);
+
+  return (
+    <Dialog open={!!deal} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Generate Follow-Up — {deal?.prospect?.prospectName ?? "Deal"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-1">
+
+          {/* Step 1: Generate */}
+          {step === "generate" && (
+            <>
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Channel</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["email", "sms"] as OutreachChannel[]).map((ch) => {
+                    const available = ch === "email" ? hasEmail : hasPhone;
+                    const Icon = ch === "email" ? Mail : Smartphone;
+                    const label = ch === "email" ? "Email" : "SMS";
+                    const detail = ch === "email"
+                      ? (hasEmail ? (deal?.prospect?.decisionMakerEmail || deal?.prospect?.contactEmail) : "No email on file")
+                      : (hasPhone ? deal?.prospect?.contactPhone : "No phone on file");
+                    return (
+                      <button
+                        key={ch}
+                        className={`flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${channel === ch ? "border-primary bg-primary/5" : "hover:bg-muted/50"} ${!available ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                        onClick={() => available && setChannel(ch)}
+                        data-testid={`button-channel-${ch}`}
+                      >
+                        <Icon className={`h-4 w-4 shrink-0 ${channel === ch ? "text-primary" : "text-muted-foreground"}`} />
+                        <div>
+                          <p className={`text-sm font-medium ${channel === ch ? "text-primary" : ""}`}>{label}</p>
+                          <p className="text-xs text-muted-foreground truncate max-w-[130px]">{detail}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-md bg-muted/40 border p-3 text-xs space-y-1 text-muted-foreground">
+                <p className="font-medium text-foreground text-xs uppercase tracking-wide">AI context for this deal</p>
+                <p>Stage: <span className="text-foreground font-medium">{deal?.status}</span> · Probability: <span className="text-foreground font-medium">{deal?.probability}%</span></p>
+                <p>Value: <span className="text-foreground font-medium">${deal?.estimatedValue?.toLocaleString()}</span></p>
+                {deal?.nextAction && <p>Next action: <span className="text-foreground">{deal.nextAction}</span></p>}
+                {deal?.notes && <p>Notes: <span className="text-foreground line-clamp-1">{deal.notes}</span></p>}
+                {deal?.prospect?.prospectName && <p>Prospect: <span className="text-foreground">{deal.prospect.prospectName}</span>{deal.prospect.sport ? ` (${deal.prospect.sport})` : ""}</p>}
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => generateMutation.mutate()}
+                  disabled={generateMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-generate-outreach"
+                >
+                  {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Generate with AI
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* Step 2: Preview & Edit */}
+          {step === "preview" && (
+            <>
+              {contactMissing && (
+                <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                  <div>
+                    <p className="font-medium text-amber-800 dark:text-amber-300">No {channel === "email" ? "email address" : "phone number"} on file</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                      {channel === "email" ? "Save as draft or add an email to the prospect to send." : "Add a phone number to the prospect to send SMS."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {channel === "email" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subject</label>
+                  <input
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Email subject..."
+                    className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    data-testid="input-outreach-subject"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  {channel === "email" ? "Email Body" : "SMS Message"}
+                  {channel === "sms" && <span className="text-muted-foreground font-normal">({message.length}/160)</span>}
+                </label>
+                <Textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  rows={channel === "email" ? 8 : 4}
+                  className="text-sm resize-none"
+                  data-testid="textarea-outreach-message"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Schedule Next Follow-Up (optional)</label>
+                <input
+                  type="date"
+                  value={followUpDate}
+                  onChange={(e) => setFollowUpDate(e.target.value)}
+                  className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  data-testid="input-outreach-followup-date"
+                />
+              </div>
+
+              <div className="flex gap-2 items-center justify-between pt-1 border-t">
+                <Button variant="ghost" size="sm" onClick={() => setStep("generate")} data-testid="button-outreach-back">
+                  ← Back
+                </Button>
+                <div className="flex gap-2">
+                  {channel === "email" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sendMutation.mutate({ saveDraft: true, nextFollowUpAt: followUpDate || undefined })}
+                      disabled={sendMutation.isPending || !message.trim()}
+                      className="gap-1"
+                      data-testid="button-outreach-save-draft"
+                    >
+                      {sendMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                      Save Draft
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={() => sendMutation.mutate({ saveDraft: false, nextFollowUpAt: followUpDate || undefined })}
+                    disabled={sendMutation.isPending || !message.trim() || contactMissing}
+                    className="gap-1"
+                    data-testid="button-outreach-send"
+                  >
+                    {sendMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    Send {channel === "sms" ? "SMS" : "Email"}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Step 3: Sent Confirmation */}
+          {step === "sent" && (
+            <div className="py-6 text-center space-y-4">
+              <div className="flex justify-center">
+                <div className="rounded-full bg-green-100 dark:bg-green-900/30 p-4">
+                  <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <p className="font-semibold text-base">
+                  {sentInfo?.sent ? `${channel === "email" ? "Email" : "SMS"} sent successfully!` : "Draft saved"}
+                </p>
+                <p className="text-sm text-muted-foreground">Activity logged to deal timeline</p>
+                <p className="text-sm text-muted-foreground">lastContactAt updated</p>
+                {followUpDate && (
+                  <p className="text-sm text-primary font-medium">
+                    Next follow-up scheduled for {new Date(followUpDate + "T12:00:00").toLocaleDateString()}
+                  </p>
+                )}
+              </div>
+              <Button onClick={onClose} className="gap-2" data-testid="button-outreach-done">
+                <CheckCircle className="h-4 w-4" /> Done
+              </Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DealCard({
   deal,
   onEdit,
@@ -765,6 +1020,7 @@ export default function AdminTeamTrainingDealsPage() {
   const [sortMode, setSortMode] = useState<SortMode>("urgency");
   const [logNote, setLogNote] = useState("");
   const [logNoteOpen, setLogNoteOpen] = useState(false);
+  const [outreachDeal, setOutreachDeal] = useState<DealWithProspect | null>(null);
 
   const { data: deals = [], isLoading } = useQuery<DealWithProspect[]>({
     queryKey: ["/api/admin/team-training/deals"],
@@ -1320,11 +1576,20 @@ export default function AdminTeamTrainingDealsPage() {
                 )}
 
                 {/* AI recommended move */}
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-1">
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
                   <div className="flex items-start gap-1.5 text-sm">
                     <Brain className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
                     <span className="text-muted-foreground">{health.move}</span>
                   </div>
+                  <Button
+                    size="sm"
+                    className="w-full gap-2 h-8"
+                    onClick={() => { setViewDeal(null); setOutreachDeal(viewDeal); }}
+                    data-testid="button-generate-followup"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Generate Follow-Up
+                  </Button>
                 </div>
 
                 {/* Next action */}
@@ -1446,6 +1711,12 @@ export default function AdminTeamTrainingDealsPage() {
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Outreach Modal */}
+      <OutreachModal
+        deal={outreachDeal}
+        onClose={() => setOutreachDeal(null)}
+      />
     </div>
   );
 }
