@@ -809,8 +809,8 @@ function AuditTab() {
     <div className="space-y-4" data-testid="audit-tab-content">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-semibold text-sm">Email Agent Health Audit</h2>
-          <p className="text-xs text-muted-foreground">Verify your email agent is configured correctly and performing well.</p>
+          <h2 className="font-semibold text-sm">Outreach Center Health Audit</h2>
+          <p className="text-xs text-muted-foreground">Verify your outreach system is configured correctly and performing well.</p>
         </div>
         <Button size="sm" onClick={() => refetch()} disabled={isFetching} data-testid="button-run-audit">
           {isFetching ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}

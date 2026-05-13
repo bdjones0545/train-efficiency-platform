@@ -3089,9 +3089,9 @@ export default function CommunicationHistoryPage() {
         <div>
           <div className="flex items-center gap-2">
             <Bot className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold tracking-tight" data-testid="heading-email-agent">Email Agent</h1>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid="heading-outreach-center">Outreach Center</h1>
           </div>
-          <p className="text-muted-foreground text-sm mt-1" data-testid="text-email-agent-subtitle">
+          <p className="text-muted-foreground text-sm mt-1" data-testid="text-outreach-center-subtitle">
             Manage outreach, prospects, sent emails, and AI-generated follow-ups.
           </p>
         </div>
@@ -3150,9 +3150,9 @@ export default function CommunicationHistoryPage() {
 
       {/* Mobile sticky bottom button */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 border-t backdrop-blur-md md:hidden z-40" data-testid="mobile-agent-bar">
-        <Button className="w-full" size="sm" onClick={() => setActiveTab("overview")} data-testid="button-ask-email-agent">
+        <Button className="w-full" size="sm" onClick={() => setActiveTab("overview")} data-testid="button-ask-outreach-center">
           <Bot className="h-4 w-4 mr-2" />
-          Ask Email Agent
+          Open Outreach Center
         </Button>
       </div>
     </div>
