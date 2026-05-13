@@ -8045,6 +8045,39 @@ Refine this email following the instruction above. Preserve the core message and
           activityType: "won",
           description: `Deal won${updated?.finalValue ? ` — $${updated.finalValue}` : ""}`,
         }).catch(() => {});
+        // Revenue Intelligence: create deal attribution record
+        try {
+          const activities = await storage.getDealActivities(deal.id);
+          const touchpoints = activities.filter(a => ["email_sent", "call_logged", "follow_up_completed"].includes(a.activityType)).length;
+          const daysToClose = Math.round((Date.now() - new Date(deal.createdAt).getTime()) / 86400000);
+          // Find the most recent outreach draft for this deal
+          const { teamTrainingOutreachDrafts } = await import("@shared/schema");
+          const { db } = await import("./db");
+          const { eq, and, desc } = await import("drizzle-orm");
+          const recentDrafts = await db.select().from(teamTrainingOutreachDrafts)
+            .where(and(eq(teamTrainingOutreachDrafts.dealId, deal.id), eq(teamTrainingOutreachDrafts.orgId, profile.organizationId)))
+            .orderBy(desc(teamTrainingOutreachDrafts.sentAt)).limit(5);
+          const sentDrafts = recentDrafts.filter(d => d.sentAt);
+          const primaryDraft = sentDrafts[0];
+          const allOutreachIds = sentDrafts.map(d => d.id);
+          const outreachSequence = sentDrafts.map((d, i) => ({
+            step: i + 1, channel: d.channel || "email", tone: d.outreachTone, strategy: d.aiStrategyTag, sentAt: d.sentAt,
+          }));
+          await storage.createDealRevenueAttribution({
+            orgId: profile.organizationId,
+            dealId: deal.id,
+            prospectId: deal.prospectId,
+            wonAt: new Date(),
+            finalValue: updated?.finalValue ?? updated?.estimatedValue ?? 0,
+            daysToClose,
+            totalTouchpoints: touchpoints,
+            primaryChannel: primaryDraft?.channel || "email",
+            primaryStrategy: primaryDraft?.aiStrategyTag || null,
+            primaryTone: primaryDraft?.outreachTone || null,
+            attributedOutreachIds: allOutreachIds,
+            outreachSequence,
+          } as any);
+        } catch {}
       }
       if (req.body.status === "lost" && prevStatus !== "lost") {
         storage.createDealActivity({
@@ -8243,23 +8276,29 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
         const completion = await openai.chat.completions.create({
           model: "gpt-4o-mini",
           messages: [
-            { role: "system", content: 'You are a sports training business development expert. Write a personalized follow-up email to a sports team decision-maker. The email must be concise (under 200 words), warm, professional, and end with a clear single call to action. Return valid JSON with "subject" and "body" fields only. Body should be plain text with line breaks (no HTML).' },
-            { role: "user", content: `${contextBlock}\n\nWrite the best follow-up email for this deal right now. Match the tone to the deal stage and move the deal toward the next logical step. Return only valid JSON.` },
+            { role: "system", content: 'You are a sports training business development expert. Write a personalized follow-up email to a sports team decision-maker. The email must be concise (under 200 words), warm, professional, and end with a single clear CTA. Return valid JSON with exactly these fields: "subject" (string), "body" (plain text with line breaks, no HTML), "outreachTone" (one of: direct, professional, energetic, relationship_first), "aiStrategyTag" (one of: urgency, authority, social_proof, value_first, problem_solution), "ctaType" (one of: schedule_call, request_info, book_assessment, follow_up_again, send_proposal). No other fields.' },
+            { role: "user", content: `${contextBlock}\n\nWrite the best follow-up email for this deal. Match tone and strategy to the deal stage. Return only valid JSON with all five required fields.` },
           ],
-          max_tokens: 700,
+          max_tokens: 800,
           temperature: 0.7,
           response_format: { type: "json_object" },
         });
         let subject = "Following up — team training";
         let message = "";
+        let outreachTone = "professional";
+        let aiStrategyTag = "value_first";
+        let ctaType = "schedule_call";
         try {
           const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
           subject = parsed.subject || subject;
           message = parsed.body || "";
+          outreachTone = parsed.outreachTone || outreachTone;
+          aiStrategyTag = parsed.aiStrategyTag || aiStrategyTag;
+          ctaType = parsed.ctaType || ctaType;
         } catch {
           message = completion.choices[0]?.message?.content?.trim() ?? "";
         }
-        return res.json({ channel: "email", subject, message });
+        return res.json({ channel: "email", subject, message, outreachTone, aiStrategyTag, ctaType });
       }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -8275,7 +8314,7 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
       const deal = await storage.getTeamTrainingDeal(req.params.id);
       if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
 
-      const { channel, subject, message, saveDraft, nextFollowUpAt } = req.body;
+      const { channel, subject, message, saveDraft, nextFollowUpAt, outreachTone, aiStrategyTag, ctaType } = req.body;
       if (!channel || !message) return res.status(400).json({ message: "channel and message required" });
 
       const prospect = await storage.getTeamTrainingProspect(deal.prospectId);
@@ -8286,6 +8325,14 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
       let activityType: "email_sent" | "note_added" = "email_sent";
       let activityDesc = "";
 
+      const outreachMeta: any = {
+        dealId: deal.id,
+        channel: channel || "email",
+        outreachTone: outreachTone || null,
+        aiStrategyTag: aiStrategyTag || null,
+        ctaType: ctaType || null,
+      };
+
       if (saveDraft) {
         // Save to outreach drafts for later approval/sending
         const draft = await storage.createOutreachDraft({
@@ -8294,6 +8341,7 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
           subject: subject || "Follow-up",
           body: message,
           approved: false,
+          ...outreachMeta,
         });
         draftId = draft.id;
         sent = false;
@@ -8311,6 +8359,7 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
           approved: true,
           approvedAt: new Date(),
           sentAt: new Date(),
+          ...outreachMeta,
         });
         draftId = draft.id;
         const { sendTeamTrainingOutreachEmail } = await import("./email");
@@ -8379,6 +8428,125 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const events = await storage.getOutreachEvents(profile.organizationId, req.query.prospectId as string | undefined);
       res.json(events);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Revenue Intelligence Analytics ──────────────────────────────────────────
+
+  // GET /api/admin/team-training/analytics — computed conversion metrics from real data
+  app.get("/api/admin/team-training/analytics", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const analytics = await storage.getConversionAnalytics(profile.organizationId);
+      res.json(analytics);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/team-training/analytics/recommendations — AI insights from real metrics
+  app.get("/api/admin/team-training/analytics/recommendations", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const analytics = await storage.getConversionAnalytics(profile.organizationId);
+      const { summary, winRateBySport, winRateByChannel, winRateByStrategy, winRateByTone, stageFunnel } = analytics;
+
+      // Only generate AI recommendations if there's enough data
+      if (summary.totalDeals < 2) {
+        return res.json({ recommendations: [
+          { icon: "📊", title: "Build your baseline", text: "Add more deals and track outreach to unlock data-driven recommendations. You need at least 2 deals to get started." }
+        ], generatedAt: new Date().toISOString(), dataPoints: summary.totalDeals });
+      }
+
+      const dataContext = `
+PIPELINE SNAPSHOT (real data):
+- Total deals: ${summary.totalDeals} (won: ${summary.wonDeals}, lost: ${summary.lostDeals}, active: ${summary.activeDeals})
+- Overall win rate: ${summary.winRate}%
+- Avg days to close: ${summary.avgDaysToClose} days
+- Total won revenue: $${summary.totalWonRevenue.toLocaleString()}
+- Reply rate: ${summary.replyRate}% (from ${summary.totalOutreachSent} sent emails)
+- Avg touchpoints before win: ${summary.avgTouchpoints}
+- Best channel: ${summary.bestChannel || "not enough data yet"}
+- Best AI strategy: ${summary.bestStrategy || "not enough data yet"}
+- Best tone: ${summary.bestTone || "not enough data yet"}
+
+WIN RATE BY SPORT: ${winRateBySport.map(s => `${s.sport}: ${s.winRate}% (${s.won}/${s.deals})`).join(", ") || "insufficient data"}
+
+WIN RATE BY CHANNEL: ${winRateByChannel.map(c => `${c.channel}: ${c.winRate}% (${c.won}/${c.sent} sent)`).join(", ") || "no outreach tracked yet"}
+
+WIN RATE BY STRATEGY: ${winRateByStrategy.map(s => `${s.strategy}: ${s.winRate}% (${s.sent} used)`).join(", ") || "no strategy data yet"}
+
+WIN RATE BY TONE: ${winRateByTone.map(t => `${t.tone}: ${t.winRate}% (${t.sent} used)`).join(", ") || "no tone data yet"}
+
+STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
+`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a revenue intelligence analyst for a sports team training sales team. You receive REAL pipeline data and generate 3-5 specific, actionable recommendations. Do NOT make up numbers — only reference the real numbers provided. Each recommendation must be concise (under 25 words), specific, and immediately actionable. Return valid JSON: { \"recommendations\": [{ \"icon\": \"emoji\", \"title\": \"short title\", \"text\": \"actionable insight\" }] }" },
+          { role: "user", content: `Analyze this real pipeline data and generate 3-5 specific recommendations:\n\n${dataContext}` },
+        ],
+        max_tokens: 600,
+        temperature: 0.4,
+        response_format: { type: "json_object" },
+      });
+
+      let recommendations: any[] = [];
+      try {
+        const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+        recommendations = parsed.recommendations || [];
+      } catch {}
+
+      if (!recommendations.length) {
+        recommendations = [
+          { icon: "📈", title: "Win Rate", text: `Your current win rate is ${summary.winRate}%. Focus on deals that match your highest-converting sport segments.` }
+        ];
+      }
+
+      res.json({ recommendations, generatedAt: new Date().toISOString(), dataPoints: summary.totalDeals });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/team-training/deals/:id/mark-response — mark that a prospect responded
+  app.post("/api/admin/team-training/deals/:id/mark-response", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const deal = await storage.getTeamTrainingDeal(req.params.id);
+      if (!deal || deal.organizationId !== profile.organizationId) return res.status(404).json({ message: "Not found" });
+
+      const { outreachDraftId, meetingBooked = false, note } = req.body;
+
+      // Mark the outreach draft as responded if provided
+      if (outreachDraftId) {
+        await storage.markOutreachResponse(outreachDraftId, meetingBooked);
+      }
+
+      // Log the response in the deal activity timeline
+      await storage.createDealActivity({
+        dealId: deal.id,
+        organizationId: profile.organizationId,
+        activityType: "manual",
+        description: meetingBooked
+          ? `Response received — meeting booked${note ? `: ${note}` : ""}`
+          : `Response received${note ? `: ${note}` : ""}`,
+        metadata: { outreachDraftId: outreachDraftId || null, meetingBooked, responseType: "manual" },
+      });
+
+      // Update deal lastContactAt
+      await storage.updateTeamTrainingDeal(deal.id, { lastContactAt: new Date() });
+
+      res.json({ ok: true, meetingBooked });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

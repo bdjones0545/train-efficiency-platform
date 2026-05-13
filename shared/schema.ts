@@ -695,8 +695,15 @@ export const teamTrainingOutreachDrafts = pgTable("team_training_outreach_drafts
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),
   prospectId: varchar("prospect_id").notNull(),
+  dealId: varchar("deal_id"),
+  channel: varchar("channel").default("email"),
   subject: text("subject").notNull(),
   body: text("body").notNull(),
+  outreachTone: varchar("outreach_tone"),
+  aiStrategyTag: varchar("ai_strategy_tag"),
+  ctaType: varchar("cta_type"),
+  responseReceived: boolean("response_received").default(false),
+  meetingBooked: boolean("meeting_booked").default(false),
   approved: boolean("approved").default(false),
   approvedAt: timestamp("approved_at"),
   sentAt: timestamp("sent_at"),
@@ -925,6 +932,27 @@ export const aiRevenueEvents = pgTable("ai_revenue_events", {
 export const insertAiRevenueEventSchema = createInsertSchema(aiRevenueEvents).omit({ id: true, createdAt: true });
 export type AiRevenueEvent = typeof aiRevenueEvents.$inferSelect;
 export type InsertAiRevenueEvent = z.infer<typeof insertAiRevenueEventSchema>;
+
+// ─── Deal Revenue Attributions ────────────────────────────────────────────────
+export const dealRevenueAttributions = pgTable("deal_revenue_attributions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  dealId: varchar("deal_id").notNull().unique(),
+  prospectId: varchar("prospect_id").notNull(),
+  wonAt: timestamp("won_at").notNull().defaultNow(),
+  finalValue: integer("final_value").default(0),
+  daysToClose: integer("days_to_close").default(0),
+  totalTouchpoints: integer("total_touchpoints").default(0),
+  primaryChannel: varchar("primary_channel"),
+  primaryStrategy: varchar("primary_strategy"),
+  primaryTone: varchar("primary_tone"),
+  attributedOutreachIds: jsonb("attributed_outreach_ids").default([]),
+  outreachSequence: jsonb("outreach_sequence").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DealRevenueAttribution = typeof dealRevenueAttributions.$inferSelect;
+export type InsertDealRevenueAttribution = typeof dealRevenueAttributions.$inferInsert;
 
 // ─── Email Trigger Audit Events ───────────────────────────────────────────────
 export const triggerTypeEnum = pgEnum("email_trigger_type", [

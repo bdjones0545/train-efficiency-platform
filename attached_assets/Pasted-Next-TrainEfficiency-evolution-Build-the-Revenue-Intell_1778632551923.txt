@@ -1,0 +1,120 @@
+Next TrainEfficiency evolution:
+
+Build the Revenue Intelligence & Outcome Learning Layer.
+
+Goal:
+The system should learn which outreach, stages, sports, organizations, and messaging styles actually convert into revenue.
+
+Current system already has:
+- deals
+- stages
+- outreach generation
+- email/SMS sending
+- activities timeline
+- follow-up scheduling
+- revenue tracking
+
+Now build outcome intelligence.
+
+1. Outreach Performance Tracking
+
+Track per outreach:
+- sentAt
+- channel (email/sms)
+- subject
+- body
+- responseReceived
+- responseTime
+- clicked
+- replied
+- meetingBooked
+- convertedToWon
+- outreachTone
+- aiStrategyTag
+
+2. Deal Conversion Analytics
+
+Track:
+- stage-to-stage conversion %
+- avg days to close
+- win rate by sport
+- win rate by organization type
+- win rate by outreach channel
+- revenue by source
+- highest-converting outreach timing
+
+3. AI Learning Tags
+
+When generating outreach, classify:
+- tone: direct / professional / energetic / relationship-first
+- strategy: urgency / authority / social proof / value-first / problem-solution
+- CTA type
+
+Store these on outreach records.
+
+4. Revenue Attribution
+
+When a deal becomes WON:
+attribute:
+- last outreach
+- outreach sequence
+- AI strategy
+- number of touchpoints
+- days to close
+
+5. Smart Recommendations Engine
+
+Generate insights like:
+- “Relationship-first emails convert 34% better for high schools.”
+- “SMS follow-ups increase reply rate after proposal stage.”
+- “Football programs close faster than baseball.”
+- “Deals contacted within 24h convert 2.1x higher.”
+
+6. AI Optimization Layer
+
+Use historical outcomes to influence:
+- outreach generation
+- recommended send timing
+- follow-up cadence
+- message tone
+
+The system should progressively improve recommendations.
+
+7. Pipeline Intelligence Dashboard Expansion
+
+Add:
+- reply rate
+- outreach conversion %
+- avg touches before win
+- most effective channel
+- best-performing sport
+- best-performing outreach strategy
+
+8. Deal Outcome Timeline
+
+Show:
+Lead discovered
+→ outreach sent
+→ response
+→ proposal
+→ follow-up
+→ won/lost
+
+with timestamps and attribution.
+
+9. Future-proofing
+
+Architecture:
+- deterministic tracking/storage
+- AI only generates interpretation/recommendations
+- no hallucinated analytics
+- all insights derived from real DB activity
+
+Acceptance tests:
+- Send outreach
+- Mark response received
+- Advance deal
+- Mark won
+- Verify attribution stored
+- Verify analytics update
+- Verify recommendations generated from real data

@@ -332,6 +332,10 @@ export interface IStorage {
   getDealPipelineStats(orgId: string): Promise<{ active: number; interested: number; negotiating: number; projectedRevenue: number; wonRevenue: number; stalledCount: number; followUpDueCount: number; avgDealSize: number; winRate: number }>;
   createDealActivity(data: import("@shared/schema").InsertDealActivity): Promise<import("@shared/schema").DealActivity>;
   getDealActivities(dealId: string): Promise<import("@shared/schema").DealActivity[]>;
+  createDealRevenueAttribution(data: import("@shared/schema").InsertDealRevenueAttribution): Promise<import("@shared/schema").DealRevenueAttribution>;
+  getDealRevenueAttribution(dealId: string): Promise<import("@shared/schema").DealRevenueAttribution | undefined>;
+  getConversionAnalytics(orgId: string): Promise<any>;
+  markOutreachResponse(outreachDraftId: string, meetingBooked?: boolean): Promise<void>;
 
   // Team Training Lead Settings
   getTeamLeadSettings(orgId: string): Promise<import("@shared/schema").TeamTrainingLeadSettings | undefined>;
@@ -2581,6 +2585,159 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(dealActivities)
       .where(eq(dealActivities.dealId, dealId))
       .orderBy(desc(dealActivities.createdAt));
+  }
+
+  async createDealRevenueAttribution(data: import("@shared/schema").InsertDealRevenueAttribution) {
+    const { dealRevenueAttributions } = await import("@shared/schema");
+    const [row] = await db.insert(dealRevenueAttributions).values(data as any)
+      .onConflictDoUpdate({
+        target: dealRevenueAttributions.dealId,
+        set: { finalValue: (data as any).finalValue, daysToClose: (data as any).daysToClose, totalTouchpoints: (data as any).totalTouchpoints, primaryChannel: (data as any).primaryChannel, primaryStrategy: (data as any).primaryStrategy, primaryTone: (data as any).primaryTone, attributedOutreachIds: (data as any).attributedOutreachIds, outreachSequence: (data as any).outreachSequence, wonAt: (data as any).wonAt },
+      })
+      .returning();
+    return row;
+  }
+
+  async getDealRevenueAttribution(dealId: string) {
+    const { dealRevenueAttributions } = await import("@shared/schema");
+    const [row] = await db.select().from(dealRevenueAttributions)
+      .where(eq(dealRevenueAttributions.dealId, dealId)).limit(1);
+    return row;
+  }
+
+  async markOutreachResponse(outreachDraftId: string, meetingBooked = false) {
+    const { teamTrainingOutreachDrafts } = await import("@shared/schema");
+    await db.update(teamTrainingOutreachDrafts)
+      .set({ responseReceived: true, repliedAt: new Date(), meetingBooked, updatedAt: new Date() })
+      .where(eq(teamTrainingOutreachDrafts.id, outreachDraftId));
+  }
+
+  async getConversionAnalytics(orgId: string) {
+    const { teamTrainingDeals, teamTrainingProspects, teamTrainingOutreachDrafts, dealRevenueAttributions } = await import("@shared/schema");
+
+    const [dealsWithProspects, outreachDrafts, attributions] = await Promise.all([
+      db.select({
+        dealId: teamTrainingDeals.id,
+        status: teamTrainingDeals.status,
+        estimatedValue: teamTrainingDeals.estimatedValue,
+        finalValue: teamTrainingDeals.finalValue,
+        createdAt: teamTrainingDeals.createdAt,
+        updatedAt: teamTrainingDeals.updatedAt,
+        lastContactAt: teamTrainingDeals.lastContactAt,
+        sport: teamTrainingProspects.sport,
+        prospectName: teamTrainingProspects.prospectName,
+      }).from(teamTrainingDeals)
+        .leftJoin(teamTrainingProspects, eq(teamTrainingDeals.prospectId, teamTrainingProspects.id))
+        .where(eq(teamTrainingDeals.organizationId, orgId)),
+
+      db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.orgId, orgId)),
+
+      db.select().from(dealRevenueAttributions).where(eq(dealRevenueAttributions.orgId, orgId)),
+    ]);
+
+    const dealMap = Object.fromEntries(dealsWithProspects.map(d => [d.dealId, d]));
+
+    const won = dealsWithProspects.filter(d => d.status === "won");
+    const lost = dealsWithProspects.filter(d => d.status === "lost");
+    const closed = won.length + lost.length;
+    const winRate = closed > 0 ? Math.round((won.length / closed) * 100) : 0;
+
+    const avgDaysToClose = won.length > 0
+      ? Math.round(won.reduce((s, d) => s + (new Date(d.updatedAt).getTime() - new Date(d.createdAt).getTime()) / 86400000, 0) / won.length)
+      : 0;
+
+    // Win rate by sport
+    const sportStats: Record<string, { won: number; total: number }> = {};
+    for (const d of dealsWithProspects) {
+      const sport = d.sport || "Unknown";
+      if (!sportStats[sport]) sportStats[sport] = { won: 0, total: 0 };
+      sportStats[sport].total++;
+      if (d.status === "won") sportStats[sport].won++;
+    }
+    const winRateBySport = Object.entries(sportStats)
+      .map(([sport, s]) => ({ sport, winRate: s.total > 0 ? Math.round((s.won / s.total) * 100) : 0, deals: s.total, won: s.won }))
+      .filter(s => s.deals >= 1)
+      .sort((a, b) => b.winRate - a.winRate).slice(0, 6);
+
+    // Win rate by channel (using deal link on outreach drafts)
+    const channelStats: Record<string, { won: number; total: number }> = {};
+    for (const o of outreachDrafts.filter(o => o.sentAt && o.dealId)) {
+      const ch = o.channel || "email";
+      if (!channelStats[ch]) channelStats[ch] = { won: 0, total: 0 };
+      channelStats[ch].total++;
+      if (dealMap[o.dealId!]?.status === "won") channelStats[ch].won++;
+    }
+    const winRateByChannel = Object.entries(channelStats)
+      .map(([channel, s]) => ({ channel, winRate: s.total > 0 ? Math.round((s.won / s.total) * 100) : 0, sent: s.total, won: s.won }))
+      .sort((a, b) => b.winRate - a.winRate);
+
+    // Win rate by strategy
+    const strategyStats: Record<string, { won: number; total: number }> = {};
+    for (const o of outreachDrafts.filter(o => o.sentAt && o.aiStrategyTag && o.dealId)) {
+      const tag = o.aiStrategyTag!;
+      if (!strategyStats[tag]) strategyStats[tag] = { won: 0, total: 0 };
+      strategyStats[tag].total++;
+      if (dealMap[o.dealId!]?.status === "won") strategyStats[tag].won++;
+    }
+    const winRateByStrategy = Object.entries(strategyStats)
+      .map(([strategy, s]) => ({ strategy, winRate: s.total > 0 ? Math.round((s.won / s.total) * 100) : 0, sent: s.total }))
+      .sort((a, b) => b.winRate - a.winRate);
+
+    // Win rate by tone
+    const toneStats: Record<string, { won: number; total: number }> = {};
+    for (const o of outreachDrafts.filter(o => o.sentAt && o.outreachTone && o.dealId)) {
+      const tone = o.outreachTone!;
+      if (!toneStats[tone]) toneStats[tone] = { won: 0, total: 0 };
+      toneStats[tone].total++;
+      if (dealMap[o.dealId!]?.status === "won") toneStats[tone].won++;
+    }
+    const winRateByTone = Object.entries(toneStats)
+      .map(([tone, s]) => ({ tone, winRate: s.total > 0 ? Math.round((s.won / s.total) * 100) : 0, sent: s.total }))
+      .sort((a, b) => b.winRate - a.winRate);
+
+    // Reply rate
+    const sentOutreach = outreachDrafts.filter(o => o.sentAt && o.approved);
+    const responsesReceived = outreachDrafts.filter(o => o.responseReceived || o.repliedAt);
+    const replyRate = sentOutreach.length > 0 ? Math.round((responsesReceived.length / sentOutreach.length) * 100) : 0;
+
+    // Avg touchpoints from attributions
+    const avgTouchpoints = attributions.length > 0
+      ? Math.round(attributions.reduce((s, a) => s + (a.totalTouchpoints || 0), 0) / attributions.length)
+      : 0;
+
+    // Stage funnel
+    const statusOrder = ["new", "contacted", "interested", "call_scheduled", "proposal_sent", "negotiating"];
+    const stageFunnel = statusOrder.map(stage => ({
+      stage,
+      label: stage.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+      count: dealsWithProspects.filter(d => d.status === stage).length,
+    }));
+
+    const totalWonRevenue = won.reduce((s, d) => s + (d.finalValue ?? d.estimatedValue ?? 0), 0);
+
+    return {
+      summary: {
+        totalDeals: dealsWithProspects.length,
+        wonDeals: won.length,
+        lostDeals: lost.length,
+        activeDeals: dealsWithProspects.filter(d => !["won", "lost"].includes(d.status)).length,
+        winRate,
+        avgDaysToClose,
+        totalWonRevenue,
+        replyRate,
+        avgTouchpoints,
+        totalOutreachSent: sentOutreach.length,
+        bestChannel: winRateByChannel[0]?.channel ?? null,
+        bestStrategy: winRateByStrategy[0]?.strategy ?? null,
+        bestTone: winRateByTone[0]?.tone ?? null,
+      },
+      stageFunnel,
+      winRateBySport,
+      winRateByChannel,
+      winRateByStrategy,
+      winRateByTone,
+      recentAttributions: attributions.slice(-5).reverse(),
+    };
   }
 
   async createAiRevenueEvent(data: import("@shared/schema").InsertAiRevenueEvent) {

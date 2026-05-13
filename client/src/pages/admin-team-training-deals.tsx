@@ -17,6 +17,7 @@ import {
   AlertTriangle, Flame, Clock, Copy, Brain, Info, ChevronDown, ChevronUp, AlertCircle,
   Mail, MapPin, User, ArrowRight, Activity, Bell, TrendingDown,
   BarChart3, Award, Thermometer, ListFilter, SortAsc, Send, Smartphone,
+  Lightbulb, RefreshCcw, ThumbsUp, Layers, BadgeCheck, Tag,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { TeamTrainingDeal, TeamTrainingProspect, DealActivity } from "@shared/schema";
@@ -553,6 +554,16 @@ function StalledDealsPanel({
 type OutreachChannel = "email" | "sms";
 type OutreachStep = "generate" | "preview" | "sent";
 
+const TONE_LABELS: Record<string, string> = {
+  direct: "Direct", professional: "Professional", energetic: "Energetic", relationship_first: "Relationship-First",
+};
+const STRATEGY_LABELS: Record<string, string> = {
+  urgency: "Urgency", authority: "Authority", social_proof: "Social Proof", value_first: "Value-First", problem_solution: "Problem-Solution",
+};
+const CTA_LABELS: Record<string, string> = {
+  schedule_call: "Schedule Call", request_info: "Request Info", book_assessment: "Book Assessment", follow_up_again: "Follow Up Again", send_proposal: "Send Proposal",
+};
+
 function OutreachModal({ deal, onClose }: { deal: DealWithProspect | null; onClose: () => void }) {
   const { toast } = useToast();
   const [step, setStep] = useState<OutreachStep>("generate");
@@ -561,6 +572,7 @@ function OutreachModal({ deal, onClose }: { deal: DealWithProspect | null; onClo
   const [message, setMessage] = useState("");
   const [followUpDate, setFollowUpDate] = useState("");
   const [sentInfo, setSentInfo] = useState<{ sent: boolean } | null>(null);
+  const [aiTags, setAiTags] = useState<{ outreachTone?: string; aiStrategyTag?: string; ctaType?: string }>({});
 
   const hasEmail = !!(deal?.prospect?.decisionMakerEmail || deal?.prospect?.contactEmail);
   const hasPhone = !!(deal?.prospect?.contactPhone);
@@ -572,6 +584,7 @@ function OutreachModal({ deal, onClose }: { deal: DealWithProspect | null; onClo
     setMessage("");
     setFollowUpDate("");
     setSentInfo(null);
+    setAiTags({});
     setChannel(hasEmail ? "email" : "sms");
   }, [deal?.id]);
 
@@ -583,6 +596,11 @@ function OutreachModal({ deal, onClose }: { deal: DealWithProspect | null; onClo
     onSuccess: (data) => {
       setSubject(data.subject || "");
       setMessage(data.message || "");
+      setAiTags({
+        outreachTone: data.outreachTone,
+        aiStrategyTag: data.aiStrategyTag,
+        ctaType: data.ctaType,
+      });
       setStep("preview");
     },
     onError: (err: Error) => toast({ title: "Generation failed", description: err.message, variant: "destructive" }),
@@ -596,6 +614,9 @@ function OutreachModal({ deal, onClose }: { deal: DealWithProspect | null; onClo
         message,
         saveDraft: payload.saveDraft,
         nextFollowUpAt: payload.nextFollowUpAt || undefined,
+        outreachTone: aiTags.outreachTone,
+        aiStrategyTag: aiTags.aiStrategyTag,
+        ctaType: aiTags.ctaType,
       });
       if (!res.ok) {
         const d = await res.json();
@@ -711,6 +732,30 @@ function OutreachModal({ deal, onClose }: { deal: DealWithProspect | null; onClo
                     className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     data-testid="input-outreach-subject"
                   />
+                </div>
+              )}
+
+              {/* AI Classification Tags */}
+              {(aiTags.outreachTone || aiTags.aiStrategyTag || aiTags.ctaType) && (
+                <div className="flex flex-wrap gap-1.5">
+                  {aiTags.outreachTone && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2 py-0.5 text-xs font-medium">
+                      <Thermometer className="h-2.5 w-2.5" />
+                      {TONE_LABELS[aiTags.outreachTone] ?? aiTags.outreachTone}
+                    </span>
+                  )}
+                  {aiTags.aiStrategyTag && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 px-2 py-0.5 text-xs font-medium">
+                      <Brain className="h-2.5 w-2.5" />
+                      {STRATEGY_LABELS[aiTags.aiStrategyTag] ?? aiTags.aiStrategyTag}
+                    </span>
+                  )}
+                  {aiTags.ctaType && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-xs font-medium">
+                      <ArrowRight className="h-2.5 w-2.5" />
+                      {CTA_LABELS[aiTags.ctaType] ?? aiTags.ctaType}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -1007,6 +1052,248 @@ function KanbanColumn({
   );
 }
 
+// ─── Revenue Intelligence Panel ──────────────────────────────────────────────
+
+interface AnalyticsSummary {
+  totalDeals: number; wonDeals: number; lostDeals: number; activeDeals: number;
+  winRate: number; avgDaysToClose: number; totalWonRevenue: number;
+  replyRate: number; avgTouchpoints: number; totalOutreachSent: number;
+  bestChannel: string | null; bestStrategy: string | null; bestTone: string | null;
+}
+interface AnalyticsData {
+  summary: AnalyticsSummary;
+  stageFunnel: { stage: string; label: string; count: number }[];
+  winRateBySport: { sport: string; winRate: number; deals: number; won: number }[];
+  winRateByChannel: { channel: string; winRate: number; sent: number; won: number }[];
+  winRateByStrategy: { strategy: string; winRate: number; sent: number }[];
+  winRateByTone: { tone: string; winRate: number; sent: number }[];
+}
+interface RecommendationsData {
+  recommendations: { icon: string; title: string; text: string }[];
+  generatedAt: string;
+  dataPoints: number;
+}
+
+function MiniBar({ value, max, color = "bg-primary" }: { value: number; max: number; color?: string }) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-medium w-8 text-right shrink-0">{value}%</span>
+    </div>
+  );
+}
+
+function RevenueIntelligencePanel() {
+  const [open, setOpen] = useState(false);
+  const [recOpen, setRecOpen] = useState(false);
+
+  const { data: analytics, isLoading: aLoading } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/team-training/analytics"],
+    enabled: open,
+  });
+
+  const { data: recs, isLoading: rLoading, refetch: refetchRecs } = useQuery<RecommendationsData>({
+    queryKey: ["/api/admin/team-training/analytics/recommendations"],
+    enabled: open && recOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const s = analytics?.summary;
+
+  return (
+    <div className="rounded-lg border bg-gradient-to-br from-indigo-50/50 to-purple-50/30 dark:from-indigo-950/20 dark:to-purple-950/10 border-indigo-200/60 dark:border-indigo-800/40 overflow-hidden" data-testid="revenue-intelligence-panel">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-colors"
+        onClick={() => setOpen(o => !o)}
+        data-testid="button-toggle-intelligence"
+      >
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded-md bg-indigo-500/15 flex items-center justify-center">
+            <BarChart3 className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <span className="font-semibold text-sm">Revenue Intelligence</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">· AI-powered pipeline analytics</span>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-4 border-t border-indigo-200/40 dark:border-indigo-800/30 pt-3">
+          {aLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-14" />)}
+            </div>
+          ) : analytics && s ? (
+            <>
+              {/* Key Metrics Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { icon: Award, label: "Win Rate", value: `${s.winRate}%`, color: "text-emerald-600", sub: `${s.wonDeals} of ${s.wonDeals + s.lostDeals} closed` },
+                  { icon: Mail, label: "Reply Rate", value: `${s.replyRate}%`, color: "text-blue-600", sub: `${s.totalOutreachSent} sent` },
+                  { icon: Clock, label: "Avg Days to Close", value: s.avgDaysToClose > 0 ? `${s.avgDaysToClose}d` : "—", color: "text-orange-500", sub: "won deals" },
+                  { icon: Layers, label: "Avg Touchpoints", value: s.avgTouchpoints > 0 ? `${s.avgTouchpoints}` : "—", color: "text-purple-600", sub: "before win" },
+                ].map(({ icon: Icon, label, value, color, sub }) => (
+                  <div key={label} className="rounded-md bg-white/70 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/40 p-2.5 space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <Icon className={`h-3 w-3 ${color}`} />
+                      <span className="text-xs text-muted-foreground">{label}</span>
+                    </div>
+                    <p className={`text-lg font-bold ${color}`}>{value}</p>
+                    <p className="text-xs text-muted-foreground">{sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Best Performers Row */}
+              {(s.bestChannel || s.bestStrategy || s.bestTone) && (
+                <div className="flex flex-wrap gap-2">
+                  {s.bestChannel && (
+                    <div className="flex items-center gap-1.5 text-xs rounded-full bg-blue-100/80 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 px-3 py-1 text-blue-700 dark:text-blue-300 font-medium">
+                      <BadgeCheck className="h-3 w-3" />
+                      Best channel: <span className="capitalize">{s.bestChannel}</span>
+                    </div>
+                  )}
+                  {s.bestStrategy && (
+                    <div className="flex items-center gap-1.5 text-xs rounded-full bg-purple-100/80 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 px-3 py-1 text-purple-700 dark:text-purple-300 font-medium">
+                      <Brain className="h-3 w-3" />
+                      Best strategy: {STRATEGY_LABELS[s.bestStrategy] ?? s.bestStrategy}
+                    </div>
+                  )}
+                  {s.bestTone && (
+                    <div className="flex items-center gap-1.5 text-xs rounded-full bg-emerald-100/80 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-emerald-700 dark:text-emerald-300 font-medium">
+                      <Thermometer className="h-3 w-3" />
+                      Best tone: {TONE_LABELS[s.bestTone] ?? s.bestTone}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Win Rate by Sport */}
+                {analytics.winRateBySport.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Win Rate by Sport</p>
+                    <div className="space-y-1.5">
+                      {analytics.winRateBySport.slice(0, 5).map(s => (
+                        <div key={s.sport} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate max-w-[120px] capitalize">{s.sport}</span>
+                            <span className="text-muted-foreground ml-1">{s.won}/{s.deals}</span>
+                          </div>
+                          <MiniBar value={s.winRate} max={100} color={s.winRate >= 50 ? "bg-emerald-500" : s.winRate >= 25 ? "bg-amber-400" : "bg-red-400"} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Win Rate by Strategy */}
+                {analytics.winRateByStrategy.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Win Rate by Strategy</p>
+                    <div className="space-y-1.5">
+                      {analytics.winRateByStrategy.slice(0, 5).map(s => (
+                        <div key={s.strategy} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate max-w-[120px]">{STRATEGY_LABELS[s.strategy] ?? s.strategy}</span>
+                            <span className="text-muted-foreground ml-1">{s.sent} sent</span>
+                          </div>
+                          <MiniBar value={s.winRate} max={100} color="bg-purple-500" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Win Rate by Strategy</p>
+                    <div className="rounded-md bg-white/50 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-700 p-3 text-center">
+                      <Tag className="h-4 w-4 mx-auto text-muted-foreground/40 mb-1" />
+                      <p className="text-xs text-muted-foreground">Send outreach via the Generate Follow-Up button to start tracking strategies</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Stage Funnel */}
+              {analytics.stageFunnel.some(s => s.count > 0) && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Active Stage Funnel</p>
+                  <div className="flex items-end gap-1 h-10">
+                    {analytics.stageFunnel.filter(s => s.count > 0).map((s, i, arr) => {
+                      const maxCount = Math.max(...arr.map(x => x.count));
+                      const heightPct = maxCount > 0 ? Math.max(20, Math.round((s.count / maxCount) * 100)) : 20;
+                      const colors = ["bg-blue-400", "bg-emerald-400", "bg-purple-400", "bg-yellow-400", "bg-orange-400", "bg-pink-400"];
+                      return (
+                        <div key={s.stage} className="flex-1 flex flex-col items-center gap-0.5" title={`${s.label}: ${s.count}`}>
+                          <span className="text-xs font-bold text-muted-foreground">{s.count}</span>
+                          <div className={`w-full rounded-t ${colors[i % colors.length]}`} style={{ height: `${heightPct}%` }} />
+                          <span className="text-xs text-muted-foreground truncate w-full text-center hidden sm:block" style={{ fontSize: "9px" }}>{s.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Recommendations */}
+              <div className="rounded-md border border-indigo-200/60 dark:border-indigo-800/30 overflow-hidden">
+                <button
+                  className="w-full flex items-center justify-between px-3 py-2 bg-indigo-50/60 dark:bg-indigo-950/30 hover:bg-indigo-100/60 dark:hover:bg-indigo-900/30 transition-colors"
+                  onClick={() => setRecOpen(o => !o)}
+                  data-testid="button-toggle-recommendations"
+                >
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+                    <span className="text-xs font-semibold">AI Recommendations</span>
+                    <span className="text-xs text-muted-foreground">based on your real data</span>
+                  </div>
+                  {recOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                </button>
+                {recOpen && (
+                  <div className="p-3 bg-white/60 dark:bg-slate-900/30 space-y-3">
+                    {rLoading ? (
+                      <div className="space-y-2">
+                        {[1,2,3].map(i => <Skeleton key={i} className="h-10" />)}
+                      </div>
+                    ) : recs?.recommendations?.length ? (
+                      <>
+                        <div className="space-y-2">
+                          {recs.recommendations.map((r, i) => (
+                            <div key={i} className="flex items-start gap-2.5 rounded-md bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30 p-2.5" data-testid={`recommendation-${i}`}>
+                              <span className="text-base leading-none mt-0.5 shrink-0">{r.icon}</span>
+                              <div>
+                                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">{r.title}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{r.text}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Based on {recs.dataPoints} deals · {recs.generatedAt ? new Date(recs.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                          <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => refetchRecs()}>
+                            <RefreshCcw className="h-2.5 w-2.5" /> Refresh
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-2">No recommendations yet. Add more deals and outreach to unlock insights.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">No analytics data yet. Start adding deals to see insights.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminTeamTrainingDealsPage() {
   const { toast } = useToast();
   const [editDeal, setEditDeal] = useState<DealWithProspect | null>(null);
@@ -1021,6 +1308,9 @@ export default function AdminTeamTrainingDealsPage() {
   const [logNote, setLogNote] = useState("");
   const [logNoteOpen, setLogNoteOpen] = useState(false);
   const [outreachDeal, setOutreachDeal] = useState<DealWithProspect | null>(null);
+  const [markResponseOpen, setMarkResponseOpen] = useState(false);
+  const [markResponseNote, setMarkResponseNote] = useState("");
+  const [markResponseMeeting, setMarkResponseMeeting] = useState(false);
 
   const { data: deals = [], isLoading } = useQuery<DealWithProspect[]>({
     queryKey: ["/api/admin/team-training/deals"],
@@ -1054,6 +1344,23 @@ export default function AdminTeamTrainingDealsPage() {
       toast({ title: "Deal deleted" });
     },
     onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const markResponseMutation = useMutation({
+    mutationFn: async ({ id, meetingBooked, note }: { id: string; meetingBooked: boolean; note?: string }) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/deals/${id}/mark-response`, { meetingBooked, note });
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals", vars.id, "activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/analytics"] });
+      setMarkResponseOpen(false);
+      setMarkResponseNote("");
+      setMarkResponseMeeting(false);
+      toast({ title: vars.meetingBooked ? "Meeting booked logged!" : "Response logged", description: "Activity added to the deal timeline." });
+    },
+    onError: (err: Error) => toast({ title: "Failed to log response", description: err.message, variant: "destructive" }),
   });
 
   const logActivityMutation = useMutation({
@@ -1229,6 +1536,9 @@ export default function AdminTeamTrainingDealsPage() {
 
       {/* Command Center */}
       {!isLoading && deals.length > 0 && <CommandCenter deals={deals} />}
+
+      {/* Revenue Intelligence Panel */}
+      {!isLoading && <RevenueIntelligencePanel />}
 
       {/* Stalled Deals Panel */}
       {!isLoading && (
@@ -1462,7 +1772,7 @@ export default function AdminTeamTrainingDealsPage() {
       </Dialog>
 
       {/* Deal Detail Drawer */}
-      <Dialog open={!!viewDeal} onOpenChange={(o) => !o && (setViewDeal(null), setLogNoteOpen(false), setLogNote(""))}>
+      <Dialog open={!!viewDeal} onOpenChange={(o) => !o && (setViewDeal(null), setLogNoteOpen(false), setLogNote(""), setMarkResponseOpen(false))}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
@@ -1581,15 +1891,64 @@ export default function AdminTeamTrainingDealsPage() {
                     <Brain className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
                     <span className="text-muted-foreground">{health.move}</span>
                   </div>
-                  <Button
-                    size="sm"
-                    className="w-full gap-2 h-8"
-                    onClick={() => { setViewDeal(null); setOutreachDeal(viewDeal); }}
-                    data-testid="button-generate-followup"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Generate Follow-Up
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1 gap-2 h-8"
+                      onClick={() => { setViewDeal(null); setOutreachDeal(viewDeal); }}
+                      data-testid="button-generate-followup"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Generate Follow-Up
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 h-8 text-xs"
+                      onClick={() => { setMarkResponseOpen(o => !o); setMarkResponseNote(""); setMarkResponseMeeting(false); }}
+                      data-testid="button-mark-response"
+                    >
+                      <ThumbsUp className="h-3 w-3" />
+                      Got Response
+                    </Button>
+                  </div>
+                  {/* Mark Response inline form */}
+                  {markResponseOpen && (
+                    <div className="space-y-2 pt-1 border-t border-primary/20">
+                      <p className="text-xs text-muted-foreground font-medium">Log response received:</p>
+                      <Input
+                        value={markResponseNote}
+                        onChange={(e) => setMarkResponseNote(e.target.value)}
+                        placeholder="Brief note (optional)..."
+                        className="h-7 text-xs"
+                        data-testid="input-mark-response-note"
+                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="meeting-booked"
+                          checked={markResponseMeeting}
+                          onChange={(e) => setMarkResponseMeeting(e.target.checked)}
+                          className="h-3 w-3"
+                          data-testid="checkbox-meeting-booked"
+                        />
+                        <label htmlFor="meeting-booked" className="text-xs text-muted-foreground cursor-pointer">Meeting booked</label>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs flex-1 gap-1"
+                          disabled={markResponseMutation.isPending}
+                          onClick={() => markResponseMutation.mutate({ id: viewDeal.id, meetingBooked: markResponseMeeting, note: markResponseNote || undefined })}
+                          data-testid="button-confirm-mark-response"
+                        >
+                          {markResponseMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                          Log Response
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setMarkResponseOpen(false)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Next action */}
