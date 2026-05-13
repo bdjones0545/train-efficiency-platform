@@ -9,6 +9,7 @@ import {
   DashQuickActionGrid,
   DashQuickActionItem,
   DashAlertReveal,
+  DashStaggerItem,
   IntelPulseDot,
 } from "@/components/DashboardMotion";
 import { useAiRevenueToasts } from "@/hooks/use-ai-revenue-toasts";
@@ -46,6 +47,15 @@ import {
   ShieldAlert,
   XCircle,
   Info,
+  Brain,
+  Activity,
+  Sparkles,
+  Shield,
+  ExternalLink,
+  Play,
+  X,
+  ListChecks,
+  BarChart3,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -200,6 +210,583 @@ const CONFIDENCE_BADGE: Record<string, string> = {
   medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
   low: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
+
+// ─── Unified Action Inbox Types ───────────────────────────────────────────────
+
+type UnifiedAction = {
+  id: string;
+  source: "brain" | "revenue_agent";
+  agentType: string;
+  title: string;
+  description: string;
+  priorityScore: number;
+  severity: "critical" | "high" | "medium" | "low";
+  estimatedImpact: number;
+  actionType: string;
+  entityType: string | null;
+  entityId: string | null;
+  entityName: string | null;
+  status: string;
+  crossAgent: boolean;
+  deepLinkType: "deal" | "lead" | "client" | "schedule" | null;
+  deepLinkUrl: string | null;
+  deepLinkLabel: string | null;
+};
+
+type BriefSummary = {
+  biggestOpportunity: { title?: string; detail?: string; value?: number } | null;
+  highestChurnRisk: { name?: string; detail?: string } | null;
+  mostValuableLead: { name?: string; detail?: string; value?: number } | null;
+  projectedWeeklyRevenue: number;
+  recommendedActions: string[];
+};
+
+type CommandCenterSummary = {
+  healthScore: number | null;
+  lastRunAt: string | null;
+  briefSummary: BriefSummary | null;
+  topActions: UnifiedAction[];
+  totalPending: number;
+};
+
+// ─── Brain Brief Strip ────────────────────────────────────────────────────────
+
+function healthScoreColor(score: number | null) {
+  if (score === null) return "text-muted-foreground";
+  if (score >= 80) return "text-emerald-600 dark:text-emerald-400";
+  if (score >= 60) return "text-yellow-600 dark:text-yellow-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function healthScoreBg(score: number | null) {
+  if (score === null) return "border-border";
+  if (score >= 80) return "border-emerald-500/40 bg-emerald-500/5";
+  if (score >= 60) return "border-yellow-500/40 bg-yellow-500/5";
+  return "border-red-500/40 bg-red-500/5";
+}
+
+function severityStyle(sev: string) {
+  switch (sev) {
+    case "critical": return "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/25";
+    case "high": return "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/25";
+    case "medium": return "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/25";
+    default: return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-transparent";
+  }
+}
+
+function agentBadgeStyle(agentType: string) {
+  const map: Record<string, string> = {
+    retention: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
+    scheduling: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+    growth: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+    client_success: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
+    revenue: "bg-primary/15 text-primary",
+    executive: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-400",
+  };
+  return map[agentType] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
+}
+
+function agentLabel(agentType: string) {
+  const map: Record<string, string> = {
+    retention: "Retention",
+    scheduling: "Scheduling",
+    growth: "Growth",
+    client_success: "Client Success",
+    revenue: "Revenue",
+    executive: "Executive",
+  };
+  return map[agentType] ?? agentType.charAt(0).toUpperCase() + agentType.slice(1);
+}
+
+function BrainBriefStrip({ onRunBrain }: { onRunBrain: () => void }) {
+  const [, setLocation] = useLocation();
+
+  const { data, isLoading } = useQuery<CommandCenterSummary>({
+    queryKey: ["/api/admin/business-brain/command-center-summary"],
+    staleTime: 120_000,
+    refetchInterval: 300_000,
+  });
+
+  const hasData = !isLoading && data;
+  const hasScore = hasData && data.healthScore !== null;
+  const hasBrief = hasData && data.briefSummary !== null;
+
+  if (isLoading) {
+    return (
+      <Card className="p-4">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-14 w-14 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-3 w-64" />
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (!hasScore && !hasBrief) {
+    return (
+      <Card className="p-4 border-dashed flex items-center gap-4" data-testid="card-brain-brief-empty">
+        <div className="rounded-full bg-muted p-3 shrink-0">
+          <Brain className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">Business Brain not yet analyzed</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Run a full analysis to see health score, opportunities, and risks.</p>
+        </div>
+        <Button size="sm" onClick={onRunBrain} className="shrink-0" data-testid="button-run-brain-strip">
+          <Play className="h-3.5 w-3.5 mr-1.5" /> Analyze
+        </Button>
+      </Card>
+    );
+  }
+
+  const score = data!.healthScore ?? 0;
+  const brief = data!.briefSummary;
+
+  return (
+    <Card className={`p-4 border ${healthScoreBg(score)}`} data-testid="card-brain-brief-strip">
+      <div className="flex items-start gap-4">
+        {/* Health score gauge */}
+        <div className="shrink-0 flex flex-col items-center gap-0.5">
+          <div className={`text-3xl font-black leading-none ${healthScoreColor(score)}`} data-testid="text-health-score">
+            {score}
+          </div>
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Health</p>
+          <div className="flex gap-0.5 mt-1">
+            {[...Array(5)].map((_, i) => (
+              <div
+                key={i}
+                className={`h-1 w-4 rounded-full transition-colors ${
+                  i < Math.round(score / 20)
+                    ? score >= 80 ? "bg-emerald-500" : score >= 60 ? "bg-yellow-500" : "bg-red-500"
+                    : "bg-muted"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Brief highlights */}
+        <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {brief?.biggestOpportunity?.title && (
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                <TrendingUp className="h-3 w-3" /> Opportunity
+              </p>
+              <p className="text-xs font-medium mt-0.5 line-clamp-2">{brief.biggestOpportunity.title}</p>
+            </div>
+          )}
+          {brief?.highestChurnRisk?.name && (
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider flex items-center gap-1">
+                <Shield className="h-3 w-3" /> Churn Risk
+              </p>
+              <p className="text-xs font-medium mt-0.5 line-clamp-2">{brief.highestChurnRisk.name}</p>
+            </div>
+          )}
+          {brief?.mostValuableLead?.name && (
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                <Building2 className="h-3 w-3" /> Best Lead
+              </p>
+              <p className="text-xs font-medium mt-0.5 line-clamp-2">{brief.mostValuableLead.name}</p>
+            </div>
+          )}
+          {brief?.projectedWeeklyRevenue != null && brief.projectedWeeklyRevenue > 0 && (
+            <div className="min-w-0 sm:col-span-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Projected This Week</p>
+              <p className="text-sm font-bold text-foreground">${brief.projectedWeeklyRevenue.toLocaleString()}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Full analysis link */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-xs text-muted-foreground hidden sm:flex items-center gap-1"
+          onClick={() => setLocation("/admin/business-brain")}
+          data-testid="button-full-analysis"
+        >
+          Full Analysis <ExternalLink className="h-3 w-3" />
+        </Button>
+      </div>
+
+      {data!.totalPending > 0 && (
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/60">
+          <p className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">{data!.totalPending}</span> pending action{data!.totalPending !== 1 ? "s" : ""} ranked below
+          </p>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs"
+            onClick={() => setLocation("/admin/business-brain")}
+            data-testid="button-view-all-actions"
+          >
+            View full analysis →
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Unified Action Inbox ─────────────────────────────────────────────────────
+
+function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => void; openAgentWith: (msg: string) => void }) {
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const { data, isLoading, refetch } = useQuery<CommandCenterSummary>({
+    queryKey: ["/api/admin/business-brain/command-center-summary"],
+    staleTime: 120_000,
+  });
+
+  const executeBrainMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => r.json()),
+    onSuccess: () => {
+      toast({ title: "Action marked done", description: "Business Brain has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/feed"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/health-score"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const dismissBrainMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/dismiss`).then(r => r.json()),
+    onSuccess: (_, id) => {
+      setDismissed(prev => new Set([...prev, id]));
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+    },
+  });
+
+  const executeRevenueMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => r.json()),
+    onSuccess: () => {
+      toast({ title: "Action executed", description: "Revenue action marked done." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const dismissRevenueMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`).then(r => r.json()),
+    onSuccess: (_, id) => {
+      setDismissed(prev => new Set([...prev, id]));
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+    },
+  });
+
+  function handleExecute(action: UnifiedAction) {
+    if (action.source === "brain") {
+      executeBrainMutation.mutate(action.id);
+    } else {
+      executeRevenueMutation.mutate(action.id);
+    }
+  }
+
+  function handleDismiss(action: UnifiedAction) {
+    if (action.source === "brain") {
+      dismissBrainMutation.mutate(action.id);
+    } else {
+      dismissRevenueMutation.mutate(action.id);
+    }
+  }
+
+  function handleNavigate(action: UnifiedAction) {
+    if (!action.deepLinkUrl) {
+      openAgentWith(`Help me with: ${action.title}`);
+      return;
+    }
+    if (action.deepLinkType === "deal" && action.entityId) {
+      sessionStorage.setItem("open_deal_id", action.entityId);
+    }
+    if (action.deepLinkType === "lead" && action.entityId) {
+      sessionStorage.setItem("open_lead_id", action.entityId);
+    }
+    if (action.deepLinkType === "client" && action.entityId) {
+      sessionStorage.setItem("open_client_id", action.entityId);
+    }
+    setLocation(action.deepLinkUrl);
+  }
+
+  function handleGenerateMessage(action: UnifiedAction) {
+    const entityCtx = action.entityName ? ` for ${action.entityName}` : "";
+    openAgentWith(`Generate a message${entityCtx}: ${action.title}. Reason: ${action.description}`);
+  }
+
+  const visibleActions = (data?.topActions ?? []).filter(a => !dismissed.has(a.id));
+  const topAction = visibleActions[0];
+  const restActions = visibleActions.slice(1, 5);
+
+  if (isLoading) {
+    return (
+      <section>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <ListChecks className="h-4 w-4 text-primary" /> Today's Business Priorities
+        </h2>
+        <Skeleton className="h-40 rounded-xl" />
+        <div className="space-y-2 mt-3">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+      </section>
+    );
+  }
+
+  if (!topAction) {
+    return (
+      <section data-testid="section-unified-inbox">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <ListChecks className="h-4 w-4 text-primary" /> Today's Business Priorities
+        </h2>
+        <Card className="p-6 text-center" data-testid="card-inbox-empty">
+          <Brain className="h-8 w-8 mx-auto mb-3 text-muted-foreground/40" />
+          <p className="text-sm font-medium">No pending actions</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">Run a Business Brain analysis to generate ranked priorities across all agents.</p>
+          <Button size="sm" onClick={onRunBrain} data-testid="button-run-brain-inbox">
+            <Play className="h-3.5 w-3.5 mr-1.5" /> Run Analysis
+          </Button>
+        </Card>
+      </section>
+    );
+  }
+
+  return (
+    <section data-testid="section-unified-inbox">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+          <ListChecks className="h-4 w-4 text-primary" /> Today's Business Priorities
+          {data!.totalPending > 0 && (
+            <Badge className="ml-1 bg-primary/15 text-primary border-primary/20 text-xs py-0">
+              {data!.totalPending}
+            </Badge>
+          )}
+        </h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-xs text-muted-foreground"
+          onClick={() => refetch()}
+          data-testid="button-refresh-inbox"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {/* Hero: #1 priority action */}
+      <DashPriorityCard variant={topAction.severity === "critical" ? "orange" : undefined}>
+        <Card
+          className={`p-4 border ${
+            topAction.severity === "critical"
+              ? "border-red-500/40 bg-gradient-to-br from-red-500/10 to-orange-500/5 dark:from-red-500/15"
+              : topAction.severity === "high"
+              ? "border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-yellow-500/5 dark:from-orange-500/15"
+              : "border-primary/30 bg-primary/5 dark:bg-primary/10"
+          }`}
+          data-testid="card-top-unified-action"
+        >
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 rounded-full p-2 shrink-0 ${
+              topAction.severity === "critical" ? "bg-red-500/20" :
+              topAction.severity === "high" ? "bg-orange-500/20" : "bg-primary/20"
+            }`}>
+              <Flame className={`h-4 w-4 ${
+                topAction.severity === "critical" ? "text-red-500" :
+                topAction.severity === "high" ? "text-orange-500" : "text-primary"
+              }`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                <Badge className={`text-[10px] px-1.5 py-0 border ${severityStyle(topAction.severity)}`}>
+                  {topAction.severity.charAt(0).toUpperCase() + topAction.severity.slice(1)}
+                </Badge>
+                <Badge className={`text-[10px] px-1.5 py-0 ${agentBadgeStyle(topAction.agentType)}`}>
+                  {agentLabel(topAction.agentType)}
+                </Badge>
+                {topAction.crossAgent && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 gap-0.5">
+                    <Sparkles className="h-2.5 w-2.5" /> Cross-Agent
+                  </Badge>
+                )}
+                <span className="text-[10px] text-muted-foreground ml-auto">Score {topAction.priorityScore}</span>
+              </div>
+              <p className="font-semibold text-sm leading-snug" data-testid="text-top-unified-title">{topAction.title}</p>
+              {topAction.entityName && (
+                <p className="text-xs text-muted-foreground mt-0.5">→ {topAction.entityName}</p>
+              )}
+              {topAction.estimatedImpact > 0 && (
+                <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
+                  Est. ${topAction.estimatedImpact.toLocaleString()} impact
+                </p>
+              )}
+              {expanded.has(topAction.id) && topAction.description && (
+                <p className="text-xs text-muted-foreground mt-2 leading-relaxed border-t border-border/50 pt-2">
+                  {topAction.description}
+                </p>
+              )}
+              <button
+                className="text-[10px] text-muted-foreground mt-1 hover:text-foreground transition-colors"
+                onClick={() => setExpanded(prev => {
+                  const s = new Set(prev);
+                  s.has(topAction.id) ? s.delete(topAction.id) : s.add(topAction.id);
+                  return s;
+                })}
+              >
+                {expanded.has(topAction.id) ? "Hide reason ↑" : "Why? ↓"}
+              </button>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-2 mt-4 flex-wrap">
+            <Button
+              size="sm"
+              className="flex-1 sm:flex-none bg-primary hover:bg-primary/90"
+              onClick={() => handleExecute(topAction)}
+              disabled={executeBrainMutation.isPending || executeRevenueMutation.isPending}
+              data-testid="button-execute-top-unified"
+            >
+              <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Done
+            </Button>
+            {topAction.deepLinkUrl && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                onClick={() => handleNavigate(topAction)}
+                data-testid="button-navigate-top-unified"
+              >
+                <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> {topAction.deepLinkLabel ?? "Open"}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleGenerateMessage(topAction)}
+              data-testid="button-message-top-unified"
+            >
+              <MessageSquare className="h-3.5 w-3.5 mr-1" /> Message
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={() => handleDismiss(topAction)}
+              data-testid="button-dismiss-top-unified"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </Card>
+      </DashPriorityCard>
+
+      {/* Next 4 priorities */}
+      {restActions.length > 0 && (
+        <div className="mt-3 space-y-2" data-testid="list-next-unified-actions">
+          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <BarChart3 className="h-3.5 w-3.5" /> Next Best Actions
+          </p>
+          {restActions.map((action, i) => (
+            <DashStaggerItem key={action.id}>
+              <Card
+                className="p-3 flex items-start gap-3 hover:border-primary/30 transition-colors"
+                data-testid={`card-unified-action-${i}`}
+              >
+                <div className={`mt-0.5 rounded-full p-1.5 shrink-0 ${
+                  action.severity === "critical" ? "bg-red-500/15" :
+                  action.severity === "high" ? "bg-orange-500/15" : "bg-primary/10"
+                }`}>
+                  <ChevronRight className={`h-3 w-3 ${
+                    action.severity === "critical" ? "text-red-500" :
+                    action.severity === "high" ? "text-orange-500" : "text-primary"
+                  }`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 flex-wrap mb-0.5">
+                    <Badge className={`text-[10px] px-1 py-0 border ${severityStyle(action.severity)}`}>
+                      {action.severity}
+                    </Badge>
+                    <Badge className={`text-[10px] px-1 py-0 ${agentBadgeStyle(action.agentType)}`}>
+                      {agentLabel(action.agentType)}
+                    </Badge>
+                    {action.crossAgent && (
+                      <Sparkles className="h-3 w-3 text-indigo-500" />
+                    )}
+                  </div>
+                  <p className="text-sm font-medium leading-snug" data-testid={`text-unified-action-title-${i}`}>
+                    {action.title}
+                  </p>
+                  {action.entityName && (
+                    <p className="text-xs text-muted-foreground">→ {action.entityName}</p>
+                  )}
+                  {action.estimatedImpact > 0 && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                      ${action.estimatedImpact.toLocaleString()}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[10px] text-muted-foreground font-mono mr-1">{action.priorityScore}</span>
+                  {action.deepLinkUrl && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => handleNavigate(action)}
+                      data-testid={`button-navigate-action-${i}`}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                    onClick={() => handleExecute(action)}
+                    data-testid={`button-execute-action-${i}`}
+                  >
+                    <CheckCircle className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-muted-foreground"
+                    onClick={() => handleDismiss(action)}
+                    data-testid={`button-dismiss-action-${i}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </Card>
+            </DashStaggerItem>
+          ))}
+        </div>
+      )}
+
+      {/* Footer: view all link */}
+      {data!.totalPending > visibleActions.length && (
+        <button
+          className="w-full mt-3 text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 py-2 border border-dashed border-border rounded-lg transition-colors"
+          onClick={() => setLocation("/admin/business-brain")}
+          data-testid="button-view-all-brain"
+        >
+          View all {data!.totalPending} actions in Business Brain →
+        </button>
+      )}
+    </section>
+  );
+}
 
 // ─── Trigger Alerts Panel ─────────────────────────────────────────────────────
 
@@ -802,6 +1389,21 @@ export default function BusinessCommandCenterPage() {
     queryKey: ["/api/business-command-center"],
   });
 
+  const runBrainMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/business-brain/run").then(r => r.json()),
+    onSuccess: () => {
+      toast({ title: "Business Brain analysis complete", description: "Health score and priorities have been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/health-score"] });
+    },
+    onError: (e: Error) => toast({ title: "Analysis failed", description: e.message, variant: "destructive" }),
+  });
+
+  function handleRunBrain() {
+    toast({ title: "Running Business Brain analysis…", description: "Analyzing your business across all agents." });
+    runBrainMutation.mutate();
+  }
+
   const setGoalMutation = useMutation({
     mutationFn: async (goalCents: number) => {
       const res = await apiRequest("POST", "/api/business-command-center/monthly-goal", { goalCents });
@@ -893,19 +1495,24 @@ export default function BusinessCommandCenterPage() {
         </div>
       </DashPageHeader>
 
+      {/* ─── Business Brain Intelligence Strip ───────────────────────────── */}
+      <DashSectionReveal>
+        <BrainBriefStrip onRunBrain={handleRunBrain} />
+      </DashSectionReveal>
+
       {/* ─── Trigger System Alerts ────────────────────────────────────────── */}
       <DashAlertReveal>
         <TriggerAlertsPanel />
       </DashAlertReveal>
 
-      {/* ─── AI Revenue Outcome Engine ────────────────────────────────────── */}
-      <DashSectionReveal>
-        <AiRevenuePanel />
+      {/* ─── Unified Action Inbox (Today's Business Priorities) ──────────── */}
+      <DashSectionReveal delay={0.02}>
+        <UnifiedActionInbox onRunBrain={handleRunBrain} openAgentWith={openAgentWith} />
       </DashSectionReveal>
 
-      {/* ─── Global Priority Engine ───────────────────────────────────────── */}
+      {/* ─── AI Revenue Outcome Engine ────────────────────────────────────── */}
       <DashSectionReveal delay={0.04}>
-        <GlobalPriorityPanel />
+        <AiRevenuePanel />
       </DashSectionReveal>
 
       {/* ─── Revenue Snapshot ─────────────────────────────────────────────── */}

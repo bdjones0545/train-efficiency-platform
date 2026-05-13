@@ -1753,6 +1753,15 @@ export default function AdminTeamTrainingDealsPage() {
     queryKey: ["/api/admin/team-training/deals"],
   });
 
+  // Navigation bridge: auto-open deal drawer when arriving from Command Center deep-link
+  useEffect(() => {
+    const openId = sessionStorage.getItem("open_deal_id");
+    if (!openId || isLoading || deals.length === 0) return;
+    sessionStorage.removeItem("open_deal_id");
+    const deal = deals.find(d => d.id === openId);
+    if (deal) setViewDeal(deal);
+  }, [isLoading, deals]);
+
   const { data: pipelineStats } = useQuery<PipelineStats>({
     queryKey: ["/api/admin/team-training/deals/pipeline-stats"],
   });

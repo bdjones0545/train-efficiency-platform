@@ -9490,6 +9490,117 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // GET /api/admin/business-brain/command-center-summary
+  // Unified summary for Command Center: health + brief + merged ranked actions
+  app.get("/api/admin/business-brain/command-center-summary", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const [brief, brainRecs, revenueActionsRaw, runs] = await Promise.all([
+        storage.getLatestExecutiveBrief(orgId),
+        storage.getAgentRecommendations(orgId, "pending", 15),
+        (storage as any).getAgentActions(orgId, "pending"),
+        storage.getOrchestratorRuns(orgId, 1),
+      ]);
+
+      const revenueActions: any[] = Array.isArray(revenueActionsRaw) ? revenueActionsRaw : [];
+      const unified: any[] = [];
+
+      // Brain recommendations
+      for (const rec of brainRecs) {
+        const et = rec.entityType as string | null;
+        let deepLinkType: string | null = null;
+        let deepLinkUrl: string | null = null;
+        let deepLinkLabel: string | null = null;
+        if (et === "client") { deepLinkType = "client"; deepLinkUrl = "/coach/users"; deepLinkLabel = "View Client"; }
+        else if (et === "deal") { deepLinkType = "deal"; deepLinkUrl = "/admin/team-training-deals"; deepLinkLabel = "Open Deal"; }
+        else if (et === "lead" || et === "prospect") { deepLinkType = "lead"; deepLinkUrl = "/admin/team-training-leads"; deepLinkLabel = "View Lead"; }
+        else if (et === "schedule") { deepLinkType = "schedule"; deepLinkUrl = "/command-center"; deepLinkLabel = "View Schedule"; }
+        unified.push({
+          id: rec.id,
+          source: "brain",
+          agentType: rec.agentType,
+          title: rec.title,
+          description: rec.description ?? rec.reason ?? "",
+          priorityScore: rec.priorityScore ?? 50,
+          severity: rec.severity ?? "medium",
+          estimatedImpact: rec.estimatedImpact ?? 0,
+          actionType: rec.actionType ?? "review",
+          entityType: et,
+          entityId: rec.entityId,
+          entityName: rec.entityName,
+          status: rec.status,
+          crossAgent: (rec.crossAgentTypes?.length ?? 0) > 0,
+          deepLinkType,
+          deepLinkUrl,
+          deepLinkLabel,
+        });
+      }
+
+      // Revenue agent actions
+      for (const action of revenueActions.slice(0, 10)) {
+        let et: string | null = null;
+        let entityId: string | null = null;
+        let entityName: string | null = null;
+        let deepLinkType: string | null = null;
+        let deepLinkUrl: string | null = null;
+        let deepLinkLabel: string | null = null;
+        if (action.dealId) {
+          et = "deal"; entityId = action.dealId;
+          entityName = (action.metadata as any)?.prospectName ?? null;
+          deepLinkType = "deal"; deepLinkUrl = "/admin/team-training-deals"; deepLinkLabel = "Open Deal";
+        } else if (action.prospectId) {
+          et = "lead"; entityId = action.prospectId;
+          entityName = (action.metadata as any)?.prospectName ?? null;
+          deepLinkType = "lead"; deepLinkUrl = "/admin/team-training-leads"; deepLinkLabel = "View Lead";
+        }
+        const p = action.priority ?? 50;
+        const sev = p >= 80 ? "critical" : p >= 60 ? "high" : p >= 40 ? "medium" : "low";
+        unified.push({
+          id: action.id,
+          source: "revenue_agent",
+          agentType: "revenue",
+          title: action.reason ?? "Revenue opportunity",
+          description: action.reason ?? "",
+          priorityScore: p,
+          severity: sev,
+          estimatedImpact: action.estimatedValue ?? 0,
+          actionType: action.actionType,
+          entityType: et,
+          entityId,
+          entityName,
+          status: action.status,
+          crossAgent: false,
+          deepLinkType,
+          deepLinkUrl,
+          deepLinkLabel,
+        });
+      }
+
+      unified.sort((a, b) => b.priorityScore - a.priorityScore);
+
+      const briefSummary = brief ? {
+        biggestOpportunity: brief.biggestOpportunity as any,
+        highestChurnRisk: brief.highestChurnRisk as any,
+        mostValuableLead: brief.mostValuableLead as any,
+        projectedWeeklyRevenue: brief.projectedWeeklyRevenue ?? 0,
+        recommendedActions: (brief.recommendedActions as any[]) ?? [],
+      } : null;
+
+      res.json({
+        healthScore: brief?.healthScore ?? null,
+        lastRunAt: runs[0]?.createdAt ?? null,
+        briefSummary,
+        topActions: unified.slice(0, 10),
+        totalPending: unified.length,
+      });
+    } catch (e: any) {
+      console.error("[BusinessBrain] command-center-summary error:", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Start Business Brain cron
   const { startBusinessBrainCron } = await import("./agents/executive-agent");
   startBusinessBrainCron();
