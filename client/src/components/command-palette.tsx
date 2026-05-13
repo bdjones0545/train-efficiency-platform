@@ -19,7 +19,7 @@ import {
   CalendarDays, ImagePlay, Target, Flame, KanbanSquare, Activity,
   Brain, Plug, GitBranch, ShieldAlert, Home, TrendingUp, Cpu,
   Building2, Radio, Clock, Zap, Send, CalendarPlus, CheckSquare,
-  AlertCircle, Play, Search, Star, ArrowRight, Laptop,
+  AlertCircle, Play, Search, Star, ArrowRight, Laptop, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserProfile } from "@shared/schema";
@@ -228,6 +228,7 @@ const ALL_PAGES: PageDef[] = [
   { id: "stripe", label: "Stripe Setup", url: "/admin/stripe", icon: CreditCard, section: "Organization", keywords: "payments billing gateway", minRole: "ADMIN" },
   { id: "subscription", label: "Subscription", url: "/admin/subscription", icon: Sparkles, section: "Organization", keywords: "plan billing account", minRole: "ADMIN" },
   { id: "options", label: "Options", url: "/admin/configuration", icon: Settings, section: "Organization", keywords: "config settings preferences", minRole: "ADMIN" },
+  { id: "attention-inbox", label: "Attention Inbox", url: "/admin/attention", icon: Inbox, section: "AI", keywords: "alerts inbox attention critical important notifications", minRole: "COACH" },
   { id: "wallet", label: "My Wallet", url: "/wallet", icon: Wallet, section: "Account", keywords: "credits balance", minRole: "CLIENT" },
   { id: "settings", label: "Settings", url: "/settings", icon: Settings, section: "Account", keywords: "preferences profile" },
 ];

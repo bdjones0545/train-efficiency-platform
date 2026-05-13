@@ -58,6 +58,7 @@ import {
   Radio,
   Pin,
   PinOff,
+  Inbox,
   Clock,
   AlertTriangle,
   Zap,
@@ -767,6 +768,13 @@ export function AppSidebar() {
             aiSection: true,
             lowPriority: true,
             items: [
+              {
+                title: "Attention Inbox",
+                simplifiedTitle: "Attention",
+                url: "/admin/attention",
+                icon: Inbox,
+                testId: "nav-attention-inbox",
+              },
               {
                 title: "Business Brain",
                 simplifiedTitle: "AI Overview",

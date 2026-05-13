@@ -60,6 +60,8 @@ import AdminAgentOpsPage from "@/pages/admin-agent-ops";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { CommandPalette, MobileFAB } from "@/components/command-palette";
+import AttentionInboxPage from "@/pages/attention-inbox";
+import { AttentionBell } from "@/components/attention-bell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
@@ -161,6 +163,7 @@ function AuthenticatedLayout() {
               <span className="flex-1 text-left text-xs">Search or run a command…</span>
               <kbd className="text-[10px] bg-background border border-border rounded px-1.5 py-0.5 font-mono opacity-70">⌘K</kbd>
             </button>
+            <AttentionBell />
             <ThemeToggle />
           </header>
           <main className={`flex-1 min-h-0 ${isFullscreenPage ? "overflow-hidden" : "overflow-y-auto p-6"}`}>
@@ -209,6 +212,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/agent-tools" component={AdminAgentToolsPage} />
                   <Route path="/admin/workflows" component={AdminWorkflowsPage} />
                   <Route path="/admin/agent-ops" component={AdminAgentOpsPage} />
+                  <Route path="/admin/attention" component={AttentionInboxPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />

@@ -10763,5 +10763,105 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // ─── Unified Attention System ─────────────────────────────────────────────────
+
+  // GET /api/attention — sync + return ranked items
+  app.get("/api/attention", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const orgCtx = await storage.getOrgContextForUser(userId);
+      const orgId = orgCtx?.orgId ?? "";
+      if (!orgId) return res.json([]);
+
+      const { syncAttentionItems, runEscalation, getAttentionItems } = await import("./attention-engine");
+      // Run sync + escalation silently in background (non-blocking for fast response)
+      syncAttentionItems(orgId).catch(() => {});
+      runEscalation(orgId).catch(() => {});
+
+      const items = await getAttentionItems(orgId);
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/attention/sync — force full sync and return fresh items
+  app.post("/api/attention/sync", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const orgCtx = await storage.getOrgContextForUser(userId);
+      const orgId = orgCtx?.orgId ?? "";
+      if (!orgId) return res.json({ synced: 0, items: [] });
+
+      const { syncAttentionItems, runEscalation, getAttentionItems } = await import("./attention-engine");
+      await syncAttentionItems(orgId);
+      await runEscalation(orgId);
+      const items = await getAttentionItems(orgId);
+      res.json({ synced: items.length, items });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/attention/digest — attention digest
+  app.get("/api/attention/digest", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const orgCtx = await storage.getOrgContextForUser(userId);
+      const orgId = orgCtx?.orgId ?? "";
+      if (!orgId) return res.json({ summary: "No data available." });
+
+      const { getAttentionDigest } = await import("./attention-engine");
+      const type = (req.query.type as "morning" | "eod" | "weekly") || "morning";
+      const digest = await getAttentionDigest(orgId, type);
+      res.json(digest);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH /api/attention/:id/snooze — snooze item
+  app.patch("/api/attention/:id/snooze", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const hours = Number(req.body?.hours ?? 4);
+      if (!id || isNaN(hours) || hours <= 0) return res.status(400).json({ message: "Invalid request" });
+
+      const { snoozeAttentionItem } = await import("./attention-engine");
+      await snoozeAttentionItem(id, hours);
+      res.json({ success: true, snoozedHours: hours });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH /api/attention/:id/dismiss — dismiss item
+  app.patch("/api/attention/:id/dismiss", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ message: "Missing id" });
+
+      const { dismissAttentionItem } = await import("./attention-engine");
+      await dismissAttentionItem(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH /api/attention/:id/complete — mark item complete
+  app.patch("/api/attention/:id/complete", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ message: "Missing id" });
+
+      const { completeAttentionItem } = await import("./attention-engine");
+      await completeAttentionItem(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

@@ -1303,3 +1303,38 @@ export const agentInvoices = pgTable("agent_invoices", {
 });
 
 export type AgentInvoice = typeof agentInvoices.$inferSelect;
+
+// ─── Unified Attention Items ──────────────────────────────────────────────────
+// level:    critical | important | suggested | informational
+// category: workflow | approval | payment | connector | deal | churn | growth |
+//           insight  | ops      | brain    | trigger   | manual
+// status:   active   | snoozed  | dismissed | completed | escalated
+// score:    (severity*0.30) + (urgency*0.40) + (businessImpact*0.20) + (confidence*100*0.10)
+
+export const attentionItems = pgTable("attention_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  level: varchar("level").notNull().default("informational"),
+  category: varchar("category").notNull().default("insight"),
+  title: text("title").notNull(),
+  body: text("body"),
+  source: varchar("source").notNull().default("manual"),
+  sourceId: varchar("source_id"),
+  severity: integer("severity").notNull().default(50),
+  urgency: integer("urgency").notNull().default(50),
+  businessImpact: integer("business_impact").notNull().default(50),
+  confidence: doublePrecision("confidence").notNull().default(0.8),
+  actionUrl: text("action_url"),
+  actionLabel: varchar("action_label"),
+  status: varchar("status").notNull().default("active"),
+  snoozedUntil: timestamp("snoozed_until"),
+  escalatedAt: timestamp("escalated_at"),
+  expiresAt: timestamp("expires_at"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAttentionItemSchema = createInsertSchema(attentionItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type AttentionItem = typeof attentionItems.$inferSelect;
+export type InsertAttentionItem = z.infer<typeof insertAttentionItemSchema>;

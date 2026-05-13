@@ -1,0 +1,113 @@
+Next TrainEfficiency UX evolution:
+
+Build a Unified Attention System.
+
+Goal:
+All alerts, recommendations, approvals, workflows, AI suggestions, and operational priorities should flow through one consistent attention model.
+
+Current issue:
+Attention is fragmented across:
+- Command Center
+- banners
+- contextual alerts
+- AI recommendations
+- workflow states
+- pending approvals
+- floating actions
+- agent ops failures
+
+The platform now needs one central prioritization layer.
+
+Build:
+
+1. Attention Priority Model
+Create 4 global attention levels:
+- Critical
+- Important
+- Suggested
+- Informational
+
+Every system event must map into one level.
+
+Examples:
+Critical:
+- failed workflow
+- stuck approval
+- payment failure
+- connector outage
+
+Important:
+- stalled deal
+- follow-up due
+- churn risk
+
+Suggested:
+- growth opportunity
+- workflow recommendation
+- AI optimization suggestion
+
+Informational:
+- completed workflow
+- successful sync
+- passive insight
+
+2. Unified Attention Inbox
+Single inbox combining:
+- Business Brain recommendations
+- Revenue Agent actions
+- workflow alerts
+- approvals
+- connector failures
+- ops failures
+- AI suggestions
+
+3. Attention Scoring
+Every item gets:
+- severity
+- urgency
+- business impact
+- confidence
+- expiration
+
+Use these to globally rank all attention items.
+
+4. Attention Lifecycles
+Items can be:
+- active
+- snoozed
+- dismissed
+- completed
+- escalated
+
+5. Smart Escalation
+If an Important item is ignored too long:
+- escalate to Critical
+- increase visibility
+- move to top
+
+6. Attention Digest
+Create:
+- morning digest
+- end-of-day digest
+- weekly ops summary
+
+7. UI Consistency
+All attention UI should use:
+- same colors
+- same badge system
+- same interaction model
+- same terminology
+
+8. Reduce UI noise
+Do NOT show:
+- duplicate alerts
+- low-value notifications
+- repetitive reminders
+
+Acceptance tests:
+- Failed workflow appears as Critical
+- Stalled deal appears as Important
+- Growth opportunity appears as Suggested
+- Inbox ranks correctly
+- Snoozed item disappears temporarily
+- Escalation works after timeout
