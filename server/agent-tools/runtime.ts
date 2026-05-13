@@ -22,6 +22,8 @@ export type ProposeToolCallInput = {
   reason?: string;
   confidence?: number;
   estimatedImpact?: number;
+  sourceRecommendationId?: string;
+  sourceRevenueActionId?: string;
 };
 
 export type ToolExecutionResult = {
@@ -85,6 +87,8 @@ export async function proposeToolCall(
     requiresConfirmation,
     confirmationStatus: requiresConfirmation ? "pending" : "auto",
     status: requiresConfirmation ? "pending_confirmation" : "pending",
+    sourceRecommendationId: proposal.sourceRecommendationId ?? null,
+    sourceRevenueActionId: proposal.sourceRevenueActionId ?? null,
   }).returning();
 
   if (!requiresConfirmation) {

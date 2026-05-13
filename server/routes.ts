@@ -17,7 +17,7 @@ import Stripe from "stripe";
 import { z } from "zod";
 import { organizationSubscriptionPlans } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { users } from "@shared/models/auth";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
@@ -8621,15 +8621,73 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
-      const action = await storage.updateAgentAction(req.params.id, {
+      const orgId = profile.organizationId;
+
+      // Fetch action data needed for tool mapping
+      const rows = await db.execute(sql`
+        SELECT id, action_type, reason, estimated_value, deal_id, prospect_id, metadata
+        FROM revenue_agent_actions WHERE id = ${req.params.id} AND organization_id = ${orgId}
+      `);
+      const row = rows.rows[0] as any;
+      if (!row) return res.status(404).json({ message: "Action not found" });
+
+      // Map to tool proposal
+      const { mapRevenueActionToToolProposal } = await import("./agent-tools/action-mapper");
+      const { proposeToolCall } = await import("./agent-tools/index");
+
+      const toolProposal = mapRevenueActionToToolProposal({
+        id: row.id,
+        actionType: row.action_type,
+        reason: row.reason,
+        estimatedValue: row.estimated_value ? Number(row.estimated_value) : null,
+        dealId: row.deal_id,
+        prospectId: row.prospect_id,
+        metadata: row.metadata ?? {},
+      });
+
+      let toolCall: any = null;
+
+      if (toolProposal) {
+        const result = await proposeToolCall(orgId, {
+          agentName: "revenue_agent",
+          ...toolProposal,
+          sourceRevenueActionId: req.params.id,
+        });
+
+        if (result.requiresConfirmation) {
+          // Mark action as pending confirmation rather than fully executed
+          await (storage as any).updateAgentAction(req.params.id, {
+            status: "pending_tool_confirmation",
+          });
+          return res.json({
+            ok: true,
+            toolCall: {
+              toolCallId: result.toolCallId,
+              requiresConfirmation: true,
+              success: true,
+              message: `${toolProposal.toolName} queued — needs approval`,
+            },
+          });
+        }
+
+        toolCall = {
+          toolCallId: result.toolCallId,
+          requiresConfirmation: false,
+          success: result.success,
+          message: result.message ?? `${toolProposal.toolName} executed`,
+          error: result.error,
+        };
+      }
+
+      // Mark action as fully executed
+      const action = await (storage as any).updateAgentAction(req.params.id, {
         status: "executed",
         executedAt: new Date(),
         acceptedAt: new Date(),
       });
-      if (!action) return res.status(404).json({ message: "Action not found" });
 
       // Log to deal activity if there's a deal
-      if (action.dealId) {
+      if (action?.dealId) {
         const actionLabels: Record<string, string> = {
           send_followup: "Revenue Agent: follow-up queued via Priority Action Queue",
           schedule_call: "Revenue Agent: call scheduled via Priority Action Queue",
@@ -8640,15 +8698,20 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         };
         await storage.createDealActivity({
           dealId: action.dealId,
-          organizationId: profile.organizationId,
+          organizationId: orgId,
           activityType: "ai_action",
           description: actionLabels[action.actionType] ?? `Revenue Agent: ${action.actionType} executed`,
-          metadata: { agentActionId: action.id, reason: action.reason },
+          metadata: {
+            agentActionId: action.id,
+            reason: action.reason,
+            toolCallId: toolCall?.toolCallId,
+            toolName: toolProposal?.toolName,
+          },
         });
         await storage.updateTeamTrainingDeal(action.dealId, { lastActivityAt: new Date() });
       }
 
-      res.json({ ok: true, action });
+      res.json({ ok: true, action, toolCall });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -9452,9 +9515,67 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { id } = req.params;
+
+      // Fetch rec data needed for tool mapping
+      const rows = await db.execute(sql`
+        SELECT id, agent_type, action_type, title, description, reason,
+               entity_type, entity_id, entity_name, estimated_impact, priority_score
+        FROM agent_recommendations WHERE id = ${id} AND org_id = ${orgId}
+      `);
+      const row = rows.rows[0] as any;
+      if (!row) return res.status(404).json({ error: "Not found" });
+
+      // Map to tool proposal
+      const { mapBrainRecToToolProposal } = await import("./agent-tools/action-mapper");
+      const { proposeToolCall } = await import("./agent-tools/index");
+
+      const toolProposal = mapBrainRecToToolProposal({
+        id: row.id,
+        agentType: row.agent_type,
+        actionType: row.action_type,
+        title: row.title,
+        description: row.description,
+        reason: row.reason,
+        entityType: row.entity_type,
+        entityId: row.entity_id,
+        entityName: row.entity_name,
+        estimatedImpact: row.estimated_impact ? Number(row.estimated_impact) : null,
+        priorityScore: row.priority_score ? Number(row.priority_score) : null,
+      });
+
+      let toolCall: any = null;
+
+      if (toolProposal) {
+        const result = await proposeToolCall(orgId, {
+          agentName: "business_brain",
+          ...toolProposal,
+          sourceRecommendationId: id,
+        });
+
+        if (result.requiresConfirmation) {
+          // Keep rec visible in pending-tool state; mark out of main inbox
+          await storage.updateAgentRecommendation(id, { status: "pending_tool_confirmation" as any });
+          return res.json({
+            toolCall: {
+              toolCallId: result.toolCallId,
+              requiresConfirmation: true,
+              success: true,
+              message: `${toolProposal.toolName} queued — needs approval`,
+            },
+          });
+        }
+
+        toolCall = {
+          toolCallId: result.toolCallId,
+          requiresConfirmation: false,
+          success: result.success,
+          message: result.message ?? `${toolProposal.toolName} executed`,
+          error: result.error,
+        };
+      }
+
       const rec = await storage.updateAgentRecommendation(id, { status: "executed", executedAt: new Date() });
-      if (!rec) return res.status(404).json({ error: "Not found" });
-      res.json(rec);
+      res.json({ rec, toolCall });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

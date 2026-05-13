@@ -1176,6 +1176,8 @@ export const agentToolCalls = pgTable("agent_tool_calls", {
   result: jsonb("result").default({}),
   error: text("error"),
   executionTimeMs: integer("execution_time_ms"),
+  sourceRecommendationId: varchar("source_recommendation_id"),
+  sourceRevenueActionId: varchar("source_revenue_action_id"),
   createdAt: timestamp("created_at").defaultNow(),
   executedAt: timestamp("executed_at"),
 });

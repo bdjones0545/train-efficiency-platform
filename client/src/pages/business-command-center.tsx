@@ -548,15 +548,24 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
     onError: (e: Error) => toast({ title: "Analysis failed", description: e.message, variant: "destructive" }),
   });
 
+  const [toolCallFeedbackDOM, setToolCallFeedbackDOM] = useState<Record<string, { requiresConfirmation: boolean; toolCallId: string; success: boolean }>>({});
+
   const executeBrainMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => r.json()),
-    onSuccess: (_, id) => {
+    onSuccess: (data: any, id) => {
       const ns = { ...localStatus, [id]: "done" as const };
       persistStatus(ns);
+      if (data?.toolCall) {
+        setToolCallFeedbackDOM(prev => ({ ...prev, [id]: { requiresConfirmation: data.toolCall.requiresConfirmation, toolCallId: data.toolCall.toolCallId, success: data.toolCall.success } }));
+        if (data.toolCall.requiresConfirmation) {
+          toast({ title: "Action queued for approval", description: `${data.toolCall.message} — check Agent Tools.` });
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/operator-score"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/day-review"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-tool-calls/pending"] });
     },
   });
 
@@ -573,11 +582,18 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
   const executeRevenueMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => r.json()),
-    onSuccess: (_, id) => {
+    onSuccess: (data: any, id) => {
       const ns = { ...localStatus, [id]: "done" as const };
       persistStatus(ns);
+      if (data?.toolCall) {
+        setToolCallFeedbackDOM(prev => ({ ...prev, [id]: { requiresConfirmation: data.toolCall.requiresConfirmation, toolCallId: data.toolCall.toolCallId, success: data.toolCall.success } }));
+        if (data.toolCall.requiresConfirmation) {
+          toast({ title: "Action queued for approval", description: `${data.toolCall.message} — check Agent Tools.` });
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/operator-score"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/day-review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-tool-calls/pending"] });
     },
   });
 
@@ -799,7 +815,11 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
                         disabled={executeBrainMutation.isPending || executeRevenueMutation.isPending}
                         data-testid={`button-done-task-${task.rank}`}
                       >
-                        <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Done
+                        {(executeBrainMutation.isPending || executeRevenueMutation.isPending) ? (
+                          <><span className="animate-spin mr-1.5">⟳</span> Running...</>
+                        ) : (
+                          <><CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Execute</>
+                        )}
                       </Button>
                       {task.deepLinkUrl && (
                         <Button
@@ -839,8 +859,17 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
                   {/* Done overlay */}
                   {!isPending && (
                     <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/40">
-                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                      <p className="text-xs text-muted-foreground">Handled</p>
+                      {toolCallFeedbackDOM[task.id]?.requiresConfirmation ? (
+                        <>
+                          <Clock className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                          <p className="text-xs text-orange-600 dark:text-orange-400">Awaiting Approval</p>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                          <p className="text-xs text-muted-foreground">{toolCallFeedbackDOM[task.id] ? "Executed" : "Handled"}</p>
+                        </>
+                      )}
                     </div>
                   )}
                 </Card>
@@ -1071,6 +1100,7 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
   const [, setLocation] = useLocation();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [toolCallFeedback, setToolCallFeedback] = useState<Record<string, { requiresConfirmation: boolean; toolCallId: string; success: boolean; toolName?: string }>>({});
 
   const { data, isLoading, refetch } = useQuery<CommandCenterSummary>({
     queryKey: ["/api/admin/business-brain/command-center-summary"],
@@ -1080,11 +1110,20 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
   const executeBrainMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => r.json()),
-    onSuccess: () => {
-      toast({ title: "Action marked done", description: "Business Brain has been updated." });
+    onSuccess: (data: any, id) => {
+      if (data?.toolCall) {
+        setToolCallFeedback(prev => ({ ...prev, [id]: { requiresConfirmation: data.toolCall.requiresConfirmation, toolCallId: data.toolCall.toolCallId, success: data.toolCall.success ?? true, toolName: data.toolCall.message } }));
+        toast({
+          title: data.toolCall.requiresConfirmation ? "Queued for approval" : "Action executed",
+          description: data.toolCall.message,
+        });
+      } else {
+        toast({ title: "Action marked done", description: "Business Brain has been updated." });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/feed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/health-score"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-tool-calls/pending"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1101,10 +1140,19 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
   const executeRevenueMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => r.json()),
-    onSuccess: () => {
-      toast({ title: "Action executed", description: "Revenue action marked done." });
+    onSuccess: (data: any, id) => {
+      if (data?.toolCall) {
+        setToolCallFeedback(prev => ({ ...prev, [id]: { requiresConfirmation: data.toolCall.requiresConfirmation, toolCallId: data.toolCall.toolCallId, success: data.toolCall.success ?? true, toolName: data.toolCall.message } }));
+        toast({
+          title: data.toolCall.requiresConfirmation ? "Queued for approval" : "Action executed",
+          description: data.toolCall.message,
+        });
+      } else {
+        toast({ title: "Action executed", description: "Revenue action marked done." });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-tool-calls/pending"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1280,15 +1328,42 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
 
           {/* Action buttons */}
           <div className="flex gap-2 mt-4 flex-wrap">
-            <Button
-              size="sm"
-              className="flex-1 sm:flex-none bg-primary hover:bg-primary/90"
-              onClick={() => handleExecute(topAction)}
-              disabled={executeBrainMutation.isPending || executeRevenueMutation.isPending}
-              data-testid="button-execute-top-unified"
-            >
-              <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Done
-            </Button>
+            {toolCallFeedback[topAction.id] ? (
+              toolCallFeedback[topAction.id].requiresConfirmation ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 sm:flex-none border-orange-400 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                  onClick={() => setLocation("/admin/agent-tools")}
+                  data-testid="button-execute-top-unified"
+                >
+                  <Clock className="h-3.5 w-3.5 mr-1.5" /> Needs Approval
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  className="flex-1 sm:flex-none bg-emerald-600 text-white cursor-default"
+                  disabled
+                  data-testid="button-execute-top-unified"
+                >
+                  <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Executed ✓
+                </Button>
+              )
+            ) : (
+              <Button
+                size="sm"
+                className="flex-1 sm:flex-none bg-primary hover:bg-primary/90"
+                onClick={() => handleExecute(topAction)}
+                disabled={executeBrainMutation.isPending || executeRevenueMutation.isPending}
+                data-testid="button-execute-top-unified"
+              >
+                {(executeBrainMutation.isPending || executeRevenueMutation.isPending) ? (
+                  <><span className="animate-spin mr-1.5 inline-block">⟳</span> Running...</>
+                ) : (
+                  <><CheckCircle className="h-3.5 w-3.5 mr-1.5" /> Execute</>
+                )}
+              </Button>
+            )}
             {topAction.deepLinkUrl && (
               <Button
                 size="sm"
@@ -1379,15 +1454,40 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Button>
                   )}
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
-                    onClick={() => handleExecute(action)}
-                    data-testid={`button-execute-action-${i}`}
-                  >
-                    <CheckCircle className="h-3.5 w-3.5" />
-                  </Button>
+                  {toolCallFeedback[action.id] ? (
+                    toolCallFeedback[action.id].requiresConfirmation ? (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-orange-500"
+                        onClick={() => setLocation("/admin/agent-tools")}
+                        title="Needs approval — click to review"
+                        data-testid={`button-execute-action-${i}`}
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                        disabled
+                        data-testid={`button-execute-action-${i}`}
+                      >
+                        <CheckCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    )
+                  ) : (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                      onClick={() => handleExecute(action)}
+                      data-testid={`button-execute-action-${i}`}
+                    >
+                      <CheckCircle className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   <Button
                     size="icon"
                     variant="ghost"
