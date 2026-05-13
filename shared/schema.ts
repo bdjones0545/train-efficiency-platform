@@ -1155,6 +1155,34 @@ export const orchestratorRuns = pgTable("orchestrator_runs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const agentToolCalls = pgTable("agent_tool_calls", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  agentName: varchar("agent_name").notNull(),
+  toolName: varchar("tool_name").notNull(),
+  targetType: varchar("target_type"),
+  targetId: varchar("target_id"),
+  targetName: varchar("target_name"),
+  inputSummary: text("input_summary"),
+  proposedInput: jsonb("proposed_input").default({}),
+  reason: text("reason"),
+  confidence: doublePrecision("confidence"),
+  estimatedImpact: integer("estimated_impact"),
+  requiresConfirmation: boolean("requires_confirmation").default(false),
+  confirmationStatus: varchar("confirmation_status").default("auto"),
+  confirmedAt: timestamp("confirmed_at"),
+  confirmedBy: varchar("confirmed_by"),
+  status: varchar("status").default("pending"),
+  result: jsonb("result").default({}),
+  error: text("error"),
+  executionTimeMs: integer("execution_time_ms"),
+  createdAt: timestamp("created_at").defaultNow(),
+  executedAt: timestamp("executed_at"),
+});
+
+export type AgentToolCall = typeof agentToolCalls.$inferSelect;
+export type InsertAgentToolCall = typeof agentToolCalls.$inferInsert;
+
 export type AgentSignal = typeof agentSignals.$inferSelect;
 export type InsertAgentSignal = typeof agentSignals.$inferInsert;
 export type AgentRecommendation = typeof agentRecommendations.$inferSelect;

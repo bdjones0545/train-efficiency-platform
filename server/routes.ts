@@ -9601,6 +9601,113 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // ─── Agent Tool Layer ─────────────────────────────────────────────────────
+
+  // GET /api/admin/agent-tools — list all tool definitions + permissions
+  app.get("/api/admin/agent-tools", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { listTools, CONNECTOR_ROADMAP } = await import("./agent-tools/index");
+      const tools = listTools().map(t => ({
+        name: t.name,
+        description: t.description,
+        category: t.category,
+        permissions: t.permissions,
+        riskLevel: t.riskLevel,
+        connector: t.connector,
+        connectorStatus: t.connectorStatus,
+      }));
+      res.json({ tools, connectorRoadmap: CONNECTOR_ROADMAP });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/admin/agent-tool-calls — audit log
+  app.get("/api/admin/agent-tool-calls", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const limit = Math.min(parseInt(String(req.query.limit ?? "50")), 200);
+      const { getToolCallAuditLog } = await import("./agent-tools/index");
+      const calls = await getToolCallAuditLog(orgId, limit);
+      res.json({ calls });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/admin/agent-tool-calls/pending — pending confirmations
+  app.get("/api/admin/agent-tool-calls/pending", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { getPendingToolCalls } = await import("./agent-tools/index");
+      const calls = await getPendingToolCalls(orgId);
+      res.json({ calls, count: calls.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/admin/agent-tool-calls/:id/confirm
+  app.post("/api/admin/agent-tool-calls/:id/confirm", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { executePendingToolCall } = await import("./agent-tools/index");
+      const result = await executePendingToolCall(orgId, req.params.id, "admin");
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/admin/agent-tool-calls/:id/reject
+  app.post("/api/admin/agent-tool-calls/:id/reject", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { rejectToolCall } = await import("./agent-tools/index");
+      await rejectToolCall(orgId, req.params.id, "admin");
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/admin/agent-tools/propose — submit an action proposal
+  app.post("/api/admin/agent-tools/propose", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { proposeToolCall } = await import("./agent-tools/index");
+      const result = await proposeToolCall(orgId, req.body);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/admin/agent-tools/execute — direct execute (auto-execute tools only)
+  app.post("/api/admin/agent-tools/execute", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { proposeToolCall, getTool } = await import("./agent-tools/index");
+      const tool = getTool(req.body.toolName);
+      if (!tool) return res.status(400).json({ error: `Unknown tool: ${req.body.toolName}` });
+      if (!tool.permissions.safe_auto_execute && tool.permissions.requires_confirmation) {
+        return res.status(400).json({ error: "This tool requires confirmation. Use /propose instead." });
+      }
+      const result = await proposeToolCall(orgId, req.body);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ─── Daily Operator Mode ──────────────────────────────────────────────────
 
   // POST /api/admin/start-my-day

@@ -56,6 +56,7 @@ import {
   X,
   ListChecks,
   BarChart3,
+  Plug,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -248,6 +249,43 @@ type CommandCenterSummary = {
   topActions: UnifiedAction[];
   totalPending: number;
 };
+
+// ─── Pending Tool Calls Strip ─────────────────────────────────────────────────
+
+function PendingToolCallsStrip() {
+  const [, setLocation] = useLocation();
+  const { data } = useQuery<{ count: number }>({
+    queryKey: ["/api/admin/agent-tool-calls/pending"],
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+
+  const count = data?.count ?? 0;
+  if (count === 0) return null;
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-orange-500/10 border border-orange-500/30"
+      data-testid="strip-pending-tool-calls"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <Plug className="h-4 w-4 text-orange-500 shrink-0" />
+        <p className="text-sm font-medium text-orange-700 dark:text-orange-400 truncate">
+          <span className="font-bold">{count}</span> agent action{count > 1 ? "s" : ""} need{count === 1 ? "s" : ""} your approval
+        </p>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs border-orange-500/40 text-orange-700 dark:text-orange-400 hover:bg-orange-500/10 shrink-0"
+        onClick={() => setLocation("/admin/agent-tools")}
+        data-testid="button-review-tool-calls"
+      >
+        Review
+      </Button>
+    </div>
+  );
+}
 
 // ─── Daily Operator Mode Types ────────────────────────────────────────────────
 
@@ -2086,6 +2124,9 @@ export default function BusinessCommandCenterPage() {
           </Button>
         </div>
       </DashPageHeader>
+
+      {/* ─── Pending Agent Tool Calls Alert ──────────────────────────────── */}
+      <PendingToolCallsStrip />
 
       {/* ─── Daily Operator Mode (Start My Day + Checklist) ──────────────── */}
       <DashSectionReveal>

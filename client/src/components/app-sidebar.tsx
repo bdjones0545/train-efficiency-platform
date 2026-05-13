@@ -54,6 +54,7 @@ import {
   KanbanSquare,
   Activity,
   Brain,
+  Plug,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -293,6 +294,14 @@ export function AppSidebar() {
                       <Link href="/admin/trigger-audit" onClick={handleNavClick} data-testid="nav-trigger-audit">
                         <Activity className="h-4 w-4" />
                         <span>Trigger Audit</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/agent-tools"}>
+                      <Link href="/admin/agent-tools" onClick={handleNavClick} data-testid="nav-agent-tools">
+                        <Plug className="h-4 w-4" />
+                        <span>Agent Tools</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

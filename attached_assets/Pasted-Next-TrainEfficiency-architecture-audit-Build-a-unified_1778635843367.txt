@@ -1,0 +1,115 @@
+Next TrainEfficiency architecture audit:
+
+Build a unified Agent Tool Layer.
+
+Current issue:
+TrainEfficiency has multiple intelligent agents, but most actions are still internal recommendations. The agents need a standardized tool system so they can safely act across external services.
+
+Goal:
+Create one shared tool registry that every agent can use through strict permissions, validation, audit logging, and confirmation rules.
+
+Existing tools:
+- SendGrid email
+- Twilio SMS
+- Internal database actions
+- Deal status updates
+- Follow-up scheduling
+- Activity logging
+
+Build:
+
+1. Unified Tool Registry
+Create a central server/agent-tools registry with tools like:
+- send_email
+- send_sms
+- create_email_draft
+- create_sms_draft
+- create_calendar_event
+- create_follow_up_task
+- update_deal_stage
+- update_lead_status
+- log_activity
+- create_invoice
+- record_payment
+- update_client_status
+- create_schedule_slot
+- book_session
+- cancel_session
+- reschedule_session
+
+2. Tool Permission Levels
+Every tool should define:
+- safe_auto_execute
+- requires_confirmation
+- admin_only
+- external_side_effect
+- financial_side_effect
+- client_visible
+
+Rules:
+- Agents may auto-create drafts, tasks, labels, recommendations, and internal notes.
+- Agents may not auto-send messages, charge cards, delete records, or book/cancel sessions without confirmation.
+
+3. Tool Execution Runtime
+Create:
+- validateToolInput()
+- executeTool()
+- requireConfirmation()
+- logToolCall()
+- rollback/compensation where possible
+
+4. Tool Audit Log
+Track:
+- agent name
+- tool called
+- input summary
+- target entity
+- confirmation status
+- result
+- error
+- timestamp
+
+5. Agent Action Contracts
+Instead of agents returning plain text recommendations, make them return structured action proposals:
+{
+  agent: "revenue_agent",
+  toolName: "create_email_draft",
+  targetType: "deal",
+  targetId: "...",
+  reason: "...",
+  confidence: 0.82,
+  estimatedImpact: 1200,
+  requiresConfirmation: false,
+  proposedInput: {...}
+}
+
+6. UI Confirmation Layer
+For any action requiring confirmation:
+- show preview
+- show risk label
+- show expected outcome
+- require Confirm button
+
+7. Tool Connectors Roadmap
+Prepare connector interfaces for:
+- Google Calendar
+- Stripe
+- Gmail / Outlook
+- Meta Ads
+- Google Analytics
+- HubSpot / CRM import
+- Zapier / webhooks
+- QuickBooks
+- Slack
+
+8. Do not overconnect yet
+Start with internal tools + existing SendGrid/Twilio.
+Add Google Calendar and Stripe next because they are most directly connected to scheduling and payments.
+
+Acceptance tests:
+- Revenue Agent proposes email draft tool call
+- Tool runtime validates and creates draft
+- Audit log records call
+- SMS send requires confirmation
+- Deal stage update works internally
+- Payment/invoice tools are blocked unless confirmed
