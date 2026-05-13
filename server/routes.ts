@@ -92,12 +92,50 @@ async function getCoachId(userId: string): Promise<string | null> {
   return profile?.id || null;
 }
 
+/**
+ * Resolve the organization ID for an authenticated admin/coach session.
+ *
+ * Handles both Replit OIDC sessions (req.user.claims.sub) and custom
+ * email/password coach sessions (req.user.id).
+ *
+ * Returns null if:
+ *   - No session exists → caller should return 401
+ *   - User has no organizationId → caller should return 403
+ */
 async function getAdminOrgId(req: any): Promise<string | null> {
   try {
     const userId = req.user?.claims?.sub ?? req.user?.id;
     if (!userId) return null;
     const profile = await storage.getUserProfile(userId);
     return profile?.organizationId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Full auth context for an admin/coach session.
+ * Use when you need more than just the orgId (role, userId, authSource).
+ */
+async function getAdminAuthContext(req: any): Promise<{
+  userId: string;
+  orgId: string;
+  role: string;
+  authSource: "oidc" | "custom";
+} | null> {
+  try {
+    const oidcId = req.user?.claims?.sub;
+    const customId = req.user?.id;
+    const userId = oidcId ?? customId;
+    if (!userId) return null;
+    const profile = await storage.getUserProfile(userId);
+    if (!profile?.organizationId) return null;
+    return {
+      userId,
+      orgId: profile.organizationId,
+      role: profile.role ?? "CLIENT",
+      authSource: oidcId ? "oidc" : "custom",
+    };
   } catch {
     return null;
   }
@@ -7324,6 +7362,13 @@ export async function registerRoutes(
   // Update prospect
   app.patch("/api/admin/team-training/prospects/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      // Verify ownership before mutating
+      const prospect = await storage.getTeamTrainingProspect(req.params.id);
+      if (!prospect) return res.status(404).json({ message: "Prospect not found" });
+      if (prospect.orgId !== profile.organizationId) return res.status(404).json({ message: "Prospect not found" });
       // Strip non-editable fields and timestamps (JSON sends dates as strings; Drizzle expects Date objects)
       const {
         id: _id, orgId: _orgId, createdAt: _ca, updatedAt: _ua,
@@ -7343,6 +7388,13 @@ export async function registerRoutes(
   // Delete prospect
   app.delete("/api/admin/team-training/prospects/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      // Verify ownership before deleting
+      const prospect = await storage.getTeamTrainingProspect(req.params.id);
+      if (!prospect) return res.status(404).json({ message: "Prospect not found" });
+      if (prospect.orgId !== profile.organizationId) return res.status(404).json({ message: "Prospect not found" });
       await storage.deleteTeamTrainingProspect(req.params.id);
       res.json({ ok: true });
     } catch (err: any) {
@@ -7353,6 +7405,13 @@ export async function registerRoutes(
   // Get drafts for a prospect
   app.get("/api/admin/team-training/prospects/:id/drafts", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      // Verify ownership before returning drafts
+      const prospect = await storage.getTeamTrainingProspect(req.params.id);
+      if (!prospect) return res.status(404).json({ message: "Prospect not found" });
+      if (prospect.orgId !== profile.organizationId) return res.status(404).json({ message: "Prospect not found" });
       const drafts = await storage.getOutreachDraftsByProspect(req.params.id);
       res.json(drafts);
     } catch (err: any) {
@@ -8637,7 +8696,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       // Fetch action data needed for tool mapping
       const rows = await db.execute(sql`
         SELECT id, action_type, reason, estimated_value, deal_id, prospect_id, metadata
-        FROM revenue_agent_actions WHERE id = ${req.params.id} AND organization_id = ${orgId}
+        FROM revenue_agent_actions WHERE id = ${req.params.id} AND org_id = ${orgId}
       `);
       const row = rows.rows[0] as any;
       if (!row) return res.status(404).json({ message: "Action not found" });
@@ -8734,6 +8793,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      // Verify ownership before mutating (column is org_id in revenue_agent_actions)
+      const ownerCheck = await db.execute(sql`SELECT id FROM revenue_agent_actions WHERE id = ${req.params.id} AND org_id = ${profile.organizationId}`);
+      if (!ownerCheck.rows[0]) return res.status(404).json({ message: "Action not found" });
       const action = await storage.updateAgentAction(req.params.id, {
         status: "dismissed",
         dismissedAt: new Date(),
@@ -9597,6 +9659,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { id } = req.params;
+      // Verify ownership before mutating
+      const ownerCheck = await db.execute(sql`SELECT id FROM agent_recommendations WHERE id = ${id} AND org_id = ${orgId}`);
+      if (!ownerCheck.rows[0]) return res.status(404).json({ error: "Not found" });
       const rec = await storage.updateAgentRecommendation(id, { status: "dismissed", dismissedAt: new Date() });
       if (!rec) return res.status(404).json({ error: "Not found" });
       res.json(rec);
@@ -9611,6 +9676,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { id } = req.params;
       const { outcomeType, outcomeValue } = req.body;
+      // Verify ownership before mutating
+      const ownerCheck = await db.execute(sql`SELECT id FROM agent_recommendations WHERE id = ${id} AND org_id = ${orgId}`);
+      if (!ownerCheck.rows[0]) return res.status(404).json({ error: "Not found" });
       const rec = await storage.updateAgentRecommendation(id, {
         outcomeType,
         outcomeValue: outcomeValue || 0,
@@ -9845,6 +9913,8 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // GET /api/admin/workflows/definitions
   app.get("/api/admin/workflows/definitions", async (req, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { listWorkflowDefinitions } = await import("./workflows/index");
       const defs = listWorkflowDefinitions();
       res.json(defs.map(d => ({
@@ -10279,6 +10349,55 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       }
 
       res.json({ todayScore, streakDays, actionsHandledToday: handled, totalActionsToday: total });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Dev-only Auth Diagnostic ─────────────────────────────────────────────
+  // GET /api/admin/auth/debug
+  // Returns the resolved identity for the current session.
+  // Only available in development — returns 404 in production.
+  app.get("/api/admin/auth/debug", async (req: any, res) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(404).json({ error: "Not found" });
+    }
+    try {
+      const oidcId = req.user?.claims?.sub;
+      const customId = req.user?.id;
+      const userId = oidcId ?? customId;
+
+      if (!userId) {
+        return res.json({
+          authenticated: false,
+          userId: null,
+          organizationId: null,
+          authSource: null,
+          role: null,
+          permissions: [],
+        });
+      }
+
+      const profile = await storage.getUserProfile(userId);
+      const role = profile?.role ?? "CLIENT";
+
+      const ROLE_PERMISSIONS: Record<string, string[]> = {
+        ADMIN:  ["read:all", "write:all", "manage:coaches", "manage:clients", "manage:billing", "run:agents", "approve:workflows"],
+        COACH:  ["read:clients", "write:sessions", "read:schedule", "run:agents", "approve:workflows"],
+        STAFF:  ["read:clients", "write:sessions", "read:schedule"],
+        CLIENT: ["read:own", "write:own"],
+      };
+
+      return res.json({
+        authenticated: true,
+        userId,
+        organizationId: profile?.organizationId ?? null,
+        authSource: oidcId ? "oidc" : "custom",
+        role,
+        permissions: ROLE_PERMISSIONS[role] ?? [],
+        sessionExists: !!req.session,
+        userObjectKeys: req.user ? Object.keys(req.user) : [],
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
