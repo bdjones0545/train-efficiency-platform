@@ -2,11 +2,17 @@
  * Agent Tool Runtime
  * Central execution engine: validate → check permissions → execute → log.
  * All agents MUST use this to call tools — never call implementations directly.
+ *
+ * Safety invariants enforced here:
+ *   1. Idempotency — duplicate propose calls with same key return the existing record.
+ *   2. Atomic execute — status CAS prevents double-click from firing twice.
+ *   3. Reject guard — rejected calls cannot be executed.
+ *   4. External send safety — implementations receive _toolCallId for pre-send dedup.
  */
 
 import { db } from "../db";
 import { agentToolCalls } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { getTool, TOOL_REGISTRY } from "./registry";
 import { TOOL_IMPLEMENTATIONS } from "./implementations";
 
@@ -24,6 +30,13 @@ export type ProposeToolCallInput = {
   estimatedImpact?: number;
   sourceRecommendationId?: string;
   sourceRevenueActionId?: string;
+  /**
+   * Optional idempotency key. If two propose calls arrive with the same
+   * (orgId, idempotencyKey), the second call returns the existing record
+   * instead of inserting a duplicate. Callers should use a stable, unique
+   * string per logical action (e.g. a UUID generated once per UI click).
+   */
+  idempotencyKey?: string;
 };
 
 export type ToolExecutionResult = {
@@ -69,6 +82,42 @@ export async function proposeToolCall(
     return { success: false, toolCallId: "", requiresConfirmation: false, message: `Validation failed: ${validation.error}` };
   }
 
+  // ── Idempotency check ────────────────────────────────────────────────────────
+  // If a stable idempotencyKey is provided, check for an existing non-rejected
+  // record first. This prevents duplicate proposals from double-clicks or
+  // retried HTTP requests.
+  if (proposal.idempotencyKey) {
+    const [existing] = await db.select().from(agentToolCalls)
+      .where(and(
+        eq(agentToolCalls.orgId, orgId),
+        eq(agentToolCalls.idempotencyKey, proposal.idempotencyKey),
+      ));
+
+    if (existing) {
+      if (existing.status === "success") {
+        return {
+          success: true,
+          toolCallId: existing.id,
+          requiresConfirmation: false,
+          result: existing.result as Record<string, any>,
+          message: `Tool call already completed (idempotent — returning cached result)`,
+        };
+      }
+      // In-flight (pending, pending_confirmation, executing) or previously failed:
+      // return the existing record so the caller doesn't create a second one.
+      if (existing.status !== "rejected" && existing.status !== "failed") {
+        return {
+          success: true,
+          toolCallId: existing.id,
+          requiresConfirmation: existing.confirmationStatus === "pending",
+          pendingConfirmation: existing.confirmationStatus === "pending",
+          message: `Tool call already in progress (idempotent)`,
+        };
+      }
+      // Rejected or failed — fall through to create a fresh record.
+    }
+  }
+
   const requiresConfirmation = tool.permissions.requires_confirmation && !tool.permissions.safe_auto_execute;
   const inputSummary = buildInputSummary(proposal.toolName, proposal.proposedInput);
 
@@ -89,6 +138,7 @@ export async function proposeToolCall(
     status: requiresConfirmation ? "pending_confirmation" : "pending",
     sourceRecommendationId: proposal.sourceRecommendationId ?? null,
     sourceRevenueActionId: proposal.sourceRevenueActionId ?? null,
+    idempotencyKey: proposal.idempotencyKey ?? null,
   }).returning();
 
   if (!requiresConfirmation) {
@@ -111,16 +161,39 @@ export async function executePendingToolCall(
   toolCallId: string,
   confirmedBy: string
 ): Promise<ToolExecutionResult> {
-  const [record] = await db.select().from(agentToolCalls)
-    .where(and(eq(agentToolCalls.id, toolCallId), eq(agentToolCalls.orgId, orgId)));
+  // ── Atomic status transition (CAS) ───────────────────────────────────────────
+  // Only transition to 'executing' if the current status is a pending/confirmable
+  // state. This single UPDATE is the gate that prevents:
+  //   • Double-click: second call sees status='executing' → no rows updated
+  //   • Rejected execution: status='rejected' → no rows updated
+  //   • Already-done execution: status='success'|'failed' → no rows updated
+  const locked = await db.update(agentToolCalls)
+    .set({ status: "executing", confirmedAt: new Date(), confirmedBy })
+    .where(and(
+      eq(agentToolCalls.id, toolCallId),
+      eq(agentToolCalls.orgId, orgId),
+      sql`status NOT IN ('executing', 'success', 'failed', 'rejected')`,
+    ))
+    .returning();
 
-  if (!record) {
-    return { success: false, toolCallId, requiresConfirmation: false, message: "Tool call record not found" };
+  if (!locked.length) {
+    // The CAS failed — fetch the current state for a meaningful error message.
+    const [existing] = await db.select().from(agentToolCalls)
+      .where(and(eq(agentToolCalls.id, toolCallId), eq(agentToolCalls.orgId, orgId)));
+
+    if (!existing) {
+      return { success: false, toolCallId, requiresConfirmation: false, message: "Tool call record not found" };
+    }
+    if (existing.status === "rejected" || existing.confirmationStatus === "rejected") {
+      return { success: false, toolCallId, requiresConfirmation: false, message: "Tool call was rejected — cannot execute a rejected action" };
+    }
+    if (existing.status === "success") {
+      return { success: true, toolCallId, requiresConfirmation: false, result: existing.result as Record<string, any>, message: "Already executed successfully (idempotent)" };
+    }
+    return { success: false, toolCallId, requiresConfirmation: false, message: `Tool call is in a non-executable state: ${existing.status}` };
   }
 
-  await db.update(agentToolCalls)
-    .set({ status: "executing", confirmedAt: new Date(), confirmedBy })
-    .where(eq(agentToolCalls.id, toolCallId));
+  const record = locked[0];
 
   const impl = TOOL_IMPLEMENTATIONS[record.toolName];
   if (!impl) {
@@ -130,10 +203,29 @@ export async function executePendingToolCall(
     return { success: false, toolCallId, requiresConfirmation: false, message: `No implementation for: ${record.toolName}` };
   }
 
+  // Inject _toolCallId so implementations can use it as an idempotency anchor
+  // when writing to external providers (SendGrid/Twilio). This lets them check
+  // communication_logs before sending to avoid duplicate external calls.
+  const enrichedInput: Record<string, any> = {
+    ...(record.proposedInput as Record<string, any>),
+    _toolCallId: toolCallId,
+  };
+
+  // Track send attempt count for external-side-effect tools
+  const tool = getTool(record.toolName);
+  if (tool?.permissions.external_side_effect) {
+    await db.update(agentToolCalls)
+      .set({ sendAttempts: sql`send_attempts + 1` })
+      .where(eq(agentToolCalls.id, toolCallId));
+  }
+
   const start = Date.now();
   try {
-    const result = await impl(orgId, record.proposedInput as Record<string, any>);
+    const result = await impl(orgId, enrichedInput);
     const ms = Date.now() - start;
+
+    // Extract providerMessageId if the implementation returned one
+    const providerMessageId = (result as any).providerMessageId ?? null;
 
     await db.update(agentToolCalls)
       .set({
@@ -142,6 +234,7 @@ export async function executePendingToolCall(
         error: result.success ? null : result.message,
         executionTimeMs: ms,
         executedAt: new Date(),
+        ...(providerMessageId ? { providerMessageId } : {}),
       })
       .where(eq(agentToolCalls.id, toolCallId));
 
@@ -168,9 +261,15 @@ export async function rejectToolCall(
   toolCallId: string,
   rejectedBy: string
 ): Promise<void> {
+  // Only reject if currently in a rejectable state (pending / pending_confirmation).
+  // A success/failed/executing record must not be overwritten.
   await db.update(agentToolCalls)
     .set({ status: "rejected", confirmationStatus: "rejected", confirmedAt: new Date(), confirmedBy: rejectedBy })
-    .where(and(eq(agentToolCalls.id, toolCallId), eq(agentToolCalls.orgId, orgId)));
+    .where(and(
+      eq(agentToolCalls.id, toolCallId),
+      eq(agentToolCalls.orgId, orgId),
+      sql`status IN ('pending', 'pending_confirmation')`,
+    ));
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────

@@ -6,15 +6,27 @@
  * The executor processes steps synchronously until it hits a gate (confirmation
  * or wait_time). Gates pause the run in the DB; external events (approve/resume)
  * call back into executeNextStep to continue.
+ *
+ * Concurrency safety:
+ *   - executeNextStep acquires a DB-level optimistic lock (lockedAt CAS) before
+ *     processing. If the lock is held (lockedAt within 60s), the call is a no-op.
+ *   - approveWorkflowStep uses a CAS on status='waiting_confirmation' so double-
+ *     click approvals are idempotent.
+ *   - resumeWaitingWorkflows acquires the per-run lock before resuming to prevent
+ *     concurrent cron calls from double-advancing the same run.
+ *   - External side-effect tools (send_email, send_sms) are never auto-retried
+ *     by the executor — they rely on implementation-level dedup instead.
  */
 
 import { db } from "../db";
 import { workflowRuns, workflowSteps } from "@shared/schema";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, sql } from "drizzle-orm";
 import { getWorkflowDefinition, type WorkflowContext, type WorkflowStepDefinition } from "./definitions";
 import { proposeToolCall } from "../agent-tools/runtime";
+import { getTool } from "../agent-tools/registry";
 
 const MAX_RECURSION = 20; // safeguard against infinite branch loops
+const LOCK_TTL_SECONDS = 60; // a stale lock older than this is considered dead
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -91,25 +103,32 @@ export async function startWorkflow(input: StartWorkflowInput): Promise<{ runId:
 export async function approveWorkflowStep(runId: string, orgId: string, approvedBy: string): Promise<{ ok: boolean; error?: string }> {
   const run = await getRunById(runId, orgId);
   if (!run) return { ok: false, error: "Workflow run not found" };
-  if (run.status !== "waiting_confirmation") return { ok: false, error: `Cannot approve: workflow is ${run.status}` };
 
   const step = await getCurrentStep(runId, run.currentStepIndex);
   if (!step) return { ok: false, error: "Current step not found" };
 
-  // Update context with draft data if this was a wait_confirmation after a tool_call
+  // ── Atomic CAS: only advance if status is actually waiting_confirmation ────
+  // If two simultaneous approve requests arrive, only the first UPDATE finds
+  // status='waiting_confirmation'; the second finds status='running' and is rejected.
+  const patch: Record<string, any> = {};
   const stepOutput = step.output as any ?? {};
-  const contextPatch: Record<string, any> = { lastApprovedBy: approvedBy };
-  if (stepOutput.subject) contextPatch.draftSubject = stepOutput.subject;
-  if (stepOutput.body)    contextPatch.draftBody    = stepOutput.body;
-  if (stepOutput.smsBody) contextPatch.smsDraftBody  = stepOutput.smsBody;
+  if (stepOutput.subject) patch.draftSubject = stepOutput.subject;
+  if (stepOutput.body)    patch.draftBody    = stepOutput.body;
+  if (stepOutput.smsBody) patch.smsDraftBody  = stepOutput.smsBody;
+
+  const advanced = await db.update(workflowRuns)
+    .set({ status: "running", context: { ...(run.context as any), lastApprovedBy: approvedBy, ...patch } })
+    .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.status, "waiting_confirmation")))
+    .returning();
+
+  if (!advanced.length) {
+    const current = await getRunById(runId, orgId);
+    return { ok: false, error: `Cannot approve: workflow is currently '${current?.status ?? "unknown"}' (already approved or progressed)` };
+  }
 
   await db.update(workflowSteps)
     .set({ status: "completed", completedAt: new Date(), confirmationStatus: "confirmed", confirmedBy: approvedBy })
     .where(eq(workflowSteps.id, step.id));
-
-  await db.update(workflowRuns)
-    .set({ status: "running", context: { ...(run.context as any), ...contextPatch } })
-    .where(eq(workflowRuns.id, runId));
 
   await executeNextStep(runId, orgId, run.currentStepIndex + 1);
   return { ok: true };
@@ -118,6 +137,9 @@ export async function approveWorkflowStep(runId: string, orgId: string, approved
 export async function rejectWorkflowStep(runId: string, orgId: string, rejectedBy: string): Promise<{ ok: boolean }> {
   const run = await getRunById(runId, orgId);
   if (!run) return { ok: false };
+
+  // Guard: only cancel if currently waiting for confirmation
+  if (run.status !== "waiting_confirmation") return { ok: false };
 
   const step = await getCurrentStep(runId, run.currentStepIndex);
   if (step) {
@@ -150,7 +172,25 @@ export async function resumeWaitingWorkflows(orgId: string): Promise<number> {
 
   let resumed = 0;
   for (const run of waitingRuns) {
-    if (run.nextCheckAt && run.nextCheckAt <= now) {
+    if (!run.nextCheckAt || run.nextCheckAt > now) continue;
+
+    // ── Per-run lock: skip if another process is already handling this run ──
+    // Acquire by CAS: set locked_at only if not already locked (within TTL).
+    const acquired = await db.update(workflowRuns)
+      .set({ lockedAt: now })
+      .where(and(
+        eq(workflowRuns.id, run.id),
+        eq(workflowRuns.status, "waiting_response"),
+        sql`(locked_at IS NULL OR locked_at < NOW() - INTERVAL '${sql.raw(String(LOCK_TTL_SECONDS))} seconds')`,
+      ))
+      .returning();
+
+    if (!acquired.length) {
+      // Another worker holds the lock for this run — skip.
+      continue;
+    }
+
+    try {
       // Complete the wait_time step and advance
       const step = await getCurrentStep(run.id, run.currentStepIndex);
       if (step) {
@@ -163,6 +203,11 @@ export async function resumeWaitingWorkflows(orgId: string): Promise<number> {
         .where(eq(workflowRuns.id, run.id));
       await executeNextStep(run.id, orgId, run.currentStepIndex + 1);
       resumed++;
+    } catch (err) {
+      // Release the lock on unexpected error so it can be retried
+      await db.update(workflowRuns)
+        .set({ lockedAt: null })
+        .where(eq(workflowRuns.id, run.id));
     }
   }
   return resumed;
@@ -211,11 +256,40 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
     return;
   }
 
+  // ── Execution lock ─────────────────────────────────────────────────────────
+  // Acquire an optimistic lock on the run row. If lockedAt is set and fresh
+  // (< LOCK_TTL_SECONDS old), another concurrent executeNextStep is in-flight
+  // for this run. We bail out to avoid double-advancing steps.
+  // This guard only applies to the outermost call (depth=0); recursive depth>0
+  // calls are part of the same logical execution chain and don't need to re-lock.
+  if (depth === 0) {
+    const lockNow = new Date();
+    const locked = await db.update(workflowRuns)
+      .set({ lockedAt: lockNow })
+      .where(and(
+        eq(workflowRuns.id, runId),
+        sql`(locked_at IS NULL OR locked_at < NOW() - INTERVAL '${sql.raw(String(LOCK_TTL_SECONDS))} seconds')`,
+      ))
+      .returning();
+
+    if (!locked.length) {
+      // Lock held by another concurrent caller — no-op.
+      return;
+    }
+  }
+
   const run = await getRunById(runId, orgId);
-  if (!run || run.status === "cancelled" || run.status === "completed" || run.status === "failed") return;
+  if (!run || run.status === "cancelled" || run.status === "completed" || run.status === "failed") {
+    if (depth === 0) await releaseLock(runId);
+    return;
+  }
 
   const def = getWorkflowDefinition(run.workflowType);
-  if (!def) { await failWorkflow(runId, "Workflow definition not found"); return; }
+  if (!def) {
+    await failWorkflow(runId, "Workflow definition not found");
+    await releaseLock(runId);
+    return;
+  }
 
   // Update current step index on run
   await db.update(workflowRuns)
@@ -224,12 +298,15 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
 
   if (stepIndex >= def.steps.length) {
     await completeWorkflow(runId);
-    return;
+    return; // lock cleared by completeWorkflow
   }
 
   const stepDef = def.steps[stepIndex];
   const step = await getCurrentStep(runId, stepIndex);
-  if (!step) { await failWorkflow(runId, `Step ${stepIndex} record not found`); return; }
+  if (!step) {
+    await failWorkflow(runId, `Step ${stepIndex} record not found`);
+    return;
+  }
 
   const ctx = (run.context ?? {}) as WorkflowContext;
 
@@ -262,12 +339,20 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
             .set({ status: "waiting_confirmation", toolCallId: result.toolCallId, output: builtInput, confirmationStatus: "pending" })
             .where(eq(workflowSteps.id, step.id));
           await db.update(workflowRuns)
-            .set({ status: "waiting_confirmation" })
+            .set({ status: "waiting_confirmation", lockedAt: null })
             .where(eq(workflowRuns.id, runId));
-          return; // gate — executor pauses here
+          return; // gate — executor pauses here; lock released above
         }
 
-        if (!result.success && (step.retryCount ?? 0) < (stepDef.maxRetries ?? 1)) {
+        // ── Retry logic: NEVER auto-retry external side-effect tools ────────
+        // Retrying send_email or send_sms risks duplicate sends even with
+        // dedup in the implementation. Rely on implementation-level idempotency
+        // only for explicit user-initiated retries, never automatic ones.
+        const toolDef = getTool(stepDef.toolName);
+        const isExternalSideEffect = toolDef?.permissions.external_side_effect ?? false;
+        const maxRetries = isExternalSideEffect ? 0 : (stepDef.maxRetries ?? 1);
+
+        if (!result.success && !isExternalSideEffect && (step.retryCount ?? 0) < maxRetries) {
           await db.update(workflowSteps)
             .set({ retryCount: (step.retryCount ?? 0) + 1, error: result.error ?? "Tool execution failed" })
             .where(eq(workflowSteps.id, step.id));
@@ -302,9 +387,9 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
           .set({ status: "waiting_confirmation", confirmationStatus: "pending", output: { prompt: stepDef.prompt } })
           .where(eq(workflowSteps.id, step.id));
         await db.update(workflowRuns)
-          .set({ status: "waiting_confirmation" })
+          .set({ status: "waiting_confirmation", lockedAt: null })
           .where(eq(workflowRuns.id, runId));
-        return; // gate
+        return; // gate; lock released above
       }
 
       case "wait_time": {
@@ -314,13 +399,12 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
           .set({ status: "waiting_response", output: { waitDays: stepDef.days, resumeAt: resumeAt.toISOString() } })
           .where(eq(workflowSteps.id, step.id));
         await db.update(workflowRuns)
-          .set({ status: "waiting_response", nextCheckAt: resumeAt })
+          .set({ status: "waiting_response", nextCheckAt: resumeAt, lockedAt: null })
           .where(eq(workflowRuns.id, runId));
-        return; // gate
+        return; // gate; lock released above
       }
 
       case "check_response": {
-        // Heuristic: check if the entity has had recent activity in the DB
         const hasResponse = await checkEntityResponse(run, stepDef.checkFn);
         const updatedCtx = { ...ctx, hasResponse };
         await db.update(workflowRuns)
@@ -343,21 +427,12 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
           .where(eq(workflowSteps.id, step.id));
 
         // Skip over any steps between current+1 and targetIndex
-        if (targetIndex > stepIndex + 1) {
-          await db.update(workflowSteps)
-            .set({ status: "skipped", completedAt: new Date() })
-            .where(and(
-              eq(workflowSteps.workflowRunId, runId),
-              // Use raw SQL for range check
-            ));
-          // Skip steps individually
-          for (let i = stepIndex + 1; i < targetIndex; i++) {
-            const skipStep = await getCurrentStep(runId, i);
-            if (skipStep && skipStep.status === "pending") {
-              await db.update(workflowSteps)
-                .set({ status: "skipped", completedAt: new Date(), output: { reason: `Branched from step ${stepIndex} → ${targetIndex}` } })
-                .where(eq(workflowSteps.id, skipStep.id));
-            }
+        for (let i = stepIndex + 1; i < targetIndex; i++) {
+          const skipStep = await getCurrentStep(runId, i);
+          if (skipStep && skipStep.status === "pending") {
+            await db.update(workflowSteps)
+              .set({ status: "skipped", completedAt: new Date(), output: { reason: `Branched from step ${stepIndex} → ${targetIndex}` } })
+              .where(eq(workflowSteps.id, skipStep.id));
           }
         }
 
@@ -366,7 +441,6 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
       }
 
       case "notify": {
-        // Future: send real notification. For now, just log.
         await db.update(workflowSteps)
           .set({ status: "completed", completedAt: new Date(), output: { message: stepDef.message } })
           .where(eq(workflowSteps.id, step.id));
@@ -414,26 +488,30 @@ async function getCurrentStep(runId: string, stepIndex: number) {
 
 async function completeWorkflow(runId: string) {
   await db.update(workflowRuns)
-    .set({ status: "completed", completedAt: new Date() })
+    .set({ status: "completed", completedAt: new Date(), lockedAt: null })
     .where(eq(workflowRuns.id, runId));
 }
 
 async function failWorkflow(runId: string, error: string) {
   await db.update(workflowRuns)
-    .set({ status: "failed", error, completedAt: new Date() })
+    .set({ status: "failed", error, completedAt: new Date(), lockedAt: null })
+    .where(eq(workflowRuns.id, runId));
+}
+
+async function releaseLock(runId: string) {
+  await db.update(workflowRuns)
+    .set({ lockedAt: null })
     .where(eq(workflowRuns.id, runId));
 }
 
 async function checkEntityResponse(run: any, checkFn?: string): Promise<boolean> {
-  // Heuristic checks based on entity type and available data
-  // In production, these would query real event data (email opens, deal movement, etc.)
   if (!run.entityId) return false;
 
   try {
     if (checkFn === "deal_activity" && run.entityId) {
       const { db: database } = await import("../db");
-      const { sql } = await import("drizzle-orm");
-      const result = await database.execute(sql`
+      const { sql: s } = await import("drizzle-orm");
+      const result = await database.execute(s`
         SELECT COUNT(*) as cnt FROM deal_activities
         WHERE deal_id = ${run.entityId}
           AND created_at > ${run.startedAt ?? new Date(0)}
@@ -443,8 +521,8 @@ async function checkEntityResponse(run: any, checkFn?: string): Promise<boolean>
     }
     if (checkFn === "client_activity" && run.entityId) {
       const { db: database } = await import("../db");
-      const { sql } = await import("drizzle-orm");
-      const result = await database.execute(sql`
+      const { sql: s } = await import("drizzle-orm");
+      const result = await database.execute(s`
         SELECT COUNT(*) as cnt FROM sessions
         WHERE client_id = ${run.entityId}
           AND created_at > ${run.startedAt ?? new Date(0)}
@@ -454,8 +532,8 @@ async function checkEntityResponse(run: any, checkFn?: string): Promise<boolean>
     }
     if (checkFn === "payment_status" && run.entityId) {
       const { db: database } = await import("../db");
-      const { sql } = await import("drizzle-orm");
-      const result = await database.execute(sql`
+      const { sql: s } = await import("drizzle-orm");
+      const result = await database.execute(s`
         SELECT COUNT(*) as cnt FROM payments
         WHERE client_id = ${run.entityId} OR session_id = ${run.entityId}
           AND created_at > ${run.startedAt ?? new Date(0)}

@@ -2,6 +2,13 @@
  * Agent Tool Implementations
  * Actual execution logic for each tool in the registry.
  * Agents NEVER call these directly — always go through runtime.ts.
+ *
+ * External send safety:
+ *   - impl_send_email and impl_send_sms both accept `_toolCallId` (injected
+ *     by the runtime at execution time) and check communication_logs for an
+ *     existing successful send before calling the external provider.
+ *   - This prevents duplicate SendGrid/Twilio calls if the same tool call is
+ *     somehow executed more than once (network retry, bug).
  */
 
 import { db } from "../db";
@@ -12,11 +19,41 @@ export type ToolResult = {
   data?: Record<string, any>;
   message: string;
   draftId?: string;
+  /** Provider-assigned message identifier (SendGrid x-message-id, Twilio SID). */
+  providerMessageId?: string;
 };
 
 // ─── Communication ────────────────────────────────────────────────────────────
 
 export async function impl_send_email(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const toolCallId = input._toolCallId as string | undefined;
+
+  // ── Pre-send dedup ──────────────────────────────────────────────────────────
+  // Before calling SendGrid, check if we already have a successful send logged
+  // for this tool call. This is the last-resort safety net against any code
+  // path that calls executePendingToolCall twice for the same record.
+  if (toolCallId) {
+    try {
+      const existing = await db.execute(sql`
+        SELECT id FROM communication_logs
+        WHERE org_id = ${orgId}
+          AND agent_action_id = ${toolCallId}
+          AND channel = 'email'
+          AND status = 'sent'
+        LIMIT 1
+      `);
+      if (existing.rows.length > 0) {
+        return {
+          success: true,
+          message: `Email already sent — skipping duplicate send (idempotent)`,
+          data: { alreadySent: true, toolCallId },
+        };
+      }
+    } catch {
+      // communication_logs might not have agent_action_id indexed yet; safe to continue
+    }
+  }
+
   const { sendEmail: _sendEmail } = await import("../email");
   try {
     await (_sendEmail as any)(
@@ -27,7 +64,7 @@ export async function impl_send_email(orgId: string, input: Record<string, any>)
       {
         orgId,
         type: "agent_outreach",
-        agentActionId: input.agentActionId,
+        agentActionId: toolCallId ?? input.agentActionId,
         recipientUserId: input.recipientUserId,
       },
       input.replyTo
@@ -39,9 +76,34 @@ export async function impl_send_email(orgId: string, input: Record<string, any>)
 }
 
 export async function impl_send_sms(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const toolCallId = input._toolCallId as string | undefined;
   const { sendSms, normalizePhone } = await import("../sms");
   const phone = normalizePhone(input.to);
   if (!phone) return { success: false, message: `Invalid phone number: ${input.to}` };
+
+  // ── Pre-send dedup ──────────────────────────────────────────────────────────
+  if (toolCallId) {
+    try {
+      const existing = await db.execute(sql`
+        SELECT id FROM communication_logs
+        WHERE org_id = ${orgId}
+          AND agent_action_id = ${toolCallId}
+          AND channel = 'sms'
+          AND status = 'sent'
+        LIMIT 1
+      `);
+      if (existing.rows.length > 0) {
+        return {
+          success: true,
+          message: `SMS already sent — skipping duplicate send (idempotent)`,
+          data: { alreadySent: true, toolCallId },
+        };
+      }
+    } catch {
+      // safe to continue
+    }
+  }
+
   try {
     const result = await sendSms({
       to: phone,
@@ -49,11 +111,12 @@ export async function impl_send_sms(orgId: string, input: Record<string, any>): 
       ctx: {
         orgId,
         type: "agent_outreach",
-        agentActionId: input.agentActionId,
+        agentActionId: toolCallId ?? input.agentActionId,
         recipientUserId: input.recipientUserId,
       },
     });
-    if (result.success) return { success: true, message: `SMS sent to ${phone}` };
+    if (result.sent) return { success: true, message: `SMS sent to ${phone}` };
+    if (result.skipped) return { success: false, message: `SMS skipped: ${result.skipped}` };
     return { success: false, message: result.error ?? "SMS send failed" };
   } catch (e: any) {
     return { success: false, message: e.message };
@@ -157,8 +220,8 @@ export async function impl_create_follow_up_task(orgId: string, input: Record<st
     }
     if (input.dealId) {
       await db.execute(sql`
-        UPDATE team_training_prospects
-        SET next_follow_up_date = ${input.followUpDate}::date,
+        UPDATE team_training_deals
+        SET next_follow_up_at = ${input.followUpDate}::date,
             updated_at = NOW()
         WHERE id = ${input.dealId}
       `);
@@ -172,15 +235,17 @@ export async function impl_create_follow_up_task(orgId: string, input: Record<st
 
 export async function impl_update_deal_stage(orgId: string, input: Record<string, any>): Promise<ToolResult> {
   try {
+    // team_training_deals.status holds the pipeline stage; organization_id is the tenant key
     await db.execute(sql`
-      UPDATE team_training_prospects
-      SET deal_stage = ${input.newStage}, updated_at = NOW()
+      UPDATE team_training_deals
+      SET status = ${input.newStage}::deal_status, updated_at = NOW()
       WHERE id = ${input.dealId}
+        AND organization_id = ${orgId}
     `);
     if (input.note) {
       await db.execute(sql`
-        INSERT INTO deal_activities (id, deal_id, activity_type, summary, created_at)
-        VALUES (gen_random_uuid(), ${input.dealId}, 'stage_change', ${input.note}, NOW())
+        INSERT INTO deal_activities (id, deal_id, organization_id, activity_type, description, created_at)
+        VALUES (gen_random_uuid(), ${input.dealId}, ${orgId}, 'stage_change', ${input.note}, NOW())
       `);
     }
     return { success: true, message: `Deal stage updated to ${input.newStage}`, data: { stage: input.newStage } };
@@ -193,7 +258,7 @@ export async function impl_update_lead_status(_orgId: string, input: Record<stri
   try {
     await db.execute(sql`
       UPDATE team_training_prospects
-      SET status = ${input.newStatus}, updated_at = NOW()
+      SET outreach_status = ${input.newStatus}, updated_at = NOW()
       WHERE id = ${input.prospectId}
     `);
     return { success: true, message: `Lead status updated to ${input.newStatus}` };
@@ -202,12 +267,12 @@ export async function impl_update_lead_status(_orgId: string, input: Record<stri
   }
 }
 
-export async function impl_log_activity(_orgId: string, input: Record<string, any>): Promise<ToolResult> {
+export async function impl_log_activity(orgId: string, input: Record<string, any>): Promise<ToolResult> {
   try {
     await db.execute(sql`
-      INSERT INTO deal_activities (id, deal_id, activity_type, summary, metadata, created_at)
-      VALUES (gen_random_uuid(), ${input.dealId}, ${input.activityType}, ${input.summary},
-              ${JSON.stringify(input.metadata ?? {})}::jsonb, NOW())
+      INSERT INTO deal_activities (id, deal_id, organization_id, activity_type, description, metadata, created_at)
+      VALUES (gen_random_uuid(), ${input.dealId}, ${orgId}, ${input.activityType}::deal_activity_type,
+              ${input.summary}, ${JSON.stringify(input.metadata ?? {})}::jsonb, NOW())
     `);
     return { success: true, message: `Activity logged: ${input.activityType}` };
   } catch (e: any) {

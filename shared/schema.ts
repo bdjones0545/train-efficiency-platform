@@ -1180,6 +1180,9 @@ export const agentToolCalls = pgTable("agent_tool_calls", {
   sourceRevenueActionId: varchar("source_revenue_action_id"),
   createdAt: timestamp("created_at").defaultNow(),
   executedAt: timestamp("executed_at"),
+  idempotencyKey: varchar("idempotency_key"),
+  providerMessageId: varchar("provider_message_id"),
+  sendAttempts: integer("send_attempts").default(0).notNull(),
 });
 
 export type AgentToolCall = typeof agentToolCalls.$inferSelect;
@@ -1210,6 +1213,7 @@ export const workflowRuns = pgTable("workflow_runs", {
   cancelledAt: timestamp("cancelled_at"),
   nextCheckAt: timestamp("next_check_at"),
   createdAt: timestamp("created_at").defaultNow(),
+  lockedAt: timestamp("locked_at"),
 });
 
 export const workflowSteps = pgTable("workflow_steps", {
