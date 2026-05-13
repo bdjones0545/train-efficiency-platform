@@ -249,6 +249,7 @@ export const bookings = pgTable("bookings", {
   subscriptionPlanId: varchar("subscription_plan_id"),
   clientReminderSentAt: timestamp("client_reminder_sent_at"),
   coachReminderSentAt: timestamp("coach_reminder_sent_at"),
+  googleCalendarEventId: varchar("google_calendar_event_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1263,3 +1264,42 @@ export type ExecutiveBrief = typeof executiveBriefs.$inferSelect;
 export type InsertExecutiveBrief = typeof executiveBriefs.$inferInsert;
 export type OrchestratorRun = typeof orchestratorRuns.$inferSelect;
 export type InsertOrchestratorRun = typeof orchestratorRuns.$inferInsert;
+
+// ─── Connector Tokens ─────────────────────────────────────────────────────────
+
+export const connectorTokens = pgTable("connector_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: varchar("org_id").notNull(),
+  connector: varchar("connector").notNull(),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiry: timestamp("token_expiry"),
+  scope: text("scope"),
+  email: varchar("email"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type ConnectorToken = typeof connectorTokens.$inferSelect;
+
+// ─── Agent Invoices ───────────────────────────────────────────────────────────
+
+export const agentInvoices = pgTable("agent_invoices", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: varchar("org_id").notNull(),
+  stripeInvoiceId: varchar("stripe_invoice_id"),
+  stripeCustomerId: varchar("stripe_customer_id"),
+  toolCallId: varchar("tool_call_id"),
+  workflowRunId: varchar("workflow_run_id"),
+  clientId: varchar("client_id"),
+  amountCents: integer("amount_cents"),
+  description: text("description"),
+  status: varchar("status").default("draft"),
+  dueDate: timestamp("due_date"),
+  stripeInvoiceUrl: varchar("stripe_invoice_url"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type AgentInvoice = typeof agentInvoices.$inferSelect;

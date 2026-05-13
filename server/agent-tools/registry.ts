@@ -113,12 +113,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
 
   create_calendar_event: {
     name: "create_calendar_event",
-    description: "Create a calendar event. Requires confirmation. Google Calendar connector planned.",
+    description: "Create a calendar event in Google Calendar. Requires confirmation. Conflict detection included.",
     category: "scheduling",
     permissions: P({ requires_confirmation: true, external_side_effect: true }),
     riskLevel: "medium",
     connector: "google_calendar",
-    connectorStatus: "planned",
+    connectorStatus: "live",
     inputSchema: z.object({
       title: z.string().min(1),
       startIso: z.string(),
@@ -194,12 +194,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
 
   create_invoice: {
     name: "create_invoice",
-    description: "Create a payment invoice via Stripe. Admin only. Requires confirmation. Financial side effect.",
+    description: "Create and send a real Stripe invoice. Admin only. Requires confirmation. Financial side effect.",
     category: "financial",
     permissions: P({ requires_confirmation: true, admin_only: true, financial_side_effect: true, client_visible: true }),
     riskLevel: "high",
     connector: "stripe",
-    connectorStatus: "stub",
+    connectorStatus: "live",
     inputSchema: z.object({
       clientId: z.string(),
       amountCents: z.number().int().positive(),
@@ -210,12 +210,12 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
 
   record_payment: {
     name: "record_payment",
-    description: "Record a manual payment. Admin only. Requires confirmation. Financial side effect. Cannot be undone.",
+    description: "Record a manual payment via Stripe PaymentIntent. Admin only. Requires confirmation. Cannot be undone.",
     category: "financial",
     permissions: P({ requires_confirmation: true, admin_only: true, financial_side_effect: true }),
     riskLevel: "critical",
     connector: "stripe",
-    connectorStatus: "stub",
+    connectorStatus: "live",
     inputSchema: z.object({
       clientId: z.string(),
       amountCents: z.number().int().positive(),
@@ -306,8 +306,8 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
 };
 
 export const CONNECTOR_ROADMAP = [
-  { name: "Google Calendar", status: "planned" as ConnectorStatus, description: "Two-way sync for session scheduling", tools: ["create_calendar_event"] },
-  { name: "Stripe", status: "stub" as ConnectorStatus, description: "Invoicing, payment links, subscription billing", tools: ["create_invoice", "record_payment"] },
+  { name: "Google Calendar", status: "live" as ConnectorStatus, description: "Two-way sync for session scheduling. OAuth per-org. Conflict detection included.", tools: ["create_calendar_event"] },
+  { name: "Stripe", status: "live" as ConnectorStatus, description: "Real Stripe invoices, payment recording, webhook payment attribution.", tools: ["create_invoice", "record_payment"] },
   { name: "Gmail / Outlook", status: "planned" as ConnectorStatus, description: "Send emails from coach's own inbox", tools: ["send_email"] },
   { name: "Meta Ads", status: "planned" as ConnectorStatus, description: "Trigger ad campaigns from AI actions", tools: [] },
   { name: "Google Analytics", status: "planned" as ConnectorStatus, description: "Track conversion events from AI actions", tools: [] },

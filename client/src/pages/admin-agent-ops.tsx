@@ -20,7 +20,7 @@ import {
   CheckCircle, XCircle, AlertTriangle, Clock, RefreshCw,
   Database, Mail, MessageSquare, Activity, Zap, ShieldAlert,
   GitBranch, RotateCcw, CheckSquare, ExternalLink, AlertCircle,
-  Info, Timer, Lock, CircleDot, Play,
+  Info, Timer, Lock, CircleDot, Play, Link2, Link2Off, CreditCard, Calendar,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -601,7 +601,7 @@ export default function AdminAgentOpsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 w-full">
+        <TabsList className="grid grid-cols-5 w-full">
           <TabsTrigger value="overview" data-testid="tab-overview">
             Overview
             {pendingCount > 0 && (
@@ -621,6 +621,7 @@ export default function AdminAgentOpsPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit-trail">Audit Trail</TabsTrigger>
+          <TabsTrigger value="connectors" data-testid="tab-connectors">Connectors</TabsTrigger>
         </TabsList>
 
         {/* ── Overview ── */}
@@ -753,6 +754,11 @@ export default function AdminAgentOpsPage() {
             onSelect={(c) => setDrawerItem({ kind: "tool-call", data: c })}
           />
         </TabsContent>
+
+        {/* ── Connectors ── */}
+        <TabsContent value="connectors" className="space-y-4 mt-4">
+          <ConnectorsPanel />
+        </TabsContent>
       </Tabs>
 
       {/* Detail Drawer */}
@@ -764,6 +770,194 @@ export default function AdminAgentOpsPage() {
         resolving={resolveMutation.isPending}
         retrying={retryMutation.isPending}
       />
+    </div>
+  );
+}
+
+// ─── Connectors Panel ─────────────────────────────────────────────────────────
+
+type ConnectorStatus = {
+  googleCalendar: { configured: boolean; connected: boolean; email: string | null; status: string };
+  stripe: { configured: boolean; connected: boolean; status: string };
+};
+
+type AgentInvoice = {
+  id: string;
+  stripeInvoiceId: string | null;
+  clientId: string | null;
+  amountCents: number | null;
+  description: string | null;
+  status: string | null;
+  stripeInvoiceUrl: string | null;
+  paidAt: string | null;
+  createdAt: string | null;
+};
+
+function ConnectorsPanel() {
+  const { toast } = useToast();
+
+  const { data: connectors, isLoading: loadingConnectors, refetch: refetchConnectors } = useQuery<ConnectorStatus>({
+    queryKey: ["/api/admin/connectors"],
+  });
+
+  const { data: invoices, isLoading: loadingInvoices } = useQuery<AgentInvoice[]>({
+    queryKey: ["/api/admin/agent-invoices"],
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/admin/connectors/google-calendar/connect");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        toast({ title: "Connect failed", description: data.message, variant: "destructive" });
+      }
+    },
+    onError: (err: any) => {
+      toast({ title: "Connect failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", "/api/admin/connectors/google-calendar");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Google Calendar disconnected" });
+      refetchConnectors();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/connectors"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Disconnect failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const statusBadgeConnector = (status: string) => {
+    if (status === "connected") return <Badge className="bg-green-100 text-green-800 border-green-200">Connected</Badge>;
+    if (status === "disconnected") return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Disconnected</Badge>;
+    return <Badge variant="outline" className="text-muted-foreground">Not Configured</Badge>;
+  };
+
+  return (
+    <div className="space-y-6" data-testid="connectors-panel">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Google Calendar */}
+        <Card className="p-5 space-y-4" data-testid="connector-google-calendar">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+              <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm">Google Calendar</p>
+              <p className="text-xs text-muted-foreground truncate">OAuth per-org · Conflict detection · Two-way sync</p>
+            </div>
+            {loadingConnectors ? <Skeleton className="h-6 w-20" /> : statusBadgeConnector(connectors?.googleCalendar?.status ?? "not_configured")}
+          </div>
+
+          {connectors?.googleCalendar?.email && (
+            <div className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2" data-testid="gcal-email">
+              Connected as <span className="font-medium text-foreground">{connectors.googleCalendar.email}</span>
+            </div>
+          )}
+
+          {!connectors?.googleCalendar?.configured && !loadingConnectors && (
+            <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
+              Set <code className="font-mono">GOOGLE_CLIENT_ID</code> and <code className="font-mono">GOOGLE_CLIENT_SECRET</code> environment variables to enable.
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {connectors?.googleCalendar?.connected ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
+                onClick={() => disconnectMutation.mutate()}
+                disabled={disconnectMutation.isPending}
+                data-testid="button-gcal-disconnect"
+              >
+                <Link2Off className="h-3.5 w-3.5 mr-1.5" />
+                {disconnectMutation.isPending ? "Disconnecting…" : "Disconnect"}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => connectMutation.mutate()}
+                disabled={connectMutation.isPending || !connectors?.googleCalendar?.configured}
+                data-testid="button-gcal-connect"
+              >
+                <Link2 className="h-3.5 w-3.5 mr-1.5" />
+                {connectMutation.isPending ? "Opening…" : "Connect"}
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => refetchConnectors()} data-testid="button-connectors-refresh">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </Card>
+
+        {/* Stripe */}
+        <Card className="p-5 space-y-4" data-testid="connector-stripe">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+              <CreditCard className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm">Stripe</p>
+              <p className="text-xs text-muted-foreground truncate">Real invoices · Payment attribution · Webhook resumption</p>
+            </div>
+            {loadingConnectors ? <Skeleton className="h-6 w-20" /> : statusBadgeConnector(connectors?.stripe?.status ?? "not_configured")}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Stripe is configured via the Replit Stripe integration or <code className="font-mono">STRIPE_SECRET_KEY</code> environment variable.
+            Agent invoices are tracked in the table below.
+          </p>
+        </Card>
+      </div>
+
+      {/* Agent Invoices */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Agent-Created Invoices</h3>
+        {loadingInvoices ? (
+          <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
+        ) : !invoices?.length ? (
+          <div className="text-sm text-muted-foreground text-center py-6 border rounded-lg" data-testid="no-agent-invoices">
+            No agent-created invoices yet. Use the <strong>create_invoice</strong> tool to create real Stripe invoices.
+          </div>
+        ) : (
+          <div className="space-y-2" data-testid="list-agent-invoices">
+            {invoices.map(inv => (
+              <div key={inv.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border" data-testid={`row-invoice-${inv.id}`}>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{inv.description ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {inv.stripeInvoiceId ?? "no stripe id"} · {inv.createdAt ? format(new Date(inv.createdAt), "MMM d, yyyy") : "—"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-sm font-medium">${((inv.amountCents ?? 0) / 100).toFixed(2)}</span>
+                  {inv.status === "paid" ? (
+                    <Badge className="bg-green-100 text-green-800 border-green-200">Paid</Badge>
+                  ) : inv.status === "open" ? (
+                    <Badge className="bg-blue-100 text-blue-800 border-blue-200">Open</Badge>
+                  ) : (
+                    <Badge variant="outline">{inv.status ?? "unknown"}</Badge>
+                  )}
+                  {inv.stripeInvoiceUrl && (
+                    <a href={inv.stripeInvoiceUrl} target="_blank" rel="noopener noreferrer" data-testid={`link-invoice-${inv.id}`}>
+                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

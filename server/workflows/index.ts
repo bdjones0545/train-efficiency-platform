@@ -4,6 +4,7 @@ export {
   rejectWorkflowStep,
   cancelWorkflow,
   resumeWaitingWorkflows,
+  resumeWorkflowAfterPayment,
   getWorkflowRunWithSteps,
   listWorkflowRuns,
   getWorkflowStats,

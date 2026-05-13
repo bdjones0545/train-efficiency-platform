@@ -83,6 +83,12 @@ export async function startWorkflow(input: StartWorkflowInput): Promise<{ runId:
     startedAt: new Date(),
   }).returning();
 
+  // Patch workflowRunId into context so buildInput functions can reference it
+  // (e.g. create_invoice uses it to link the invoice back to this run for payment webhook resumption)
+  await db.update(workflowRuns)
+    .set({ context: { ...context, workflowRunId: run.id } })
+    .where(eq(workflowRuns.id, run.id));
+
   // Create all step records up-front (pending state)
   await db.insert(workflowSteps).values(
     def.steps.map(s => ({
@@ -367,6 +373,15 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
         if (builtInput.body && stepDef.toolName === "create_sms_draft") ctxPatch.smsDraftBody = builtInput.body;
         if (stepDef.toolName === "send_sms") ctxPatch.smsSent = true;
         if (stepDef.toolName === "send_email") ctxPatch.emailSent = true;
+        // Connector result patching
+        if (stepDef.toolName === "create_calendar_event" && result.result?.calendarEventId) {
+          ctxPatch.calendarEventId = result.result.calendarEventId;
+        }
+        if (stepDef.toolName === "create_invoice" && result.result?.agentInvoiceId) {
+          ctxPatch.agentInvoiceId = result.result.agentInvoiceId;
+          ctxPatch.stripeInvoiceId = result.result.stripeInvoiceId;
+          ctxPatch.invoiceUrl = result.result.invoiceUrl;
+        }
 
         await db.update(workflowSteps)
           .set({ status: result.success ? "completed" : "failed", completedAt: new Date(), toolCallId: result.toolCallId, output: { ...builtInput, toolCallId: result.toolCallId, success: result.success }, error: result.error ?? null })
@@ -401,6 +416,50 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
         await db.update(workflowRuns)
           .set({ status: "waiting_response", nextCheckAt: resumeAt, lockedAt: null })
           .where(eq(workflowRuns.id, runId));
+        return; // gate; lock released above
+      }
+
+      case "wait_payment": {
+        const agentInvoiceId = (ctx as any).agentInvoiceId ?? null;
+        if (!agentInvoiceId) {
+          throw new Error(
+            "wait_payment step requires agentInvoiceId in workflow context — did the create_invoice step succeed?"
+          );
+        }
+
+        const timeoutDays = (stepDef as any).timeoutDays ?? 14;
+        const timeoutAt = new Date();
+        timeoutAt.setDate(timeoutAt.getDate() + timeoutDays);
+
+        await db.update(workflowSteps)
+          .set({
+            status: "waiting_response",
+            output: { awaitingInvoiceId: agentInvoiceId, timeoutAt: timeoutAt.toISOString() },
+          })
+          .where(eq(workflowSteps.id, step.id));
+
+        await db.update(workflowRuns)
+          .set({
+            status: "waiting_response",
+            nextCheckAt: timeoutAt,
+            context: { ...ctx, awaitingInvoiceId: agentInvoiceId },
+            lockedAt: null,
+          })
+          .where(eq(workflowRuns.id, runId));
+
+        // Back-link this run onto the agent_invoice record so the webhook can find it
+        try {
+          const { sql: sqlRaw } = await import("drizzle-orm");
+          await db.execute(sqlRaw`
+            UPDATE agent_invoices
+            SET workflow_run_id = ${runId}, updated_at = NOW()
+            WHERE id = ${agentInvoiceId}
+              OR stripe_invoice_id = ${agentInvoiceId}
+          `);
+        } catch (e) {
+          console.warn("[Workflow] Could not back-link agent_invoice to workflow run:", e);
+        }
+
         return; // gate; lock released above
       }
 
@@ -547,4 +606,53 @@ async function checkEntityResponse(run: any, checkFn?: string): Promise<boolean>
   }
 
   return false;
+}
+
+// ─── Resume after payment (called by Stripe webhook) ─────────────────────────
+
+export async function resumeWorkflowAfterPayment(
+  runId: string,
+  stripeInvoiceId: string
+): Promise<{ resumed: boolean }> {
+  // Only resume if the run is actually waiting_response and not locked
+  const now = new Date();
+  const acquired = await db.update(workflowRuns)
+    .set({ lockedAt: now })
+    .where(
+      and(
+        eq(workflowRuns.id, runId),
+        eq(workflowRuns.status, "waiting_response"),
+        sql`(locked_at IS NULL OR locked_at < NOW() - INTERVAL '60 seconds')`,
+      )
+    )
+    .returning();
+
+  if (!acquired.length) return { resumed: false };
+
+  const run = acquired[0];
+  const ctx = (run.context ?? {}) as Record<string, any>;
+
+  const steps = await db.select().from(workflowSteps)
+    .where(and(eq(workflowSteps.workflowRunId, runId), eq(workflowSteps.status, "waiting_response")));
+
+  for (const step of steps) {
+    await db.update(workflowSteps)
+      .set({
+        status: "completed",
+        completedAt: now,
+        output: { paymentReceived: true, stripeInvoiceId, resumedAt: now.toISOString() },
+      })
+      .where(eq(workflowSteps.id, step.id));
+  }
+
+  const updatedCtx = { ...ctx, paymentReceived: true, stripeInvoiceId, paidAt: now.toISOString() };
+  await db.update(workflowRuns)
+    .set({ status: "running", context: updatedCtx })
+    .where(eq(workflowRuns.id, runId));
+
+  const nextIndex = (run.currentStepIndex ?? 0) + 1;
+  await executeNextStep(runId, run.orgId, nextIndex, 0);
+
+  console.log(`[Workflow] Resumed run ${runId} after payment ${stripeInvoiceId} — advancing to step ${nextIndex}`);
+  return { resumed: true };
 }

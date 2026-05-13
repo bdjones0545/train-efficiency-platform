@@ -10653,5 +10653,115 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   startWeeklyReminderJob();
   startSessionReminderJob();
 
+  // ─── Connector Routes ──────────────────────────────────────────────────────
+
+  // GET /api/admin/connectors — list all connector statuses
+  app.get("/api/admin/connectors", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+
+      const { isGoogleCalendarConfigured, getGoogleCalendarStatus } = await import("./connectors/google-calendar");
+      const gcal = await getGoogleCalendarStatus(orgId);
+
+      let stripeConnected = false;
+      try {
+        const { getUncachableStripeClient } = await import("./stripeClient");
+        const stripe = await getUncachableStripeClient();
+        await stripe.balance.retrieve();
+        stripeConnected = true;
+      } catch { stripeConnected = false; }
+
+      res.json({
+        googleCalendar: {
+          configured: gcal.configured,
+          connected: gcal.connected,
+          email: gcal.email,
+          status: gcal.connected ? "connected" : gcal.configured ? "disconnected" : "not_configured",
+        },
+        stripe: {
+          configured: stripeConnected,
+          connected: stripeConnected,
+          status: stripeConnected ? "connected" : "not_configured",
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/connectors/google-calendar/connect — start OAuth flow
+  app.get("/api/admin/connectors/google-calendar/connect", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { isGoogleCalendarConfigured, getGoogleAuthUrl } = await import("./connectors/google-calendar");
+      if (!isGoogleCalendarConfigured()) {
+        return res.status(400).json({ message: "Google Calendar not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." });
+      }
+      const userId = req.user?.claims?.sub;
+      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const url = getGoogleAuthUrl(orgId);
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/connectors/google-calendar/callback — OAuth callback (public, Google redirects here)
+  app.get("/api/connectors/google-calendar/callback", async (req: any, res) => {
+    const { code, state: orgId, error } = req.query;
+    if (error) {
+      return res.redirect(`/admin/agent-ops?tab=connectors&gcal_error=${encodeURIComponent(error)}`);
+    }
+    if (!code || !orgId) {
+      return res.redirect("/admin/agent-ops?tab=connectors&gcal_error=missing_params");
+    }
+    try {
+      const { exchangeCodeAndStoreTokens } = await import("./connectors/google-calendar");
+      const { email } = await exchangeCodeAndStoreTokens(code as string, orgId as string);
+      res.redirect(`/admin/agent-ops?tab=connectors&gcal_connected=1&gcal_email=${encodeURIComponent(email ?? "")}`);
+    } catch (err: any) {
+      res.redirect(`/admin/agent-ops?tab=connectors&gcal_error=${encodeURIComponent(err.message)}`);
+    }
+  });
+
+  // DELETE /api/admin/connectors/google-calendar — disconnect
+  app.delete("/api/admin/connectors/google-calendar", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const { disconnectGoogleCalendar } = await import("./connectors/google-calendar");
+      await disconnectGoogleCalendar(orgId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/agent-invoices — list agent invoices
+  app.get("/api/admin/agent-invoices", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const { listAgentInvoices } = await import("./connectors/stripe-invoicing");
+      const invoices = await listAgentInvoices(orgId, 100);
+      res.json(invoices);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/agent-invoices/unpaid — list unpaid agent invoices
+  app.get("/api/admin/agent-invoices/unpaid", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const { listUnpaidAgentInvoices } = await import("./connectors/stripe-invoicing");
+      const invoices = await listUnpaidAgentInvoices(orgId);
+      res.json(invoices);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

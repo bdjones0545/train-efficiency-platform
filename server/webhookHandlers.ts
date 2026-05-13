@@ -405,6 +405,20 @@ export class WebhookHandlers {
   }
 
   static async handleInvoicePaid(stripeInvoiceId: string): Promise<void> {
+    // ── Agent invoice attribution (payment → workflow resumption) ──────────────
+    try {
+      const { markAgentInvoicePaid } = await import("./connectors/stripe-invoicing");
+      const { workflowRunId } = await markAgentInvoicePaid(stripeInvoiceId);
+      if (workflowRunId) {
+        const { resumeWorkflowAfterPayment } = await import("./workflows/executor");
+        const { resumed } = await resumeWorkflowAfterPayment(workflowRunId, stripeInvoiceId);
+        console.log(`[Stripe Webhook] Agent invoice ${stripeInvoiceId} paid — workflow ${workflowRunId} resumed: ${resumed}`);
+      }
+    } catch (err) {
+      console.warn(`[Stripe Webhook] Agent invoice lookup failed for ${stripeInvoiceId}:`, err);
+    }
+
+    // ── Team quote payment handling ────────────────────────────────────────────
     const quote = await storage.getTeamQuoteByStripeInvoiceId(stripeInvoiceId);
 
     if (!quote || quote.status === 'PAID') return;

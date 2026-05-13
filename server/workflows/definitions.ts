@@ -18,6 +18,7 @@ export type StepType =
   | "tool_call"
   | "wait_confirmation"
   | "wait_time"
+  | "wait_payment"
   | "check_response"
   | "branch"
   | "complete"
@@ -40,6 +41,11 @@ export type StepConfig =
       type: "wait_time";
       description: string;
       days: number;
+    }
+  | {
+      type: "wait_payment";
+      description: string;
+      timeoutDays?: number;
     }
   | {
       type: "check_response";
@@ -564,6 +570,71 @@ const unpaidSessionRecovery: WorkflowDefinition = {
   ],
 };
 
+// ─── 6. Session Booking (Calendar + Invoice + Payment) ───────────────────────
+
+const sessionBooking: WorkflowDefinition = {
+  type: "session_booking",
+  displayName: "Session Booking",
+  description: "Book a training session: create Google Calendar event, confirm with coach, create Stripe invoice, and resume automatically when client pays.",
+  category: "scheduling",
+  estimatedDays: 3,
+  triggerEvent: "booking_requested",
+  steps: [
+    {
+      index: 0,
+      name: "Create Calendar Event",
+      type: "tool_call",
+      toolName: "create_calendar_event",
+      description: "Create the session in Google Calendar with the client and coach as attendees.",
+      buildInput: (ctx) => ({
+        title: ctx.sessionTitle ?? `Training Session — ${ctx.entityName ?? "Client"}`,
+        startIso: ctx.startIso ?? new Date(Date.now() + 86400000).toISOString(),
+        endIso: ctx.endIso ?? new Date(Date.now() + 90000000).toISOString(),
+        description: ctx.sessionNotes ?? "AI-scheduled training session",
+        attendeeEmails: ctx.attendeeEmails ?? [],
+        location: ctx.sessionLocation ?? "TBD",
+      }),
+      maxRetries: 0,
+    },
+    {
+      index: 1,
+      name: "Confirm Booking",
+      type: "wait_confirmation",
+      description: "Coach/admin confirms the session details and calendar event.",
+      prompt: "Review the calendar event created above. Confirm to proceed with invoicing the client.",
+    },
+    {
+      index: 2,
+      name: "Create Invoice",
+      type: "tool_call",
+      toolName: "create_invoice",
+      description: "Create and send a Stripe invoice for the session payment.",
+      buildInput: (ctx) => ({
+        clientId: ctx.clientId ?? ctx.entityId ?? "",
+        amountCents: ctx.sessionPriceCents ?? 10000,
+        description: ctx.sessionTitle ?? "Training Session",
+        dueDate: ctx.invoiceDueDate,
+        workflowRunId: ctx.workflowRunId,
+      }),
+      maxRetries: 0,
+    },
+    {
+      index: 3,
+      name: "Wait for Payment",
+      type: "wait_payment",
+      description: "Pause until the client's Stripe invoice is paid. Resumes automatically via webhook.",
+      timeoutDays: 14,
+    },
+    {
+      index: 4,
+      name: "Booking Confirmed",
+      type: "complete",
+      description: "Session fully booked and payment received.",
+      outcomeLabel: "booking_confirmed",
+    },
+  ],
+};
+
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 export const WORKFLOW_DEFINITIONS: Record<string, WorkflowDefinition> = {
@@ -572,6 +643,7 @@ export const WORKFLOW_DEFINITIONS: Record<string, WorkflowDefinition> = {
   fill_schedule_gap: fillScheduleGap,
   onboarding_sequence: onboardingSequence,
   unpaid_session_recovery: unpaidSessionRecovery,
+  session_booking: sessionBooking,
 };
 
 export function getWorkflowDefinition(type: string): WorkflowDefinition | undefined {

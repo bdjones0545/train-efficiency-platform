@@ -157,11 +157,49 @@ export async function impl_create_sms_draft(_orgId: string, input: Record<string
 
 // ─── Scheduling ───────────────────────────────────────────────────────────────
 
-export async function impl_create_calendar_event(_orgId: string, input: Record<string, any>): Promise<ToolResult> {
+export async function impl_create_calendar_event(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { isGoogleCalendarConfigured, getGoogleCalendarStatus, createCalendarEvent, checkConflicts } = await import("../connectors/google-calendar");
+
+  if (!isGoogleCalendarConfigured()) {
+    return {
+      success: false,
+      message: "Google Calendar is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.",
+      data: { notConfigured: true },
+    };
+  }
+
+  const status = await getGoogleCalendarStatus(orgId);
+  if (!status.connected) {
+    return {
+      success: false,
+      message: "Google Calendar is not connected for this organisation. Connect via Admin → Agent Ops → Connectors.",
+      data: { notConnected: true },
+    };
+  }
+
+  const conflicts = await checkConflicts(orgId, input.startIso, input.endIso).catch(() => []);
+  if (conflicts.length > 0) {
+    return {
+      success: false,
+      message: `Conflict detected: ${conflicts.length} existing event(s) overlap this time slot. First conflict: "${conflicts[0].summary}" at ${conflicts[0].start}. Cancel or reschedule the conflicting event before proceeding.`,
+      data: { conflicts },
+    };
+  }
+
+  const { eventId, htmlLink } = await createCalendarEvent(orgId, {
+    title: input.title,
+    startIso: input.startIso,
+    endIso: input.endIso,
+    description: input.description,
+    attendeeEmails: input.attendeeEmails,
+    location: input.location,
+  });
+
   return {
     success: true,
-    message: `[STUB] Calendar event "${input.title}" queued — Google Calendar connector not yet live`,
-    data: { stubbed: true, title: input.title, startIso: input.startIso },
+    message: `Google Calendar event created: "${input.title}" at ${input.startIso}`,
+    data: { calendarEventId: eventId, htmlLink, title: input.title, startIso: input.startIso },
+    providerMessageId: eventId,
   };
 }
 
@@ -188,20 +226,98 @@ export async function impl_book_session(_orgId: string, input: Record<string, an
   };
 }
 
-export async function impl_cancel_session(_orgId: string, input: Record<string, any>): Promise<ToolResult> {
-  return {
-    success: false,
-    message: `[STUB] Session cancellation requires integration with the full booking flow — not auto-executeable yet`,
-    data: { stubbed: true, bookingId: input.bookingId },
-  };
+export async function impl_cancel_session(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, status, google_calendar_event_id, client_id, coach_id, start_at
+      FROM bookings WHERE id = ${input.bookingId} LIMIT 1
+    `);
+    const booking = ((rows as any).rows ?? rows)[0];
+    if (!booking) {
+      return { success: false, message: `Booking ${input.bookingId} not found.` };
+    }
+    if (booking.status === "CANCELLED") {
+      return { success: false, message: `Booking ${input.bookingId} is already cancelled.` };
+    }
+
+    await db.execute(sql`
+      UPDATE bookings SET status = 'CANCELLED' WHERE id = ${input.bookingId}
+    `);
+
+    let calendarNote = "";
+    if (booking.google_calendar_event_id) {
+      try {
+        const { isGoogleCalendarConfigured, getGoogleCalendarStatus, deleteCalendarEvent } = await import("../connectors/google-calendar");
+        if (isGoogleCalendarConfigured()) {
+          const status = await getGoogleCalendarStatus(orgId);
+          if (status.connected) {
+            await deleteCalendarEvent(orgId, booking.google_calendar_event_id);
+            calendarNote = " Google Calendar event deleted.";
+          }
+        }
+      } catch (e: any) {
+        calendarNote = ` (Calendar deletion failed: ${e.message})`;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Booking ${input.bookingId} cancelled.${calendarNote} Reason: ${input.reason}`,
+      data: { bookingId: input.bookingId, reason: input.reason, previousStatus: booking.status },
+    };
+  } catch (e: any) {
+    return { success: false, message: e.message };
+  }
 }
 
-export async function impl_reschedule_session(_orgId: string, input: Record<string, any>): Promise<ToolResult> {
-  return {
-    success: false,
-    message: `[STUB] Session rescheduling requires integration with the full booking flow — not auto-executeable yet`,
-    data: { stubbed: true, bookingId: input.bookingId },
-  };
+export async function impl_reschedule_session(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, status, google_calendar_event_id, start_at, end_at
+      FROM bookings WHERE id = ${input.bookingId} LIMIT 1
+    `);
+    const booking = ((rows as any).rows ?? rows)[0];
+    if (!booking) {
+      return { success: false, message: `Booking ${input.bookingId} not found.` };
+    }
+    if (booking.status === "CANCELLED") {
+      return { success: false, message: `Cannot reschedule a cancelled booking.` };
+    }
+
+    await db.execute(sql`
+      UPDATE bookings
+      SET start_at = ${input.newStartIso}::timestamptz,
+          end_at = ${input.newEndIso}::timestamptz
+      WHERE id = ${input.bookingId}
+    `);
+
+    let calendarNote = "";
+    if (booking.google_calendar_event_id) {
+      try {
+        const { isGoogleCalendarConfigured, getGoogleCalendarStatus, updateCalendarEvent } = await import("../connectors/google-calendar");
+        if (isGoogleCalendarConfigured()) {
+          const status = await getGoogleCalendarStatus(orgId);
+          if (status.connected) {
+            await updateCalendarEvent(orgId, booking.google_calendar_event_id, {
+              startIso: input.newStartIso,
+              endIso: input.newEndIso,
+            });
+            calendarNote = " Google Calendar event updated.";
+          }
+        }
+      } catch (e: any) {
+        calendarNote = ` (Calendar update failed: ${e.message})`;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Booking ${input.bookingId} rescheduled to ${input.newStartIso}.${calendarNote}`,
+      data: { bookingId: input.bookingId, newStartIso: input.newStartIso, newEndIso: input.newEndIso, previousStartAt: booking.start_at },
+    };
+  } catch (e: any) {
+    return { success: false, message: e.message };
+  }
 }
 
 // ─── CRM ──────────────────────────────────────────────────────────────────────
@@ -290,20 +406,61 @@ export async function impl_update_client_status(_orgId: string, input: Record<st
 
 // ─── Financial ────────────────────────────────────────────────────────────────
 
-export async function impl_create_invoice(_orgId: string, input: Record<string, any>): Promise<ToolResult> {
-  return {
-    success: false,
-    message: `[STUB] Invoice creation requires Stripe invoice API integration — coming soon`,
-    data: { stubbed: true, clientId: input.clientId, amountCents: input.amountCents },
-  };
+export async function impl_create_invoice(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const { createAgentInvoice } = await import("../connectors/stripe-invoicing");
+    const result = await createAgentInvoice({
+      orgId,
+      clientId: input.clientId,
+      amountCents: input.amountCents,
+      description: input.description,
+      dueDate: input.dueDate,
+      toolCallId: input._toolCallId,
+      workflowRunId: input.workflowRunId,
+    });
+
+    return {
+      success: true,
+      message: `Stripe invoice created for $${(input.amountCents / 100).toFixed(2)}: ${input.description}. Invoice sent to client.`,
+      data: {
+        agentInvoiceId: result.agentInvoiceId,
+        stripeInvoiceId: result.stripeInvoiceId,
+        stripeCustomerId: result.stripeCustomerId,
+        invoiceUrl: result.invoiceUrl,
+        amountCents: result.amountCents,
+      },
+      providerMessageId: result.stripeInvoiceId,
+    };
+  } catch (e: any) {
+    return { success: false, message: `Invoice creation failed: ${e.message}` };
+  }
 }
 
-export async function impl_record_payment(_orgId: string, input: Record<string, any>): Promise<ToolResult> {
-  return {
-    success: false,
-    message: `[STUB] Payment recording requires Stripe integration — coming soon`,
-    data: { stubbed: true, clientId: input.clientId, amountCents: input.amountCents },
-  };
+export async function impl_record_payment(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const { recordManualPayment } = await import("../connectors/stripe-invoicing");
+    const result = await recordManualPayment(
+      orgId,
+      input.clientId,
+      input.amountCents,
+      input.description ?? `Manual payment — ${input.paymentMethod}`,
+      input._toolCallId
+    );
+
+    return {
+      success: true,
+      message: `Payment of $${(input.amountCents / 100).toFixed(2)} recorded via ${input.paymentMethod}. PaymentIntent: ${result.paymentIntentId}`,
+      data: {
+        paymentIntentId: result.paymentIntentId,
+        agentInvoiceId: result.agentInvoiceId,
+        amountCents: input.amountCents,
+        paymentMethod: input.paymentMethod,
+      },
+      providerMessageId: result.paymentIntentId,
+    };
+  } catch (e: any) {
+    return { success: false, message: `Payment recording failed: ${e.message}` };
+  }
 }
 
 // ─── Dispatch table ───────────────────────────────────────────────────────────
