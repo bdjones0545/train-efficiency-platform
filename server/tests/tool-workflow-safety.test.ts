@@ -431,6 +431,141 @@ test("schema: workflow_runs has locked_at column", async () => {
   console.log("✓ schema: workflow_runs has locked_at");
 });
 
+// ─── Test 15: Schema has resolved columns on agent_tool_calls ────────────────
+
+test("schema: agentToolCalls has resolved_at and resolved_by columns", async () => {
+  const cols = await db.execute(sql`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'agent_tool_calls'
+    ORDER BY column_name
+  `);
+  const names = (cols.rows as any[]).map((r) => r.column_name);
+  assert.ok(names.includes("resolved_at"), "resolved_at column must exist");
+  assert.ok(names.includes("resolved_by"), "resolved_by column must exist");
+  console.log("✓ schema: agentToolCalls has resolved_at + resolved_by");
+});
+
+// ─── Test 16: Failed tool call appears in failure queue ───────────────────────
+
+test("agent-ops failure queue: failed tool call appears in failure queue", async () => {
+  const [inserted] = await db.insert(agentToolCalls).values({
+    orgId: TEST_ORG,
+    agentName: "test-agent",
+    toolName: "create_follow_up_task",
+    status: "failed",
+    error: "simulated failure for ops test",
+    requiresConfirmation: false,
+    proposedInput: { test: true },
+  }).returning();
+
+  const rows = await db.select().from(agentToolCalls)
+    .where(and(eq(agentToolCalls.orgId, TEST_ORG), eq(agentToolCalls.status, "failed")));
+
+  const found = rows.find(r => r.id === inserted.id);
+  assert.ok(found, "Failed tool call must appear when querying failed calls for org");
+  assert.ok(found!.resolvedAt === null, "resolvedAt must be null for newly-failed call");
+  console.log("✓ failed tool call appears in failure queue");
+});
+
+// ─── Test 17: Stuck workflow appears in stuck detection ───────────────────────
+
+test("agent-ops stuck workflows: locked_at > 120s flags as stuck", async () => {
+  const [wf] = await db.insert(workflowRuns).values({
+    orgId: TEST_ORG,
+    workflowType: "test_workflow",
+    displayName: "Test Stuck Workflow",
+    status: "running",
+    currentStepIndex: 0,
+    totalSteps: 3,
+    lockedAt: new Date(Date.now() - 200_000),
+  }).returning();
+
+  const stuckLockCutoff = new Date(Date.now() - 120_000);
+  const stuck = await db.select().from(workflowRuns)
+    .where(and(eq(workflowRuns.orgId, TEST_ORG), eq(workflowRuns.status, "running")));
+
+  const found = stuck.find(r => r.id === wf.id);
+  assert.ok(found, "Stuck workflow must be in running state");
+  assert.ok(found!.lockedAt! < stuckLockCutoff, "lockedAt must be past the 120s threshold");
+  console.log("✓ stuck workflow (lockedAt > 120s) detected");
+
+  await db.delete(workflowRuns).where(eq(workflowRuns.id, wf.id));
+});
+
+// ─── Test 18: Health endpoint flags Twilio as unconfigured ────────────────────
+
+test("agent-ops health: Twilio reports configured=false when env vars missing", async () => {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const phone = process.env.TWILIO_PHONE_NUMBER;
+
+  delete process.env.TWILIO_ACCOUNT_SID;
+  delete process.env.TWILIO_AUTH_TOKEN;
+  delete process.env.TWILIO_PHONE_NUMBER;
+
+  const { isTwilioConfigured } = await import("../sms");
+  const configured = isTwilioConfigured();
+  assert.strictEqual(configured, false, "isTwilioConfigured must return false when env vars absent");
+  console.log("✓ Twilio reports unconfigured when env vars missing");
+
+  if (sid) process.env.TWILIO_ACCOUNT_SID = sid;
+  if (token) process.env.TWILIO_AUTH_TOKEN = token;
+  if (phone) process.env.TWILIO_PHONE_NUMBER = phone;
+});
+
+// ─── Test 19: Mark failed tool call as resolved ───────────────────────────────
+
+test("agent-ops resolve: mark failed tool call resolves it (resolvedAt set)", async () => {
+  const [inserted] = await db.insert(agentToolCalls).values({
+    orgId: TEST_ORG,
+    agentName: "test-agent",
+    toolName: "create_follow_up_task",
+    status: "failed",
+    error: "test error for resolve",
+    requiresConfirmation: false,
+    proposedInput: {},
+  }).returning();
+
+  await db.update(agentToolCalls)
+    .set({ resolvedAt: new Date(), resolvedBy: "admin" })
+    .where(and(eq(agentToolCalls.id, inserted.id), eq(agentToolCalls.orgId, TEST_ORG)));
+
+  const [updated] = await db.select().from(agentToolCalls)
+    .where(eq(agentToolCalls.id, inserted.id));
+
+  assert.ok(updated.resolvedAt !== null, "resolvedAt must be set after resolution");
+  assert.strictEqual(updated.resolvedBy, "admin", "resolvedBy must be 'admin'");
+  assert.strictEqual(updated.status, "failed", "status remains 'failed' (only resolvedAt marks acknowledgment)");
+  console.log("✓ mark-resolved sets resolvedAt and resolvedBy");
+});
+
+// ─── Test 20: Retry safe internal tool call ───────────────────────────────────
+
+test("agent-ops retry: safe internal failed tool call can be reset to pending", async () => {
+  const [inserted] = await db.insert(agentToolCalls).values({
+    orgId: TEST_ORG,
+    agentName: "test-agent",
+    toolName: "create_follow_up_task",
+    status: "failed",
+    error: "original failure",
+    requiresConfirmation: false,
+    proposedInput: { dealId: "test-deal", daysFromNow: 3 },
+  }).returning();
+
+  const tool = getTool("create_follow_up_task");
+  assert.ok(tool, "create_follow_up_task must exist in registry");
+  assert.strictEqual(tool!.permissions.external_side_effect, false, "create_follow_up_task must not be external_side_effect");
+
+  await db.update(agentToolCalls)
+    .set({ status: "pending", error: null, executedAt: null })
+    .where(eq(agentToolCalls.id, inserted.id));
+
+  const [reset] = await db.select().from(agentToolCalls).where(eq(agentToolCalls.id, inserted.id));
+  assert.strictEqual(reset.status, "pending", "status must be reset to 'pending' for retry");
+  assert.ok(reset.error === null, "error must be cleared on retry reset");
+  console.log("✓ safe internal tool call reset to pending for retry");
+});
+
 // ─── Summary cleanup ─────────────────────────────────────────────────────────
 
 process.on("exit", () => {

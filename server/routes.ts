@@ -10403,6 +10403,230 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // ─── Agent Ops Monitor ────────────────────────────────────────────────────
+
+  // GET /api/admin/agent-ops/health
+  app.get("/api/admin/agent-ops/health", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { db } = await import("./db");
+      const { agentToolCalls, workflowRuns, revenueAgentSettings, agentRecommendations } = await import("@shared/schema");
+      const { isTwilioConfigured } = await import("./sms");
+      const { sql, count, and, lt, gt, eq, isNull } = await import("drizzle-orm");
+
+      const sendgridConfigured = !!(process.env.SENDGRID_API_KEY || process.env.REPLIT_CONNECTORS_HOSTNAME);
+      const twilioConfigured = isTwilioConfigured();
+
+      let dbReachable = false;
+      try {
+        await db.execute(sql`SELECT 1`);
+        dbReachable = true;
+      } catch { /* noop */ }
+
+      const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const cutoff25h = new Date(Date.now() - 25 * 60 * 60 * 1000);
+
+      const [failedCalls, pendingApprovals, recentWorkflows, recentBrainRec, revenueSettings] = await Promise.all([
+        db.select({ count: count() }).from(agentToolCalls)
+          .where(and(eq(agentToolCalls.orgId, orgId), eq(agentToolCalls.status, "failed"), gt(agentToolCalls.createdAt, cutoff24h))),
+        db.select({ count: count() }).from(agentToolCalls)
+          .where(and(eq(agentToolCalls.orgId, orgId), eq(agentToolCalls.status, "pending_confirmation"), isNull(agentToolCalls.resolvedAt))),
+        db.select({ count: count() }).from(workflowRuns)
+          .where(and(eq(workflowRuns.orgId, orgId), gt(workflowRuns.createdAt, cutoff24h))),
+        db.select({ createdAt: agentRecommendations.createdAt }).from(agentRecommendations)
+          .where(and(eq(agentRecommendations.orgId, orgId), gt(agentRecommendations.createdAt, cutoff25h)))
+          .orderBy(agentRecommendations.createdAt)
+          .limit(1),
+        db.select({ lastRunAt: revenueAgentSettings.lastRunAt }).from(revenueAgentSettings)
+          .where(eq(revenueAgentSettings.orgId, orgId))
+          .limit(1),
+      ]);
+
+      const failedJobsLast24h = Number(failedCalls[0]?.count ?? 0);
+      const pendingApprovalsCount = Number(pendingApprovals[0]?.count ?? 0);
+      const workflowRunnerActive = Number(recentWorkflows[0]?.count ?? 0) > 0;
+      const businessBrainLastRun = recentBrainRec[0]?.createdAt ?? null;
+      const businessBrainActive = !!businessBrainLastRun;
+      const revenueAgentLastRun = revenueSettings[0]?.lastRunAt ?? null;
+      const revenueAgentActive = revenueAgentLastRun ? (Date.now() - new Date(revenueAgentLastRun).getTime()) < 25 * 60 * 60 * 1000 : false;
+
+      res.json({
+        sendgrid: { configured: sendgridConfigured, label: sendgridConfigured ? "Connected" : "Not configured" },
+        twilio: { configured: twilioConfigured, label: twilioConfigured ? "Connected" : "Not configured" },
+        database: { reachable: dbReachable, label: dbReachable ? "Reachable" : "Unreachable" },
+        workflowRunner: { active: workflowRunnerActive, label: workflowRunnerActive ? "Active" : "No runs in 24h" },
+        businessBrainCron: { active: businessBrainActive, lastRunAt: businessBrainLastRun, label: businessBrainActive ? "Active" : "No activity in 25h" },
+        revenueAgentCron: { active: revenueAgentActive, lastRunAt: revenueAgentLastRun, label: revenueAgentActive ? "Active" : "No run in 25h" },
+        failedJobsLast24h,
+        pendingApprovalsCount,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/agent-ops/failure-queue
+  app.get("/api/admin/agent-ops/failure-queue", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { db } = await import("./db");
+      const { agentToolCalls, workflowRuns } = await import("@shared/schema");
+      const { and, eq, isNull, desc, inArray } = await import("drizzle-orm");
+
+      const [failedToolCalls, failedWorkflows] = await Promise.all([
+        db.select().from(agentToolCalls)
+          .where(and(eq(agentToolCalls.orgId, orgId), eq(agentToolCalls.status, "failed"), isNull(agentToolCalls.resolvedAt)))
+          .orderBy(desc(agentToolCalls.createdAt))
+          .limit(50),
+        db.select().from(workflowRuns)
+          .where(and(eq(workflowRuns.orgId, orgId), inArray(workflowRuns.status, ["failed"])))
+          .orderBy(desc(workflowRuns.createdAt))
+          .limit(20),
+      ]);
+
+      res.json({ failedToolCalls, failedWorkflows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/agent-ops/stuck-workflows
+  app.get("/api/admin/agent-ops/stuck-workflows", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { db } = await import("./db");
+      const { workflowRuns } = await import("@shared/schema");
+      const { and, eq, lt, isNotNull, or, inArray, desc } = await import("drizzle-orm");
+
+      const stuckLockCutoff = new Date(Date.now() - 120 * 1000);
+      const waitConfirmCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const waitResponseCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+      const allStuck = await db.select().from(workflowRuns)
+        .where(and(
+          eq(workflowRuns.orgId, orgId),
+          or(
+            and(
+              inArray(workflowRuns.status, ["running", "waiting_confirmation", "waiting_response"]),
+              isNotNull(workflowRuns.lockedAt),
+              lt(workflowRuns.lockedAt, stuckLockCutoff)
+            ),
+            and(eq(workflowRuns.status, "waiting_confirmation"), lt(workflowRuns.createdAt, waitConfirmCutoff)),
+            and(eq(workflowRuns.status, "waiting_response"), isNotNull(workflowRuns.nextCheckAt), lt(workflowRuns.nextCheckAt, waitResponseCutoff))
+          )
+        ))
+        .orderBy(desc(workflowRuns.createdAt))
+        .limit(30);
+
+      const labeled = allStuck.map(run => {
+        let reason = "unknown";
+        if (run.lockedAt && new Date(run.lockedAt) < stuckLockCutoff) reason = "locked_too_long";
+        else if (run.status === "waiting_confirmation" && run.createdAt && new Date(run.createdAt) < waitConfirmCutoff) reason = "confirmation_overdue";
+        else if (run.status === "waiting_response" && run.nextCheckAt && new Date(run.nextCheckAt) < waitResponseCutoff) reason = "response_overdue";
+        return { ...run, stuckReason: reason };
+      });
+
+      res.json({ stuckWorkflows: labeled, count: labeled.length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/agent-ops/alerts
+  app.get("/api/admin/agent-ops/alerts", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { db } = await import("./db");
+      const { agentToolCalls, workflowRuns } = await import("@shared/schema");
+      const { and, eq, isNull, lt, isNotNull, or, inArray, count } = await import("drizzle-orm");
+      const { isTwilioConfigured } = await import("./sms");
+
+      const stuckLockCutoff = new Date(Date.now() - 120 * 1000);
+      const waitConfirmCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const [pendingApprovals, failedWorkflows, stuckWorkflows] = await Promise.all([
+        db.select({ count: count() }).from(agentToolCalls)
+          .where(and(eq(agentToolCalls.orgId, orgId), eq(agentToolCalls.status, "pending_confirmation"), isNull(agentToolCalls.resolvedAt))),
+        db.select({ count: count() }).from(workflowRuns)
+          .where(and(eq(workflowRuns.orgId, orgId), eq(workflowRuns.status, "failed"))),
+        db.select({ count: count() }).from(workflowRuns)
+          .where(and(
+            eq(workflowRuns.orgId, orgId),
+            or(
+              and(inArray(workflowRuns.status, ["running", "waiting_confirmation", "waiting_response"]), isNotNull(workflowRuns.lockedAt), lt(workflowRuns.lockedAt, stuckLockCutoff)),
+              and(eq(workflowRuns.status, "waiting_confirmation"), lt(workflowRuns.createdAt, waitConfirmCutoff))
+            )
+          )),
+      ]);
+
+      const alerts: Array<{ level: string; message: string; type: string; count?: number }> = [];
+      const pendingCount = Number(pendingApprovals[0]?.count ?? 0);
+      const failedCount = Number(failedWorkflows[0]?.count ?? 0);
+      const stuckCount = Number(stuckWorkflows[0]?.count ?? 0);
+
+      if (pendingCount > 0) alerts.push({ level: "warning", message: `${pendingCount} action${pendingCount > 1 ? "s" : ""} need${pendingCount === 1 ? "s" : ""} approval`, type: "pending_approvals", count: pendingCount });
+      if (failedCount > 0) alerts.push({ level: "error", message: `${failedCount} workflow${failedCount > 1 ? "s" : ""} failed`, type: "failed_workflows", count: failedCount });
+      if (stuckCount > 0) alerts.push({ level: "warning", message: `${stuckCount} workflow${stuckCount > 1 ? "s" : ""} stuck`, type: "stuck_workflows", count: stuckCount });
+      if (!isTwilioConfigured()) alerts.push({ level: "info", message: "Twilio not configured — SMS disabled", type: "twilio_missing" });
+      if (!(process.env.SENDGRID_API_KEY || process.env.REPLIT_CONNECTORS_HOSTNAME)) alerts.push({ level: "error", message: "SendGrid not configured — emails disabled", type: "sendgrid_missing" });
+
+      res.json({ alerts, critical: alerts.filter(a => a.level === "error").length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/agent-ops/tool-calls/:id/resolve
+  app.post("/api/admin/agent-ops/tool-calls/:id/resolve", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { db } = await import("./db");
+      const { agentToolCalls } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+
+      const updated = await db.update(agentToolCalls)
+        .set({ resolvedAt: new Date(), resolvedBy: "admin" })
+        .where(and(eq(agentToolCalls.id, req.params.id), eq(agentToolCalls.orgId, orgId)))
+        .returning({ id: agentToolCalls.id });
+
+      if (!updated.length) return res.status(404).json({ error: "Tool call not found" });
+      res.json({ success: true, id: updated[0].id });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/agent-ops/tool-calls/:id/retry
+  app.post("/api/admin/agent-ops/tool-calls/:id/retry", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { db } = await import("./db");
+      const { agentToolCalls } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const { getTool, executePendingToolCall } = await import("./agent-tools/index");
+
+      const [existing] = await db.select().from(agentToolCalls)
+        .where(and(eq(agentToolCalls.id, req.params.id), eq(agentToolCalls.orgId, orgId)))
+        .limit(1);
+
+      if (!existing) return res.status(404).json({ error: "Tool call not found" });
+      if (existing.status !== "failed") return res.status(400).json({ error: `Cannot retry — status is '${existing.status}', must be 'failed'` });
+
+      const tool = getTool(existing.toolName);
+      if (!tool) return res.status(400).json({ error: `Tool '${existing.toolName}' not found in registry` });
+      if (tool.permissions.external_side_effect) return res.status(400).json({ error: "Cannot auto-retry external side-effect tools — resolve manually" });
+
+      await db.update(agentToolCalls)
+        .set({ status: "pending", error: null, executedAt: null })
+        .where(eq(agentToolCalls.id, req.params.id));
+
+      const result = await executePendingToolCall(orgId, req.params.id, "admin-retry");
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Start Business Brain cron
   const { startBusinessBrainCron } = await import("./agents/executive-agent");
   startBusinessBrainCron();

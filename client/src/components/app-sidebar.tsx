@@ -56,6 +56,7 @@ import {
   Brain,
   Plug,
   GitBranch,
+  ShieldAlert,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -311,6 +312,14 @@ export function AppSidebar() {
                       <Link href="/admin/workflows" onClick={handleNavClick} data-testid="nav-workflows">
                         <GitBranch className="h-4 w-4" />
                         <span>Workflows</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/agent-ops"}>
+                      <Link href="/admin/agent-ops" onClick={handleNavClick} data-testid="nav-agent-ops">
+                        <ShieldAlert className="h-4 w-4" />
+                        <span>Agent Ops Monitor</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

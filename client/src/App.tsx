@@ -56,6 +56,7 @@ import BusinessBrainPage from "@/pages/business-brain";
 import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import AdminAgentToolsPage from "@/pages/admin-agent-tools";
 import AdminWorkflowsPage from "@/pages/admin-workflows";
+import AdminAgentOpsPage from "@/pages/admin-agent-ops";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { Button } from "@/components/ui/button";
@@ -197,6 +198,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/agent-tools" component={AdminAgentToolsPage} />
                   <Route path="/admin/workflows" component={AdminWorkflowsPage} />
+                  <Route path="/admin/agent-ops" component={AdminAgentOpsPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />

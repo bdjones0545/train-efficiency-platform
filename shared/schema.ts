@@ -1183,6 +1183,8 @@ export const agentToolCalls = pgTable("agent_tool_calls", {
   idempotencyKey: varchar("idempotency_key"),
   providerMessageId: varchar("provider_message_id"),
   sendAttempts: integer("send_attempts").default(0).notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by"),
 });
 
 export type AgentToolCall = typeof agentToolCalls.$inferSelect;
