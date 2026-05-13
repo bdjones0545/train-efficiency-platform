@@ -1,0 +1,136 @@
+Audit and redesign the TrainEfficiency left sidebar navigation for coaches/admins.
+
+Current problem:
+The sidebar has evolved into a flat feature inventory instead of an intuitive business operating system. There are too many equal-weight items, AI systems are scattered, high-frequency actions are mixed with low-frequency configuration pages, and the mobile experience requires excessive scrolling.
+
+Goal:
+Reorganize the sidebar into a role-based, workflow-oriented navigation system that feels like running a business — not browsing settings.
+
+Primary UX goals:
+- Reduce cognitive overload
+- Reduce mobile scrolling fatigue
+- Group features by business function
+- Separate operational tools from AI/system tools
+- Make high-frequency actions fastest to access
+- Make the platform feel cohesive
+
+New sidebar structure:
+
+1. HOME
+This is the operational starting point.
+
+Items:
+- Command Center
+- Daily Operator Mode (if separate)
+- Dashboard
+
+Notes:
+- Command Center should become the primary home.
+- Dashboard may eventually be merged into Command Center.
+
+2. CLIENTS & SCHEDULING
+High-frequency operational actions.
+
+Items:
+- Coaches
+- Users
+- Schedule
+- Availability
+- Group Sessions
+- Team Training
+- My Bookings
+- Redemptions
+- Transactions
+
+3. GROWTH & REVENUE
+Sales, pipeline, outreach, business growth.
+
+Items:
+- Team Training Leads
+- Deal Pipeline
+- Outreach Center (rename Email Agent)
+- Business Plan
+- Team Quotes
+
+Future-safe area for:
+- Campaigns
+- Referral Engine
+- Revenue Intelligence
+
+4. AI OPERATIONS
+AI orchestration + system intelligence layer.
+
+Items:
+- Business Brain
+- Agent Ops Monitor
+- Workflows
+- Trigger Audit
+- Agent Tools
+- Connectors
+
+Important:
+This section should visually communicate:
+“These are AI orchestration/intelligence systems.”
+
+5. ORGANIZATION
+Lower-frequency admin/configuration tools.
+
+Items:
+- Branding
+- Media Library
+- Stripe
+- Subscription
+- Options
+
+6. DANGER ZONE
+Keep isolated.
+
+Items:
+- Delete Organization
+
+Required UX changes:
+
+1. Collapsible accordion sections
+On mobile:
+- Only one major section expanded at a time
+- Remember last-opened section
+- Smooth expand/collapse animation
+- Reduce sidebar height fatigue dramatically
+
+2. Visual hierarchy
+- Strong section headers
+- Smaller text for secondary items
+- Better spacing rhythm
+- Distinct icon treatment for AI Operations
+
+3. Active state improvements
+- Stronger highlight for active page
+- Parent section auto-expands when active route belongs to it
+
+4. Mobile optimization
+- Reduce excessive vertical spacing
+- Keep logout/account anchored to bottom
+- Ensure scrolling feels intentional and not overwhelming
+
+5. Rename “Email Agent”
+Rename to:
+- Outreach Center
+OR
+- Outreach Hub
+
+Update all references consistently.
+
+6. Command Center positioning
+Command Center should feel like the primary operational hub — likely pinned near the top under Home.
+
+7. Do not break routing
+Maintain all existing route paths and auth behavior.
+
+Acceptance tests:
+- Sidebar loads correctly for coach/admin
+- Only one accordion section expanded on mobile
+- Active route auto-expands parent section
+- AI Operations visually grouped correctly
+- Outreach Center rename reflected everywhere
+- Mobile scrolling significantly reduced
+- No routing regressions
