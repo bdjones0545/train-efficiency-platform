@@ -1081,3 +1081,85 @@ export const revenueAgentRuns = pgTable("revenue_agent_runs", {
 
 export type RevenueAgentRun = typeof revenueAgentRuns.$inferSelect;
 export type InsertRevenueAgentRun = typeof revenueAgentRuns.$inferInsert;
+
+// ─── Multi-Agent Business Brain ───────────────────────────────────────────────
+
+export const agentSignals = pgTable("agent_signals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  agentType: varchar("agent_type").notNull(),
+  signalType: varchar("signal_type").notNull(),
+  entityType: varchar("entity_type"),
+  entityId: varchar("entity_id"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  severity: varchar("severity").notNull().default("medium"),
+  score: integer("score").default(50),
+  metadata: jsonb("metadata").default({}),
+  orchestratorRunId: varchar("orchestrator_run_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const agentRecommendations = pgTable("agent_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  agentType: varchar("agent_type").notNull(),
+  crossAgentTypes: text("cross_agent_types").array().default([]),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  reason: text("reason").notNull(),
+  entityType: varchar("entity_type"),
+  entityId: varchar("entity_id"),
+  entityName: varchar("entity_name"),
+  severity: varchar("severity").notNull().default("medium"),
+  estimatedImpact: integer("estimated_impact").default(0),
+  priorityScore: integer("priority_score").default(50),
+  status: varchar("status").notNull().default("pending"),
+  actionType: varchar("action_type"),
+  executedAt: timestamp("executed_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  outcomeType: varchar("outcome_type"),
+  outcomeValue: integer("outcome_value").default(0),
+  outcomeLoggedAt: timestamp("outcome_logged_at"),
+  metadata: jsonb("metadata").default({}),
+  orchestratorRunId: varchar("orchestrator_run_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const executiveBriefs = pgTable("executive_briefs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  biggestOpportunity: jsonb("biggest_opportunity").default({}),
+  highestChurnRisk: jsonb("highest_churn_risk").default({}),
+  schedulingInefficiency: jsonb("scheduling_inefficiency").default({}),
+  mostValuableLead: jsonb("most_valuable_lead").default({}),
+  projectedWeeklyRevenue: integer("projected_weekly_revenue").default(0),
+  healthScore: integer("health_score").default(50),
+  recommendedActions: jsonb("recommended_actions").default([]),
+  agentSummary: jsonb("agent_summary").default({}),
+  rawSignals: jsonb("raw_signals").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const orchestratorRuns = pgTable("orchestrator_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  triggeredBy: varchar("triggered_by").notNull().default("manual"),
+  agentsRun: text("agents_run").array().default([]),
+  signalsCreated: integer("signals_created").default(0),
+  recommendationsCreated: integer("recommendations_created").default(0),
+  status: varchar("status").notNull().default("running"),
+  completedAt: timestamp("completed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type AgentSignal = typeof agentSignals.$inferSelect;
+export type InsertAgentSignal = typeof agentSignals.$inferInsert;
+export type AgentRecommendation = typeof agentRecommendations.$inferSelect;
+export type InsertAgentRecommendation = typeof agentRecommendations.$inferInsert;
+export type ExecutiveBrief = typeof executiveBriefs.$inferSelect;
+export type InsertExecutiveBrief = typeof executiveBriefs.$inferInsert;
+export type OrchestratorRun = typeof orchestratorRuns.$inferSelect;
+export type InsertOrchestratorRun = typeof orchestratorRuns.$inferInsert;

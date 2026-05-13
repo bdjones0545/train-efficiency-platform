@@ -344,6 +344,13 @@ export interface IStorage {
   updateAgentAction(id: string, data: Partial<import("@shared/schema").RevenueAgentAction>): Promise<import("@shared/schema").RevenueAgentAction | undefined>;
   getAgentRuns(orgId: string, limit?: number): Promise<import("@shared/schema").RevenueAgentRun[]>;
 
+  // Business Brain
+  getAgentRecommendations(orgId: string, status?: string, limit?: number): Promise<import("@shared/schema").AgentRecommendation[]>;
+  updateAgentRecommendation(id: string, data: Partial<import("@shared/schema").AgentRecommendation>): Promise<import("@shared/schema").AgentRecommendation | undefined>;
+  getAgentSignals(orgId: string, runId?: string): Promise<import("@shared/schema").AgentSignal[]>;
+  getLatestExecutiveBrief(orgId: string): Promise<import("@shared/schema").ExecutiveBrief | undefined>;
+  getOrchestratorRuns(orgId: string, limit?: number): Promise<import("@shared/schema").OrchestratorRun[]>;
+
   // Team Training Lead Settings
   getTeamLeadSettings(orgId: string): Promise<import("@shared/schema").TeamTrainingLeadSettings | undefined>;
   upsertTeamLeadSettings(orgId: string, input: Partial<import("@shared/schema").InsertTeamTrainingLeadSettings>): Promise<import("@shared/schema").TeamTrainingLeadSettings>;
@@ -2986,6 +2993,68 @@ export class DatabaseStorage implements IStorage {
         )
       );
     return rows;
+  }
+
+  // ─── Business Brain ────────────────────────────────────────────────────────
+
+  async getAgentRecommendations(orgId: string, status?: string, limit = 50) {
+    const { agentRecommendations } = await import("@shared/schema");
+    const { eq, and, desc, ne } = await import("drizzle-orm");
+    const conditions = [eq(agentRecommendations.orgId, orgId)];
+    if (status) conditions.push(eq(agentRecommendations.status, status));
+    return this.db
+      .select()
+      .from(agentRecommendations)
+      .where(and(...conditions))
+      .orderBy(desc(agentRecommendations.priorityScore))
+      .limit(limit);
+  }
+
+  async updateAgentRecommendation(id: string, data: Partial<import("@shared/schema").AgentRecommendation>) {
+    const { agentRecommendations } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const [rec] = await this.db
+      .update(agentRecommendations)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(agentRecommendations.id, id))
+      .returning();
+    return rec;
+  }
+
+  async getAgentSignals(orgId: string, runId?: string) {
+    const { agentSignals } = await import("@shared/schema");
+    const { eq, and, desc } = await import("drizzle-orm");
+    const conditions = [eq(agentSignals.orgId, orgId)];
+    if (runId) conditions.push(eq(agentSignals.orchestratorRunId, runId));
+    return this.db
+      .select()
+      .from(agentSignals)
+      .where(and(...conditions))
+      .orderBy(desc(agentSignals.score))
+      .limit(100);
+  }
+
+  async getLatestExecutiveBrief(orgId: string) {
+    const { executiveBriefs } = await import("@shared/schema");
+    const { eq, desc } = await import("drizzle-orm");
+    const [brief] = await this.db
+      .select()
+      .from(executiveBriefs)
+      .where(eq(executiveBriefs.orgId, orgId))
+      .orderBy(desc(executiveBriefs.createdAt))
+      .limit(1);
+    return brief;
+  }
+
+  async getOrchestratorRuns(orgId: string, limit = 10) {
+    const { orchestratorRuns } = await import("@shared/schema");
+    const { eq, desc } = await import("drizzle-orm");
+    return this.db
+      .select()
+      .from(orchestratorRuns)
+      .where(eq(orchestratorRuns.orgId, orgId))
+      .orderBy(desc(orchestratorRuns.createdAt))
+      .limit(limit);
   }
 
   async getTriggerAuditSummary(orgId: string, windowHours = 24) {

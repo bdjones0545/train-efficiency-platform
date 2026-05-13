@@ -53,6 +53,7 @@ import {
   Flame,
   KanbanSquare,
   Activity,
+  Brain,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -243,6 +244,24 @@ export function AppSidebar() {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+
+          {role === "ADMIN" && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Intelligence</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/admin/business-brain"}>
+                      <Link href="/admin/business-brain" onClick={handleNavClick} data-testid="nav-business-brain">
+                        <Brain className="h-4 w-4" />
+                        <span>Business Brain</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

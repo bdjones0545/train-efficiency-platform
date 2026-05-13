@@ -9378,6 +9378,122 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // ─── Business Brain API ──────────────────────────────────────────────────────
+
+  app.post("/api/admin/business-brain/run", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { runOrchestrator } = await import("./agents/executive-agent");
+      const result = await runOrchestrator(orgId, "manual");
+      res.json(result);
+    } catch (e: any) {
+      console.error("[BusinessBrain] Run error:", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/business-brain/feed", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const status = (req.query.status as string) || undefined;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const [recommendations, signals] = await Promise.all([
+        storage.getAgentRecommendations(orgId, status, limit),
+        storage.getAgentSignals(orgId),
+      ]);
+      res.json({ recommendations, signals });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/business-brain/brief", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const brief = await storage.getLatestExecutiveBrief(orgId);
+      res.json(brief || null);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/business-brain/runs", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const runs = await storage.getOrchestratorRuns(orgId, 10);
+      res.json(runs);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/business-brain/health-score", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const brief = await storage.getLatestExecutiveBrief(orgId);
+      const runs = await storage.getOrchestratorRuns(orgId, 1);
+      res.json({
+        healthScore: brief?.healthScore ?? null,
+        lastRunAt: runs[0]?.createdAt ?? null,
+        lastBriefAt: brief?.createdAt ?? null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/business-brain/recommendations/:id/execute", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { id } = req.params;
+      const rec = await storage.updateAgentRecommendation(id, { status: "executed", executedAt: new Date() });
+      if (!rec) return res.status(404).json({ error: "Not found" });
+      res.json(rec);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/business-brain/recommendations/:id/dismiss", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { id } = req.params;
+      const rec = await storage.updateAgentRecommendation(id, { status: "dismissed", dismissedAt: new Date() });
+      if (!rec) return res.status(404).json({ error: "Not found" });
+      res.json(rec);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/business-brain/recommendations/:id/outcome", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { id } = req.params;
+      const { outcomeType, outcomeValue } = req.body;
+      const rec = await storage.updateAgentRecommendation(id, {
+        outcomeType,
+        outcomeValue: outcomeValue || 0,
+        outcomeLoggedAt: new Date(),
+      });
+      res.json(rec);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Start Business Brain cron
+  const { startBusinessBrainCron } = await import("./agents/executive-agent");
+  startBusinessBrainCron();
+
   const { initializeScheduledEmailAgent } = await import("./email-agent/scheduled-email-agent");
   initializeScheduledEmailAgent();
 
