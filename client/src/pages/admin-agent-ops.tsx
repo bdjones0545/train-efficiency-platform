@@ -20,7 +20,7 @@ import {
   CheckCircle, XCircle, AlertTriangle, Clock, RefreshCw,
   Database, Mail, MessageSquare, Activity, Zap, ShieldAlert,
   GitBranch, RotateCcw, CheckSquare, ExternalLink, AlertCircle,
-  Info, Timer, Lock, CircleDot, Play, Link2, Link2Off, CreditCard, Calendar,
+  Info, Timer, Lock, CircleDot, Play, Link2, Link2Off, CreditCard, Calendar, Inbox, ArrowRight,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -549,7 +549,16 @@ export default function AdminAgentOpsPage() {
               data-testid={`alert-${a.type}`}
             >
               {alertIcon(a.level)}
-              <span className="font-medium">{a.message}</span>
+              <span className="font-medium flex-1">{a.message}</span>
+              {(a.level === "error" || a.level === "warning") && (
+                <a
+                  href="/admin/attention"
+                  className="text-xs underline opacity-60 hover:opacity-100 transition-opacity shrink-0"
+                  data-testid="link-agent-ops-attention"
+                >
+                  Attention Inbox
+                </a>
+              )}
             </div>
           ))}
         </div>
@@ -557,6 +566,28 @@ export default function AdminAgentOpsPage() {
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-900 text-sm" data-testid="alert-all-clear">
           <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
           <span className="font-medium text-green-700 dark:text-green-300">All systems clear — no critical alerts</span>
+        </div>
+      )}
+
+      {/* Attention Inbox crosslink — route user-facing failures to prioritised inbox */}
+      {!alertsLoading && (failedToolCount + failedWorkflowCount + stuckCount) > 0 && (
+        <div
+          className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/60 dark:bg-amber-950/20 text-sm"
+          data-testid="banner-attention-inbox-crosslink"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Inbox className="h-4 w-4 text-amber-500 shrink-0" />
+            <span className="text-amber-700 dark:text-amber-400 font-medium">
+              {failedToolCount + failedWorkflowCount + stuckCount} failure{(failedToolCount + failedWorkflowCount + stuckCount) !== 1 ? "s" : ""} tracked in Attention Inbox
+            </span>
+          </div>
+          <a
+            href="/admin/attention"
+            className="flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 shrink-0 transition-colors"
+            data-testid="link-attention-from-agent-ops"
+          >
+            View <ArrowRight className="h-3.5 w-3.5" />
+          </a>
         </div>
       )}
 

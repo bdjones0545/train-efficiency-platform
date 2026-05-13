@@ -518,12 +518,12 @@ export default function AttentionInboxPage() {
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <CheckCheck className="h-12 w-12 text-muted-foreground/20 mb-3" />
               <h3 className="text-sm font-semibold text-muted-foreground">
-                {tab === "all" ? "All clear — inbox is empty" : `No ${tab} items`}
+                {tab === "all" ? "Everything is clear" : `No ${tab} items`}
               </h3>
               <p className="text-xs text-muted-foreground mt-1 max-w-xs">
                 {tab === "all"
-                  ? "Nothing requires your attention right now. Systems are operating normally."
-                  : `No ${tab} attention items in your inbox right now.`}
+                  ? "Everything is clear. Your business systems are operating normally."
+                  : `No ${tab} attention items right now.`}
               </p>
               <Button
                 variant="ghost"

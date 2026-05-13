@@ -8,7 +8,6 @@ import {
   DashPriorityCard,
   DashQuickActionGrid,
   DashQuickActionItem,
-  DashAlertReveal,
   DashStaggerItem,
   IntelPulseDot,
 } from "@/components/DashboardMotion";
@@ -44,9 +43,6 @@ import {
   Building2,
   Flame,
   Undo2,
-  ShieldAlert,
-  XCircle,
-  Info,
   Brain,
   Activity,
   Sparkles,
@@ -58,6 +54,9 @@ import {
   BarChart3,
   Plug,
   GitBranch,
+  Inbox,
+  AlertCircle,
+  Lightbulb,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -251,39 +250,113 @@ type CommandCenterSummary = {
   totalPending: number;
 };
 
-// ─── Pending Tool Calls Strip ─────────────────────────────────────────────────
+// ─── Top Attention Strip ──────────────────────────────────────────────────────
+// Shows top 1-3 critical/important attention items from the Unified Attention
+// System. All other alerts are routed to the full Attention Inbox.
 
-function PendingToolCallsStrip() {
+type AttentionPreviewItem = {
+  id: string;
+  level: string;
+  title: string;
+  body?: string | null;
+  actionUrl?: string | null;
+  actionLabel?: string | null;
+  score: number;
+  status: string;
+};
+
+const ATTENTION_LEVEL_STYLE: Record<string, { bg: string; border: string; icon: typeof AlertTriangle; iconCls: string; badge: string }> = {
+  critical: {
+    bg: "bg-red-500/8 dark:bg-red-950/20",
+    border: "border-red-400/30",
+    icon: AlertTriangle,
+    iconCls: "text-red-500",
+    badge: "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300",
+  },
+  escalated: {
+    bg: "bg-red-500/8 dark:bg-red-950/20",
+    border: "border-red-400/30",
+    icon: AlertTriangle,
+    iconCls: "text-red-500",
+    badge: "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300",
+  },
+  important: {
+    bg: "bg-amber-500/8 dark:bg-amber-950/20",
+    border: "border-amber-400/30",
+    icon: AlertCircle,
+    iconCls: "text-amber-500",
+    badge: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300",
+  },
+  suggested: {
+    bg: "bg-violet-500/5 dark:bg-violet-950/10",
+    border: "border-violet-300/30",
+    icon: Lightbulb,
+    iconCls: "text-violet-500",
+    badge: "bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300",
+  },
+};
+
+function TopAttentionStrip() {
   const [, setLocation] = useLocation();
-  const { data } = useQuery<{ count: number }>({
-    queryKey: ["/api/admin/agent-tool-calls/pending"],
-    refetchInterval: 30_000,
-    staleTime: 20_000,
+
+  const { data: items = [] } = useQuery<AttentionPreviewItem[]>({
+    queryKey: ["/api/attention"],
+    refetchInterval: 3 * 60 * 1000,
+    staleTime: 90_000,
   });
 
-  const count = data?.count ?? 0;
-  if (count === 0) return null;
+  const active = items.filter(
+    (i) => i.status === "active" || i.status === "escalated"
+  );
+  const priority = active.filter(
+    (i) => i.level === "critical" || i.level === "important" || i.status === "escalated"
+  );
+
+  if (priority.length === 0) return null;
+
+  const top = priority.slice(0, 3);
+  const remaining = active.length - top.length;
 
   return (
-    <div
-      className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-orange-500/10 border border-orange-500/30"
-      data-testid="strip-pending-tool-calls"
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        <Plug className="h-4 w-4 text-orange-500 shrink-0" />
-        <p className="text-sm font-medium text-orange-700 dark:text-orange-400 truncate">
-          <span className="font-bold">{count}</span> agent action{count > 1 ? "s" : ""} need{count === 1 ? "s" : ""} your approval
-        </p>
-      </div>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-7 text-xs border-orange-500/40 text-orange-700 dark:text-orange-400 hover:bg-orange-500/10 shrink-0"
-        onClick={() => setLocation("/admin/agent-tools")}
-        data-testid="button-review-tool-calls"
-      >
-        Review
-      </Button>
+    <div className="space-y-1.5" data-testid="strip-top-attention">
+      {top.map((item) => {
+        const effectiveLevel = item.status === "escalated" ? "escalated" : item.level;
+        const style = ATTENTION_LEVEL_STYLE[effectiveLevel] ?? ATTENTION_LEVEL_STYLE.important;
+        const Icon = style.icon;
+        const dest = item.actionUrl ?? "/admin/attention";
+        return (
+          <div
+            key={item.id}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border ${style.bg} ${style.border}`}
+            data-testid={`strip-attention-item-${item.id}`}
+          >
+            <Icon className={`h-4 w-4 shrink-0 ${style.iconCls}`} />
+            <p className="text-sm font-medium flex-1 min-w-0 truncate">{item.title}</p>
+            <button
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${style.badge}`}
+              onClick={() => setLocation(dest)}
+              data-testid={`button-attention-action-${item.id}`}
+            >
+              {item.actionLabel ?? "View"}
+            </button>
+          </div>
+        );
+      })}
+      {(remaining > 0 || active.length > 3) && (
+        <button
+          className="flex items-center gap-1.5 px-3.5 py-1.5 w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setLocation("/admin/attention")}
+          data-testid="link-attention-view-all-strip"
+        >
+          <Inbox className="h-3.5 w-3.5" />
+          <span>
+            {remaining > 0
+              ? `+${remaining} more item${remaining !== 1 ? "s" : ""} in Attention Inbox`
+              : "View all in Attention Inbox"}
+          </span>
+          <ArrowRight className="h-3 w-3 ml-auto" />
+        </button>
+      )}
     </div>
   );
 }
@@ -1714,102 +1787,6 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
   );
 }
 
-// ─── Trigger Alerts Panel ─────────────────────────────────────────────────────
-
-type TriggerAlert = {
-  type: string;
-  severity: "critical" | "warning" | "info";
-  message: string;
-  affectedCount: number;
-  suggestedAction: string;
-};
-
-type TriggerAlertsResult = {
-  alerts: TriggerAlert[];
-  hasActive: boolean;
-  criticalCount: number;
-  warningCount: number;
-  topRisk: string | null;
-};
-
-function TriggerAlertsPanel() {
-  const [, setLocation] = useLocation();
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-
-  const { data, isLoading } = useQuery<TriggerAlertsResult>({
-    queryKey: ["/api/email-agent/trigger-alerts"],
-    staleTime: 60_000,
-    refetchInterval: 120_000,
-  });
-
-  if (isLoading || !data || !data.hasActive) return null;
-
-  const visible = data.alerts.filter((a) => !dismissed.has(a.type));
-  if (visible.length === 0) return null;
-
-  function severityStyle(s: TriggerAlert["severity"]) {
-    if (s === "critical")
-      return "border-red-400/60 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200";
-    if (s === "warning")
-      return "border-yellow-400/60 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200";
-    return "border-blue-300/60 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200";
-  }
-
-  function SeverityIcon({ s }: { s: TriggerAlert["severity"] }) {
-    if (s === "critical") return <XCircle className="h-4 w-4 shrink-0 text-red-500" />;
-    if (s === "warning") return <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-500" />;
-    return <Info className="h-4 w-4 shrink-0 text-blue-500" />;
-  }
-
-  return (
-    <section data-testid="section-trigger-alerts">
-      <h2
-        className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors"
-        onClick={() => setLocation("/admin/trigger-audit")}
-        data-testid="heading-trigger-alerts"
-      >
-        <ShieldAlert className="h-4 w-4 text-red-500" />
-        System Alerts
-        <span className="ml-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold w-4 h-4">
-          {visible.length}
-        </span>
-      </h2>
-      <div className="space-y-2">
-        {visible.map((alert) => (
-          <div
-            key={alert.type}
-            className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${severityStyle(alert.severity)}`}
-            data-testid={`alert-${alert.type.toLowerCase()}`}
-          >
-            <SeverityIcon s={alert.severity} />
-            <div className="flex-1 min-w-0">
-              <p className="font-medium leading-snug">{alert.message}</p>
-              <p className="text-xs mt-0.5 opacity-75 leading-snug">{alert.suggestedAction}</p>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                className="text-xs underline opacity-60 hover:opacity-100 transition-opacity"
-                onClick={() => setLocation("/admin/trigger-audit")}
-                data-testid={`button-view-audit-${alert.type.toLowerCase()}`}
-              >
-                View
-              </button>
-              <button
-                className="text-xs opacity-40 hover:opacity-80 transition-opacity ml-1"
-                onClick={() => setDismissed((prev) => new Set([...prev, alert.type]))}
-                aria-label="Dismiss alert"
-                data-testid={`button-dismiss-alert-${alert.type.toLowerCase()}`}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function GlobalPriorityPanel() {
   const [, setLocation] = useLocation();
 
@@ -2421,8 +2398,8 @@ export default function BusinessCommandCenterPage() {
         </div>
       </DashPageHeader>
 
-      {/* ─── Pending Agent Tool Calls Alert ──────────────────────────────── */}
-      <PendingToolCallsStrip />
+      {/* ─── Top Attention Items (Unified Attention System) ──────────────── */}
+      <TopAttentionStrip />
 
       {/* ─── Active Workflow Status Strip ────────────────────────────────── */}
       <WorkflowStatusStrip />
@@ -2436,11 +2413,6 @@ export default function BusinessCommandCenterPage() {
       <DashSectionReveal delay={0.01}>
         <BrainBriefStrip onRunBrain={handleRunBrain} />
       </DashSectionReveal>
-
-      {/* ─── Trigger System Alerts ────────────────────────────────────────── */}
-      <DashAlertReveal>
-        <TriggerAlertsPanel />
-      </DashAlertReveal>
 
       {/* ─── Unified Action Inbox (Today's Business Priorities) ──────────── */}
       <DashSectionReveal delay={0.02}>

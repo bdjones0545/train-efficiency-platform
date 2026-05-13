@@ -60,8 +60,6 @@ import {
   PinOff,
   Inbox,
   Clock,
-  AlertTriangle,
-  Zap,
   Lock,
   Sliders,
 } from "lucide-react";
@@ -331,98 +329,65 @@ function AccordionSection({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ContextualAlerts – admin-only live action badges
+// AttentionCountChip – single compact badge pointing to Attention Inbox
+// Replaces multiple duplicate alert strips; bell + inbox are the source of truth
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-type Alert = { label: string; url: string; severity: "high" | "medium" };
-
-function useContextualAlerts(role: string): Alert[] {
-  const isAdmin = role === "ADMIN";
-
-  const { data: pendingTools } = useQuery<any[]>({
-    queryKey: ["/api/admin/agent-tool-calls/pending"],
-    enabled: isAdmin,
-    staleTime: 60_000,
-    refetchInterval: 120_000,
-  });
-
-  const { data: pipelineStats } = useQuery<any>({
-    queryKey: ["/api/admin/team-training/deals/pipeline-stats"],
-    enabled: isAdmin,
-    staleTime: 120_000,
-  });
-
-  const { data: stuckWorkflows } = useQuery<any>({
-    queryKey: ["/api/admin/agent-ops/stuck-workflows"],
-    enabled: isAdmin,
-    staleTime: 120_000,
-  });
-
-  const alerts: Alert[] = [];
-
-  const pendingCount = Array.isArray(pendingTools) ? pendingTools.length : 0;
-  if (pendingCount > 0) {
-    alerts.push({
-      label: `${pendingCount} approval${pendingCount > 1 ? "s" : ""} pending`,
-      url: "/admin/agent-tools",
-      severity: "high",
-    });
-  }
-
-  const stalledCount = pipelineStats?.stalledCount ?? 0;
-  if (stalledCount > 0) {
-    alerts.push({
-      label: `${stalledCount} deal${stalledCount > 1 ? "s" : ""} stalled`,
-      url: "/admin/team-training-deals",
-      severity: "medium",
-    });
-  }
-
-  const stuckCount = Array.isArray(stuckWorkflows)
-    ? stuckWorkflows.length
-    : typeof stuckWorkflows?.count === "number"
-    ? stuckWorkflows.count
-    : 0;
-  if (stuckCount > 0) {
-    alerts.push({
-      label: `${stuckCount} workflow${stuckCount > 1 ? "s" : ""} stuck`,
-      url: "/admin/agent-ops",
-      severity: "medium",
-    });
-  }
-
-  return alerts;
-}
-
-function ContextualAlerts({
-  alerts,
+function AttentionCountChip({
+  role,
   onNavClick,
 }: {
-  alerts: Alert[];
+  role: string;
   onNavClick: () => void;
 }) {
-  if (alerts.length === 0) return null;
+  const isCoachOrAdmin = role === "COACH" || role === "ADMIN";
+
+  const { data: items = [] } = useQuery<any[]>({
+    queryKey: ["/api/attention"],
+    enabled: isCoachOrAdmin,
+    staleTime: 2 * 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+
+  const active = items.filter(
+    (i: any) => i.status === "active" || i.status === "escalated"
+  );
+  const criticalCount = active.filter(
+    (i: any) => i.level === "critical" || i.status === "escalated"
+  ).length;
+  const importantCount = active.filter(
+    (i: any) => i.level === "important"
+  ).length;
+  const badgeCount = criticalCount + importantCount;
+
+  if (badgeCount === 0) return null;
 
   return (
-    <div className="mx-2 mb-2 space-y-1">
-      {alerts.map((alert) => (
-        <Link
-          key={alert.url}
-          href={alert.url}
-          onClick={onNavClick}
-          data-testid={`alert-${alert.url.replace(/\//g, "-")}`}
-          className={cn(
-            "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
-            alert.severity === "high"
-              ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/50"
-              : "bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/40 border border-orange-200 dark:border-orange-800/50"
-          )}
-        >
-          <AlertTriangle className="h-3 w-3 flex-shrink-0" />
-          <span className="truncate">{alert.label}</span>
-          <Zap className="h-3 w-3 ml-auto flex-shrink-0 opacity-60" />
-        </Link>
-      ))}
+    <div className="mx-2 mb-2">
+      <Link
+        href="/admin/attention"
+        onClick={onNavClick}
+        data-testid="chip-attention-count"
+        className={cn(
+          "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border",
+          criticalCount > 0
+            ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/50 hover:bg-red-100 dark:hover:bg-red-900/40"
+            : "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+        )}
+      >
+        <Inbox className="h-3 w-3 flex-shrink-0" />
+        <span className="flex-1 truncate">
+          {badgeCount} item{badgeCount !== 1 ? "s" : ""} need{badgeCount === 1 ? "s" : ""} attention
+        </span>
+        <span className={cn(
+          "flex-shrink-0 font-bold text-[10px] px-1.5 py-0.5 rounded-full",
+          criticalCount > 0
+            ? "bg-red-500 text-white"
+            : "bg-amber-500 text-white"
+        )}>
+          {badgeCount}
+        </span>
+      </Link>
     </div>
   );
 }
@@ -678,9 +643,7 @@ export function AppSidebar() {
     },
   });
 
-  // ── Contextual alerts (admin only) ───────────────────────────────────────────
-
-  const contextualAlerts = useContextualAlerts(role);
+  // ── Attention count chip handled inline via AttentionCountChip component ─────
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // Build section definitions
@@ -960,9 +923,9 @@ export function AppSidebar() {
           </div>
 
           <SidebarContent className="px-2 py-2 flex flex-col">
-            {/* ── Contextual alerts (admin) ─────────────────────────────────── */}
-            {isAdmin && contextualAlerts.length > 0 && (
-              <ContextualAlerts alerts={contextualAlerts} onNavClick={handleNavClick} />
+            {/* ── Attention count chip (coach/admin) ───────────────────────── */}
+            {isCoachOrAdmin && (
+              <AttentionCountChip role={role} onNavClick={handleNavClick} />
             )}
 
             {/* ── COACH / ADMIN sections ───────────────────────────────────── */}
