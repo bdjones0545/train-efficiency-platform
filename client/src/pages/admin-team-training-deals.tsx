@@ -15,7 +15,9 @@ import {
   TrendingUp, Target, Briefcase, Loader2, MessageSquare,
   Phone, FileText, Sparkles, CheckCircle, XCircle, Plus,
   AlertTriangle, Flame, Clock, Copy, Brain, Info, ChevronDown, ChevronUp, AlertCircle,
+  Mail, MapPin, User, ArrowRight,
 } from "lucide-react";
+import { Link } from "wouter";
 import type { TeamTrainingDeal, TeamTrainingProspect } from "@shared/schema";
 
 type DealWithProspect = TeamTrainingDeal & { prospect?: TeamTrainingProspect };
@@ -25,6 +27,7 @@ const DEAL_STATUSES = [
   { key: "interested", label: "Interested", color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-800" },
   { key: "call_scheduled", label: "Call Scheduled", color: "bg-purple-500/15 text-purple-700 dark:text-purple-400", border: "border-purple-200 dark:border-purple-800" },
   { key: "proposal_sent", label: "Proposal Sent", color: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400", border: "border-yellow-200 dark:border-yellow-800" },
+  { key: "negotiating", label: "Follow-Up", color: "bg-orange-500/15 text-orange-700 dark:text-orange-400", border: "border-orange-200 dark:border-orange-800" },
   { key: "won", label: "Won", color: "bg-green-500/15 text-green-700 dark:text-green-400", border: "border-green-200 dark:border-green-800" },
   { key: "lost", label: "Lost", color: "bg-red-500/15 text-red-700 dark:text-red-400", border: "border-red-200 dark:border-red-800" },
 ];
@@ -34,6 +37,7 @@ const KANBAN_COLUMNS = [
   { key: "interested", label: "Interested" },
   { key: "call_scheduled", label: "Call Scheduled" },
   { key: "proposal_sent", label: "Proposal Sent" },
+  { key: "negotiating", label: "Follow-Up" },
   { key: "won", label: "Won" },
   { key: "lost", label: "Lost" },
 ];
@@ -298,6 +302,7 @@ function DealCard({
   onEdit,
   onDelete,
   onAiAction,
+  onView,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -306,6 +311,7 @@ function DealCard({
   onEdit: (d: DealWithProspect) => void;
   onDelete: (id: string) => void;
   onAiAction: (deal: DealWithProspect, action: string) => void;
+  onView: (d: DealWithProspect) => void;
   isDragging: boolean;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
@@ -327,7 +333,8 @@ function DealCard({
       draggable
       onDragStart={() => onDragStart(deal.id)}
       onDragEnd={onDragEnd}
-      className={`p-3 space-y-2 cursor-grab active:cursor-grabbing select-none transition-opacity ${isDragging ? "opacity-40" : ""}`}
+      onClick={() => onView(deal)}
+      className={`p-3 space-y-2 cursor-pointer select-none transition-opacity hover:shadow-md hover:border-primary/30 ${isDragging ? "opacity-40 cursor-grab" : ""}`}
       data-testid={`card-deal-${deal.id}`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -335,13 +342,13 @@ function DealCard({
           <p className="font-semibold text-sm truncate" data-testid={`text-deal-name-${deal.id}`}>
             {deal.prospect?.prospectName ?? "Unknown Team"}
           </p>
-          <p className="text-xs text-muted-foreground">{deal.prospect?.sport ?? "—"}</p>
+          <p className="text-xs text-muted-foreground">{deal.prospect?.sport ?? "—"} · {deal.prospect?.city ?? "—"}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onEdit(deal)} data-testid={`button-edit-deal-${deal.id}`}>
+          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); onEdit(deal); }} data-testid={`button-edit-deal-${deal.id}`}>
             <Edit2 className="h-3 w-3" />
           </Button>
-          <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500 hover:text-red-600" onClick={() => onDelete(deal.id)} data-testid={`button-delete-deal-${deal.id}`}>
+          <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500 hover:text-red-600" onClick={(e) => { e.stopPropagation(); onDelete(deal.id); }} data-testid={`button-delete-deal-${deal.id}`}>
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
@@ -382,19 +389,19 @@ function DealCard({
           <Calendar className="h-3 w-3" />
           {timeAgo(deal.lastActivityAt)}
         </span>
-        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={handleAskAgent} title="Copy agent prompt" data-testid={`button-ask-agent-deal-${deal.id}`}>
+        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); handleAskAgent(); }} title="Copy agent prompt" data-testid={`button-ask-agent-deal-${deal.id}`}>
           <Copy className="h-2.5 w-2.5" />
         </Button>
       </div>
 
       <div className="flex gap-1 flex-wrap pt-1">
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => onAiAction(deal, "generate_response")} data-testid={`button-ai-response-${deal.id}`}>
+        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={(e) => { e.stopPropagation(); onAiAction(deal, "generate_response"); }} data-testid={`button-ai-response-${deal.id}`}>
           <MessageSquare className="h-3 w-3 mr-1" /> Respond
         </Button>
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => onAiAction(deal, "suggest_next_step")} data-testid={`button-ai-next-${deal.id}`}>
+        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={(e) => { e.stopPropagation(); onAiAction(deal, "suggest_next_step"); }} data-testid={`button-ai-next-${deal.id}`}>
           <Zap className="h-3 w-3 mr-1" /> Next Step
         </Button>
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => onAiAction(deal, "create_proposal")} data-testid={`button-ai-proposal-${deal.id}`}>
+        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={(e) => { e.stopPropagation(); onAiAction(deal, "create_proposal"); }} data-testid={`button-ai-proposal-${deal.id}`}>
           <FileText className="h-3 w-3 mr-1" /> Proposal
         </Button>
       </div>
@@ -408,6 +415,7 @@ function KanbanColumn({
   onEdit,
   onDelete,
   onAiAction,
+  onView,
   draggingId,
   onDragStart,
   onDragEnd,
@@ -418,6 +426,7 @@ function KanbanColumn({
   onEdit: (d: DealWithProspect) => void;
   onDelete: (id: string) => void;
   onAiAction: (deal: DealWithProspect, action: string) => void;
+  onView: (d: DealWithProspect) => void;
   draggingId: string | null;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
@@ -452,14 +461,15 @@ function KanbanColumn({
             onEdit={onEdit}
             onDelete={onDelete}
             onAiAction={onAiAction}
+            onView={onView}
             isDragging={draggingId === deal.id}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
           />
         ))}
         {deals.length === 0 && (
-          <div className="flex items-center justify-center h-16 text-xs text-muted-foreground italic">
-            Drop deals here
+          <div className="flex items-center justify-center h-16 text-xs text-muted-foreground/60 italic select-none pointer-events-none">
+            No deals in this stage yet
           </div>
         )}
       </div>
@@ -471,6 +481,7 @@ export default function AdminTeamTrainingDealsPage() {
   const { toast } = useToast();
   const [editDeal, setEditDeal] = useState<DealWithProspect | null>(null);
   const [editForm, setEditForm] = useState<Partial<DealWithProspect>>({});
+  const [viewDeal, setViewDeal] = useState<DealWithProspect | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [aiResult, setAiResult] = useState("");
@@ -599,6 +610,22 @@ export default function AdminTeamTrainingDealsPage() {
             <Skeleton key={col.key} className="min-w-[220px] h-64" />
           ))}
         </div>
+      ) : deals.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center space-y-4 border rounded-lg bg-muted/20">
+          <Briefcase className="h-12 w-12 text-muted-foreground/40" />
+          <div className="space-y-1">
+            <p className="font-semibold text-base">No deals in your pipeline yet</p>
+            <p className="text-sm text-muted-foreground max-w-sm">
+              Start by moving an interested team training lead into the pipeline.
+            </p>
+          </div>
+          <Link href="/admin/team-training-leads">
+            <Button variant="outline" className="gap-2" data-testid="button-go-to-leads">
+              <ArrowRight className="h-4 w-4" />
+              Go to Team Training Leads
+            </Button>
+          </Link>
+        </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-4">
           {KANBAN_COLUMNS.map(col => (
@@ -609,6 +636,7 @@ export default function AdminTeamTrainingDealsPage() {
               onEdit={openEdit}
               onDelete={(id) => deleteDealMutation.mutate(id)}
               onAiAction={handleAiAction}
+              onView={setViewDeal}
               draggingId={draggingId}
               onDragStart={setDraggingId}
               onDragEnd={() => setDraggingId(null)}
@@ -746,6 +774,173 @@ export default function AdminTeamTrainingDealsPage() {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deal Detail Drawer */}
+      <Dialog open={!!viewDeal} onOpenChange={(o) => !o && setViewDeal(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Briefcase className="h-4 w-4 text-primary shrink-0" />
+              <span className="truncate">{viewDeal?.prospect?.prospectName ?? "Deal Details"}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {viewDeal && (() => {
+            const health = getDealHealth(viewDeal);
+            const HealthIcon = health.icon;
+            const sInfo = statusInfo(viewDeal.status);
+            const displayEmail = viewDeal.prospect?.decisionMakerEmail || viewDeal.prospect?.contactEmail;
+            const displayContact = viewDeal.prospect?.decisionMakerName || viewDeal.prospect?.contactName;
+            return (
+              <div className="space-y-4 pt-1">
+                {/* Stage badge + health */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${sInfo.color}`}>
+                    {sInfo.label}
+                  </span>
+                  <span className={`flex items-center gap-1 text-xs font-medium ${health.color}`}>
+                    <HealthIcon className="h-3 w-3 shrink-0" />
+                    {health.label}
+                  </span>
+                </div>
+
+                {/* Key details */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Estimated Value</p>
+                    <p className="font-semibold text-green-700 dark:text-green-400">
+                      {viewDeal.estimatedValue > 0 ? `$${viewDeal.estimatedValue.toLocaleString()}` : "No estimate"}
+                    </p>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Close Probability</p>
+                    <p className="font-semibold">{viewDeal.probability}%</p>
+                  </div>
+                  {viewDeal.finalValue && viewDeal.finalValue > 0 && (
+                    <div className="space-y-0.5 col-span-2">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Final Value (Won)</p>
+                      <p className="font-semibold text-green-700 dark:text-green-400">${viewDeal.finalValue.toLocaleString()}</p>
+                    </div>
+                  )}
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Last Activity</p>
+                    <p>{timeAgo(viewDeal.lastActivityAt)}</p>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Sport</p>
+                    <p>{viewDeal.prospect?.sport ?? "—"}</p>
+                  </div>
+                </div>
+
+                {/* Contact details */}
+                {(displayContact || displayEmail || viewDeal.prospect?.contactPhone) && (
+                  <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Contact</p>
+                    {displayContact && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span>{displayContact}</span>
+                        {viewDeal.prospect?.decisionMakerTitle && (
+                          <span className="text-muted-foreground text-xs">· {viewDeal.prospect.decisionMakerTitle}</span>
+                        )}
+                      </div>
+                    )}
+                    {displayEmail && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="font-mono text-xs break-all">{displayEmail}</span>
+                      </div>
+                    )}
+                    {viewDeal.prospect?.contactPhone && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span>{viewDeal.prospect.contactPhone}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Location */}
+                {(viewDeal.prospect?.city || viewDeal.prospect?.state) && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span>{[viewDeal.prospect.city, viewDeal.prospect.state].filter(Boolean).join(", ")}</span>
+                    {viewDeal.prospect?.websiteUrl && (
+                      <>
+                        <span>·</span>
+                        <a
+                          href={viewDeal.prospect.websiteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline hover:text-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Website
+                        </a>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* AI recommended move */}
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-1">
+                  <div className="flex items-start gap-1.5 text-sm">
+                    <Brain className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
+                    <span className="text-muted-foreground">{health.move}</span>
+                  </div>
+                </div>
+
+                {/* Next action */}
+                {viewDeal.nextAction && (
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Next Action</p>
+                    <p className="text-sm">{viewDeal.nextAction}</p>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {viewDeal.notes && (
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Notes</p>
+                    <p className="text-sm text-muted-foreground italic border-l-2 pl-2">{viewDeal.notes}</p>
+                  </div>
+                )}
+
+                {/* Quick stage move */}
+                <div className="space-y-2 pt-1 border-t">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Move to Stage</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {KANBAN_COLUMNS.filter(c => c.key !== viewDeal.status).map(col => (
+                      <Button
+                        key={col.key}
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          updateDealMutation.mutate({ id: viewDeal.id, data: { status: col.key as TeamTrainingDeal["status"] } });
+                          setViewDeal(null);
+                        }}
+                        data-testid={`button-move-to-${col.key}`}
+                      >
+                        → {col.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex gap-2 justify-end pt-1">
+                  <Button variant="outline" size="sm" onClick={() => { setViewDeal(null); openEdit(viewDeal); }} data-testid="button-view-edit-deal">
+                    <Edit2 className="h-3.5 w-3.5 mr-1" /> Edit
+                  </Button>
+                  <Button size="sm" onClick={() => setViewDeal(null)} data-testid="button-close-view-deal">
+                    Close
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

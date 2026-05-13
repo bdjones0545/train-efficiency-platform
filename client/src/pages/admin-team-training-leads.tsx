@@ -21,8 +21,9 @@ import {
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
   Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX,
   Sparkles, RotateCcw, Clock, MapPin, FileSearch, Minimize2, X as XIcon,
-  Upload, Download
+  Upload, Download, Briefcase
 } from "lucide-react";
+import { useLocation } from "wouter";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
 
 const AI_CHIPS = [
@@ -373,7 +374,9 @@ function ProspectCard({
   onMarkReplied,
   onDoNotContact,
   onEnrichContact,
+  onCreateDeal,
   enrichingId,
+  existingDealProspectIds,
 }: {
   prospect: TeamTrainingProspect;
   onStatusChange: (id: string, status: string) => void;
@@ -383,12 +386,15 @@ function ProspectCard({
   onMarkReplied: (id: string) => void;
   onDoNotContact: (id: string) => void;
   onEnrichContact: (id: string) => void;
+  onCreateDeal: (p: TeamTrainingProspect) => void;
   enrichingId: string | null;
+  existingDealProspectIds: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const stage = getClientStage(prospect);
   const quality = getClientQuality(prospect);
   const isEnriching = enrichingId === prospect.id;
+  const hasDeal = existingDealProspectIds.has(prospect.id);
 
   const displayEmail = prospect.decisionMakerEmail || prospect.contactEmail;
 
@@ -483,6 +489,17 @@ function ProspectCard({
             <MessageSquare className="h-3 w-3 mr-1" /> Mark Replied
           </Button>
         )}
+        <Button
+          size="sm"
+          variant={hasDeal ? "ghost" : "outline"}
+          className={`h-7 text-xs ${hasDeal ? "text-muted-foreground" : "border-emerald-500 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"}`}
+          onClick={() => onCreateDeal(prospect)}
+          data-testid={`button-create-deal-${prospect.id}`}
+          title={hasDeal ? "A deal already exists for this lead" : "Add this lead to the Deal Pipeline"}
+        >
+          <Briefcase className="h-3 w-3 mr-1" />
+          {hasDeal ? "In Pipeline" : "Create Deal"}
+        </Button>
         {prospect.outreachStatus !== "Do Not Contact" && (
           <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600 hover:text-red-700" onClick={() => onDoNotContact(prospect.id)} data-testid={`button-dnc-${prospect.id}`}>
             <PhoneOff className="h-3 w-3 mr-1" /> Do Not Contact
@@ -1391,6 +1408,43 @@ export default function AdminTeamTrainingLeadsPage() {
     queryKey: ["/api/admin/team-training/drafts"],
   });
 
+  const { data: existingDeals = [] } = useQuery<{ prospectId: string }[]>({
+    queryKey: ["/api/admin/team-training/deals"],
+  });
+  const existingDealProspectIds = new Set((existingDeals as any[]).map((d: any) => d.prospectId));
+
+  const [, navigate] = useLocation();
+
+  const createDealMutation = useMutation({
+    mutationFn: async (prospect: TeamTrainingProspect) => {
+      const res = await apiRequest("POST", "/api/admin/team-training/deals", {
+        prospectId: prospect.id,
+        status: "new",
+        estimatedValue: prospect.estimatedValue ?? 0,
+        probability: 40,
+        nextAction: "",
+        notes: "",
+      });
+      const json = await res.json();
+      if (!res.ok && res.status !== 409) throw new Error(json.message || "Failed to create deal");
+      return { json, isExisting: res.status === 409 };
+    },
+    onSuccess: ({ json, isExisting }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/deals"] });
+      if (isExisting) {
+        toast({ title: "Already in pipeline", description: "This lead already has a deal in the pipeline.", duration: 3000 });
+      } else {
+        toast({
+          title: "Deal created!",
+          description: "Lead added to Deal Pipeline under 'New'.",
+          duration: 4000,
+        });
+      }
+      navigate("/admin/team-training-deals");
+    },
+    onError: (err: Error) => toast({ title: "Failed to create deal", description: err.message, variant: "destructive" }),
+  });
+
   const [settingsSaved, setSettingsSaved] = useState(false);
 
   const { data: savedSettings } = useQuery<{
@@ -2233,7 +2287,9 @@ export default function AdminTeamTrainingLeadsPage() {
                   onMarkReplied={(id) => markRepliedMutation.mutate(id)}
                   onDoNotContact={(id) => doNotContactMutation.mutate(id)}
                   onEnrichContact={(id) => enrichContactMutation.mutate(id)}
+                  onCreateDeal={(p) => createDealMutation.mutate(p)}
                   enrichingId={enrichingId}
+                  existingDealProspectIds={existingDealProspectIds}
                 />
               ))}
             </div>
