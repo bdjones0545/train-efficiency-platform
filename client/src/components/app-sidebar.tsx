@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -56,6 +56,13 @@ import {
   Building2,
   ChevronDown,
   Radio,
+  Pin,
+  PinOff,
+  Clock,
+  AlertTriangle,
+  Zap,
+  Lock,
+  Sliders,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -64,10 +71,15 @@ import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Types
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type WorkspaceMode = "simplified" | "advanced";
 
 type NavItem = {
   title: string;
+  simplifiedTitle?: string;
   url: string;
   icon: React.ElementType;
   testId: string;
@@ -79,12 +91,64 @@ type NavSection = {
   icon: React.ElementType;
   items: NavItem[];
   aiSection?: boolean;
-  dangerSection?: boolean;
+  lowPriority?: boolean;
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+type NavRef = { url: string; title: string };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Storage helpers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const OPEN_KEY = "sidebar_open_sections";
+const MODE_KEY = "workspace_mode";
+const PINNED_KEY = "nav_pinned";
+const RECENTS_KEY = "nav_recents";
+const MAX_RECENTS = 5;
+
+function ls<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? (JSON.parse(v) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function lsSet(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function loadOpenSections(isMobile: boolean): Set<string> {
+  if (isMobile) return new Set(["home"]);
+  return new Set(ls<string[]>(OPEN_KEY, ["home"]));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Sidebar Context (avoids prop-drilling for pinning)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type SidebarCtx = {
+  pinned: NavRef[];
+  isPinned: (url: string) => boolean;
+  togglePin: (ref: NavRef) => void;
+  workspaceMode: WorkspaceMode;
+};
+
+const SidebarContext = createContext<SidebarCtx>({
+  pinned: [],
+  isPinned: () => false,
+  togglePin: () => {},
+  workspaceMode: "simplified",
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Helpers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function itemIsActive(location: string, url: string): boolean {
+  if (url === "/coach") return location === "/coach";
   return location === url || location.startsWith(url + "/");
 }
 
@@ -92,23 +156,90 @@ function sectionIsActive(location: string, items: NavItem[]): boolean {
   return items.some((item) => itemIsActive(location, item.url));
 }
 
-const STORAGE_KEY = "sidebar_open_sections";
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NavLink – single nav item with pin button
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function loadOpenSections(): Set<string> {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return new Set(JSON.parse(saved));
-  } catch {}
-  return new Set(["home"]);
+function NavLink({
+  item,
+  location,
+  onClick,
+  aiSection = false,
+  useSimplifiedTitle = false,
+}: {
+  item: NavItem;
+  location: string;
+  onClick: () => void;
+  aiSection?: boolean;
+  useSimplifiedTitle?: boolean;
+}) {
+  const { isPinned, togglePin } = useContext(SidebarContext);
+  const active = itemIsActive(location, item.url);
+  const pinned = isPinned(item.url);
+  const label = useSimplifiedTitle && item.simplifiedTitle ? item.simplifiedTitle : item.title;
+
+  return (
+    <div className="group relative flex items-center">
+      <Link
+        href={item.url}
+        onClick={onClick}
+        data-testid={item.testId}
+        className={cn(
+          "flex-1 flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors ml-1 pr-8",
+          active
+            ? aiSection
+              ? "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 font-medium"
+              : "bg-primary/10 text-primary font-medium"
+            : "text-foreground/70 hover:text-foreground hover:bg-muted/60"
+        )}
+      >
+        <item.icon
+          className={cn(
+            "h-4 w-4 flex-shrink-0",
+            active
+              ? aiSection
+                ? "text-violet-600 dark:text-violet-400"
+                : "text-primary"
+              : "text-muted-foreground"
+          )}
+        />
+        <span className="truncate">{label}</span>
+        {active && (
+          <span
+            className={cn(
+              "ml-auto h-1.5 w-1.5 rounded-full flex-shrink-0",
+              aiSection ? "bg-violet-500" : "bg-primary"
+            )}
+          />
+        )}
+      </Link>
+
+      {/* Pin button – visible on hover (desktop) or always if pinned */}
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          togglePin({ url: item.url, title: item.title });
+        }}
+        data-testid={`pin-${item.testId}`}
+        title={pinned ? "Unpin" : "Pin to Quick Access"}
+        className={cn(
+          "absolute right-1.5 h-5 w-5 rounded flex items-center justify-center transition-all",
+          "text-muted-foreground hover:text-foreground hover:bg-muted",
+          pinned
+            ? "opacity-100 text-primary"
+            : "opacity-0 group-hover:opacity-100"
+        )}
+      >
+        {pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+      </button>
+    </div>
+  );
 }
 
-function saveOpenSections(sections: Set<string>) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...sections]));
-  } catch {}
-}
-
-// ── Accordion Section Component ────────────────────────────────────────────────
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AccordionSection
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function AccordionSection({
   section,
@@ -123,7 +254,9 @@ function AccordionSection({
   location: string;
   onNavClick: () => void;
 }) {
+  const { workspaceMode } = useContext(SidebarContext);
   const active = sectionIsActive(location, section.items);
+  const simplified = workspaceMode === "simplified";
 
   return (
     <div className="mb-0.5">
@@ -134,26 +267,21 @@ function AccordionSection({
           "w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors",
           section.aiSection
             ? "text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20"
-            : section.dangerSection
-            ? "text-destructive hover:bg-destructive/10"
             : "text-muted-foreground hover:bg-muted/60",
-          active && !section.dangerSection && !section.aiSection
-            ? "text-foreground"
-            : "",
-          active && section.aiSection
-            ? "text-violet-700 dark:text-violet-300"
-            : ""
+          active && !section.aiSection ? "text-foreground" : "",
+          active && section.aiSection ? "text-violet-700 dark:text-violet-300" : ""
         )}
       >
         <span className="flex items-center gap-1.5">
           <section.icon
-            className={cn(
-              "h-3.5 w-3.5",
-              section.aiSection ? "text-violet-500" : "",
-              section.dangerSection ? "text-destructive" : ""
-            )}
+            className={cn("h-3.5 w-3.5", section.aiSection ? "text-violet-500" : "")}
           />
           {section.label}
+          {section.aiSection && simplified && (
+            <span className="ml-1 text-[9px] font-medium px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 uppercase tracking-wide leading-none">
+              Adv
+            </span>
+          )}
           {active && (
             <span
               className={cn(
@@ -174,64 +302,324 @@ function AccordionSection({
       <div
         className={cn(
           "overflow-hidden transition-all duration-200 ease-in-out",
-          isOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"
+          isOpen ? "max-h-[700px] opacity-100" : "max-h-0 opacity-0"
         )}
       >
         <div className="mt-0.5 space-y-0.5 pb-1">
-          {section.items.map((item) => {
-            const active = itemIsActive(location, item.url);
-            return (
-              <Link
-                key={item.url}
-                href={item.url}
-                onClick={onNavClick}
-                data-testid={item.testId}
-                className={cn(
-                  "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors ml-1",
-                  active
-                    ? section.aiSection
-                      ? "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 font-medium"
-                      : "bg-primary/10 text-primary font-medium"
-                    : "text-foreground/70 hover:text-foreground hover:bg-muted/60"
-                )}
-              >
-                <item.icon
-                  className={cn(
-                    "h-4 w-4 flex-shrink-0",
-                    active
-                      ? section.aiSection
-                        ? "text-violet-600 dark:text-violet-400"
-                        : "text-primary"
-                      : "text-muted-foreground"
-                  )}
-                />
-                <span className="truncate">{item.title}</span>
-                {active && (
-                  <span
-                    className={cn(
-                      "ml-auto h-1.5 w-1.5 rounded-full flex-shrink-0",
-                      section.aiSection ? "bg-violet-500" : "bg-primary"
-                    )}
-                  />
-                )}
-              </Link>
-            );
-          })}
+          {section.items.map((item) => (
+            <NavLink
+              key={item.url}
+              item={item}
+              location={location}
+              onClick={onNavClick}
+              aiSection={section.aiSection}
+              useSimplifiedTitle={simplified && !!section.aiSection}
+            />
+          ))}
+
+          {/* AI section footer in simplified mode */}
+          {section.aiSection && simplified && (
+            <p className="ml-1 px-3 pt-1 pb-0.5 text-[10px] text-muted-foreground/70 leading-relaxed">
+              Switch to Advanced workspace to configure internals.
+            </p>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────────
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ContextualAlerts – admin-only live action badges
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type Alert = { label: string; url: string; severity: "high" | "medium" };
+
+function useContextualAlerts(role: string): Alert[] {
+  const isAdmin = role === "ADMIN";
+
+  const { data: pendingTools } = useQuery<any[]>({
+    queryKey: ["/api/admin/agent-tool-calls/pending"],
+    enabled: isAdmin,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+
+  const { data: pipelineStats } = useQuery<any>({
+    queryKey: ["/api/admin/team-training/deals/pipeline-stats"],
+    enabled: isAdmin,
+    staleTime: 120_000,
+  });
+
+  const { data: stuckWorkflows } = useQuery<any>({
+    queryKey: ["/api/admin/agent-ops/stuck-workflows"],
+    enabled: isAdmin,
+    staleTime: 120_000,
+  });
+
+  const alerts: Alert[] = [];
+
+  const pendingCount = Array.isArray(pendingTools) ? pendingTools.length : 0;
+  if (pendingCount > 0) {
+    alerts.push({
+      label: `${pendingCount} approval${pendingCount > 1 ? "s" : ""} pending`,
+      url: "/admin/agent-tools",
+      severity: "high",
+    });
+  }
+
+  const stalledCount = pipelineStats?.stalledCount ?? 0;
+  if (stalledCount > 0) {
+    alerts.push({
+      label: `${stalledCount} deal${stalledCount > 1 ? "s" : ""} stalled`,
+      url: "/admin/team-training-deals",
+      severity: "medium",
+    });
+  }
+
+  const stuckCount = Array.isArray(stuckWorkflows)
+    ? stuckWorkflows.length
+    : typeof stuckWorkflows?.count === "number"
+    ? stuckWorkflows.count
+    : 0;
+  if (stuckCount > 0) {
+    alerts.push({
+      label: `${stuckCount} workflow${stuckCount > 1 ? "s" : ""} stuck`,
+      url: "/admin/agent-ops",
+      severity: "medium",
+    });
+  }
+
+  return alerts;
+}
+
+function ContextualAlerts({
+  alerts,
+  onNavClick,
+}: {
+  alerts: Alert[];
+  onNavClick: () => void;
+}) {
+  if (alerts.length === 0) return null;
+
+  return (
+    <div className="mx-2 mb-2 space-y-1">
+      {alerts.map((alert) => (
+        <Link
+          key={alert.url}
+          href={alert.url}
+          onClick={onNavClick}
+          data-testid={`alert-${alert.url.replace(/\//g, "-")}`}
+          className={cn(
+            "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
+            alert.severity === "high"
+              ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/50"
+              : "bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/40 border border-orange-200 dark:border-orange-800/50"
+          )}
+        >
+          <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{alert.label}</span>
+          <Zap className="h-3 w-3 ml-auto flex-shrink-0 opacity-60" />
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// QuickAccess – Recent + Pinned strip
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function QuickAccess({
+  recents,
+  allItems,
+  location,
+  onNavClick,
+}: {
+  recents: NavRef[];
+  allItems: NavItem[];
+  location: string;
+  onNavClick: () => void;
+}) {
+  const { pinned, togglePin } = useContext(SidebarContext);
+
+  const resolveItem = (ref: NavRef) =>
+    allItems.find((i) => i.url === ref.url) ?? {
+      title: ref.title,
+      url: ref.url,
+      icon: Clock,
+      testId: `nav-recent-${ref.url.replace(/\//g, "-")}`,
+    };
+
+  const showPinned = pinned.length > 0;
+  const showRecents = recents.filter((r) => !pinned.find((p) => p.url === r.url)).length > 0;
+
+  if (!showPinned && !showRecents) return null;
+
+  return (
+    <div className="mb-3 pb-2 border-b border-border/40">
+      {showPinned && (
+        <div className="mb-1.5">
+          <p className="px-3 mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1">
+            <Pin className="h-2.5 w-2.5" /> Pinned
+          </p>
+          <div className="space-y-0.5">
+            {pinned.map((ref) => {
+              const item = resolveItem(ref);
+              const active = itemIsActive(location, item.url);
+              return (
+                <div key={ref.url} className="group relative flex items-center">
+                  <Link
+                    href={item.url}
+                    onClick={onNavClick}
+                    data-testid={`pinned-${item.testId ?? ref.url}`}
+                    className={cn(
+                      "flex-1 flex items-center gap-2 px-3 py-1 rounded-md text-xs transition-colors pr-7",
+                      active
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-foreground/70 hover:text-foreground hover:bg-muted/60"
+                    )}
+                  >
+                    <item.icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                    <span className="truncate">{item.title}</span>
+                  </Link>
+                  <button
+                    onClick={() => togglePin(ref)}
+                    title="Unpin"
+                    className="absolute right-1.5 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-all"
+                    data-testid={`unpin-${ref.url.replace(/\//g, "-")}`}
+                  >
+                    <PinOff className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {showRecents && (
+        <div>
+          <p className="px-3 mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1">
+            <Clock className="h-2.5 w-2.5" /> Recent
+          </p>
+          <div className="space-y-0.5">
+            {recents
+              .filter((r) => !pinned.find((p) => p.url === r.url))
+              .slice(0, 4)
+              .map((ref) => {
+                const item = resolveItem(ref);
+                const active = itemIsActive(location, item.url);
+                return (
+                  <Link
+                    key={ref.url}
+                    href={item.url}
+                    onClick={onNavClick}
+                    data-testid={`recent-${item.testId ?? ref.url}`}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1 rounded-md text-xs transition-colors",
+                      active
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-foreground/70 hover:text-foreground hover:bg-muted/60"
+                    )}
+                  >
+                    <item.icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                    <span className="truncate">{item.title}</span>
+                  </Link>
+                );
+              })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WorkspaceModeToggle
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function WorkspaceModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: WorkspaceMode;
+  onChange: (m: WorkspaceMode) => void;
+}) {
+  const simplified = mode === "simplified";
+
+  return (
+    <div className="mx-2 mb-2 rounded-md border border-border/50 bg-muted/30 p-2">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+          <Sliders className="h-3 w-3" />
+          Workspace
+        </span>
+        <span
+          className={cn(
+            "text-[9px] font-medium px-1.5 py-0.5 rounded-full",
+            simplified
+              ? "bg-muted text-muted-foreground"
+              : "bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400"
+          )}
+        >
+          {simplified ? "Simplified" : "Advanced"}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          onClick={() => onChange("simplified")}
+          data-testid="workspace-simplified"
+          className={cn(
+            "text-[10px] py-1 px-2 rounded transition-colors font-medium",
+            simplified
+              ? "bg-background text-foreground shadow-sm border border-border/60"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          )}
+        >
+          Simplified
+        </button>
+        <button
+          onClick={() => onChange("advanced")}
+          data-testid="workspace-advanced"
+          className={cn(
+            "text-[10px] py-1 px-2 rounded transition-colors font-medium flex items-center justify-center gap-1",
+            !simplified
+              ? "bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800/50"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          )}
+        >
+          {!simplified && <Lock className="h-2.5 w-2.5" />}
+          Advanced
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AppSidebar – main component
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
   const { isMobile, setOpenMobile } = useSidebar();
   const { toast } = useToast();
+
+  // ── State ────────────────────────────────────────────────────────────────────
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [openSections, setOpenSections] = useState<Set<string>>(loadOpenSections);
+  const [openSections, setOpenSections] = useState<Set<string>>(() =>
+    loadOpenSections(isMobile)
+  );
+  const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(
+    () => ls<WorkspaceMode>(MODE_KEY, "simplified")
+  );
+  const [pinned, setPinned] = useState<NavRef[]>(() => ls<NavRef[]>(PINNED_KEY, []));
+  const [recents, setRecents] = useState<NavRef[]>(() => ls<NavRef[]>(RECENTS_KEY, []));
+
+  // ── Queries ──────────────────────────────────────────────────────────────────
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -240,6 +628,10 @@ export function AppSidebar() {
 
   const role = profile?.role || "CLIENT";
   const orgId = profile?.organizationId;
+  const isAdmin = role === "ADMIN";
+  const isCoach = role === "COACH";
+  const isStaff = role === "STAFF";
+  const isCoachOrAdmin = isCoach || isAdmin;
 
   const { data: organization, isLoading: orgLoading } = useQuery<{
     name: string;
@@ -256,6 +648,20 @@ export function AppSidebar() {
     enabled: !!orgId,
   });
 
+  const athleticEnabled = (organization as any)?.athleticEnabled === true;
+  const coachTransactionsVisible = (organization as any)?.coachTransactionsVisible !== false;
+
+  const { data: athleticProgramsSidebar } = useQuery<any[]>({
+    queryKey: ["/api/athletic/programs", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/programs?orgId=${orgId}`);
+      return res.json();
+    },
+    enabled: !!orgId && athleticEnabled,
+  });
+
+  const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active) || [];
+
   const deleteOrgMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("DELETE", `/api/organizations/${orgId}`);
@@ -271,25 +677,31 @@ export function AppSidebar() {
     },
   });
 
-  const athleticEnabled = (organization as any)?.athleticEnabled === true;
-  const coachTransactionsVisible = (organization as any)?.coachTransactionsVisible !== false;
+  // ── Contextual alerts (admin only) ───────────────────────────────────────────
 
-  const { data: athleticProgramsSidebar } = useQuery<any[]>({
-    queryKey: ["/api/athletic/programs", orgId],
-    queryFn: async () => {
-      const res = await fetch(`/api/athletic/programs?orgId=${orgId}`);
-      return res.json();
+  const contextualAlerts = useContextualAlerts(role);
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Build section definitions
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // STAFF: limited Clients & Scheduling only
+  const staffSections: NavSection[] = [
+    {
+      id: "clients",
+      label: "Clients & Scheduling",
+      icon: Users,
+      items: [
+        { title: "Coaches", url: "/coaches", icon: UserCog, testId: "nav-coaches" },
+        { title: "Schedule", url: "/scheduling", icon: CalendarDays, testId: "nav-scheduling" },
+        { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
+        { title: "Team Training", url: "/team-training", icon: Dumbbell, testId: "nav-team-training" },
+        { title: "My Bookings", url: "/bookings", icon: Calendar, testId: "nav-my-bookings" },
+      ],
     },
-    enabled: !!orgId && athleticEnabled,
-  });
+  ];
 
-  const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active) || [];
-
-  // ── Build sections ─────────────────────────────────────────────────────────
-
-  const isCoachOrAdmin = role === "COACH" || role === "ADMIN";
-  const isAdmin = role === "ADMIN";
-
+  // COACH / ADMIN sections
   const coachAdminSections: NavSection[] = [
     {
       id: "home",
@@ -318,7 +730,10 @@ export function AppSidebar() {
           : []),
         ...(athleticEnabled
           ? [{
-              title: activeAthleticPrograms.length === 1 ? activeAthleticPrograms[0]?.name || "Athletic" : "Athletic",
+              title:
+                activeAthleticPrograms.length === 1
+                  ? activeAthleticPrograms[0]?.name || "Athletic"
+                  : "Athletic",
               url: "/coach/athletic",
               icon: Trophy,
               testId: "nav-athletic",
@@ -350,18 +765,50 @@ export function AppSidebar() {
             label: "AI Operations",
             icon: Cpu,
             aiSection: true,
+            lowPriority: true,
             items: [
-              { title: "Business Brain", url: "/admin/business-brain", icon: Brain, testId: "nav-business-brain" },
-              { title: "Agent Ops Monitor", url: "/admin/agent-ops", icon: ShieldAlert, testId: "nav-agent-ops" },
-              { title: "Workflows", url: "/admin/workflows", icon: GitBranch, testId: "nav-workflows" },
-              { title: "Trigger Audit", url: "/admin/trigger-audit", icon: Activity, testId: "nav-trigger-audit" },
-              { title: "Agent Tools", url: "/admin/agent-tools", icon: Plug, testId: "nav-agent-tools" },
+              {
+                title: "Business Brain",
+                simplifiedTitle: "AI Overview",
+                url: "/admin/business-brain",
+                icon: Brain,
+                testId: "nav-business-brain",
+              },
+              {
+                title: "Agent Ops Monitor",
+                simplifiedTitle: "System Health",
+                url: "/admin/agent-ops",
+                icon: ShieldAlert,
+                testId: "nav-agent-ops",
+              },
+              {
+                title: "Workflows",
+                simplifiedTitle: "Automations",
+                url: "/admin/workflows",
+                icon: GitBranch,
+                testId: "nav-workflows",
+              },
+              {
+                title: "Trigger Audit",
+                simplifiedTitle: "Activity Log",
+                url: "/admin/trigger-audit",
+                icon: Activity,
+                testId: "nav-trigger-audit",
+              },
+              {
+                title: "Agent Tools",
+                simplifiedTitle: "AI Tools",
+                url: "/admin/agent-tools",
+                icon: Plug,
+                testId: "nav-agent-tools",
+              },
             ],
           } as NavSection,
           {
             id: "organization",
             label: "Organization",
             icon: Building2,
+            lowPriority: true,
             items: [
               { title: "Branding", url: "/admin/branding", icon: Paintbrush, testId: "nav-branding" },
               { title: "Media Library", url: "/admin/media", icon: ImagePlay, testId: "nav-media" },
@@ -374,6 +821,7 @@ export function AppSidebar() {
       : []),
   ];
 
+  // CLIENT flat list
   const clientItems: NavItem[] = [
     { title: "Coaches", url: "/coaches", icon: Users, testId: "nav-coaches" },
     { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
@@ -384,23 +832,50 @@ export function AppSidebar() {
     { title: "Settings", url: "/settings", icon: Settings, testId: "nav-settings" },
   ];
 
-  // ── Auto-expand section when active route belongs to it ────────────────────
+  // All nav items across all roles (for recents lookup)
+  const allNavItems: NavItem[] = [
+    ...coachAdminSections.flatMap((s) => s.items),
+    ...staffSections.flatMap((s) => s.items),
+    ...clientItems,
+  ];
 
+  // Active sections to use
+  const activeSections = isCoachOrAdmin ? coachAdminSections : isStaff ? staffSections : [];
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Effects
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // Track recent pages
   useEffect(() => {
-    if (!isCoachOrAdmin) return;
-    const activeSection = coachAdminSections.find((s) => sectionIsActive(location, s.items));
+    const matched = allNavItems.find((i) => itemIsActive(location, i.url));
+    if (!matched) return;
+    const ref: NavRef = { url: matched.url, title: matched.title };
+    setRecents((prev) => {
+      const next = [ref, ...prev.filter((r) => r.url !== ref.url)].slice(0, MAX_RECENTS);
+      lsSet(RECENTS_KEY, next);
+      return next;
+    });
+  }, [location]);
+
+  // Auto-expand parent section for active route
+  useEffect(() => {
+    if (activeSections.length === 0) return;
+    const activeSection = activeSections.find((s) => sectionIsActive(location, s.items));
     if (activeSection && !openSections.has(activeSection.id)) {
       setOpenSections((prev) => {
         const next = new Set(prev);
         next.add(activeSection.id);
-        saveOpenSections(next);
+        lsSet(OPEN_KEY, [...next]);
         return next;
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location, role]);
 
-  // ── Toggle section ─────────────────────────────────────────────────────────
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Handlers
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   const toggleSection = useCallback(
     (id: string) => {
@@ -410,167 +885,230 @@ export function AppSidebar() {
           next = prev.has(id) ? new Set<string>() : new Set([id]);
         } else {
           next = new Set(prev);
-          if (next.has(id)) {
-            next.delete(id);
-          } else {
-            next.add(id);
-          }
+          next.has(id) ? next.delete(id) : next.add(id);
         }
-        saveOpenSections(next);
+        lsSet(OPEN_KEY, [...next]);
         return next;
       });
     },
     [isMobile]
   );
 
+  const setWorkspaceMode = useCallback((m: WorkspaceMode) => {
+    lsSet(MODE_KEY, m);
+    setWorkspaceModeState(m);
+  }, []);
+
+  const togglePin = useCallback((ref: NavRef) => {
+    setPinned((prev) => {
+      const exists = prev.find((p) => p.url === ref.url);
+      const next = exists ? prev.filter((p) => p.url !== ref.url) : [...prev, ref];
+      lsSet(PINNED_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const isPinned = useCallback(
+    (url: string) => !!pinned.find((p) => p.url === url),
+    [pinned]
+  );
+
   const handleNavClick = () => {
     if (isMobile) setOpenMobile(false);
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Render
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  const ctxValue: SidebarCtx = { pinned, isPinned, togglePin, workspaceMode };
 
   return (
-    <>
-      <Sidebar>
-        {/* Logo / Org name */}
-        <div className="flex items-center gap-2 px-3 py-3 border-b border-border/50">
-          {organization?.logoUrl ? (
-            <img
-              src={organization.logoUrl}
-              alt={organization.name || "Logo"}
-              className="h-7 rounded-md object-contain flex-shrink-0"
-              data-testid="img-sidebar-logo"
-            />
-          ) : orgLoading ? (
-            <div className="h-7 w-7 rounded-md bg-muted animate-pulse flex-shrink-0" />
-          ) : (
-            <div
-              className="h-7 w-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs flex-shrink-0"
-              data-testid="img-sidebar-logo"
-            >
-              {(organization?.name || "").charAt(0).toUpperCase()}
-            </div>
-          )}
-          <span className="font-semibold text-sm tracking-tight truncate">
-            {organization?.name || (orgLoading ? "Loading..." : "My Organization")}
-          </span>
-        </div>
+    <SidebarContext.Provider value={ctxValue}>
+      <>
+        <Sidebar>
+          {/* ── Org header ────────────────────────────────────────────────────── */}
+          <div className="flex items-center gap-2 px-3 py-3 border-b border-border/50">
+            {organization?.logoUrl ? (
+              <img
+                src={organization.logoUrl}
+                alt={organization.name || "Logo"}
+                className="h-7 rounded-md object-contain flex-shrink-0"
+                data-testid="img-sidebar-logo"
+              />
+            ) : orgLoading ? (
+              <div className="h-7 w-7 rounded-md bg-muted animate-pulse flex-shrink-0" />
+            ) : (
+              <div
+                className="h-7 w-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs flex-shrink-0"
+                data-testid="img-sidebar-logo"
+              >
+                {(organization?.name || "").charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="font-semibold text-sm tracking-tight truncate">
+              {organization?.name || (orgLoading ? "Loading..." : "My Organization")}
+            </span>
+          </div>
 
-        <SidebarContent className="px-2 py-2">
-          {isCoachOrAdmin ? (
-            <div className="space-y-0.5">
-              {coachAdminSections.map((section) => (
-                <AccordionSection
-                  key={section.id}
-                  section={section}
-                  isOpen={openSections.has(section.id)}
-                  onToggle={toggleSection}
+          <SidebarContent className="px-2 py-2 flex flex-col">
+            {/* ── Contextual alerts (admin) ─────────────────────────────────── */}
+            {isAdmin && contextualAlerts.length > 0 && (
+              <ContextualAlerts alerts={contextualAlerts} onNavClick={handleNavClick} />
+            )}
+
+            {/* ── COACH / ADMIN sections ───────────────────────────────────── */}
+            {isCoachOrAdmin && (
+              <>
+                {/* Quick Access (Recent + Pinned) */}
+                <QuickAccess
+                  recents={recents}
+                  allItems={allNavItems}
                   location={location}
                   onNavClick={handleNavClick}
                 />
-              ))}
 
-              {/* Danger Zone – always visible, no accordion needed */}
-              {isAdmin && (
-                <div className="mt-2 pt-2 border-t border-border/50">
-                  <button
-                    onClick={() => setDeleteDialogOpen(true)}
-                    data-testid="button-delete-organization"
-                    className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4 flex-shrink-0" />
-                    <span>Delete Organization</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* CLIENT role – flat list */
-            <div className="space-y-0.5">
-              <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Browse
-              </p>
-              {clientItems.map((item) => {
-                const active = itemIsActive(location, item.url);
-                return (
-                  <Link
-                    key={item.url}
-                    href={item.url}
-                    onClick={handleNavClick}
-                    data-testid={item.testId}
-                    className={cn(
-                      "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors",
-                      active
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "text-foreground/70 hover:text-foreground hover:bg-muted/60"
-                    )}
-                  >
-                    <item.icon
-                      className={cn(
-                        "h-4 w-4 flex-shrink-0",
-                        active ? "text-primary" : "text-muted-foreground"
-                      )}
+                <div className="space-y-0.5 flex-1">
+                  {coachAdminSections.map((section) => (
+                    <AccordionSection
+                      key={section.id}
+                      section={section}
+                      isOpen={openSections.has(section.id)}
+                      onToggle={toggleSection}
+                      location={location}
+                      onNavClick={handleNavClick}
                     />
-                    <span>{item.title}</span>
-                    {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />}
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </SidebarContent>
+                  ))}
 
-        <SidebarFooter className="p-3 border-t border-border/50">
-          {user && (
-            <div className="flex items-center gap-2">
-              <Avatar className="h-7 w-7 flex-shrink-0">
-                <AvatarImage src={user.profileImageUrl || undefined} />
-                <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                  {(user.firstName?.[0] || "U").toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">
-                  {user.firstName} {user.lastName}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  {/* Danger Zone */}
+                  {isAdmin && (
+                    <div className="mt-2 pt-2 border-t border-border/50">
+                      <button
+                        onClick={() => setDeleteDialogOpen(true)}
+                        data-testid="button-delete-organization"
+                        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4 flex-shrink-0" />
+                        <span>Delete Organization</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Workspace mode toggle */}
+                <div className="mt-3 pt-2 border-t border-border/40">
+                  <WorkspaceModeToggle mode={workspaceMode} onChange={setWorkspaceMode} />
+                </div>
+              </>
+            )}
+
+            {/* ── STAFF sections ───────────────────────────────────────────── */}
+            {isStaff && (
+              <div className="space-y-0.5">
+                {staffSections.map((section) => (
+                  <AccordionSection
+                    key={section.id}
+                    section={section}
+                    isOpen={openSections.has(section.id)}
+                    onToggle={toggleSection}
+                    location={location}
+                    onNavClick={handleNavClick}
+                  />
+                ))}
               </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 flex-shrink-0"
-                data-testid="button-logout"
-                onClick={() => logout()}
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          )}
-        </SidebarFooter>
-      </Sidebar>
+            )}
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle data-testid="text-delete-dialog-title">Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription data-testid="text-delete-dialog-description">
-              This will permanently delete your organization, all services, coach profiles, and user data associated
-              with it. If you have an active subscription, it will also be canceled. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-delete-cancel">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteOrgMutation.mutate()}
-              disabled={deleteOrgMutation.isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="button-delete-confirm"
-            >
-              {deleteOrgMutation.isPending ? "Deleting..." : "Delete Organization"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+            {/* ── CLIENT flat list ─────────────────────────────────────────── */}
+            {role === "CLIENT" && (
+              <div className="space-y-0.5">
+                <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Browse
+                </p>
+                {clientItems.map((item) => {
+                  const active = itemIsActive(location, item.url);
+                  return (
+                    <Link
+                      key={item.url}
+                      href={item.url}
+                      onClick={handleNavClick}
+                      data-testid={item.testId}
+                      className={cn(
+                        "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors",
+                        active
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-foreground/70 hover:text-foreground hover:bg-muted/60"
+                      )}
+                    >
+                      <item.icon
+                        className={cn(
+                          "h-4 w-4 flex-shrink-0",
+                          active ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
+                      <span>{item.title}</span>
+                      {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </SidebarContent>
+
+          {/* ── Footer ──────────────────────────────────────────────────────── */}
+          <SidebarFooter className="p-3 border-t border-border/50">
+            {user && (
+              <div className="flex items-center gap-2">
+                <Avatar className="h-7 w-7 flex-shrink-0">
+                  <AvatarImage src={user.profileImageUrl || undefined} />
+                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                    {(user.firstName?.[0] || "U").toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">
+                    {user.firstName} {user.lastName}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 flex-shrink-0"
+                  data-testid="button-logout"
+                  onClick={() => logout()}
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </SidebarFooter>
+        </Sidebar>
+
+        {/* ── Delete org dialog ──────────────────────────────────────────────── */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle data-testid="text-delete-dialog-title">Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription data-testid="text-delete-dialog-description">
+                This will permanently delete your organization, all services, coach profiles, and user data
+                associated with it. If you have an active subscription, it will also be canceled. This action
+                cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-delete-cancel">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => deleteOrgMutation.mutate()}
+                disabled={deleteOrgMutation.isPending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-delete-confirm"
+              >
+                {deleteOrgMutation.isPending ? "Deleting..." : "Delete Organization"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    </SidebarContext.Provider>
   );
 }
