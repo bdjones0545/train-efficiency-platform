@@ -375,7 +375,7 @@ export default function WalletPage() {
         <div className="p-6">
           <div className="flex items-center gap-3 mb-2">
             <Wallet className="h-6 w-6 text-primary" />
-            <h2 className="text-lg font-semibold">Account Balance</h2>
+            <h2 className="text-lg font-semibold">Dollar Balance</h2>
           </div>
           <p
             className={`text-4xl font-bold ${
@@ -386,13 +386,16 @@ export default function WalletPage() {
             data-testid="text-wallet-balance"
           >
             {balance < 0
-              ? `-$${(Math.abs(balance) / 100).toFixed(2)}`
+              ? `Owes $${(Math.abs(balance) / 100).toFixed(2)}`
               : `$${(balance / 100).toFixed(2)}`}
           </p>
           <p className="text-sm text-muted-foreground mt-1">
             {balance < 0
-              ? "You have an outstanding balance. Please add funds to cover it."
-              : "Available for session payments"}
+              ? "Outstanding balance — add funds to cover your owed amount."
+              : "Available dollar credit for pay-per-session bookings"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-2 border-t border-border/40 pt-2" data-testid="text-balance-note">
+            Session credits from subscriptions are shown separately below under <span className="font-medium">My Subscriptions</span>.
           </p>
         </div>
       </WalletGlowCard>

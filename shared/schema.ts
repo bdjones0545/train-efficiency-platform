@@ -270,6 +270,35 @@ export const redemptions = pgTable("redemptions", {
   amountCents: integer("amount_cents").notNull().default(0),
 });
 
+// ── Credit Ledger: auditable trail for every session-credit movement ──────────
+export const creditEventTypeEnum = pgEnum("credit_event_type", [
+  "subscription_renewal",
+  "redemption_debit",
+  "cancellation_reversal",
+  "manual_adjustment",
+  "refund",
+  "admin_override",
+]);
+
+export const creditLedgerEvents = pgTable("credit_ledger_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => users.id),
+  bookingId: varchar("booking_id").references(() => bookings.id),
+  subscriptionId: varchar("subscription_id").references(() => userSubscriptions.id),
+  organizationId: varchar("organization_id"),
+  eventType: creditEventTypeEnum("event_type").notNull(),
+  deltaSessions: integer("delta_sessions").notNull().default(0),
+  deltaCents: integer("delta_cents").notNull().default(0),
+  sessionsAfter: integer("sessions_after"),
+  reason: text("reason").default(""),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCreditLedgerEventSchema = createInsertSchema(creditLedgerEvents).omit({ id: true, createdAt: true });
+export type CreditLedgerEvent = typeof creditLedgerEvents.$inferSelect;
+export type InsertCreditLedgerEvent = z.infer<typeof insertCreditLedgerEventSchema>;
+
 export const athleticPrograms = pgTable("athletic_programs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),

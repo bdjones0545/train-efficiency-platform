@@ -48,6 +48,7 @@ import {
   Dumbbell,
   Bot,
   CalendarIcon,
+  Lock,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Booking, Service, CoachProfile, User } from "@shared/schema";
@@ -80,12 +81,13 @@ const SESSION_TYPE_LABELS: Record<string, string> = {
 
 const BOOKING_STATUSES = ["CONFIRMED", "PENDING", "COMPLETED", "CANCELLED", "NO_SHOW", "RESCHEDULED"];
 
-function BookingCard({ booking, onCancel, onReschedule, onComplete, onNoShow }: {
+function BookingCard({ booking, onCancel, onReschedule, onComplete, onNoShow, isRedeemed }: {
   booking: BookingWithDetails;
   onCancel: (b: BookingWithDetails) => void;
   onReschedule: (b: BookingWithDetails) => void;
   onComplete: (b: BookingWithDetails) => void;
   onNoShow: (b: BookingWithDetails) => void;
+  isRedeemed?: boolean;
 }) {
   const start = new Date(booking.startAt);
   const end = new Date(booking.endAt);
@@ -111,6 +113,15 @@ function BookingCard({ booking, onCancel, onReschedule, onComplete, onNoShow }: 
               {booking.service?.sessionType && (
                 <Badge variant="outline" className="text-xs">
                   {SESSION_TYPE_LABELS[booking.service.sessionType] || booking.service.sessionType}
+                </Badge>
+              )}
+              {isRedeemed && (
+                <Badge
+                  className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                  data-testid={`badge-redeemed-${booking.id}`}
+                >
+                  <Lock className="h-2.5 w-2.5 mr-1" />
+                  Redeemed
                 </Badge>
               )}
             </div>
@@ -258,6 +269,11 @@ export default function SchedulingPage() {
   const { data: bookings = [], isLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/scheduling/bookings"],
   });
+
+  const { data: redemptions = [] } = useQuery<{ id: string; bookingId: string; redeemedAt: string | null; amountCents: number }[]>({
+    queryKey: ["/api/coach/redemptions"],
+  });
+  const redeemedBookingIds = new Set(redemptions.map(r => r.bookingId));
 
   const { data: coaches = [] } = useQuery<CoachWithUser[]>({
     queryKey: ["/api/coaches"],
@@ -538,6 +554,7 @@ export default function SchedulingPage() {
                   <BookingCard
                     key={b.id}
                     booking={b}
+                    isRedeemed={redeemedBookingIds.has(b.id)}
                     onCancel={setCancelBooking}
                     onReschedule={b2 => {
                       setRescheduleBooking(b2);
@@ -566,6 +583,7 @@ export default function SchedulingPage() {
                   <BookingCard
                     key={b.id}
                     booking={b}
+                    isRedeemed={redeemedBookingIds.has(b.id)}
                     onCancel={setCancelBooking}
                     onReschedule={b2 => {
                       setRescheduleBooking(b2);

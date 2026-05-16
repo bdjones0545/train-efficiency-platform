@@ -1,0 +1,173 @@
+Task 5 — Credit + Redemption Accounting Integrity
+
+Audit and harden TrainEfficiency’s session credit, redemption, payment, and ledger logic.
+
+Goal:
+Make it impossible for client session balances, redemptions, and payments to become mathematically inconsistent.
+
+Context:
+Scheduling now shows client credits and redeemed sessions are locked. The next step is to make credit accounting the single source of truth across the platform.
+
+Primary requirements:
+
+1. Audit all credit/accounting concepts
+Search the codebase for:
+- redemptions
+- packages
+- subscriptions
+- session credits
+- client balances
+- payments
+- invoices
+- ledger
+- bookings
+- completed sessions
+- cancelled sessions
+- no-shows
+- manual adjustments
+
+Document how each currently affects client balance.
+
+2. Define one source of truth
+Establish a clear accounting model:
+
+Recommended:
+- Payment/purchase creates credit entitlement.
+- Redemption consumes credit.
+- Cancellation may restore credit depending on status and business rules.
+- Completed redeemed session becomes locked historical record.
+- Manual adjustment creates an auditable ledger entry.
+- Displayed balance is calculated from ledger/credits, not manually patched fields.
+
+Do not do a risky database rewrite unless necessary.
+
+3. Prevent negative balance bugs
+Add guards so the app cannot accidentally show impossible math like:
+- client paid $200
+- 2 sessions at $70
+- balance becomes -$10
+
+Balance should distinguish:
+- dollar balance
+- session credits
+- unpaid amount
+- overpayment/credit
+- package credits remaining
+
+Do not mix dollar balances and session counts into one number.
+
+4. Redemption idempotency
+Verify POST /api/redemptions is truly idempotent.
+A booking/session should not be redeemable twice.
+A repeated click, retry, or agent action must return the existing redemption instead of creating a duplicate.
+
+5. Redemption validation
+Before redeeming:
+- booking exists
+- booking is not cancelled
+- booking is not already redeemed
+- client has eligible credit unless manual/unpaid redemption is explicitly allowed
+- selected service matches eligible package/subscription/service rules
+- credit quantity is sufficient
+- redemption creates an immutable audit trail
+
+6. Cancellation and restoration rules
+Define and enforce:
+- cancelled before redemption = no credit consumed
+- cancelled after redemption but before completion = either restore credit or require admin override, depending on current business logic
+- completed + redeemed = locked forever
+- no-show behavior must be explicit
+- deleting redeemed sessions remains blocked
+
+If restored, create a reversal ledger/redemption event rather than deleting history.
+
+7. Ledger/audit trail
+Every credit movement should have an auditable event:
+- purchase/payment
+- redemption
+- cancellation reversal
+- refund
+- manual adjustment
+- package expiration
+- admin override
+
+Each event should include:
+- clientId
+- bookingId/sessionId if relevant
+- serviceId/packageId if relevant
+- deltaCredits
+- deltaDollars if relevant
+- reason
+- createdBy
+- timestamp
+- source action
+
+8. UI balance clarity
+Audit every place client balance or credits are shown:
+- client profile
+- session edit dialog
+- scheduling form credit preview
+- users table
+- dashboard cards
+- package/subscription views
+- payment/ledger views
+- agent previews
+
+Separate labels clearly:
+- Session Credits
+- Dollar Balance
+- Unpaid Sessions
+- Redeemed Sessions
+- Available Credits
+
+Avoid showing one ambiguous “Balance” if it mixes meanings.
+
+9. Session edit dialog
+Ensure redeemed sessions show:
+- redeemed badge
+- credit source/package if available
+- redemption timestamp
+- locked state
+- no editable accounting fields
+
+10. Agent alignment
+Update scheduling/payment agents:
+- Agents must not redeem twice.
+- Agents must not modify redeemed sessions.
+- Agent previews should show credit impact before confirmation.
+- Agent confirmations should include whether credit will be consumed, restored, or left unchanged.
+
+11. Backfill/integrity check
+Create a safe diagnostic script or admin endpoint that reports accounting inconsistencies without mutating data:
+- duplicate redemptions
+- negative session credits
+- dollar/session balance mismatch
+- redeemed cancelled sessions without reversal
+- completed sessions without redemption if they should have one
+- orphaned redemptions
+- payments with no ledger entry
+- packages with impossible remaining count
+
+Do not auto-fix unless explicitly triggered by an admin-only action.
+
+12. Tests
+Add regression tests for:
+- payment creates correct credits
+- redeem consumes exactly one eligible credit
+- double redeem is idempotent
+- redeem without credits is blocked unless manual override is allowed
+- cancelling unredeemed session does not affect credits
+- cancelling redeemed uncompleted session creates reversal or blocks according to rule
+- completed redeemed session cannot be edited/deleted/cancelled
+- dollar balance and session credits are displayed separately
+- F Langford-style case: $200 payment minus two $70 sessions should not show -$10 as session balance
+
+Deliverables:
+- Files changed
+- Current accounting model summary
+- Source of truth decision
+- Any new guards added
+- Any new diagnostic endpoint/script
+- UI labels changed
+- Tests added
+- Confirmation that redeemed lifecycle locks from Task 2 still pass

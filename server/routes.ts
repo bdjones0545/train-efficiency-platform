@@ -16,7 +16,11 @@ import { sendSms, normalizePhone, smsBookingConfirmation, smsCancellation, smsRe
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
-import { organizationSubscriptionPlans, availabilityBlocks as availabilityBlocksSchema, bookings as bookingsSchema } from "@shared/schema";
+import {
+  organizationSubscriptionPlans,
+  availabilityBlocks as availabilityBlocksSchema,
+  bookings as bookingsSchema,
+} from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql, or, lt, gt, ne } from "drizzle-orm";
 import { users } from "@shared/models/auth";
@@ -2770,6 +2774,23 @@ export async function registerRoutes(
       const existing = await storage.getRedemptionByBookingId(bookingId);
       if (existing) return res.status(409).json({ message: "Already redeemed" });
 
+      // ── Authorization: coach can only redeem their own sessions; admins can redeem any ──
+      const requesterRole = await getUserRole(userId);
+      const isRequesterAdmin = requesterRole === "ADMIN";
+      if (!isRequesterAdmin && booking.coachId !== coachId) {
+        return res.status(403).json({ message: "You can only redeem sessions assigned to you" });
+      }
+
+      // ── Org isolation: booking's coach must belong to the same org as requester ──
+      const [bookingCoachProfile, requesterUserProfile] = await Promise.all([
+        storage.getCoachProfile(booking.coachId),
+        storage.getUserProfile(userId),
+      ]);
+      const requesterOrgId = requesterUserProfile?.organizationId;
+      if (requesterOrgId && bookingCoachProfile?.organizationId && bookingCoachProfile.organizationId !== requesterOrgId) {
+        return res.status(403).json({ message: "Booking does not belong to your organization" });
+      }
+
       const service = await storage.getService(booking.serviceId);
       let perPersonCents = service?.priceCents || 0;
 
@@ -2901,9 +2922,23 @@ export async function registerRoutes(
           const clientSubs = await storage.getUserSubscriptions(booking.clientId);
           const activeSub = clientSubs.find(s => s.planId === booking.subscriptionPlanId && (s.status === "active" || s.status === "past_due"));
           if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
+            const newSessionCount = Math.max(0, activeSub.sessionsRemaining - 1);
             await storage.updateUserSubscription(activeSub.id, {
-              sessionsRemaining: Math.max(0, activeSub.sessionsRemaining - 1),
+              sessionsRemaining: newSessionCount,
             });
+            // ── Credit ledger: record the session debit for auditability ──
+            storage.createCreditLedgerEvent({
+              clientId: booking.clientId,
+              bookingId,
+              subscriptionId: activeSub.id,
+              organizationId: requesterOrgId || bookingCoachProfile?.organizationId || null,
+              eventType: "redemption_debit",
+              deltaSessions: -1,
+              deltaCents: 0,
+              sessionsAfter: newSessionCount,
+              reason: `Session redeemed: booking ${bookingId}`,
+              createdBy: userId,
+            }).catch(e => console.error("[redemption] Credit ledger write failed (non-fatal):", e));
           }
         } catch (e) {
           console.error("Error decrementing session count on redemption:", e);
@@ -3827,6 +3862,134 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating redemption amount:", error);
       res.status(500).json({ message: "Failed to update redemption" });
+    }
+  });
+
+  // ── Accounting Integrity Diagnostic ────────────────────────────────────────
+  // Read-only endpoint that surfaces inconsistencies across the credit/payment model.
+  // No mutations — safe to run at any time.
+  app.get("/api/admin/accounting-integrity", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
+
+      // 1. Duplicate redemptions (same bookingId redeemed more than once)
+      const dupRedemptions = await db.execute(sql`
+        SELECT booking_id, COUNT(*)::int AS count
+        FROM redemptions
+        GROUP BY booking_id
+        HAVING COUNT(*) > 1
+      `);
+
+      // 2. Negative dollar balances
+      const negativeBalanceQuery = await db.execute(sql`
+        SELECT u.id, u.first_name, u.last_name, u.email, u.balance_cents
+        FROM users u
+        ${orgId ? sql`
+          JOIN user_profiles up ON up.user_id = u.id
+          WHERE up.organization_id = ${orgId} AND u.balance_cents < 0
+        ` : sql`WHERE u.balance_cents < 0`}
+        ORDER BY u.balance_cents ASC
+        LIMIT 100
+      `);
+
+      // 3. Redeemed + cancelled sessions (redemption on a booking that is now CANCELLED)
+      const redeemedCancelledQuery = await db.execute(sql`
+        SELECT r.id AS redemption_id, r.booking_id, b.status AS booking_status, r.redeemed_at
+        FROM redemptions r
+        JOIN bookings b ON b.id = r.booking_id
+        WHERE b.status = 'CANCELLED'
+        LIMIT 100
+      `);
+
+      // 4. Completed sessions with no redemption (may be intentional for some service types)
+      const completedNoRedemptionQuery = await db.execute(sql`
+        SELECT b.id, b.start_at, b.client_id, b.coach_id, b.service_id
+        FROM bookings b
+        LEFT JOIN redemptions r ON r.booking_id = b.id
+        WHERE b.status = 'COMPLETED'
+          AND r.id IS NULL
+          ${orgId ? sql`AND b.coach_id IN (
+            SELECT id FROM coach_profiles WHERE organization_id = ${orgId}
+          )` : sql``}
+        ORDER BY b.start_at DESC
+        LIMIT 50
+      `);
+
+      // 5. Negative session credits (blocked by Math.max at redemption, but verify)
+      const negativeCreditsQuery = await db.execute(sql`
+        SELECT us.id, us.user_id, us.plan_id, us.sessions_remaining, us.status
+        FROM user_subscriptions us
+        WHERE us.sessions_remaining < 0
+        LIMIT 100
+      `);
+
+      // 6. Orphaned redemptions (redemption references a non-existent booking)
+      const orphanedRedemptionsQuery = await db.execute(sql`
+        SELECT r.id, r.booking_id, r.redeemed_at
+        FROM redemptions r
+        LEFT JOIN bookings b ON b.id = r.booking_id
+        WHERE b.id IS NULL
+        LIMIT 50
+      `);
+
+      const report = {
+        generatedAt: new Date().toISOString(),
+        organizationId: orgId,
+        checks: {
+          duplicateRedemptions: {
+            label: "Duplicate redemptions (same booking_id redeemed > 1x)",
+            count: dupRedemptions.rows.length,
+            severity: dupRedemptions.rows.length > 0 ? "critical" : "ok",
+            rows: dupRedemptions.rows,
+          },
+          negativeBalances: {
+            label: "Users with negative dollar balance (owe money)",
+            count: negativeBalanceQuery.rows.length,
+            severity: negativeBalanceQuery.rows.length > 0 ? "warning" : "ok",
+            rows: negativeBalanceQuery.rows,
+          },
+          redeemedCancelledSessions: {
+            label: "Sessions that are both redeemed and cancelled",
+            count: redeemedCancelledQuery.rows.length,
+            severity: redeemedCancelledQuery.rows.length > 0 ? "critical" : "ok",
+            rows: redeemedCancelledQuery.rows,
+          },
+          completedWithoutRedemption: {
+            label: "Completed sessions with no redemption record",
+            count: completedNoRedemptionQuery.rows.length,
+            severity: completedNoRedemptionQuery.rows.length > 0 ? "info" : "ok",
+            rows: completedNoRedemptionQuery.rows,
+          },
+          negativeSessionCredits: {
+            label: "Subscriptions with negative sessions_remaining",
+            count: negativeCreditsQuery.rows.length,
+            severity: negativeCreditsQuery.rows.length > 0 ? "critical" : "ok",
+            rows: negativeCreditsQuery.rows,
+          },
+          orphanedRedemptions: {
+            label: "Redemptions referencing non-existent bookings",
+            count: orphanedRedemptionsQuery.rows.length,
+            severity: orphanedRedemptionsQuery.rows.length > 0 ? "critical" : "ok",
+            rows: orphanedRedemptionsQuery.rows,
+          },
+        },
+        summary: {
+          totalIssues:
+            dupRedemptions.rows.length +
+            redeemedCancelledQuery.rows.length +
+            negativeCreditsQuery.rows.length +
+            orphanedRedemptionsQuery.rows.length,
+          warnings: negativeBalanceQuery.rows.length,
+          infos: completedNoRedemptionQuery.rows.length,
+        },
+      };
+
+      res.json(report);
+    } catch (error) {
+      console.error("Error running accounting integrity check:", error);
+      res.status(500).json({ message: "Failed to run accounting integrity check" });
     }
   });
 

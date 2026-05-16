@@ -74,6 +74,9 @@ import {
   type InsertOrganizationMedia,
   userOrgPreferences,
   type UserOrgPreferences,
+  creditLedgerEvents,
+  type CreditLedgerEvent,
+  type InsertCreditLedgerEvent,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -175,6 +178,8 @@ export interface IStorage {
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string): Promise<WalletTransaction>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
+  createCreditLedgerEvent(data: InsertCreditLedgerEvent): Promise<CreditLedgerEvent>;
+  getCreditLedgerEvents(clientId: string, limit?: number): Promise<CreditLedgerEvent[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1123,6 +1128,20 @@ export class DatabaseStorage implements IStorage {
 
   async getWalletTransactions(userId: string): Promise<WalletTransaction[]> {
     return db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt));
+  }
+
+  async createCreditLedgerEvent(data: InsertCreditLedgerEvent): Promise<CreditLedgerEvent> {
+    const [event] = await db.insert(creditLedgerEvents).values(data).returning();
+    return event;
+  }
+
+  async getCreditLedgerEvents(clientId: string, limit = 50): Promise<CreditLedgerEvent[]> {
+    return db
+      .select()
+      .from(creditLedgerEvents)
+      .where(eq(creditLedgerEvents.clientId, clientId))
+      .orderBy(desc(creditLedgerEvents.createdAt))
+      .limit(limit);
   }
 
   async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {

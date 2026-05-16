@@ -492,7 +492,7 @@ export default function UserManagementPage() {
             {walletDollars !== null && (
               <div className="flex items-center gap-2 text-sm" data-testid="text-user-wallet">
                 <CreditCard className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span>Wallet: <span className={`font-medium ${selectedUser.balanceCents! > 0 ? "text-green-600 dark:text-green-400" : ""}`}>${walletDollars}</span></span>
+                <span>Dollar Balance: <span className={`font-medium ${selectedUser.balanceCents! < 0 ? "text-red-600 dark:text-red-400" : selectedUser.balanceCents! > 0 ? "text-green-600 dark:text-green-400" : ""}`}>{selectedUser.balanceCents! < 0 ? `Owes $${Math.abs(selectedUser.balanceCents!/ 100).toFixed(2)}` : `$${walletDollars}`}</span></span>
               </div>
             )}
           </div>
