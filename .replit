@@ -46,3 +46,6 @@ integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.
 
 [userenv.shared]
 ADMIN_REPAIR_KEY = "a02e9df687ecaec69a5de09bd63309ffe50093148009b6a75eeb9e32d3561656"
+
+[userenv.production]
+PUBLIC_APP_URL = "https://trainefficiency.com"

@@ -322,7 +322,7 @@ export async function registerRoutes(
 
       const rawToken = crypto.randomBytes(32).toString("hex");
       const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
       await storage.createPasswordResetToken({
         email: normalizedEmail,
@@ -332,10 +332,18 @@ export async function registerRoutes(
         expiresAt,
       });
 
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+      const baseUrl =
+        process.env.PUBLIC_APP_URL ||
+        process.env.BASE_URL ||
+        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null) ||
+        `${req.protocol}://${req.get("host")}`;
       const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
+
+      try {
+        console.log("[password-reset] Generated reset link domain:", new URL(resetUrl).origin);
+      } catch {
+        console.log("[password-reset] Generated reset link baseUrl:", baseUrl);
+      }
 
       sendPasswordResetEmail(normalizedEmail, resetUrl).catch((err) => {
         console.error("Password reset email send failure:", err);
