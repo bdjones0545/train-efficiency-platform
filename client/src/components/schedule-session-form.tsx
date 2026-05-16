@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar as CalendarWidget } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Search, XCircle, MapPin } from "lucide-react";
+import {
+  CalendarIcon, Search, XCircle, MapPin,
+  CheckCircle2, AlertCircle, AlertTriangle, Clock,
+} from "lucide-react";
 import { format } from "date-fns";
 import type { Service } from "@shared/schema";
 import type { CoachWithUser } from "@/lib/types";
@@ -33,6 +36,32 @@ export type ScheduleFormData = {
   notes: string;
 };
 
+type AvailabilityStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "coach_conflict"
+  | "client_conflict"
+  | "outside_availability"
+  | "locked_session"
+  | "unknown";
+
+type SuggestionSlot = {
+  startTime: string;
+  endTime: string;
+  coachId: string;
+  coachName: string;
+  reason: string;
+};
+
+type CreditsInfo = {
+  hasActiveSubscription: boolean;
+  sessionsRemaining: number | null;
+  willConsumeCredit: boolean;
+  insufficient: boolean;
+  planName?: string;
+};
+
 type Props = {
   services: Service[];
   coaches: CoachWithUser[];
@@ -46,10 +75,12 @@ type Props = {
   defaultLocation?: string;
   defaultNotes?: string;
   defaultStartTime?: string;
+  excludeBookingId?: string;
   submitLabel?: string;
   cancelLabel?: string;
   isSubmitting?: boolean;
   showCoachSelector?: boolean;
+  allowConflictOverride?: boolean;
   onSubmit: (data: ScheduleFormData) => void;
   onCancel?: () => void;
   onValidationError?: (message: string) => void;
@@ -72,6 +103,16 @@ function deriveEndTime(startTime: string, durationMin: number): string {
   return format(d, "h:mm a");
 }
 
+const STATUS_STYLES: Record<string, string> = {
+  checking: "bg-muted/40 text-muted-foreground border border-border",
+  available: "bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400",
+  coach_conflict: "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400",
+  client_conflict: "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400",
+  locked_session: "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400",
+  outside_availability: "bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400",
+  unknown: "bg-muted/40 text-muted-foreground border border-border",
+};
+
 export function ScheduleSessionForm({
   services,
   coaches,
@@ -85,10 +126,12 @@ export function ScheduleSessionForm({
   defaultLocation = "",
   defaultNotes = "",
   defaultStartTime = "09:00",
+  excludeBookingId,
   submitLabel = "Schedule Session",
   cancelLabel = "Cancel",
   isSubmitting = false,
   showCoachSelector = true,
+  allowConflictOverride = false,
   onSubmit,
   onCancel,
   onValidationError,
@@ -105,6 +148,12 @@ export function ScheduleSessionForm({
   const [coachId, setCoachId] = useState(defaultCoachId || (coaches.length === 1 ? coaches[0].id : ""));
   const [location, setLocation] = useState(defaultLocation);
   const [notes, setNotes] = useState(defaultNotes);
+
+  const [availabilityStatus, setAvailabilityStatus] = useState<AvailabilityStatus>("idle");
+  const [availabilityMessage, setAvailabilityMessage] = useState("");
+  const [suggestions, setSuggestions] = useState<SuggestionSlot[]>([]);
+  const [credits, setCredits] = useState<CreditsInfo | null>(null);
+  const availabilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: searchResults = [] } = useQuery<ClientSearchResult[]>({
     queryKey: ["/api/coach/clients/search", searchQuery],
@@ -123,8 +172,65 @@ export function ScheduleSessionForm({
   const durationMin = selectedService?.durationMin ?? 60;
   const price = (selectedService as any)?.price;
   const sessionCredits = (selectedService as any)?.sessionCredits;
-
   const resolvedCoachId = coachId || (coaches.length === 1 ? coaches[0].id : "");
+
+  useEffect(() => {
+    const hasRequired = serviceId && clientId && selectedDate && startTime && (!showCoachSelector || resolvedCoachId);
+    if (!hasRequired) {
+      setAvailabilityStatus("idle");
+      setSuggestions([]);
+      return;
+    }
+
+    setAvailabilityStatus("checking");
+    if (availabilityTimer.current) clearTimeout(availabilityTimer.current);
+
+    availabilityTimer.current = setTimeout(async () => {
+      try {
+        const [hours, minutes] = startTime.split(":").map(Number);
+        const startAt = new Date(selectedDate!);
+        startAt.setHours(hours, minutes, 0, 0);
+        const endAt = new Date(startAt.getTime() + durationMin * 60 * 1000);
+
+        const params = new URLSearchParams({
+          clientId: clientId!,
+          serviceId,
+          startTime: startAt.toISOString(),
+          endTime: endAt.toISOString(),
+        });
+        if (resolvedCoachId) params.set("coachId", resolvedCoachId);
+        if (excludeBookingId) params.set("excludeBookingId", excludeBookingId);
+
+        const res = await fetch(`/api/scheduling/check-availability?${params}`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          setAvailabilityStatus("unknown");
+          setAvailabilityMessage("Could not check availability.");
+          return;
+        }
+        const data = await res.json();
+        setAvailabilityStatus(data.status ?? "unknown");
+        setAvailabilityMessage(data.message ?? "");
+        setSuggestions(data.suggestions ?? []);
+        setCredits(data.credits ?? null);
+      } catch {
+        setAvailabilityStatus("unknown");
+        setAvailabilityMessage("Could not check availability.");
+      }
+    }, 600);
+
+    return () => {
+      if (availabilityTimer.current) clearTimeout(availabilityTimer.current);
+    };
+  }, [serviceId, clientId, selectedDate, startTime, resolvedCoachId, durationMin, excludeBookingId, showCoachSelector]);
+
+  const applySuggestion = (s: SuggestionSlot) => {
+    const d = new Date(s.startTime);
+    setSelectedDate(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+    setStartTime(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+    if (s.coachId && s.coachId !== resolvedCoachId) setCoachId(s.coachId);
+  };
 
   const handleSelectClient = (client: ClientSearchResult) => {
     setClientId(client.id);
@@ -138,7 +244,15 @@ export function ScheduleSessionForm({
     setClientId(null);
     setClientFirstName("");
     setClientLastName("");
+    setAvailabilityStatus("idle");
+    setCredits(null);
   };
+
+  const isHardConflict = !allowConflictOverride && (
+    availabilityStatus === "coach_conflict" ||
+    availabilityStatus === "client_conflict" ||
+    availabilityStatus === "locked_session"
+  );
 
   const handleSubmit = () => {
     const notify = onValidationError ?? (() => {});
@@ -147,6 +261,7 @@ export function ScheduleSessionForm({
     if (!selectedDate) { notify("Please pick a date."); return; }
     if (!startTime) { notify("Please select a start time."); return; }
     if (showCoachSelector && !resolvedCoachId) { notify("Please select a coach."); return; }
+    if (isHardConflict) { notify("Resolve the scheduling conflict before saving."); return; }
 
     const [hours, minutes] = startTime.split(":").map(Number);
     const startAt = new Date(selectedDate);
@@ -190,10 +305,10 @@ export function ScheduleSessionForm({
           <p className="text-xs text-muted-foreground px-1" data-testid="ssf-service-summary">
             {selectedService.durationMin
               ? `${selectedService.durationMin} min`
-              : <span className="text-amber-600 dark:text-amber-400">60 min (default — no duration set)</span>
+              : <span className="text-amber-600 dark:text-amber-400">60 min (default)</span>
             }
             {price ? ` · $${(price / 100).toFixed(0)}` : ""}
-            {sessionCredits ? ` · Uses ${sessionCredits} session credit${sessionCredits !== 1 ? "s" : ""}` : ""}
+            {sessionCredits ? ` · Uses ${sessionCredits} credit${sessionCredits !== 1 ? "s" : ""}` : ""}
           </p>
         )}
       </div>
@@ -203,7 +318,7 @@ export function ScheduleSessionForm({
         <Label>Client *</Label>
         {clientId ? (
           <div className="flex items-center gap-2">
-            <div className="flex-1 text-sm border rounded-md p-2 bg-muted/30">
+            <div className="flex-1 text-sm border rounded-md p-2 bg-muted/30" data-testid="ssf-selected-client">
               {clientFirstName} {clientLastName}
             </div>
             <Button
@@ -261,6 +376,19 @@ export function ScheduleSessionForm({
               </div>
             )}
           </div>
+        )}
+        {/* Client credit visibility — shown once both client + service are selected */}
+        {clientId && serviceId && credits !== null && (
+          <p
+            className={`text-xs px-1 ${credits.insufficient ? "text-destructive" : "text-muted-foreground"}`}
+            data-testid="ssf-credits-info"
+          >
+            {credits.hasActiveSubscription
+              ? credits.sessionsRemaining !== null
+                ? `${clientFirstName || "Client"} has ${credits.sessionsRemaining} session credit${credits.sessionsRemaining !== 1 ? "s" : ""} remaining.${credits.sessionsRemaining > 0 ? " This booking uses 1 credit." : " No credits — coach may book as unpaid."}`
+                : `${clientFirstName || "Client"} has an active ${credits.planName || "subscription"}.`
+              : `No active subscription found for ${clientFirstName || "this client"}.`}
+          </p>
         )}
       </div>
 
@@ -320,14 +448,60 @@ export function ScheduleSessionForm({
         </Select>
       </div>
 
+      {/* Availability Status Banner — shown after all required fields are filled */}
+      {availabilityStatus !== "idle" && (
+        <div
+          className={`rounded-md px-3 py-2 text-sm ${STATUS_STYLES[availabilityStatus] ?? STATUS_STYLES.unknown}`}
+          data-testid="ssf-availability-status"
+          data-status={availabilityStatus}
+        >
+          <div className="flex items-start gap-2">
+            {availabilityStatus === "checking" && (
+              <span className="text-[10px] tracking-widest animate-pulse mt-0.5">●●●</span>
+            )}
+            {availabilityStatus === "available" && (
+              <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+            )}
+            {(availabilityStatus === "coach_conflict" ||
+              availabilityStatus === "client_conflict" ||
+              availabilityStatus === "locked_session") && (
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            )}
+            {availabilityStatus === "outside_availability" && (
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            )}
+            <span>
+              {availabilityStatus === "checking"
+                ? "Checking availability…"
+                : availabilityMessage}
+            </span>
+          </div>
+
+          {/* Suggestion chips */}
+          {suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2.5 ml-6">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-current/40 hover:bg-current/10 transition-colors font-medium"
+                  onClick={() => applySuggestion(s)}
+                  data-testid={`ssf-suggestion-${i}`}
+                >
+                  <Clock className="h-3 w-3" />
+                  {s.reason}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 5. Coach (optional) */}
       {showCoachSelector && (
         <div className="space-y-1.5">
           <Label>Coach {coaches.length === 1 ? "" : "*"}</Label>
-          <Select
-            value={resolvedCoachId}
-            onValueChange={setCoachId}
-          >
+          <Select value={resolvedCoachId} onValueChange={setCoachId}>
             <SelectTrigger data-testid="ssf-select-coach">
               <SelectValue
                 placeholder={
@@ -397,7 +571,8 @@ export function ScheduleSessionForm({
           type="button"
           className="flex-1"
           onClick={handleSubmit}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isHardConflict}
+          title={isHardConflict ? "Resolve the conflict before scheduling" : undefined}
           data-testid="ssf-button-submit"
         >
           {isSubmitting ? "Scheduling..." : submitLabel}

@@ -1,0 +1,177 @@
+Task 4 — Scheduling Intelligence Layer
+
+Now that TrainEfficiency has one shared ScheduleSessionForm construct, add scheduling intelligence on top of it.
+
+Goal:
+Make scheduling feel smart, not just form-based.
+
+Build an intelligence layer that helps the coach select valid, optimal session times while preserving all existing lifecycle protections.
+
+Requirements:
+
+1. Availability preview
+When the user selects:
+- Service
+- Client
+- Date
+- Start Time
+- Coach
+
+show an inline availability status:
+- Available
+- Conflict detected
+- Outside coach availability
+- Client already booked
+- Coach already booked
+- Redeemed/locked session cannot be changed
+
+Use the derived endTime from service duration.
+
+2. Conflict detection endpoint
+Create or reuse an endpoint that checks conflicts before submission.
+
+Suggested endpoint:
+GET or POST /api/scheduling/check-availability
+
+Input:
+- clientId
+- coachId
+- serviceId
+- startTime
+- endTime
+- excludeBookingId for reschedules
+
+Return:
+{
+  available: boolean,
+  status: "available" | "coach_conflict" | "client_conflict" | "outside_availability" | "locked_session" | "unknown",
+  message: string,
+  conflicts?: [
+    {
+      id,
+      clientName,
+      coachName,
+      serviceName,
+      startTime,
+      endTime,
+      status
+    }
+  ],
+  suggestions?: [
+    {
+      startTime,
+      endTime,
+      coachId,
+      coachName,
+      reason
+    }
+  ]
+}
+
+3. Frontend integration
+In ScheduleSessionForm:
+- Debounce availability checks after required fields are selected.
+- Show loading state: “Checking availability…”
+- Show success state: “Available”
+- Show warning/error state with clear reason.
+- Disable submit when unavailable unless an explicit override flag already exists in the app.
+- Do not block form typing while checking.
+
+4. Suggested times
+If selected time is unavailable, return up to 3 better alternatives:
+- same coach later that day
+- same coach nearby day
+- another available coach, if appropriate
+- preserve selected service duration
+
+Show suggestions as small clickable chips:
+“Today 2:30 PM”
+“Tomorrow 9:00 AM”
+“Coach Sarah at 11:00 AM”
+
+Clicking a suggestion updates date/time/coach.
+
+5. Coach suggestions
+If coach is optional or not selected:
+- suggest available coaches for the selected service/date/time
+- prefer previous coach for that client if available
+- prefer coach assigned to that service if configured
+- otherwise show all available coaches
+
+6. Client session credit visibility
+When client + service are selected, show:
+- available package/session credits
+- whether this session will consume a credit
+- warning if insufficient credits
+- option to still schedule as unpaid/manual if current business logic allows it
+
+Example:
+“F Langford has 1 session credit available. This booking will use 1 credit.”
+
+If no credits:
+“No active credit available for this service.”
+
+7. Preserve redeemed session lifecycle locks
+Do not weaken Task 2.
+Redeemed sessions must remain:
+- non-editable
+- non-deleteable
+- non-cancellable
+- non-cloneable
+- non-reschedulable
+
+Availability and suggestion logic must respect locked sessions.
+
+8. Reschedule behavior
+For rescheduling existing sessions:
+- pass excludeBookingId so the booking does not conflict with itself
+- still block if redeemed or completed
+- show original time versus proposed time summary
+- show conflict/success preview before save
+
+9. Scheduling Agent alignment
+Update Scheduling Agent tools so agent-created sessions use the same availability check before previewing or confirming.
+
+Agent preview should include:
+- client
+- service
+- date
+- time range
+- coach
+- location
+- availability status
+- credit impact
+
+Agent should not confirm unavailable sessions unless explicitly allowed.
+
+10. UI polish
+Availability status should be compact and premium:
+- green/check for available
+- amber/warning for limited/credit issue
+- red/blocking for conflict
+- neutral/loading for checking
+
+Do not make the form feel noisy.
+
+11. Testing checklist
+Test:
+- available slot
+- coach conflict
+- client conflict
+- missing coach
+- service duration conflict
+- reschedule with excludeBookingId
+- redeemed session reschedule blocked
+- insufficient credits warning
+- suggestion chip updates fields
+- Scheduling page create flow
+- Dashboard create flow
+- mobile modal layout
+
+Deliverables:
+- Files changed
+- Endpoint added/reused
+- Availability logic summary
+- Credit visibility logic summary
+- Agent alignment summary
+- Confirmation that Task 2 lifecycle locks still pass

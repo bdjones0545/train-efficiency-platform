@@ -1279,6 +1279,29 @@ async function executeTool(
 
       case "book_session": {
         if (args.confirmed !== true) {
+          // Availability pre-check before creating the pending action
+          const preCheckStart = new Date(args.startAt);
+          const preCheckEnd = new Date(args.endAt);
+          if (!isNaN(preCheckStart.getTime()) && !isNaN(preCheckEnd.getTime())) {
+            const preConflicts = await storage.getOverlappingBookings(args.coachId, preCheckStart, preCheckEnd);
+            if (preConflicts.length > 0) {
+              return JSON.stringify({
+                error: "time_unavailable",
+                status: "coach_conflict",
+                message: `This time slot has ${preConflicts.length} conflicting session(s). Please choose a different time.`,
+                hint: "Use get_available_slots to find open times, then retry with an available slot.",
+              });
+            }
+          }
+
+          // Build enriched preview
+          let previewService: any = null;
+          let previewCoach: any = null;
+          try { previewService = await storage.getService(args.serviceId); } catch {}
+          try { previewCoach = await storage.getCoachProfile(args.coachId); } catch {}
+          const previewStart = new Date(args.startAt);
+          const previewEnd = new Date(args.endAt);
+
           const pending = await createPendingAction(userId, "book_session", {
             coachId: args.coachId,
             serviceId: args.serviceId,
@@ -1289,7 +1312,17 @@ async function executeTool(
             requiresConfirmation: true,
             pendingActionId: pending.id,
             actionType: "book_session",
-            summary: `Book session: coach ${args.coachId}, service ${args.serviceId}, starting ${args.startAt}`,
+            availabilityStatus: "available",
+            preview: {
+              service: previewService?.name || args.serviceId,
+              coach: previewCoach?.user
+                ? `${previewCoach.user.firstName ?? ""} ${previewCoach.user.lastName ?? ""}`.trim()
+                : args.coachId,
+              dateTime: `${format(previewStart, "EEEE, MMMM d 'at' h:mm a")} – ${format(previewEnd, "h:mm a")}`,
+              duration: previewService?.durationMin ? `${previewService.durationMin} min` : undefined,
+              availabilityNote: "✓ Time slot is available",
+            },
+            summary: `Book ${previewService?.name || args.serviceId} with ${previewCoach?.user ? `${previewCoach.user.firstName} ${previewCoach.user.lastName}` : args.coachId} on ${format(previewStart, "MMM d 'at' h:mm a")}`,
             expiresAt: pending.expiresAt.toISOString(),
             message: "Restate the session details clearly to the user and ask them to confirm. Once they confirm, call book_session again with confirmed: true and the exact pendingActionId from this response.",
           });
@@ -1619,6 +1652,34 @@ async function executeTool(
 
       case "coach_create_session": {
         if (args.confirmed !== true) {
+          // Availability pre-check before creating the pending action
+          if (args.coachId && args.startAt) {
+            let preCheckService: any = null;
+            try { preCheckService = args.serviceId ? await storage.getService(args.serviceId) : null; } catch {}
+            const preCheckStart = new Date(args.startAt);
+            const preCheckEnd = addMinutes(preCheckStart, preCheckService?.durationMin || 60);
+            if (!isNaN(preCheckStart.getTime())) {
+              const preConflicts = await storage.getOverlappingBookings(args.coachId, preCheckStart, preCheckEnd);
+              if (preConflicts.length > 0) {
+                return JSON.stringify({
+                  error: "time_unavailable",
+                  status: "coach_conflict",
+                  message: `Coach has ${preConflicts.length} conflicting session(s) at this time. Please choose a different time.`,
+                  hint: "Use get_available_slots to find open times, then retry with an available slot.",
+                });
+              }
+            }
+          }
+
+          // Build enriched preview
+          let previewService: any = null;
+          let previewCoach: any = null;
+          try { previewService = args.serviceId ? await storage.getService(args.serviceId) : null; } catch {}
+          try { previewCoach = args.coachId ? await storage.getCoachProfile(args.coachId) : null; } catch {}
+          const previewStart = new Date(args.startAt);
+          const previewEnd = addMinutes(previewStart, previewService?.durationMin || 60);
+          const clientDisplay = args.clientId || `${args.clientFirstName || ""} ${args.clientLastName || ""}`.trim();
+
           const pending = await createPendingAction(userId, "coach_create_session", {
             coachId: args.coachId,
             serviceId: args.serviceId,
@@ -1631,9 +1692,20 @@ async function executeTool(
             requiresConfirmation: true,
             pendingActionId: pending.id,
             actionType: "coach_create_session",
-            summary: `Create session: coach ${args.coachId}, service ${args.serviceId}, client ${args.clientId || `${args.clientFirstName} ${args.clientLastName}`}, starting ${args.startAt}`,
+            availabilityStatus: "available",
+            preview: {
+              client: clientDisplay,
+              service: previewService?.name || args.serviceId,
+              coach: previewCoach?.user
+                ? `${previewCoach.user.firstName ?? ""} ${previewCoach.user.lastName ?? ""}`.trim()
+                : args.coachId,
+              dateTime: `${format(previewStart, "EEEE, MMMM d 'at' h:mm a")} – ${format(previewEnd, "h:mm a")}`,
+              duration: previewService?.durationMin ? `${previewService.durationMin} min` : undefined,
+              availabilityNote: "✓ Time slot is available",
+            },
+            summary: `Create session: ${clientDisplay}, ${previewService?.name || args.serviceId}, ${previewCoach?.user ? `${previewCoach.user.firstName} ${previewCoach.user.lastName}` : args.coachId}, ${format(previewStart, "MMM d 'at' h:mm a")}`,
             expiresAt: pending.expiresAt.toISOString(),
-            message: "Restate the client, coach, service, and time to the coach and ask them to confirm. Once confirmed, call coach_create_session again with confirmed: true and the exact pendingActionId from this response.",
+            message: "Restate the client, coach, service, date, and time clearly and ask them to confirm. Once confirmed, call coach_create_session again with confirmed: true and the exact pendingActionId from this response.",
           });
         }
         const pendingActionId_create: string | undefined = args.pendingActionId;

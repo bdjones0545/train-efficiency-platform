@@ -16,9 +16,9 @@ import { sendSms, normalizePhone, smsBookingConfirmation, smsCancellation, smsRe
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
-import { organizationSubscriptionPlans } from "@shared/schema";
+import { organizationSubscriptionPlans, availabilityBlocks as availabilityBlocksSchema, bookings as bookingsSchema } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, or, lt, gt, ne } from "drizzle-orm";
 import { users } from "@shared/models/auth";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
@@ -5915,6 +5915,174 @@ export async function registerRoutes(
   });
 
   // ===== ORG-SCOPED SCHEDULING BOOKINGS =====
+  // ── Availability check ───────────────────────────────────────────────────
+  app.get("/api/scheduling/check-availability", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+
+      const { clientId, coachId, serviceId, startTime, endTime, excludeBookingId } = req.query as Record<string, string | undefined>;
+      if (!clientId || !coachId || !startTime || !endTime) {
+        return res.json({ available: true, status: "unknown", message: "Insufficient parameters for check." });
+      }
+
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({ message: "Invalid startTime or endTime." });
+      }
+
+      // 1. Redeemed / locked check (for reschedule case)
+      if (excludeBookingId) {
+        const existingRedemption = await storage.getRedemptionByBookingId(excludeBookingId);
+        if (existingRedemption) {
+          return res.json({
+            available: false,
+            status: "locked_session",
+            message: "This session has been redeemed and cannot be rescheduled.",
+            suggestions: [],
+          });
+        }
+      }
+
+      // 2. Coach conflict check
+      const coachConflicts = await storage.getOverlappingBookings(coachId, start, end, excludeBookingId);
+
+      // 3. Client conflict check (direct query — no storage method for this)
+      const clientRows = await db
+        .select()
+        .from(bookingsSchema)
+        .where(
+          and(
+            eq(bookingsSchema.clientId, clientId),
+            or(eq(bookingsSchema.status, "CONFIRMED"), eq(bookingsSchema.status, "PENDING")),
+            lt(bookingsSchema.startAt, end),
+            gt(bookingsSchema.endAt, start),
+            ...(excludeBookingId ? [ne(bookingsSchema.id, excludeBookingId)] : [])
+          )
+        );
+
+      // 4. Coach availability blocks
+      const allBlocks = await storage.getAvailabilityBlocks(coachId);
+      // DB stores day_of_week as 0=Monday…6=Sunday; JS getDay() 0=Sunday…6=Saturday
+      const dbDayOfWeek = start.getDay() === 0 ? 6 : start.getDay() - 1;
+      const blocksForDay = allBlocks.filter(b => b.dayOfWeek === dbDayOfWeek);
+
+      let outsideAvailability = false;
+      if (blocksForDay.length > 0) {
+        const sessionStartStr = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}:00`;
+        const sessionEndStr = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}:00`;
+        const covered = blocksForDay.some(b => b.startTime <= sessionStartStr && b.endTime >= sessionEndStr);
+        if (!covered) outsideAvailability = true;
+      }
+
+      // Suggestion generator (up to 3 alternative slots for the same coach)
+      const generateSuggestions = async () => {
+        const durationMs = end.getTime() - start.getTime();
+        const suggestions: Array<{ startTime: string; endTime: string; coachId: string; coachName: string; reason: string }> = [];
+        let coachProfile: any = null;
+        try { coachProfile = await storage.getCoachProfile(coachId); } catch {}
+        const coachName = coachProfile?.user
+          ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+          : "Coach";
+
+        // Try same day: +1h, +2h
+        for (const offsetMin of [60, 120]) {
+          if (suggestions.length >= 2) break;
+          const tryStart = new Date(start.getTime() + offsetMin * 60_000);
+          const tryEnd = new Date(tryStart.getTime() + durationMs);
+          if (tryStart.getHours() >= 21) continue;
+          const conflicts = await storage.getOverlappingBookings(coachId, tryStart, tryEnd, excludeBookingId);
+          if (conflicts.length === 0) {
+            suggestions.push({
+              startTime: tryStart.toISOString(),
+              endTime: tryEnd.toISOString(),
+              coachId,
+              coachName,
+              reason: `${format(tryStart, "EEE MMM d")} at ${format(tryStart, "h:mm a")}`,
+            });
+          }
+        }
+
+        // Try next day, same time
+        if (suggestions.length < 3) {
+          const nextDay = new Date(start);
+          nextDay.setDate(nextDay.getDate() + 1);
+          const nextDayEnd = new Date(nextDay.getTime() + durationMs);
+          const conflicts = await storage.getOverlappingBookings(coachId, nextDay, nextDayEnd, excludeBookingId);
+          if (conflicts.length === 0) {
+            suggestions.push({
+              startTime: nextDay.toISOString(),
+              endTime: nextDayEnd.toISOString(),
+              coachId,
+              coachName,
+              reason: `${format(nextDay, "EEE MMM d")} at ${format(nextDay, "h:mm a")}`,
+            });
+          }
+        }
+
+        return suggestions;
+      };
+
+      // Determine result
+      if (coachConflicts.length > 0) {
+        return res.json({
+          available: false,
+          status: "coach_conflict",
+          message: `Coach has ${coachConflicts.length} conflicting session${coachConflicts.length > 1 ? "s" : ""} at this time.`,
+          suggestions: await generateSuggestions(),
+        });
+      }
+
+      if (clientRows.length > 0) {
+        return res.json({
+          available: false,
+          status: "client_conflict",
+          message: "Client already has a booking that overlaps this time.",
+          suggestions: await generateSuggestions(),
+        });
+      }
+
+      if (outsideAvailability) {
+        return res.json({
+          available: false,
+          status: "outside_availability",
+          message: "This time is outside the coach's availability window.",
+          suggestions: await generateSuggestions(),
+        });
+      }
+
+      // 5. Client credits (informational — never hard-blocks)
+      let credits: Record<string, any> | null = null;
+      if (clientId && serviceId) {
+        try {
+          const subs = await storage.getUserSubscriptions(clientId);
+          const activeSub = subs.find(s => ["active", "trialing", "past_due"].includes(s.status));
+          if (activeSub) {
+            credits = {
+              hasActiveSubscription: true,
+              sessionsRemaining: activeSub.sessionsRemaining ?? null,
+              willConsumeCredit: activeSub.sessionsRemaining !== null,
+              insufficient: activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining <= 0,
+            };
+          } else {
+            credits = { hasActiveSubscription: false, sessionsRemaining: null, willConsumeCredit: false, insufficient: false };
+          }
+        } catch {}
+      }
+
+      return res.json({
+        available: true,
+        status: "available",
+        message: "This time slot is available.",
+        credits,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/scheduling/bookings", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
