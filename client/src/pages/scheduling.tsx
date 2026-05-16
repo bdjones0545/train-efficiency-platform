@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, isSameDay, isToday, parseISO, addDays } from "date-fns";
+import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, isSameDay, isToday, addDays } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Calendar as CalendarWidget } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -47,6 +49,9 @@ import {
   MapPin,
   Dumbbell,
   Bot,
+  Search,
+  XCircle,
+  CalendarIcon,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Booking, Service, CoachProfile, User } from "@shared/schema";
@@ -246,9 +251,19 @@ export default function SchedulingPage() {
   const [rescheduleBooking, setRescheduleBooking] = useState<BookingWithDetails | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const [newBooking, setNewBooking] = useState({
-    clientId: "", coachId: "", serviceId: "", startAt: "", endAt: "", notes: "", location: "",
-  });
+  // New Booking modal — unified state
+  const [nbServiceId, setNbServiceId] = useState("");
+  const [nbSelectedDate, setNbSelectedDate] = useState<Date | undefined>();
+  const [nbCalendarOpen, setNbCalendarOpen] = useState(false);
+  const [nbStartTime, setNbStartTime] = useState("09:00");
+  const [nbClientId, setNbClientId] = useState<string | null>(null);
+  const [nbClientFirstName, setNbClientFirstName] = useState("");
+  const [nbClientLastName, setNbClientLastName] = useState("");
+  const [nbSearchQuery, setNbSearchQuery] = useState("");
+  const [nbShowSearch, setNbShowSearch] = useState(false);
+  const [nbCoachId, setNbCoachId] = useState("");
+  const [nbLocation, setNbLocation] = useState("");
+  const [nbNotes, setNbNotes] = useState("");
 
   const [rescheduleData, setRescheduleData] = useState({ startAt: "", endAt: "" });
 
@@ -271,6 +286,41 @@ export default function SchedulingPage() {
   const { data: orgUsers = [] } = useQuery<any[]>({
     queryKey: ["/api/coach/users"],
   });
+
+  const { data: nbClientSearchResults = [] } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string | null }[]>({
+    queryKey: ["/api/coach/clients/search", nbSearchQuery],
+    queryFn: async () => {
+      if (nbSearchQuery.length < 2) return [];
+      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(nbSearchQuery)}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: nbSearchQuery.length >= 2,
+  });
+
+  const nbSelectedService = services.find(s => s.id === nbServiceId);
+  const nbDurationMin = nbSelectedService?.durationMin || 60;
+
+  const nbTimeOptions: string[] = [];
+  for (let h = 5; h < 22; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      nbTimeOptions.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+
+  const resetNewBooking = () => {
+    setNbServiceId("");
+    setNbSelectedDate(undefined);
+    setNbStartTime("09:00");
+    setNbClientId(null);
+    setNbClientFirstName("");
+    setNbClientLastName("");
+    setNbSearchQuery("");
+    setNbShowSearch(false);
+    setNbCoachId(coaches.length === 1 ? coaches[0].id : "");
+    setNbLocation("");
+    setNbNotes("");
+  };
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
@@ -295,12 +345,12 @@ export default function SchedulingPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: typeof newBooking) => apiRequest("POST", "/api/scheduling/bookings", data),
+    mutationFn: (data: any) => apiRequest("POST", "/api/scheduling/bookings", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
       setCreateOpen(false);
-      setNewBooking({ clientId: "", coachId: "", serviceId: "", startAt: "", endAt: "", notes: "", location: "" });
-      toast({ title: "Booking created" });
+      resetNewBooking();
+      toast({ title: "Session scheduled", description: "The session has been added to the schedule." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -358,11 +408,24 @@ export default function SchedulingPage() {
   };
 
   const handleCreateSubmit = () => {
-    if (!newBooking.clientId || !newBooking.coachId || !newBooking.serviceId || !newBooking.startAt || !newBooking.endAt) {
-      toast({ title: "Fill in all required fields", variant: "destructive" });
+    const resolvedCoachId = nbCoachId || (coaches.length === 1 ? coaches[0].id : "");
+    if (!nbServiceId || !nbClientId || !nbSelectedDate || !nbStartTime || !resolvedCoachId) {
+      toast({ title: "Missing required fields", description: "Please fill in service, client, date, time, and coach.", variant: "destructive" });
       return;
     }
-    createMutation.mutate(newBooking);
+    const [hours, minutes] = nbStartTime.split(":").map(Number);
+    const startAt = new Date(nbSelectedDate);
+    startAt.setHours(hours, minutes, 0, 0);
+    const endAt = new Date(startAt.getTime() + nbDurationMin * 60 * 1000);
+    createMutation.mutate({
+      clientId: nbClientId,
+      coachId: resolvedCoachId,
+      serviceId: nbServiceId,
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString(),
+      location: nbLocation !== "__none__" ? nbLocation : "",
+      notes: nbNotes,
+    });
   };
 
   return (
@@ -424,10 +487,10 @@ export default function SchedulingPage() {
             </Select>
             <Select value={filterSessionType} onValueChange={setFilterSessionType}>
               <SelectTrigger className="h-8 w-40 text-sm" data-testid="select-filter-session-type">
-                <SelectValue placeholder="All Session Types" />
+                <SelectValue placeholder="All Service Types" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="all">All Service Types</SelectItem>
                 {uniqueSessionTypes.map(t => (
                   <SelectItem key={t} value={t}>{SESSION_TYPE_LABELS[t] || t}</SelectItem>
                 ))}
@@ -640,102 +703,233 @@ export default function SchedulingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Booking Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg">
+      {/* Schedule Session Dialog */}
+      <Dialog open={createOpen} onOpenChange={(v) => { setCreateOpen(v); if (!v) resetNewBooking(); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle data-testid="text-create-dialog-title">New Booking</DialogTitle>
+            <DialogTitle data-testid="text-create-dialog-title">Schedule a Session</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+
+            {/* 1. Service */}
             <div className="space-y-2">
-              <Label>Client *</Label>
-              <Select value={newBooking.clientId} onValueChange={v => setNewBooking(d => ({ ...d, clientId: v }))}>
-                <SelectTrigger data-testid="select-new-client">
-                  <SelectValue placeholder="Select client" />
+              <Label>Service *</Label>
+              <Select value={nbServiceId} onValueChange={setNbServiceId}>
+                <SelectTrigger data-testid="select-new-service">
+                  <SelectValue placeholder="Select a service" />
                 </SelectTrigger>
                 <SelectContent>
-                  {orgUsers.filter((u: any) => u.profile?.role === "CLIENT" || !u.profile?.role).map((u: any) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.firstName} {u.lastName}
+                  {services.filter(s => s.active && (s as any).isBookableByCoach !== false).map(s => (
+                    <SelectItem key={s.id} value={s.id} data-testid={`option-service-${s.id}`}>
+                      {s.name}
+                      {s.durationMin ? ` · ${s.durationMin} min` : ""}
+                      {(s as any).price ? ` · $${((s as any).price / 100).toFixed(0)}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {nbSelectedService && (
+                <p className="text-xs text-muted-foreground px-1" data-testid="text-service-summary">
+                  {nbSelectedService.durationMin ? `${nbSelectedService.durationMin} min` : "60 min (default)"}
+                  {(nbSelectedService as any).price ? ` · $${((nbSelectedService as any).price / 100).toFixed(0)}` : ""}
+                  {!nbSelectedService.durationMin && (
+                    <span className="ml-1 text-amber-600 dark:text-amber-400">· No duration set — defaulting to 60 min</span>
+                  )}
+                </p>
+              )}
             </div>
+
+            {/* 2. Client */}
             <div className="space-y-2">
-              <Label>Coach *</Label>
-              <Select value={newBooking.coachId} onValueChange={v => setNewBooking(d => ({ ...d, coachId: v }))}>
-                <SelectTrigger data-testid="select-new-coach">
-                  <SelectValue placeholder="Select coach" />
+              <Label>Client *</Label>
+              {nbClientId ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 text-sm border rounded-md p-2 bg-muted/30">
+                    {nbClientFirstName} {nbClientLastName}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setNbClientId(null); setNbClientFirstName(""); setNbClientLastName(""); }}
+                    data-testid="button-clear-nb-client"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNbShowSearch(!nbShowSearch)}
+                    className="w-full justify-start"
+                    data-testid="button-nb-search-clients"
+                  >
+                    <Search className="h-3.5 w-3.5 mr-2" />
+                    Search clients...
+                  </Button>
+                  {nbShowSearch && (
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Type to search..."
+                        value={nbSearchQuery}
+                        onChange={e => setNbSearchQuery(e.target.value)}
+                        autoFocus
+                        data-testid="input-nb-search-clients"
+                      />
+                      {nbClientSearchResults.length > 0 && (
+                        <div className="border rounded-md max-h-36 overflow-y-auto">
+                          {nbClientSearchResults.map(client => (
+                            <button
+                              key={client.id}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b last:border-b-0"
+                              onClick={() => {
+                                setNbClientId(client.id);
+                                setNbClientFirstName(client.firstName || "");
+                                setNbClientLastName(client.lastName || "");
+                                setNbShowSearch(false);
+                                setNbSearchQuery("");
+                              }}
+                              data-testid={`button-nb-select-client-${client.id}`}
+                            >
+                              <span className="font-medium">{client.firstName} {client.lastName}</span>
+                              {client.email && <span className="text-muted-foreground ml-2 text-xs">{client.email}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {nbSearchQuery.length >= 2 && nbClientSearchResults.length === 0 && (
+                        <p className="text-xs text-muted-foreground">No clients found for "{nbSearchQuery}".</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Date */}
+            <div className="space-y-2">
+              <Label>Date *</Label>
+              <Popover open={nbCalendarOpen} onOpenChange={setNbCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                    data-testid="button-nb-select-date"
+                  >
+                    <CalendarIcon className="h-4 w-4 mr-2" />
+                    {nbSelectedDate ? format(nbSelectedDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarWidget
+                    mode="single"
+                    selected={nbSelectedDate}
+                    onSelect={(date) => { setNbSelectedDate(date); setNbCalendarOpen(false); }}
+                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* 4. Start Time */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Start Time *</Label>
+                {nbStartTime && nbSelectedService?.durationMin && (() => {
+                  const [sh, sm] = nbStartTime.split(":").map(Number);
+                  const endTotalMin = sh * 60 + sm + nbDurationMin;
+                  const endH = Math.floor(endTotalMin / 60);
+                  const endM = endTotalMin % 60;
+                  const endD = new Date();
+                  endD.setHours(endH, endM);
+                  return (
+                    <span className="text-xs text-muted-foreground" data-testid="text-nb-computed-end-time">
+                      ends {format(endD, "h:mm a")} · {nbDurationMin} min
+                    </span>
+                  );
+                })()}
+              </div>
+              <Select value={nbStartTime} onValueChange={setNbStartTime}>
+                <SelectTrigger data-testid="select-nb-time">
+                  <SelectValue placeholder="Select time" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48">
+                  {nbTimeOptions.map(t => {
+                    const [h, m] = t.split(":").map(Number);
+                    const d = new Date();
+                    d.setHours(h, m);
+                    return (
+                      <SelectItem key={t} value={t}>
+                        {format(d, "h:mm a")}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 5. Coach */}
+            <div className="space-y-2">
+              <Label>Coach {coaches.length === 1 ? "" : "*"}</Label>
+              <Select
+                value={nbCoachId || (coaches.length === 1 ? coaches[0].id : "")}
+                onValueChange={setNbCoachId}
+              >
+                <SelectTrigger data-testid="select-nb-coach">
+                  <SelectValue placeholder={coaches.length === 1 ? `${coaches[0].user.firstName} ${coaches[0].user.lastName}` : "Select coach"} />
                 </SelectTrigger>
                 <SelectContent>
                   {coaches.map(c => (
-                    <SelectItem key={c.id} value={c.id}>
+                    <SelectItem key={c.id} value={c.id} data-testid={`option-coach-${c.id}`}>
                       {c.user.firstName} {c.user.lastName}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* 6. Location */}
             <div className="space-y-2">
-              <Label>Session Type *</Label>
-              <Select value={newBooking.serviceId} onValueChange={v => setNewBooking(d => ({ ...d, serviceId: v }))}>
-                <SelectTrigger data-testid="select-new-service">
-                  <SelectValue placeholder="Select service" />
+              <Label>Location</Label>
+              <Select value={nbLocation} onValueChange={setNbLocation}>
+                <SelectTrigger data-testid="select-nb-location">
+                  <MapPin className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
+                  <SelectValue placeholder="Select a location (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  {services.filter(s => s.active && (s as any).isBookableByCoach !== false).map(s => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name} ({SESSION_TYPE_LABELS[s.sessionType || ""] || s.sessionType}{(s as any).category && (s as any).category !== "paid" ? ` · ${(s as any).category}` : ""})
+                  {locations.map((l: any) => (
+                    <SelectItem key={l.id} value={l.name} data-testid={`option-location-${l.id}`}>
+                      {l.name}
                     </SelectItem>
                   ))}
+                  <SelectItem value="__none__">No location / remote</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Start *</Label>
-                <Input
-                  type="datetime-local"
-                  value={newBooking.startAt}
-                  onChange={e => setNewBooking(d => ({ ...d, startAt: e.target.value }))}
-                  data-testid="input-new-start"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>End *</Label>
-                <Input
-                  type="datetime-local"
-                  value={newBooking.endAt}
-                  onChange={e => setNewBooking(d => ({ ...d, endAt: e.target.value }))}
-                  data-testid="input-new-end"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <Input
-                placeholder="Location (optional)"
-                value={newBooking.location}
-                onChange={e => setNewBooking(d => ({ ...d, location: e.target.value }))}
-                data-testid="input-new-location"
-              />
-            </div>
+
+            {/* 7. Notes */}
             <div className="space-y-2">
               <Label>Notes</Label>
               <Textarea
-                placeholder="Notes (optional)"
-                value={newBooking.notes}
-                onChange={e => setNewBooking(d => ({ ...d, notes: e.target.value }))}
-                data-testid="input-new-notes"
+                placeholder="Session notes (optional)..."
+                value={nbNotes}
+                onChange={e => setNbNotes(e.target.value)}
+                data-testid="input-nb-notes"
                 rows={2}
+                className="resize-none"
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateSubmit} disabled={createMutation.isPending} data-testid="button-create-confirm">
-              {createMutation.isPending ? "Creating..." : "Create Booking"}
+
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2 pt-2">
+            <Button variant="outline" onClick={() => { setCreateOpen(false); resetNewBooking(); }}>Cancel</Button>
+            <Button
+              onClick={handleCreateSubmit}
+              disabled={createMutation.isPending}
+              data-testid="button-create-confirm"
+            >
+              {createMutation.isPending ? "Scheduling..." : "Schedule Session"}
             </Button>
           </DialogFooter>
         </DialogContent>
