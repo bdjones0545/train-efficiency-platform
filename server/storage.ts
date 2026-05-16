@@ -101,6 +101,12 @@ import {
   retentionWorkflowEvents,
   type RetentionWorkflowEvent,
   type InsertRetentionWorkflowEvent,
+  outreachDrafts,
+  type OutreachDraft,
+  type InsertOutreachDraft,
+  outreachEvents,
+  type OutreachEvent,
+  type InsertOutreachEvent,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -232,6 +238,14 @@ export interface IStorage {
   updateRetentionWorkflow(id: string, updates: Partial<RetentionWorkflow>): Promise<RetentionWorkflow | null>;
   createRetentionWorkflowEvent(data: InsertRetentionWorkflowEvent): Promise<RetentionWorkflowEvent>;
   getRetentionWorkflowEvents(workflowId: string): Promise<RetentionWorkflowEvent[]>;
+  // Outreach Drafts
+  createOutreachDraft(data: InsertOutreachDraft): Promise<OutreachDraft>;
+  getOutreachDraft(id: string): Promise<OutreachDraft | null>;
+  getOutreachDrafts(orgId: string, filters?: { status?: string; channel?: string; purpose?: string; workflowId?: string }): Promise<OutreachDraft[]>;
+  updateOutreachDraft(id: string, updates: Partial<OutreachDraft>): Promise<OutreachDraft | null>;
+  createOutreachEvent(data: InsertOutreachEvent): Promise<OutreachEvent>;
+  getOutreachEvents(outreachDraftId: string): Promise<OutreachEvent[]>;
+  getOutreachSummary(orgId: string): Promise<{ totalDrafts: number; pendingApproval: number; approved: number; sent: number; rejected: number; staleDrafts: number; approvalRate: number; sendRate: number; byPurpose: Record<string, number>; byChannel: Record<string, number> }>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1366,6 +1380,58 @@ export class DatabaseStorage implements IStorage {
 
   async getRetentionWorkflowEvents(workflowId: string): Promise<RetentionWorkflowEvent[]> {
     return db.select().from(retentionWorkflowEvents).where(eq(retentionWorkflowEvents.workflowId, workflowId)).orderBy(desc(retentionWorkflowEvents.createdAt));
+  }
+
+  // ── Outreach Drafts ───────────────────────────────────────────────────────
+
+  async createOutreachDraft(data: InsertOutreachDraft): Promise<OutreachDraft> {
+    const [row] = await db.insert(outreachDrafts).values(data).returning();
+    return row;
+  }
+
+  async getOutreachDraft(id: string): Promise<OutreachDraft | null> {
+    const [row] = await db.select().from(outreachDrafts).where(eq(outreachDrafts.id, id));
+    return row ?? null;
+  }
+
+  async getOutreachDrafts(orgId: string, filters: { status?: string; channel?: string; purpose?: string; workflowId?: string } = {}): Promise<OutreachDraft[]> {
+    const conditions: any[] = [eq(outreachDrafts.orgId, orgId)];
+    if (filters.status) conditions.push(eq(outreachDrafts.status, filters.status as any));
+    if (filters.channel) conditions.push(eq(outreachDrafts.channel, filters.channel as any));
+    if (filters.purpose) conditions.push(eq(outreachDrafts.purpose, filters.purpose as any));
+    if (filters.workflowId) conditions.push(eq(outreachDrafts.workflowId, filters.workflowId));
+    return db.select().from(outreachDrafts).where(and(...conditions)).orderBy(desc(outreachDrafts.createdAt));
+  }
+
+  async updateOutreachDraft(id: string, updates: Partial<OutreachDraft>): Promise<OutreachDraft | null> {
+    const [row] = await db.update(outreachDrafts).set({ ...updates, updatedAt: new Date() }).where(eq(outreachDrafts.id, id)).returning();
+    return row ?? null;
+  }
+
+  async createOutreachEvent(data: InsertOutreachEvent): Promise<OutreachEvent> {
+    const [row] = await db.insert(outreachEvents).values(data).returning();
+    return row;
+  }
+
+  async getOutreachEvents(outreachDraftId: string): Promise<OutreachEvent[]> {
+    return db.select().from(outreachEvents).where(eq(outreachEvents.outreachDraftId, outreachDraftId)).orderBy(desc(outreachEvents.createdAt));
+  }
+
+  async getOutreachSummary(orgId: string): Promise<{ totalDrafts: number; pendingApproval: number; approved: number; sent: number; rejected: number; staleDrafts: number; approvalRate: number; sendRate: number; byPurpose: Record<string, number>; byChannel: Record<string, number> }> {
+    const all = await db.select().from(outreachDrafts).where(eq(outreachDrafts.orgId, orgId));
+    const staleThreshold = new Date(Date.now() - 7 * 24 * 3600000);
+    const totalDrafts = all.length;
+    const pendingApproval = all.filter(d => d.status === "pending_approval").length;
+    const approved = all.filter(d => d.status === "approved").length;
+    const sent = all.filter(d => d.status === "sent").length;
+    const rejected = all.filter(d => d.status === "rejected").length;
+    const staleDrafts = all.filter(d => d.status === "draft" && new Date(d.updatedAt!) < staleThreshold).length;
+    const submitted = all.filter(d => ["approved","sent","rejected"].includes(d.status)).length;
+    const approvalRate = submitted > 0 ? Math.round(((approved + sent) / submitted) * 100) : 0;
+    const sendRate = (approved + sent) > 0 ? Math.round((sent / (approved + sent)) * 100) : 0;
+    const byPurpose = all.reduce((acc, d) => { acc[d.purpose] = (acc[d.purpose] || 0) + 1; return acc; }, {} as Record<string, number>);
+    const byChannel = all.reduce((acc, d) => { acc[d.channel] = (acc[d.channel] || 0) + 1; return acc; }, {} as Record<string, number>);
+    return { totalDrafts, pendingApproval, approved, sent, rejected, staleDrafts, approvalRate, sendRate, byPurpose, byChannel };
   }
 
   async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {

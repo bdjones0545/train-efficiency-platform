@@ -1,0 +1,303 @@
+Task 12 — Client Outreach Drafting + Approval Queue
+
+Build a structured AI-assisted outreach drafting and approval system on top of:
+- Retention Workflows
+- Operator Actions
+- Financial Brain recommendations
+- Scheduling intelligence
+- existing communication infrastructure (if available)
+
+Goal:
+Allow TrainEfficiency operators to:
+- generate intelligent outreach drafts
+- review/edit them
+- approve them
+- track delivery status
+- connect outreach directly to recovery workflows
+
+without ever auto-sending messages.
+
+Core principle:
+AI may draft communication.
+Only humans may approve/send communication.
+
+Requirements:
+
+1. Outreach Draft model
+Create:
+outreach_drafts
+
+Fields:
+- id
+- orgId
+- workflowId (nullable)
+- operatorActionId (nullable)
+- relatedClientId
+- relatedCoachId
+- channel
+  - sms
+  - email
+  - in_app
+- purpose
+  - inactive_client
+  - unused_credits
+  - expiring_package
+  - unpaid_balance
+  - no_show_followup
+  - churn_recovery
+  - scheduling_recovery
+  - general
+- tone
+  - professional
+  - supportive
+  - energetic
+  - accountability
+  - relationship_first
+- status
+  - draft
+  - pending_approval
+  - approved
+  - sent
+  - rejected
+  - cancelled
+- subject (nullable for SMS)
+- content
+- aiGenerated
+- aiPromptSnapshot
+- aiContextSnapshot
+- generatedBy
+- approvedBy
+- sentBy
+- approvedAt
+- sentAt
+- rejectedAt
+- rejectionReason
+- createdAt
+- updatedAt
+
+Rows are never deleted.
+
+2. Outreach audit trail
+Create:
+outreach_events
+
+Tracks:
+- generated
+- edited
+- submitted_for_approval
+- approved
+- rejected
+- sent
+- cancelled
+- note_added
+
+Fields:
+- outreachDraftId
+- actorId
+- eventType
+- previousStatus
+- newStatus
+- note
+- metadata
+- createdAt
+
+3. AI draft generation endpoint
+POST /api/admin/outreach/generate
+
+Input:
+- workflowId or operatorActionId
+- clientId
+- purpose
+- channel
+- tone
+
+The AI should use:
+- client risk context
+- unused credits
+- attendance history
+- workflow metadata
+- coach relationship context
+- revenue exposure
+- scheduling history
+
+to generate:
+- concise
+- human
+- non-spammy
+- operationally useful outreach
+
+Examples:
+- “You still have 6 sessions remaining — want to get something on the calendar next week?”
+- “Haven’t seen you in a few weeks. Let’s get you back in rhythm.”
+
+4. Safety rules for generation
+AI must:
+- avoid manipulation language
+- avoid fake urgency
+- avoid guilt/shaming
+- avoid fabricated details
+- avoid over-promising results
+
+Messages should feel:
+- relationship-based
+- professional
+- coach-oriented
+- personalized from real data
+
+5. Approval queue
+New page:
+/admin/outreach-queue
+
+Views:
+- Drafts
+- Pending Approval
+- Approved
+- Sent
+- Rejected
+- Cancelled
+
+Filters:
+- channel
+- purpose
+- status
+- tone
+- AI-generated vs manual
+- assigned workflow/action
+
+6. Outreach editor
+Operators can:
+- edit generated text
+- change tone
+- regenerate
+- approve
+- reject
+- cancel
+
+Every edit creates an audit event.
+
+7. Send gating
+The system must NEVER auto-send.
+
+Sending requires:
+- approved status
+- explicit operator click
+- valid client contact info
+- final confirmation dialog
+
+If existing SendGrid/Twilio integrations already exist:
+- support real send
+- otherwise simulate/send-preview only
+
+8. Send tracking
+Track:
+- sent timestamp
+- send result
+- delivery state if available
+- channel metadata
+- failure reason if send fails
+
+Do not silently fail sends.
+
+9. Workflow integration
+Retention workflows should show:
+- linked outreach drafts
+- latest outreach status
+- outreach history
+- outreach outcomes
+
+Example:
+“Contacted via SMS — awaiting response.”
+
+10. Operator Action integration
+Actions can launch outreach drafts directly.
+
+Examples:
+- “High-value inactive client”
+→ Generate supportive outreach draft
+
+- “Unused credits”
+→ Generate scheduling recovery outreach
+
+11. Suggested scheduling recovery
+Generated outreach may optionally include:
+- suggested next available times
+- booking links
+- “reply YES to schedule” style copy only if infrastructure exists
+
+Do NOT automatically schedule anything.
+
+12. AI outreach guidance
+Allow multiple tone variants:
+- Professional
+- Relationship-first
+- Motivational
+- Accountability
+- Light-touch check-in
+
+Operators can regenerate variants before approval.
+
+13. Agent Ops integration
+Extend health endpoint with:
+- pending outreach approvals
+- failed outreach sends
+- stale drafts (>7 days)
+- unresolved outreach-linked workflows
+
+14. Reporting
+Add:
+GET /api/admin/outreach-summary
+
+Returns:
+- drafts generated
+- approval rate
+- send rate
+- response tracking placeholder
+- workflow recovery correlation
+- outreach by purpose/channel
+
+15. UI/UX direction
+The Outreach Queue should feel:
+- operational
+- high-trust
+- review-oriented
+- not like marketing spam software
+
+Avoid:
+- “blast campaign” aesthetics
+- growth-hack language
+- mass-email tooling feel
+
+16. Safety protections
+Enforce:
+- no auto-send
+- no auto-approval
+- no auto-regeneration loops
+- no sending without explicit confirmation
+- no modification of immutable accounting/workflow history
+
+17. Tests
+Add tests for:
+- draft generation
+- approval workflow
+- rejection flow
+- send gating
+- audit event creation
+- workflow linkage
+- action linkage
+- AI safety rules
+- send failure handling
+- stale draft detection
+
+18. Deliverables
+Return:
+- tables added
+- endpoints added
+- approval workflow summary
+- AI drafting architecture
+- workflow/action integration summary
+- send safety protections
+- reporting additions
+- Agent Ops additions
+- UI/dashboard summary
+- tests added
+- confirmation immutable accounting + lifecycle protections still pass

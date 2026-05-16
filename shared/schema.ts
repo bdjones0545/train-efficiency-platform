@@ -1617,3 +1617,62 @@ export const retentionWorkflowEvents = pgTable("retention_workflow_events", {
 export const insertRetentionWorkflowEventSchema = createInsertSchema(retentionWorkflowEvents).omit({ id: true, createdAt: true });
 export type RetentionWorkflowEvent = typeof retentionWorkflowEvents.$inferSelect;
 export type InsertRetentionWorkflowEvent = z.infer<typeof insertRetentionWorkflowEventSchema>;
+
+// ─── Outreach Drafts ──────────────────────────────────────────────────────────
+// channel:  email | sms | in_app
+// purpose:  inactive_client | unused_credits | expiring_package | unpaid_balance |
+//           no_show_followup | churn_recovery | scheduling_recovery | general
+// tone:     professional | supportive | energetic | accountability | relationship_first
+// status:   draft | pending_approval | approved | sent | rejected | cancelled
+
+export const outreachDrafts = pgTable("outreach_drafts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workflowId: varchar("workflow_id"),
+  operatorActionId: varchar("operator_action_id"),
+  relatedClientId: varchar("related_client_id"),
+  relatedCoachId: varchar("related_coach_id"),
+  channel: varchar("channel").notNull().default("email"),
+  purpose: varchar("purpose").notNull().default("general"),
+  tone: varchar("tone").notNull().default("professional"),
+  status: varchar("status").notNull().default("draft"),
+  subject: varchar("subject"),
+  content: text("content").notNull().default(""),
+  aiGenerated: boolean("ai_generated").default(false),
+  aiPromptSnapshot: text("ai_prompt_snapshot"),
+  aiContextSnapshot: jsonb("ai_context_snapshot"),
+  generatedBy: varchar("generated_by"),
+  approvedBy: varchar("approved_by"),
+  sentBy: varchar("sent_by"),
+  approvedAt: timestamp("approved_at"),
+  sentAt: timestamp("sent_at"),
+  rejectedAt: timestamp("rejected_at"),
+  rejectionReason: text("rejection_reason"),
+  sendResult: jsonb("send_result"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOutreachDraftSchema = createInsertSchema(outreachDrafts).omit({ id: true, createdAt: true, updatedAt: true });
+export type OutreachDraft = typeof outreachDrafts.$inferSelect;
+export type InsertOutreachDraft = z.infer<typeof insertOutreachDraftSchema>;
+
+// ─── Outreach Events ──────────────────────────────────────────────────────────
+// eventType: generated | edited | submitted_for_approval | approved | rejected |
+//            sent | cancelled | note_added | regenerated
+
+export const outreachEvents = pgTable("outreach_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  outreachDraftId: varchar("outreach_draft_id").notNull(),
+  actorId: varchar("actor_id"),
+  eventType: varchar("event_type").notNull(),
+  previousStatus: varchar("previous_status"),
+  newStatus: varchar("new_status"),
+  note: text("note"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOutreachEventSchema = createInsertSchema(outreachEvents).omit({ id: true, createdAt: true });
+export type OutreachEvent = typeof outreachEvents.$inferSelect;
+export type InsertOutreachEvent = z.infer<typeof insertOutreachEventSchema>;

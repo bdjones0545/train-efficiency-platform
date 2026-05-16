@@ -5422,6 +5422,386 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Outreach Draft Endpoints ──────────────────────────────────────────────
+
+  // POST /api/admin/outreach/generate — AI draft generation
+  app.post("/api/admin/outreach/generate", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { clientId, workflowId, operatorActionId, purpose, channel, tone } = req.body;
+      if (!clientId) return res.status(400).json({ error: "clientId is required" });
+
+      // Gather context
+      const ctx: Record<string, any> = { clientId, purpose, channel, tone };
+      try {
+        const clientProfile = await storage.getUserProfile(clientId);
+        if (clientProfile) ctx.clientName = `${clientProfile.firstName || ""} ${clientProfile.lastName || ""}`.trim();
+      } catch {}
+      if (workflowId) {
+        try {
+          const wf = await storage.getRetentionWorkflow(workflowId);
+          if (wf?.metadata) {
+            ctx.sessionsRemaining = (wf.metadata as any).sessionsRemaining;
+            ctx.daysSinceLastSession = (wf.metadata as any).daysSinceLastSession;
+            ctx.riskType = (wf.metadata as any).riskType;
+            ctx.workflowDescription = (wf.metadata as any).description;
+          }
+        } catch {}
+      }
+
+      // Safety rules embedded in system prompt
+      const TONE_GUIDANCE: Record<string, string> = {
+        professional: "professional and direct — like a business email",
+        supportive: "warm, caring, and encouraging — like a coach who knows you",
+        energetic: "upbeat and motivating — brief, punchy, action-oriented",
+        accountability: "honest and direct — holding the client to their commitment without guilt or shame",
+        relationship_first: "casual and personal — as if catching up with a client you care about",
+      };
+      const toneDesc = TONE_GUIDANCE[tone] || "professional";
+      const PURPOSE_CONTEXT: Record<string, string> = {
+        inactive_client: "The client has not attended sessions recently and has remaining sessions available.",
+        unused_credits: "The client has unused session credits that may expire.",
+        expiring_package: "The client's session package is expiring soon.",
+        unpaid_balance: "The client has an outstanding balance.",
+        no_show_followup: "The client missed a scheduled session.",
+        churn_recovery: "The client appears at risk of stopping their training entirely.",
+        scheduling_recovery: "The client has not scheduled their next session.",
+        general: "General check-in outreach.",
+      };
+      const purposeCtx = PURPOSE_CONTEXT[purpose] || "";
+      const systemPrompt = `You are a strength and conditioning business assistant writing a real outreach message on behalf of a coaching business. Tone: ${toneDesc}.
+
+Context: ${purposeCtx}
+
+SAFETY RULES — NEVER violate:
+- No manipulation or pressure tactics
+- No fake urgency ("limited time only", "act now")  
+- No guilt or shaming ("you've been neglecting", "you promised")
+- No fabricated data — only use facts from the context provided
+- No over-promising results
+- Keep it under 100 words for SMS, 200 words for email
+- Sound like a real human coach, not a marketing template
+- Do NOT include unsubscribe links, promotional banners, or spam triggers
+${channel === "email" ? "- Also write a short subject line (prefix with SUBJECT: on first line)" : ""}`;
+
+      const userMsg = `Client context: ${JSON.stringify(ctx)}
+Write a ${channel} message for a coaching business client. Be concise, human, and relationship-focused.`;
+
+      let content = "";
+      let subject: string | undefined;
+      let aiPromptSnapshot = systemPrompt;
+
+      if (process.env.OPENAI_API_KEY) {
+        const OpenAI = (await import("openai")).default;
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const r = await openai.chat.completions.create({
+          model: "gpt-4o", max_tokens: channel === "sms" ? 120 : 280,
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMsg }],
+        });
+        const raw = r.choices[0]?.message?.content || "";
+        if (channel === "email" && raw.startsWith("SUBJECT:")) {
+          const lines = raw.split("\n");
+          subject = lines[0].replace(/^SUBJECT:\s*/i, "").trim();
+          content = lines.slice(1).join("\n").trim();
+        } else {
+          content = raw.trim();
+        }
+      } else {
+        // Fallback placeholder when OpenAI not configured
+        const templates: Record<string, string> = {
+          inactive_client: ctx.sessionsRemaining
+            ? `Hi${ctx.clientName ? ` ${ctx.clientName.split(" ")[0]}` : ""}! You still have ${ctx.sessionsRemaining} sessions waiting for you. Want to get something on the calendar this week?`
+            : `Hi${ctx.clientName ? ` ${ctx.clientName.split(" ")[0]}` : ""}! Haven't seen you in a while — let's get you back on track. When works for you?`,
+          unused_credits: `Hey${ctx.clientName ? ` ${ctx.clientName.split(" ")[0]}` : ""}! Quick check-in — you have sessions remaining and we'd love to see you back. Want to schedule something this week?`,
+          scheduling_recovery: `Hi${ctx.clientName ? ` ${ctx.clientName.split(" ")[0]}` : ""}! Just noticed you don't have a session booked yet. Let's get your next one on the calendar — what days work best for you?`,
+          general: `Hi${ctx.clientName ? ` ${ctx.clientName.split(" ")[0]}` : ""}! Checking in to see how things are going. Let us know if there's anything we can help with.`,
+        };
+        content = templates[purpose] || templates.general;
+        if (channel === "email") subject = `Checking in${ctx.clientName ? ` — ${ctx.clientName.split(" ")[0]}` : ""}`;
+      }
+
+      const draft = await storage.createOutreachDraft({
+        orgId, workflowId: workflowId || undefined, operatorActionId: operatorActionId || undefined,
+        relatedClientId: clientId, channel, purpose, tone, status: "draft",
+        subject: subject || undefined, content,
+        aiGenerated: true, aiPromptSnapshot, aiContextSnapshot: ctx, generatedBy: userId,
+      });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "generated", newStatus: "draft", note: `AI generated ${tone} ${channel} draft for purpose: ${purpose}` });
+      res.status(201).json(draft);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/outreach — list with filters
+  app.get("/api/admin/outreach", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { status, channel, purpose, workflowId } = req.query as Record<string, string>;
+      const drafts = await storage.getOutreachDrafts(orgId, {
+        status: status || undefined, channel: channel || undefined,
+        purpose: purpose || undefined, workflowId: workflowId || undefined,
+      });
+      res.json(drafts);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/outreach-summary — reporting
+  app.get("/api/admin/outreach-summary", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const summary = await storage.getOutreachSummary(orgId);
+      res.json(summary);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/outreach/:id — detail + events
+  app.get("/api/admin/outreach/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const events = await storage.getOutreachEvents(draft.id);
+      res.json({ ...draft, events });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/outreach/:id/events
+  app.get("/api/admin/outreach/:id/events", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const events = await storage.getOutreachEvents(draft.id);
+      res.json(events);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/edit — edit content/subject
+  app.post("/api/admin/outreach/:id/edit", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (["sent","cancelled"].includes(draft.status)) return res.status(400).json({ error: `Cannot edit a ${draft.status} draft` });
+      const { content, subject } = req.body;
+      if (!content || !String(content).trim()) return res.status(400).json({ error: "content is required" });
+      const updated = await storage.updateOutreachDraft(draft.id, { content: String(content).trim(), subject: subject ? String(subject).trim() : draft.subject });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "edited", note: "Content edited by operator" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/regenerate — re-run AI with same context
+  app.post("/api/admin/outreach/:id/regenerate", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (!["draft"].includes(draft.status)) return res.status(400).json({ error: "Can only regenerate drafts" });
+      if (!draft.aiGenerated) return res.status(400).json({ error: "Can only regenerate AI-generated drafts" });
+      const ctx = draft.aiContextSnapshot as any || {};
+      const TONE_GUIDANCE: Record<string, string> = {
+        professional: "professional and direct", supportive: "warm and encouraging",
+        energetic: "upbeat and motivating", accountability: "honest and direct",
+        relationship_first: "casual and personal",
+      };
+      const toneDesc = TONE_GUIDANCE[draft.tone] || "professional";
+      const systemPrompt = `You are a strength and conditioning business assistant. Tone: ${toneDesc}. Write a NEW variation — different phrasing from previous. SAFETY: No manipulation, no fake urgency, no guilt/shaming, no fabricated data, no over-promising.${draft.channel === "email" ? " Write subject on first line prefixed SUBJECT:" : ""}`;
+      let content = draft.content;
+      let subject = draft.subject;
+      if (process.env.OPENAI_API_KEY) {
+        const OpenAI = (await import("openai")).default;
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const r = await openai.chat.completions.create({
+          model: "gpt-4o", max_tokens: draft.channel === "sms" ? 120 : 280,
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `Client context: ${JSON.stringify(ctx)}` }],
+        });
+        const raw = r.choices[0]?.message?.content || "";
+        if (draft.channel === "email" && raw.startsWith("SUBJECT:")) {
+          const lines = raw.split("\n");
+          subject = lines[0].replace(/^SUBJECT:\s*/i, "").trim();
+          content = lines.slice(1).join("\n").trim();
+        } else { content = raw.trim(); }
+      }
+      const updated = await storage.updateOutreachDraft(draft.id, { content, subject: subject || undefined });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "regenerated", note: "AI variant generated" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/submit — submit for approval
+  app.post("/api/admin/outreach/:id/submit", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (draft.status !== "draft") return res.status(400).json({ error: "Only drafts can be submitted" });
+      const updated = await storage.updateOutreachDraft(draft.id, { status: "pending_approval" });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "submitted_for_approval", previousStatus: "draft", newStatus: "pending_approval" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/approve — approve
+  app.post("/api/admin/outreach/:id/approve", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (draft.status !== "pending_approval") return res.status(400).json({ error: "Only pending drafts can be approved" });
+      const updated = await storage.updateOutreachDraft(draft.id, { status: "approved", approvedBy: userId, approvedAt: new Date() });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "approved", previousStatus: "pending_approval", newStatus: "approved" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/reject — reject with reason (required)
+  app.post("/api/admin/outreach/:id/reject", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (!["pending_approval","draft"].includes(draft.status)) return res.status(400).json({ error: `Cannot reject a ${draft.status} draft` });
+      const { reason } = req.body;
+      if (!reason || !String(reason).trim()) return res.status(400).json({ error: "Rejection reason is required" });
+      const updated = await storage.updateOutreachDraft(draft.id, { status: "rejected", rejectedAt: new Date(), rejectionReason: String(reason).trim() });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "rejected", previousStatus: draft.status, newStatus: "rejected", note: String(reason).trim() });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/cancel
+  app.post("/api/admin/outreach/:id/cancel", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (["sent","cancelled"].includes(draft.status)) return res.status(400).json({ error: `Cannot cancel a ${draft.status} draft` });
+      const updated = await storage.updateOutreachDraft(draft.id, { status: "cancelled" });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "cancelled", previousStatus: draft.status, newStatus: "cancelled" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/send — gated send (approved status required, explicit confirmation)
+  app.post("/api/admin/outreach/:id/send", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      // Hard gate: must be approved
+      if (draft.status !== "approved") return res.status(400).json({ error: "Only approved drafts can be sent. Draft must first be approved." });
+      if (!draft.relatedClientId) return res.status(400).json({ error: "No client linked to this draft" });
+
+      let sendResult: Record<string, any> = { channel: draft.channel, sentAt: new Date().toISOString() };
+      let sendError: string | undefined;
+
+      if (draft.channel === "email") {
+        // Attempt SendGrid if configured
+        const sgKey = process.env.SENDGRID_API_KEY;
+        if (sgKey) {
+          try {
+            const clientProfile = await storage.getUserProfile(draft.relatedClientId);
+            const toEmail = clientProfile?.email;
+            if (!toEmail) throw new Error("No email address on file for client");
+            const sgMail = await import("@sendgrid/mail");
+            sgMail.default.setApiKey(sgKey);
+            const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@trainefficiency.com";
+            await sgMail.default.send({
+              to: toEmail, from: fromEmail,
+              subject: draft.subject || "Message from your coach",
+              text: draft.content,
+            });
+            sendResult = { ...sendResult, provider: "sendgrid", status: "sent", toEmail };
+          } catch (sendErr: any) {
+            sendError = sendErr.message;
+            sendResult = { ...sendResult, provider: "sendgrid", status: "failed", error: sendError };
+          }
+        } else {
+          // Simulate/preview mode when SendGrid not configured
+          sendResult = { ...sendResult, provider: "preview_mode", status: "simulated", note: "SendGrid not configured — message logged but not delivered" };
+        }
+      } else {
+        // SMS/in_app — preview mode (no Twilio integration configured)
+        sendResult = { ...sendResult, provider: "preview_mode", status: "simulated", note: `${draft.channel} send not yet integrated — message logged but not delivered` };
+      }
+
+      if (sendError) {
+        // Log failure but do not silently swallow it
+        await storage.updateOutreachDraft(draft.id, { sendResult });
+        await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "sent", previousStatus: "approved", newStatus: "approved", note: `Send failed: ${sendError}`, metadata: sendResult });
+        return res.status(500).json({ error: `Send failed: ${sendError}`, sendResult });
+      }
+
+      const updated = await storage.updateOutreachDraft(draft.id, { status: "sent", sentBy: userId, sentAt: new Date(), sendResult });
+      await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "sent", previousStatus: "approved", newStatus: "sent", metadata: sendResult });
+
+      // If linked to a workflow, advance to contacted
+      if (draft.workflowId) {
+        try {
+          const wf = await storage.getRetentionWorkflow(draft.workflowId);
+          if (wf && wf.status === "active") {
+            await storage.updateRetentionWorkflow(wf.id, { status: "contacted" });
+            await storage.createRetentionWorkflowEvent({ workflowId: wf.id, actorId: userId, eventType: "contacted", note: `Outreach sent via ${draft.channel}` });
+          }
+        } catch {}
+      }
+
+      res.json({ ...updated, sendResult });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/outreach/:id/note
+  app.post("/api/admin/outreach/:id/note", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const draft = await storage.getOutreachDraft(req.params.id);
+      if (!draft || draft.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { note } = req.body;
+      if (!note || !String(note).trim()) return res.status(400).json({ error: "note is required" });
+      const ev = await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "note_added", note: String(note).trim() });
+      res.status(201).json(ev);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/admin/financial-brain/anomalies — raw anomaly list
   app.get("/api/admin/financial-brain/anomalies", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -12310,6 +12690,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         retentionWorkflowsUrl: "/admin/retention-workflows",
         highRiskChurnCount: await storage.getRetentionWorkflows(orgId, { riskSeverity: "critical" }).then(ws => ws.filter(w => !["completed","cancelled"].includes(w.status)).length).catch(() => 0),
         unresolvedRecoveryWorkflows: await storage.getRetentionWorkflows(orgId).then(ws => ws.filter(w => !["completed","cancelled","recovered"].includes(w.status)).length).catch(() => 0),
+        outreachQueueUrl: "/admin/outreach-queue",
+        pendingOutreachApprovals: await storage.getOutreachDrafts(orgId, { status: "pending_approval" }).then(d => d.length).catch(() => 0),
+        staleDrafts: await storage.getOutreachSummary(orgId).then(s => s.staleDrafts).catch(() => 0),
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

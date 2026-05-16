@@ -62,6 +62,7 @@ import AdminFinancialReconciliationPage from "@/pages/admin-financial-reconcilia
 import AdminFinancialBrainPage from "@/pages/admin-financial-brain";
 import AdminOperatorActionsPage from "@/pages/admin-operator-actions";
 import AdminRetentionWorkflowsPage from "@/pages/admin-retention-workflows";
+import AdminOutreachQueuePage from "@/pages/admin-outreach-queue";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { CommandPalette } from "@/components/command-palette";
@@ -225,6 +226,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/financial-brain" component={AdminFinancialBrainPage} />
                   <Route path="/admin/operator-actions" component={AdminOperatorActionsPage} />
                   <Route path="/admin/retention-workflows" component={AdminRetentionWorkflowsPage} />
+                  <Route path="/admin/outreach-queue" component={AdminOutreachQueuePage} />
                   <Route path="/admin/attention" component={AttentionInboxPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
