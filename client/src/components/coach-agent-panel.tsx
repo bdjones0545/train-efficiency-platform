@@ -592,6 +592,9 @@ interface PendingConfirmation {
   actionType: string;
   summary: string;
   expiresAt: string;
+  phone?: string;
+  smsBody?: string;
+  recipient?: string;
 }
 
 const ACTION_SUCCESS_PATTERNS = [
@@ -1447,11 +1450,32 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                       <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                         <div className="flex items-start gap-2 mb-3">
                           <CheckCircle2 className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-0.5 uppercase tracking-wide">Confirm Action</p>
+                          <div className="min-w-0 w-full">
+                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-0.5 uppercase tracking-wide">
+                              {pendingConfirmation.actionType === "send_drafted_outreach_sms" ? "Confirm SMS" : "Confirm Action"}
+                            </p>
                             <p className="text-sm text-foreground leading-relaxed">{pendingConfirmation.summary}</p>
+
+                            {/* SMS-specific preview block */}
+                            {pendingConfirmation.actionType === "send_drafted_outreach_sms" && (
+                              <div className="mt-2 space-y-1.5">
+                                {pendingConfirmation.phone && (
+                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <MessageSquare className="h-3 w-3 shrink-0" />
+                                    <span>To: <span className="font-medium text-foreground">{pendingConfirmation.recipient}</span> · {pendingConfirmation.phone}</span>
+                                  </div>
+                                )}
+                                {pendingConfirmation.smsBody && (
+                                  <div className="mt-1.5 bg-white dark:bg-black/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
+                                    <p className="text-xs text-muted-foreground mb-0.5 font-medium">Message preview</p>
+                                    <p className="text-sm text-foreground leading-relaxed">{pendingConfirmation.smsBody}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {pendingConfirmation.expiresAt && (
-                              <p className="text-xs text-muted-foreground mt-1">
+                              <p className="text-xs text-muted-foreground mt-1.5">
                                 Expires at {new Date(pendingConfirmation.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                               </p>
                             )}
@@ -1468,7 +1492,22 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                               sendMessage(`Yes, confirmed. pendingActionId: ${id}`);
                             }}
                           >
-                            Confirm
+                            {pendingConfirmation.actionType === "send_drafted_outreach_sms" ? "Send SMS" : "Confirm"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            data-testid="button-edit-message"
+                            onClick={() => {
+                              setPendingConfirmation(null);
+                              if (pendingConfirmation.actionType === "send_drafted_outreach_sms") {
+                                sendMessage("Edit the SMS message before sending");
+                              }
+                            }}
+                            style={{ display: pendingConfirmation.actionType === "send_drafted_outreach_sms" ? undefined : "none" }}
+                          >
+                            Edit
                           </Button>
                           <Button
                             size="sm"

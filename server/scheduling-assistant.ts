@@ -721,11 +721,11 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "send_drafted_outreach_sms",
-      description: "Send a previously drafted outreach message as an SMS to a client. Use after draft_client_outreach returns an agentActionId. Requires the client to have a valid phone number. Use the two-call handshake: first call with confirmed: false to preview the SMS and get a pendingActionId, present the message to the user and ask them to confirm, then call again with confirmed: true and the pendingActionId. Never invent a pendingActionId or agentActionId. Set messagePurpose to 'operational' for manual one-to-one coach messages (scheduling, check-ins, reminders, session updates — no opt-in required). Set messagePurpose to 'marketing' for bulk promotions or sales offers (opt-in required). Defaults to 'operational'.",
+      description: "Send a previously drafted outreach message as an SMS to a client. Use after draft_client_outreach returns an agentActionId. Requires the client to have a valid phone number. Two-call handshake: (1) Call with confirmed: false + agentActionId to preview the SMS and get a pendingActionId. (2) Call with confirmed: true + pendingActionId to execute. On the second call, include agentActionId if you still have it in context — the server can also resolve it automatically from the pendingActionId. Never invent a pendingActionId or agentActionId. Set messagePurpose to 'operational' for manual one-to-one coach messages (scheduling, check-ins, reminders, session updates — no opt-in required). Set messagePurpose to 'marketing' for bulk promotions or sales offers (opt-in required). Defaults to 'operational'.",
       parameters: {
         type: "object",
         properties: {
-          agentActionId: { type: "string", description: "The agentActionId returned by draft_client_outreach" },
+          agentActionId: { type: "string", description: "The agentActionId returned by draft_client_outreach. Required on the first call (confirmed: false). On the second call (confirmed: true), include it if you have it — the server resolves it automatically from the pendingActionId if omitted." },
           confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
           pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
           messagePurpose: {
@@ -734,7 +734,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             description: "Purpose of the SMS. 'operational' = manual one-to-one coach message (scheduling, check-ins, reminders, coaching communication) — no opt-in required as long as client has a phone number. 'marketing' or 'automated_outreach' = promotions, bulk campaigns, sales offers — requires explicit SMS opt-in. Default: 'operational'.",
           },
         },
-        required: ["agentActionId", "confirmed"],
+        required: ["confirmed"],
       },
     },
   },
@@ -3041,7 +3041,9 @@ async function executeTool(
           check_in: "check in and reinforce the coaching relationship",
         };
 
-        const systemMsg = `You are a coaching business assistant. Write personalized, human-sounding outreach messages for a fitness coach reaching out to a client. Keep messages concise, warm, and direct. Do not use emojis. Do not be salesy. Keep the SMS under 155 characters — count carefully, this is a hard limit. Return valid JSON only.`;
+        const systemMsg = `You are a coaching business assistant. Write personalized, human-sounding outreach messages for a fitness coach reaching out to a client. Keep messages concise, warm, and direct. Do not use emojis. Do not be salesy. Keep the SMS under 155 characters — count carefully, this is a hard limit. Return valid JSON only.
+
+VERBATIM MESSAGE RULE: If the additional context contains a complete, ready-to-send message (e.g. "this is a test of our SMS systems", "just checking in", or any sentence that reads like a finished message rather than a topic or instruction), use it EXACTLY as the "sms" value — do NOT rewrite, expand, rephrase, or paraphrase it. Use the context literally as the sms body. Still generate a suitable email_subject and email_body.`;
 
         const slotLine = targetSlot ? `Open slot to fill: ${targetSlot} — the message must reference this specific time.` : "";
 
@@ -3051,10 +3053,10 @@ Goal: ${goalLabels[goal] || goal}
 Tone: ${tone}
 ${sessionContext ? `Client session history: ${sessionContext}` : ""}
 ${slotLine}
-${context ? `Additional context: ${context}` : ""}
+${context ? `Additional context / verbatim message: ${context}` : ""}
 
 Return a JSON object with exactly these keys:
-- "sms": short text message (under 155 chars, no emoji, first-person coach voice${targetSlot ? `, must reference '${targetSlot}'` : ""})
+- "sms": short text message (under 155 chars, no emoji, first-person coach voice${targetSlot ? `, must reference '${targetSlot}'` : ""}). If the context above is a verbatim ready-to-send message, use it exactly as this value.
 - "email_subject": clear, specific subject line
 - "email_body": 3-4 sentences, personal and direct
 - "reasoning": one sentence explaining the message approach`;
@@ -3215,17 +3217,21 @@ Return a JSON object with exactly these keys:
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can send outreach SMS." });
         }
-        const agentActionId_sms: string | undefined = args.agentActionId;
-        if (!agentActionId_sms) {
-          return JSON.stringify({ error: "agentActionId is required. Call draft_client_outreach first to get one." });
-        }
 
+        // ── PREVIEW BRANCH (confirmed: false) ─────────────────────────────────
         if (args.confirmed !== true) {
+          const agentActionId_sms: string | undefined = args.agentActionId;
+          if (!agentActionId_sms) {
+            return JSON.stringify({ error: "agentActionId is required. Call draft_client_outreach first to get one." });
+          }
           const agentAction = await storage.getAgentActionById(agentActionId_sms);
           if (!agentAction) {
             return JSON.stringify({ error: "Agent action not found. The draft may have been deleted or the ID is invalid." });
           }
           if (agentAction.status !== "pending") {
+            if (agentAction.status === "sent") {
+              return JSON.stringify({ error: `This message was already sent. Draft a new message to send again.` });
+            }
             return JSON.stringify({ error: `This outreach has already been ${agentAction.status}. Draft a new message to send again.` });
           }
           if (organizationId && agentAction.organizationId !== organizationId) {
@@ -3233,13 +3239,12 @@ Return a JSON object with exactly these keys:
           }
           const clientUser = await storage.getUser(agentAction.clientId);
           if (!clientUser?.phone) {
-            return JSON.stringify({ error: "Client has no phone number on file. Cannot send SMS." });
+            return JSON.stringify({ error: `Client ${agentAction.clientName} has no phone number on file. Cannot send SMS. Add their phone number first, or send via email instead.` });
           }
           const messagePurpose: string = args.messagePurpose ?? "operational";
           const isMarketingSms = messagePurpose === "marketing" || messagePurpose === "automated_outreach";
 
           if (isMarketingSms) {
-            // Marketing/promotional SMS requires explicit opt-in
             let effectiveSmsOptIn = clientUser.smsOptIn;
             if (organizationId) {
               try {
@@ -3252,90 +3257,133 @@ Return a JSON object with exactly these keys:
             }
           }
           const mc = agentAction.messageContent as any;
-          const smsBody = mc?.smsBody ?? mc?.emailBody ?? "(no message)";
-          const pending = createPendingAction(userId, "send_drafted_outreach_sms", { agentActionId: agentActionId_sms });
+          const smsBody = mc?.sms ?? mc?.smsBody ?? mc?.emailBody ?? "(no message)";
+          // Build the actual formatted body so the preview matches what will be sent
+          const previewFirstName = clientUser.firstName || agentAction.clientName || "there";
+          const previewOrgBranding = await getOrgBranding(agentAction.organizationId);
+          const previewOrgName = previewOrgBranding?.name || "TrainEfficiency";
+          const formattedSmsBody = smsOutreach({ clientFirstName: previewFirstName, message: smsBody, orgName: previewOrgName });
+
+          const pending = createPendingAction(userId, "send_drafted_outreach_sms", {
+            agentActionId: agentActionId_sms,
+            messagePurpose,
+          });
           return JSON.stringify({
             requiresConfirmation: true,
             pendingActionId: pending.pendingActionId,
             actionType: "send_drafted_outreach_sms",
-            summary: `Send outreach SMS to ${agentAction.clientName}`,
+            summary: `Send SMS to ${agentAction.clientName} at ${clientUser.phone}`,
             recipient: agentAction.clientName,
             phone: clientUser.phone,
-            smsBody,
+            smsBody: formattedSmsBody,
+            rawSmsBody: smsBody,
+            messagePurpose,
             expiresAt: pending.expiresAt.toISOString(),
-            message: "Show the recipient name, phone number, and SMS message to the user and ask them to confirm sending. Once confirmed, call send_drafted_outreach_sms again with confirmed: true and the exact pendingActionId from this response.",
+            message: `Preview SMS to ${agentAction.clientName} (${clientUser.phone}):\n\n"${formattedSmsBody}"\n\nCall send_drafted_outreach_sms again with confirmed: true, pendingActionId: "${pending.pendingActionId}", and agentActionId: "${agentActionId_sms}" to send. Or the user can click the Send SMS button.`,
           });
         }
 
+        // ── CONFIRMATION BRANCH (confirmed: true) ─────────────────────────────
         const pendingActionId_sms: string | undefined = args.pendingActionId;
         if (!pendingActionId_sms) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call send_drafted_outreach_sms with confirmed: false first." });
         }
         const statusSms = getPendingActionStatus(pendingActionId_sms);
         if (statusSms.status === "expired") {
-          return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
+          return JSON.stringify({ error: "pending_action_expired", message: "This confirmation window expired. Call send_drafted_outreach_sms with confirmed: false to generate a new preview and pendingActionId." });
         }
         if (statusSms.status === "not_found") {
-          return JSON.stringify({ error: "pendingActionId not found. Call send_drafted_outreach_sms with confirmed: false first." });
+          return JSON.stringify({ error: "pendingActionId not found or already used. Call send_drafted_outreach_sms with confirmed: false first." });
         }
         const pvSms = validatePendingAction(statusSms.action, userId, "send_drafted_outreach_sms", args);
         if (!pvSms.valid) return JSON.stringify({ error: pvSms.error });
+
+        // Resolve agentActionId: prefer args, fall back to what was stored in the pending action
+        const resolvedAgentActionId: string =
+          (args.agentActionId as string | undefined) ||
+          (statusSms.action.normalizedArgs.agentActionId as string | undefined) ||
+          "";
+        if (!resolvedAgentActionId) {
+          return JSON.stringify({ error: "agentActionId is missing from both args and the pending action. Call send_drafted_outreach_sms with confirmed: false first." });
+        }
+
+        // Resolve messagePurpose: prefer args, fall back to stored value
+        const resolvedPurpose: string =
+          (args.messagePurpose as string | undefined) ||
+          (statusSms.action.normalizedArgs.messagePurpose as string | undefined) ||
+          "operational";
+
+        // Consume the pending action (idempotency: marks it used so it can't be confirmed twice)
         consumePendingAction(pendingActionId_sms);
 
-        const agentActionSms = await storage.getAgentActionById(agentActionId_sms);
+        const agentActionSms = await storage.getAgentActionById(resolvedAgentActionId);
         if (!agentActionSms) {
           return JSON.stringify({ error: "Agent action not found after confirmation. The draft may have been deleted." });
         }
+        // Idempotency: if already sent, report it rather than sending again
+        if (agentActionSms.status === "sent") {
+          return JSON.stringify({ success: true, alreadySent: true, message: `This SMS was already sent to ${agentActionSms.clientName}. No duplicate send.` });
+        }
         if (agentActionSms.status !== "pending") {
-          return JSON.stringify({ error: `This outreach has already been ${agentActionSms.status}.` });
+          return JSON.stringify({ error: `This outreach is in status '${agentActionSms.status}' and cannot be sent again.` });
         }
 
         const clientUserSms = await storage.getUser(agentActionSms.clientId);
         if (!clientUserSms?.phone) {
-          await storage.updateAgentAction(agentActionId_sms, { status: "failed" });
-          return JSON.stringify({ error: "Client has no phone number on file. SMS not sent." });
+          await storage.updateAgentAction(resolvedAgentActionId, { status: "failed" });
+          return JSON.stringify({ error: `Client ${agentActionSms.clientName} has no phone number on file. SMS not sent.` });
         }
 
         const mcSms = agentActionSms.messageContent as any;
-        const smsBody = mcSms?.smsBody ?? mcSms?.emailBody ?? "";
+        const smsBodySend = mcSms?.sms ?? mcSms?.smsBody ?? mcSms?.emailBody ?? "";
         const clientFirstNameSms = clientUserSms.firstName || agentActionSms.clientName || "there";
         const orgBrandingSms = await getOrgBranding(agentActionSms.organizationId);
         const orgNameSms = orgBrandingSms?.name || "TrainEfficiency";
 
         try {
           const smsPurpose: "operational" | "marketing" | "automated_outreach" =
-            args.messagePurpose === "marketing" || args.messagePurpose === "automated_outreach"
-              ? args.messagePurpose
+            resolvedPurpose === "marketing" || resolvedPurpose === "automated_outreach"
+              ? (resolvedPurpose as "marketing" | "automated_outreach")
               : "operational";
+          const finalBody = smsOutreach({ clientFirstName: clientFirstNameSms, message: smsBodySend, orgName: orgNameSms });
           const smsResult = await sendSms({
             to: clientUserSms.phone,
-            body: smsOutreach({ clientFirstName: clientFirstNameSms, message: smsBody, orgName: orgNameSms }),
+            body: finalBody,
             ctx: {
               orgId: agentActionSms.organizationId,
               type: "outreach",
               userId: clientUserSms.id,
               coachId: agentActionSms.coachId || undefined,
-              agentActionId: agentActionId_sms,
+              agentActionId: resolvedAgentActionId,
               recipientUserId: clientUserSms.id,
               messagePurpose: smsPurpose,
             },
           });
           if (smsResult.sent) {
-            await storage.updateAgentAction(agentActionId_sms, { status: "sent" });
-            console.log(`[send_drafted_outreach_sms] Sent to ${clientUserSms.phone} (action ${agentActionId_sms})`);
+            await storage.updateAgentAction(resolvedAgentActionId, { status: "sent" });
+            console.log(`[send_drafted_outreach_sms] Sent to ${clientUserSms.phone} (action ${resolvedAgentActionId})`);
             return JSON.stringify({
               success: true,
-              message: `SMS sent to ${agentActionSms.clientName} (${clientUserSms.phone}).`,
+              message: `SMS sent to ${agentActionSms.clientName} at ${clientUserSms.phone}.`,
+              recipient: agentActionSms.clientName,
+              phone: clientUserSms.phone,
+              sentAt: new Date().toISOString(),
             });
           } else {
             const skipReason = smsResult.skipped || smsResult.error || "unknown";
-            await storage.updateAgentAction(agentActionId_sms, { status: "failed" });
+            await storage.updateAgentAction(resolvedAgentActionId, { status: "failed" });
+            if (skipReason === "twilio_not_configured") {
+              return JSON.stringify({ error: "SMS provider (Twilio) is not configured for this organization. Please contact your administrator to set up Twilio credentials." });
+            }
+            if (skipReason === "sms_not_opted_in") {
+              return JSON.stringify({ error: `SMS not sent: ${agentActionSms.clientName} has not opted in to SMS. This message was classified as '${smsPurpose}'. Try resending with messagePurpose: 'operational' if this is a direct coaching message.` });
+            }
             return JSON.stringify({ error: `SMS not sent: ${skipReason}` });
           }
         } catch (err: any) {
-          await storage.updateAgentAction(agentActionId_sms, { status: "failed" });
-          console.error(`[send_drafted_outreach_sms] Failed for action ${agentActionId_sms}:`, err?.message);
-          return JSON.stringify({ error: "Failed to send SMS. The action has been marked as failed." });
+          await storage.updateAgentAction(resolvedAgentActionId, { status: "failed" });
+          console.error(`[send_drafted_outreach_sms] Failed for action ${resolvedAgentActionId}:`, err?.message);
+          return JSON.stringify({ error: `Failed to send SMS: ${err?.message || "unknown error"}` });
         }
       }
 
@@ -4144,6 +4192,16 @@ When the coach asks for outreach help, use **draft_client_outreach** to generate
 
 After drafting: present both the SMS draft and email draft. **Always offer to send the SMS directly** using **send_drafted_outreach_sms** — do NOT tell the user to copy and send manually. Do NOT say you lack texting permissions if Twilio is configured.
 
+**CRITICAL — SMS honesty guard (NEVER violate):**
+- NEVER say "I don't have the drafted SMS tied into the system tools."
+- NEVER say "I can't honor that pendingActionId."
+- NEVER say "SMS tools are not wired" or "I can't send SMS directly."
+- NEVER say "copy and paste this message" as an alternative to sending.
+- You HAVE the send_drafted_outreach_sms tool and it IS wired to the Twilio backend.
+- If the SMS fails, the TOOL will return an error message — let the tool speak. Do not pre-empt it with a refusal.
+- You may only say you cannot send if: the tool explicitly returns an error (Twilio not configured, no phone number, invalid pendingActionId, expired, already sent). In that case, report the tool's exact error message.
+- When a user says "yes", "send it", "confirmed", "go ahead", or "Yes, confirmed. pendingActionId: [id]" after seeing an SMS preview → immediately call send_drafted_outreach_sms with confirmed: true, the pendingActionId, and the agentActionId.
+
 ## Utilization Overload Interpretation
 When presenting get_coach_utilization results, use BOTH the weekly summary AND the dailyBreakdown array:
 - For "what days are overloaded?" → look at dailyBreakdown for each coach, surface days where statusLabel is "overloaded" or "high_load"
@@ -4220,7 +4278,7 @@ When a coach says "text [client] asking [X]" or "send [client] a text" → this 
 - Set messagePurpose: "automated_outreach" only for automated recurring sequences or system-generated campaigns.
 - Default to "operational" when in doubt for any manual, one-to-one coach-initiated message.
 
-When the coach says "send it", "yes text them", or "confirm" after an SMS preview → call send_drafted_outreach_sms with confirmed: true and the pendingActionId (preserve the same messagePurpose from the first call).
+When the coach says "send it", "yes text them", "confirm", "yes", "go ahead", or "Yes, confirmed. pendingActionId: [id]" after an SMS preview → immediately call send_drafted_outreach_sms with confirmed: true, the pendingActionId, and messagePurpose: "operational" (or whatever was used in the preview call). The agentActionId is automatically resolved by the server from the pendingActionId — include it if you have it, otherwise omit it. Never say you can't send — call the tool and let the tool report any errors.
 If the client has no phone number → say "I found [name] but they don't have a phone number on file."
 If the client has not opted in to SMS but this is a marketing message → say "[name] hasn't opted in to marketing SMS. Want me to send this as an email instead, or send it as an operational message if it's coaching communication?"
 
@@ -4645,7 +4703,7 @@ export function handleAssistantMessage(
   async function* generate(): AsyncGenerator<string> {
     let currentMessages = [...chatMessages];
     let maxIterations = 5;
-    let pendingConfirmPayload: { pendingActionId: string; actionType: string; summary: string; expiresAt: string } | null = null;
+    let pendingConfirmPayload: { pendingActionId: string; actionType: string; summary: string; expiresAt: string; phone?: string; smsBody?: string; recipient?: string } | null = null;
 
     while (maxIterations > 0) {
       maxIterations--;
@@ -4724,6 +4782,10 @@ export function handleAssistantMessage(
               actionType: parsed.actionType || tc.name,
               summary: parsed.summary || "",
               expiresAt: parsed.expiresAt || "",
+              // SMS-specific fields — included when actionType is send_drafted_outreach_sms
+              phone: parsed.phone,
+              smsBody: parsed.smsBody,
+              recipient: parsed.recipient,
             };
           }
         } catch {}
