@@ -5802,6 +5802,152 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // WORKFLOW ORCHESTRATOR — Task 13
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /api/admin/workflow-templates — list all available templates
+  app.get("/api/admin/workflow-templates", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { WORKFLOW_TEMPLATES } = await import("./workflow-orchestrator");
+      res.json(Object.values(WORKFLOW_TEMPLATES));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflow-runs — list runs for org with optional status filter
+  app.get("/api/admin/workflow-runs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { status, templateKey } = req.query as { status?: string; templateKey?: string };
+      const runs = await storage.getWorkflowRuns(orgId, { status, templateKey });
+      res.json(runs);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-runs — start a new workflow run
+  app.post("/api/admin/workflow-runs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { templateKey, sourceType, sourceId, metadata } = req.body;
+      if (!templateKey || typeof templateKey !== "string") return res.status(400).json({ error: "templateKey is required" });
+      const { orchestrator } = await import("./workflow-orchestrator");
+      const run = await orchestrator.start({ orgId, templateKey, sourceType, sourceId, createdBy: userId, metadata: metadata || {} });
+      res.status(201).json(run);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflow-runs/:id — get run detail with step history
+  app.get("/api/admin/workflow-runs/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const run = await storage.getWorkflowRun(req.params.id);
+      if (!run || run.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const steps = await storage.getWorkflowStepRuns(run.id);
+      res.json({ ...run, steps });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-runs/:id/cancel
+  app.post("/api/admin/workflow-runs/:id/cancel", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const run = await storage.getWorkflowRun(req.params.id);
+      if (!run || run.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (["completed","cancelled"].includes(run.status)) return res.status(400).json({ error: `Cannot cancel run with status: ${run.status}` });
+      const updated = await storage.updateWorkflowRun(run.id, { status: "cancelled", cancelledAt: new Date(), failureReason: `Cancelled by operator ${userId}` });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-runs/:id/resume — manually resume a waiting run
+  app.post("/api/admin/workflow-runs/:id/resume", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const run = await storage.getWorkflowRun(req.params.id);
+      if (!run || run.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { orchestrator } = await import("./workflow-orchestrator");
+      const updated = await orchestrator.manualResume(run.id, userId, req.body.note);
+      const steps = await storage.getWorkflowStepRuns(updated.id);
+      res.json({ ...updated, steps });
+    } catch (e: any) { res.status(400).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-runs/:id/retry-step — retry a failed step
+  app.post("/api/admin/workflow-runs/:id/retry-step", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const run = await storage.getWorkflowRun(req.params.id);
+      if (!run || run.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { stepKey } = req.body;
+      if (!stepKey) return res.status(400).json({ error: "stepKey is required" });
+      const { orchestrator } = await import("./workflow-orchestrator");
+      const updated = await orchestrator.retryStep(run.id, stepKey, userId);
+      const steps = await storage.getWorkflowStepRuns(updated.id);
+      res.json({ ...updated, steps });
+    } catch (e: any) { res.status(400).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-runs/:id/skip-step — skip a non-critical step
+  app.post("/api/admin/workflow-runs/:id/skip-step", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const run = await storage.getWorkflowRun(req.params.id);
+      if (!run || run.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { stepKey } = req.body;
+      if (!stepKey) return res.status(400).json({ error: "stepKey is required" });
+      const { orchestrator } = await import("./workflow-orchestrator");
+      const updated = await orchestrator.skipStep(run.id, stepKey, userId);
+      const steps = await storage.getWorkflowStepRuns(updated.id);
+      res.json({ ...updated, steps });
+    } catch (e: any) { res.status(400).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-runs/:id/note — add an operator note
+  app.post("/api/admin/workflow-runs/:id/note", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const run = await storage.getWorkflowRun(req.params.id);
+      if (!run || run.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { note } = req.body;
+      if (!note || !String(note).trim()) return res.status(400).json({ error: "note is required" });
+      // Store note as a step run record
+      const stepRun = await storage.createWorkflowStepRun({
+        workflowRunId: run.id,
+        stepKey: `note_${Date.now()}`,
+        stepType: "add_note",
+        status: "completed",
+        startedAt: new Date(),
+        completedAt: new Date(),
+        output: { note: String(note).trim(), addedBy: userId },
+      });
+      res.status(201).json(stepRun);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/admin/financial-brain/anomalies — raw anomaly list
   app.get("/api/admin/financial-brain/anomalies", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -12693,6 +12839,13 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         outreachQueueUrl: "/admin/outreach-queue",
         pendingOutreachApprovals: await storage.getOutreachDrafts(orgId, { status: "pending_approval" }).then(d => d.length).catch(() => 0),
         staleDrafts: await storage.getOutreachSummary(orgId).then(s => s.staleDrafts).catch(() => 0),
+        // Workflow Orchestration (Task 13)
+        workflowOrchestratorUrl: "/admin/workflow-orchestrator",
+        activeWorkflowRuns: await storage.getWorkflowRuns(orgId, { status: "running" }).then(r => r.length).catch(() => 0),
+        waitingWorkflowRuns: await storage.getWorkflowRuns(orgId, { status: "waiting" }).then(r => r.length).catch(() => 0),
+        failedWorkflowRuns: await storage.getWorkflowRuns(orgId, { status: "failed" }).then(r => r.length).catch(() => 0),
+        staleWaitingWorkflows: await storage.getWorkflowRuns(orgId, { status: "waiting" }).then(rs => rs.filter(r => r.updatedAt && (Date.now() - new Date(r.updatedAt).getTime()) > 48 * 3600000).length).catch(() => 0),
+        blockedApprovalWorkflows: await storage.getWorkflowRuns(orgId, { status: "waiting" }).then(rs => rs.filter(r => { const stepKey = r.currentStepKey; return stepKey && stepKey.includes("approval"); }).length).catch(() => 0),
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

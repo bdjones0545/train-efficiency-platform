@@ -397,6 +397,11 @@ app.use((req, res, next) => {
   setInterval(runFinancialEventRetryCron, 15 * 60 * 1000);
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
+
+  // ─── Workflow Orchestration Runner ───────────────────────────────────────
+  const { startWorkflowRunner } = await import("./workflow-runner");
+  startWorkflowRunner();
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

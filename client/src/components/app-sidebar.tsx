@@ -753,6 +753,13 @@ export function AppSidebar() {
                 testId: "nav-agent-ops",
               },
               {
+                title: "Workflow Orchestrator",
+                simplifiedTitle: "Orchestration",
+                url: "/admin/workflow-orchestrator",
+                icon: Activity,
+                testId: "nav-workflow-orchestrator",
+              },
+              {
                 title: "Workflows",
                 simplifiedTitle: "Automations",
                 url: "/admin/workflows",

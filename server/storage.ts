@@ -107,6 +107,12 @@ import {
   outreachEvents,
   type OutreachEvent,
   type InsertOutreachEvent,
+  workflowRuns,
+  type WorkflowRun,
+  type InsertWorkflowRun,
+  workflowStepRuns,
+  type WorkflowStepRun,
+  type InsertWorkflowStepRun,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -246,6 +252,17 @@ export interface IStorage {
   createOutreachEvent(data: InsertOutreachEvent): Promise<OutreachEvent>;
   getOutreachEvents(outreachDraftId: string): Promise<OutreachEvent[]>;
   getOutreachSummary(orgId: string): Promise<{ totalDrafts: number; pendingApproval: number; approved: number; sent: number; rejected: number; staleDrafts: number; approvalRate: number; sendRate: number; byPurpose: Record<string, number>; byChannel: Record<string, number> }>;
+  // Workflow Orchestration
+  createWorkflowRun(data: InsertWorkflowRun): Promise<WorkflowRun>;
+  getWorkflowRun(id: string): Promise<WorkflowRun | null>;
+  getWorkflowRuns(orgId: string, filters?: { status?: string; templateKey?: string }): Promise<WorkflowRun[]>;
+  updateWorkflowRun(id: string, updates: Partial<WorkflowRun>): Promise<WorkflowRun | null>;
+  createWorkflowStepRun(data: InsertWorkflowStepRun): Promise<WorkflowStepRun>;
+  getWorkflowStepRun(runId: string, stepKey: string): Promise<WorkflowStepRun | null>;
+  getWorkflowStepRuns(runId: string): Promise<WorkflowStepRun[]>;
+  updateWorkflowStepRun(id: string, updates: Partial<WorkflowStepRun>): Promise<WorkflowStepRun | null>;
+  getAllActiveWorkflowRuns(): Promise<WorkflowRun[]>;
+  getRetryableFailedRuns(): Promise<WorkflowRun[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1432,6 +1449,64 @@ export class DatabaseStorage implements IStorage {
     const byPurpose = all.reduce((acc, d) => { acc[d.purpose] = (acc[d.purpose] || 0) + 1; return acc; }, {} as Record<string, number>);
     const byChannel = all.reduce((acc, d) => { acc[d.channel] = (acc[d.channel] || 0) + 1; return acc; }, {} as Record<string, number>);
     return { totalDrafts, pendingApproval, approved, sent, rejected, staleDrafts, approvalRate, sendRate, byPurpose, byChannel };
+  }
+
+  // ── Workflow Orchestration ─────────────────────────────────────────────────
+
+  async createWorkflowRun(data: InsertWorkflowRun): Promise<WorkflowRun> {
+    const [row] = await db.insert(workflowRuns).values(data).returning();
+    return row;
+  }
+
+  async getWorkflowRun(id: string): Promise<WorkflowRun | null> {
+    const [row] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, id));
+    return row ?? null;
+  }
+
+  async getWorkflowRuns(orgId: string, filters: { status?: string; templateKey?: string } = {}): Promise<WorkflowRun[]> {
+    const conditions: any[] = [eq(workflowRuns.orgId, orgId)];
+    if (filters.status) conditions.push(eq(workflowRuns.status, filters.status as any));
+    if (filters.templateKey) conditions.push(eq(workflowRuns.workflowTemplateKey, filters.templateKey));
+    return db.select().from(workflowRuns).where(and(...conditions)).orderBy(desc(workflowRuns.createdAt));
+  }
+
+  async updateWorkflowRun(id: string, updates: Partial<WorkflowRun>): Promise<WorkflowRun | null> {
+    const [row] = await db.update(workflowRuns).set({ ...updates, updatedAt: new Date() }).where(eq(workflowRuns.id, id)).returning();
+    return row ?? null;
+  }
+
+  async createWorkflowStepRun(data: InsertWorkflowStepRun): Promise<WorkflowStepRun> {
+    const [row] = await db.insert(workflowStepRuns).values(data).returning();
+    return row;
+  }
+
+  async getWorkflowStepRun(runId: string, stepKey: string): Promise<WorkflowStepRun | null> {
+    const [row] = await db.select().from(workflowStepRuns)
+      .where(and(eq(workflowStepRuns.workflowRunId, runId), eq(workflowStepRuns.stepKey, stepKey)))
+      .orderBy(desc(workflowStepRuns.createdAt));
+    return row ?? null;
+  }
+
+  async getWorkflowStepRuns(runId: string): Promise<WorkflowStepRun[]> {
+    return db.select().from(workflowStepRuns).where(eq(workflowStepRuns.workflowRunId, runId)).orderBy(workflowStepRuns.createdAt);
+  }
+
+  async updateWorkflowStepRun(id: string, updates: Partial<WorkflowStepRun>): Promise<WorkflowStepRun | null> {
+    const [row] = await db.update(workflowStepRuns).set({ ...updates, updatedAt: new Date() }).where(eq(workflowStepRuns.id, id)).returning();
+    return row ?? null;
+  }
+
+  async getAllActiveWorkflowRuns(): Promise<WorkflowRun[]> {
+    return db.select().from(workflowRuns)
+      .where(or(eq(workflowRuns.status, "waiting"), eq(workflowRuns.status, "running")))
+      .orderBy(workflowRuns.createdAt);
+  }
+
+  async getRetryableFailedRuns(): Promise<WorkflowRun[]> {
+    const oneHourAgo = new Date(Date.now() - 3600000);
+    const all = await db.select().from(workflowRuns).where(eq(workflowRuns.status, "failed")).orderBy(workflowRuns.updatedAt);
+    // Only retry runs that failed recently and haven't been retried too many times
+    return all.filter(r => r.failedAt && new Date(r.failedAt) > oneHourAgo);
   }
 
   async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {

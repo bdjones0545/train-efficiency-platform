@@ -1,0 +1,333 @@
+Task 13 — Autonomous Workflow Orchestration Layer
+
+Build a multi-step operational orchestration system on top of:
+- Financial Brain
+- Operator Actions
+- Retention Workflows
+- Outreach Queue
+- Scheduling Intelligence
+- Reconciliation + Closeout infrastructure
+
+Goal:
+Transform TrainEfficiency from:
+- isolated AI-assisted workflows
+into:
+- orchestrated operational agent systems.
+
+The system should coordinate:
+- actions
+- approvals
+- outreach
+- follow-ups
+- escalations
+- scheduling recovery
+- reconciliation resolution
+- payout review workflows
+
+through structured workflow execution.
+
+Core principle:
+No autonomous financial or customer-impacting action may execute without explicit approval gates where required.
+
+Requirements:
+
+1. Workflow orchestration engine
+Create:
+server/workflow-orchestrator.ts
+
+Responsibilities:
+- workflow execution
+- step progression
+- wait conditions
+- escalation logic
+- retry handling
+- approval gating
+- orchestration state tracking
+
+The orchestrator must be deterministic and auditable.
+
+2. New orchestration tables
+
+workflow_runs
+Tracks one execution instance.
+
+Fields:
+- id
+- orgId
+- workflowTemplateKey
+- sourceType
+- sourceId
+- status
+  - pending
+  - running
+  - waiting
+  - blocked
+  - completed
+  - failed
+  - cancelled
+- currentStepKey
+- startedAt
+- completedAt
+- failedAt
+- cancelledAt
+- failureReason
+- createdBy
+- metadata (jsonb)
+- createdAt
+- updatedAt
+
+workflow_step_runs
+Tracks every step execution.
+
+Fields:
+- id
+- workflowRunId
+- stepKey
+- stepType
+- status
+  - pending
+  - running
+  - waiting
+  - completed
+  - failed
+  - skipped
+- startedAt
+- completedAt
+- failedAt
+- output (jsonb)
+- errorMessage
+- retryCount
+- createdAt
+- updatedAt
+
+Rows are immutable historically.
+
+3. Supported workflow step types
+
+Initial step types:
+- create_operator_action
+- assign_operator
+- generate_outreach
+- wait_for_approval
+- wait_duration
+- wait_for_response
+- escalate_action
+- create_retention_workflow
+- create_followup_task
+- suggest_schedule_times
+- request_closeout_review
+- request_payout_review
+- resolve_operator_action
+- resolve_workflow
+- add_note
+- conditional_branch
+
+4. Workflow template system
+Create reusable orchestration templates.
+
+Examples:
+
+inactive_prepaid_recovery
+Steps:
+1. create_operator_action
+2. generate_outreach
+3. wait_for_approval
+4. wait_duration (3 days)
+5. conditional_branch:
+   - if no response → escalate_action
+   - if booked session → resolve_workflow
+
+payout_anomaly_review
+Steps:
+1. create_operator_action
+2. request_payout_review
+3. block_closeout
+4. wait_for_resolution
+5. resolve_workflow
+
+financial_failure_escalation
+Steps:
+1. create_operator_action
+2. assign_operator
+3. wait_duration
+4. escalate_if_unresolved
+
+5. Workflow execution model
+The orchestrator should:
+- execute steps sequentially
+- persist state after every step
+- survive server restarts
+- resume safely
+- support retries
+- never double-run completed steps
+
+Use idempotency where appropriate.
+
+6. Wait state support
+Support:
+- waiting for approval
+- waiting for outreach send
+- waiting for response
+- waiting for operator resolution
+- time-based delays
+
+Workflow runs should remain resumable after waits.
+
+7. Conditional branching
+Support simple branch conditions:
+- action resolved
+- outreach approved
+- outreach sent
+- session booked
+- workflow completed
+- payout reviewed
+- no response after X days
+
+8. Escalation logic
+Allow workflows to escalate:
+- severity
+- assignment
+- closeout blockers
+- stale operational actions
+
+Examples:
+- unresolved > 3 days → critical
+- no response after outreach → escalate
+- unresolved payout review → block closeout
+
+9. Human approval gates
+Critical actions must pause execution until approved:
+- outreach send
+- payout approval
+- closeout completion
+- financial adjustment
+- cancellation reversal
+
+The orchestrator must NEVER bypass approval requirements.
+
+10. Workflow timeline UI
+New page:
+/admin/workflow-orchestrator
+
+Views:
+- Active Runs
+- Waiting
+- Failed
+- Escalated
+- Completed
+
+Each workflow run should show:
+- template
+- current step
+- status
+- related entities
+- waiting reason
+- started time
+- duration
+- escalation state
+
+11. Workflow detail view
+Show:
+- full execution timeline
+- step history
+- outputs/errors
+- retries
+- related actions/workflows/outreach
+- current waiting condition
+- escalation history
+
+12. Recovery + retry tooling
+Operators should be able to:
+- retry failed steps
+- cancel workflow runs
+- skip non-critical steps
+- manually resume blocked workflows
+- add notes
+
+All actions audited.
+
+13. Cron/runner integration
+Create:
+server/workflow-runner.ts
+
+Recurring runner:
+- resumes waiting workflows
+- checks wait conditions
+- advances eligible workflows
+- retries retryable failures
+- logs summaries
+
+Safe against duplicate execution.
+
+14. Agent Ops integration
+Expose:
+- active workflow runs
+- failed workflow runs
+- escalated workflows
+- stale waiting workflows
+- blocked approval workflows
+
+through:
+GET /api/admin/agent-ops/health
+
+15. Financial Brain integration
+The Financial Brain should be able to recommend:
+- starting orchestration templates
+- escalating workflows
+- resolving workflows
+- identifying stalled workflows
+
+But recommendations remain advisory.
+
+16. Outreach integration
+Workflow steps should integrate with:
+- outreach generation
+- approval queue
+- send state
+- response state
+
+No auto-send without approval.
+
+17. Scheduling integration
+Workflow steps should support:
+- suggested booking recovery
+- scheduling reminders
+- attendance recovery
+- rescheduling prompts
+
+18. Safety protections
+The orchestration engine:
+- must never auto-send outreach
+- must never auto-pay coaches
+- must never auto-close accounting periods
+- must never auto-adjust financial records
+- must never bypass lifecycle locks
+
+All high-risk actions require explicit human confirmation.
+
+19. Tests
+Add tests for:
+- workflow execution
+- wait states
+- retries
+- escalation logic
+- conditional branching
+- approval gating
+- workflow recovery after restart
+- duplicate execution prevention
+- timeline integrity
+- orchestration safety protections
+
+20. Deliverables
+Return:
+- tables added
+- orchestration architecture summary
+- workflow template system summary
+- runner/cron summary
+- UI/dashboard summary
+- escalation model
+- approval gate model
+- Agent Ops additions
+- retry/recovery model
+- tests added
+- confirmation immutable accounting + lifecycle protections still pass

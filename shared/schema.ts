@@ -1676,3 +1676,51 @@ export const outreachEvents = pgTable("outreach_events", {
 export const insertOutreachEventSchema = createInsertSchema(outreachEvents).omit({ id: true, createdAt: true });
 export type OutreachEvent = typeof outreachEvents.$inferSelect;
 export type InsertOutreachEvent = z.infer<typeof insertOutreachEventSchema>;
+
+// ─── Workflow Orchestration ───────────────────────────────────────────────────
+// status: pending | running | waiting | blocked | completed | failed | cancelled
+
+export const workflowRuns = pgTable("workflow_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workflowTemplateKey: varchar("workflow_template_key").notNull(),
+  sourceType: varchar("source_type"),
+  sourceId: varchar("source_id"),
+  status: varchar("status").notNull().default("pending"),
+  currentStepKey: varchar("current_step_key"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  failedAt: timestamp("failed_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  failureReason: text("failure_reason"),
+  createdBy: varchar("created_by"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWorkflowRunSchema = createInsertSchema(workflowRuns).omit({ id: true, createdAt: true, updatedAt: true });
+export type WorkflowRun = typeof workflowRuns.$inferSelect;
+export type InsertWorkflowRun = z.infer<typeof insertWorkflowRunSchema>;
+
+// step status: pending | running | waiting | completed | failed | skipped
+
+export const workflowStepRuns = pgTable("workflow_step_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workflowRunId: varchar("workflow_run_id").notNull(),
+  stepKey: varchar("step_key").notNull(),
+  stepType: varchar("step_type").notNull(),
+  status: varchar("status").notNull().default("pending"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  failedAt: timestamp("failed_at"),
+  output: jsonb("output"),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWorkflowStepRunSchema = createInsertSchema(workflowStepRuns).omit({ id: true, createdAt: true, updatedAt: true });
+export type WorkflowStepRun = typeof workflowStepRuns.$inferSelect;
+export type InsertWorkflowStepRun = z.infer<typeof insertWorkflowStepRunSchema>;
