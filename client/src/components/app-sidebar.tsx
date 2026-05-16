@@ -688,10 +688,6 @@ export function AppSidebar() {
         { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
         { title: "Team Training", url: "/team-training", icon: Dumbbell, testId: "nav-team-training" },
         { title: "My Bookings", url: "/bookings", icon: Calendar, testId: "nav-my-bookings" },
-        { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign, testId: "nav-redemptions" },
-        ...(coachTransactionsVisible
-          ? [{ title: "Transactions", url: "/coach/transactions", icon: Wallet, testId: "nav-transactions" }]
-          : []),
         ...(athleticEnabled
           ? [{
               title:
@@ -716,6 +712,10 @@ export function AppSidebar() {
               { title: "Team Training Leads", url: "/admin/team-training-leads", icon: Target, testId: "nav-team-training-leads" },
               { title: "Deal Pipeline", url: "/admin/team-training-deals", icon: KanbanSquare, testId: "nav-deal-pipeline" },
             ]
+          : []),
+        { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign, testId: "nav-redemptions" },
+        ...(coachTransactionsVisible
+          ? [{ title: "Transactions", url: "/coach/transactions", icon: Wallet, testId: "nav-transactions" }]
           : []),
         { title: "Outreach Center", url: "/coach/communications", icon: Radio, testId: "nav-outreach-center" },
         { title: "Business Plan", url: "/coach/business-plan", icon: Briefcase, testId: "nav-business-plan" },

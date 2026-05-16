@@ -210,7 +210,7 @@ const ALL_PAGES: PageDef[] = [
   { id: "scheduling-agent", label: "Scheduling Agent", url: "/scheduling/agent", icon: Bot, section: "Scheduling", keywords: "AI schedule bot" },
   { id: "availability", label: "Availability", url: "/coach/availability", icon: CalendarClock, section: "Scheduling", keywords: "open hours slots", minRole: "COACH" },
   { id: "users", label: "Users", url: "/coach/users", icon: Users, section: "Clients", keywords: "clients members manage", minRole: "COACH" },
-  { id: "redemptions", label: "Redemptions", url: "/coach/redemptions", icon: DollarSign, section: "Clients", keywords: "redeem credits", minRole: "COACH" },
+  { id: "redemptions", label: "Redemptions", url: "/coach/redemptions", icon: DollarSign, section: "Revenue", keywords: "redeem credits", minRole: "COACH" },
   { id: "transactions", label: "Transactions", url: "/coach/transactions", icon: Wallet, section: "Finance", keywords: "payments invoices money", minRole: "COACH" },
   { id: "my-profile", label: "My Profile", url: "/coach/profile", icon: UserCog, section: "Account", minRole: "COACH" },
   { id: "outreach-center", label: "Outreach Center", url: "/coach/communications", icon: Radio, section: "Growth", keywords: "email follow-up outreach prospects agent", minRole: "COACH" },
