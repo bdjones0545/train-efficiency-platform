@@ -1,0 +1,179 @@
+Audit and refactor TrainEfficiency scheduling so the Scheduling page “New Booking” modal uses the same construct, terminology, and UX pattern as the dashboard “Schedule a Session” modal.
+
+Goal:
+The scheduling flow should feel like one unified product, not two different booking systems.
+
+Primary issue:
+On /scheduling, the New Booking modal currently uses an admin-style construct:
+- Client
+- Coach
+- Session Type
+- Start
+- End
+
+But the dashboard Schedule a Session modal uses the better workflow-first construct:
+- Service
+- Client
+- Date
+- Start Time
+- Location
+- Notes
+
+Refactor the Scheduling page New Booking modal to match the dashboard Schedule a Session construct as closely as possible.
+
+Requirements:
+
+1. Standardize terminology
+- Replace user-facing “Session Type” with “Service” everywhere appropriate.
+- Keep backend fields like sessionType/serviceId only if needed, but UI language should be “Service.”
+- Ensure filters, dropdown labels, modal titles, validation messages, empty states, and buttons use the same language.
+
+2. Unify modal flow
+The Scheduling page New Booking modal should follow this hierarchy:
+- Service selector first
+- Client selector/search/create client flow second
+- Date selector
+- Start Time selector
+- Coach selector, ideally auto-suggested or defaulted if only one coach is available
+- Location selector
+- Notes
+- Primary button: “Schedule Session” or “Create Session,” but use one consistent label across the app
+
+3. Remove manual end-time burden
+- Do not require the user to manually enter both Start and End.
+- End time should be derived from selected service duration.
+- If service has no duration, use a safe default like 60 minutes and surface that clearly.
+- Preserve backend compatibility by still sending startTime and endTime to the API.
+- Validate conflicts using derived endTime.
+
+4. Reuse existing dashboard scheduling components where possible
+- Find the dashboard “Schedule a Session” modal/component.
+- Reuse or extract it into a shared component if possible.
+- Avoid duplicating two separate implementations.
+- Shared component should support different launch contexts:
+  - Dashboard quick action
+  - Scheduling page New Booking
+  - Client profile scheduling
+  - Coach/session detail scheduling, if applicable
+
+5. Audit all scheduling entry points
+Search the codebase for all places that create, edit, or schedule sessions/bookings.
+Audit and align:
+- Dashboard Schedule Session modal
+- Scheduling page New Booking modal
+- Client profile “schedule session” actions
+- Coach profile schedule actions
+- Session detail reschedule/edit modal
+- Package/session redemption scheduling
+- Scheduling Agent confirmation flow
+- Any admin booking creation forms
+- Any client portal booking forms
+
+For each entry point:
+- Use “Service” as the user-facing concept
+- Derive endTime from selected service duration
+- Use the same date/time/location/notes structure
+- Prevent editing/deleting redeemed sessions
+- Show redemption status where sessions are listed
+- Use the same validation/error language
+
+6. Fix mobile layout issues
+The current New Booking modal has Start/End fields squeezed side-by-side on mobile.
+Refactor responsive layout:
+- One column on mobile
+- Two columns only where it remains readable on desktop
+- Modal should fit within viewport with internal scrolling
+- Bottom action buttons should remain accessible
+- Avoid fields being cut off by Safari bottom browser chrome
+
+7. Data/model audit
+Audit whether the app has overlapping concepts:
+- bookings
+- sessions
+- sessionTypes
+- services
+- packages
+- redemptions
+- calendar events
+
+Document how they currently connect.
+Then make the smallest safe refactor so the UI has one clear mental model:
+- Service = the thing being scheduled
+- Session = the dated occurrence
+- Booking = the reservation/status record, if still needed internally
+- Redemption = use of a paid session/package credit
+
+Do not do a risky database rewrite unless absolutely necessary.
+
+8. API compatibility
+Audit create/update booking/session endpoints.
+Ensure the unified form can submit to existing endpoints without breaking:
+- /api/bookings
+- /api/sessions
+- /api/scheduling
+- any scheduling-agent tool endpoints
+
+If multiple endpoints perform the same job, identify them and consolidate only if safe.
+
+9. Validation rules
+Add or verify:
+- service is required
+- client is required
+- date is required
+- start time is required
+- coach is required only if the org requires coach assignment
+- derived endTime must be after startTime
+- no coach double-booking
+- no client double-booking
+- redeemed sessions cannot be edited, cancelled, deleted, or rescheduled
+- cancelled sessions should not consume credits unless business logic explicitly says otherwise
+
+10. UX polish
+When a service is selected, show a compact summary:
+- duration
+- price, if available
+- default location, if available
+- required credits, if applicable
+
+Example:
+“60 min • $70 • Spring Island • Uses 1 session credit”
+
+11. Scheduling Agent alignment
+Audit the Scheduling Agent tools and confirmations.
+The agent should speak the same language:
+- “service”
+- “schedule session”
+- “start time”
+- derived duration/end time
+
+If the agent previews a session, it should show:
+- client
+- service
+- date
+- time range
+- coach
+- location
+- credit/redemption impact
+
+12. Regression testing
+After implementation, test:
+- create from Scheduling page
+- create from Dashboard
+- create with existing client
+- create with new client
+- create with selected service duration
+- create when service has missing duration
+- reschedule session
+- cancel session
+- redeemed session lock behavior
+- mobile Safari layout
+- desktop layout
+- filtering by service/status/coach
+- scheduling agent confirmation still works
+
+Deliverables:
+- Summary of components/files changed
+- Before/after explanation of scheduling mental model
+- Any endpoints consolidated or left intentionally separate
+- Confirmation that Scheduling page New Booking now matches the Schedule Session construct
+- Confirmation that mobile modal layout is fixed
