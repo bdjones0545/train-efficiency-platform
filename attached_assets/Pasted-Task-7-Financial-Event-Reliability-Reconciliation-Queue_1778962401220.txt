@@ -1,0 +1,180 @@
+Task 7 — Financial Event Reliability + Reconciliation Queue
+
+Audit and harden TrainEfficiency’s non-blocking financial event writes.
+
+Goal:
+Ledger writes should never break the user-facing payment/redemption flow, but they also must never silently disappear.
+
+Context:
+Task 6 added revenue_ledger_events and non-blocking event writers:
+- onPaymentReceived()
+- onRedemption()
+- onCashoutPaid()
+- onRefundIssued()
+
+These currently log warnings if ledger writes fail. Now add reliability infrastructure so failures are visible, retryable, and reconcilable.
+
+Requirements:
+
+1. Audit non-blocking ledger writes
+Search for all financial/credit ledger event writers:
+- revenue_ledger_events
+- credit_ledger_events
+- wallet_transactions
+- redemptions
+- payments
+- cashouts
+- refunds
+- manual payments
+- Stripe verification
+
+Document which are blocking vs non-blocking.
+
+2. Create financial_event_failures table
+Add a durable failure queue for failed ledger writes.
+
+Fields:
+- id
+- orgId
+- userId/clientId nullable
+- coachId nullable
+- bookingId nullable
+- redemptionId nullable
+- sourceType
+- eventType
+- payload jsonb
+- idempotencyKey
+- failureMessage
+- attempts
+- status: pending | retrying | resolved | ignored | failed
+- lastAttemptAt
+- resolvedAt
+- resolvedBy
+- createdAt
+- updatedAt
+
+3. Capture failed ledger writes
+Whenever a revenue or credit ledger write fails:
+- write a financial_event_failures row
+- preserve the original payload
+- preserve the idempotencyKey
+- preserve the source action
+- do not break the original user-facing request
+
+If the failure queue insert itself fails, log a critical error.
+
+4. Retry endpoint
+Create admin-only endpoint:
+
+POST /api/admin/financial-event-failures/:id/retry
+
+Behavior:
+- loads stored payload
+- replays the correct ledger write
+- uses original idempotencyKey
+- increments attempts
+- marks resolved if success
+- leaves pending/failed if still failing
+- never creates duplicate ledger events
+
+5. Bulk reconciliation endpoint
+Create admin-only endpoint:
+
+POST /api/admin/financial-event-failures/reconcile
+
+Behavior:
+- retries all pending failures up to a safe limit, such as 50
+- returns counts:
+  - attempted
+  - resolved
+  - stillFailed
+  - ignored
+- respects idempotency keys
+
+6. Failure inbox UI
+Add admin UI card/page for Financial Event Failures.
+
+Show:
+- status
+- source type
+- event type
+- client
+- coach
+- booking/session
+- amount or delta
+- attempts
+- failure message
+- created date
+- last attempt date
+
+Actions:
+- Retry
+- Mark ignored
+- View payload/details
+
+7. Revenue integrity integration
+Update GET /api/admin/revenue-integrity to include:
+- pending financial event failures
+- failed financial event failures
+- ledger events missing after successful redemption/payment
+- stale pending failures older than 24 hours
+
+Severity:
+- pending < 1 hour = warning
+- pending > 24 hours = critical
+- failed after max attempts = critical
+
+8. Credit integrity integration
+Update GET /api/admin/accounting-integrity to include:
+- failed credit ledger events
+- missing credit ledger entries for redemptions
+- stale unresolved credit failures
+
+9. Cron retry job
+Add a safe recurring retry job:
+- runs every 15 minutes or existing cron cadence
+- retries pending failures
+- max attempts, such as 5
+- exponential backoff if easy to implement
+- logs summary
+- never retries ignored/resolved failures
+
+10. Agent Ops Monitor integration
+If Agent Ops Monitor exists, add a health signal:
+- financial_event_failures_pending
+- financial_event_failures_critical
+- last_reconciliation_run
+- last_reconciliation_result
+
+The Attention Inbox should surface unresolved critical financial failures.
+
+11. Manual reconciliation safety
+Admins should be able to mark a failure as ignored only with:
+- reason required
+- resolvedBy recorded
+- resolvedAt timestamp
+- payload preserved forever
+
+Never delete failure rows.
+
+12. Tests
+Add regression tests for:
+- revenue ledger write failure creates failure queue row
+- credit ledger write failure creates failure queue row
+- retry resolves failure and writes ledger once
+- retry is idempotent
+- bulk reconcile respects limit
+- max attempts prevents infinite retries
+- ignored failures are not retried
+- revenue integrity flags stale failures
+- accounting integrity flags credit failures
+
+Deliverables:
+- Files changed
+- Failure table schema
+- Retry/reconcile endpoints
+- UI failure inbox summary
+- Cron behavior summary
+- Agent Ops/Attention integration summary
+- Tests added
+- Confirmation that original payment/redemption flows still do not break when ledger writes fail

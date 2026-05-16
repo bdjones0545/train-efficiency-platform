@@ -51,10 +51,30 @@ async function writeRevenueEvent(data: {
   } catch (e: any) {
     // Unique constraint violation = idempotent duplicate — safe to ignore
     if (e?.code === "23505") return;
+    const msg = e?.message ?? String(e);
     console.warn(
-      `[revenue-recognition] Failed to write ${data.eventType} event (key: ${data.idempotencyKey}):`,
-      e?.message ?? e
+      `[revenue-recognition] Failed to write ${data.eventType} event (key: ${data.idempotencyKey}): ${msg}`
     );
+    // Capture into durable failure queue
+    try {
+      await storage.createFinancialEventFailure({
+        orgId: data.orgId ?? null,
+        clientId: data.clientId ?? null,
+        coachId: data.coachId ?? null,
+        bookingId: data.bookingId ?? null,
+        redemptionId: data.redemptionId ?? null,
+        sourceType: "revenue_ledger",
+        eventType: data.eventType,
+        payload: { ...data } as any,
+        idempotencyKey: data.idempotencyKey ?? null,
+        failureMessage: msg,
+        attempts: 1,
+        status: "pending",
+        lastAttemptAt: new Date(),
+      });
+    } catch (queueErr: any) {
+      console.error("[revenue-recognition] CRITICAL: failure queue insert failed:", queueErr?.message ?? queueErr);
+    }
   }
 }
 

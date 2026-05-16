@@ -383,6 +383,18 @@ app.use((req, res, next) => {
   setInterval(runRecurringTeamLeadResearch, 60 * 60 * 1000); // every hour
   // Also check for any missed runs shortly after startup (in case server restarted during a scheduled window)
   setTimeout(runRecurringTeamLeadResearch, 2 * 60 * 1000); // 2 minutes after start
+
+  // ─── Financial Event Retry Cron ──────────────────────────────────────────
+  // Retries pending financial_event_failures every 15 minutes (max 5 attempts per failure).
+  const runFinancialEventRetryCron = async () => {
+    try {
+      const { runFinancialEventRetry } = await import("./financial-event-retry-cron");
+      await runFinancialEventRetry();
+    } catch (err: any) {
+      console.error("[FinancialEventRetry] Cron wrapper error:", err?.message ?? err);
+    }
+  };
+  setInterval(runFinancialEventRetryCron, 15 * 60 * 1000);
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
   await registerRoutes(httpServer, app);

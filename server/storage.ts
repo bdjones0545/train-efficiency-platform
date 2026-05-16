@@ -80,6 +80,9 @@ import {
   revenueLedgerEvents,
   type RevenueLedgerEvent,
   type InsertRevenueLedgerEvent,
+  financialEventFailures,
+  type FinancialEventFailure,
+  type InsertFinancialEventFailure,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -185,6 +188,11 @@ export interface IStorage {
   getCreditLedgerEvents(clientId: string, limit?: number): Promise<CreditLedgerEvent[]>;
   createRevenueLedgerEvent(data: InsertRevenueLedgerEvent): Promise<RevenueLedgerEvent>;
   getRevenueLedgerEvents(orgId: string, since?: Date, limit?: number): Promise<RevenueLedgerEvent[]>;
+  createFinancialEventFailure(data: InsertFinancialEventFailure): Promise<FinancialEventFailure>;
+  getFinancialEventFailure(id: string): Promise<FinancialEventFailure | null>;
+  getFinancialEventFailures(orgId: string, statuses?: string[]): Promise<FinancialEventFailure[]>;
+  updateFinancialEventFailure(id: string, updates: Partial<FinancialEventFailure>): Promise<FinancialEventFailure | null>;
+  countFinancialEventFailures(orgId: string, status: string): Promise<number>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1167,6 +1175,47 @@ export class DatabaseStorage implements IStorage {
       .where(and(...conditions))
       .orderBy(desc(revenueLedgerEvents.createdAt))
       .limit(limit);
+  }
+
+  async createFinancialEventFailure(data: InsertFinancialEventFailure): Promise<FinancialEventFailure> {
+    const [row] = await db.insert(financialEventFailures).values(data).returning();
+    return row;
+  }
+
+  async getFinancialEventFailure(id: string): Promise<FinancialEventFailure | null> {
+    const [row] = await db.select().from(financialEventFailures).where(eq(financialEventFailures.id, id));
+    return row ?? null;
+  }
+
+  async getFinancialEventFailures(orgId: string, statuses?: string[]): Promise<FinancialEventFailure[]> {
+    const conditions: any[] = [eq(financialEventFailures.orgId, orgId)];
+    if (statuses && statuses.length > 0) {
+      conditions.push(inArray(financialEventFailures.status, statuses as any[]));
+    }
+    return db
+      .select()
+      .from(financialEventFailures)
+      .where(and(...conditions))
+      .orderBy(desc(financialEventFailures.createdAt))
+      .limit(200);
+  }
+
+  async updateFinancialEventFailure(id: string, updates: Partial<FinancialEventFailure>): Promise<FinancialEventFailure | null> {
+    const [row] = await db
+      .update(financialEventFailures)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(financialEventFailures.id, id))
+      .returning();
+    return row ?? null;
+  }
+
+  async countFinancialEventFailures(orgId: string, status: string): Promise<number> {
+    const { count } = await import("drizzle-orm");
+    const [row] = await db
+      .select({ n: count() })
+      .from(financialEventFailures)
+      .where(and(eq(financialEventFailures.orgId, orgId), eq(financialEventFailures.status, status as any)));
+    return Number(row?.n ?? 0);
   }
 
   async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {

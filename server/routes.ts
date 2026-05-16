@@ -2928,18 +2928,42 @@ export async function registerRoutes(
               sessionsRemaining: newSessionCount,
             });
             // ── Credit ledger: record the session debit for auditability ──
-            storage.createCreditLedgerEvent({
-              clientId: booking.clientId,
-              bookingId,
-              subscriptionId: activeSub.id,
-              organizationId: requesterOrgId || bookingCoachProfile?.organizationId || null,
-              eventType: "redemption_debit",
-              deltaSessions: -1,
-              deltaCents: 0,
-              sessionsAfter: newSessionCount,
-              reason: `Session redeemed: booking ${bookingId}`,
-              createdBy: userId,
-            }).catch(e => console.error("[redemption] Credit ledger write failed (non-fatal):", e));
+            (() => {
+              const creditPayload = {
+                clientId: booking.clientId,
+                bookingId,
+                subscriptionId: activeSub.id,
+                organizationId: requesterOrgId || bookingCoachProfile?.organizationId || null,
+                eventType: "redemption_debit",
+                deltaSessions: -1,
+                deltaCents: 0,
+                sessionsAfter: newSessionCount,
+                reason: `Session redeemed: booking ${bookingId}`,
+                createdBy: userId,
+              };
+              storage.createCreditLedgerEvent(creditPayload).catch(async (e: any) => {
+                console.error("[redemption] Credit ledger write failed (non-fatal):", e?.message ?? e);
+                try {
+                  await storage.createFinancialEventFailure({
+                    orgId: creditPayload.organizationId ?? null,
+                    clientId: creditPayload.clientId ?? null,
+                    coachId: null,
+                    bookingId: creditPayload.bookingId ?? null,
+                    redemptionId: null,
+                    sourceType: "credit_ledger",
+                    eventType: creditPayload.eventType,
+                    payload: creditPayload as any,
+                    idempotencyKey: null,
+                    failureMessage: e?.message ?? String(e),
+                    attempts: 1,
+                    status: "pending",
+                    lastAttemptAt: new Date(),
+                  });
+                } catch (queueErr: any) {
+                  console.error("[redemption] CRITICAL: credit failure queue insert failed:", queueErr?.message ?? queueErr);
+                }
+              });
+            })();
           }
         } catch (e) {
           console.error("Error decrementing session count on redemption:", e);
@@ -4014,6 +4038,34 @@ export async function registerRoutes(
         },
       };
 
+      // Add credit ledger failure checks
+      if (orgId) {
+        const { financialEventFailures: fefT } = await import("@shared/schema");
+        const { count: cntFn, and: andFn2, eq: eqFn2, inArray: inArrayFn2, lt: ltFn2 } = await import("drizzle-orm");
+        const cutoff24hCredit = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const [creditPending, creditFailed, creditStale] = await Promise.all([
+          db.select({ n: cntFn() }).from(fefT).where(andFn2(eqFn2(fefT.orgId, orgId), eqFn2(fefT.sourceType, "credit_ledger"), inArrayFn2(fefT.status, ["pending", "retrying"]))),
+          db.select({ n: cntFn() }).from(fefT).where(andFn2(eqFn2(fefT.orgId, orgId), eqFn2(fefT.sourceType, "credit_ledger"), eqFn2(fefT.status, "failed"))),
+          db.select({ n: cntFn() }).from(fefT).where(andFn2(eqFn2(fefT.orgId, orgId), eqFn2(fefT.sourceType, "credit_ledger"), inArrayFn2(fefT.status, ["pending", "retrying"]), ltFn2(fefT.createdAt, cutoff24hCredit))),
+        ]);
+        (report.checks as any).creditLedgerFailuresPending = {
+          label: "Credit ledger writes queued for retry",
+          count: Number(creditPending[0]?.n ?? 0),
+          severity: Number(creditPending[0]?.n ?? 0) === 0 ? "ok" : "warning",
+        };
+        (report.checks as any).creditLedgerFailuresFailed = {
+          label: "Credit ledger writes failed after max attempts",
+          count: Number(creditFailed[0]?.n ?? 0),
+          severity: Number(creditFailed[0]?.n ?? 0) > 0 ? "critical" : "ok",
+        };
+        (report.checks as any).creditLedgerFailuresStale = {
+          label: "Credit ledger failures unresolved >24 hours",
+          count: Number(creditStale[0]?.n ?? 0),
+          severity: Number(creditStale[0]?.n ?? 0) > 0 ? "critical" : "ok",
+        };
+        report.summary.totalIssues += Number(creditFailed[0]?.n ?? 0) + Number(creditStale[0]?.n ?? 0);
+      }
+
       res.json(report);
     } catch (error) {
       console.error("Error running accounting integrity check:", error);
@@ -4110,13 +4162,36 @@ export async function registerRoutes(
         LIMIT 50
       `);
 
+      // 8. Financial event failure queue checks
+      const now = new Date();
+      const cutoff1h = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+      const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const { financialEventFailures: fefTable } = await import("@shared/schema");
+      const { count: countFn, and: andFn, eq: eqFn, inArray: inArrayFn, lt: ltFn } = await import("drizzle-orm");
+
+      const [pendingCount, failedCount, staleCount] = await Promise.all([
+        db.select({ n: countFn() }).from(fefTable)
+          .where(orgId ? andFn(eqFn(fefTable.orgId, orgId), inArrayFn(fefTable.status, ["pending", "retrying"])) : inArrayFn(fefTable.status, ["pending", "retrying"])),
+        db.select({ n: countFn() }).from(fefTable)
+          .where(orgId ? andFn(eqFn(fefTable.orgId, orgId), eqFn(fefTable.status, "failed")) : eqFn(fefTable.status, "failed")),
+        db.select({ n: countFn() }).from(fefTable)
+          .where(orgId
+            ? andFn(eqFn(fefTable.orgId, orgId), inArrayFn(fefTable.status, ["pending", "retrying"]), ltFn(fefTable.createdAt, cutoff24h))
+            : andFn(inArrayFn(fefTable.status, ["pending", "retrying"]), ltFn(fefTable.createdAt, cutoff24h))),
+      ]);
+      const fefPending = Number(pendingCount[0]?.n ?? 0);
+      const fefFailed = Number(failedCount[0]?.n ?? 0);
+      const fefStale = Number(staleCount[0]?.n ?? 0);
+
       const criticalCount =
         dupRecognition.rows.length +
         dupAccruals.rows.length +
         (negativeDeferredBalance ? 1 : 0) +
         (overpaid ? 1 : 0) +
         recognizedNoRedemption.rows.length +
-        orphanedEvents.rows.length;
+        orphanedEvents.rows.length +
+        fefFailed +
+        fefStale;
 
       res.json({
         generatedAt: new Date().toISOString(),
@@ -4167,6 +4242,21 @@ export async function registerRoutes(
             count: orphanedEvents.rows.length,
             severity: orphanedEvents.rows.length > 0 ? "warning" : "ok",
             rows: orphanedEvents.rows,
+          },
+          pendingFinancialFailures: {
+            label: "Revenue ledger writes currently queued for retry",
+            count: fefPending,
+            severity: fefPending === 0 ? "ok" : "warning",
+          },
+          failedFinancialFailures: {
+            label: "Revenue ledger writes failed after max retry attempts",
+            count: fefFailed,
+            severity: fefFailed > 0 ? "critical" : "ok",
+          },
+          stalePendingFailures: {
+            label: "Revenue ledger failures unresolved for >24 hours",
+            count: fefStale,
+            severity: fefStale > 0 ? "critical" : "ok",
           },
         },
         summary: {
@@ -4271,6 +4361,123 @@ export async function registerRoutes(
       console.error("Error computing revenue summary v2:", error);
       res.status(500).json({ message: "Failed to compute revenue summary" });
     }
+  });
+
+  // ── Financial Event Failure Queue ─────────────────────────────────────────
+  // GET /api/admin/financial-event-failures — list failures for this org
+  app.get("/api/admin/financial-event-failures", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const statusFilter = req.query.status ? String(req.query.status).split(",") : undefined;
+      const failures = await storage.getFinancialEventFailures(orgId, statusFilter);
+      res.json(failures);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/financial-event-failures/:id/retry — replay one failure
+  app.post("/api/admin/financial-event-failures/:id/retry", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const failure = await storage.getFinancialEventFailure(req.params.id);
+      if (!failure) return res.status(404).json({ error: "Failure not found" });
+      if (failure.orgId !== orgId) return res.status(403).json({ error: "Forbidden" });
+      if (failure.status === "resolved" || failure.status === "ignored") {
+        return res.json({ success: false, reason: `Already ${failure.status}`, failure });
+      }
+
+      const newAttempts = (failure.attempts ?? 0) + 1;
+      await storage.updateFinancialEventFailure(failure.id, { status: "retrying", lastAttemptAt: new Date(), attempts: newAttempts });
+
+      try {
+        const p = failure.payload as Record<string, any>;
+        if (failure.sourceType === "revenue_ledger") {
+          await storage.createRevenueLedgerEvent({
+            orgId: p.orgId ?? null,
+            clientId: p.clientId ?? null,
+            coachId: p.coachId ?? null,
+            bookingId: p.bookingId ?? null,
+            redemptionId: p.redemptionId ?? null,
+            eventType: p.eventType,
+            amountCents: p.amountCents ?? 0,
+            reason: p.reason ?? "",
+            sourceAction: p.sourceAction ?? "",
+            createdBy: p.createdBy ?? null,
+            idempotencyKey: failure.idempotencyKey ?? p.idempotencyKey ?? null,
+          });
+        } else if (failure.sourceType === "credit_ledger") {
+          await storage.createCreditLedgerEvent({
+            clientId: p.clientId,
+            bookingId: p.bookingId ?? null,
+            subscriptionId: p.subscriptionId ?? null,
+            organizationId: p.organizationId ?? null,
+            eventType: p.eventType,
+            deltaSessions: p.deltaSessions ?? 0,
+            deltaCents: p.deltaCents ?? 0,
+            sessionsAfter: p.sessionsAfter ?? null,
+            reason: p.reason ?? "",
+            createdBy: p.createdBy ?? null,
+          });
+        } else {
+          throw new Error(`Unknown sourceType: ${failure.sourceType}`);
+        }
+        const updated = await storage.updateFinancialEventFailure(failure.id, { status: "resolved", resolvedAt: new Date(), resolvedBy: userId });
+        return res.json({ success: true, failure: updated });
+      } catch (replayErr: any) {
+        if ((replayErr as any)?.code === "23505") {
+          const updated = await storage.updateFinancialEventFailure(failure.id, { status: "resolved", resolvedAt: new Date(), resolvedBy: userId, failureMessage: "Already written (idempotent)" });
+          return res.json({ success: true, failure: updated });
+        }
+        const newStatus = newAttempts >= (failure.maxAttempts ?? 5) ? "failed" : "pending";
+        const updated = await storage.updateFinancialEventFailure(failure.id, { status: newStatus, failureMessage: replayErr?.message ?? String(replayErr) });
+        return res.json({ success: false, reason: replayErr?.message, failure: updated });
+      }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/financial-event-failures/reconcile — bulk retry up to 50 pending
+  app.post("/api/admin/financial-event-failures/reconcile", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const { runFinancialEventRetry } = await import("./financial-event-retry-cron");
+      const result = await runFinancialEventRetry();
+      res.json({ ...result, runBy: userId, runAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PATCH /api/admin/financial-event-failures/:id/ignore — mark as ignored with reason
+  app.patch("/api/admin/financial-event-failures/:id/ignore", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const { reason } = req.body;
+      if (!reason || !String(reason).trim()) return res.status(400).json({ error: "reason is required" });
+
+      const failure = await storage.getFinancialEventFailure(req.params.id);
+      if (!failure) return res.status(404).json({ error: "Failure not found" });
+      if (failure.orgId !== orgId) return res.status(403).json({ error: "Forbidden" });
+
+      const updated = await storage.updateFinancialEventFailure(failure.id, {
+        status: "ignored",
+        ignoreReason: String(reason).trim(),
+        resolvedAt: new Date(),
+        resolvedBy: userId,
+      });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
@@ -11103,6 +11310,18 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const revenueAgentLastRun = revenueSettings[0]?.lastRunAt ?? null;
       const revenueAgentActive = revenueAgentLastRun ? (Date.now() - new Date(revenueAgentLastRun).getTime()) < 25 * 60 * 60 * 1000 : false;
 
+      // Financial event failure signals
+      const { financialEventFailures: fefHealth } = await import("@shared/schema");
+      const { count: fefCount, and: fefAnd, eq: fefEq, inArray: fefInArray, lt: fefLt } = await import("drizzle-orm");
+      const fefCutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const [fefPendingHealth, fefFailedHealth, fefStaleHealth] = await Promise.all([
+        db.select({ n: fefCount() }).from(fefHealth).where(fefAnd(fefEq(fefHealth.orgId, orgId), fefInArray(fefHealth.status, ["pending", "retrying"]))),
+        db.select({ n: fefCount() }).from(fefHealth).where(fefAnd(fefEq(fefHealth.orgId, orgId), fefEq(fefHealth.status, "failed"))),
+        db.select({ n: fefCount() }).from(fefHealth).where(fefAnd(fefEq(fefHealth.orgId, orgId), fefInArray(fefHealth.status, ["pending", "retrying"]), fefLt(fefHealth.createdAt, fefCutoff24h))),
+      ]);
+      const financialFailuresPending = Number(fefPendingHealth[0]?.n ?? 0);
+      const financialFailuresCritical = Number(fefFailedHealth[0]?.n ?? 0) + Number(fefStaleHealth[0]?.n ?? 0);
+
       res.json({
         sendgrid: { configured: sendgridConfigured, label: sendgridConfigured ? "Connected" : "Not configured" },
         twilio: { configured: twilioConfigured, label: twilioConfigured ? "Connected" : "Not configured" },
@@ -11112,6 +11331,8 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         revenueAgentCron: { active: revenueAgentActive, lastRunAt: revenueAgentLastRun, label: revenueAgentActive ? "Active" : "No run in 25h" },
         failedJobsLast24h,
         pendingApprovalsCount,
+        financialEventFailuresPending: financialFailuresPending,
+        financialEventFailuresCritical: financialFailuresCritical,
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

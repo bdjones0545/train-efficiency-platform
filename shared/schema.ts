@@ -332,6 +332,42 @@ export const insertRevenueLedgerEventSchema = createInsertSchema(revenueLedgerEv
 export type RevenueLedgerEvent = typeof revenueLedgerEvents.$inferSelect;
 export type InsertRevenueLedgerEvent = z.infer<typeof insertRevenueLedgerEventSchema>;
 
+// ── Financial Event Failure Queue ────────────────────────────────────────────
+export const financialEventFailureStatusEnum = pgEnum("financial_event_failure_status", [
+  "pending",
+  "retrying",
+  "resolved",
+  "ignored",
+  "failed",
+]);
+
+export const financialEventFailures = pgTable("financial_event_failures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  clientId: varchar("client_id"),
+  coachId: varchar("coach_id"),
+  bookingId: varchar("booking_id"),
+  redemptionId: varchar("redemption_id"),
+  sourceType: varchar("source_type").notNull(),
+  eventType: varchar("event_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  idempotencyKey: varchar("idempotency_key"),
+  failureMessage: text("failure_message"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(5),
+  status: financialEventFailureStatusEnum("status").notNull().default("pending"),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by"),
+  ignoreReason: text("ignore_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertFinancialEventFailureSchema = createInsertSchema(financialEventFailures).omit({ id: true, createdAt: true, updatedAt: true });
+export type FinancialEventFailure = typeof financialEventFailures.$inferSelect;
+export type InsertFinancialEventFailure = z.infer<typeof insertFinancialEventFailureSchema>;
+
 export const athleticPrograms = pgTable("athletic_programs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
