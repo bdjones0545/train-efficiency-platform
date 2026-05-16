@@ -299,6 +299,39 @@ export const insertCreditLedgerEventSchema = createInsertSchema(creditLedgerEven
 export type CreditLedgerEvent = typeof creditLedgerEvents.$inferSelect;
 export type InsertCreditLedgerEvent = z.infer<typeof insertCreditLedgerEventSchema>;
 
+// ── Revenue Ledger: immutable financial event log ────────────────────────────
+export const revenueLedgerEventTypeEnum = pgEnum("revenue_ledger_event_type", [
+  "payment_received",
+  "revenue_recognized",
+  "deferred_revenue_created",
+  "deferred_revenue_released",
+  "coach_compensation_accrued",
+  "coach_compensation_paid",
+  "refund_issued",
+  "cancellation_reversal",
+  "manual_adjustment",
+]);
+
+export const revenueLedgerEvents = pgTable("revenue_ledger_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  clientId: varchar("client_id").references(() => users.id),
+  coachId: varchar("coach_id").references(() => coachProfiles.id),
+  bookingId: varchar("booking_id").references(() => bookings.id),
+  redemptionId: varchar("redemption_id"),
+  eventType: revenueLedgerEventTypeEnum("event_type").notNull(),
+  amountCents: integer("amount_cents").notNull().default(0),
+  reason: text("reason").default(""),
+  sourceAction: varchar("source_action"),
+  createdBy: varchar("created_by"),
+  idempotencyKey: varchar("idempotency_key").unique(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertRevenueLedgerEventSchema = createInsertSchema(revenueLedgerEvents).omit({ id: true, createdAt: true });
+export type RevenueLedgerEvent = typeof revenueLedgerEvents.$inferSelect;
+export type InsertRevenueLedgerEvent = z.infer<typeof insertRevenueLedgerEventSchema>;
+
 export const athleticPrograms = pgTable("athletic_programs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),

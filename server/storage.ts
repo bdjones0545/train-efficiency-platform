@@ -77,6 +77,9 @@ import {
   creditLedgerEvents,
   type CreditLedgerEvent,
   type InsertCreditLedgerEvent,
+  revenueLedgerEvents,
+  type RevenueLedgerEvent,
+  type InsertRevenueLedgerEvent,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -180,6 +183,8 @@ export interface IStorage {
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
   createCreditLedgerEvent(data: InsertCreditLedgerEvent): Promise<CreditLedgerEvent>;
   getCreditLedgerEvents(clientId: string, limit?: number): Promise<CreditLedgerEvent[]>;
+  createRevenueLedgerEvent(data: InsertRevenueLedgerEvent): Promise<RevenueLedgerEvent>;
+  getRevenueLedgerEvents(orgId: string, since?: Date, limit?: number): Promise<RevenueLedgerEvent[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1141,6 +1146,26 @@ export class DatabaseStorage implements IStorage {
       .from(creditLedgerEvents)
       .where(eq(creditLedgerEvents.clientId, clientId))
       .orderBy(desc(creditLedgerEvents.createdAt))
+      .limit(limit);
+  }
+
+  async createRevenueLedgerEvent(data: InsertRevenueLedgerEvent): Promise<RevenueLedgerEvent> {
+    const [event] = await db
+      .insert(revenueLedgerEvents)
+      .values(data)
+      .onConflictDoNothing({ target: revenueLedgerEvents.idempotencyKey })
+      .returning();
+    return event;
+  }
+
+  async getRevenueLedgerEvents(orgId: string, since?: Date, limit = 500): Promise<RevenueLedgerEvent[]> {
+    const conditions: any[] = [eq(revenueLedgerEvents.orgId, orgId)];
+    if (since) conditions.push(gte(revenueLedgerEvents.createdAt, since));
+    return db
+      .select()
+      .from(revenueLedgerEvents)
+      .where(and(...conditions))
+      .orderBy(desc(revenueLedgerEvents.createdAt))
       .limit(limit);
   }
 

@@ -1,0 +1,235 @@
+Task 6 — Revenue Recognition + Coach Compensation Engine
+
+Audit and build a proper revenue recognition and coach compensation system on top of the new accounting foundation.
+
+Goal:
+TrainEfficiency should correctly track:
+- money collected
+- revenue earned
+- deferred revenue/liability
+- coach compensation exposure
+- payout calculations
+- org-level profitability
+
+while preserving immutable accounting and redemption history.
+
+Context:
+The platform now has:
+- dollar accounting separation
+- credit ledger events
+- redemption lifecycle locks
+- idempotent redemptions
+- scheduling intelligence
+- immutable redeemed sessions
+
+Now build the financial recognition layer.
+
+Core principle:
+A payment is NOT automatically earned revenue.
+Revenue is recognized when the service/session is delivered according to business rules.
+
+Requirements:
+
+1. Audit current payment/revenue flow
+Search and document:
+- wallet_transactions
+- invoices
+- payments
+- subscriptions
+- session purchases
+- redemptions
+- coach payouts
+- commissions
+- payroll-related calculations
+- revenue dashboard calculations
+- reporting endpoints
+
+Identify:
+- where money enters
+- where revenue is currently considered “earned”
+- where coach pay is calculated
+- where deferred liability should exist but currently doesn’t
+
+2. Create revenue recognition model
+Establish these concepts explicitly:
+
+Collected Revenue
+Money received from client/org.
+
+Deferred Revenue
+Money owed in future services.
+
+Recognized Revenue
+Revenue earned after completed/redeemed session or fulfilled service.
+
+Coach Compensation Exposure
+What the coach has earned but may not yet be paid.
+
+Net Org Revenue
+Recognized revenue minus compensation obligations.
+
+Do NOT collapse these into one metric.
+
+3. Revenue ledger events
+Create immutable ledger event support for:
+- payment_received
+- revenue_recognized
+- deferred_revenue_created
+- deferred_revenue_released
+- coach_compensation_accrued
+- coach_compensation_paid
+- refund_issued
+- cancellation_reversal
+- manual_adjustment
+
+Each should include:
+- orgId
+- userId/clientId
+- coachId if applicable
+- bookingId/sessionId if applicable
+- amountCents
+- reason
+- source action
+- createdBy
+- timestamps
+
+4. Revenue recognition trigger rules
+Define and enforce:
+
+Package/session purchase:
+- increases collected revenue
+- increases deferred revenue liability
+- does NOT immediately recognize revenue
+
+Completed + redeemed session:
+- decreases deferred revenue
+- recognizes earned revenue
+- accrues coach compensation
+
+Cancelled unredeemed session:
+- no recognition
+
+Cancelled redeemed session:
+- reversal event if current rules allow
+
+Unlimited memberships:
+- configurable recognition model
+- monthly recognition or attendance-based if supported
+
+Team contracts:
+- support org-level recurring recognition
+
+5. Coach compensation engine
+Build configurable coach payout rules.
+
+Support:
+- flat per-session
+- percentage split
+- per-service rates
+- org-level overrides
+- future commission support
+
+Examples:
+- Coach earns $40 per session
+- Coach earns 60% of recognized revenue
+- Team training pays flat $100/session
+- Different services pay different rates
+
+6. Compensation accruals
+Coach earnings should accrue automatically when:
+- session becomes completed + redeemed
+- or another recognized fulfillment rule occurs
+
+Do NOT accrue on:
+- scheduled only
+- cancelled
+- no-show unless explicitly configured
+
+7. Payout tracking
+Separate:
+- accrued earnings
+- paid earnings
+- pending payouts
+
+Support:
+- payout periods
+- payroll exports later
+- manual payout marking
+- audit trail of payout events
+
+8. Dashboard/reporting updates
+Audit dashboards and analytics.
+
+Add or separate:
+- collected revenue
+- recognized revenue
+- deferred liability
+- pending coach payouts
+- paid coach payouts
+- projected revenue
+- average revenue per session
+- revenue by service
+- revenue by coach
+- org profitability
+
+Do NOT display inflated revenue by counting unfulfilled packages as earned revenue.
+
+9. Coach-facing visibility
+Coach dashboards should show:
+- completed sessions
+- accrued earnings
+- pending payout
+- paid payout history
+- payout breakdown by service/session
+
+10. Agent alignment
+Scheduling/payment agents must understand:
+- scheduling does not equal earned revenue
+- completed redeemed sessions trigger recognition
+- cancellation may reverse accruals
+- payout previews should be informational only unless admin-confirmed
+
+11. Integrity protections
+Ensure:
+- revenue cannot recognize twice for same redemption
+- coach compensation cannot accrue twice
+- deleting sessions cannot erase recognized history
+- completed redeemed sessions remain immutable
+- reversal events are additive, not destructive
+
+12. Diagnostic endpoint
+Create read-only admin integrity diagnostics:
+GET /api/admin/revenue-integrity
+
+Checks:
+- duplicate revenue recognition
+- duplicate coach accruals
+- negative deferred revenue
+- recognized revenue with no fulfillment event
+- coach payout mismatch
+- sessions recognized without redemption
+- orphaned payout records
+
+13. Testing
+Add regression tests for:
+- package purchase creates deferred revenue
+- completed redeemed session recognizes revenue once
+- coach accrual generated once
+- duplicate redemption does not double-recognize revenue
+- cancellation reversal logic
+- payout totals correct
+- org profitability calculations
+- percentage split calculations
+- flat-rate calculations
+- negative deferred revenue prevention
+
+Deliverables:
+- Files changed
+- Revenue model summary
+- Compensation model summary
+- Ledger event architecture
+- Dashboard/reporting changes
+- Integrity protections added
+- Diagnostic endpoint summary
+- Tests added
+- Confirmation that Task 2 lifecycle locks still pass

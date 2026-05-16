@@ -85,6 +85,8 @@ type BusinessPlanData = {
     totalRevenueCents: number;
     predictedMonthlyRevenueCents: number;
     subscriptionRevenueCents: number;
+    coachPendingCents?: number;
+    coachPaidCents?: number;
   };
   revenueHistory: RevenueMonth[];
   actualRevenue: {
@@ -438,7 +440,21 @@ export default function CoachBusinessPlanPage() {
                 Revenue Generated
               </div>
               <p className="text-2xl font-bold">${(plan.stats.totalRevenueCents / 100).toFixed(0)}</p>
-              <p className="text-xs text-muted-foreground">Coach earnings: ${((plan.stats.coachEarningsCents || 0) / 100).toFixed(0)}</p>
+              <div className="flex flex-col gap-0.5 mt-0.5">
+                <p className="text-xs text-muted-foreground">
+                  Total accrued: <span className="font-medium text-foreground">${((plan.stats.coachEarningsCents || 0) / 100).toFixed(2)}</span>
+                </p>
+                {(plan.stats.coachPendingCents ?? 0) > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                    Pending payout: ${((plan.stats.coachPendingCents ?? 0) / 100).toFixed(2)}
+                  </p>
+                )}
+                {(plan.stats.coachPaidCents ?? 0) > 0 && (
+                  <p className="text-xs text-green-600 dark:text-green-400">
+                    Paid out: ${((plan.stats.coachPaidCents ?? 0) / 100).toFixed(2)}
+                  </p>
+                )}
+              </div>
             </Card>
             <Card className="p-4 space-y-1 border-primary/30 bg-primary/5" data-testid="stat-predicted-revenue">
               <div className="flex items-center gap-2 text-primary text-xs font-medium">

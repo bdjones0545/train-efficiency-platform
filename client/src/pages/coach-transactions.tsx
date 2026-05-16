@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus, TrendingUp, ChevronLeft, ChevronRight, CreditCard, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Search, Wallet, DollarSign, Plus, TrendingUp, ChevronLeft, ChevronRight, CreditCard, ExternalLink, Loader2, BarChart3, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -19,6 +19,33 @@ import type { User } from "@shared/models/auth";
 import type { Organization } from "@shared/schema";
 
 type RevenuePeriod = "daily" | "weekly" | "monthly" | "yearly";
+
+interface RevenueSummaryV2 {
+  generatedAt: string;
+  organizationId: string | null;
+  since: string | null;
+  metrics: {
+    collectedRevenueCents: number;
+    recognizedRevenueCents: number;
+    deferredRevenueCents: number;
+    deferredCreatedCents: number;
+    deferredReleasedCents: number;
+    coachAccruedCents: number;
+    coachPaidCents: number;
+    coachPendingCents: number;
+    refundedCents: number;
+    netOrgRevenueCents: number;
+  };
+  coachBreakdown: {
+    coachId: string;
+    coachName: string;
+    accruedCents: number;
+    paidCents: number;
+    pendingCents: number;
+    sessionsRedeemed: number;
+  }[];
+  eventCounts: Record<string, number>;
+}
 
 interface TransactionWithUser {
   id: string;
@@ -101,6 +128,16 @@ export default function CoachTransactionsPage() {
 
   const { data: payoutRedemptions } = useQuery<{ id: string; coachId: string; coachEmail: string | null; amountCents: number; redeemedAt: string | null; payoutStatus: string }[]>({
     queryKey: ["/api/coach/payout-redemptions"],
+  });
+
+  const { data: revenueSummaryV2, isLoading: revSummaryLoading } = useQuery<RevenueSummaryV2>({
+    queryKey: ["/api/admin/revenue-summary-v2", orgId],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/revenue-summary-v2");
+      if (!res.ok) throw new Error("Failed to fetch revenue summary");
+      return res.json();
+    },
+    enabled: true,
   });
 
   const manualPaymentMutation = useMutation({
@@ -385,6 +422,110 @@ export default function CoachTransactionsPage() {
           </p>
         </Card>
       </div>
+
+      {/* ── Revenue Recognition Summary (v2) ─────────────────────────────── */}
+      <Card className="p-4 space-y-4" data-testid="card-revenue-summary-v2">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">Revenue Recognition Ledger</span>
+          <Badge variant="outline" className="text-xs">All-Time</Badge>
+        </div>
+        {revSummaryLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16" />)}
+          </div>
+        ) : revenueSummaryV2 ? (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="space-y-0.5" data-testid="metric-collected-revenue">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <ArrowDownLeft className="h-3 w-3" /> Collected Revenue
+                </p>
+                <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                  ${(revenueSummaryV2.metrics.collectedRevenueCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Money received</p>
+              </div>
+              <div className="space-y-0.5" data-testid="metric-recognized-revenue">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> Recognized Revenue
+                </p>
+                <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                  ${(revenueSummaryV2.metrics.recognizedRevenueCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Earned on delivery</p>
+              </div>
+              <div className="space-y-0.5" data-testid="metric-deferred-revenue">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> Deferred Revenue
+                </p>
+                <p className="text-lg font-bold text-amber-600 dark:text-amber-400">
+                  ${(revenueSummaryV2.metrics.deferredRevenueCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Owed as future sessions</p>
+              </div>
+              <div className="space-y-0.5" data-testid="metric-coach-accrued">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <DollarSign className="h-3 w-3" /> Coach Accrued
+                </p>
+                <p className="text-lg font-bold text-orange-600 dark:text-orange-400">
+                  ${(revenueSummaryV2.metrics.coachAccruedCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Earned by coaches</p>
+              </div>
+              <div className="space-y-0.5" data-testid="metric-coach-pending">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> Coach Pending
+                </p>
+                <p className="text-lg font-bold text-red-500 dark:text-red-400">
+                  ${(revenueSummaryV2.metrics.coachPendingCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Unpaid to coaches</p>
+              </div>
+              <div className="space-y-0.5" data-testid="metric-net-org-revenue">
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3" /> Net Org Revenue
+                </p>
+                <p className="text-lg font-bold text-green-700 dark:text-green-300">
+                  ${(revenueSummaryV2.metrics.netOrgRevenueCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Recognized − accrued</p>
+              </div>
+            </div>
+            {revenueSummaryV2.coachBreakdown.length > 0 && (
+              <div className="pt-2 border-t">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Coach Compensation Breakdown</p>
+                <div className="space-y-2">
+                  {revenueSummaryV2.coachBreakdown.map((coach) => (
+                    <div key={coach.coachId} className="flex items-center justify-between text-sm" data-testid={`coach-breakdown-${coach.coachId}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{coach.coachName}</span>
+                        <Badge variant="outline" className="text-xs">{coach.sessionsRedeemed} sessions</Badge>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-right">
+                        <span className="text-muted-foreground">Accrued: <span className="font-semibold text-foreground">${(coach.accruedCents / 100).toFixed(2)}</span></span>
+                        <span className="text-muted-foreground">Paid: <span className="font-semibold text-green-600 dark:text-green-400">${(coach.paidCents / 100).toFixed(2)}</span></span>
+                        {coach.pendingCents > 0 && (
+                          <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-300">
+                            ${(coach.pendingCents / 100).toFixed(2)} pending
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(revenueSummaryV2.eventCounts["revenue_recognized"] ?? 0) === 0 && (
+              <p className="text-xs text-muted-foreground italic">
+                No ledger events yet — they will appear here as sessions are redeemed and payments are recorded going forward.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Failed to load revenue summary.</p>
+        )}
+      </Card>
 
       {orgData?.subscriptionsEnabled && (
         <Card className="p-4">

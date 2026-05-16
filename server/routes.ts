@@ -28,6 +28,7 @@ import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClie
 import { startWeeklyReminderJob } from "./weekly-reminder";
 import { startSessionReminderJob } from "./session-reminders";
 import { handleAssistantMessage } from "./scheduling-assistant";
+import { onPaymentReceived, onRedemption, onCashoutPaid } from "./revenue-recognition";
 import { computeCommandCenter, setMonthlyGoal, buildCommandCenterContextString } from "./business-command-center";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
@@ -2945,6 +2946,19 @@ export async function registerRoutes(
         }
       }
 
+      // ── Revenue recognition: write immutable ledger events ──────────────────
+      onRedemption({
+        orgId: requesterOrgId || bookingCoachProfile?.organizationId || null,
+        clientId: booking.clientId,
+        coachId: booking.coachId,
+        bookingId,
+        redemptionId: redemption.id,
+        recognizedAmountCents: totalCollectedCents,
+        coachCompensationCents: amountCents,
+        isSubscriptionSession: !!booking.subscriptionPlanId,
+        createdBy: userId,
+      }).catch(e => console.error("[redemption] Revenue recognition write failed (non-fatal):", e));
+
       res.json(redemption);
     } catch (error) {
       console.error("Error creating redemption:", error);
@@ -3319,6 +3333,20 @@ export async function registerRoutes(
 
       const description = `Manual payment (${method === "cash" ? "Cash" : "Venmo"})`;
       const tx = await storage.creditWallet(userId, amountCents, description);
+
+      // ── Revenue recognition: record payment received ─────────────────────────
+      {
+        const coachUserId = req.user.claims.sub;
+        const coachProf = await storage.getCoachProfile(coachUserId);
+        onPaymentReceived({
+          orgId: coachProf?.organizationId || null,
+          clientId: userId,
+          amountCents,
+          walletTxId: tx.id,
+          isSubscriptionPayment: false,
+          createdBy: coachUserId,
+        }).catch(() => {});
+      }
 
       if (user.email) {
         const newBalance = await storage.getUserBalance(userId);
@@ -3993,6 +4021,258 @@ export async function registerRoutes(
     }
   });
 
+  // ── Revenue Integrity Diagnostic ─────────────────────────────────────────────
+  app.get("/api/admin/revenue-integrity", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
+      const orgFilter = orgId ? sql`AND org_id = ${orgId}` : sql``;
+
+      // 1. Duplicate revenue recognition (same redemption_id recognized > 1x)
+      const dupRecognition = await db.execute(sql`
+        SELECT redemption_id, COUNT(*)::int AS count
+        FROM revenue_ledger_events
+        WHERE event_type = 'revenue_recognized'
+          AND redemption_id IS NOT NULL
+          ${orgFilter}
+        GROUP BY redemption_id
+        HAVING COUNT(*) > 1
+      `);
+
+      // 2. Duplicate coach compensation accruals (same redemption_id accrued > 1x)
+      const dupAccruals = await db.execute(sql`
+        SELECT redemption_id, COUNT(*)::int AS count
+        FROM revenue_ledger_events
+        WHERE event_type = 'coach_compensation_accrued'
+          AND redemption_id IS NOT NULL
+          ${orgFilter}
+        GROUP BY redemption_id
+        HAVING COUNT(*) > 1
+      `);
+
+      // 3. Negative net deferred revenue (released more than created — logic error)
+      const deferredNet = await db.execute(sql`
+        SELECT
+          COALESCE(SUM(CASE WHEN event_type = 'deferred_revenue_created' THEN amount_cents ELSE 0 END), 0)::int AS created,
+          COALESCE(SUM(CASE WHEN event_type = 'deferred_revenue_released' THEN amount_cents ELSE 0 END), 0)::int AS released
+        FROM revenue_ledger_events
+        WHERE event_type IN ('deferred_revenue_created', 'deferred_revenue_released')
+          ${orgFilter}
+      `);
+      const deferredCreated = (deferredNet.rows[0] as any)?.created ?? 0;
+      const deferredReleased = (deferredNet.rows[0] as any)?.released ?? 0;
+      const negativeDeferredBalance = deferredReleased > deferredCreated;
+
+      // 4. Sessions recognized without a corresponding redemption record
+      const recognizedNoRedemption = await db.execute(sql`
+        SELECT rle.id, rle.redemption_id, rle.booking_id, rle.amount_cents, rle.created_at
+        FROM revenue_ledger_events rle
+        LEFT JOIN redemptions r ON r.id = rle.redemption_id
+        WHERE rle.event_type = 'revenue_recognized'
+          AND rle.redemption_id IS NOT NULL
+          AND r.id IS NULL
+          ${orgFilter}
+        LIMIT 50
+      `);
+
+      // 5. Coach payout mismatch: total accrued vs total paid cashouts
+      const payoutMismatch = await db.execute(sql`
+        SELECT
+          COALESCE(SUM(CASE WHEN event_type = 'coach_compensation_accrued' THEN amount_cents ELSE 0 END), 0)::int AS accrued,
+          COALESCE(SUM(CASE WHEN event_type = 'coach_compensation_paid' THEN amount_cents ELSE 0 END), 0)::int AS paid
+        FROM revenue_ledger_events
+        WHERE event_type IN ('coach_compensation_accrued', 'coach_compensation_paid')
+          ${orgFilter}
+      `);
+      const totalAccrued = (payoutMismatch.rows[0] as any)?.accrued ?? 0;
+      const totalPaid = (payoutMismatch.rows[0] as any)?.paid ?? 0;
+      const overpaid = totalPaid > totalAccrued;
+
+      // 6. Redemptions missing any recognition event (redeemed but no ledger event written)
+      const redemptionsNoLedger = await db.execute(sql`
+        SELECT r.id, r.booking_id, r.coach_id, r.redeemed_at, r.amount_cents
+        FROM redemptions r
+        LEFT JOIN revenue_ledger_events rle ON rle.redemption_id = r.id AND rle.event_type = 'revenue_recognized'
+        WHERE rle.id IS NULL
+          ${orgId ? sql`AND r.coach_id IN (SELECT id FROM coach_profiles WHERE organization_id = ${orgId})` : sql``}
+        ORDER BY r.redeemed_at DESC
+        LIMIT 50
+      `);
+
+      // 7. Orphaned revenue ledger events (booking_id or client_id references deleted records)
+      const orphanedEvents = await db.execute(sql`
+        SELECT rle.id, rle.event_type, rle.booking_id, rle.client_id, rle.created_at
+        FROM revenue_ledger_events rle
+        LEFT JOIN bookings b ON b.id = rle.booking_id
+        WHERE rle.booking_id IS NOT NULL AND b.id IS NULL
+          ${orgFilter}
+        LIMIT 50
+      `);
+
+      const criticalCount =
+        dupRecognition.rows.length +
+        dupAccruals.rows.length +
+        (negativeDeferredBalance ? 1 : 0) +
+        (overpaid ? 1 : 0) +
+        recognizedNoRedemption.rows.length +
+        orphanedEvents.rows.length;
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        organizationId: orgId,
+        checks: {
+          duplicateRecognition: {
+            label: "Duplicate revenue_recognized events (same redemption_id > 1x)",
+            count: dupRecognition.rows.length,
+            severity: dupRecognition.rows.length > 0 ? "critical" : "ok",
+            rows: dupRecognition.rows,
+          },
+          duplicateAccruals: {
+            label: "Duplicate coach_compensation_accrued events (same redemption_id > 1x)",
+            count: dupAccruals.rows.length,
+            severity: dupAccruals.rows.length > 0 ? "critical" : "ok",
+            rows: dupAccruals.rows,
+          },
+          negativeDeferredBalance: {
+            label: "Net deferred revenue is negative (released > created)",
+            count: negativeDeferredBalance ? 1 : 0,
+            severity: negativeDeferredBalance ? "critical" : "ok",
+            deferredCreatedCents: deferredCreated,
+            deferredReleasedCents: deferredReleased,
+            netDeferredCents: deferredCreated - deferredReleased,
+          },
+          recognizedWithoutRedemption: {
+            label: "Revenue recognized events referencing non-existent redemption",
+            count: recognizedNoRedemption.rows.length,
+            severity: recognizedNoRedemption.rows.length > 0 ? "warning" : "ok",
+            rows: recognizedNoRedemption.rows,
+          },
+          payoutOverpaid: {
+            label: "Coach compensation paid exceeds accrued (overpayment risk)",
+            count: overpaid ? 1 : 0,
+            severity: overpaid ? "critical" : "ok",
+            totalAccruedCents: totalAccrued,
+            totalPaidCents: totalPaid,
+            differencesCents: totalAccrued - totalPaid,
+          },
+          redemptionsWithoutLedger: {
+            label: "Redemptions with no matching revenue_recognized event (pre-Task-6 data)",
+            count: redemptionsNoLedger.rows.length,
+            severity: redemptionsNoLedger.rows.length > 0 ? "info" : "ok",
+            rows: redemptionsNoLedger.rows,
+          },
+          orphanedLedgerEvents: {
+            label: "Revenue ledger events referencing non-existent bookings",
+            count: orphanedEvents.rows.length,
+            severity: orphanedEvents.rows.length > 0 ? "warning" : "ok",
+            rows: orphanedEvents.rows,
+          },
+        },
+        summary: {
+          criticalIssues: criticalCount,
+          hasPreTask6Data: redemptionsNoLedger.rows.length > 0,
+          note: "Pre-Task-6 redemptions lack ledger events — this is expected for historical data.",
+        },
+      });
+    } catch (error) {
+      console.error("Error running revenue integrity check:", error);
+      res.status(500).json({ message: "Failed to run revenue integrity check" });
+    }
+  });
+
+  // ── Revenue Summary V2 — collected / recognized / deferred / compensation ────
+  app.get("/api/admin/revenue-summary-v2", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId || null;
+      const sinceParam = req.query.since as string | undefined;
+      const since = sinceParam ? new Date(sinceParam) : undefined;
+
+      const orgFilter = orgId ? sql`AND org_id = ${orgId}` : sql``;
+      const sinceFilter = since ? sql`AND created_at >= ${since}` : sql``;
+
+      const totals = await db.execute(sql`
+        SELECT
+          event_type,
+          COALESCE(SUM(amount_cents), 0)::int AS total_cents,
+          COUNT(*)::int AS event_count
+        FROM revenue_ledger_events
+        WHERE 1=1 ${orgFilter} ${sinceFilter}
+        GROUP BY event_type
+      `);
+
+      const byType: Record<string, { totalCents: number; count: number }> = {};
+      for (const row of totals.rows as any[]) {
+        byType[row.event_type] = { totalCents: row.total_cents, count: row.event_count };
+      }
+
+      const get = (type: string) => byType[type]?.totalCents ?? 0;
+
+      const collectedRevenueCents = get("payment_received");
+      const recognizedRevenueCents = get("revenue_recognized");
+      const deferredCreatedCents = get("deferred_revenue_created");
+      const deferredReleasedCents = get("deferred_revenue_released");
+      const deferredRevenueCents = Math.max(0, deferredCreatedCents - deferredReleasedCents);
+      const coachAccruedCents = get("coach_compensation_accrued");
+      const coachPaidCents = get("coach_compensation_paid");
+      const refundedCents = get("refund_issued");
+      const netOrgRevenueCents = Math.max(0, recognizedRevenueCents - coachAccruedCents);
+
+      // Per-coach accruals (last 90 days)
+      const coachBreakdown = await db.execute(sql`
+        SELECT
+          rle.coach_id,
+          u.first_name,
+          u.last_name,
+          COALESCE(SUM(CASE WHEN rle.event_type = 'coach_compensation_accrued' THEN rle.amount_cents ELSE 0 END), 0)::int AS accrued_cents,
+          COALESCE(SUM(CASE WHEN rle.event_type = 'coach_compensation_paid' THEN rle.amount_cents ELSE 0 END), 0)::int AS paid_cents,
+          COUNT(CASE WHEN rle.event_type = 'coach_compensation_accrued' THEN 1 END)::int AS sessions_redeemed
+        FROM revenue_ledger_events rle
+        LEFT JOIN coach_profiles cp ON cp.id = rle.coach_id
+        LEFT JOIN users u ON u.id = cp.user_id
+        WHERE rle.coach_id IS NOT NULL
+          AND rle.event_type IN ('coach_compensation_accrued', 'coach_compensation_paid')
+          ${orgFilter}
+        GROUP BY rle.coach_id, u.first_name, u.last_name
+        ORDER BY accrued_cents DESC
+      `);
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        organizationId: orgId,
+        since: since?.toISOString() ?? null,
+        metrics: {
+          collectedRevenueCents,
+          recognizedRevenueCents,
+          deferredRevenueCents,
+          deferredCreatedCents,
+          deferredReleasedCents,
+          coachAccruedCents,
+          coachPaidCents,
+          coachPendingCents: Math.max(0, coachAccruedCents - coachPaidCents),
+          refundedCents,
+          netOrgRevenueCents,
+        },
+        coachBreakdown: (coachBreakdown.rows as any[]).map(r => ({
+          coachId: r.coach_id,
+          coachName: [r.first_name, r.last_name].filter(Boolean).join(" ") || "Unknown",
+          accruedCents: r.accrued_cents,
+          paidCents: r.paid_cents,
+          pendingCents: Math.max(0, r.accrued_cents - r.paid_cents),
+          sessionsRedeemed: r.sessions_redeemed,
+        })),
+        eventCounts: Object.fromEntries(
+          Object.entries(byType).map(([k, v]) => [k, v.count])
+        ),
+      });
+    } catch (error) {
+      console.error("Error computing revenue summary v2:", error);
+      res.status(500).json({ message: "Failed to compute revenue summary" });
+    }
+  });
+
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -4028,6 +4308,20 @@ export async function registerRoutes(
       }
       const updated = await storage.updateCashoutStatus(id, status);
       if (!updated) return res.status(404).json({ message: "Cashout not found" });
+
+      // ── Revenue recognition: record coach compensation paid ──────────────────
+      if (status === "PAID" && updated) {
+        const adminUserId = req.user.claims.sub;
+        const adminProfile = await storage.getUserProfile(adminUserId);
+        onCashoutPaid({
+          orgId: adminProfile?.organizationId || null,
+          coachId: updated.coachId,
+          cashoutId: updated.id,
+          amountCents: updated.amountCents,
+          createdBy: adminUserId,
+        }).catch(() => {});
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Error updating cashout status:", error);
@@ -4768,7 +5062,17 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid session" });
       }
 
-      await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId);
+      const stripeCreditTx = await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId);
+
+      // ── Revenue recognition: record payment received ─────────────────────────
+      onPaymentReceived({
+        orgId: orgId || null,
+        clientId: userId,
+        amountCents,
+        walletTxId: stripeCreditTx.id,
+        isSubscriptionPayment: false,
+        createdBy: userId,
+      }).catch(() => {});
 
       const stripeUser = await storage.getUser(userId);
       if (stripeUser?.email) {
@@ -5042,6 +5346,12 @@ export async function registerRoutes(
 
       const coachEarningsCents = coachRedemptions
         .reduce((sum, r) => sum + r.amountCents, 0);
+      const coachPendingCents = coachRedemptions
+        .filter((r: any) => r.payoutStatus === "PENDING")
+        .reduce((sum: number, r: any) => sum + r.amountCents, 0);
+      const coachPaidCents = coachRedemptions
+        .filter((r: any) => r.payoutStatus === "SENT")
+        .reduce((sum: number, r: any) => sum + r.amountCents, 0);
 
       const clientIds = new Set(clients.map(c => c.id));
       const clientWalletCharges = allWalletTx
@@ -5192,6 +5502,8 @@ export async function registerRoutes(
           freeSessionsPerformed,
           totalRevenueCents: totalRevenueCents + subscriptionRevenueCents,
           coachEarningsCents,
+          coachPendingCents,
+          coachPaidCents,
           predictedMonthlyRevenueCents,
           subscriptionRevenueCents,
         },
