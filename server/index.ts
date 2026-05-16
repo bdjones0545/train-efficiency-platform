@@ -154,6 +154,20 @@ app.use((req, res, next) => {
   setInterval(runOutcomeDetection, 30 * 60 * 1000);
   setInterval(runAutoSendAndCampaigns, 30 * 60 * 1000);
 
+  // ─── Agent Pending Actions cleanup ───────────────────────────────────────
+  // Mark expired rows every 15 minutes; also run once on startup.
+  const runPendingActionsCleanup = async () => {
+    try {
+      const { storage: st } = await import("./storage");
+      const count = await st.markExpiredAgentPendingActions();
+      if (count > 0) console.log(`[PendingActionsCleanup] Marked ${count} expired pending action(s).`);
+    } catch (err) {
+      console.error("[PendingActionsCleanup] Error:", err);
+    }
+  };
+  runPendingActionsCleanup();
+  setInterval(runPendingActionsCleanup, 15 * 60 * 1000);
+
   // ─── Recurring Team Lead Research Job ────────────────────────────────────
   const runRecurringTeamLeadResearch = async () => {
     if (!process.env.OPENAI_API_KEY) return;

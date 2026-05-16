@@ -1,5 +1,6 @@
 import OpenAI from "openai";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
+import type { AgentPendingAction } from "@shared/schema";
 import { storage } from "./storage";
 import { addDays, startOfWeek, format, addMinutes, startOfMonth, endOfMonth } from "date-fns";
 import {
@@ -68,7 +69,11 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-// ─── Pending action store ─────────────────────────────────────────────────────
+// ─── Pending action store (DB-backed, in-memory write-through cache) ──────────
+// Source of truth: agent_pending_actions table.
+// Cache: pendingActionsCache — avoids DB reads on hot paths within same process.
+// Double-send prevention: completeAgentPendingAction uses atomic WHERE status='pending'.
+
 type GatedActionType =
   | "book_session"
   | "cancel_booking"
@@ -80,99 +85,106 @@ type GatedActionType =
   | "send_drafted_outreach_sms"
   | "send_team_outreach_email";
 
-interface PendingAction {
-  pendingActionId: string;
-  userId: string | null;
-  actionType: GatedActionType;
-  normalizedArgs: Record<string, unknown>;
-  createdAt: Date;
-  expiresAt: Date;
-}
-
 const PENDING_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const pendingActions = new Map<string, PendingAction>();
+const MAX_PENDING_PER_USER = 5;
 
-function purgeExpiredPending(): void {
-  const now = new Date();
-  pendingActions.forEach((a, id) => {
-    if (a.expiresAt < now) pendingActions.delete(id);
-  });
+// In-memory write-through cache keyed by pending action id
+const pendingActionsCache = new Map<string, AgentPendingAction>();
+
+function computeIdempotencyKey(
+  userId: string | null,
+  actionType: string,
+  normalizedArgs: Record<string, unknown>
+): string {
+  const data = JSON.stringify({ userId: userId ?? null, actionType, normalizedArgs });
+  return createHash("sha256").update(data).digest("hex");
 }
 
-function createPendingAction(
+async function purgeExpiredPending(): Promise<void> {
+  const now = new Date();
+  pendingActionsCache.forEach((a, id) => {
+    if (a.expiresAt < now || a.status !== "pending") pendingActionsCache.delete(id);
+  });
+  storage.markExpiredAgentPendingActions().catch(() => {});
+}
+
+async function createPendingAction(
   userId: string | null,
   actionType: GatedActionType,
   normalizedArgs: Record<string, unknown>
-): PendingAction {
-  purgeExpiredPending();
+): Promise<AgentPendingAction> {
   const now = new Date();
-  const argsKey = JSON.stringify(normalizedArgs);
+  const idemKey = computeIdempotencyKey(userId, actionType, normalizedArgs);
 
-  // Dedup: return existing non-expired action for same user + actionType + args
-  let existingAction: PendingAction | undefined;
-  pendingActions.forEach((a) => {
+  // Cache hit: return existing non-expired pending action
+  for (const [, a] of pendingActionsCache) {
     if (
-      !existingAction &&
       a.userId === userId &&
       a.actionType === actionType &&
-      JSON.stringify(a.normalizedArgs) === argsKey &&
-      a.expiresAt > now
+      a.status === "pending" &&
+      a.expiresAt > now &&
+      computeIdempotencyKey(a.userId, a.actionType, a.normalizedArgs as Record<string, unknown>) === idemKey
     ) {
-      existingAction = a;
+      return a;
     }
-  });
-  if (existingAction) return existingAction;
-
-  // Max 5 active pending actions per user — delete oldest first
-  const userEntries: [string, PendingAction][] = [];
-  pendingActions.forEach((a, id) => {
-    if (a.userId === userId) userEntries.push([id, a]);
-  });
-  userEntries.sort((x, y) => x[1].createdAt.getTime() - y[1].createdAt.getTime());
-  while (userEntries.length >= 5) {
-    const oldest = userEntries.shift()!;
-    pendingActions.delete(oldest[0]);
   }
 
-  const action: PendingAction = {
-    pendingActionId: randomUUID(),
+  // DB dedup: return existing active row for the same idempotency key
+  const existing = await storage.findActiveAgentPendingAction(idemKey);
+  if (existing) {
+    pendingActionsCache.set(existing.id, existing);
+    return existing;
+  }
+
+  // Enforce max pending per user — cancel the oldest if at the limit
+  const oldest = await storage.listOldestActiveAgentPendingActions(userId, MAX_PENDING_PER_USER);
+  if (oldest.length >= MAX_PENDING_PER_USER) {
+    const toCancel = oldest[0];
+    await storage.cancelAgentPendingAction(toCancel.id);
+    pendingActionsCache.delete(toCancel.id);
+  }
+
+  const action = await storage.createAgentPendingAction({
     userId,
+    orgId: null,
     actionType,
     normalizedArgs,
-    createdAt: now,
+    status: "pending",
     expiresAt: new Date(now.getTime() + PENDING_TTL_MS),
-  };
-  pendingActions.set(action.pendingActionId, action);
+    idempotencyKey: idemKey,
+  });
+  pendingActionsCache.set(action.id, action);
   return action;
 }
 
-function getPendingAction(id: string): PendingAction | undefined {
-  const a = pendingActions.get(id);
-  if (!a) return undefined;
-  if (a.expiresAt < new Date()) { pendingActions.delete(id); return undefined; }
-  return a;
-}
-
-function consumePendingAction(id: string): PendingAction | undefined {
-  const a = getPendingAction(id);
-  if (a) pendingActions.delete(id);
-  return a;
-}
-
-function getPendingActionStatus(
+async function getPendingActionStatus(
   id: string
-): { status: "found"; action: PendingAction } | { status: "expired" } | { status: "not_found" } {
-  const a = pendingActions.get(id);
-  if (!a) return { status: "not_found" };
-  if (a.expiresAt < new Date()) {
-    pendingActions.delete(id);
-    return { status: "expired" };
+): Promise<{ status: "found"; action: AgentPendingAction } | { status: "expired" } | { status: "not_found" }> {
+  // Cache-first
+  const cached = pendingActionsCache.get(id);
+  if (cached) {
+    if (cached.status !== "pending") { pendingActionsCache.delete(id); return { status: "not_found" }; }
+    if (cached.expiresAt < new Date()) { pendingActionsCache.delete(id); return { status: "expired" }; }
+    return { status: "found", action: cached };
   }
-  return { status: "found", action: a };
+  // DB fallback
+  const row = await storage.getAgentPendingAction(id);
+  if (!row) return { status: "not_found" };
+  if (row.status === "completed" || row.status === "cancelled") return { status: "not_found" };
+  if (row.status === "expired" || row.expiresAt < new Date()) return { status: "expired" };
+  pendingActionsCache.set(id, row);
+  return { status: "found", action: row };
+}
+
+async function consumePendingAction(id: string): Promise<AgentPendingAction | undefined> {
+  // Atomic update: only succeeds if status is currently 'pending'
+  const completed = await storage.completeAgentPendingAction(id);
+  pendingActionsCache.delete(id);
+  return completed ?? undefined;
 }
 
 function validatePendingAction(
-  pending: PendingAction,
+  pending: AgentPendingAction,
   userId: string | null,
   actionType: GatedActionType,
   args: Record<string, unknown>
@@ -181,7 +193,7 @@ function validatePendingAction(
     return { valid: false, error: "pendingActionId was created for a different action type. Preview the action again to generate a new one." };
   if (pending.userId !== userId)
     return { valid: false, error: "pendingActionId does not match the current user. Preview the action again." };
-  const s = pending.normalizedArgs;
+  const s = pending.normalizedArgs as Record<string, unknown>;
   if (actionType === "book_session") {
     if (s.coachId !== args.coachId || s.serviceId !== args.serviceId || s.startAt !== args.startAt)
       return { valid: false, error: "Booking details changed since preview. Preview the action again to generate a new pendingActionId." };
@@ -1267,7 +1279,7 @@ async function executeTool(
 
       case "book_session": {
         if (args.confirmed !== true) {
-          const pending = createPendingAction(userId, "book_session", {
+          const pending = await createPendingAction(userId, "book_session", {
             coachId: args.coachId,
             serviceId: args.serviceId,
             startAt: args.startAt,
@@ -1275,7 +1287,7 @@ async function executeTool(
           });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "book_session",
             summary: `Book session: coach ${args.coachId}, service ${args.serviceId}, starting ${args.startAt}`,
             expiresAt: pending.expiresAt.toISOString(),
@@ -1286,7 +1298,7 @@ async function executeTool(
         if (!pendingActionId_book) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call book_session with confirmed: false first to generate one." });
         }
-        const statusBook = getPendingActionStatus(pendingActionId_book);
+        const statusBook = await getPendingActionStatus(pendingActionId_book);
         if (statusBook.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
@@ -1296,7 +1308,7 @@ async function executeTool(
         const pendingBook = statusBook.action;
         const pvBook = validatePendingAction(pendingBook, userId, "book_session", args);
         if (!pvBook.valid) return JSON.stringify({ error: pvBook.error });
-        consumePendingAction(pendingActionId_book);
+        await consumePendingAction(pendingActionId_book);
         if (!userId) return JSON.stringify({ error: "You need to be logged in to book a session." });
         const { coachId, serviceId, startAt, endAt } = args;
 
@@ -1450,10 +1462,10 @@ async function executeTool(
 
       case "cancel_booking": {
         if (args.confirmed !== true) {
-          const pending = createPendingAction(userId, "cancel_booking", { bookingId: args.bookingId });
+          const pending = await createPendingAction(userId, "cancel_booking", { bookingId: args.bookingId });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "cancel_booking",
             summary: `Cancel booking ID: ${args.bookingId}`,
             expiresAt: pending.expiresAt.toISOString(),
@@ -1464,7 +1476,7 @@ async function executeTool(
         if (!pendingActionId_cancel) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call cancel_booking with confirmed: false first to generate one." });
         }
-        const statusCancel = getPendingActionStatus(pendingActionId_cancel);
+        const statusCancel = await getPendingActionStatus(pendingActionId_cancel);
         if (statusCancel.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
@@ -1474,7 +1486,7 @@ async function executeTool(
         const pendingCancel = statusCancel.action;
         const pvCancel = validatePendingAction(pendingCancel, userId, "cancel_booking", args);
         if (!pvCancel.valid) return JSON.stringify({ error: pvCancel.error });
-        consumePendingAction(pendingActionId_cancel);
+        await consumePendingAction(pendingActionId_cancel);
         if (!userId) return JSON.stringify({ error: "You need to be logged in." });
         const booking = await storage.getBooking(args.bookingId);
         if (!booking) return JSON.stringify({ error: "Booking not found." });
@@ -1607,7 +1619,7 @@ async function executeTool(
 
       case "coach_create_session": {
         if (args.confirmed !== true) {
-          const pending = createPendingAction(userId, "coach_create_session", {
+          const pending = await createPendingAction(userId, "coach_create_session", {
             coachId: args.coachId,
             serviceId: args.serviceId,
             startAt: args.startAt,
@@ -1617,7 +1629,7 @@ async function executeTool(
           });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "coach_create_session",
             summary: `Create session: coach ${args.coachId}, service ${args.serviceId}, client ${args.clientId || `${args.clientFirstName} ${args.clientLastName}`}, starting ${args.startAt}`,
             expiresAt: pending.expiresAt.toISOString(),
@@ -1628,7 +1640,7 @@ async function executeTool(
         if (!pendingActionId_create) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call coach_create_session with confirmed: false first to generate one." });
         }
-        const statusCreate = getPendingActionStatus(pendingActionId_create);
+        const statusCreate = await getPendingActionStatus(pendingActionId_create);
         if (statusCreate.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
@@ -1638,7 +1650,7 @@ async function executeTool(
         const pendingCreate = statusCreate.action;
         const pvCreate = validatePendingAction(pendingCreate, userId, "coach_create_session", args);
         if (!pvCreate.valid) return JSON.stringify({ error: pvCreate.error });
-        consumePendingAction(pendingActionId_create);
+        await consumePendingAction(pendingActionId_create);
         if (userRole !== "COACH" && userRole !== "ADMIN") {
           return JSON.stringify({ error: "Only coaches and admins can create sessions for clients." });
         }
@@ -1990,14 +2002,14 @@ async function executeTool(
 
       case "reschedule_booking": {
         if (args.confirmed !== true) {
-          const pending = createPendingAction(userId, "reschedule_booking", {
+          const pending = await createPendingAction(userId, "reschedule_booking", {
             bookingId: args.bookingId,
             newStartAt: args.newStartAt,
             newEndAt: args.newEndAt,
           });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "reschedule_booking",
             summary: `Reschedule booking ${args.bookingId} to ${args.newStartAt}`,
             expiresAt: pending.expiresAt.toISOString(),
@@ -2008,7 +2020,7 @@ async function executeTool(
         if (!pendingActionId_reschedule) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call reschedule_booking with confirmed: false first to generate one." });
         }
-        const statusReschedule = getPendingActionStatus(pendingActionId_reschedule);
+        const statusReschedule = await getPendingActionStatus(pendingActionId_reschedule);
         if (statusReschedule.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
@@ -2018,7 +2030,7 @@ async function executeTool(
         const pendingReschedule = statusReschedule.action;
         const pvReschedule = validatePendingAction(pendingReschedule, userId, "reschedule_booking", args);
         if (!pvReschedule.valid) return JSON.stringify({ error: pvReschedule.error });
-        consumePendingAction(pendingActionId_reschedule);
+        await consumePendingAction(pendingActionId_reschedule);
         const { bookingId, newStartAt, newEndAt } = args;
         const booking = await storage.getBooking(bookingId);
         if (!booking) return JSON.stringify({ error: "Booking not found." });
@@ -2501,10 +2513,10 @@ async function executeTool(
 
       case "send_scheduling_inquiry": {
         if (args.confirmed !== true) {
-          const pending = createPendingAction(userId, "send_scheduling_inquiry", { message: args.message });
+          const pending = await createPendingAction(userId, "send_scheduling_inquiry", { message: args.message });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "send_scheduling_inquiry",
             summary: `Send scheduling inquiry: "${String(args.message).slice(0, 80)}${String(args.message).length > 80 ? "…" : ""}"`,
             expiresAt: pending.expiresAt.toISOString(),
@@ -2515,7 +2527,7 @@ async function executeTool(
         if (!pendingActionId_inquiry) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call send_scheduling_inquiry with confirmed: false first to generate one." });
         }
-        const statusInquiry = getPendingActionStatus(pendingActionId_inquiry);
+        const statusInquiry = await getPendingActionStatus(pendingActionId_inquiry);
         if (statusInquiry.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
@@ -2525,7 +2537,7 @@ async function executeTool(
         const pendingInquiry = statusInquiry.action;
         const pvInquiry = validatePendingAction(pendingInquiry, userId, "send_scheduling_inquiry", args);
         if (!pvInquiry.valid) return JSON.stringify({ error: pvInquiry.error });
-        consumePendingAction(pendingActionId_inquiry);
+        await consumePendingAction(pendingActionId_inquiry);
         if (!organizationId) return JSON.stringify({ error: "No organization context." });
         const org = await storage.getOrganizationById(organizationId);
         if (!org) return JSON.stringify({ error: "Organization not found." });
@@ -2842,7 +2854,7 @@ async function executeTool(
       case "create_confirmed_recurring_sessions": {
         if (args.confirmed !== true) {
           const slots = Array.isArray(args.confirmedSlots) ? args.confirmedSlots : [];
-          const pending = createPendingAction(userId, "create_confirmed_recurring_sessions", {
+          const pending = await createPendingAction(userId, "create_confirmed_recurring_sessions", {
             clientId: args.clientId,
             coachId: args.coachId,
             serviceId: args.serviceId,
@@ -2850,7 +2862,7 @@ async function executeTool(
           });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "create_confirmed_recurring_sessions",
             summary: `Create ${slots.length} recurring session(s) for client ${args.clientId}, service ${args.serviceId}`,
             expiresAt: pending.expiresAt.toISOString(),
@@ -2861,7 +2873,7 @@ async function executeTool(
         if (!pendingActionId_recurring) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call create_confirmed_recurring_sessions with confirmed: false first to generate one." });
         }
-        const statusRecurring = getPendingActionStatus(pendingActionId_recurring);
+        const statusRecurring = await getPendingActionStatus(pendingActionId_recurring);
         if (statusRecurring.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
@@ -2871,7 +2883,7 @@ async function executeTool(
         const pendingRecurring = statusRecurring.action;
         const pvRecurring = validatePendingAction(pendingRecurring, userId, "create_confirmed_recurring_sessions", args);
         if (!pvRecurring.valid) return JSON.stringify({ error: pvRecurring.error });
-        consumePendingAction(pendingActionId_recurring);
+        await consumePendingAction(pendingActionId_recurring);
         if (userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "Only coaches, admins, and staff can create sessions." });
         }
@@ -3134,10 +3146,10 @@ Return a JSON object with exactly these keys:
             return JSON.stringify({ error: "This draft belongs to a different organization." });
           }
           const mc = agentAction.messageContent as any;
-          const pending = createPendingAction(userId, "send_drafted_outreach_email", { agentActionId: agentActionId_outreach });
+          const pending = await createPendingAction(userId, "send_drafted_outreach_email", { agentActionId: agentActionId_outreach });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "send_drafted_outreach_email",
             summary: `Send outreach email to ${agentAction.clientName}`,
             recipient: agentAction.clientName,
@@ -3152,7 +3164,7 @@ Return a JSON object with exactly these keys:
         if (!pendingActionId_outreach) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call send_drafted_outreach_email with confirmed: false first." });
         }
-        const statusOutreach = getPendingActionStatus(pendingActionId_outreach);
+        const statusOutreach = await getPendingActionStatus(pendingActionId_outreach);
         if (statusOutreach.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This action has expired. Please review and confirm again." });
         }
@@ -3161,7 +3173,7 @@ Return a JSON object with exactly these keys:
         }
         const pvOutreach = validatePendingAction(statusOutreach.action, userId, "send_drafted_outreach_email", args);
         if (!pvOutreach.valid) return JSON.stringify({ error: pvOutreach.error });
-        consumePendingAction(pendingActionId_outreach);
+        await consumePendingAction(pendingActionId_outreach);
 
         const agentAction = await storage.getAgentActionById(agentActionId_outreach);
         if (!agentAction) {
@@ -3264,13 +3276,13 @@ Return a JSON object with exactly these keys:
           const previewOrgName = previewOrgBranding?.name || "TrainEfficiency";
           const formattedSmsBody = smsOutreach({ clientFirstName: previewFirstName, message: smsBody, orgName: previewOrgName });
 
-          const pending = createPendingAction(userId, "send_drafted_outreach_sms", {
+          const pending = await createPendingAction(userId, "send_drafted_outreach_sms", {
             agentActionId: agentActionId_sms,
             messagePurpose,
           });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "send_drafted_outreach_sms",
             summary: `Send SMS to ${agentAction.clientName} at ${clientUser.phone}`,
             recipient: agentAction.clientName,
@@ -3279,7 +3291,7 @@ Return a JSON object with exactly these keys:
             rawSmsBody: smsBody,
             messagePurpose,
             expiresAt: pending.expiresAt.toISOString(),
-            message: `Preview SMS to ${agentAction.clientName} (${clientUser.phone}):\n\n"${formattedSmsBody}"\n\nCall send_drafted_outreach_sms again with confirmed: true, pendingActionId: "${pending.pendingActionId}", and agentActionId: "${agentActionId_sms}" to send. Or the user can click the Send SMS button.`,
+            message: `Preview SMS to ${agentAction.clientName} (${clientUser.phone}):\n\n"${formattedSmsBody}"\n\nCall send_drafted_outreach_sms again with confirmed: true, pendingActionId: "${pending.id}", and agentActionId: "${agentActionId_sms}" to send. Or the user can click the Send SMS button.`,
           });
         }
 
@@ -3288,7 +3300,7 @@ Return a JSON object with exactly these keys:
         if (!pendingActionId_sms) {
           return JSON.stringify({ error: "pendingActionId is required when confirmed is true. Call send_drafted_outreach_sms with confirmed: false first." });
         }
-        const statusSms = getPendingActionStatus(pendingActionId_sms);
+        const statusSms = await getPendingActionStatus(pendingActionId_sms);
         if (statusSms.status === "expired") {
           return JSON.stringify({ error: "pending_action_expired", message: "This confirmation window expired. Call send_drafted_outreach_sms with confirmed: false to generate a new preview and pendingActionId." });
         }
@@ -3314,7 +3326,7 @@ Return a JSON object with exactly these keys:
           "operational";
 
         // Consume the pending action (idempotency: marks it used so it can't be confirmed twice)
-        consumePendingAction(pendingActionId_sms);
+        await consumePendingAction(pendingActionId_sms);
 
         const agentActionSms = await storage.getAgentActionById(resolvedAgentActionId);
         if (!agentActionSms) {
@@ -3888,10 +3900,10 @@ Return a JSON object with exactly these keys:
         }
 
         if (!confirmed) {
-          const pending = createPendingAction(userId, "send_team_outreach_email", { draftId });
+          const pending = await createPendingAction(userId, "send_team_outreach_email", { draftId });
           return JSON.stringify({
             requiresConfirmation: true,
-            pendingActionId: pending.pendingActionId,
+            pendingActionId: pending.id,
             actionType: "send_team_outreach_email",
             summary: `Send team outreach email to ${prospect.prospectName} (${prospect.contactEmail})\n\nSubject: ${draft.subject}\n\nPreview: ${draft.body.slice(0, 150)}${draft.body.length > 150 ? "..." : ""}`,
             prospect: {
@@ -3914,7 +3926,7 @@ Return a JSON object with exactly these keys:
         }
 
         if (!pendingActionId) return JSON.stringify({ error: "pendingActionId required to confirm." });
-        const pending = consumePendingAction(pendingActionId);
+        const pending = await consumePendingAction(pendingActionId);
         if (!pending) return JSON.stringify({ error: "pending_action_expired", message: "The confirmation window expired. Please restart the send flow." });
         if (pending.actionType !== "send_team_outreach_email") return JSON.stringify({ error: "Confirmation mismatch. Please restart." });
 

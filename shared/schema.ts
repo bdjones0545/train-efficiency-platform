@@ -1338,3 +1338,33 @@ export const attentionItems = pgTable("attention_items", {
 export const insertAttentionItemSchema = createInsertSchema(attentionItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type AttentionItem = typeof attentionItems.$inferSelect;
 export type InsertAttentionItem = z.infer<typeof insertAttentionItemSchema>;
+
+// ─── Agent Pending Actions ─────────────────────────────────────────────────────
+// Persists the two-call confirmation handshake so actions survive server restarts.
+// status: pending → completed (confirmed) | cancelled (dropped) | expired (TTL hit)
+
+export const agentPendingActionStatusEnum = pgEnum("agent_pending_action_status", [
+  "pending",
+  "completed",
+  "cancelled",
+  "expired",
+]);
+
+export const agentPendingActions = pgTable("agent_pending_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id"),
+  orgId: varchar("org_id"),
+  actionType: varchar("action_type").notNull(),
+  normalizedArgs: jsonb("normalized_args").notNull().default(sql`'{}'::jsonb`),
+  status: agentPendingActionStatusEnum("status").notNull().default("pending"),
+  idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
+  providerMessageSid: varchar("provider_message_sid"),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  completedAt: timestamp("completed_at"),
+  cancelledAt: timestamp("cancelled_at"),
+});
+
+export const insertAgentPendingActionSchema = createInsertSchema(agentPendingActions).omit({ id: true, createdAt: true });
+export type AgentPendingAction = typeof agentPendingActions.$inferSelect;
+export type InsertAgentPendingAction = z.infer<typeof insertAgentPendingActionSchema>;

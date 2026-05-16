@@ -218,6 +218,15 @@ export interface IStorage {
   getAgentActions(orgId: string, opts?: { status?: string; clientId?: string; sinceDays?: number; limit?: number }): Promise<AgentAction[]>;
   updateAgentAction(id: string, data: Partial<AgentAction>): Promise<AgentAction | undefined>;
 
+  // Agent Pending Actions (two-call confirmation handshake, DB-persisted)
+  createAgentPendingAction(data: import("@shared/schema").InsertAgentPendingAction): Promise<import("@shared/schema").AgentPendingAction>;
+  getAgentPendingAction(id: string): Promise<import("@shared/schema").AgentPendingAction | undefined>;
+  findActiveAgentPendingAction(idempotencyKey: string): Promise<import("@shared/schema").AgentPendingAction | undefined>;
+  listOldestActiveAgentPendingActions(userId: string | null, limit: number): Promise<import("@shared/schema").AgentPendingAction[]>;
+  completeAgentPendingAction(id: string, providerMessageSid?: string): Promise<import("@shared/schema").AgentPendingAction | undefined>;
+  cancelAgentPendingAction(id: string): Promise<import("@shared/schema").AgentPendingAction | undefined>;
+  markExpiredAgentPendingActions(): Promise<number>;
+
   getOrgAutomationLevel(orgId: string): Promise<number>;
   setOrgAutomationLevel(orgId: string, level: number): Promise<void>;
 
@@ -3103,6 +3112,94 @@ export class DatabaseStorage implements IStorage {
       collisions,
       events,
     };
+  }
+  // ─── Agent Pending Actions ──────────────────────────────────────────────────
+
+  async createAgentPendingAction(data: import("@shared/schema").InsertAgentPendingAction): Promise<import("@shared/schema").AgentPendingAction> {
+    const { agentPendingActions } = await import("@shared/schema");
+    // ON CONFLICT (idempotency_key) DO NOTHING — if a duplicate key exists, re-fetch the existing row
+    const [row] = await db.insert(agentPendingActions).values(data).onConflictDoNothing().returning();
+    if (row) return row;
+    // Conflict: an active pending action with this idempotency key already exists
+    const [existing] = await db
+      .select()
+      .from(agentPendingActions)
+      .where(eq(agentPendingActions.idempotencyKey, data.idempotencyKey!));
+    return existing;
+  }
+
+  async getAgentPendingAction(id: string): Promise<import("@shared/schema").AgentPendingAction | undefined> {
+    const { agentPendingActions } = await import("@shared/schema");
+    const [row] = await db.select().from(agentPendingActions).where(eq(agentPendingActions.id, id));
+    return row ?? undefined;
+  }
+
+  async findActiveAgentPendingAction(idempotencyKey: string): Promise<import("@shared/schema").AgentPendingAction | undefined> {
+    const { agentPendingActions } = await import("@shared/schema");
+    const now = new Date();
+    const [row] = await db
+      .select()
+      .from(agentPendingActions)
+      .where(
+        and(
+          eq(agentPendingActions.idempotencyKey, idempotencyKey),
+          eq(agentPendingActions.status, "pending"),
+          gt(agentPendingActions.expiresAt, now),
+        )
+      );
+    return row ?? undefined;
+  }
+
+  async listOldestActiveAgentPendingActions(userId: string | null, limit: number): Promise<import("@shared/schema").AgentPendingAction[]> {
+    const { agentPendingActions } = await import("@shared/schema");
+    const now = new Date();
+    const conditions: any[] = [
+      eq(agentPendingActions.status, "pending"),
+      gt(agentPendingActions.expiresAt, now),
+    ];
+    if (userId) conditions.push(eq(agentPendingActions.userId, userId));
+    else conditions.push(isNull(agentPendingActions.userId));
+    return db
+      .select()
+      .from(agentPendingActions)
+      .where(and(...conditions))
+      .orderBy(agentPendingActions.createdAt)
+      .limit(limit);
+  }
+
+  async completeAgentPendingAction(id: string, providerMessageSid?: string): Promise<import("@shared/schema").AgentPendingAction | undefined> {
+    const { agentPendingActions } = await import("@shared/schema");
+    const now = new Date();
+    const updateData: any = { status: "completed", completedAt: now };
+    if (providerMessageSid) updateData.providerMessageSid = providerMessageSid;
+    const [row] = await db
+      .update(agentPendingActions)
+      .set(updateData)
+      .where(and(eq(agentPendingActions.id, id), eq(agentPendingActions.status, "pending")))
+      .returning();
+    return row ?? undefined;
+  }
+
+  async cancelAgentPendingAction(id: string): Promise<import("@shared/schema").AgentPendingAction | undefined> {
+    const { agentPendingActions } = await import("@shared/schema");
+    const now = new Date();
+    const [row] = await db
+      .update(agentPendingActions)
+      .set({ status: "cancelled", cancelledAt: now })
+      .where(and(eq(agentPendingActions.id, id), eq(agentPendingActions.status, "pending")))
+      .returning();
+    return row ?? undefined;
+  }
+
+  async markExpiredAgentPendingActions(): Promise<number> {
+    const { agentPendingActions } = await import("@shared/schema");
+    const now = new Date();
+    const rows = await db
+      .update(agentPendingActions)
+      .set({ status: "expired" })
+      .where(and(eq(agentPendingActions.status, "pending"), lt(agentPendingActions.expiresAt, now)))
+      .returning();
+    return rows.length;
   }
 }
 
