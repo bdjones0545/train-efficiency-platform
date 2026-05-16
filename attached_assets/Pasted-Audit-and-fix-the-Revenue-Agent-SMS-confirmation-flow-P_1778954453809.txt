@@ -1,0 +1,132 @@
+Audit and fix the Revenue Agent SMS confirmation flow.
+
+Problem:
+The agent creates an SMS preview and returns a pendingActionId, but when I confirm, it says:
+“I don’t actually have the drafted SMS tied into the system tools yet, so I can’t honor that pendingActionId or send directly.”
+
+This is wrong. The confirmation flow is broken.
+
+Goal:
+When the agent drafts an SMS and asks for confirmation, the pendingActionId must be tied to an executable SMS tool call. When the user confirms, the system must send the SMS through the existing SMS/Twilio backend, not fall back to copy/paste instructions.
+
+Observed flow:
+1. User asks: “text Rahiem Saunders that this is a test of our SMS systems - Efficiency Strength Training”
+2. Agent previews SMS to Rahiem Saunders at +1 843-473-1577
+3. Agent generates pendingActionId
+4. User confirms with that pendingActionId
+5. Agent fails to execute the SMS tool and claims SMS tools are not wired
+
+Audit these areas:
+
+1. Pending action storage
+Find where pendingActionId is created.
+Confirm the pending action stores:
+- action type: send_sms or send_drafted_outreach_sms
+- recipient user/client ID
+- recipient name
+- phone number
+- message body
+- message purpose: operational
+- org ID / coach ID context
+- createdBy user ID
+- expiration time
+- status: pending
+
+2. Confirmation handler
+Find the handler that processes confirmation messages like:
+- “yes”
+- “confirmed”
+- “send it”
+- “Yes, confirmed. pendingActionId: ...”
+
+It must:
+- Parse pendingActionId if present
+- Look up the pending action
+- Validate it belongs to the current authenticated coach/org
+- Validate it is still pending and not expired
+- Execute the stored SMS send tool
+- Mark the pending action completed
+- Return a verified success response with recipient + timestamp
+
+3. Tool execution
+Wire the confirmation handler to the existing backend SMS function.
+
+Use the existing SMS/Twilio path if available:
+- sendSms
+- send_drafted_outreach_sms
+- scheduling assistant SMS tool
+- operational SMS send path
+
+Important:
+This is an operational coach-to-client test/check-in message, not marketing.
+It should bypass marketing opt-in rules if the current SMS implementation supports operational messages, but it still must require a valid phone number.
+
+4. Agent honesty guard
+Remove or block the fallback response:
+“I don’t actually have the drafted SMS tied into the system tools yet...”
+
+The agent should only say it cannot send if:
+- Twilio is not configured
+- recipient has no valid phone
+- user/org permission check fails
+- pending action expired
+- pending action ID is invalid
+- SMS provider returns an error
+
+Otherwise it must execute the tool.
+
+5. Message preservation
+The final sent message should match the user’s instruction.
+
+For this exact input, do not rewrite it into a long coaching check-in unless the user asks.
+Expected SMS body:
+“This is a test of our SMS systems - Efficiency Strength Training”
+
+The agent may preview it, but it should not expand it into a long message.
+
+6. Confirmation UX
+After preview, show clear buttons or text:
+- Send SMS
+- Edit message
+- Cancel
+
+If text-only confirmation is used, support:
+- yes
+- send
+- send it
+- confirmed
+- yes confirmed
+- pendingActionId: <id>
+
+7. Safety/idempotency
+Prevent double sends:
+- If the same pendingActionId is confirmed twice, do not send again.
+- Return “This SMS was already sent at [time].”
+- Add idempotency key based on pendingActionId.
+- Log provider message SID if Twilio returns one.
+
+8. Tests/manual QA
+Add or update tests if test structure exists.
+
+Manual QA:
+- Ask agent to text an existing client with a valid phone number.
+- Agent previews exact message.
+- Confirm send.
+- SMS sends through Twilio.
+- Conversation shows “Sent to Rahiem Saunders at +1 843-473-1577.”
+- Confirm same pendingActionId again.
+- System does not send twice.
+- Try invalid/expired pendingActionId.
+- System shows clean error.
+- Try client without phone number.
+- System shows clean error.
+- Try marketing-style message.
+- System uses marketing opt-in rules.
+
+Return:
+- Files changed
+- Root cause
+- Confirmation path before/after
+- Whether pending actions are stored in DB or memory
+- Exact SMS backend function used
+- Manual QA results
