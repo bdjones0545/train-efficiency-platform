@@ -1,0 +1,251 @@
+Task 9 — AI Financial Operations Layer
+
+Build an AI-native financial operations layer on top of the new reconciliation and accounting infrastructure.
+
+Goal:
+Transform TrainEfficiency from a system that stores accounting data into a system that actively monitors, explains, predicts, and assists operational finance decisions.
+
+The AI layer should help operators answer:
+- What needs attention?
+- What looks abnormal?
+- Where is revenue leaking?
+- Which payouts look wrong?
+- Which clients are underutilizing packages?
+- Which coaches are over/under-utilized?
+- What is likely to churn?
+- What should be reconciled before closeout?
+- What operational actions should the org take?
+
+Requirements:
+
+1. AI Financial Brain service
+Create a dedicated financial intelligence layer/service.
+
+Suggested:
+server/financial-brain.ts
+
+Responsibilities:
+- anomaly detection
+- reconciliation summaries
+- operational recommendations
+- forecasting inputs
+- payout discrepancy analysis
+- liability monitoring
+- utilization analysis
+
+The service should consume:
+- revenue ledger events
+- credit ledger events
+- closeout snapshots
+- scheduling data
+- redemption history
+- payout accruals
+- integrity diagnostics
+- financial failures
+
+2. Daily financial intelligence digest
+Create a daily AI-generated financial digest for org admins.
+
+Suggested endpoint:
+GET /api/admin/financial-brain/digest
+
+Digest sections:
+- Revenue Summary
+- Recognition Summary
+- Coach Payout Summary
+- Deferred Liability Changes
+- Financial Failures
+- Integrity Warnings
+- Utilization Risks
+- Churn Risks
+- Recommended Actions
+
+Example recommendations:
+- “12 session credits unused for >21 days.”
+- “Coach payout accruals increased 38% week-over-week.”
+- “2 unresolved financial failures are blocking closeout.”
+- “Revenue recognized dropped 24% from prior week.”
+- “3 clients have high prepaid liability but no recent attendance.”
+
+3. Revenue anomaly detection
+Detect:
+- sudden revenue drops
+- unusually high refunds
+- negative deferred revenue
+- payout spikes
+- duplicate recognitions
+- abnormal manual adjustments
+- abnormal cancellation reversals
+- sessions completed without revenue recognition
+- redemptions without matching ledger activity
+
+Severity scoring:
+- info
+- warning
+- critical
+
+4. Coach payout intelligence
+Detect:
+- coaches with unusually high/low payout ratios
+- payout accrual spikes
+- underutilized coaches
+- coaches with high cancellation/no-show rates
+- coaches with high revenue efficiency
+- compensation anomalies
+
+Add coach operational insights:
+- sessions completed
+- revenue generated
+- payout %
+- client retention indicators
+
+5. Client utilization + churn intelligence
+Build operational client finance intelligence.
+
+Detect:
+- unused session credits
+- prepaid clients with declining attendance
+- clients approaching expiration
+- clients consuming credits unusually fast
+- high-value inactive clients
+- clients likely to churn
+
+Suggested outputs:
+- risk score
+- reason
+- recommended outreach action
+
+6. AI-assisted reconciliation preparation
+Before closing a period:
+Generate a “Closeout Readiness Summary.”
+
+Suggested endpoint:
+GET /api/admin/financial-closeouts/:id/readiness
+
+Include:
+- unresolved critical issues
+- warnings
+- stale failures
+- payout mismatches
+- recommended fixes
+- estimated closeout confidence score
+
+Example:
+“Closeout confidence: 92%. Two stale financial failures should be resolved before closing.”
+
+7. Natural-language financial querying
+Create a finance-focused AI query endpoint.
+
+Suggested:
+POST /api/admin/financial-brain/query
+
+Supports questions like:
+- “How much revenue did Coach Sarah generate this month?”
+- “Which clients have unused credits?”
+- “Why is deferred revenue high?”
+- “Which sessions failed revenue recognition?”
+- “Which coaches have pending payouts?”
+- “Show me payout anomalies this quarter.”
+
+Responses should:
+- use structured backend data
+- avoid hallucinating missing data
+- cite exact totals and counts
+- clearly state uncertainty if applicable
+
+8. Agent Ops integration
+Extend Agent Ops health with:
+- unresolved financial risks
+- payout anomalies
+- recognition inconsistencies
+- closeout readiness score
+- churn risk count
+- revenue anomaly count
+
+9. Financial recommendation engine
+Generate actionable recommendations:
+- “Reach out to inactive prepaid clients.”
+- “Resolve failed recognition events before month-end.”
+- “Coach compensation liability exceeds recognized revenue growth.”
+- “Package utilization is declining in semi-private training.”
+- “High deferred liability with low scheduling activity.”
+
+Recommendations should include:
+- severity
+- estimated impact
+- related entities
+- suggested actions
+
+10. Forecasting layer (lightweight)
+Add simple trend forecasting:
+- projected month-end recognized revenue
+- projected coach payouts
+- projected deferred liability
+- projected churn exposure
+- projected session utilization
+
+Do not build a full ML system yet.
+Use rolling averages/trends.
+
+11. UI — /admin/financial-brain
+Create a dedicated operational intelligence dashboard.
+
+Sections:
+- Daily Financial Digest
+- Financial Risks
+- Revenue Trends
+- Coach Insights
+- Client Utilization Risks
+- Forecasts
+- AI Recommendations
+- Closeout Readiness
+- Financial Query Assistant
+
+Design language:
+- high-trust
+- operational
+- clean
+- analytical
+- not consumer fitness styling
+
+12. Auditability + safety
+AI recommendations must:
+- never mutate accounting automatically
+- never auto-close periods
+- never auto-adjust payouts
+- never auto-reconcile silently
+
+All recommendations are advisory unless explicitly confirmed by an admin workflow.
+
+13. Logging + observability
+Track:
+- generated recommendations
+- query requests
+- anomaly detections
+- digest generation
+- confidence scoring
+- acknowledgment state
+
+14. Testing
+Add tests for:
+- anomaly detection
+- payout intelligence
+- churn risk logic
+- readiness summaries
+- natural-language financial querying
+- forecasting calculations
+- recommendation generation
+- integrity/safety protections
+
+15. Deliverables
+Return:
+- files added/changed
+- AI Financial Brain architecture summary
+- anomaly detection logic
+- forecasting logic
+- recommendation categories
+- query system summary
+- UI/dashboard summary
+- safety protections
+- tests added
+- confirmation immutable accounting and lifecycle protections still pass

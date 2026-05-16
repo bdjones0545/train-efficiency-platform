@@ -4884,6 +4884,76 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── AI Financial Brain Endpoints ──────────────────────────────────────────
+  // GET /api/admin/financial-brain/digest — daily financial intelligence digest
+  app.get("/api/admin/financial-brain/digest", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { generateDigest } = await import("./financial-brain");
+      const digest = await generateDigest(orgId);
+      res.json(digest);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/financial-brain/query — natural-language financial querying
+  app.post("/api/admin/financial-brain/query", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { question } = req.body;
+      if (!question || !String(question).trim()) return res.status(400).json({ error: "question is required" });
+      const { answerQuery } = await import("./financial-brain");
+      const result = await answerQuery(orgId, String(question).trim());
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/financial-closeouts/:id/readiness — closeout readiness scoring
+  app.get("/api/admin/financial-closeouts/:id/readiness", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const closeout = await storage.getFinancialCloseout(req.params.id);
+      if (!closeout || closeout.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { getCloseoutReadiness } = await import("./financial-brain");
+      const readiness = await getCloseoutReadiness(orgId, new Date(closeout.periodStart), new Date(closeout.periodEnd), closeout.id);
+      res.json(readiness);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/financial-brain/anomalies — raw anomaly list
+  app.get("/api/admin/financial-brain/anomalies", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { detectAnomalies } = await import("./financial-brain");
+      const anomalies = await detectAnomalies(orgId);
+      res.json(anomalies);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/financial-brain/client-risks — client utilization + churn risks
+  app.get("/api/admin/financial-brain/client-risks", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { getClientRisks } = await import("./financial-brain");
+      const risks = await getClientRisks(orgId);
+      res.json(risks);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -11737,6 +11807,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         pendingApprovalsCount,
         financialEventFailuresPending: financialFailuresPending,
         financialEventFailuresCritical: financialFailuresCritical,
+        financialBrainUrl: "/admin/financial-brain",
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
