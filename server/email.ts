@@ -1089,7 +1089,10 @@ function wrapLinksForTracking(html: string, emailId: string, baseUrl: string): s
   });
 }
 
-const APP_BASE_URL = process.env.APP_BASE_URL || "https://trainefficiency.replit.app";
+const APP_BASE_URL =
+  process.env.APP_BASE_URL ||
+  process.env.PUBLIC_APP_URL ||
+  "https://trainefficiency.com";
 
 export async function sendTeamTrainingOutreachEmail(
   toEmail: string,

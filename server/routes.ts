@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { buildPublicAppUrl } from "./utils/url";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import multer from "multer";
@@ -332,18 +333,7 @@ export async function registerRoutes(
         expiresAt,
       });
 
-      const baseUrl =
-        process.env.PUBLIC_APP_URL ||
-        process.env.BASE_URL ||
-        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null) ||
-        `${req.protocol}://${req.get("host")}`;
-      const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
-
-      try {
-        console.log("[password-reset] Generated reset link domain:", new URL(resetUrl).origin);
-      } catch {
-        console.log("[password-reset] Generated reset link baseUrl:", baseUrl);
-      }
+      const resetUrl = buildPublicAppUrl(`/reset-password?token=${rawToken}`);
 
       sendPasswordResetEmail(normalizedEmail, resetUrl).catch((err) => {
         console.error("Password reset email send failure:", err);
@@ -670,9 +660,7 @@ export async function registerRoutes(
       const { userProfiles: userProfilesTable } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
 
-      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-      const host = req.headers["x-forwarded-host"] || req.get("host");
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = buildPublicAppUrl();
 
       const results: { email: string; status: string; name?: string }[] = [];
 
@@ -1098,7 +1086,7 @@ export async function registerRoutes(
       }
 
       const orgBranding = await getOrgBranding(req.params.id);
-      const baseUrl = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const baseUrl = buildPublicAppUrl();
       const intervalLabel = plan.intervalCount && plan.intervalCount > 1
         ? `every ${plan.intervalCount} ${plan.interval}s`
         : `per ${plan.interval}`;
@@ -1385,7 +1373,7 @@ export async function registerRoutes(
       if (!plan) return res.status(404).json({ message: "Plan not found" });
 
       const { stripe } = await getOrgStripeClient(plan.organizationId);
-      const baseUrl = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+      const baseUrl = buildPublicAppUrl();
       const { customerEmail } = req.body;
 
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
@@ -4219,7 +4207,7 @@ export async function registerRoutes(
         stripe = await getUncachableStripeClient();
       }
 
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const baseUrl = buildPublicAppUrl();
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         customer_email: user.email || undefined,
@@ -4531,7 +4519,7 @@ export async function registerRoutes(
         stripe = await getUncachableStripeClient();
       }
 
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const baseUrl = buildPublicAppUrl();
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
         payment_method_types: ["card"],
         customer_email: user.email || undefined,
@@ -5392,7 +5380,7 @@ export async function registerRoutes(
         await storage.updateOrganization(org.id, { stripeCustomerId: customerId });
       }
 
-      const baseUrl = `https://${process.env.REPLIT_DOMAINS?.split(",")[0] || req.get("host")}`;
+      const baseUrl = buildPublicAppUrl();
 
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
