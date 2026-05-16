@@ -1,0 +1,228 @@
+Task 8 — Financial Reconciliation Dashboard + Closeout Workflow
+
+Build a full reconciliation and accounting closeout workflow for TrainEfficiency.
+
+Goal:
+Give admins/operators a reliable operational finance layer that answers:
+
+- What money came in?
+- What revenue was recognized?
+- What credits changed?
+- What coach payouts accrued?
+- What failed or retried?
+- What requires manual review?
+- Is this accounting period safe to close?
+
+The system should support weekly/monthly operational reconciliation without requiring raw database inspection.
+
+Requirements:
+
+1. Create Financial Reconciliation Dashboard
+New admin page:
+/admin/financial-reconciliation
+
+The dashboard should aggregate:
+- collected revenue
+- recognized revenue
+- deferred revenue
+- pending deferred liability
+- credit redemptions
+- reversal events
+- coach accruals
+- coach payouts
+- unresolved financial failures
+- integrity warnings
+- unresolved accounting mismatches
+
+Time filters:
+- today
+- this week
+- this month
+- custom range
+
+Org-scoped.
+
+2. Reconciliation summary cards
+Top summary cards:
+
+Collected Revenue
+Recognized Revenue
+Deferred Revenue Liability
+Coach Compensation Accrued
+Coach Compensation Paid
+Pending Financial Failures
+Integrity Warnings
+Unreconciled Events
+
+Cards should:
+- support trend indicators later
+- show counts + dollar totals where relevant
+- color critical states appropriately
+
+3. Event stream timeline
+Add a chronological reconciliation feed showing:
+- payments
+- redemptions
+- reversals
+- revenue recognition
+- coach accruals
+- payout events
+- manual adjustments
+- ignored failures
+- retried failures
+- stale failures
+
+Each row should show:
+- event type
+- amount
+- org/client/coach
+- source entity
+- timestamp
+- status
+- idempotency state if relevant
+
+4. Reconciliation mismatches section
+Create a dedicated section for unresolved problems.
+
+Examples:
+- redeemed session with no revenue recognition
+- recognized revenue with no completed session
+- coach accrual without revenue recognition
+- duplicate payout accrual
+- orphaned financial event
+- unresolved financial failure
+- stale retry queue item
+- negative deferred revenue
+- negative session credits
+- completed redeemed session with no ledger events
+
+Each issue should include:
+- severity
+- explanation
+- related entity links
+- recommended action
+
+5. Accounting period closeout model
+Create:
+financial_closeouts table
+
+Fields:
+- id
+- orgId
+- periodType (weekly/monthly)
+- periodStart
+- periodEnd
+- status (draft/open/closed/reopened)
+- closedBy
+- closedAt
+- notes
+- totals snapshot JSON
+- unresolvedIssueCount
+- createdAt
+- updatedAt
+
+6. Closeout workflow
+Admins should be able to:
+- review a period
+- see unresolved issues
+- optionally acknowledge warnings
+- close the accounting period
+
+Closing a period should:
+- snapshot totals
+- freeze the reconciliation summary for that period
+- mark the closeout immutable except admin reopen
+- NOT block future operational activity
+
+7. Reopen workflow
+Admins can reopen a closed period:
+- requires reason
+- writes audit event
+- marks period reopened
+- preserves original snapshot history
+
+8. Integrity gates before close
+Before allowing close:
+Block on critical:
+- failed financial events
+- unresolved duplicate recognitions
+- negative deferred revenue
+- unresolved orphaned payouts
+
+Warn but allow override:
+- informational missing redemptions
+- stale warnings
+- manual adjustment imbalance
+
+9. Coach payout reconciliation
+Add payout reconciliation summary:
+- accrued
+- paid
+- pending
+- outstanding liability
+
+Per coach and org-level totals.
+
+10. Export support
+Add CSV export support for:
+- reconciliation event stream
+- payout accruals
+- unresolved issues
+- closeout summary
+
+11. Agent Ops integration
+Expose:
+- unresolved reconciliation issues
+- failed financial retries
+- stale accounting problems
+
+inside:
+GET /api/admin/agent-ops/health
+
+12. Admin action logging
+All financial close/reopen actions must create immutable audit events:
+- actor
+- timestamp
+- reason
+- previous status
+- new status
+
+13. UI/UX expectations
+The page should feel:
+- operational
+- high-trust
+- finance-grade
+- clean and readable
+
+Avoid:
+- flashy visuals
+- consumer fitness app styling
+- noisy dashboards
+
+Think:
+“AI-native operational accounting console.”
+
+14. Testing
+Add tests for:
+- period creation
+- closeout snapshot accuracy
+- reopen flow
+- blocked closeout on critical failures
+- override warning flow
+- totals calculations
+- CSV export integrity
+- payout summaries
+- unresolved issue aggregation
+- audit event generation
+
+15. Deliverables
+Return:
+- files changed
+- DB tables added
+- endpoints added
+- reconciliation model summary
+- closeout workflow summary
+- integrity gate logic
+- export support summary
+- tests added
+- confirmation that immutable financial history and Task 2 lifecycle locks still pass

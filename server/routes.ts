@@ -4480,6 +4480,410 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Financial Reconciliation Dashboard ────────────────────────────────────
+  // Shared helper: build reconciliation aggregates for a period
+  async function buildReconciliationData(orgId: string, start: Date, end: Date) {
+    const { revenueLedgerEvents, creditLedgerEvents, financialEventFailures: fefT, users: usersT, coachProfiles } = await import("@shared/schema");
+    const { sql: sqlFn, and: andFn, eq: eqFn, gte: gteFn, lte: lteFn, inArray: inArrayFn, lt: ltFn, count: countFn, desc: descFn } = await import("drizzle-orm");
+
+    const orgFilter = sqlFn`AND org_id = ${orgId}`;
+    const dateFilter = sqlFn`AND created_at >= ${start} AND created_at <= ${end}`;
+
+    // 1. Revenue ledger aggregates
+    const [ledgerTotals, ledgerEvents, coachBreakdown, failuresSummary, creditDebits, staleFailures, failedFailures] = await Promise.all([
+      db.execute(sqlFn`
+        SELECT
+          COALESCE(SUM(CASE WHEN event_type = 'payment_received' THEN amount_cents ELSE 0 END), 0)::int AS collected,
+          COALESCE(SUM(CASE WHEN event_type = 'revenue_recognized' THEN amount_cents ELSE 0 END), 0)::int AS recognized,
+          COALESCE(SUM(CASE WHEN event_type = 'deferred_revenue_created' THEN amount_cents ELSE 0 END), 0)::int AS deferred_created,
+          COALESCE(SUM(CASE WHEN event_type = 'deferred_revenue_released' THEN amount_cents ELSE 0 END), 0)::int AS deferred_released,
+          COALESCE(SUM(CASE WHEN event_type = 'coach_compensation_accrued' THEN amount_cents ELSE 0 END), 0)::int AS coach_accrued,
+          COALESCE(SUM(CASE WHEN event_type = 'coach_compensation_paid' THEN amount_cents ELSE 0 END), 0)::int AS coach_paid,
+          COALESCE(SUM(CASE WHEN event_type = 'refund_issued' THEN amount_cents ELSE 0 END), 0)::int AS refunded,
+          COALESCE(SUM(CASE WHEN event_type = 'manual_adjustment' THEN amount_cents ELSE 0 END), 0)::int AS manual_adj,
+          COUNT(*)::int AS total_events
+        FROM revenue_ledger_events
+        WHERE 1=1 ${orgFilter} ${dateFilter}
+      `),
+      db.select().from(revenueLedgerEvents)
+        .where(andFn(eqFn(revenueLedgerEvents.orgId, orgId), gteFn(revenueLedgerEvents.createdAt, start), lteFn(revenueLedgerEvents.createdAt, end)))
+        .orderBy(descFn(revenueLedgerEvents.createdAt)).limit(200),
+      db.execute(sqlFn`
+        SELECT cp.id AS coach_id, u.first_name, u.last_name,
+          COALESCE(SUM(CASE WHEN rle.event_type = 'coach_compensation_accrued' THEN rle.amount_cents ELSE 0 END), 0)::int AS accrued_cents,
+          COALESCE(SUM(CASE WHEN rle.event_type = 'coach_compensation_paid' THEN rle.amount_cents ELSE 0 END), 0)::int AS paid_cents,
+          COUNT(DISTINCT CASE WHEN rle.event_type = 'revenue_recognized' THEN rle.redemption_id END)::int AS sessions_redeemed
+        FROM revenue_ledger_events rle
+        JOIN coach_profiles cp ON cp.id = rle.coach_id
+        JOIN users u ON u.id = cp.user_id
+        WHERE rle.org_id = ${orgId} AND rle.created_at >= ${start} AND rle.created_at <= ${end}
+        GROUP BY cp.id, u.first_name, u.last_name
+        ORDER BY accrued_cents DESC
+      `),
+      db.select({ n: countFn() }).from(fefT)
+        .where(andFn(eqFn(fefT.orgId, orgId), inArrayFn(fefT.status, ["pending", "retrying"]))),
+      db.execute(sqlFn`
+        SELECT COUNT(*)::int AS debit_count,
+          COALESCE(SUM(ABS(delta_sessions)), 0)::int AS sessions_debited
+        FROM credit_ledger_events
+        WHERE organization_id = ${orgId} AND event_type = 'redemption_debit'
+          AND created_at >= ${start} AND created_at <= ${end}
+      `),
+      db.select({ n: countFn() }).from(fefT)
+        .where(andFn(eqFn(fefT.orgId, orgId), inArrayFn(fefT.status, ["pending", "retrying"]), ltFn(fefT.createdAt, new Date(Date.now() - 24 * 3600000)))),
+      db.select({ n: countFn() }).from(fefT)
+        .where(andFn(eqFn(fefT.orgId, orgId), eqFn(fefT.status, "failed"))),
+    ]);
+
+    const t = ledgerTotals.rows[0] as any;
+    const summary = {
+      collectedCents: t?.collected ?? 0,
+      recognizedCents: t?.recognized ?? 0,
+      deferredLiabilityCents: Math.max(0, (t?.deferred_created ?? 0) - (t?.deferred_released ?? 0)),
+      coachAccruedCents: t?.coach_accrued ?? 0,
+      coachPaidCents: t?.coach_paid ?? 0,
+      coachPendingCents: Math.max(0, (t?.coach_accrued ?? 0) - (t?.coach_paid ?? 0)),
+      refundedCents: t?.refunded ?? 0,
+      manualAdjCents: t?.manual_adj ?? 0,
+      pendingFailures: Number(failuresSummary[0]?.n ?? 0),
+      failedFailures: Number(failedFailures[0]?.n ?? 0),
+      staleFailures: Number(staleFailures[0]?.n ?? 0),
+      creditDebitsCount: (creditDebits.rows[0] as any)?.debit_count ?? 0,
+      sessionsDebited: (creditDebits.rows[0] as any)?.sessions_debited ?? 0,
+      totalLedgerEvents: t?.total_events ?? 0,
+    };
+
+    // 2. Integrity mismatches (period-scoped where possible)
+    const [dupRecognition, dupAccruals, orphanedEvents, redemptionsNoLedger] = await Promise.all([
+      db.execute(sqlFn`
+        SELECT redemption_id, COUNT(*)::int AS count FROM revenue_ledger_events
+        WHERE event_type = 'revenue_recognized' AND redemption_id IS NOT NULL AND org_id = ${orgId}
+          AND created_at >= ${start} AND created_at <= ${end}
+        GROUP BY redemption_id HAVING COUNT(*) > 1
+      `),
+      db.execute(sqlFn`
+        SELECT redemption_id, COUNT(*)::int AS count FROM revenue_ledger_events
+        WHERE event_type = 'coach_compensation_accrued' AND redemption_id IS NOT NULL AND org_id = ${orgId}
+          AND created_at >= ${start} AND created_at <= ${end}
+        GROUP BY redemption_id HAVING COUNT(*) > 1
+      `),
+      db.execute(sqlFn`
+        SELECT rle.id, rle.event_type, rle.booking_id, rle.created_at
+        FROM revenue_ledger_events rle
+        LEFT JOIN bookings b ON b.id = rle.booking_id
+        WHERE rle.booking_id IS NOT NULL AND b.id IS NULL AND rle.org_id = ${orgId}
+          AND rle.created_at >= ${start} AND rle.created_at <= ${end}
+        LIMIT 20
+      `),
+      db.execute(sqlFn`
+        SELECT r.id, r.booking_id, r.redeemed_at
+        FROM redemptions r
+        LEFT JOIN revenue_ledger_events rle ON rle.redemption_id = r.id AND rle.event_type = 'revenue_recognized'
+        WHERE rle.id IS NULL AND r.coach_id IN (SELECT id FROM coach_profiles WHERE organization_id = ${orgId})
+          AND r.redeemed_at >= ${start} AND r.redeemed_at <= ${end}
+        LIMIT 20
+      `),
+    ]);
+
+    const deferredNet = (t?.deferred_created ?? 0) - (t?.deferred_released ?? 0);
+
+    const mismatches: Array<{ key: string; severity: "critical" | "warning" | "info"; label: string; count: number; rows?: any[] }> = [];
+    if (dupRecognition.rows.length > 0) mismatches.push({ key: "dup_recognition", severity: "critical", label: "Duplicate revenue_recognized events", count: dupRecognition.rows.length, rows: dupRecognition.rows });
+    if (dupAccruals.rows.length > 0) mismatches.push({ key: "dup_accruals", severity: "critical", label: "Duplicate coach_compensation_accrued events", count: dupAccruals.rows.length, rows: dupAccruals.rows });
+    if (deferredNet < 0) mismatches.push({ key: "negative_deferred", severity: "critical", label: "Net deferred revenue is negative (released > created)", count: 1 });
+    if (Number(failedFailures[0]?.n ?? 0) > 0) mismatches.push({ key: "failed_queue", severity: "critical", label: "Financial event failures reached max attempts", count: Number(failedFailures[0]?.n ?? 0) });
+    if (Number(staleFailures[0]?.n ?? 0) > 0) mismatches.push({ key: "stale_failures", severity: "critical", label: "Financial event failures unresolved >24 hours", count: Number(staleFailures[0]?.n ?? 0) });
+    if (orphanedEvents.rows.length > 0) mismatches.push({ key: "orphaned_events", severity: "warning", label: "Revenue ledger events referencing deleted bookings", count: orphanedEvents.rows.length, rows: orphanedEvents.rows });
+    if (redemptionsNoLedger.rows.length > 0) mismatches.push({ key: "redemptions_no_ledger", severity: "info", label: "Redemptions with no revenue recognition event", count: redemptionsNoLedger.rows.length, rows: redemptionsNoLedger.rows });
+    if (Number(failuresSummary[0]?.n ?? 0) > 0) mismatches.push({ key: "pending_failures", severity: "warning", label: "Financial event writes queued for retry", count: Number(failuresSummary[0]?.n ?? 0) });
+
+    const criticalCount = mismatches.filter(m => m.severity === "critical").length;
+
+    return {
+      period: { start: start.toISOString(), end: end.toISOString() },
+      summary,
+      eventStream: ledgerEvents,
+      mismatches,
+      criticalCount,
+      coachPayouts: (coachBreakdown.rows as any[]).map(r => ({
+        coachId: r.coach_id,
+        coachName: [r.first_name, r.last_name].filter(Boolean).join(" ") || "Unknown",
+        accruedCents: r.accrued_cents,
+        paidCents: r.paid_cents,
+        pendingCents: Math.max(0, r.accrued_cents - r.paid_cents),
+        sessionsRedeemed: r.sessions_redeemed,
+      })),
+    };
+  }
+
+  app.get("/api/admin/financial-reconciliation", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const now = new Date();
+      const start = req.query.start ? new Date(String(req.query.start)) : new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = req.query.end ? new Date(String(req.query.end)) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+      const data = await buildReconciliationData(orgId, start, end);
+      res.json(data);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/financial-reconciliation/export — CSV export
+  app.get("/api/admin/financial-reconciliation/export", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const now = new Date();
+      const start = req.query.start ? new Date(String(req.query.start)) : new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = req.query.end ? new Date(String(req.query.end)) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+      const { revenueLedgerEvents } = await import("@shared/schema");
+      const { and: andFn, eq: eqFn, gte: gteFn, lte: lteFn, desc: descFn } = await import("drizzle-orm");
+
+      const events = await db.select().from(revenueLedgerEvents)
+        .where(andFn(eqFn(revenueLedgerEvents.orgId, orgId), gteFn(revenueLedgerEvents.createdAt, start), lteFn(revenueLedgerEvents.createdAt, end)))
+        .orderBy(descFn(revenueLedgerEvents.createdAt));
+
+      const exportType = String(req.query.type ?? "events");
+
+      if (exportType === "coach_payouts") {
+        const data = await buildReconciliationData(orgId, start, end);
+        const headers = ["Coach ID", "Coach Name", "Accrued ($)", "Paid ($)", "Pending ($)", "Sessions Redeemed"];
+        const rows = data.coachPayouts.map(c => [
+          c.coachId, c.coachName,
+          (c.accruedCents / 100).toFixed(2),
+          (c.paidCents / 100).toFixed(2),
+          (c.pendingCents / 100).toFixed(2),
+          String(c.sessionsRedeemed),
+        ]);
+        const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", `attachment; filename="coach-payouts-${start.toISOString().slice(0,10)}.csv"`);
+        return res.send(csv);
+      }
+
+      if (exportType === "issues") {
+        const data = await buildReconciliationData(orgId, start, end);
+        const headers = ["Severity", "Issue", "Count"];
+        const rows = data.mismatches.map(m => [m.severity, m.label, String(m.count)]);
+        const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", `attachment; filename="reconciliation-issues-${start.toISOString().slice(0,10)}.csv"`);
+        return res.send(csv);
+      }
+
+      // Default: event stream
+      const headers = ["ID", "Event Type", "Amount ($)", "Coach ID", "Client ID", "Booking ID", "Redemption ID", "Source Action", "Idempotency Key", "Created At"];
+      const rows = events.map(e => [
+        e.id, e.eventType,
+        e.amountCents != null ? (e.amountCents / 100).toFixed(2) : "0.00",
+        e.coachId ?? "", e.clientId ?? "", e.bookingId ?? "", e.redemptionId ?? "",
+        e.sourceAction ?? "", e.idempotencyKey ?? "",
+        e.createdAt ? new Date(e.createdAt).toISOString() : "",
+      ]);
+      const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="reconciliation-events-${start.toISOString().slice(0,10)}.csv"`);
+      return res.send(csv);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Financial Closeout Endpoints ───────────────────────────────────────────
+  app.get("/api/admin/financial-closeouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const closeouts = await storage.getFinancialCloseouts(orgId);
+      res.json(closeouts);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/financial-closeouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const { periodStart, periodEnd, periodType = "monthly", notes } = req.body;
+      if (!periodStart || !periodEnd) return res.status(400).json({ error: "periodStart and periodEnd required" });
+
+      const closeout = await storage.createFinancialCloseout({
+        orgId,
+        periodType: periodType as any,
+        periodStart: new Date(periodStart),
+        periodEnd: new Date(periodEnd),
+        status: "draft",
+        notes: notes ?? null,
+        totalsSnapshot: null,
+        unresolvedIssueCount: 0,
+        acknowledgedWarnings: false,
+        closedBy: null, closedAt: null,
+        reopenedBy: null, reopenedAt: null, reopenReason: null,
+      });
+
+      await storage.createCloseoutAuditEvent({
+        closeoutId: closeout.id,
+        actor: userId,
+        action: "created",
+        previousStatus: null,
+        newStatus: "draft",
+        reason: "Period created",
+        metadata: { periodStart, periodEnd, periodType } as any,
+      });
+
+      res.json(closeout);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get("/api/admin/financial-closeouts/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const closeout = await storage.getFinancialCloseout(req.params.id);
+      if (!closeout || closeout.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+
+      const [auditEvents, recon] = await Promise.all([
+        storage.getCloseoutAuditEvents(closeout.id),
+        buildReconciliationData(orgId, new Date(closeout.periodStart), new Date(closeout.periodEnd)),
+      ]);
+
+      res.json({ closeout, auditEvents, reconciliation: recon });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/financial-closeouts/:id/acknowledge-warnings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const closeout = await storage.getFinancialCloseout(req.params.id);
+      if (!closeout || closeout.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+
+      const updated = await storage.updateFinancialCloseout(closeout.id, { acknowledgedWarnings: true });
+      await storage.createCloseoutAuditEvent({
+        closeoutId: closeout.id,
+        actor: userId,
+        action: "warnings_acknowledged",
+        previousStatus: closeout.status,
+        newStatus: closeout.status,
+        reason: req.body.reason ?? "Warnings acknowledged by admin",
+        metadata: null,
+      });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/financial-closeouts/:id/close", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const closeout = await storage.getFinancialCloseout(req.params.id);
+      if (!closeout || closeout.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (closeout.status === "closed") return res.status(400).json({ error: "Period already closed" });
+
+      const recon = await buildReconciliationData(orgId, new Date(closeout.periodStart), new Date(closeout.periodEnd));
+
+      // Integrity gates
+      const criticalIssues = recon.mismatches.filter(m => m.severity === "critical");
+      if (criticalIssues.length > 0) {
+        return res.status(422).json({
+          blocked: true,
+          reason: "Critical integrity issues must be resolved before closing this period.",
+          criticalIssues: criticalIssues.map(i => ({ key: i.key, label: i.label, count: i.count })),
+        });
+      }
+
+      const warnings = recon.mismatches.filter(m => m.severity !== "critical");
+      if (warnings.length > 0 && !closeout.acknowledgedWarnings) {
+        return res.status(422).json({
+          requiresAcknowledgment: true,
+          reason: "Non-critical warnings exist. Acknowledge them before closing.",
+          warnings: warnings.map(w => ({ key: w.key, label: w.label, count: w.count })),
+        });
+      }
+
+      const totalsSnapshot = {
+        ...recon.summary,
+        mismatches: recon.mismatches.map(m => ({ key: m.key, severity: m.severity, count: m.count })),
+        coachPayouts: recon.coachPayouts,
+        snapshotAt: new Date().toISOString(),
+      };
+
+      const updated = await storage.updateFinancialCloseout(closeout.id, {
+        status: "closed",
+        closedBy: userId,
+        closedAt: new Date(),
+        totalsSnapshot: totalsSnapshot as any,
+        unresolvedIssueCount: recon.mismatches.length,
+      });
+
+      await storage.createCloseoutAuditEvent({
+        closeoutId: closeout.id,
+        actor: userId,
+        action: "closed",
+        previousStatus: closeout.status,
+        newStatus: "closed",
+        reason: req.body.notes ?? "Period closed",
+        metadata: { criticalCount: 0, warningCount: warnings.length } as any,
+      });
+
+      res.json({ closeout: updated, totalsSnapshot });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/financial-closeouts/:id/reopen", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const closeout = await storage.getFinancialCloseout(req.params.id);
+      if (!closeout || closeout.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+
+      const { reason } = req.body;
+      if (!reason || !String(reason).trim()) return res.status(400).json({ error: "reason is required to reopen" });
+
+      const updated = await storage.updateFinancialCloseout(closeout.id, {
+        status: "reopened",
+        reopenedBy: userId,
+        reopenedAt: new Date(),
+        reopenReason: String(reason).trim(),
+        acknowledgedWarnings: false,
+      });
+
+      await storage.createCloseoutAuditEvent({
+        closeoutId: closeout.id,
+        actor: userId,
+        action: "reopened",
+        previousStatus: closeout.status,
+        newStatus: "reopened",
+        reason: String(reason).trim(),
+        metadata: null,
+      });
+
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

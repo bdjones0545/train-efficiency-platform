@@ -83,6 +83,12 @@ import {
   financialEventFailures,
   type FinancialEventFailure,
   type InsertFinancialEventFailure,
+  financialCloseouts,
+  type FinancialCloseout,
+  type InsertFinancialCloseout,
+  closeoutAuditEvents,
+  type CloseoutAuditEvent,
+  type InsertCloseoutAuditEvent,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -193,6 +199,12 @@ export interface IStorage {
   getFinancialEventFailures(orgId: string, statuses?: string[]): Promise<FinancialEventFailure[]>;
   updateFinancialEventFailure(id: string, updates: Partial<FinancialEventFailure>): Promise<FinancialEventFailure | null>;
   countFinancialEventFailures(orgId: string, status: string): Promise<number>;
+  createFinancialCloseout(data: InsertFinancialCloseout): Promise<FinancialCloseout>;
+  getFinancialCloseout(id: string): Promise<FinancialCloseout | null>;
+  getFinancialCloseouts(orgId: string): Promise<FinancialCloseout[]>;
+  updateFinancialCloseout(id: string, updates: Partial<FinancialCloseout>): Promise<FinancialCloseout | null>;
+  createCloseoutAuditEvent(data: InsertCloseoutAuditEvent): Promise<CloseoutAuditEvent>;
+  getCloseoutAuditEvents(closeoutId: string): Promise<CloseoutAuditEvent[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1216,6 +1228,34 @@ export class DatabaseStorage implements IStorage {
       .from(financialEventFailures)
       .where(and(eq(financialEventFailures.orgId, orgId), eq(financialEventFailures.status, status as any)));
     return Number(row?.n ?? 0);
+  }
+
+  async createFinancialCloseout(data: InsertFinancialCloseout): Promise<FinancialCloseout> {
+    const [row] = await db.insert(financialCloseouts).values(data).returning();
+    return row;
+  }
+
+  async getFinancialCloseout(id: string): Promise<FinancialCloseout | null> {
+    const [row] = await db.select().from(financialCloseouts).where(eq(financialCloseouts.id, id));
+    return row ?? null;
+  }
+
+  async getFinancialCloseouts(orgId: string): Promise<FinancialCloseout[]> {
+    return db.select().from(financialCloseouts).where(eq(financialCloseouts.orgId, orgId)).orderBy(desc(financialCloseouts.periodStart));
+  }
+
+  async updateFinancialCloseout(id: string, updates: Partial<FinancialCloseout>): Promise<FinancialCloseout | null> {
+    const [row] = await db.update(financialCloseouts).set({ ...updates, updatedAt: new Date() }).where(eq(financialCloseouts.id, id)).returning();
+    return row ?? null;
+  }
+
+  async createCloseoutAuditEvent(data: InsertCloseoutAuditEvent): Promise<CloseoutAuditEvent> {
+    const [row] = await db.insert(closeoutAuditEvents).values(data).returning();
+    return row;
+  }
+
+  async getCloseoutAuditEvents(closeoutId: string): Promise<CloseoutAuditEvent[]> {
+    return db.select().from(closeoutAuditEvents).where(eq(closeoutAuditEvents.closeoutId, closeoutId)).orderBy(desc(closeoutAuditEvents.createdAt));
   }
 
   async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {

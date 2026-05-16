@@ -368,6 +368,50 @@ export const insertFinancialEventFailureSchema = createInsertSchema(financialEve
 export type FinancialEventFailure = typeof financialEventFailures.$inferSelect;
 export type InsertFinancialEventFailure = z.infer<typeof insertFinancialEventFailureSchema>;
 
+// ── Financial Closeouts ───────────────────────────────────────────────────────
+export const closeoutStatusEnum = pgEnum("closeout_status", ["draft", "open", "closed", "reopened"]);
+export const closeoutPeriodTypeEnum = pgEnum("closeout_period_type", ["weekly", "monthly", "custom"]);
+
+export const financialCloseouts = pgTable("financial_closeouts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  periodType: closeoutPeriodTypeEnum("period_type").notNull().default("monthly"),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  status: closeoutStatusEnum("status").notNull().default("draft"),
+  closedBy: varchar("closed_by"),
+  closedAt: timestamp("closed_at"),
+  reopenedBy: varchar("reopened_by"),
+  reopenedAt: timestamp("reopened_at"),
+  reopenReason: text("reopen_reason"),
+  notes: text("notes"),
+  totalsSnapshot: jsonb("totals_snapshot"),
+  unresolvedIssueCount: integer("unresolved_issue_count").notNull().default(0),
+  acknowledgedWarnings: boolean("acknowledged_warnings").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertFinancialCloseoutSchema = createInsertSchema(financialCloseouts).omit({ id: true, createdAt: true, updatedAt: true });
+export type FinancialCloseout = typeof financialCloseouts.$inferSelect;
+export type InsertFinancialCloseout = z.infer<typeof insertFinancialCloseoutSchema>;
+
+export const closeoutAuditEvents = pgTable("closeout_audit_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closeoutId: varchar("closeout_id").notNull(),
+  actor: varchar("actor").notNull(),
+  action: varchar("action").notNull(),
+  previousStatus: varchar("previous_status"),
+  newStatus: varchar("new_status"),
+  reason: text("reason"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCloseoutAuditEventSchema = createInsertSchema(closeoutAuditEvents).omit({ id: true, createdAt: true });
+export type CloseoutAuditEvent = typeof closeoutAuditEvents.$inferSelect;
+export type InsertCloseoutAuditEvent = z.infer<typeof insertCloseoutAuditEventSchema>;
+
 export const athleticPrograms = pgTable("athletic_programs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
