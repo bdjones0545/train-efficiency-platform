@@ -1510,3 +1510,62 @@ export const agentPendingActions = pgTable("agent_pending_actions", {
 export const insertAgentPendingActionSchema = createInsertSchema(agentPendingActions).omit({ id: true, createdAt: true });
 export type AgentPendingAction = typeof agentPendingActions.$inferSelect;
 export type InsertAgentPendingAction = z.infer<typeof insertAgentPendingActionSchema>;
+
+// ─── Operator Actions ─────────────────────────────────────────────────────────
+// sourceType:  financial_brain | reconciliation | integrity_check | scheduling |
+//              churn_risk | payout_review | manual
+// severity:    info | warning | critical
+// category:    financial | payout | churn | scheduling | accounting |
+//              client_retention | coach_operations
+// status:      open | acknowledged | in_progress | resolved | ignored
+
+export const operatorActions = pgTable("operator_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  sourceType: varchar("source_type").notNull().default("manual"),
+  sourceKey: varchar("source_key"),
+  severity: varchar("severity").notNull().default("info"),
+  category: varchar("category").notNull().default("financial"),
+  title: text("title").notNull(),
+  description: text("description"),
+  suggestedAction: text("suggested_action"),
+  status: varchar("status").notNull().default("open"),
+  assignedToUserId: varchar("assigned_to_user_id"),
+  assignedToCoachId: varchar("assigned_to_coach_id"),
+  relatedClientId: varchar("related_client_id"),
+  relatedBookingId: varchar("related_booking_id"),
+  relatedCoachId: varchar("related_coach_id"),
+  relatedCloseoutId: varchar("related_closeout_id"),
+  estimatedImpact: text("estimated_impact"),
+  metadata: jsonb("metadata"),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  resolvedAt: timestamp("resolved_at"),
+  ignoredAt: timestamp("ignored_at"),
+  ignoredReason: text("ignored_reason"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOperatorActionSchema = createInsertSchema(operatorActions).omit({ id: true, createdAt: true, updatedAt: true });
+export type OperatorAction = typeof operatorActions.$inferSelect;
+export type InsertOperatorAction = z.infer<typeof insertOperatorActionSchema>;
+
+// ─── Operator Action Events ───────────────────────────────────────────────────
+// eventType: created | acknowledged | assigned | started | resolved | ignored |
+//            note_added | reassigned
+
+export const operatorActionEvents = pgTable("operator_action_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  operatorActionId: varchar("operator_action_id").notNull(),
+  actorId: varchar("actor_id"),
+  eventType: varchar("event_type").notNull(),
+  previousStatus: varchar("previous_status"),
+  newStatus: varchar("new_status"),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOperatorActionEventSchema = createInsertSchema(operatorActionEvents).omit({ id: true, createdAt: true });
+export type OperatorActionEvent = typeof operatorActionEvents.$inferSelect;
+export type InsertOperatorActionEvent = z.infer<typeof insertOperatorActionEventSchema>;

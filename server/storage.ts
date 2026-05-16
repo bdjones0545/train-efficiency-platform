@@ -89,6 +89,12 @@ import {
   closeoutAuditEvents,
   type CloseoutAuditEvent,
   type InsertCloseoutAuditEvent,
+  operatorActions,
+  type OperatorAction,
+  type InsertOperatorAction,
+  operatorActionEvents,
+  type OperatorActionEvent,
+  type InsertOperatorActionEvent,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -205,6 +211,14 @@ export interface IStorage {
   updateFinancialCloseout(id: string, updates: Partial<FinancialCloseout>): Promise<FinancialCloseout | null>;
   createCloseoutAuditEvent(data: InsertCloseoutAuditEvent): Promise<CloseoutAuditEvent>;
   getCloseoutAuditEvents(closeoutId: string): Promise<CloseoutAuditEvent[]>;
+  // Operator Actions
+  createOperatorAction(data: InsertOperatorAction): Promise<OperatorAction>;
+  getOperatorAction(id: string): Promise<OperatorAction | null>;
+  getOperatorActions(orgId: string, filters?: { status?: string; severity?: string; category?: string; sourceType?: string }): Promise<OperatorAction[]>;
+  updateOperatorAction(id: string, updates: Partial<OperatorAction>): Promise<OperatorAction | null>;
+  createOperatorActionEvent(data: InsertOperatorActionEvent): Promise<OperatorActionEvent>;
+  getOperatorActionEvents(actionId: string): Promise<OperatorActionEvent[]>;
+  getOperatorActionsSummary(orgId: string): Promise<{ totalOpen: number; criticalOpen: number; staleCount: number; inProgressCount: number; resolvedLast7d: number; byCategory: Record<string, number>; byStatus: Record<string, number> }>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1256,6 +1270,55 @@ export class DatabaseStorage implements IStorage {
 
   async getCloseoutAuditEvents(closeoutId: string): Promise<CloseoutAuditEvent[]> {
     return db.select().from(closeoutAuditEvents).where(eq(closeoutAuditEvents.closeoutId, closeoutId)).orderBy(desc(closeoutAuditEvents.createdAt));
+  }
+
+  // ── Operator Actions ──────────────────────────────────────────────────────
+
+  async createOperatorAction(data: InsertOperatorAction): Promise<OperatorAction> {
+    const [row] = await db.insert(operatorActions).values(data).returning();
+    return row;
+  }
+
+  async getOperatorAction(id: string): Promise<OperatorAction | null> {
+    const [row] = await db.select().from(operatorActions).where(eq(operatorActions.id, id));
+    return row ?? null;
+  }
+
+  async getOperatorActions(orgId: string, filters: { status?: string; severity?: string; category?: string; sourceType?: string } = {}): Promise<OperatorAction[]> {
+    const conditions: any[] = [eq(operatorActions.orgId, orgId)];
+    if (filters.status) conditions.push(eq(operatorActions.status, filters.status as any));
+    if (filters.severity) conditions.push(eq(operatorActions.severity, filters.severity as any));
+    if (filters.category) conditions.push(eq(operatorActions.category, filters.category as any));
+    if (filters.sourceType) conditions.push(eq(operatorActions.sourceType, filters.sourceType as any));
+    return db.select().from(operatorActions).where(and(...conditions)).orderBy(desc(operatorActions.createdAt));
+  }
+
+  async updateOperatorAction(id: string, updates: Partial<OperatorAction>): Promise<OperatorAction | null> {
+    const [row] = await db.update(operatorActions).set({ ...updates, updatedAt: new Date() }).where(eq(operatorActions.id, id)).returning();
+    return row ?? null;
+  }
+
+  async createOperatorActionEvent(data: InsertOperatorActionEvent): Promise<OperatorActionEvent> {
+    const [row] = await db.insert(operatorActionEvents).values(data).returning();
+    return row;
+  }
+
+  async getOperatorActionEvents(actionId: string): Promise<OperatorActionEvent[]> {
+    return db.select().from(operatorActionEvents).where(eq(operatorActionEvents.operatorActionId, actionId)).orderBy(desc(operatorActionEvents.createdAt));
+  }
+
+  async getOperatorActionsSummary(orgId: string): Promise<{ totalOpen: number; criticalOpen: number; staleCount: number; inProgressCount: number; resolvedLast7d: number; byCategory: Record<string, number>; byStatus: Record<string, number> }> {
+    const all = await db.select().from(operatorActions).where(eq(operatorActions.orgId, orgId));
+    const staleThreshold = new Date(Date.now() - 3 * 24 * 3600000);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600000);
+    const totalOpen = all.filter(a => a.status === "open").length;
+    const criticalOpen = all.filter(a => a.status === "open" && a.severity === "critical").length;
+    const staleCount = all.filter(a => a.status === "open" && new Date(a.createdAt!) < staleThreshold).length;
+    const inProgressCount = all.filter(a => a.status === "in_progress").length;
+    const resolvedLast7d = all.filter(a => a.status === "resolved" && a.resolvedAt && new Date(a.resolvedAt) >= sevenDaysAgo).length;
+    const byCategory = all.reduce((acc, a) => { if (a.status !== "resolved" && a.status !== "ignored") acc[a.category] = (acc[a.category] || 0) + 1; return acc; }, {} as Record<string, number>);
+    const byStatus = all.reduce((acc, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {} as Record<string, number>);
+    return { totalOpen, criticalOpen, staleCount, inProgressCount, resolvedLast7d, byCategory, byStatus };
   }
 
   async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {

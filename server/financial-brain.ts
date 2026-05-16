@@ -869,11 +869,28 @@ export async function getCloseoutReadiness(orgId: string, periodStart: Date, per
 
   const safeConfidence = Math.max(0, Math.min(100, confidence));
 
+  // Check for unresolved critical operator actions
+  try {
+    const { storage } = await import("./storage");
+    const criticalActions = await (storage as any).getOperatorActions(orgId, { severity: "critical" });
+    const unresolvedCritical = (criticalActions as any[]).filter((a: any) => a.status !== "resolved" && a.status !== "ignored");
+    const unresolvedPayouts = (criticalActions as any[]).filter((a: any) => a.category === "payout" && a.status !== "resolved" && a.status !== "ignored");
+    if (unresolvedCritical.length > 0) {
+      blockers.push({ key: "unresolved_critical_actions", label: `${unresolvedCritical.length} unresolved critical operator action${unresolvedCritical.length !== 1 ? "s" : ""}`, severity: "critical" });
+      confidence -= 10;
+      recommendations.push("Resolve or ignore all critical operator actions before closing this period.");
+    }
+    if (unresolvedPayouts.length > 0) {
+      warnings.push({ key: "unresolved_payout_reviews", label: "Unresolved payout review actions", count: unresolvedPayouts.length });
+      confidence -= 5;
+    }
+  } catch {}
+
   const summary = blockers.length > 0
-    ? `Closeout blocked — ${blockers.length} critical issue${blockers.length !== 1 ? "s" : ""} must be resolved. Confidence: ${safeConfidence}%.`
+    ? `Closeout blocked — ${blockers.length} critical issue${blockers.length !== 1 ? "s" : ""} must be resolved. Confidence: ${Math.max(0, Math.min(100, confidence))}%.`
     : warnings.length > 0
-      ? `Closeout confidence: ${safeConfidence}%. ${warnings.length} non-critical warning${warnings.length !== 1 ? "s" : ""} require acknowledgment.`
-      : `Closeout confidence: ${safeConfidence}%. No blocking issues — this period is ready to close.`;
+      ? `Closeout confidence: ${Math.max(0, Math.min(100, confidence))}%. ${warnings.length} non-critical warning${warnings.length !== 1 ? "s" : ""} require acknowledgment.`
+      : `Closeout confidence: ${Math.max(0, Math.min(100, confidence))}%. No blocking issues — this period is ready to close.`;
 
   return {
     closeoutId,

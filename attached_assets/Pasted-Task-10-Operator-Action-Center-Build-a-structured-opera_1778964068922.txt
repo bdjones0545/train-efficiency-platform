@@ -1,0 +1,295 @@
+Task 10 — Operator Action Center
+
+Build a structured operational action system on top of the AI Financial Brain and reconciliation infrastructure.
+
+Goal:
+Transform TrainEfficiency from:
+- “AI notices problems”
+into:
+- “AI creates trackable operational workflows.”
+
+The system should let admins/operators:
+- acknowledge recommendations
+- assign responsibility
+- track resolution state
+- launch operational actions
+- audit outcomes
+- close the loop on AI-detected risks
+
+Core principle:
+AI recommendations remain advisory unless explicitly confirmed by a human operator.
+
+Requirements:
+
+1. Create Operator Action model
+New table:
+operator_actions
+
+Fields:
+- id
+- orgId
+- sourceType
+  - financial_brain
+  - reconciliation
+  - integrity_check
+  - scheduling
+  - churn_risk
+  - payout_review
+  - manual
+- sourceKey
+- severity
+  - info
+  - warning
+  - critical
+- category
+  - financial
+  - payout
+  - churn
+  - scheduling
+  - accounting
+  - client_retention
+  - coach_operations
+- title
+- description
+- suggestedAction
+- status
+  - open
+  - acknowledged
+  - in_progress
+  - resolved
+  - ignored
+- assignedToUserId
+- assignedToCoachId
+- relatedClientId
+- relatedBookingId
+- relatedCoachId
+- relatedCloseoutId
+- estimatedImpact
+- metadata (jsonb)
+- acknowledgedAt
+- resolvedAt
+- ignoredAt
+- ignoredReason
+- createdBy
+- createdAt
+- updatedAt
+
+Rows are immutable historically — status changes should generate audit events.
+
+2. Operator action audit trail
+Create:
+operator_action_events
+
+Tracks:
+- status changes
+- assignments
+- notes
+- AI recommendation linkage
+- acknowledgments
+- ignores
+- resolutions
+
+Fields:
+- operatorActionId
+- actorId
+- eventType
+- previousStatus
+- newStatus
+- note
+- createdAt
+
+3. Recommendation → Action conversion
+AI recommendations from the Financial Brain should support:
+“Create Action”
+
+Examples:
+- unresolved payout discrepancy
+- inactive high-value client
+- stale financial failure
+- payout spike
+- revenue drop
+- coach inactivity
+- reconciliation blocker
+
+Creating an action:
+- snapshots the recommendation context
+- stores severity/category
+- preserves original AI recommendation metadata
+
+4. Action Center UI
+New page:
+/admin/operator-actions
+
+Views:
+- All Actions
+- Open
+- Critical
+- Assigned to Me
+- Resolved
+- Ignored
+
+Filters:
+- severity
+- category
+- assignee
+- source type
+- status
+- date range
+
+5. Action cards/table
+Each action should show:
+- severity badge
+- title
+- description
+- suggested action
+- related entities
+- assignee
+- created date
+- status
+- estimated impact
+
+Quick actions:
+- Acknowledge
+- Assign
+- Start Work
+- Resolve
+- Ignore
+- View Details
+
+6. Action detail view
+Expandable/detail drawer should show:
+- full recommendation context
+- linked entities
+- AI reasoning/source
+- audit timeline
+- notes
+- related reconciliation issues
+- related financial failures
+- related clients/coaches/bookings
+
+7. Operational workflows
+Support launch actions from recommendations:
+
+Examples:
+- “Create client follow-up task”
+- “Draft outreach message”
+- “Open payout review”
+- “Flag for reconciliation”
+- “Assign to operations manager”
+- “Create closeout blocker”
+- “Schedule review meeting”
+
+Initially these can create structured operator_actions only.
+Do NOT automate external messaging yet unless already supported elsewhere.
+
+8. AI recommendation lifecycle
+Recommendations should support:
+- unreviewed
+- action created
+- acknowledged
+- ignored
+- resolved
+
+The Financial Brain dashboard should reflect lifecycle state.
+
+Example:
+“3 unresolved critical recommendations.”
+
+9. Assignment system
+Actions can be assigned to:
+- org admins
+- coaches
+- finance operators
+
+Show:
+- assignedBy
+- assignedAt
+- reassignment history
+
+10. Agent Ops integration
+Expose:
+- open critical actions
+- stale unresolved actions
+- unresolved payout reviews
+- unresolved churn risks
+
+through:
+GET /api/admin/agent-ops/health
+
+11. Notifications/readiness support
+Prepare for future notifications:
+- action created
+- assigned
+- overdue
+- unresolved > X days
+
+Do not implement email/SMS notifications yet unless already wired elsewhere.
+
+12. AI-generated operational summaries
+Add:
+GET /api/admin/operator-actions/summary
+
+Returns:
+- total open actions
+- critical open actions
+- stale actions
+- resolution velocity
+- most common categories
+- unresolved financial risk count
+
+Optional AI narrative:
+“Two payout discrepancies and one stale reconciliation issue require review.”
+
+13. Closeout integration
+Financial closeout readiness should include:
+- unresolved critical operator actions
+- unresolved payout review actions
+- unresolved accounting review actions
+
+Critical unresolved actions may block closeout depending on severity/category.
+
+14. Safety protections
+The Action Center:
+- must never mutate accounting automatically
+- must never auto-pay coaches
+- must never auto-close periods
+- must never auto-resolve reconciliation issues
+
+Human confirmation required for all operational transitions.
+
+15. UI/UX direction
+The Action Center should feel like:
+- operational command infrastructure
+- incident management
+- finance ops console
+
+Not:
+- task list app
+- generic CRM board
+- consumer productivity UI
+
+16. Tests
+Add tests for:
+- action creation
+- assignment
+- acknowledgment
+- resolution
+- ignore workflow
+- audit trail creation
+- recommendation snapshot preservation
+- closeout blocking logic
+- summary aggregation
+- stale action detection
+
+17. Deliverables
+Return:
+- tables added
+- endpoints added
+- UI pages/components added
+- recommendation lifecycle model
+- assignment model
+- closeout integration summary
+- audit trail summary
+- Agent Ops additions
+- tests added
+- confirmation that immutable accounting + lifecycle protections still pass

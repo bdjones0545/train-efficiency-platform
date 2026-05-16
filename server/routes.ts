@@ -4928,6 +4928,257 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Operator Action Center Endpoints ─────────────────────────────────────
+  // GET /api/admin/operator-actions — list with filters
+  app.get("/api/admin/operator-actions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { status, severity, category, sourceType } = req.query as Record<string, string>;
+      const actions = await storage.getOperatorActions(orgId, {
+        status: status || undefined,
+        severity: severity || undefined,
+        category: category || undefined,
+        sourceType: sourceType || undefined,
+      });
+      res.json(actions);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/operator-actions — create
+  app.post("/api/admin/operator-actions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { title, description, suggestedAction, severity, category, sourceType, sourceKey,
+        estimatedImpact, relatedClientId, relatedCoachId, relatedCloseoutId, metadata } = req.body;
+      if (!title || !String(title).trim()) return res.status(400).json({ error: "title is required" });
+      const action = await storage.createOperatorAction({
+        orgId, title: String(title).trim(), description: description ? String(description) : undefined,
+        suggestedAction: suggestedAction ? String(suggestedAction) : undefined,
+        severity: severity || "warning", category: category || "financial",
+        sourceType: sourceType || "manual", sourceKey: sourceKey || undefined,
+        estimatedImpact: estimatedImpact || undefined, status: "open",
+        relatedClientId: relatedClientId || undefined, relatedCoachId: relatedCoachId || undefined,
+        relatedCloseoutId: relatedCloseoutId || undefined, metadata: metadata || undefined,
+        createdBy: userId,
+      });
+      await storage.createOperatorActionEvent({
+        operatorActionId: action.id, actorId: userId,
+        eventType: "created", newStatus: "open",
+      });
+      res.status(201).json(action);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/operator-actions/summary
+  app.get("/api/admin/operator-actions/summary", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const summary = await storage.getOperatorActionsSummary(orgId);
+      // Optional AI narrative
+      let narrative: string | undefined;
+      if (process.env.OPENAI_API_KEY && (summary.totalOpen > 0 || summary.criticalOpen > 0)) {
+        try {
+          const OpenAI = (await import("openai")).default;
+          const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini", max_tokens: 80,
+            messages: [
+              { role: "system", content: "Write a single concise sentence (≤20 words) summarizing the operator action state for a finance ops team. Be direct." },
+              { role: "user", content: JSON.stringify({ totalOpen: summary.totalOpen, criticalOpen: summary.criticalOpen, stale: summary.staleCount, byCategory: summary.byCategory }) },
+            ],
+          });
+          narrative = completion.choices[0]?.message?.content ?? undefined;
+        } catch {}
+      }
+      res.json({ ...summary, narrative });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/operator-actions/:id — detail + events
+  app.get("/api/admin/operator-actions/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const events = await storage.getOperatorActionEvents(action.id);
+      res.json({ ...action, events });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/operator-actions/:id/events — audit trail only
+  app.get("/api/admin/operator-actions/:id/events", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const events = await storage.getOperatorActionEvents(action.id);
+      res.json(events);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Helper: status transition with audit event
+  async function transitionAction(actionId: string, actorId: string, newStatus: string, extras: Record<string, any> = {}, note?: string) {
+    const action = await storage.getOperatorAction(actionId);
+    if (!action) throw new Error("Not found");
+    const updated = await storage.updateOperatorAction(actionId, { status: newStatus as any, ...extras });
+    await storage.createOperatorActionEvent({
+      operatorActionId: actionId, actorId, eventType: newStatus,
+      previousStatus: action.status, newStatus, note: note || undefined,
+    });
+    return updated;
+  }
+
+  // POST /api/admin/operator-actions/:id/acknowledge
+  app.post("/api/admin/operator-actions/:id/acknowledge", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (action.status !== "open") return res.status(400).json({ error: "Action must be open to acknowledge" });
+      const updated = await transitionAction(req.params.id, userId, "acknowledged", { acknowledgedAt: new Date() });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/operator-actions/:id/start
+  app.post("/api/admin/operator-actions/:id/start", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (action.status === "resolved" || action.status === "ignored") return res.status(400).json({ error: "Cannot start a closed action" });
+      const updated = await transitionAction(req.params.id, userId, "in_progress");
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/operator-actions/:id/resolve
+  app.post("/api/admin/operator-actions/:id/resolve", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (action.status === "ignored") return res.status(400).json({ error: "Cannot resolve an ignored action" });
+      const { note } = req.body;
+      const updated = await transitionAction(req.params.id, userId, "resolved", { resolvedAt: new Date() }, note);
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/operator-actions/:id/ignore
+  app.post("/api/admin/operator-actions/:id/ignore", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      if (action.status === "resolved") return res.status(400).json({ error: "Cannot ignore a resolved action" });
+      const { reason } = req.body;
+      if (!reason || !String(reason).trim()) return res.status(400).json({ error: "reason is required to ignore" });
+      const updated = await transitionAction(req.params.id, userId, "ignored", { ignoredAt: new Date(), ignoredReason: String(reason).trim() }, String(reason).trim());
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/operator-actions/:id/assign
+  app.post("/api/admin/operator-actions/:id/assign", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { userId: assignUserId } = req.body;
+      const updated = await storage.updateOperatorAction(req.params.id, { assignedToUserId: assignUserId || null });
+      await storage.createOperatorActionEvent({
+        operatorActionId: req.params.id, actorId: userId,
+        eventType: action.assignedToUserId ? "reassigned" : "assigned",
+        note: `Assigned to ${assignUserId}`,
+      });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/operator-actions/:id/note
+  app.post("/api/admin/operator-actions/:id/note", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const action = await storage.getOperatorAction(req.params.id);
+      if (!action || action.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { note } = req.body;
+      if (!note || !String(note).trim()) return res.status(400).json({ error: "note is required" });
+      const event = await storage.createOperatorActionEvent({
+        operatorActionId: req.params.id, actorId: userId,
+        eventType: "note_added", note: String(note).trim(),
+      });
+      res.status(201).json(event);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/financial-brain/create-action — convert AI recommendation to operator action
+  app.post("/api/admin/financial-brain/create-action", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { key, label, detail, severity, suggestedAction, estimatedImpact, relatedEntities, sourceKey } = req.body;
+      if (!label) return res.status(400).json({ error: "label is required" });
+      const categoryMap: Record<string, string> = {
+        resolve_failed_events: "accounting", clear_stale_failures: "accounting",
+        investigate_revenue_drop: "financial", reengage_inactive_clients: "client_retention",
+        followup_underutilizing_clients: "client_retention", coach_no_sessions: "coach_operations",
+        review_payout_spike: "payout",
+      };
+      const action = await storage.createOperatorAction({
+        orgId, title: String(label), description: detail ? String(detail) : undefined,
+        suggestedAction: suggestedAction ? String(suggestedAction) : undefined,
+        severity: severity || "warning",
+        category: categoryMap[key] || "financial",
+        sourceType: "financial_brain", sourceKey: sourceKey || key,
+        estimatedImpact: estimatedImpact || undefined,
+        metadata: { recommendationKey: key, relatedEntities, originalDetail: detail },
+        createdBy: userId, status: "open",
+      });
+      await storage.createOperatorActionEvent({
+        operatorActionId: action.id, actorId: userId,
+        eventType: "created", newStatus: "open",
+        note: `Created from AI Financial Brain recommendation: ${key}`,
+      });
+      res.status(201).json(action);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/admin/financial-brain/anomalies — raw anomaly list
   app.get("/api/admin/financial-brain/anomalies", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -11808,6 +12059,11 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         financialEventFailuresPending: financialFailuresPending,
         financialEventFailuresCritical: financialFailuresCritical,
         financialBrainUrl: "/admin/financial-brain",
+        operatorActionsUrl: "/admin/operator-actions",
+        openCriticalActions: await storage.getOperatorActionsSummary(orgId).then(s => s.criticalOpen).catch(() => 0),
+        staleUnresolvedActions: await storage.getOperatorActionsSummary(orgId).then(s => s.staleCount).catch(() => 0),
+        unresolvedPayoutReviews: await storage.getOperatorActions(orgId, { category: "payout", status: "open" }).then(a => a.length).catch(() => 0),
+        unresolvedChurnRisks: await storage.getOperatorActions(orgId, { category: "churn", status: "open" }).then(a => a.length).catch(() => 0),
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
