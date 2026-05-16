@@ -734,28 +734,3 @@ export function CommandPalette() {
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Mobile Floating Action Button
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-export function MobileFAB() {
-  return (
-    <button
-      onClick={() => {
-        window.dispatchEvent(new CustomEvent("command-palette:open"));
-      }}
-      data-testid="button-mobile-fab"
-      aria-label="Open action launcher"
-      className={cn(
-        "md:hidden fixed bottom-6 right-5 z-50",
-        "h-14 w-14 rounded-full shadow-lg",
-        "bg-primary text-primary-foreground",
-        "flex items-center justify-center",
-        "transition-all active:scale-95",
-        "ring-4 ring-primary/20"
-      )}
-    >
-      <Search className="h-6 w-6" />
-    </button>
-  );
-}

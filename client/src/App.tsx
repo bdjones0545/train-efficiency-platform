@@ -59,7 +59,8 @@ import AdminWorkflowsPage from "@/pages/admin-workflows";
 import AdminAgentOpsPage from "@/pages/admin-agent-ops";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
-import { CommandPalette, MobileFAB } from "@/components/command-palette";
+import { CommandPalette } from "@/components/command-palette";
+import { Search } from "lucide-react";
 import AttentionInboxPage from "@/pages/attention-inbox";
 import { AttentionBell } from "@/components/attention-bell";
 import { Button } from "@/components/ui/button";
@@ -152,17 +153,19 @@ function AuthenticatedLayout() {
       <div className="flex h-[100dvh] w-full overflow-hidden">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <header className="flex items-center justify-between gap-4 p-3 border-b sticky top-0 z-50 bg-background/80 backdrop-blur-md shrink-0">
+          <header className="flex items-center gap-2 p-3 border-b sticky top-0 z-50 bg-background/80 backdrop-blur-md shrink-0">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <button
               onClick={() => window.dispatchEvent(new CustomEvent("command-palette:open"))}
-              data-testid="button-command-palette-trigger"
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-md border border-border/60 bg-muted/40 hover:bg-muted transition-colors text-sm text-muted-foreground flex-1 max-w-xs mx-auto"
+              data-testid="button-search"
+              aria-label="Open search"
+              className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <span className="flex-1 text-left text-xs">Search or run a command…</span>
-              <kbd className="text-[10px] bg-background border border-border rounded px-1.5 py-0.5 font-mono opacity-70">⌘K</kbd>
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="hidden md:inline text-xs">Search</span>
+              <kbd className="hidden md:inline text-[10px] bg-background border border-border rounded px-1.5 py-0.5 font-mono opacity-60">⌘K</kbd>
             </button>
+            <div className="flex-1" />
             <AttentionBell />
             <ThemeToggle />
           </header>
@@ -227,7 +230,6 @@ function AuthenticatedLayout() {
       <CoachAgentLauncher />
       <ClientAgentLauncher />
       <CommandPalette />
-      <MobileFAB />
     </SidebarProvider>
   );
 }
