@@ -1,0 +1,113 @@
+Task 3 — Unify Scheduling Constructs
+
+Audit and refactor TrainEfficiency so all session creation flows use the same “Schedule Session” construct.
+
+Primary goal:
+The Scheduling page “New Booking” modal should match the dashboard “Schedule a Session” modal.
+
+Current mismatch:
+Scheduling page New Booking uses:
+- Client
+- Coach
+- Session Type
+- Start
+- End
+
+Dashboard Schedule Session uses:
+- Service
+- Client
+- Date
+- Start Time
+- Location
+- Notes
+
+Refactor toward the dashboard construct.
+
+Requirements:
+
+1. Find both implementations
+- Locate the Scheduling page New Booking modal.
+- Locate the dashboard Schedule Session modal.
+- Compare fields, validation, API payloads, and submit behavior.
+
+2. Create or reuse one shared scheduling component
+- Prefer extracting the dashboard Schedule Session form into a shared component.
+- Use it from both Dashboard and Scheduling page.
+- Support context props such as:
+  - defaultClientId
+  - defaultCoachId
+  - defaultDate
+  - defaultServiceId
+  - onSuccess
+  - submitLabel
+  - mode: "create" | "reschedule"
+
+3. Standardize terminology
+- User-facing label should be “Service.”
+- Replace “Session Type” anywhere in scheduling UI, filters, validation, toasts, and agent previews unless there is a specific technical/admin reason.
+- Backend naming can remain unchanged if needed.
+
+4. Derive end time automatically
+- User selects Date + Start Time.
+- Selected service determines duration.
+- Compute endTime from startTime + service.durationMinutes.
+- If duration is missing, default to 60 minutes and show “60 min default.”
+- Do not show required manual Start/End paired fields in the create flow.
+
+5. Preserve backend compatibility
+- Continue sending whatever existing endpoint requires:
+  - clientId
+  - coachId
+  - serviceId or sessionTypeId
+  - startTime
+  - endTime
+  - location
+  - notes
+- Do not rewrite the database unless absolutely necessary.
+
+6. Mobile layout fix
+- Make the modal single-column on mobile.
+- Ensure date/time/location/notes are not clipped by Safari browser chrome.
+- Use internal scrolling if needed.
+- Keep the primary action button reachable.
+
+7. Audit other scheduling entry points
+Search for all create/reschedule/edit session forms and align them:
+- Dashboard Schedule Session
+- Scheduling page New Booking
+- Client profile schedule action
+- Coach profile schedule action
+- Session edit/reschedule dialog
+- Scheduling Agent confirmation flow
+- Any admin booking creation forms
+- Any client portal booking flow
+
+8. Keep redeemed lifecycle locks intact
+- Do not break the Task 2 redeemed session protections.
+- Redeemed sessions must remain non-editable, non-deleteable, non-cancellable, and non-cloneable.
+- Reschedule/edit flows must respect locked sessions.
+
+9. UX polish
+When a service is selected, show a small summary:
+“60 min • $70 • Spring Island • Uses 1 session credit”
+Only show values that exist.
+
+10. Testing checklist
+Verify:
+- Scheduling page New Booking uses the same construct as dashboard Schedule Session.
+- Dashboard scheduling still works.
+- Existing client scheduling works.
+- New client inline flow still works, if supported.
+- Service duration correctly computes end time.
+- Missing duration defaults safely.
+- Coach/client conflict validation still works.
+- Redeemed sessions remain locked.
+- Mobile Safari modal layout works.
+- Filters still work after terminology change.
+
+Deliverables:
+- Files changed
+- Components consolidated
+- Endpoint compatibility notes
+- Before/after UX summary
+- Confirmation that all scheduling creation flows now share one construct

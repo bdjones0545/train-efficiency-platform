@@ -1,0 +1,408 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar as CalendarWidget } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, Search, XCircle, MapPin } from "lucide-react";
+import { format } from "date-fns";
+import type { Service } from "@shared/schema";
+import type { CoachWithUser } from "@/lib/types";
+
+type ClientSearchResult = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+};
+
+type LocationEntry = { id: string; name: string };
+
+export type ScheduleFormData = {
+  serviceId: string;
+  clientId: string | null;
+  clientFirstName?: string;
+  clientLastName?: string;
+  coachId: string;
+  startAt: Date;
+  endAt: Date;
+  location: string;
+  notes: string;
+};
+
+type Props = {
+  services: Service[];
+  coaches: CoachWithUser[];
+  locations: LocationEntry[];
+  defaultClientId?: string;
+  defaultClientFirstName?: string;
+  defaultClientLastName?: string;
+  defaultCoachId?: string;
+  defaultDate?: Date;
+  defaultServiceId?: string;
+  defaultLocation?: string;
+  defaultNotes?: string;
+  defaultStartTime?: string;
+  submitLabel?: string;
+  cancelLabel?: string;
+  isSubmitting?: boolean;
+  showCoachSelector?: boolean;
+  onSubmit: (data: ScheduleFormData) => void;
+  onCancel?: () => void;
+  onValidationError?: (message: string) => void;
+};
+
+const TIME_OPTIONS: string[] = [];
+for (let h = 5; h < 22; h++) {
+  for (let m = 0; m < 60; m += 15) {
+    TIME_OPTIONS.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  }
+}
+
+function deriveEndTime(startTime: string, durationMin: number): string {
+  const [h, m] = startTime.split(":").map(Number);
+  const totalMin = h * 60 + m + durationMin;
+  const endH = Math.floor(totalMin / 60);
+  const endM = totalMin % 60;
+  const d = new Date();
+  d.setHours(endH, endM);
+  return format(d, "h:mm a");
+}
+
+export function ScheduleSessionForm({
+  services,
+  coaches,
+  locations,
+  defaultClientId,
+  defaultClientFirstName = "",
+  defaultClientLastName = "",
+  defaultCoachId = "",
+  defaultDate,
+  defaultServiceId = "",
+  defaultLocation = "",
+  defaultNotes = "",
+  defaultStartTime = "09:00",
+  submitLabel = "Schedule Session",
+  cancelLabel = "Cancel",
+  isSubmitting = false,
+  showCoachSelector = true,
+  onSubmit,
+  onCancel,
+  onValidationError,
+}: Props) {
+  const [serviceId, setServiceId] = useState(defaultServiceId);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(defaultDate);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [startTime, setStartTime] = useState(defaultStartTime);
+  const [clientId, setClientId] = useState<string | null>(defaultClientId ?? null);
+  const [clientFirstName, setClientFirstName] = useState(defaultClientFirstName);
+  const [clientLastName, setClientLastName] = useState(defaultClientLastName);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const [coachId, setCoachId] = useState(defaultCoachId || (coaches.length === 1 ? coaches[0].id : ""));
+  const [location, setLocation] = useState(defaultLocation);
+  const [notes, setNotes] = useState(defaultNotes);
+
+  const { data: searchResults = [] } = useQuery<ClientSearchResult[]>({
+    queryKey: ["/api/coach/clients/search", searchQuery],
+    queryFn: async () => {
+      if (searchQuery.length < 2) return [];
+      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(searchQuery)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: searchQuery.length >= 2,
+  });
+
+  const selectedService = services.find(s => s.id === serviceId);
+  const durationMin = selectedService?.durationMin ?? 60;
+  const price = (selectedService as any)?.price;
+  const sessionCredits = (selectedService as any)?.sessionCredits;
+
+  const resolvedCoachId = coachId || (coaches.length === 1 ? coaches[0].id : "");
+
+  const handleSelectClient = (client: ClientSearchResult) => {
+    setClientId(client.id);
+    setClientFirstName(client.firstName || "");
+    setClientLastName(client.lastName || "");
+    setShowSearch(false);
+    setSearchQuery("");
+  };
+
+  const handleClearClient = () => {
+    setClientId(null);
+    setClientFirstName("");
+    setClientLastName("");
+  };
+
+  const handleSubmit = () => {
+    const notify = onValidationError ?? (() => {});
+    if (!serviceId) { notify("Please select a service."); return; }
+    if (!clientId) { notify("Please select a client."); return; }
+    if (!selectedDate) { notify("Please pick a date."); return; }
+    if (!startTime) { notify("Please select a start time."); return; }
+    if (showCoachSelector && !resolvedCoachId) { notify("Please select a coach."); return; }
+
+    const [hours, minutes] = startTime.split(":").map(Number);
+    const startAt = new Date(selectedDate);
+    startAt.setHours(hours, minutes, 0, 0);
+    const endAt = new Date(startAt.getTime() + durationMin * 60 * 1000);
+
+    onSubmit({
+      serviceId,
+      clientId,
+      clientFirstName,
+      clientLastName,
+      coachId: resolvedCoachId,
+      startAt,
+      endAt,
+      location: location !== "__none__" ? location : "",
+      notes,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 1. Service */}
+      <div className="space-y-1.5">
+        <Label>Service *</Label>
+        <Select value={serviceId} onValueChange={setServiceId}>
+          <SelectTrigger data-testid="ssf-select-service">
+            <SelectValue placeholder="Select a service" />
+          </SelectTrigger>
+          <SelectContent>
+            {services
+              .filter(s => s.active && (s as any).isBookableByCoach !== false)
+              .map(s => (
+                <SelectItem key={s.id} value={s.id} data-testid={`ssf-option-service-${s.id}`}>
+                  {s.name}
+                  {s.durationMin ? ` · ${s.durationMin} min` : ""}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        {selectedService && (
+          <p className="text-xs text-muted-foreground px-1" data-testid="ssf-service-summary">
+            {selectedService.durationMin
+              ? `${selectedService.durationMin} min`
+              : <span className="text-amber-600 dark:text-amber-400">60 min (default — no duration set)</span>
+            }
+            {price ? ` · $${(price / 100).toFixed(0)}` : ""}
+            {sessionCredits ? ` · Uses ${sessionCredits} session credit${sessionCredits !== 1 ? "s" : ""}` : ""}
+          </p>
+        )}
+      </div>
+
+      {/* 2. Client */}
+      <div className="space-y-1.5">
+        <Label>Client *</Label>
+        {clientId ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 text-sm border rounded-md p-2 bg-muted/30">
+              {clientFirstName} {clientLastName}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleClearClient}
+              data-testid="ssf-button-clear-client"
+            >
+              <XCircle className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSearch(!showSearch)}
+              className="w-full justify-start"
+              data-testid="ssf-button-search-clients"
+            >
+              <Search className="h-3.5 w-3.5 mr-2" />
+              Search clients...
+            </Button>
+            {showSearch && (
+              <div className="space-y-2">
+                <Input
+                  placeholder="Type a name or email..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  autoFocus
+                  data-testid="ssf-input-search-clients"
+                />
+                {searchResults.length > 0 && (
+                  <div className="border rounded-md max-h-36 overflow-y-auto">
+                    {searchResults.map(client => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b last:border-b-0"
+                        onClick={() => handleSelectClient(client)}
+                        data-testid={`ssf-button-select-client-${client.id}`}
+                      >
+                        <span className="font-medium">{client.firstName} {client.lastName}</span>
+                        {client.email && (
+                          <span className="text-muted-foreground ml-2 text-xs">{client.email}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchQuery.length >= 2 && searchResults.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No clients found for "{searchQuery}".</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 3. Date */}
+      <div className="space-y-1.5">
+        <Label>Date *</Label>
+        <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-full justify-start text-left font-normal"
+              data-testid="ssf-button-select-date"
+            >
+              <CalendarIcon className="h-4 w-4 mr-2" />
+              {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <CalendarWidget
+              mode="single"
+              selected={selectedDate}
+              onSelect={date => { setSelectedDate(date); setCalendarOpen(false); }}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* 4. Start Time */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label>Start Time *</Label>
+          {startTime && (
+            <span className="text-xs text-muted-foreground" data-testid="ssf-text-end-time">
+              ends {deriveEndTime(startTime, durationMin)} · {durationMin} min
+              {!selectedService?.durationMin && (
+                <span className="ml-1 text-amber-600 dark:text-amber-400">(default)</span>
+              )}
+            </span>
+          )}
+        </div>
+        <Select value={startTime} onValueChange={setStartTime}>
+          <SelectTrigger data-testid="ssf-select-time">
+            <SelectValue placeholder="Select time" />
+          </SelectTrigger>
+          <SelectContent className="max-h-48">
+            {TIME_OPTIONS.map(t => {
+              const [h, m] = t.split(":").map(Number);
+              const d = new Date();
+              d.setHours(h, m);
+              return (
+                <SelectItem key={t} value={t}>
+                  {format(d, "h:mm a")}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* 5. Coach (optional) */}
+      {showCoachSelector && (
+        <div className="space-y-1.5">
+          <Label>Coach {coaches.length === 1 ? "" : "*"}</Label>
+          <Select
+            value={resolvedCoachId}
+            onValueChange={setCoachId}
+          >
+            <SelectTrigger data-testid="ssf-select-coach">
+              <SelectValue
+                placeholder={
+                  coaches.length === 1
+                    ? `${coaches[0].user.firstName} ${coaches[0].user.lastName}`
+                    : "Select coach"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {coaches.map(c => (
+                <SelectItem key={c.id} value={c.id} data-testid={`ssf-option-coach-${c.id}`}>
+                  {c.user.firstName} {c.user.lastName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* 6. Location */}
+      <div className="space-y-1.5">
+        <Label>Location</Label>
+        <Select value={location} onValueChange={setLocation}>
+          <SelectTrigger data-testid="ssf-select-location">
+            <MapPin className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
+            <SelectValue placeholder="Select a location (optional)" />
+          </SelectTrigger>
+          <SelectContent>
+            {locations.map(l => (
+              <SelectItem key={l.id} value={l.name} data-testid={`ssf-option-location-${l.id}`}>
+                {l.name}
+              </SelectItem>
+            ))}
+            <SelectItem value="__none__">No location / remote</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* 7. Notes */}
+      <div className="space-y-1.5">
+        <Label>Notes</Label>
+        <Textarea
+          placeholder="Session notes (optional)..."
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          rows={2}
+          className="resize-none"
+          data-testid="ssf-input-notes"
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-col-reverse sm:flex-row gap-2 pt-1">
+        {onCancel && (
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            onClick={onCancel}
+            data-testid="ssf-button-cancel"
+          >
+            {cancelLabel}
+          </Button>
+        )}
+        <Button
+          type="button"
+          className="flex-1"
+          onClick={handleSubmit}
+          disabled={isSubmitting}
+          data-testid="ssf-button-submit"
+        >
+          {isSubmitting ? "Scheduling..." : submitLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}

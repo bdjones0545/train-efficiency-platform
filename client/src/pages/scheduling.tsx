@@ -19,9 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,12 +47,12 @@ import {
   MapPin,
   Dumbbell,
   Bot,
-  Search,
-  XCircle,
   CalendarIcon,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Booking, Service, CoachProfile, User } from "@shared/schema";
+import type { CoachWithUser } from "@/lib/types";
+import { ScheduleSessionForm, type ScheduleFormData } from "@/components/schedule-session-form";
 
 type BookingWithDetails = Booking & {
   service?: Service;
@@ -250,28 +248,18 @@ export default function SchedulingPage() {
   const [cancelBooking, setCancelBooking] = useState<BookingWithDetails | null>(null);
   const [rescheduleBooking, setRescheduleBooking] = useState<BookingWithDetails | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createFormKey, setCreateFormKey] = useState(0);
 
-  // New Booking modal — unified state
-  const [nbServiceId, setNbServiceId] = useState("");
-  const [nbSelectedDate, setNbSelectedDate] = useState<Date | undefined>();
-  const [nbCalendarOpen, setNbCalendarOpen] = useState(false);
-  const [nbStartTime, setNbStartTime] = useState("09:00");
-  const [nbClientId, setNbClientId] = useState<string | null>(null);
-  const [nbClientFirstName, setNbClientFirstName] = useState("");
-  const [nbClientLastName, setNbClientLastName] = useState("");
-  const [nbSearchQuery, setNbSearchQuery] = useState("");
-  const [nbShowSearch, setNbShowSearch] = useState(false);
-  const [nbCoachId, setNbCoachId] = useState("");
-  const [nbLocation, setNbLocation] = useState("");
-  const [nbNotes, setNbNotes] = useState("");
-
-  const [rescheduleData, setRescheduleData] = useState({ startAt: "", endAt: "" });
+  // Reschedule dialog state
+  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>();
+  const [rescheduleStartTime, setRescheduleStartTime] = useState("09:00");
+  const [rescheduleCalendarOpen, setRescheduleCalendarOpen] = useState(false);
 
   const { data: bookings = [], isLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/scheduling/bookings"],
   });
 
-  const { data: coaches = [] } = useQuery<(CoachProfile & { user: User })[]>({
+  const { data: coaches = [] } = useQuery<CoachWithUser[]>({
     queryKey: ["/api/coaches"],
   });
 
@@ -282,45 +270,6 @@ export default function SchedulingPage() {
   const { data: locations = [] } = useQuery<any[]>({
     queryKey: ["/api/locations"],
   });
-
-  const { data: orgUsers = [] } = useQuery<any[]>({
-    queryKey: ["/api/coach/users"],
-  });
-
-  const { data: nbClientSearchResults = [] } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string | null }[]>({
-    queryKey: ["/api/coach/clients/search", nbSearchQuery],
-    queryFn: async () => {
-      if (nbSearchQuery.length < 2) return [];
-      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(nbSearchQuery)}`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: nbSearchQuery.length >= 2,
-  });
-
-  const nbSelectedService = services.find(s => s.id === nbServiceId);
-  const nbDurationMin = nbSelectedService?.durationMin || 60;
-
-  const nbTimeOptions: string[] = [];
-  for (let h = 5; h < 22; h++) {
-    for (let m = 0; m < 60; m += 15) {
-      nbTimeOptions.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-    }
-  }
-
-  const resetNewBooking = () => {
-    setNbServiceId("");
-    setNbSelectedDate(undefined);
-    setNbStartTime("09:00");
-    setNbClientId(null);
-    setNbClientFirstName("");
-    setNbClientLastName("");
-    setNbSearchQuery("");
-    setNbShowSearch(false);
-    setNbCoachId(coaches.length === 1 ? coaches[0].id : "");
-    setNbLocation("");
-    setNbNotes("");
-  };
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
@@ -337,8 +286,9 @@ export default function SchedulingPage() {
       apiRequest("PATCH", `/api/scheduling/bookings/${id}`, { startAt, endAt }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
       setRescheduleBooking(null);
+      setRescheduleDate(undefined);
+      setRescheduleStartTime("09:00");
       toast({ title: "Booking rescheduled" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -349,11 +299,37 @@ export default function SchedulingPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
       setCreateOpen(false);
-      resetNewBooking();
+      setCreateFormKey(k => k + 1);
       toast({ title: "Session scheduled", description: "The session has been added to the schedule." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  const handleCreateSubmit = (data: ScheduleFormData) => {
+    createMutation.mutate({
+      clientId: data.clientId,
+      coachId: data.coachId,
+      serviceId: data.serviceId,
+      startAt: data.startAt.toISOString(),
+      endAt: data.endAt.toISOString(),
+      location: data.location,
+      notes: data.notes,
+    });
+  };
+
+  const handleRescheduleSubmit = () => {
+    if (!rescheduleBooking || !rescheduleDate || !rescheduleStartTime) return;
+    const [hours, minutes] = rescheduleStartTime.split(":").map(Number);
+    const startAt = new Date(rescheduleDate);
+    startAt.setHours(hours, minutes, 0, 0);
+    const durationMin = rescheduleBooking.service?.durationMin || 60;
+    const endAt = new Date(startAt.getTime() + durationMin * 60 * 1000);
+    rescheduleMutation.mutate({
+      id: rescheduleBooking.id,
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString(),
+    });
+  };
 
   const filtered = useMemo(() => {
     return bookings.filter(b => {
@@ -400,32 +376,6 @@ export default function SchedulingPage() {
     setFilterSessionType("all");
     setFilterLocation("all");
     setSearchTerm("");
-  };
-
-  const handleRescheduleSubmit = () => {
-    if (!rescheduleBooking || !rescheduleData.startAt || !rescheduleData.endAt) return;
-    rescheduleMutation.mutate({ id: rescheduleBooking.id, ...rescheduleData });
-  };
-
-  const handleCreateSubmit = () => {
-    const resolvedCoachId = nbCoachId || (coaches.length === 1 ? coaches[0].id : "");
-    if (!nbServiceId || !nbClientId || !nbSelectedDate || !nbStartTime || !resolvedCoachId) {
-      toast({ title: "Missing required fields", description: "Please fill in service, client, date, time, and coach.", variant: "destructive" });
-      return;
-    }
-    const [hours, minutes] = nbStartTime.split(":").map(Number);
-    const startAt = new Date(nbSelectedDate);
-    startAt.setHours(hours, minutes, 0, 0);
-    const endAt = new Date(startAt.getTime() + nbDurationMin * 60 * 1000);
-    createMutation.mutate({
-      clientId: nbClientId,
-      coachId: resolvedCoachId,
-      serviceId: nbServiceId,
-      startAt: startAt.toISOString(),
-      endAt: endAt.toISOString(),
-      location: nbLocation !== "__none__" ? nbLocation : "",
-      notes: nbNotes,
-    });
   };
 
   return (
@@ -665,36 +615,98 @@ export default function SchedulingPage() {
       </AlertDialog>
 
       {/* Reschedule Dialog */}
-      <Dialog open={!!rescheduleBooking} onOpenChange={() => setRescheduleBooking(null)}>
-        <DialogContent>
+      <Dialog
+        open={!!rescheduleBooking}
+        onOpenChange={(v) => {
+          if (!v) {
+            setRescheduleBooking(null);
+            setRescheduleDate(undefined);
+            setRescheduleStartTime("09:00");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle data-testid="text-reschedule-dialog-title">Reschedule Booking</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>New Start Time</Label>
-              <Input
-                type="datetime-local"
-                value={rescheduleData.startAt}
-                onChange={e => setRescheduleData(d => ({ ...d, startAt: e.target.value }))}
-                data-testid="input-reschedule-start"
-              />
+          {rescheduleBooking && (
+            <div className="rounded-md border border-muted bg-muted/30 px-3 py-2 text-sm text-muted-foreground mb-1">
+              {rescheduleBooking.service?.name} · {format(new Date(rescheduleBooking.startAt), "MMM d 'at' h:mm a")}
             </div>
-            <div className="space-y-2">
-              <Label>New End Time</Label>
-              <Input
-                type="datetime-local"
-                value={rescheduleData.endAt}
-                onChange={e => setRescheduleData(d => ({ ...d, endAt: e.target.value }))}
-                data-testid="input-reschedule-end"
-              />
+          )}
+          <div className="space-y-4 py-1">
+            {/* New Date */}
+            <div className="space-y-1.5">
+              <Label>New Date</Label>
+              <Popover open={rescheduleCalendarOpen} onOpenChange={setRescheduleCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                    data-testid="button-reschedule-select-date"
+                  >
+                    <CalendarIcon className="h-4 w-4 mr-2" />
+                    {rescheduleDate ? format(rescheduleDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarWidget
+                    mode="single"
+                    selected={rescheduleDate}
+                    onSelect={date => { setRescheduleDate(date); setRescheduleCalendarOpen(false); }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* New Start Time */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label>New Start Time</Label>
+                {rescheduleDate && rescheduleStartTime && rescheduleBooking && (
+                  <span className="text-xs text-muted-foreground" data-testid="text-reschedule-end-time">
+                    {(() => {
+                      const [h, m] = rescheduleStartTime.split(":").map(Number);
+                      const dur = rescheduleBooking.service?.durationMin || 60;
+                      const end = new Date();
+                      end.setHours(h, m + dur);
+                      return `ends ${format(end, "h:mm a")} · ${dur} min`;
+                    })()}
+                  </span>
+                )}
+              </div>
+              <Select value={rescheduleStartTime} onValueChange={setRescheduleStartTime}>
+                <SelectTrigger data-testid="select-reschedule-time">
+                  <SelectValue placeholder="Select time" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48">
+                  {(() => {
+                    const opts: string[] = [];
+                    for (let h = 5; h < 22; h++) {
+                      for (let m = 0; m < 60; m += 15) {
+                        opts.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+                      }
+                    }
+                    return opts.map(t => {
+                      const [hh, mm] = t.split(":").map(Number);
+                      const d = new Date();
+                      d.setHours(hh, mm);
+                      return (
+                        <SelectItem key={t} value={t}>
+                          {format(d, "h:mm a")}
+                        </SelectItem>
+                      );
+                    });
+                  })()}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRescheduleBooking(null)}>Cancel</Button>
             <Button
               onClick={handleRescheduleSubmit}
-              disabled={rescheduleMutation.isPending}
+              disabled={rescheduleMutation.isPending || !rescheduleDate}
               data-testid="button-reschedule-confirm"
             >
               {rescheduleMutation.isPending ? "Saving..." : "Reschedule"}
@@ -704,234 +716,23 @@ export default function SchedulingPage() {
       </Dialog>
 
       {/* Schedule Session Dialog */}
-      <Dialog open={createOpen} onOpenChange={(v) => { setCreateOpen(v); if (!v) resetNewBooking(); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <Dialog open={createOpen} onOpenChange={(v) => { setCreateOpen(v); if (!v) setCreateFormKey(k => k + 1); }}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle data-testid="text-create-dialog-title">Schedule a Session</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-
-            {/* 1. Service */}
-            <div className="space-y-2">
-              <Label>Service *</Label>
-              <Select value={nbServiceId} onValueChange={setNbServiceId}>
-                <SelectTrigger data-testid="select-new-service">
-                  <SelectValue placeholder="Select a service" />
-                </SelectTrigger>
-                <SelectContent>
-                  {services.filter(s => s.active && (s as any).isBookableByCoach !== false).map(s => (
-                    <SelectItem key={s.id} value={s.id} data-testid={`option-service-${s.id}`}>
-                      {s.name}
-                      {s.durationMin ? ` · ${s.durationMin} min` : ""}
-                      {(s as any).price ? ` · $${((s as any).price / 100).toFixed(0)}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {nbSelectedService && (
-                <p className="text-xs text-muted-foreground px-1" data-testid="text-service-summary">
-                  {nbSelectedService.durationMin ? `${nbSelectedService.durationMin} min` : "60 min (default)"}
-                  {(nbSelectedService as any).price ? ` · $${((nbSelectedService as any).price / 100).toFixed(0)}` : ""}
-                  {!nbSelectedService.durationMin && (
-                    <span className="ml-1 text-amber-600 dark:text-amber-400">· No duration set — defaulting to 60 min</span>
-                  )}
-                </p>
-              )}
-            </div>
-
-            {/* 2. Client */}
-            <div className="space-y-2">
-              <Label>Client *</Label>
-              {nbClientId ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 text-sm border rounded-md p-2 bg-muted/30">
-                    {nbClientFirstName} {nbClientLastName}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => { setNbClientId(null); setNbClientFirstName(""); setNbClientLastName(""); }}
-                    data-testid="button-clear-nb-client"
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setNbShowSearch(!nbShowSearch)}
-                    className="w-full justify-start"
-                    data-testid="button-nb-search-clients"
-                  >
-                    <Search className="h-3.5 w-3.5 mr-2" />
-                    Search clients...
-                  </Button>
-                  {nbShowSearch && (
-                    <div className="space-y-2">
-                      <Input
-                        placeholder="Type to search..."
-                        value={nbSearchQuery}
-                        onChange={e => setNbSearchQuery(e.target.value)}
-                        autoFocus
-                        data-testid="input-nb-search-clients"
-                      />
-                      {nbClientSearchResults.length > 0 && (
-                        <div className="border rounded-md max-h-36 overflow-y-auto">
-                          {nbClientSearchResults.map(client => (
-                            <button
-                              key={client.id}
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors border-b last:border-b-0"
-                              onClick={() => {
-                                setNbClientId(client.id);
-                                setNbClientFirstName(client.firstName || "");
-                                setNbClientLastName(client.lastName || "");
-                                setNbShowSearch(false);
-                                setNbSearchQuery("");
-                              }}
-                              data-testid={`button-nb-select-client-${client.id}`}
-                            >
-                              <span className="font-medium">{client.firstName} {client.lastName}</span>
-                              {client.email && <span className="text-muted-foreground ml-2 text-xs">{client.email}</span>}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {nbSearchQuery.length >= 2 && nbClientSearchResults.length === 0 && (
-                        <p className="text-xs text-muted-foreground">No clients found for "{nbSearchQuery}".</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 3. Date */}
-            <div className="space-y-2">
-              <Label>Date *</Label>
-              <Popover open={nbCalendarOpen} onOpenChange={setNbCalendarOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                    data-testid="button-nb-select-date"
-                  >
-                    <CalendarIcon className="h-4 w-4 mr-2" />
-                    {nbSelectedDate ? format(nbSelectedDate, "PPP") : "Pick a date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarWidget
-                    mode="single"
-                    selected={nbSelectedDate}
-                    onSelect={(date) => { setNbSelectedDate(date); setNbCalendarOpen(false); }}
-                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {/* 4. Start Time */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Start Time *</Label>
-                {nbStartTime && nbSelectedService?.durationMin && (() => {
-                  const [sh, sm] = nbStartTime.split(":").map(Number);
-                  const endTotalMin = sh * 60 + sm + nbDurationMin;
-                  const endH = Math.floor(endTotalMin / 60);
-                  const endM = endTotalMin % 60;
-                  const endD = new Date();
-                  endD.setHours(endH, endM);
-                  return (
-                    <span className="text-xs text-muted-foreground" data-testid="text-nb-computed-end-time">
-                      ends {format(endD, "h:mm a")} · {nbDurationMin} min
-                    </span>
-                  );
-                })()}
-              </div>
-              <Select value={nbStartTime} onValueChange={setNbStartTime}>
-                <SelectTrigger data-testid="select-nb-time">
-                  <SelectValue placeholder="Select time" />
-                </SelectTrigger>
-                <SelectContent className="max-h-48">
-                  {nbTimeOptions.map(t => {
-                    const [h, m] = t.split(":").map(Number);
-                    const d = new Date();
-                    d.setHours(h, m);
-                    return (
-                      <SelectItem key={t} value={t}>
-                        {format(d, "h:mm a")}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 5. Coach */}
-            <div className="space-y-2">
-              <Label>Coach {coaches.length === 1 ? "" : "*"}</Label>
-              <Select
-                value={nbCoachId || (coaches.length === 1 ? coaches[0].id : "")}
-                onValueChange={setNbCoachId}
-              >
-                <SelectTrigger data-testid="select-nb-coach">
-                  <SelectValue placeholder={coaches.length === 1 ? `${coaches[0].user.firstName} ${coaches[0].user.lastName}` : "Select coach"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {coaches.map(c => (
-                    <SelectItem key={c.id} value={c.id} data-testid={`option-coach-${c.id}`}>
-                      {c.user.firstName} {c.user.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 6. Location */}
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <Select value={nbLocation} onValueChange={setNbLocation}>
-                <SelectTrigger data-testid="select-nb-location">
-                  <MapPin className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
-                  <SelectValue placeholder="Select a location (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {locations.map((l: any) => (
-                    <SelectItem key={l.id} value={l.name} data-testid={`option-location-${l.id}`}>
-                      {l.name}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="__none__">No location / remote</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 7. Notes */}
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea
-                placeholder="Session notes (optional)..."
-                value={nbNotes}
-                onChange={e => setNbNotes(e.target.value)}
-                data-testid="input-nb-notes"
-                rows={2}
-                className="resize-none"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="flex-col-reverse sm:flex-row gap-2 pt-2">
-            <Button variant="outline" onClick={() => { setCreateOpen(false); resetNewBooking(); }}>Cancel</Button>
-            <Button
-              onClick={handleCreateSubmit}
-              disabled={createMutation.isPending}
-              data-testid="button-create-confirm"
-            >
-              {createMutation.isPending ? "Scheduling..." : "Schedule Session"}
-            </Button>
-          </DialogFooter>
+          <ScheduleSessionForm
+            key={createFormKey}
+            services={services}
+            coaches={coaches}
+            locations={locations}
+            showCoachSelector={true}
+            submitLabel={createMutation.isPending ? "Scheduling..." : "Schedule Session"}
+            isSubmitting={createMutation.isPending}
+            onSubmit={handleCreateSubmit}
+            onCancel={() => { setCreateOpen(false); setCreateFormKey(k => k + 1); }}
+            onValidationError={(msg) => toast({ title: "Missing required fields", description: msg, variant: "destructive" })}
+          />
         </DialogContent>
       </Dialog>
     </div>

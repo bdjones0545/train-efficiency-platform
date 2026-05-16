@@ -593,6 +593,20 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedServiceObj && (
+                  <p className="text-xs text-muted-foreground px-1" data-testid="text-service-summary">
+                    {selectedServiceObj.durationMin
+                      ? `${selectedServiceObj.durationMin} min`
+                      : <span className="text-amber-600 dark:text-amber-400">60 min (default — no duration set)</span>
+                    }
+                    {(selectedServiceObj as any).price
+                      ? ` · $${((selectedServiceObj as any).price / 100).toFixed(0)}`
+                      : ""}
+                    {(selectedServiceObj as any).sessionCredits
+                      ? ` · Uses ${(selectedServiceObj as any).sessionCredits} session credit${(selectedServiceObj as any).sessionCredits !== 1 ? "s" : ""}`
+                      : ""}
+                  </p>
+                )}
               </div>
             ) : !addSessionOrg?.subscriptionsEnabled ? (
               <div className="space-y-2">
@@ -609,6 +623,20 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedServiceObj && (
+                  <p className="text-xs text-muted-foreground px-1" data-testid="text-service-summary">
+                    {selectedServiceObj.durationMin
+                      ? `${selectedServiceObj.durationMin} min`
+                      : <span className="text-amber-600 dark:text-amber-400">60 min (default — no duration set)</span>
+                    }
+                    {(selectedServiceObj as any).price
+                      ? ` · $${((selectedServiceObj as any).price / 100).toFixed(0)}`
+                      : ""}
+                    {(selectedServiceObj as any).sessionCredits
+                      ? ` · Uses ${(selectedServiceObj as any).sessionCredits} session credit${(selectedServiceObj as any).sessionCredits !== 1 ? "s" : ""}`
+                      : ""}
+                  </p>
+                )}
               </div>
             ) : null
           )}
