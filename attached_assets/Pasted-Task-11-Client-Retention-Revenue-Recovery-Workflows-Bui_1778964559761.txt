@@ -1,0 +1,284 @@
+Task 11 — Client Retention + Revenue Recovery Workflows
+
+Build a structured retention and revenue recovery workflow layer on top of:
+- the Financial Brain
+- Operator Action Center
+- scheduling intelligence
+- client utilization/churn risk detection
+- entitlement accounting
+
+Goal:
+Turn TrainEfficiency into a proactive client retention and revenue recovery system.
+
+The platform should not just detect:
+- inactive prepaid clients
+- expiring credits
+- unpaid balances
+- stalled scheduling
+- churn risk
+
+It should help operators systematically recover revenue and retain clients through trackable workflows.
+
+Core principle:
+AI recommendations remain advisory until confirmed by an operator.
+
+Requirements:
+
+1. Revenue Recovery Workflow model
+Create:
+retention_workflows
+
+Fields:
+- id
+- orgId
+- workflowType
+  - inactive_prepaid
+  - unused_credits
+  - expiring_package
+  - unpaid_balance
+  - no_show_followup
+  - stalled_client
+  - churn_risk
+  - manual
+- status
+  - draft
+  - active
+  - paused
+  - completed
+  - cancelled
+- relatedClientId
+- relatedOperatorActionId
+- riskSeverity
+- estimatedRevenueAtRiskCents
+- estimatedRecoverableRevenueCents
+- metadata (jsonb)
+- createdBy
+- startedAt
+- completedAt
+- cancelledAt
+- createdAt
+- updatedAt
+
+Rows are never deleted.
+
+2. Workflow step audit trail
+Create:
+retention_workflow_events
+
+Tracks:
+- workflow creation
+- pauses
+- resumes
+- completion
+- cancellation
+- outreach drafts
+- outreach approvals
+- scheduling recovery
+- payment recovery
+- notes
+
+Fields:
+- workflowId
+- actorId
+- eventType
+- note
+- metadata
+- createdAt
+
+3. AI recommendation → retention workflow conversion
+Allow Financial Brain recommendations and Operator Actions to launch recovery workflows.
+
+Examples:
+- “3 inactive prepaid clients”
+→ create inactive_prepaid workflow
+
+- “Unused session credits”
+→ create unused_credits workflow
+
+- “High-value churn risk”
+→ create churn_risk workflow
+
+Creation should snapshot:
+- client risk context
+- unused credits
+- inactivity duration
+- revenue exposure
+- recommended actions
+
+4. Workflow dashboard
+New page:
+/admin/retention-workflows
+
+Views:
+- Active
+- High Risk
+- Revenue Recovery
+- Completed
+- Cancelled
+
+Filters:
+- workflow type
+- severity
+- estimated revenue at risk
+- assigned client
+- status
+- date range
+
+5. Client recovery profile
+Each workflow detail should show:
+- client name
+- last attendance
+- sessions remaining
+- dollar balance
+- prepaid liability exposure
+- estimated churn risk
+- recommended outreach
+- booking history
+- no-show/cancellation patterns
+- related operator actions
+
+6. Revenue exposure calculations
+Estimate:
+- revenue at risk
+- recoverable revenue
+- prepaid liability exposure
+- unused credits value
+- probability of churn (lightweight heuristic)
+
+Examples:
+- 12 unused credits × avg session value
+- inactive 45 days with $480 liability remaining
+- declining attendance trend
+
+7. Outreach workflow support
+Support structured workflow actions:
+- draft outreach message
+- schedule follow-up task
+- assign to coach/operator
+- mark contacted
+- mark responded
+- mark recovered
+- mark churned
+- schedule consultation/session
+
+Initially:
+DO NOT auto-send email/SMS unless existing infrastructure already supports approved sends.
+
+8. Workflow lifecycle states
+Track:
+- unreviewed
+- active
+- contacted
+- awaiting_response
+- recovered
+- churned
+- completed
+
+Allow transitions only through valid states.
+
+9. Scheduling recovery integration
+Allow workflows to trigger:
+- “Schedule Session” flow
+- suggested availability
+- booking recovery actions
+- package renewal prompts
+
+Example:
+“Client has not scheduled in 28 days — suggest next available times.”
+
+10. Payment recovery integration
+For unpaid balances:
+- create structured payment recovery workflows
+- show outstanding balance
+- show recent payments
+- show failed payments if applicable
+- allow operator notes
+
+Do NOT auto-charge clients.
+
+11. AI-generated recovery recommendations
+Financial Brain should generate:
+- recommended outreach tone
+- recovery priority
+- suggested next action
+- urgency score
+
+Examples:
+- “High-value inactive client with 8 remaining sessions.”
+- “Client historically returns after outreach.”
+- “Client nearing expiration threshold.”
+
+12. Revenue Recovery Summary endpoint
+GET /api/admin/revenue-recovery-summary
+
+Returns:
+- total recoverable revenue
+- inactive prepaid exposure
+- unpaid balances
+- expiring package exposure
+- recovered revenue last 30 days
+- active workflow count
+- churned client count
+
+Optional AI narrative:
+“$4,200 in prepaid liability is currently inactive across 11 clients.”
+
+13. Operator Action integration
+Recovery workflows should optionally:
+- create operator actions
+- resolve operator actions when recovered
+- escalate unresolved workflows into critical actions
+
+14. Agent Ops integration
+Extend health endpoint with:
+- high-risk churn count
+- inactive prepaid exposure
+- unresolved recovery workflows
+- overdue follow-ups
+
+15. UI/UX direction
+The workflow system should feel:
+- operational
+- revenue-focused
+- retention-oriented
+- high-trust
+
+Not:
+- marketing automation spam
+- CRM gimmicks
+- generic task manager
+
+16. Safety protections
+The system must:
+- never auto-send outreach without confirmation
+- never auto-charge balances
+- never auto-renew subscriptions
+- never auto-mark clients recovered
+
+All financial/customer-impacting actions require explicit operator confirmation.
+
+17. Tests
+Add tests for:
+- workflow creation
+- workflow transitions
+- recovery calculations
+- inactive client detection
+- outreach draft generation
+- operator action linkage
+- scheduling recovery linkage
+- revenue summary calculations
+- escalation logic
+
+18. Deliverables
+Return:
+- tables added
+- endpoints added
+- workflow lifecycle summary
+- revenue exposure model
+- AI recommendation integration summary
+- Operator Action integration
+- Agent Ops additions
+- UI/dashboard summary
+- safety protections
+- tests added
+- confirmation that immutable accounting + lifecycle protections still pass

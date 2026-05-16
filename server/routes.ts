@@ -5179,6 +5179,249 @@ export async function registerRoutes(
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Retention Workflow Endpoints ──────────────────────────────────────────
+
+  // GET /api/admin/revenue-recovery-summary
+  app.get("/api/admin/revenue-recovery-summary", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 3600000);
+
+      // Pull workflows
+      const workflows = await storage.getRetentionWorkflows(orgId);
+      const activeWorkflowCount = workflows.filter(w => !["completed","cancelled"].includes(w.status)).length;
+      const churnedClientCount = workflows.filter(w => w.status === "churned").length;
+      const recoveredLast30dCents = workflows
+        .filter(w => w.status === "recovered" && w.updatedAt && new Date(w.updatedAt) >= thirtyDaysAgo)
+        .reduce((s, w) => s + (w.estimatedRecoverableRevenueCents ?? 0), 0);
+
+      // Pull inactive prepaid exposure from financial brain
+      let inactivePrepaidExposureCents = 0;
+      let totalRecoverableRevenueCents = 0;
+      try {
+        const { getClientRisks } = await import("./financial-brain");
+        const risks = await getClientRisks(orgId);
+        // Estimate: sessions_remaining × avg session value ($100 default)
+        const AVG_SESSION_CENTS = 10000;
+        for (const r of risks) {
+          const exposure = (r.sessionsRemaining ?? 0) * AVG_SESSION_CENTS;
+          inactivePrepaidExposureCents += exposure;
+          totalRecoverableRevenueCents += Math.round(exposure * 0.65);
+        }
+      } catch {}
+
+      // Combine with workflow estimates
+      totalRecoverableRevenueCents += workflows
+        .filter(w => !["completed","cancelled","churned"].includes(w.status))
+        .reduce((s, w) => s + (w.estimatedRecoverableRevenueCents ?? 0), 0);
+
+      const summary = {
+        totalRecoverableRevenueCents,
+        inactivePrepaidExposureCents,
+        unpaidBalanceCents: 0,
+        expiringPackageExposureCents: 0,
+        recoveredLast30dCents,
+        activeWorkflowCount,
+        churnedClientCount,
+        narrative: null as string | null,
+      };
+
+      if (process.env.OPENAI_API_KEY && (totalRecoverableRevenueCents > 0 || inactivePrepaidExposureCents > 0)) {
+        try {
+          const OpenAI = (await import("openai")).default;
+          const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini", max_tokens: 60,
+            messages: [
+              { role: "system", content: "Write one direct sentence (≤25 words) summarizing retention/revenue recovery exposure for an ops team. Cite exact dollar amounts." },
+              { role: "user", content: JSON.stringify({ inactivePrepaid: `$${(inactivePrepaidExposureCents/100).toFixed(0)}`, recoverable: `$${(totalRecoverableRevenueCents/100).toFixed(0)}`, activeWorkflows: activeWorkflowCount }) },
+            ],
+          });
+          summary.narrative = completion.choices[0]?.message?.content ?? null;
+        } catch {}
+      }
+
+      res.json(summary);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/retention-workflows — list with filters
+  app.get("/api/admin/retention-workflows", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { status, workflowType, riskSeverity } = req.query as Record<string, string>;
+      const workflows = await storage.getRetentionWorkflows(orgId, {
+        status: status || undefined,
+        workflowType: workflowType || undefined,
+        riskSeverity: riskSeverity || undefined,
+      });
+      res.json(workflows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/retention-workflows — create
+  app.post("/api/admin/retention-workflows", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const {
+        workflowType, status, relatedClientId, relatedOperatorActionId,
+        riskSeverity, estimatedRevenueAtRiskCents, estimatedRecoverableRevenueCents, metadata,
+      } = req.body;
+      const wf = await storage.createRetentionWorkflow({
+        orgId, workflowType: workflowType || "manual", status: status || "draft",
+        relatedClientId: relatedClientId || undefined, relatedOperatorActionId: relatedOperatorActionId || undefined,
+        riskSeverity: riskSeverity || "warning",
+        estimatedRevenueAtRiskCents: estimatedRevenueAtRiskCents ?? 0,
+        estimatedRecoverableRevenueCents: estimatedRecoverableRevenueCents ?? 0,
+        metadata: metadata || undefined, createdBy: userId,
+      });
+      await storage.createRetentionWorkflowEvent({ workflowId: wf.id, actorId: userId, eventType: "created", note: `Workflow created: ${workflowType || "manual"}` });
+      res.status(201).json(wf);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/retention-workflows/from-risk — create from AI client risk
+  app.post("/api/admin/retention-workflows/from-risk", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const { clientId, clientName, riskType, sessionsRemaining, daysSinceLastSession, description, recommendedAction, relatedOperatorActionId } = req.body;
+      if (!clientId) return res.status(400).json({ error: "clientId is required" });
+      const typeMap: Record<string, string> = {
+        unused_credits: "unused_credits", high_value_inactive: "inactive_prepaid",
+        declining_attendance: "stalled_client", expiring_soon: "expiring_package",
+        fast_consumer: "stalled_client",
+      };
+      const AVG_SESSION_CENTS = 10000;
+      const atRisk = (sessionsRemaining ?? 0) * AVG_SESSION_CENTS;
+      const recoverable = Math.round(atRisk * 0.65);
+
+      // Try AI recovery recommendation
+      let aiRec: string | undefined;
+      if (process.env.OPENAI_API_KEY && sessionsRemaining != null) {
+        try {
+          const OpenAI = (await import("openai")).default;
+          const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+          const r = await openai.chat.completions.create({
+            model: "gpt-4o-mini", max_tokens: 80,
+            messages: [
+              { role: "system", content: "Write one sentence of actionable recovery guidance for a retention manager. Be specific, professional, concise." },
+              { role: "user", content: JSON.stringify({ clientName, sessionsRemaining, daysSinceLastSession, riskType }) },
+            ],
+          });
+          aiRec = r.choices[0]?.message?.content ?? undefined;
+        } catch {}
+      }
+
+      const wf = await storage.createRetentionWorkflow({
+        orgId, workflowType: typeMap[riskType] || "inactive_prepaid", status: "draft",
+        relatedClientId: clientId, relatedOperatorActionId: relatedOperatorActionId || undefined,
+        riskSeverity: daysSinceLastSession != null && daysSinceLastSession > 60 ? "critical" : "warning",
+        estimatedRevenueAtRiskCents: atRisk,
+        estimatedRecoverableRevenueCents: recoverable,
+        metadata: { clientName, sessionsRemaining, daysSinceLastSession, riskType, description, recommendedAction, aiRecommendation: aiRec },
+        createdBy: userId,
+      });
+      await storage.createRetentionWorkflowEvent({ workflowId: wf.id, actorId: userId, eventType: "created", note: `Created from AI client risk: ${riskType} for ${clientName || clientId}` });
+      res.status(201).json(wf);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/retention-workflows/:id — detail + events
+  app.get("/api/admin/retention-workflows/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const wf = await storage.getRetentionWorkflow(req.params.id);
+      if (!wf || wf.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const events = await storage.getRetentionWorkflowEvents(wf.id);
+      res.json({ ...wf, events });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/retention-workflows/:id/events
+  app.get("/api/admin/retention-workflows/:id/events", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const wf = await storage.getRetentionWorkflow(req.params.id);
+      if (!wf || wf.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const events = await storage.getRetentionWorkflowEvents(wf.id);
+      res.json(events);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/retention-workflows/:id/transition — lifecycle state machine
+  app.post("/api/admin/retention-workflows/:id/transition", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const wf = await storage.getRetentionWorkflow(req.params.id);
+      if (!wf || wf.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { status: newStatus, note } = req.body;
+      if (!newStatus) return res.status(400).json({ error: "status is required" });
+      const VALID: Record<string, string[]> = {
+        draft: ["active","cancelled"], active: ["contacted","paused","cancelled"],
+        paused: ["active","cancelled"], contacted: ["awaiting_response","recovered","churned","active"],
+        awaiting_response: ["recovered","churned","contacted","active"],
+        recovered: ["completed"], churned: ["completed"],
+        completed: [], cancelled: [],
+      };
+      if (!(VALID[wf.status] || []).includes(newStatus)) {
+        return res.status(400).json({ error: `Cannot transition from '${wf.status}' to '${newStatus}'` });
+      }
+      const extras: Partial<typeof wf> = {};
+      if (newStatus === "active" && !wf.startedAt) extras.startedAt = new Date();
+      if (newStatus === "completed") extras.completedAt = new Date();
+      if (newStatus === "cancelled") extras.cancelledAt = new Date();
+      // When recovered, optionally resolve linked operator action
+      if (newStatus === "recovered" && wf.relatedOperatorActionId) {
+        try {
+          await storage.updateOperatorAction(wf.relatedOperatorActionId, { status: "resolved" as any, resolvedAt: new Date() });
+          await storage.createOperatorActionEvent({ operatorActionId: wf.relatedOperatorActionId, actorId: userId, eventType: "resolved", note: "Auto-resolved via recovery workflow" });
+        } catch {}
+      }
+      const updated = await storage.updateRetentionWorkflow(wf.id, { status: newStatus as any, ...extras });
+      await storage.createRetentionWorkflowEvent({ workflowId: wf.id, actorId: userId, eventType: newStatus, note: note || undefined });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/retention-workflows/:id/note
+  app.post("/api/admin/retention-workflows/:id/note", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(400).json({ error: "No organization" });
+      const wf = await storage.getRetentionWorkflow(req.params.id);
+      if (!wf || wf.orgId !== orgId) return res.status(404).json({ error: "Not found" });
+      const { note } = req.body;
+      if (!note || !String(note).trim()) return res.status(400).json({ error: "note is required" });
+      const ev = await storage.createRetentionWorkflowEvent({ workflowId: wf.id, actorId: userId, eventType: "note_added", note: String(note).trim() });
+      res.status(201).json(ev);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/admin/financial-brain/anomalies — raw anomaly list
   app.get("/api/admin/financial-brain/anomalies", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -12064,6 +12307,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         staleUnresolvedActions: await storage.getOperatorActionsSummary(orgId).then(s => s.staleCount).catch(() => 0),
         unresolvedPayoutReviews: await storage.getOperatorActions(orgId, { category: "payout", status: "open" }).then(a => a.length).catch(() => 0),
         unresolvedChurnRisks: await storage.getOperatorActions(orgId, { category: "churn", status: "open" }).then(a => a.length).catch(() => 0),
+        retentionWorkflowsUrl: "/admin/retention-workflows",
+        highRiskChurnCount: await storage.getRetentionWorkflows(orgId, { riskSeverity: "critical" }).then(ws => ws.filter(w => !["completed","cancelled"].includes(w.status)).length).catch(() => 0),
+        unresolvedRecoveryWorkflows: await storage.getRetentionWorkflows(orgId).then(ws => ws.filter(w => !["completed","cancelled","recovered"].includes(w.status)).length).catch(() => 0),
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

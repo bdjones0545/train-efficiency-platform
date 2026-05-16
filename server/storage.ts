@@ -95,6 +95,12 @@ import {
   operatorActionEvents,
   type OperatorActionEvent,
   type InsertOperatorActionEvent,
+  retentionWorkflows,
+  type RetentionWorkflow,
+  type InsertRetentionWorkflow,
+  retentionWorkflowEvents,
+  type RetentionWorkflowEvent,
+  type InsertRetentionWorkflowEvent,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -219,6 +225,13 @@ export interface IStorage {
   createOperatorActionEvent(data: InsertOperatorActionEvent): Promise<OperatorActionEvent>;
   getOperatorActionEvents(actionId: string): Promise<OperatorActionEvent[]>;
   getOperatorActionsSummary(orgId: string): Promise<{ totalOpen: number; criticalOpen: number; staleCount: number; inProgressCount: number; resolvedLast7d: number; byCategory: Record<string, number>; byStatus: Record<string, number> }>;
+  // Retention Workflows
+  createRetentionWorkflow(data: InsertRetentionWorkflow): Promise<RetentionWorkflow>;
+  getRetentionWorkflow(id: string): Promise<RetentionWorkflow | null>;
+  getRetentionWorkflows(orgId: string, filters?: { status?: string; workflowType?: string; riskSeverity?: string }): Promise<RetentionWorkflow[]>;
+  updateRetentionWorkflow(id: string, updates: Partial<RetentionWorkflow>): Promise<RetentionWorkflow | null>;
+  createRetentionWorkflowEvent(data: InsertRetentionWorkflowEvent): Promise<RetentionWorkflowEvent>;
+  getRetentionWorkflowEvents(workflowId: string): Promise<RetentionWorkflowEvent[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -1319,6 +1332,40 @@ export class DatabaseStorage implements IStorage {
     const byCategory = all.reduce((acc, a) => { if (a.status !== "resolved" && a.status !== "ignored") acc[a.category] = (acc[a.category] || 0) + 1; return acc; }, {} as Record<string, number>);
     const byStatus = all.reduce((acc, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {} as Record<string, number>);
     return { totalOpen, criticalOpen, staleCount, inProgressCount, resolvedLast7d, byCategory, byStatus };
+  }
+
+  // ── Retention Workflows ───────────────────────────────────────────────────
+
+  async createRetentionWorkflow(data: InsertRetentionWorkflow): Promise<RetentionWorkflow> {
+    const [row] = await db.insert(retentionWorkflows).values(data).returning();
+    return row;
+  }
+
+  async getRetentionWorkflow(id: string): Promise<RetentionWorkflow | null> {
+    const [row] = await db.select().from(retentionWorkflows).where(eq(retentionWorkflows.id, id));
+    return row ?? null;
+  }
+
+  async getRetentionWorkflows(orgId: string, filters: { status?: string; workflowType?: string; riskSeverity?: string } = {}): Promise<RetentionWorkflow[]> {
+    const conditions: any[] = [eq(retentionWorkflows.orgId, orgId)];
+    if (filters.status) conditions.push(eq(retentionWorkflows.status, filters.status as any));
+    if (filters.workflowType) conditions.push(eq(retentionWorkflows.workflowType, filters.workflowType as any));
+    if (filters.riskSeverity) conditions.push(eq(retentionWorkflows.riskSeverity, filters.riskSeverity as any));
+    return db.select().from(retentionWorkflows).where(and(...conditions)).orderBy(desc(retentionWorkflows.createdAt));
+  }
+
+  async updateRetentionWorkflow(id: string, updates: Partial<RetentionWorkflow>): Promise<RetentionWorkflow | null> {
+    const [row] = await db.update(retentionWorkflows).set({ ...updates, updatedAt: new Date() }).where(eq(retentionWorkflows.id, id)).returning();
+    return row ?? null;
+  }
+
+  async createRetentionWorkflowEvent(data: InsertRetentionWorkflowEvent): Promise<RetentionWorkflowEvent> {
+    const [row] = await db.insert(retentionWorkflowEvents).values(data).returning();
+    return row;
+  }
+
+  async getRetentionWorkflowEvents(workflowId: string): Promise<RetentionWorkflowEvent[]> {
+    return db.select().from(retentionWorkflowEvents).where(eq(retentionWorkflowEvents.workflowId, workflowId)).orderBy(desc(retentionWorkflowEvents.createdAt));
   }
 
   async updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {

@@ -1569,3 +1569,51 @@ export const operatorActionEvents = pgTable("operator_action_events", {
 export const insertOperatorActionEventSchema = createInsertSchema(operatorActionEvents).omit({ id: true, createdAt: true });
 export type OperatorActionEvent = typeof operatorActionEvents.$inferSelect;
 export type InsertOperatorActionEvent = z.infer<typeof insertOperatorActionEventSchema>;
+
+// ─── Retention Workflows ──────────────────────────────────────────────────────
+// workflowType: inactive_prepaid | unused_credits | expiring_package |
+//               unpaid_balance | no_show_followup | stalled_client | churn_risk | manual
+// status:       draft | active | contacted | awaiting_response |
+//               recovered | churned | completed | cancelled | paused
+// riskSeverity: info | warning | critical
+
+export const retentionWorkflows = pgTable("retention_workflows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workflowType: varchar("workflow_type").notNull().default("manual"),
+  status: varchar("status").notNull().default("draft"),
+  relatedClientId: varchar("related_client_id"),
+  relatedOperatorActionId: varchar("related_operator_action_id"),
+  riskSeverity: varchar("risk_severity").notNull().default("warning"),
+  estimatedRevenueAtRiskCents: integer("estimated_revenue_at_risk_cents").default(0),
+  estimatedRecoverableRevenueCents: integer("estimated_recoverable_revenue_cents").default(0),
+  metadata: jsonb("metadata"),
+  createdBy: varchar("created_by"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertRetentionWorkflowSchema = createInsertSchema(retentionWorkflows).omit({ id: true, createdAt: true, updatedAt: true });
+export type RetentionWorkflow = typeof retentionWorkflows.$inferSelect;
+export type InsertRetentionWorkflow = z.infer<typeof insertRetentionWorkflowSchema>;
+
+// ─── Retention Workflow Events ────────────────────────────────────────────────
+// eventType: created | activated | contacted | awaiting_response | recovered |
+//            churned | completed | cancelled | paused | resumed | note_added | outreach_drafted
+
+export const retentionWorkflowEvents = pgTable("retention_workflow_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workflowId: varchar("workflow_id").notNull(),
+  actorId: varchar("actor_id"),
+  eventType: varchar("event_type").notNull(),
+  note: text("note"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertRetentionWorkflowEventSchema = createInsertSchema(retentionWorkflowEvents).omit({ id: true, createdAt: true });
+export type RetentionWorkflowEvent = typeof retentionWorkflowEvents.$inferSelect;
+export type InsertRetentionWorkflowEvent = z.infer<typeof insertRetentionWorkflowEventSchema>;
