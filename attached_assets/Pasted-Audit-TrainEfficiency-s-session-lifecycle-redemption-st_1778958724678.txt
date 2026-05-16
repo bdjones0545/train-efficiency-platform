@@ -1,0 +1,145 @@
+Audit TrainEfficiency’s session lifecycle, redemption status, and edit/delete protections across the entire app.
+
+Context:
+The scheduling modal has now been unified around the Schedule Session construct. Next, audit whether sessions behave correctly after creation, especially around paid credits, redemption, cancellation, rescheduling, and user/client profile visibility.
+
+Primary goal:
+A redeemed session should become a locked historical record. It should never be editable, deletable, or casually cancelled/rescheduled.
+
+Audit these areas:
+
+1. Session status model
+Find every status used for sessions/bookings:
+- confirmed
+- scheduled
+- completed
+- redeemed
+- cancelled
+- no-show
+- pending
+- expired
+- any others
+
+Document where each status is created, displayed, filtered, and updated.
+
+2. Redemption state
+Find how the app currently tracks whether a session has consumed a package/session credit.
+Audit:
+- ledger entries
+- client balance
+- package credits
+- booking/session fields
+- payment records
+- redeemed flags
+- completed sessions
+
+Determine the single source of truth for whether a session is redeemed.
+
+3. UI display
+Every session list/card should clearly show:
+- scheduled status
+- redemption status
+- payment/credit impact if available
+
+Examples:
+- Confirmed · Not Redeemed
+- Confirmed · Credit Reserved
+- Completed · Redeemed
+- Cancelled · Credit Returned
+- No-show · Credit Used
+
+Apply this to:
+- Scheduling page
+- Client profile session list
+- Coach profile session list
+- Dashboard upcoming sessions
+- Session detail modal
+- Package/client ledger views
+
+4. Locking rules
+Add consistent protections:
+- redeemed sessions cannot be edited
+- redeemed sessions cannot be deleted
+- redeemed sessions cannot be rescheduled
+- redeemed sessions cannot be cancelled without an explicit admin reversal flow
+- completed sessions should require confirmation before edits
+- cancelled sessions should not be redeemable unless restored
+
+5. Backend enforcement
+Do not rely only on disabled frontend buttons.
+
+Audit and enforce these rules in all relevant backend routes:
+- session update
+- booking update
+- reschedule
+- cancel
+- delete
+- redeem
+- complete
+- ledger adjustment
+
+If a protected action is attempted, return a clear 409 conflict response with a human-readable message.
+
+6. Frontend enforcement
+Disable or hide destructive actions based on lifecycle state.
+
+For locked sessions:
+- show lock icon or “Locked: Redeemed”
+- remove edit/delete actions
+- disable reschedule/cancel buttons
+- show explanation tooltip/copy
+
+7. Ledger consistency
+Audit whether cancelling, deleting, no-showing, completing, or redeeming a session correctly affects:
+- client balance
+- package remaining sessions
+- ledger entries
+- revenue reporting
+- dashboard stats
+
+Add idempotency checks so a session cannot be redeemed twice.
+
+8. Reschedule behavior
+When rescheduling an unpaid/unredeemed session:
+- preserve service
+- preserve client
+- preserve coach unless changed
+- recompute end time from service duration
+- preserve credit reservation state if applicable
+- prevent conflicts
+
+When rescheduling a redeemed session:
+- block it.
+
+9. Agent alignment
+Audit Scheduling Agent tools:
+- create session
+- reschedule session
+- cancel session
+- redeem session
+- mark completed
+- delete booking
+
+The agent should respect the same lifecycle rules and preview credit impact before confirming.
+
+10. Tests
+Add or update tests for:
+- redeemed session cannot be edited
+- redeemed session cannot be deleted
+- redeemed session cannot be cancelled
+- redeemed session cannot be rescheduled
+- unredeemed session can be rescheduled
+- cancelling unredeemed session does not consume credit
+- redeeming session decrements credit once
+- duplicate redeem attempt is blocked
+- UI hides/disables locked actions
+- API returns 409 for protected actions
+
+Deliverables:
+- Files changed
+- Lifecycle model summary
+- Source of truth for redemption
+- Screens/flows updated
+- Backend routes protected
+- Tests added
+- Any remaining risks or follow-up recommendations

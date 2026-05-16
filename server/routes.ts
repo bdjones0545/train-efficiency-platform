@@ -1909,14 +1909,12 @@ export async function registerRoutes(
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-      if (booking.status === "COMPLETED" && status !== "COMPLETED") {
-        return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
+      const existingRedemption = await storage.getRedemptionByBookingId(bookingId);
+      if (existingRedemption) {
+        return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be cancelled or modified." });
       }
-      if (booking.status === "COMPLETED") {
-        const redemption = await storage.getRedemptionByBookingId(bookingId);
-        if (redemption) {
-          return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
-        }
+      if (booking.status === "COMPLETED" && status !== "COMPLETED") {
+        return res.status(409).json({ message: "Completed sessions cannot have their status changed without an admin reversal." });
       }
 
       const role = await getUserRole(userId);
@@ -5974,6 +5972,13 @@ export async function registerRoutes(
       const { status } = req.body;
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
+      if (existingRedemption) {
+        return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be modified." });
+      }
+      if (booking.status === "COMPLETED" && status !== "COMPLETED") {
+        return res.status(409).json({ message: "Completed sessions cannot have their status changed without an admin reversal." });
+      }
       const updated = await storage.updateBookingStatus(req.params.id, status);
       res.json(updated);
     } catch (error: any) {
@@ -5988,6 +5993,13 @@ export async function registerRoutes(
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
+      if (existingRedemption) {
+        return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be rescheduled or edited." });
+      }
+      if (booking.status === "COMPLETED") {
+        return res.status(409).json({ message: "Completed sessions cannot be rescheduled. Use an admin reversal if needed." });
+      }
       const { startAt, endAt, notes, location, serviceId, clientId } = req.body;
       const updated = await storage.updateBooking(req.params.id, {
         ...(startAt && { startAt: new Date(startAt) }),

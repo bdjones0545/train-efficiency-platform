@@ -13,7 +13,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign, UserPlus, Users, X, Copy } from "lucide-react";
+import { CalendarIcon, Search, Trash2, XCircle, MapPin, DollarSign, UserPlus, Users, X, Copy, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, parseISO, addDays } from "date-fns";
 import type { Service, Organization } from "@shared/schema";
@@ -478,9 +478,22 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
         <DialogHeader>
           <DialogTitle>Edit Session</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 pt-2">
+
+        {isRedeemed && (
+          <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3 mx-0" data-testid="banner-session-locked">
+            <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Session Locked — Redeemed</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                This session has been redeemed. It cannot be edited, rescheduled, or deleted.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className={`space-y-4 pt-2 ${isRedeemed ? "pointer-events-none opacity-60 select-none" : ""}`}>
           <div className="space-y-2">
-            <Label>Service</Label>
+            <Label data-testid="label-service">Service</Label>
             <Select value={serviceId} onValueChange={setServiceId}>
               <SelectTrigger data-testid="edit-select-service">
                 <SelectValue placeholder="Select a service" />
@@ -860,26 +873,34 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
             />
           </div>
 
-          {booking.status === "COMPLETED" && (
-            <div className="border-t pt-3">
-              {isRedeemed ? (
-                <Badge variant="secondary" className="w-full justify-center py-1.5 no-default-hover-elevate no-default-active-elevate">
-                  Session Redeemed
-                </Badge>
-              ) : (
-                <Button
-                  className="w-full"
-                  onClick={() => redeemMutation.mutate()}
-                  disabled={redeemMutation.isPending}
-                  data-testid="button-redeem-session"
-                >
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  {redeemMutation.isPending ? "Redeeming..." : "Redeem Session"}
-                </Button>
-              )}
-            </div>
-          )}
+        </div>
 
+        {booking.status === "COMPLETED" && (
+          <div className="border-t pt-3">
+            {isRedeemed ? (
+              <Badge variant="secondary" className="w-full justify-center py-1.5 no-default-hover-elevate no-default-active-elevate" data-testid="badge-session-redeemed">
+                Session Redeemed
+              </Badge>
+            ) : (
+              <Button
+                className="w-full"
+                onClick={() => redeemMutation.mutate()}
+                disabled={redeemMutation.isPending}
+                data-testid="button-redeem-session"
+              >
+                <DollarSign className="h-4 w-4 mr-2" />
+                {redeemMutation.isPending ? "Redeeming..." : "Redeem Session"}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {isRedeemed ? (
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground pt-1 pb-1" data-testid="text-session-locked-actions">
+            <Lock className="h-3.5 w-3.5" />
+            <span>Edit, delete, and clone are disabled for redeemed sessions</span>
+          </div>
+        ) : (
           <div className="flex gap-2">
             <Button
               variant="destructive"
@@ -910,7 +931,7 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
               {updateMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </div>
-        </div>
+        )}
         </>
         )}
       </DialogContent>
