@@ -32,6 +32,8 @@ import {
   Users,
   CalendarCheck,
   Wrench,
+  BarChart2,
+  Hammer,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -194,6 +196,13 @@ export default function AdminConfigurationPage() {
   const [newProgramTrainingTypes, setNewProgramTrainingTypes] = useState("Strength,Speed");
   const [newProgramStartHour, setNewProgramStartHour] = useState("16");
   const [newProgramEndHour, setNewProgramEndHour] = useState("20");
+
+  const [showProgramTypeModal, setShowProgramTypeModal] = useState(false);
+  const [addingSimpleProgram, setAddingSimpleProgram] = useState(false);
+  const [simpleProgramType, setSimpleProgramType] = useState<"pr_tracker" | "workout_builder">("pr_tracker");
+  const [newSimpleProgramName, setNewSimpleProgramName] = useState("");
+  const [newSimpleProgramSlug, setNewSimpleProgramSlug] = useState("");
+  const [placeholderEditProgramId, setPlaceholderEditProgramId] = useState<string | null>(null);
 
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [editProgramName, setEditProgramName] = useState("");
@@ -745,6 +754,23 @@ export default function AdminConfigurationPage() {
     },
   });
 
+  const createSimpleProgramMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/athletic/programs", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Program tool created" });
+      queryClient.invalidateQueries({ queryKey: ["/api/athletic/programs", orgId] });
+      setAddingSimpleProgram(false);
+      setNewSimpleProgramName("");
+      setNewSimpleProgramSlug("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const { data: programSchedules } = useQuery<any[]>({
     queryKey: ["/api/athletic/schedules", schedulesProgramId],
     queryFn: () => fetch(`/api/athletic/schedules?programId=${schedulesProgramId}`).then(r => r.json()),
@@ -850,10 +876,28 @@ export default function AdminConfigurationPage() {
     createProgramMutation.mutate({
       name: newProgramName.trim(),
       slug: newProgramSlug.trim(),
+      type: "scheduling",
       maxTeamsPerSlot: parseInt(newProgramMaxTeams) || 2,
       trainingTypes: types,
       startHour: start,
       endHour: end,
+    });
+  };
+
+  const handleCreateSimpleProgram = () => {
+    if (!newSimpleProgramName.trim() || !newSimpleProgramSlug.trim()) {
+      toast({ title: "Missing fields", description: "Name and slug are required.", variant: "destructive" });
+      return;
+    }
+    createSimpleProgramMutation.mutate({
+      name: newSimpleProgramName.trim(),
+      slug: newSimpleProgramSlug.trim(),
+      type: simpleProgramType,
+      maxTeamsPerSlot: 1,
+      trainingTypes: [],
+      startHour: 6,
+      endHour: 22,
+      active: true,
     });
   };
 
@@ -2182,16 +2226,103 @@ export default function AdminConfigurationPage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold flex items-center gap-2">
                   <Trophy className="h-4 w-4 text-muted-foreground" />
-                  Athletic Programs
+                  Program Tools
                 </h2>
-            <Button size="sm" onClick={() => setAddingProgram(true)} data-testid="button-add-program">
+            <Button size="sm" onClick={() => setShowProgramTypeModal(true)} data-testid="button-add-program">
               <Plus className="h-4 w-4 mr-1" /> Add Program
             </Button>
           </div>
 
+          {/* Type-selection modal */}
+          <Dialog open={showProgramTypeModal} onOpenChange={setShowProgramTypeModal}>
+            <DialogContent data-testid="dialog-program-type">
+              <DialogHeader>
+                <DialogTitle>Choose Program Type</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 pt-2">
+                {[
+                  { type: "scheduling", label: "Scheduling Program", desc: "Create a bookable training schedule for teams or groups.", icon: <CalendarCheck className="h-5 w-5" /> },
+                  { type: "pr_tracker", label: "PR Tracker", desc: "Let athletes log and track personal records.", icon: <BarChart2 className="h-5 w-5" /> },
+                  { type: "workout_builder", label: "Workout Builder", desc: "Create structured workouts athletes can access.", icon: <Hammer className="h-5 w-5" /> },
+                ].map((opt) => (
+                  <button
+                    key={opt.type}
+                    className="w-full flex items-start gap-3 rounded-lg border p-4 text-left hover:bg-muted transition-colors"
+                    onClick={() => {
+                      setShowProgramTypeModal(false);
+                      if (opt.type === "scheduling") {
+                        setAddingProgram(true);
+                      } else {
+                        setSimpleProgramType(opt.type as "pr_tracker" | "workout_builder");
+                        setNewSimpleProgramName("");
+                        setNewSimpleProgramSlug("");
+                        setAddingSimpleProgram(true);
+                      }
+                    }}
+                    data-testid={`button-select-type-${opt.type}`}
+                  >
+                    <span className="mt-0.5 text-muted-foreground">{opt.icon}</span>
+                    <div>
+                      <p className="text-sm font-semibold">{opt.label}</p>
+                      <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Placeholder edit dialog */}
+          <Dialog open={!!placeholderEditProgramId} onOpenChange={(open) => { if (!open) setPlaceholderEditProgramId(null); }}>
+            <DialogContent data-testid="dialog-placeholder-edit">
+              <DialogHeader>
+                <DialogTitle>Tool Configuration</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground py-2">This tool type is ready for buildout.</p>
+              <Button size="sm" variant="outline" onClick={() => setPlaceholderEditProgramId(null)}>Close</Button>
+            </DialogContent>
+          </Dialog>
+
+          {addingSimpleProgram && (
+            <Card className="p-4 space-y-3 mb-4" data-testid="card-add-simple-program">
+              <p className="text-sm font-semibold">
+                New {simpleProgramType === "pr_tracker" ? "PR Tracker" : "Workout Builder"}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Tool Name</Label>
+                  <Input
+                    placeholder={simpleProgramType === "pr_tracker" ? "e.g., Varsity PRs" : "e.g., Team Workouts"}
+                    value={newSimpleProgramName}
+                    onChange={(e) => { setNewSimpleProgramName(e.target.value); setNewSimpleProgramSlug(slugify(e.target.value)); }}
+                    data-testid="input-simple-program-name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">URL Slug</Label>
+                  <Input
+                    placeholder="e.g., varsity-prs"
+                    value={newSimpleProgramSlug}
+                    onChange={(e) => setNewSimpleProgramSlug(e.target.value)}
+                    data-testid="input-simple-program-slug"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" disabled={createSimpleProgramMutation.isPending} onClick={handleCreateSimpleProgram} data-testid="button-save-simple-program">
+                  <Save className="h-4 w-4 mr-1" />
+                  {createSimpleProgramMutation.isPending ? "Creating..." : "Create Tool"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setAddingSimpleProgram(false)} data-testid="button-cancel-simple-program">
+                  <X className="h-4 w-4 mr-1" /> Cancel
+                </Button>
+              </div>
+            </Card>
+          )}
+
           {addingProgram && (
             <Card className="p-4 space-y-3 mb-4" data-testid="card-add-program">
-              <p className="text-sm font-semibold">New Athletic Program</p>
+              <p className="text-sm font-semibold">New Scheduling Program</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Program Name</Label>
@@ -2331,19 +2462,33 @@ export default function AdminConfigurationPage() {
                   <>
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold" data-testid={`text-program-name-${p.id}`}>{p.name}</p>
+                          {(() => {
+                            const t = p.type ?? "scheduling";
+                            if (t === "pr_tracker") return <Badge className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-0" data-testid={`badge-type-${p.id}`}>PR Tracker</Badge>;
+                            if (t === "workout_builder") return <Badge className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 border-0" data-testid={`badge-type-${p.id}`}>Workout Builder</Badge>;
+                            return <Badge className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-0" data-testid={`badge-type-${p.id}`}>Scheduling Program</Badge>;
+                          })()}
                           {!p.active && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground">/{p.slug}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button size="sm" variant="ghost" className="h-7" onClick={() => startEditProgram(p)} data-testid={`button-edit-program-${p.id}`}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7" onClick={() => { setSchedulesProgramId(schedulesProgramId === p.id ? null : p.id); setAddingSchedule(false); }} data-testid={`button-schedules-program-${p.id}`}>
-                          <Clock className="h-3.5 w-3.5" />
-                        </Button>
+                        {(p.type === "scheduling" || !p.type) ? (
+                          <>
+                            <Button size="sm" variant="ghost" className="h-7" onClick={() => startEditProgram(p)} data-testid={`button-edit-program-${p.id}`}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7" onClick={() => { setSchedulesProgramId(schedulesProgramId === p.id ? null : p.id); setAddingSchedule(false); }} data-testid={`button-schedules-program-${p.id}`}>
+                              <Clock className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button size="sm" variant="ghost" className="h-7" onClick={() => setPlaceholderEditProgramId(p.id)} data-testid={`button-edit-program-${p.id}`}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7" data-testid={`button-delete-program-${p.id}`}>
@@ -2440,7 +2585,7 @@ export default function AdminConfigurationPage() {
             ))}
 
             {(!athleticPrograms || athleticPrograms.length === 0) && (
-              <p className="text-sm text-muted-foreground text-center py-6">No athletic programs yet. Click "Add Program" to create one.</p>
+              <p className="text-sm text-muted-foreground text-center py-6">No program tools yet. Click "Add Program" to create one.</p>
             )}
           </div>
           </section>

@@ -417,6 +417,7 @@ export const athleticPrograms = pgTable("athletic_programs", {
   organizationId: varchar("organization_id").notNull(),
   name: varchar("name").notNull(),
   slug: varchar("slug").notNull(),
+  type: varchar("type").notNull().default("scheduling"),
   maxTeamsPerSlot: integer("max_teams_per_slot").notNull().default(2),
   trainingTypes: text("training_types").array().default(sql`'{"Strength","Speed"}'::text[]`),
   startHour: integer("start_hour").notNull().default(16),

@@ -27,6 +27,7 @@ import AdminSubscriptionPage from "@/pages/admin-subscription";
 import AdminSetupPage from "@/pages/admin-setup";
 import OpenSessionsPage from "@/pages/open-sessions";
 import AthleticSchedulingPage from "@/pages/athletic-scheduling";
+import ProgramToolPage from "@/pages/program-tool-placeholder";
 import CoachAthleticPage from "@/pages/coach-athletic";
 import UserManagementPage from "@/pages/user-management";
 import CoachTransactionsPage from "@/pages/coach-transactions";
@@ -184,6 +185,7 @@ function AuthenticatedLayout() {
                   <Route path="/coaches" component={CoachesPage} />
                   <Route path="/coaches/:id" component={CoachSchedulePage} />
                   <Route path="/sessions" component={OpenSessionsPage} />
+                  <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
                   <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
                   <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />

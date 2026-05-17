@@ -6061,12 +6061,24 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
+  app.get("/api/athletic/programs/by-org-slug/:orgSlug/:programSlug", async (req, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.orgSlug);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      const program = await storage.getAthleticProgramBySlug(org.id, req.params.programSlug);
+      if (!program) return res.status(404).json({ message: "Program not found" });
+      res.json(program);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch program" });
+    }
+  });
+
   app.post("/api/athletic/programs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
-      const { name, slug, maxTeamsPerSlot, trainingTypes, startHour, endHour } = req.body;
+      const { name, slug, maxTeamsPerSlot, trainingTypes, startHour, endHour, type } = req.body;
       if (!name || !slug) return res.status(400).json({ message: "name and slug are required" });
       const existing = await storage.getAthleticProgramBySlug(profile.organizationId, slug);
       if (existing) return res.status(409).json({ message: "A program with this slug already exists" });
@@ -6074,6 +6086,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         organizationId: profile.organizationId,
         name,
         slug,
+        type: type ?? "scheduling",
         maxTeamsPerSlot: maxTeamsPerSlot ?? 2,
         trainingTypes: trainingTypes ?? ["Strength", "Speed"],
         startHour: startHour ?? 16,
@@ -6095,7 +6108,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!program || program.organizationId !== profile.organizationId) {
         return res.status(404).json({ message: "Program not found" });
       }
-      const { name, slug, maxTeamsPerSlot, trainingTypes, startHour, endHour, active } = req.body;
+      const { name, slug, maxTeamsPerSlot, trainingTypes, startHour, endHour, active, type } = req.body;
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
       if (slug !== undefined) {
@@ -6110,6 +6123,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (startHour !== undefined) updateData.startHour = startHour;
       if (endHour !== undefined) updateData.endHour = endHour;
       if (active !== undefined) updateData.active = active;
+      if (type !== undefined) updateData.type = type;
       const updated = await storage.updateAthleticProgram(req.params.id, updateData);
       res.json(updated);
     } catch (error) {
