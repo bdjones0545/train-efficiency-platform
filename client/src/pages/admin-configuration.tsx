@@ -27,6 +27,7 @@ import {
   Clock,
   Wallet,
   Mail,
+  AlertTriangle,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -34,6 +35,7 @@ import { useState, useEffect } from "react";
 import type { Service, Organization, OrganizationSubscriptionPlan } from "@shared/schema";
 import { MapPin } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { clearAuthToken } from "@/lib/authToken";
 
 type StripeProduct = {
   productId: string;
@@ -512,6 +514,23 @@ export default function AdminConfigurationPage() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false);
+
+  const deleteOrgMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/organizations/${orgId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Organization deleted", description: "Your organization has been permanently deleted." });
+      clearAuthToken();
+      window.location.href = "/";
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to delete organization", variant: "destructive" });
     },
   });
 
@@ -2355,6 +2374,62 @@ export default function AdminConfigurationPage() {
           </div>
         </section>
       )}
+
+      {/* ── Danger Zone ──────────────────────────────────────────────────────── */}
+      <section className="mt-8">
+        <Card className="border-destructive/50 bg-destructive/5">
+          <div className="p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
+              <h2 className="text-base font-semibold text-destructive">Danger Zone</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">Permanent organization actions live here.</p>
+            <Separator className="border-destructive/20" />
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Delete Organization</p>
+                <p className="text-xs text-muted-foreground">Permanently remove this organization and all associated data.</p>
+              </div>
+              <Button
+                variant="outline"
+                className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive flex-shrink-0"
+                onClick={() => setDeleteOrgDialogOpen(true)}
+                data-testid="button-delete-organization"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Organization
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </section>
+
+      {/* ── Delete org confirmation dialog ───────────────────────────────────── */}
+      <AlertDialog open={deleteOrgDialogOpen} onOpenChange={setDeleteOrgDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-delete-org-dialog-title">
+              Delete this organization?
+            </AlertDialogTitle>
+            <AlertDialogDescription data-testid="text-delete-org-dialog-description">
+              This will permanently delete your organization, all services, coach profiles, and user data
+              associated with it. If you have an active subscription, it will also be canceled.{" "}
+              <span className="font-semibold text-destructive">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-org-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteOrgMutation.mutate()}
+              disabled={deleteOrgMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-delete-org-confirm"
+            >
+              {deleteOrgMutation.isPending ? "Deleting..." : "Yes, delete permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

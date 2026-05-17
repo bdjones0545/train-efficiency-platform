@@ -1338,11 +1338,11 @@ export type InsertAgentToolCall = typeof agentToolCalls.$inferInsert;
 export const workflowRuns = pgTable("workflow_runs", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: varchar("org_id").notNull(),
-  workflowType: varchar("workflow_type").notNull(),
-  displayName: varchar("display_name").notNull(),
-  status: varchar("status").default("pending").notNull(),
-  currentStepIndex: integer("current_step_index").default(0).notNull(),
-  totalSteps: integer("total_steps").default(0).notNull(),
+  // Legacy executor fields
+  workflowType: varchar("workflow_type"),
+  displayName: varchar("display_name"),
+  currentStepIndex: integer("current_step_index").default(0),
+  totalSteps: integer("total_steps").default(0),
   entityType: varchar("entity_type"),
   entityId: varchar("entity_id"),
   entityName: varchar("entity_name"),
@@ -1353,12 +1353,24 @@ export const workflowRuns = pgTable("workflow_runs", {
   context: jsonb("context").default({}),
   result: jsonb("result"),
   error: text("error"),
+  nextCheckAt: timestamp("next_check_at"),
+  lockedAt: timestamp("locked_at"),
+  // Orchestrator fields
+  workflowTemplateKey: varchar("workflow_template_key"),
+  sourceType: varchar("source_type"),
+  sourceId: varchar("source_id"),
+  currentStepKey: varchar("current_step_key"),
+  failedAt: timestamp("failed_at"),
+  failureReason: text("failure_reason"),
+  createdBy: varchar("created_by"),
+  metadata: jsonb("metadata"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  // Shared
+  status: varchar("status").default("pending").notNull(),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   cancelledAt: timestamp("cancelled_at"),
-  nextCheckAt: timestamp("next_check_at"),
   createdAt: timestamp("created_at").defaultNow(),
-  lockedAt: timestamp("locked_at"),
 });
 
 export const workflowSteps = pgTable("workflow_steps", {
@@ -1381,6 +1393,7 @@ export const workflowSteps = pgTable("workflow_steps", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const insertWorkflowRunSchema = createInsertSchema(workflowRuns).omit({ id: true, createdAt: true, updatedAt: true });
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type InsertWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowStep = typeof workflowSteps.$inferSelect;
@@ -1676,32 +1689,6 @@ export const outreachEvents = pgTable("outreach_events", {
 export const insertOutreachEventSchema = createInsertSchema(outreachEvents).omit({ id: true, createdAt: true });
 export type OutreachEvent = typeof outreachEvents.$inferSelect;
 export type InsertOutreachEvent = z.infer<typeof insertOutreachEventSchema>;
-
-// ─── Workflow Orchestration ───────────────────────────────────────────────────
-// status: pending | running | waiting | blocked | completed | failed | cancelled
-
-export const workflowRuns = pgTable("workflow_runs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orgId: varchar("org_id").notNull(),
-  workflowTemplateKey: varchar("workflow_template_key").notNull(),
-  sourceType: varchar("source_type"),
-  sourceId: varchar("source_id"),
-  status: varchar("status").notNull().default("pending"),
-  currentStepKey: varchar("current_step_key"),
-  startedAt: timestamp("started_at"),
-  completedAt: timestamp("completed_at"),
-  failedAt: timestamp("failed_at"),
-  cancelledAt: timestamp("cancelled_at"),
-  failureReason: text("failure_reason"),
-  createdBy: varchar("created_by"),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const insertWorkflowRunSchema = createInsertSchema(workflowRuns).omit({ id: true, createdAt: true, updatedAt: true });
-export type WorkflowRun = typeof workflowRuns.$inferSelect;
-export type InsertWorkflowRun = z.infer<typeof insertWorkflowRunSchema>;
 
 // step status: pending | running | waiting | completed | failed | skipped
 

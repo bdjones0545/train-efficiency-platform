@@ -575,7 +575,6 @@ export function AppSidebar() {
 
   // ── State ────────────────────────────────────────────────────────────────────
 
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Set<string>>(() =>
     loadOpenSections(isMobile)
   );
@@ -628,20 +627,6 @@ export function AppSidebar() {
 
   const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active) || [];
 
-  const deleteOrgMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("DELETE", `/api/organizations/${orgId}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Organization deleted", description: "Your organization has been permanently deleted." });
-      clearAuthToken();
-      window.location.href = "/";
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message || "Failed to delete organization", variant: "destructive" });
-    },
-  });
 
   // ── Attention count chip handled inline via AttentionCountChip component ─────
 
@@ -958,19 +943,6 @@ export function AppSidebar() {
                     />
                   ))}
 
-                  {/* Danger Zone */}
-                  {isAdmin && (
-                    <div className="mt-2 pt-2 border-t border-border/50">
-                      <button
-                        onClick={() => setDeleteDialogOpen(true)}
-                        data-testid="button-delete-organization"
-                        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4 flex-shrink-0" />
-                        <span>Delete Organization</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 {/* Workspace mode toggle */}
@@ -1062,30 +1034,6 @@ export function AppSidebar() {
           </SidebarFooter>
         </Sidebar>
 
-        {/* ── Delete org dialog ──────────────────────────────────────────────── */}
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle data-testid="text-delete-dialog-title">Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription data-testid="text-delete-dialog-description">
-                This will permanently delete your organization, all services, coach profiles, and user data
-                associated with it. If you have an active subscription, it will also be canceled. This action
-                cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel data-testid="button-delete-cancel">Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => deleteOrgMutation.mutate()}
-                disabled={deleteOrgMutation.isPending}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                data-testid="button-delete-confirm"
-              >
-                {deleteOrgMutation.isPending ? "Deleting..." : "Delete Organization"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </>
     </SidebarContext.Provider>
   );
