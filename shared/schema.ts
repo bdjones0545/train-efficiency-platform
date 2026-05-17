@@ -1712,3 +1712,102 @@ export const workflowStepRuns = pgTable("workflow_step_runs", {
 export const insertWorkflowStepRunSchema = createInsertSchema(workflowStepRuns).omit({ id: true, createdAt: true, updatedAt: true });
 export type WorkflowStepRun = typeof workflowStepRuns.$inferSelect;
 export type InsertWorkflowStepRun = z.infer<typeof insertWorkflowStepRunSchema>;
+
+// ─── Shared Org Identity Layer ────────────────────────────────────────────────
+
+export const orgUsers = pgTable("org_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  email: varchar("email").notNull(),
+  passwordHash: varchar("password_hash").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const orgMemberships = pgTable("org_memberships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  role: varchar("role").notNull().default("athlete"),
+  status: varchar("status").notNull().default("active"),
+  permissions: jsonb("permissions"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const orgSessions = pgTable("org_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  tokenHash: varchar("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  keepLoggedIn: boolean("keep_logged_in").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastUsedAt: timestamp("last_used_at").defaultNow(),
+});
+
+// ─── PR Tracker ───────────────────────────────────────────────────────────────
+
+export const prTeams = pgTable("pr_teams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  coachUserId: varchar("coach_user_id").notNull(),
+  name: varchar("name").notNull(),
+  sport: varchar("sport"),
+  season: varchar("season"),
+  joinCode: varchar("join_code").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const prTeamMembers = pgTable("pr_team_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  teamId: varchar("team_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  role: varchar("role").notNull().default("athlete"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const prLiftTypes = pgTable("pr_lift_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  name: varchar("name").notNull(),
+  category: varchar("category"),
+  unit: varchar("unit").notNull().default("lbs"),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const prLiftEntries = pgTable("pr_lift_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  teamId: varchar("team_id"),
+  liftTypeId: varchar("lift_type_id").notNull(),
+  value: doublePrecision("value").notNull(),
+  unit: varchar("unit").notNull().default("lbs"),
+  entryDate: varchar("entry_date").notNull(),
+  notes: text("notes"),
+  verifiedByCoachId: varchar("verified_by_coach_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const prImportJobs = pgTable("pr_import_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  coachUserId: varchar("coach_user_id").notNull(),
+  filename: varchar("filename"),
+  status: varchar("status").notNull().default("pending"),
+  rowCount: integer("row_count").default(0),
+  successCount: integer("success_count").default(0),
+  errorCount: integer("error_count").default(0),
+  errors: jsonb("errors"),
+  createdAt: timestamp("created_at").defaultNow(),
+});

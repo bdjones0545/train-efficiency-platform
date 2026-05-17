@@ -1,0 +1,269 @@
+Build Phase 1 of the PR Tracker module, but do NOT create isolated PR Tracker users.
+
+ARCHITECTURAL REQUIREMENT:
+Create a shared organization identity layer that can be reused across:
+- Scheduling
+- PR Tracker
+- Workout Builder
+- Athletic Programs
+- Future athlete portal features
+
+The same coach or athlete account should be able to:
+- Sign in to the org
+- Schedule with the org
+- Use PR Tracker
+- Join teams
+- Access future workout tools
+
+CORE MODEL:
+Use shared org-scoped users/memberships, not PR-only users.
+
+Recommended tables:
+
+org_users
+- id
+- name
+- email
+- passwordHash
+- createdAt
+- updatedAt
+- lastLoginAt
+
+org_memberships
+- id
+- orgId
+- userId
+- role: owner | coach | athlete | parent
+- status: active | pending | disabled
+- permissions jsonb
+- createdAt
+- updatedAt
+
+org_sessions
+- id
+- orgId
+- userId
+- tokenHash
+- expiresAt
+- keepLoggedIn boolean
+- createdAt
+- lastUsedAt
+
+pr_teams
+- id
+- orgId
+- programId
+- coachUserId
+- name
+- sport
+- season
+- joinCode
+- createdAt
+- updatedAt
+
+pr_team_members
+- id
+- orgId
+- teamId
+- userId
+- role: athlete | coach
+- createdAt
+
+pr_lift_types
+- id
+- orgId
+- programId
+- name
+- category
+- unit
+- isDefault
+- createdAt
+
+pr_lift_entries
+- id
+- orgId
+- programId
+- userId
+- teamId nullable
+- liftTypeId
+- value
+- unit
+- entryDate
+- notes
+- verifiedByCoachId nullable
+- createdAt
+- updatedAt
+
+pr_import_jobs
+- id
+- orgId
+- programId
+- coachUserId
+- filename
+- status
+- rowCount
+- successCount
+- errorCount
+- errors jsonb
+- createdAt
+
+PHASE 1 FEATURES:
+
+1. Shared Org Auth Modal
+When a user opens /org/:orgSlug/programs/:programSlug and is not authenticated:
+- Show Login / Sign Up modal
+- Signup role:
+  - Athlete
+  - Coach
+- Fields:
+  - Name
+  - Email
+  - Password
+  - Confirm password
+  - Role
+  - Optional team join code
+- Login fields:
+  - Email
+  - Password
+  - Keep me logged in checkbox
+
+Session behavior:
+- If Keep me logged in is checked, persist longer using localStorage/token expiration.
+- If not checked, use shorter session behavior.
+- Auth must be org-scoped.
+- Same login should work later for scheduling and other org features.
+
+2. Membership Logic
+On signup:
+- Create org_user if email does not exist.
+- Create org_membership for the current org.
+- If already a user but not a member of this org, create membership.
+- If already a member, login normally.
+- Never duplicate users by module.
+
+3. PR Tracker Access
+If program.type === "pr_tracker":
+- Load PR Tracker module.
+- If unauthenticated: show org auth modal.
+- If logged in as coach: show Coach PR Dashboard.
+- If logged in as athlete: show Athlete PR Dashboard.
+
+4. Coach Dashboard
+Coach can:
+- Create team
+- Generate/copy join code
+- Upload CSV of team athletes and current numbers
+- View teams
+- View athletes
+- View athlete PR history
+- See Recent PRs
+- See Team Leaderboard placeholder
+
+CSV upload should support:
+name,email,team,sport,back_squat,bench_press,deadlift,power_clean,vertical_jump,forty_yard_dash
+
+CSV behavior:
+- Create org_user if needed
+- Create org_membership as athlete if needed
+- Add athlete to team
+- Create PR entries from numeric lift columns
+- Show row-level errors
+- Do not crash on missing optional fields
+
+5. Athlete Dashboard
+Athlete can:
+- Join team with join code
+- Add PR entry
+- View current best PRs
+- View PR history
+- Track independently without joining a team
+
+6. Default Lift Types
+Seed defaults on first PR Tracker open:
+- Back Squat
+- Front Squat
+- Bench Press
+- Deadlift
+- Power Clean
+- Hang Clean
+- Clean
+- Snatch
+- Vertical Jump
+- Broad Jump
+- 10 Yard Sprint
+- 20 Yard Sprint
+- 40 Yard Dash
+- Pro Agility
+- Pull-Ups
+
+7. API Endpoints
+Create shared org auth endpoints:
+- POST /api/org-auth/signup
+- POST /api/org-auth/login
+- POST /api/org-auth/logout
+- GET /api/org-auth/me
+
+Create PR Tracker endpoints:
+- GET /api/pr-tracker/bootstrap
+- GET /api/pr-tracker/teams
+- POST /api/pr-tracker/teams
+- POST /api/pr-tracker/teams/join
+- GET /api/pr-tracker/lift-types
+- GET /api/pr-tracker/entries
+- POST /api/pr-tracker/entries
+- GET /api/pr-tracker/athletes
+- POST /api/pr-tracker/import-csv
+
+Every endpoint must enforce:
+- org scope
+- program scope when relevant
+- role permissions
+- no cross-org leakage
+
+8. Security
+- Hash passwords with bcrypt
+- Never return password hashes
+- Validate with Zod
+- Use secure signed tokens or token hashes
+- Store token safely
+- Coach-only:
+  - Create teams
+  - Upload CSV
+  - View team athletes
+  - Verify PRs later
+- Athlete:
+  - View own PRs
+  - Add own PRs
+  - Join teams
+
+9. UI Components
+Create:
+- OrgAuthModal
+- PrTrackerPage
+- CoachPrDashboard
+- AthletePrDashboard
+- TeamCreateDialog
+- CsvImportDialog
+- AddPrEntryDialog
+- JoinTeamDialog
+- PrMetricCard
+- AthletePrCard
+
+10. UX Requirements
+- Mobile-first
+- Dark TrainEfficiency premium style
+- Thumb-friendly buttons
+- Clear empty states
+- Loading states
+- Success/error toasts
+- No giant mobile tables; use cards
+- Coaches should feel like they are building a team performance database.
+- Athletes should feel like they have a personal record book.
+
+IMPORTANT:
+Do not build isolated PR Tracker auth.
+Do not build advanced analytics yet.
+Do not build full leaderboard yet.
+Do not build Workout Builder yet.
+
+Build the shared organization identity layer + PR Tracker Phase 1 foundation.

@@ -13262,5 +13262,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // ── PR Tracker & Shared Org Auth ─────────────────────────────────────────
+  const { registerPrTrackerRoutes } = await import("./pr-tracker-routes");
+  registerPrTrackerRoutes(app);
+
   return httpServer;
 }

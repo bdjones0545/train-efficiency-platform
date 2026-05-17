@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { BarChart2, Dumbbell, Loader2 } from "lucide-react";
 import { Redirect } from "wouter";
+import PrTrackerPage from "@/pages/pr-tracker";
 
 export default function ProgramToolPage() {
   const params = useParams<{ slug: string; programSlug: string }>();
@@ -34,32 +35,28 @@ export default function ProgramToolPage() {
     );
   }
 
+  // Scheduling programs → existing athletic scheduling page
   if (program.type === "scheduling" || !program.type) {
     return <Redirect to={`/org/${orgSlug}/athletic/${programSlug}`} />;
   }
 
-  const config =
-    program.type === "pr_tracker"
-      ? {
-          icon: <BarChart2 className="h-8 w-8" />,
-          message: "PR Tracker coming soon.",
-        }
-      : {
-          icon: <Dumbbell className="h-8 w-8" />,
-          message: "Workout Builder coming soon.",
-        };
+  // PR Tracker
+  if (program.type === "pr_tracker") {
+    return <PrTrackerPage program={program} orgSlug={orgSlug} />;
+  }
 
+  // Workout Builder placeholder
   return (
     <div className="p-6 max-w-xl mx-auto">
       <Card className="p-8 text-center space-y-4">
         <div className="flex justify-center text-muted-foreground">
-          {config.icon}
+          <Dumbbell className="h-8 w-8" />
         </div>
         <h1 className="text-xl font-semibold" data-testid="text-program-tool-name">
           {program.name}
         </h1>
         <p className="text-muted-foreground" data-testid="text-program-tool-message">
-          {config.message}
+          Workout Builder coming soon.
         </p>
       </Card>
     </div>
