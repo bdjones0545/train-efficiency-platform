@@ -13308,5 +13308,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerOrgScheduleRoutes } = await import("./org-schedule-routes");
   registerOrgScheduleRoutes(app);
 
+  // ── Org Profile Routes ────────────────────────────────────────────────────
+  const { registerOrgProfileRoutes } = await import("./org-profile-routes");
+  registerOrgProfileRoutes(app);
+
   return httpServer;
 }

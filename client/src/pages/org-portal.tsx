@@ -201,6 +201,13 @@ function PortalHome({
           </div>
           <div className="flex items-center gap-1">
             <span className="text-sm text-muted-foreground hidden sm:block" data-testid="text-portal-user-name">{user?.name}</span>
+            <a href={`/org/${slug}/profile`} data-testid="link-profile-nav">
+              <Button size="sm" variant="ghost" title="My Profile">
+                <div className="h-6 w-6 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center">
+                  {user?.name?.split(" ").filter(Boolean).map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
+                </div>
+              </Button>
+            </a>
             <Button size="sm" variant="ghost" onClick={onLogout} data-testid="button-portal-logout">
               <LogOut className="h-4 w-4" />
             </Button>
@@ -274,7 +281,7 @@ function PortalHome({
               icon={<User className="h-5 w-5 text-muted-foreground" />}
               label="Profile"
               description="Account & settings"
-              href="#profile"
+              href={`/org/${slug}/profile`}
             />
           </div>
         </section>

@@ -1815,3 +1815,19 @@ export const prImportJobs = pgTable("pr_import_jobs", {
   errors: jsonb("errors"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// ─── Org Notification Preferences ────────────────────────────────────────────
+
+export const orgNotificationPreferences = pgTable("org_notification_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  bookingReminders: boolean("booking_reminders").notNull().default(true),
+  prUpdates: boolean("pr_updates").notNull().default(true),
+  teamAnnouncements: boolean("team_announcements").notNull().default(true),
+  marketingEmails: boolean("marketing_emails").notNull().default(false),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  smsEnabled: boolean("sms_enabled").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});

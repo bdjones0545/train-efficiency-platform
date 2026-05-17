@@ -1,0 +1,275 @@
+Build the shared Profile + Account Management system for the TrainEfficiency org portal.
+
+GOAL:
+Complete the shared organization identity layer by creating a central account/profile management experience that works across:
+- Scheduling
+- PR Tracker
+- Future Workout Builder
+- Future athlete portal features
+
+ROUTE:
+Create:
+/org/:slug/profile
+
+AUTH:
+Use existing shared org auth:
+- org_users
+- org_memberships
+- org_sessions
+- token key: orgToken_${orgId}
+
+If not authenticated:
+- Show OrgAuthModal
+- Redirect back to /portal after login if needed
+
+PAGE GOALS:
+The profile page should feel like:
+- a modern athlete/member account center
+- mobile-first
+- clean and premium
+- role-aware
+- integrated with the rest of the org portal
+
+SECTIONS:
+
+====================================================
+1. PROFILE HEADER
+====================================================
+
+Top hero card:
+- User name
+- Role badge (Athlete / Coach / Owner / Parent)
+- Organization name/logo
+- Member since date
+- Team count (if athlete/coach)
+- Quick stats:
+  - Upcoming bookings
+  - PR entries
+  - Teams
+
+Add:
+- Edit Profile button
+- Logout button
+
+====================================================
+2. EDIT PROFILE
+====================================================
+
+Editable fields:
+- Name
+- Email
+
+Optional future-ready fields:
+- Phone
+- Birthday
+- Sport
+- Position
+
+Requirements:
+- Validate with Zod
+- Prevent duplicate emails within org auth system
+- Show loading states
+- Success/error toasts
+- Optimistic UI where appropriate
+
+API:
+PATCH /api/org/profile
+
+====================================================
+3. PASSWORD & SECURITY
+====================================================
+
+Create a Security card containing:
+
+A. Change Password
+Fields:
+- Current password
+- New password
+- Confirm password
+
+Requirements:
+- bcrypt verification
+- password length validation
+- invalidate old sessions optionally
+
+API:
+PATCH /api/org/profile/password
+
+B. Active Sessions
+Show:
+- Current session
+- Device/session age
+- Keep me logged in status
+- Last active time
+
+Add:
+- Logout Current Session
+- Logout All Sessions
+
+API:
+GET /api/org/profile/sessions
+POST /api/org/profile/logout-all
+
+Requirements:
+- Keep current session alive unless explicitly logging out current
+- Revoke org_sessions rows
+
+====================================================
+4. NOTIFICATION PREFERENCES
+====================================================
+
+Create notification preference settings.
+
+Database table:
+org_notification_preferences
+- id
+- orgId
+- userId
+- bookingReminders boolean
+- prUpdates boolean
+- teamAnnouncements boolean
+- marketingEmails boolean
+- emailEnabled boolean
+- smsEnabled boolean
+- createdAt
+- updatedAt
+
+UI:
+Toggle cards for:
+- Booking reminders
+- PR updates
+- Team announcements
+- Email notifications
+- SMS notifications
+
+API:
+GET /api/org/profile/notifications
+PATCH /api/org/profile/notifications
+
+====================================================
+5. MEMBERSHIP INFO
+====================================================
+
+Create a Membership card:
+- Organization
+- Role
+- Membership status
+- Joined date
+- Teams joined
+- Programs available
+
+If athlete:
+- Current team(s)
+- PR Tracker access
+- Schedule access
+
+If coach:
+- Teams managed
+- Athlete count
+- Coach tools quick links
+
+====================================================
+6. QUICK LINKS / SHORTCUTS
+====================================================
+
+Add large mobile-friendly action buttons:
+- Portal Home
+- My Schedule
+- Book Session
+- PR Tracker
+- Team Dashboard
+- Coach Dashboard (coach only)
+
+Reuse existing routes.
+
+====================================================
+7. PROFILE AVATAR SYSTEM (LIGHTWEIGHT)
+====================================================
+
+Phase 1:
+- Generate initials avatar automatically
+- Optional avatar upload placeholder card
+- Do NOT build full media upload system yet
+
+====================================================
+8. API ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/profile
+PATCH /api/org/profile
+
+PATCH /api/org/profile/password
+
+GET /api/org/profile/sessions
+POST /api/org/profile/logout-all
+
+GET /api/org/profile/notifications
+PATCH /api/org/profile/notifications
+
+All endpoints must:
+- require valid org session
+- enforce org scope
+- never expose sensitive data
+- never return password hashes
+
+====================================================
+9. UI / DESIGN REQUIREMENTS
+====================================================
+
+Design language:
+- TrainEfficiency dark premium UI
+- Mobile-first
+- Large touch targets
+- Clean card sections
+- Sticky top nav
+- Smooth loading skeletons
+- Empty states
+- Toast feedback
+- Minimal clutter
+- Premium enterprise-athlete aesthetic
+
+Use:
+- cards instead of giant forms
+- section spacing hierarchy
+- subtle borders/glows
+- role-colored badges
+
+====================================================
+10. NAVIGATION INTEGRATION
+====================================================
+
+Add Profile links to:
+- Portal nav
+- Scheduling nav
+- PR Tracker nav
+- User dropdown/menu if present
+
+When logged in:
+- Clicking profile should always route to:
+/org/:slug/profile
+
+====================================================
+11. FUTURE-READY ARCHITECTURE
+====================================================
+
+Structure this so future additions can plug in cleanly:
+- billing/subscriptions
+- readiness questionnaires
+- AI coaching memory/preferences
+- parent accounts
+- workout history
+- wearable integrations
+
+DO NOT build those yet.
+Only create scalable architecture.
+
+====================================================
+12. IMPORTANT
+====================================================
+
+Do NOT create a separate auth system.
+Reuse the shared org identity layer everywhere.
+
+This profile system should become the central account management hub for all future organization features.

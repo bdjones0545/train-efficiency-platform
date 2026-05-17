@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
   Users,
+  User,
   Upload,
   Copy,
   Loader2,
@@ -163,6 +164,11 @@ export function CoachPrDashboard({
           <a href={`/org/${orgSlug}/portal`} data-testid="link-portal">
             <Button size="sm" variant="ghost" title="Portal Home">
               <LayoutDashboard className="h-4 w-4" />
+            </Button>
+          </a>
+          <a href={`/org/${orgSlug}/profile`} data-testid="link-profile">
+            <Button size="sm" variant="ghost" title="My Profile">
+              <User className="h-4 w-4" />
             </Button>
           </a>
           <Button size="sm" variant="ghost" onClick={onRefresh} data-testid="button-refresh">

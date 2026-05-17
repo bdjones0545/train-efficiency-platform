@@ -438,6 +438,11 @@ export default function AthleticSchedulingPage() {
                     <LayoutDashboard className="h-4 w-4 mr-1" /> Portal
                   </Button>
                 </a>
+                <a href={`/org/${slug}/profile`} data-testid="link-profile">
+                  <Button variant="ghost" size="sm">
+                    <User className="h-4 w-4 mr-1" /> Profile
+                  </Button>
+                </a>
                 <a href={myScheduleUrl}>
                   <Button variant="ghost" size="sm" data-testid="link-my-schedule">
                     <CalendarCheck className="h-4 w-4 mr-1" /> My Schedule

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trophy, ClipboardList, Users, Loader2, LogOut, RefreshCw, TrendingUp, LayoutDashboard } from "lucide-react";
+import { Plus, Trophy, ClipboardList, Users, User, Loader2, LogOut, RefreshCw, TrendingUp, LayoutDashboard } from "lucide-react";
 
 interface BootstrapData {
   user: any;
@@ -145,6 +145,11 @@ export function AthletePrDashboard({
           <a href={`/org/${orgSlug}/portal`} data-testid="link-portal">
             <Button size="sm" variant="ghost" title="Portal Home">
               <LayoutDashboard className="h-4 w-4" />
+            </Button>
+          </a>
+          <a href={`/org/${orgSlug}/profile`} data-testid="link-profile">
+            <Button size="sm" variant="ghost" title="My Profile">
+              <User className="h-4 w-4" />
             </Button>
           </a>
           <Button size="sm" variant="ghost" onClick={onRefresh} data-testid="button-refresh">
