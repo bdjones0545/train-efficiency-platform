@@ -1,0 +1,497 @@
+import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { db } from "./db";
+import {
+  workoutPrograms,
+  workoutProgramAssignments,
+  workoutSessions,
+  workoutCompletionLogs,
+  orgAiIntegrations,
+  athleticPrograms,
+  prTeams,
+  prTeamMembers,
+  prLiftEntries,
+  prLiftTypes,
+} from "@shared/schema";
+import { eq, and, desc, asc, inArray } from "drizzle-orm";
+import { z } from "zod";
+import { trainChatClient } from "./services/trainchat-client";
+
+function getUserId(req: any): string | null {
+  return req.user?.claims?.sub ?? req.user?.id ?? null;
+}
+
+async function getOrgProfile(req: any) {
+  const userId = getUserId(req);
+  if (!userId) return null;
+  const { userProfiles } = await import("@shared/schema");
+  const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
+  return profile ?? null;
+}
+
+function requireCoachOrAdmin(req: any, res: any, next: any) {
+  (async () => {
+    const profile = await getOrgProfile(req);
+    if (!profile) return res.status(401).json({ message: "Unauthorized" });
+    if (!["ADMIN", "COACH"].includes(profile.role ?? "")) return res.status(403).json({ message: "Coach or Admin required" });
+    (req as any)._profile = profile;
+    next();
+  })().catch(() => res.status(500).json({ message: "Auth error" }));
+}
+
+function requireAuth(req: any, res: any, next: any) {
+  (async () => {
+    const profile = await getOrgProfile(req);
+    if (!profile) return res.status(401).json({ message: "Unauthorized" });
+    (req as any)._profile = profile;
+    next();
+  })().catch(() => res.status(500).json({ message: "Auth error" }));
+}
+
+async function parseAndStoreSessions(orgId: string, programId: string, rawResponse: any): Promise<void> {
+  const weeks: any[] = rawResponse?.weeks ?? rawResponse?.program?.weeks ?? [];
+  if (!Array.isArray(weeks) || weeks.length === 0) return;
+  const sessionRows: any[] = [];
+  for (const week of weeks) {
+    const weekNum = week.weekNumber ?? week.week ?? 0;
+    const days: any[] = week.days ?? week.sessions ?? [];
+    for (const day of days) {
+      const dayNum = day.dayNumber ?? day.day ?? 0;
+      sessionRows.push({
+        orgId,
+        workoutProgramId: programId,
+        weekNumber: weekNum,
+        dayNumber: dayNum,
+        title: day.title ?? `Week ${weekNum} Day ${dayNum}`,
+        focus: day.focus ?? day.theme ?? null,
+        sessionData: day,
+      });
+    }
+  }
+  if (sessionRows.length > 0) {
+    await db.insert(workoutSessions).values(sessionRows);
+  }
+}
+
+async function getAthleteContextSummary(orgId: string, athleteUserIds: string[]): Promise<any[]> {
+  if (athleteUserIds.length === 0) return [];
+  try {
+    const entries = await db
+      .select({
+        userId: prLiftEntries.userId,
+        value: prLiftEntries.value,
+        unit: prLiftEntries.unit,
+        entryDate: prLiftEntries.entryDate,
+        liftName: prLiftTypes.name,
+        liftCategory: prLiftTypes.category,
+      })
+      .from(prLiftEntries)
+      .innerJoin(prLiftTypes, eq(prLiftEntries.liftTypeId, prLiftTypes.id))
+      .where(and(eq(prLiftEntries.orgId, orgId), inArray(prLiftEntries.userId, athleteUserIds)))
+      .orderBy(desc(prLiftEntries.createdAt))
+      .limit(100);
+
+    const byAthlete: Record<string, any[]> = {};
+    for (const e of entries) {
+      if (!byAthlete[e.userId]) byAthlete[e.userId] = [];
+      byAthlete[e.userId].push(e);
+    }
+    return Object.entries(byAthlete).map(([userId, lifts]) => ({ userId, recentLifts: lifts.slice(0, 10) }));
+  } catch {
+    return [];
+  }
+}
+
+export function registerWorkoutBuilderRoutes(app: Express) {
+  // GET /api/org/workout-builder/bootstrap
+  app.get("/api/org/workout-builder/bootstrap", isAuthenticated, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const { users, organizations, orgMemberships } = await import("@shared/schema");
+
+      const [[org], programs, teams, athletes, tcIntegration] = await Promise.all([
+        db.select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
+          .from(organizations).where(eq(organizations.id, orgId)).limit(1),
+        db.select().from(workoutPrograms).where(eq(workoutPrograms.orgId, orgId)).orderBy(desc(workoutPrograms.createdAt)),
+        db.select().from(prTeams).where(eq(prTeams.orgId, orgId)).orderBy(asc(prTeams.name)),
+        db.select({
+          userId: orgMemberships.userId,
+          name: users.name,
+          email: users.email,
+        })
+          .from(orgMemberships)
+          .innerJoin(users, eq(orgMemberships.userId, users.id))
+          .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete")))
+          .orderBy(asc(users.name)),
+        db.select({ isActive: orgAiIntegrations.isActive, lastSuccessAt: orgAiIntegrations.lastSuccessAt })
+          .from(orgAiIntegrations)
+          .where(and(eq(orgAiIntegrations.orgId, orgId), eq(orgAiIntegrations.provider, "trainchat")))
+          .limit(1),
+      ]);
+
+      const trainChatConnected = tcIntegration[0]?.isActive ?? false;
+
+      return res.json({
+        org,
+        currentUser: { id: profile.userId, role: profile.role },
+        teams,
+        athletes,
+        programs,
+        trainChatConnected,
+        trainChatLastSync: tcIntegration[0]?.lastSuccessAt ?? null,
+      });
+    } catch (err: any) {
+      console.error("[workout-builder] bootstrap error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/generate
+  app.post("/api/org/workout-builder/generate", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const bodySchema = z.object({
+        programToolId: z.string().min(1),
+        targetType: z.enum(["team", "athlete"]),
+        athleteUserIds: z.array(z.string()).default([]),
+        teamId: z.string().optional(),
+        goal: z.string().min(1),
+        sport: z.string().optional(),
+        durationWeeks: z.number().int().min(1).max(52),
+        daysPerWeek: z.number().int().min(1).max(7),
+        equipment: z.string().optional(),
+        constraints: z.string().optional(),
+        coachNotes: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
+
+      const { programToolId, targetType, athleteUserIds, teamId, goal, sport, durationWeeks, daysPerWeek, equipment, constraints, coachNotes } = parsed.data;
+
+      // Verify program tool belongs to org
+      const [programTool] = await db.select().from(athleticPrograms)
+        .where(and(eq(athleticPrograms.id, programToolId), eq(athleticPrograms.organizationId, orgId))).limit(1);
+      if (!programTool) return res.status(404).json({ message: "Program tool not found" });
+
+      // Check TrainChat integration
+      const [tcIntegration] = await db.select().from(orgAiIntegrations)
+        .where(and(eq(orgAiIntegrations.orgId, orgId), eq(orgAiIntegrations.provider, "trainchat"), eq(orgAiIntegrations.isActive, true))).limit(1);
+      if (!tcIntegration) return res.status(400).json({ message: "TrainChat integration is not connected. Set it up in Options → Advanced → Integrations." });
+
+      // Gather athlete context
+      const athleteContext = await getAthleteContextSummary(orgId, athleteUserIds);
+
+      // Package context for TrainChat
+      const tcParams = {
+        targetType,
+        athleteUserIds,
+        teamId,
+        goal,
+        sport,
+        durationWeeks,
+        daysPerWeek,
+        equipment,
+        constraints,
+        coachNotes,
+        athleteContext,
+      };
+
+      let rawResponse: any = null;
+      let trainChatProgramId: string | null = null;
+      let generatedSummary: string | null = null;
+      let title = `${goal.charAt(0).toUpperCase() + goal.slice(1)} Program – ${durationWeeks}wk/${daysPerWeek}x`;
+      let generationError: string | null = null;
+
+      try {
+        const result = await trainChatClient.generateProgram(orgId, tcParams);
+        rawResponse = result.data;
+        if (rawResponse) {
+          trainChatProgramId = rawResponse.id ?? rawResponse.programId ?? null;
+          generatedSummary = rawResponse.summary ?? rawResponse.rationale ?? null;
+          if (rawResponse.title) title = rawResponse.title;
+        }
+      } catch (err: any) {
+        console.error("[workout-builder] TrainChat generation error:", err);
+        generationError = err?.message ?? "TrainChat generation failed";
+        rawResponse = { error: generationError };
+      }
+
+      // Store program regardless of TrainChat success
+      const [program] = await db.insert(workoutPrograms).values({
+        orgId,
+        programToolId,
+        createdByUserId: profile.userId,
+        trainChatProgramId,
+        title,
+        goal,
+        sport: sport ?? null,
+        durationWeeks,
+        daysPerWeek,
+        status: "draft",
+        source: "trainchat_api",
+        trainChatRawResponse: rawResponse,
+        generatedSummary,
+      }).returning();
+
+      // Parse and store sessions from raw response
+      if (rawResponse && !generationError) {
+        await parseAndStoreSessions(orgId, program.id, rawResponse).catch((err) => {
+          console.error("[workout-builder] session parsing error:", err);
+        });
+      }
+
+      const sessions = await db.select().from(workoutSessions)
+        .where(eq(workoutSessions.workoutProgramId, program.id))
+        .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber));
+
+      return res.json({ program, sessions, generationError });
+    } catch (err: any) {
+      console.error("[workout-builder] generate error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/:programId/assign
+  app.post("/api/org/workout-builder/:programId/assign", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const [program] = await db.select().from(workoutPrograms)
+        .where(and(eq(workoutPrograms.id, req.params.programId), eq(workoutPrograms.orgId, orgId))).limit(1);
+      if (!program) return res.status(404).json({ message: "Program not found" });
+
+      const bodySchema = z.object({
+        assignedToType: z.enum(["athlete", "team"]),
+        athleteUserId: z.string().optional(),
+        teamId: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid request" });
+
+      const { assignedToType, athleteUserId, teamId } = parsed.data;
+      if (assignedToType === "athlete" && !athleteUserId) return res.status(400).json({ message: "athleteUserId required" });
+      if (assignedToType === "team" && !teamId) return res.status(400).json({ message: "teamId required" });
+
+      const [assignment] = await db.insert(workoutProgramAssignments).values({
+        orgId,
+        workoutProgramId: program.id,
+        assignedToType,
+        athleteUserId: athleteUserId ?? null,
+        teamId: teamId ?? null,
+        assignedByUserId: profile.userId,
+        status: "active",
+      }).returning();
+
+      // Mark program as assigned
+      await db.update(workoutPrograms).set({ status: "assigned", updatedAt: new Date() })
+        .where(eq(workoutPrograms.id, program.id));
+
+      return res.json({ assignment });
+    } catch (err: any) {
+      console.error("[workout-builder] assign error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // GET /api/org/workout-builder/programs/:programId
+  app.get("/api/org/workout-builder/programs/:programId", isAuthenticated, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const [program] = await db.select().from(workoutPrograms)
+        .where(and(eq(workoutPrograms.id, req.params.programId), eq(workoutPrograms.orgId, orgId))).limit(1);
+      if (!program) return res.status(404).json({ message: "Program not found" });
+
+      const [sessions, assignments] = await Promise.all([
+        db.select().from(workoutSessions)
+          .where(eq(workoutSessions.workoutProgramId, program.id))
+          .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber)),
+        db.select().from(workoutProgramAssignments)
+          .where(eq(workoutProgramAssignments.workoutProgramId, program.id))
+          .orderBy(desc(workoutProgramAssignments.assignedAt)),
+      ]);
+
+      return res.json({ program, sessions, assignments });
+    } catch (err: any) {
+      console.error("[workout-builder] get program error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // PATCH /api/org/workout-builder/programs/:programId
+  app.patch("/api/org/workout-builder/programs/:programId", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const [program] = await db.select().from(workoutPrograms)
+        .where(and(eq(workoutPrograms.id, req.params.programId), eq(workoutPrograms.orgId, orgId))).limit(1);
+      if (!program) return res.status(404).json({ message: "Program not found" });
+
+      const bodySchema = z.object({
+        title: z.string().optional(),
+        description: z.string().optional(),
+        status: z.enum(["draft", "assigned", "archived"]).optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid request" });
+
+      const updateData: any = { updatedAt: new Date() };
+      if (parsed.data.title !== undefined) updateData.title = parsed.data.title;
+      if (parsed.data.description !== undefined) updateData.description = parsed.data.description;
+      if (parsed.data.status !== undefined) updateData.status = parsed.data.status;
+
+      const [updated] = await db.update(workoutPrograms).set(updateData)
+        .where(eq(workoutPrograms.id, program.id)).returning();
+
+      return res.json({ program: updated });
+    } catch (err: any) {
+      console.error("[workout-builder] patch program error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/programs/:programId/edit
+  app.post("/api/org/workout-builder/programs/:programId/edit", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const [program] = await db.select().from(workoutPrograms)
+        .where(and(eq(workoutPrograms.id, req.params.programId), eq(workoutPrograms.orgId, orgId))).limit(1);
+      if (!program) return res.status(404).json({ message: "Program not found" });
+
+      const bodySchema = z.object({ instruction: z.string().min(1) });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "instruction is required" });
+
+      if (!program.trainChatProgramId) {
+        return res.status(400).json({ message: "No TrainChat program ID stored. Cannot refine this program." });
+      }
+
+      let rawResponse: any = null;
+      let editError: string | null = null;
+
+      try {
+        const result = await trainChatClient.editProgram(orgId, program.trainChatProgramId, {
+          instruction: parsed.data.instruction,
+          currentProgram: program.trainChatRawResponse,
+        });
+        rawResponse = result.data;
+      } catch (err: any) {
+        editError = err?.message ?? "TrainChat edit failed";
+      }
+
+      if (rawResponse) {
+        // Re-parse sessions
+        await db.delete(workoutSessions).where(eq(workoutSessions.workoutProgramId, program.id));
+        await parseAndStoreSessions(orgId, program.id, rawResponse).catch(() => {});
+
+        const updateData: any = {
+          trainChatRawResponse: rawResponse,
+          updatedAt: new Date(),
+        };
+        if (rawResponse.title) updateData.title = rawResponse.title;
+        if (rawResponse.summary) updateData.generatedSummary = rawResponse.summary;
+        if (rawResponse.id) updateData.trainChatProgramId = rawResponse.id;
+
+        const [updated] = await db.update(workoutPrograms).set(updateData)
+          .where(eq(workoutPrograms.id, program.id)).returning();
+
+        const sessions = await db.select().from(workoutSessions)
+          .where(eq(workoutSessions.workoutProgramId, program.id))
+          .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber));
+
+        return res.json({ program: updated, sessions, editError });
+      }
+
+      return res.json({ program, sessions: [], editError });
+    } catch (err: any) {
+      console.error("[workout-builder] edit program error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/sessions/:sessionId/complete
+  app.post("/api/org/workout-builder/sessions/:sessionId/complete", isAuthenticated, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const [session] = await db.select().from(workoutSessions)
+        .where(and(eq(workoutSessions.id, req.params.sessionId), eq(workoutSessions.orgId, orgId))).limit(1);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+
+      const bodySchema = z.object({
+        notes: z.string().optional(),
+        rating: z.number().int().min(1).max(5).optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid request" });
+
+      const [log] = await db.insert(workoutCompletionLogs).values({
+        orgId,
+        workoutSessionId: session.id,
+        athleteUserId: profile.userId,
+        notes: parsed.data.notes ?? null,
+        rating: parsed.data.rating ?? null,
+      }).returning();
+
+      return res.json({ log });
+    } catch (err: any) {
+      console.error("[workout-builder] complete session error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // GET /api/org/workout-builder/my-workouts  (athlete view)
+  app.get("/api/org/workout-builder/my-workouts", isAuthenticated, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const userId = profile.userId;
+
+      // Get assignments for this athlete
+      const assignments = await db.select()
+        .from(workoutProgramAssignments)
+        .where(and(
+          eq(workoutProgramAssignments.orgId, orgId),
+          eq(workoutProgramAssignments.athleteUserId, userId),
+          eq(workoutProgramAssignments.status, "active"),
+        ));
+
+      if (assignments.length === 0) return res.json({ assignments: [], programs: [] });
+
+      const programIds = [...new Set(assignments.map((a) => a.workoutProgramId))];
+      const programs = await db.select().from(workoutPrograms)
+        .where(and(eq(workoutPrograms.orgId, orgId), inArray(workoutPrograms.id, programIds)));
+
+      const sessions = await db.select().from(workoutSessions)
+        .where(and(eq(workoutSessions.orgId, orgId), inArray(workoutSessions.workoutProgramId, programIds)))
+        .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber));
+
+      const completions = await db.select().from(workoutCompletionLogs)
+        .where(and(eq(workoutCompletionLogs.orgId, orgId), eq(workoutCompletionLogs.athleteUserId, userId)));
+
+      return res.json({ assignments, programs, sessions, completions });
+    } catch (err: any) {
+      console.error("[workout-builder] my-workouts error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+}

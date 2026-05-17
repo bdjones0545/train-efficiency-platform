@@ -1927,6 +1927,68 @@ export const athleteExternalAssets = pgTable("athlete_external_assets", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// ─── Workout Builder Tables ───────────────────────────────────────────────────
+
+export const workoutPrograms = pgTable("workout_programs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programToolId: varchar("program_tool_id").notNull(),
+  createdByUserId: varchar("created_by_user_id").notNull(),
+  trainChatProgramId: varchar("trainchat_program_id"),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  goal: varchar("goal").notNull(),
+  sport: varchar("sport"),
+  durationWeeks: integer("duration_weeks").notNull(),
+  daysPerWeek: integer("days_per_week").notNull(),
+  status: varchar("status").notNull().default("draft"),
+  source: varchar("source").notNull().default("trainchat_api"),
+  trainChatRawResponse: jsonb("trainchat_raw_response"),
+  generatedSummary: text("generated_summary"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const workoutProgramAssignments = pgTable("workout_program_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workoutProgramId: varchar("workout_program_id").notNull(),
+  assignedToType: varchar("assigned_to_type").notNull(),
+  athleteUserId: varchar("athlete_user_id"),
+  teamId: varchar("team_id"),
+  assignedByUserId: varchar("assigned_by_user_id").notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  status: varchar("status").notNull().default("active"),
+});
+
+export const workoutSessions = pgTable("workout_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workoutProgramId: varchar("workout_program_id").notNull(),
+  weekNumber: integer("week_number").notNull(),
+  dayNumber: integer("day_number").notNull(),
+  title: varchar("title").notNull(),
+  focus: varchar("focus"),
+  sessionData: jsonb("session_data"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const workoutCompletionLogs = pgTable("workout_completion_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workoutSessionId: varchar("workout_session_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  completedAt: timestamp("completed_at").defaultNow(),
+  notes: text("notes"),
+  rating: integer("rating"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type WorkoutProgram = typeof workoutPrograms.$inferSelect;
+export type WorkoutProgramAssignment = typeof workoutProgramAssignments.$inferSelect;
+export type WorkoutSession = typeof workoutSessions.$inferSelect;
+export type WorkoutCompletionLog = typeof workoutCompletionLogs.$inferSelect;
+
 // ─── Org AI Integrations ──────────────────────────────────────────────────────
 
 export const orgAiIntegrations = pgTable("org_ai_integrations", {

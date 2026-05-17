@@ -1,0 +1,398 @@
+Build Workout Builder Phase 1 inside TrainEfficiency using the existing TrainChat API integration.
+
+IMPORTANT CONTEXT:
+TrainChat is already connected through the TrainChat Integration system.
+Do NOT rebuild TrainChat.
+Do NOT recreate programming logic inside TrainEfficiency.
+
+TrainEfficiency should:
+- orchestrate workflows
+- collect athlete/team context
+- send generation requests to TrainChat
+- store returned programs
+- assign programs
+- display workouts in the athlete portal
+- track completion/progress
+
+TrainChat remains:
+- the AI programming engine
+- periodization engine
+- exercise reasoning engine
+- refinement engine
+
+All generation must flow:
+TrainEfficiency frontend
+→ TrainEfficiency backend
+→ TrainChat API
+→ TrainEfficiency storage/display layer
+
+====================================================
+1. WORKOUT BUILDER ROUTE
+====================================================
+
+Use existing program tool routing:
+
+/org/:slug/programs/:programSlug
+
+If:
+program.type === "workout_builder"
+
+Load:
+WorkoutBuilderPage
+
+====================================================
+2. DATABASE TABLES
+====================================================
+
+Create:
+
+workout_programs
+- id
+- orgId
+- programToolId
+- createdByUserId
+- trainChatProgramId nullable
+- title
+- description nullable
+- goal
+- sport nullable
+- durationWeeks
+- daysPerWeek
+- status
+  (draft, assigned, archived)
+- source
+  (trainchat_api)
+- trainChatRawResponse jsonb
+- generatedSummary nullable
+- createdAt
+- updatedAt
+
+workout_program_assignments
+- id
+- orgId
+- workoutProgramId
+- assignedToType
+  (athlete, team)
+- athleteUserId nullable
+- teamId nullable
+- assignedByUserId
+- assignedAt
+- status
+  (active, completed, archived)
+
+workout_sessions
+- id
+- orgId
+- workoutProgramId
+- weekNumber
+- dayNumber
+- title
+- focus
+- sessionData jsonb
+- createdAt
+
+workout_completion_logs
+- id
+- orgId
+- workoutSessionId
+- athleteUserId
+- completedAt
+- notes nullable
+- rating nullable
+- createdAt
+
+====================================================
+3. BACKEND ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/workout-builder/bootstrap
+
+Returns:
+- org info
+- current user/membership
+- teams
+- athletes
+- existing programs
+- TrainChat integration status
+
+POST /api/org/workout-builder/generate
+
+Purpose:
+Generate a program through TrainChat.
+
+Input:
+- targetType
+  (team or athlete)
+- athleteUserIds
+- teamId
+- goal
+- sport
+- durationWeeks
+- daysPerWeek
+- equipment
+- constraints
+- coachNotes
+
+Backend responsibilities:
+- validate org permissions
+- verify TrainChat integration exists
+- gather athlete/team context
+- gather PR summaries
+- gather coach notes summaries
+- gather recent training activity
+- package context
+- call trainChatClient.generateProgram()
+- store returned program
+- parse/store sessions
+- return formatted program
+
+POST /api/org/workout-builder/:programId/assign
+
+Assign program to:
+- athlete
+or
+- team
+
+GET /api/org/workout-builder/programs/:programId
+
+Return:
+- program
+- sessions
+- assignments
+- generated summary
+- TrainChat rationale
+
+PATCH /api/org/workout-builder/programs/:programId
+
+Allow:
+- title edits
+- description edits
+- status updates
+
+POST /api/org/workout-builder/programs/:programId/edit
+
+Purpose:
+Send refinement instruction to TrainChat API.
+
+Examples:
+- reduce lower body volume
+- increase speed emphasis
+- shorten sessions
+- modify for knee pain
+
+Update stored program afterward.
+
+POST /api/org/workout-builder/sessions/:sessionId/complete
+
+Athlete marks workout complete.
+
+====================================================
+4. PERMISSIONS
+====================================================
+
+Coach/Owner:
+- generate programs
+- refine programs
+- assign programs
+- view team programs
+- manage assignments
+
+Athlete:
+- view assigned programs
+- view sessions
+- mark workouts complete
+
+Enforce:
+- org scope
+- role permissions
+- no cross-org leakage
+
+====================================================
+5. WORKOUT BUILDER COACH EXPERIENCE
+====================================================
+
+WorkoutBuilderPage should include:
+
+A. Header
+- Workout Builder title
+- TrainChat Connected badge
+- Generate Program button
+
+B. Program Generator Wizard
+
+Step 1:
+Select target
+- Team
+- Individual Athlete
+
+Step 2:
+Select athlete/team
+
+Step 3:
+Program goal
+- strength
+- speed
+- hypertrophy
+- return to play
+- general performance
+- custom
+
+Step 4:
+Sport/context
+
+Step 5:
+Duration
+- 4
+- 6
+- 8
+- 12 weeks
+
+Step 6:
+Days per week
+
+Step 7:
+Equipment available
+
+Step 8:
+Constraints/injuries/coach notes
+
+Step 9:
+Generate Program
+
+====================================================
+6. CONTEXT PREVIEW
+====================================================
+
+Before generation show:
+- selected athletes/team
+- PR summaries
+- recent training consistency
+- coach notes available
+- injuries/constraints
+- schedule context
+
+Show:
+“This context will be sent to TrainChat.”
+
+====================================================
+7. PROGRAM DISPLAY
+====================================================
+
+After generation display:
+
+- program title
+- generated summary
+- coach rationale
+- weeks
+- sessions
+- exercises
+- focus areas
+- safety flags if present
+
+Actions:
+- Assign Program
+- Edit/Refine
+- Archive
+
+====================================================
+8. PROGRAM LIBRARY
+====================================================
+
+Show all generated programs:
+- draft
+- assigned
+- archived
+
+Display:
+- target
+- created by
+- created date
+- assignment count
+- open/manage buttons
+
+====================================================
+9. ATHLETE EXPERIENCE
+====================================================
+
+Inside athlete portal:
+- My Workouts
+- Active Programs
+- Next Session
+- Session Details
+- Completion Tracking
+- Workout History
+
+Athletes can:
+- mark sessions complete
+- leave optional notes
+- rate session difficulty
+
+====================================================
+10. TRAINCHAT API USAGE
+====================================================
+
+Use the existing:
+services/trainchat-client.ts
+
+Do NOT:
+- duplicate TrainChat logic
+- create another programming engine
+- expose API keys to frontend
+
+TrainEfficiency only:
+- packages context
+- sends requests
+- stores responses
+- manages delivery
+
+====================================================
+11. ERROR HANDLING
+====================================================
+
+Handle:
+- missing TrainChat integration
+- invalid API key
+- missing permissions
+- API timeout
+- generation failure
+- malformed response
+
+Show clean UI messages.
+
+====================================================
+12. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- coach workflow oriented
+- large cards
+- wizard UX
+- loading states
+- generation progress
+- clean hierarchy
+- no giant mobile tables
+
+====================================================
+13. PORTAL INTEGRATION
+====================================================
+
+Update portal:
+- My Workouts card
+- Workout counts
+- Active program preview
+- Coach admin shortcut to Workout Builder
+
+====================================================
+14. IMPORTANT
+====================================================
+
+This is a TrainEfficiency feature powered by the existing TrainChat API integration.
+
+TrainEfficiency = orchestration + management layer
+TrainChat = AI programming engine
+
+Do not rebuild TrainChat inside TrainEfficiency.

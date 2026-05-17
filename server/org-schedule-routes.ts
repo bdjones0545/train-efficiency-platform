@@ -209,6 +209,7 @@ export function registerOrgScheduleRoutes(app: Express) {
 
       const schedulingPrograms = programs.filter((p) => p.type === "scheduling" || !p.type);
       const prTrackerPrograms = programs.filter((p) => p.type === "pr_tracker");
+      const workoutBuilderPrograms = programs.filter((p) => p.type === "workout_builder");
       const hasPrTracker = prTrackerPrograms.length > 0;
 
       // Bookings
@@ -317,6 +318,7 @@ export function registerOrgScheduleRoutes(app: Express) {
         pastBookingCount,
         schedulingPrograms,
         prTrackerPrograms,
+        workoutBuilderPrograms,
         hasPrTracker,
         userTeams: teamMemberships,
         recentPrEntries,

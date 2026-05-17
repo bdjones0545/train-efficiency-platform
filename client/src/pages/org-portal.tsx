@@ -177,7 +177,7 @@ function PortalHome({
   orgId: string;
   onLogout: () => void;
 }) {
-  const { org, user, membership, upcomingBookings, pastBookingCount, schedulingPrograms, prTrackerPrograms, hasPrTracker, userTeams, recentPrEntries, bestPrs } = data;
+  const { org, user, membership, upcomingBookings, pastBookingCount, schedulingPrograms, prTrackerPrograms, workoutBuilderPrograms, hasPrTracker, userTeams, recentPrEntries, bestPrs } = data;
 
   const isCoach = membership?.role === "coach" || membership?.role === "owner";
   const prTrackerUrl = prTrackerPrograms?.[0] ? `/org/${slug}/programs/${prTrackerPrograms[0].slug}` : null;
@@ -479,17 +479,20 @@ function PortalHome({
                 </Card>
               </a>
             ))}
-            {/* Placeholder for Workout Builder */}
-            <Card className="p-4 flex items-center gap-3 opacity-50" data-testid="card-workout-builder-placeholder">
-              <div className="rounded-lg bg-muted p-2">
-                <Dumbbell className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm">Workout Builder</p>
-                <p className="text-xs text-muted-foreground">Assign and track workouts</p>
-              </div>
-              <Badge variant="outline" className="flex-shrink-0 text-xs">Coming Soon</Badge>
-            </Card>
+            {workoutBuilderPrograms?.map((p: any) => (
+              <a key={p.id} href={`/org/${slug}/programs/${p.slug}`} data-testid={`link-workout-program-${p.id}`}>
+                <Card className="p-4 flex items-center gap-3 hover:border-primary/30 transition-colors">
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Dumbbell className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm">{p.name}</p>
+                    <p className="text-xs text-muted-foreground">{isCoach ? "Generate and assign workouts" : "View assigned workouts"}</p>
+                  </div>
+                  <Badge variant="secondary" className="flex-shrink-0">Workout Builder</Badge>
+                </Card>
+              </a>
+            ))}
           </div>
         </section>
 
