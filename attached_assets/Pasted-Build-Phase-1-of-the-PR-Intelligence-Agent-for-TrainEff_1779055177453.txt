@@ -1,0 +1,213 @@
+Build Phase 1 of the PR Intelligence Agent for TrainEfficiency.
+
+GOAL:
+Reduce coach workload by giving each athlete profile an AI-assisted research and summary layer.
+
+The agent should help coaches:
+- summarize athlete notes
+- summarize PR progress
+- identify performance trends
+- optionally research public athlete information from approved public sources
+- generate coach-facing athlete summaries
+- prepare clean player report blurbs
+
+IMPORTANT SAFETY / COMPLIANCE:
+Do not scrape behind logins.
+Do not bypass paywalls.
+Do not violate robots.txt or site terms.
+Only use publicly available information.
+Always store source URLs and timestamps.
+Never present external info as fact without attribution.
+Coach must review/approve imported external info before it becomes part of the athlete profile.
+
+PHASE 1 FEATURES:
+
+1. Athlete AI Summary Panel
+On Coach Athlete Detail Page, add a section:
+“PR Intelligence”
+
+Include buttons:
+- Generate Athlete Summary
+- Summarize Coach Notes
+- Summarize PR Progress
+- Find Public Athlete Info
+- Generate Player Report Blurb
+
+2. Coach Notes Summary
+Use existing coach notes + athlete PR data to generate:
+- short coach summary
+- strengths
+- areas to monitor
+- recent progress
+- suggested talking points
+- next check-in focus
+
+Output should be editable before saving.
+
+3. PR Progress Summary
+Analyze athlete PR entries:
+- recent improvements
+- strongest lifts/metrics
+- stagnant metrics
+- newest PR
+- best overall PR
+- possible next targets
+
+Do not make medical claims.
+Do not over-prescribe training.
+Keep it coach-facing.
+
+4. Public Athlete Research
+Add optional agent action:
+“Find Public Athlete Info”
+
+Inputs:
+- athlete name
+- school/team
+- sport
+- graduation year if available
+- location/org city/state if available
+
+Search public sources such as:
+- MaxPreps public profile pages
+- school athletics pages
+- public roster pages
+- Hudl public profile pages if available
+- athletic.net / MileSplit public pages where relevant
+- other public sports profile pages
+
+The agent should return:
+- possible matches
+- confidence score
+- source URL
+- source title
+- extracted public fields
+- “needs review” status
+
+Possible fields:
+- sport
+- position
+- height/weight if public
+- class year
+- jersey number
+- school
+- public stats
+- profile links
+
+Coach must click “Approve Import” before anything is saved to the athlete profile.
+
+5. Database Tables
+
+pr_agent_research_jobs
+- id
+- orgId
+- athleteUserId
+- coachUserId
+- status: pending | running | completed | failed
+- query jsonb
+- result jsonb
+- errorMessage
+- createdAt
+- completedAt
+
+athlete_public_profiles
+- id
+- orgId
+- athleteUserId
+- sourceName
+- sourceUrl
+- sourceTitle
+- confidenceScore
+- extractedData jsonb
+- approvedByCoachId nullable
+- approvedAt nullable
+- status: pending_review | approved | rejected
+- createdAt
+- updatedAt
+
+athlete_ai_summaries
+- id
+- orgId
+- athleteUserId
+- coachUserId
+- summaryType: notes | pr_progress | player_report | full_profile
+- sourceSnapshot jsonb
+- generatedText
+- editedText nullable
+- status: draft | approved | archived
+- createdAt
+- updatedAt
+
+6. API Endpoints
+
+POST /api/org/coach/athletes/:userId/ai/summary
+- Generates notes/progress/player report summaries
+
+POST /api/org/coach/athletes/:userId/ai/research
+- Starts public research job
+
+GET /api/org/coach/athletes/:userId/ai/research-jobs
+- Lists research jobs
+
+PATCH /api/org/coach/athletes/:userId/public-profile/:profileId/approve
+- Approves imported public info
+
+PATCH /api/org/coach/athletes/:userId/public-profile/:profileId/reject
+- Rejects imported public info
+
+PATCH /api/org/coach/athletes/:userId/ai/summary/:summaryId
+- Saves coach-edited summary
+
+7. UI Requirements
+
+On Coach Athlete Detail Page add:
+- PR Intelligence card
+- AI summary tabs:
+  - Coach Notes
+  - PR Progress
+  - Player Report
+  - Public Research
+- Loading states
+- “Needs Review” badges
+- Source citation chips
+- Approve / Reject controls
+- Editable summary text area
+- Save to Athlete Profile button
+
+8. Player Card Integration
+
+Allow approved AI summary to appear on exported player card:
+- Coach Summary
+- Key Strengths
+- Recent Progress
+- Public Profile Links if approved
+
+9. Permissions
+
+Only coach/owner can:
+- run research
+- generate summaries
+- approve public data
+- edit AI summaries
+
+Athletes should not see coach private notes or unapproved research.
+
+10. Agent Behavior
+
+The PR Intelligence Agent should be conservative:
+- distinguish confirmed data from possible matches
+- avoid guessing
+- show confidence scores
+- require coach approval
+- cite every external source
+- summarize rather than dump raw data
+- never overwrite athlete-entered PRs automatically
+
+DO NOT:
+- build autonomous background crawling yet
+- scrape private data
+- contact athletes
+- modify PR entries automatically
+- publish anything externally
+
+Build Phase 1 as an on-demand coach assistant inside the athlete profile.
