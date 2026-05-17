@@ -13332,5 +13332,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerWorkoutBuilderRoutes } = await import("./workout-builder-routes");
   registerWorkoutBuilderRoutes(app);
 
+  // ── Workout Execution Routes ──────────────────────────────────────────────
+  const { registerWorkoutExecutionRoutes } = await import("./workout-execution-routes");
+  registerWorkoutExecutionRoutes(app);
+
   return httpServer;
 }

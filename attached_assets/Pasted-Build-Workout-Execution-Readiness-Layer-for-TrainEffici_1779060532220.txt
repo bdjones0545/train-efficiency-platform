@@ -1,0 +1,303 @@
+Build Workout Execution + Readiness Layer for TrainEfficiency.
+
+GOAL:
+Create the feedback loop after Workout Builder Phase 1:
+
+Generate → Assign → Execute → Monitor → Adapt
+
+This should let athletes complete workouts with readiness/check-in data, and let coaches see when programs may need adjustment.
+
+CONTEXT:
+Workout Builder already exists and is powered by the TrainChat API.
+Do NOT rebuild TrainChat.
+Use TrainChat only for adaptive modification suggestions when needed.
+
+====================================================
+1. DATABASE TABLES
+====================================================
+
+Create:
+
+workout_readiness_checkins
+- id
+- orgId
+- athleteUserId
+- workoutSessionId nullable
+- readinessScore integer
+- sleepQuality integer nullable
+- sorenessLevel integer nullable
+- fatigueLevel integer nullable
+- stressLevel integer nullable
+- motivationLevel integer nullable
+- painAreas jsonb nullable
+- notes nullable
+- createdAt
+
+workout_session_exercise_logs
+- id
+- orgId
+- workoutSessionId
+- athleteUserId
+- exerciseName
+- prescribedData jsonb
+- completedData jsonb
+- rpe integer nullable
+- notes nullable
+- createdAt
+
+workout_adaptation_recommendations
+- id
+- orgId
+- athleteUserId
+- workoutProgramId
+- workoutSessionId nullable
+- recommendationType
+  (modify_session, reduce_volume, increase_recovery, progress_load, coach_review)
+- severity
+  (info, moderate, important)
+- reason
+- suggestedChange jsonb
+- source
+  (rules, trainchat_api)
+- status
+  (pending, accepted, dismissed)
+- createdAt
+- updatedAt
+
+====================================================
+2. ATHLETE WORKOUT EXECUTION FLOW
+====================================================
+
+When athlete opens an assigned workout session:
+
+Step 1:
+Readiness Check-In
+
+Ask:
+- How ready do you feel today? 1–10
+- Sleep quality 1–10
+- Soreness 1–10
+- Fatigue 1–10
+- Stress 1–10
+- Motivation 1–10
+- Any pain areas?
+- Notes
+
+Step 2:
+Workout Session View
+
+Show:
+- exercises
+- sets/reps/load/time
+- coach notes
+- session focus
+
+Step 3:
+Exercise Logging
+
+For each exercise:
+- mark complete
+- enter actual load/reps/time if applicable
+- enter RPE
+- notes
+
+Step 4:
+Finish Session
+
+Save:
+- completion log
+- exercise logs
+- readiness check-in
+
+====================================================
+3. COACH EXECUTION DASHBOARD
+====================================================
+
+Add coach view inside Workout Builder:
+
+“Execution Monitor”
+
+Show:
+- athletes who completed today
+- athletes who missed assigned sessions
+- low readiness flags
+- high soreness/fatigue flags
+- high RPE flags
+- incomplete workouts
+- adaptation recommendations
+
+Cards:
+- Needs Review
+- Low Readiness
+- High Fatigue
+- Missed Sessions
+- Strong Progress
+
+====================================================
+4. ADAPTATION ENGINE
+====================================================
+
+Create a lightweight rules-first engine.
+
+Rules examples:
+- readinessScore <= 4 → suggest reduce intensity/volume
+- sorenessLevel >= 8 → suggest recovery emphasis
+- fatigueLevel >= 8 and RPE high → coach review
+- missed 2+ sessions → reschedule or reduce density
+- consistently easy RPE <= 5 → possible progression
+- painAreas present → coach review required
+
+The engine should create workout_adaptation_recommendations.
+
+====================================================
+5. TRAINCHAT API ADAPTATION SUPPORT
+====================================================
+
+Add optional coach action:
+
+“Ask TrainChat for Modification”
+
+When clicked:
+- Send session/program context
+- Send readiness data
+- Send exercise logs
+- Send coach notes
+- Ask TrainChat for safe modification suggestions
+
+Use existing:
+trainChatClient.editProgram()
+or trainChatClient.generateSession()
+
+Do NOT automatically apply changes.
+
+Coach must review:
+- suggested changes
+- rationale
+- safety flags
+
+Then choose:
+- Accept
+- Dismiss
+- Edit manually
+
+====================================================
+6. API ENDPOINTS
+====================================================
+
+Create:
+
+POST /api/org/workout-execution/readiness
+GET /api/org/workout-execution/readiness/:athleteUserId
+
+POST /api/org/workout-execution/exercise-logs
+GET /api/org/workout-execution/session/:sessionId/logs
+
+POST /api/org/workout-execution/session/:sessionId/finish
+
+GET /api/org/workout-execution/coach-monitor
+
+GET /api/org/workout-execution/recommendations
+PATCH /api/org/workout-execution/recommendations/:id
+
+POST /api/org/workout-execution/recommendations/:id/trainchat-review
+
+====================================================
+7. ATHLETE UI
+====================================================
+
+Update athlete workout session screen:
+
+- readiness check-in card
+- exercise completion cards
+- RPE selector
+- notes fields
+- finish workout button
+- completion summary
+
+Mobile-first:
+- no tables
+- large controls
+- fast tap logging
+- clear progress indicator
+
+====================================================
+8. COACH UI
+====================================================
+
+Inside Workout Builder add tab:
+
+Execution Monitor
+
+Include:
+- alert cards
+- athlete status feed
+- recommendation queue
+- filters by team/program/athlete
+- quick actions:
+  - View Athlete
+  - View Logs
+  - Ask TrainChat
+  - Dismiss
+  - Accept Recommendation
+
+====================================================
+9. PORTAL INTEGRATION
+====================================================
+
+Update portal:
+- Today’s Workout card
+- Readiness prompt if session assigned today
+- Recent workout completion status
+- Coach alert count for execution monitor
+
+====================================================
+10. PERMISSIONS
+====================================================
+
+Athlete:
+- submit own readiness
+- submit own exercise logs
+- complete own sessions
+- view own history
+
+Coach/Owner:
+- view assigned athlete execution data
+- view readiness summaries
+- create/accept/dismiss recommendations
+- request TrainChat modifications
+
+Enforce:
+- org scope
+- role scope
+- no cross-org leakage
+
+====================================================
+11. DESIGN REQUIREMENTS
+====================================================
+
+Use TrainEfficiency dark premium style.
+
+Athlete experience:
+- simple
+- fast
+- motivating
+- not clinical
+
+Coach experience:
+- operational
+- alert-driven
+- easy to scan
+- decision-support focused
+
+====================================================
+12. IMPORTANT
+====================================================
+
+Do NOT:
+- auto-change workouts without coach approval
+- make medical claims
+- diagnose injury
+- expose private readiness notes to other athletes
+- rebuild TrainChat logic
+
+This phase creates the execution feedback loop that turns Workout Builder from static assignment into adaptive performance management.

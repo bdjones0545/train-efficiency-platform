@@ -11,17 +11,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Slider } from "@/components/ui/slider";
 import {
   Dumbbell, Wifi, WifiOff, Plus, Loader2, ChevronRight, ChevronLeft,
   Check, Star, Users, User, Archive, Pencil, ArrowRight, Calendar,
   Target, Clock, Zap, AlertTriangle, CheckCircle2, BarChart3,
-  MessageSquarePlus, X, ClipboardList,
+  MessageSquarePlus, X, ClipboardList, Activity, Brain, TrendingUp,
+  TrendingDown, ShieldAlert, Eye, ChevronDown, ChevronUp, RefreshCw,
+  Flame, Gauge, BedDouble, Siren,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Program = any;
 type Session = any;
 
+const PAIN_AREAS = ["Lower Back", "Knees", "Shoulders", "Hips", "Hamstrings", "Quads", "Calves", "Ankles", "Neck", "Wrists", "Elbows"];
 const GOALS = ["strength", "speed", "hypertrophy", "return_to_play", "general_performance", "custom"];
 const GOAL_LABELS: Record<string, string> = {
   strength: "Strength", speed: "Speed & Power", hypertrophy: "Hypertrophy",
@@ -57,19 +61,94 @@ function RatingStars({ rating, onRate }: { rating?: number; onRate?: (r: number)
   );
 }
 
-// ─── Session Card ─────────────────────────────────────────────────────────────
-function SessionCard({ session, completions, onComplete }: { session: Session; completions: any[]; onComplete: (id: string, notes: string, rating: number) => void }) {
-  const [open, setOpen] = useState(false);
-  const [notes, setNotes] = useState("");
-  const [rating, setRating] = useState(0);
+// ─── Readiness Slider ─────────────────────────────────────────────────────────
+function ReadinessSlider({ label, value, onChange, lowLabel, highLabel }: { label: string; value: number; onChange: (v: number) => void; lowLabel?: string; highLabel?: string }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-center">
+        <Label className="text-sm font-medium">{label}</Label>
+        <span className={`text-lg font-bold tabular-nums ${value <= 3 ? "text-red-400" : value <= 6 ? "text-amber-400" : "text-emerald-400"}`}>{value}</span>
+      </div>
+      <Slider min={1} max={10} step={1} value={[value]} onValueChange={([v]) => onChange(v)} className="w-full" data-testid={`slider-${label.toLowerCase().replace(/\s/g, "-")}`} />
+      {(lowLabel || highLabel) && (
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>{lowLabel ?? "Low"}</span>
+          <span>{highLabel ?? "High"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Session Execution Card (Athlete) ─────────────────────────────────────────
+type ExLog = { exerciseName: string; completed: boolean; actualLoad: string; actualReps: string; actualSets: string; rpe: number; notes: string };
+
+function SessionCard({ session, completions, onFinish }: { session: Session; completions: any[]; onFinish: (sessionId: string, data: any) => void }) {
   const done = completions.some((c) => c.workoutSessionId === session.id);
   const exercises: any[] = (session.sessionData as any)?.exercises ?? [];
+
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"readiness" | "exercises" | "finish">("readiness");
+
+  // Readiness
+  const [readinessScore, setReadinessScore] = useState(7);
+  const [sleepQuality, setSleepQuality] = useState(7);
+  const [sorenessLevel, setSorenessLevel] = useState(3);
+  const [fatigueLevel, setFatigueLevel] = useState(3);
+  const [stressLevel, setStressLevel] = useState(3);
+  const [motivationLevel, setMotivationLevel] = useState(7);
+  const [painAreas, setPainAreas] = useState<string[]>([]);
+  const [readinessNotes, setReadinessNotes] = useState("");
+
+  // Exercise logs
+  const [exLogs, setExLogs] = useState<ExLog[]>(() =>
+    exercises.map((ex: any) => ({
+      exerciseName: ex.name ?? ex.exercise ?? `Exercise`,
+      completed: false, actualLoad: ex.load ?? "", actualReps: ex.reps ?? "", actualSets: ex.sets ?? "", rpe: 0, notes: "",
+    }))
+  );
+
+  // Finish
+  const [completionRating, setCompletionRating] = useState(0);
+  const [completionNotes, setCompletionNotes] = useState("");
+
+  function updateEx(i: number, field: keyof ExLog, value: any) {
+    setExLogs((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: value } : l));
+  }
+
+  function togglePain(area: string) {
+    setPainAreas((prev) => prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]);
+  }
+
+  function handleOpen() {
+    setStep("readiness");
+    setOpen(true);
+  }
+
+  function handleFinish() {
+    onFinish(session.id, {
+      checkinData: { readinessScore, sleepQuality, sorenessLevel, fatigueLevel, stressLevel, motivationLevel, painAreas: painAreas.length > 0 ? painAreas : undefined, notes: readinessNotes || undefined },
+      exerciseLogs: exLogs.filter((l) => l.completed).map((l) => ({
+        exerciseName: l.exerciseName,
+        prescribedData: exercises.find((e: any) => (e.name ?? e.exercise) === l.exerciseName),
+        completedData: { load: l.actualLoad || undefined, reps: l.actualReps || undefined, sets: l.actualSets || undefined },
+        rpe: l.rpe > 0 ? l.rpe : undefined,
+        notes: l.notes || undefined,
+      })),
+      completionRating: completionRating > 0 ? completionRating : undefined,
+      completionNotes: completionNotes || undefined,
+    });
+    setOpen(false);
+  }
+
+  const stepIndex = ["readiness", "exercises", "finish"].indexOf(step);
+  const stepLabels = ["Readiness", "Session", "Finish"];
 
   return (
     <>
       <Card
-        className={`p-4 cursor-pointer hover:border-primary/30 transition-colors ${done ? "opacity-60" : ""}`}
-        onClick={() => setOpen(true)}
+        className={`p-4 cursor-pointer hover:border-primary/30 transition-colors ${done ? "border-emerald-500/20" : ""}`}
+        onClick={handleOpen}
         data-testid={`card-session-${session.id}`}
       >
         <div className="flex items-start justify-between gap-3">
@@ -83,54 +162,196 @@ function SessionCard({ session, completions, onComplete }: { session: Session; c
           </div>
           <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-1" />
         </div>
-        {exercises.length > 0 && (
-          <p className="text-xs text-muted-foreground mt-2">{exercises.length} exercise{exercises.length !== 1 ? "s" : ""}</p>
-        )}
+        {exercises.length > 0 && <p className="text-xs text-muted-foreground mt-2">{exercises.length} exercise{exercises.length !== 1 ? "s" : ""}</p>}
+        {done && <p className="text-xs text-emerald-500 mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Completed</p>}
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Dumbbell className="h-5 w-5" />
-              {session.title}
-            </DialogTitle>
-          </DialogHeader>
-          {session.focus && <p className="text-sm text-muted-foreground">{session.focus}</p>}
-          {exercises.length > 0 ? (
-            <div className="space-y-2 mt-2">
-              {exercises.map((ex: any, i: number) => (
-                <Card key={i} className="p-3 space-y-0.5">
-                  <p className="text-sm font-medium">{ex.name ?? ex.exercise ?? `Exercise ${i + 1}`}</p>
-                  {(ex.sets || ex.reps || ex.load || ex.rest) && (
-                    <p className="text-xs text-muted-foreground">
-                      {[ex.sets && `${ex.sets} sets`, ex.reps && `${ex.reps} reps`, ex.load && `@ ${ex.load}`, ex.rest && `${ex.rest} rest`].filter(Boolean).join(" · ")}
-                    </p>
-                  )}
-                  {ex.notes && <p className="text-xs text-muted-foreground italic">{ex.notes}</p>}
-                </Card>
+        <DialogContent className="max-w-md max-h-[90vh] flex flex-col p-0 gap-0">
+          {/* Progress header */}
+          <div className="p-4 border-b space-y-3">
+            <DialogHeader>
+              <DialogTitle className="text-base flex items-center gap-2">
+                <Dumbbell className="h-4 w-4 text-primary" /> {session.title}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex items-center gap-1">
+              {stepLabels.map((label, i) => (
+                <div key={label} className="flex items-center gap-1 flex-1">
+                  <div className={`flex items-center gap-1.5 flex-1`}>
+                    <div className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${i < stepIndex ? "bg-emerald-500 text-white" : i === stepIndex ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                      {i < stepIndex ? <Check className="h-3 w-3" /> : i + 1}
+                    </div>
+                    <span className={`text-xs ${i === stepIndex ? "text-foreground font-medium" : "text-muted-foreground"}`}>{label}</span>
+                  </div>
+                  {i < stepLabels.length - 1 && <div className={`h-px flex-1 mx-1 ${i < stepIndex ? "bg-emerald-500" : "bg-muted"}`} />}
+                </div>
               ))}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">No exercise details available.</p>
-          )}
-          {!done && (
-            <div className="border-t pt-4 space-y-3 mt-2">
-              <p className="text-sm font-medium">Mark as complete</p>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Difficulty Rating</Label>
-                <RatingStars rating={rating} onRate={setRating} />
+          </div>
+
+          <div className="overflow-y-auto flex-1 p-4 space-y-4">
+            {/* ── Step 1: Readiness ── */}
+            {step === "readiness" && (
+              <div className="space-y-5">
+                <div>
+                  <p className="font-semibold text-sm">How are you feeling today?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">This helps your coach adapt the program over time.</p>
+                </div>
+                <ReadinessSlider label="Overall Readiness" value={readinessScore} onChange={setReadinessScore} lowLabel="Not ready" highLabel="100%" />
+                <ReadinessSlider label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Poor" highLabel="Great" />
+                <ReadinessSlider label="Muscle Soreness" value={sorenessLevel} onChange={setSorenessLevel} lowLabel="None" highLabel="Very sore" />
+                <ReadinessSlider label="Fatigue Level" value={fatigueLevel} onChange={setFatigueLevel} lowLabel="Fresh" highLabel="Exhausted" />
+                <ReadinessSlider label="Stress Level" value={stressLevel} onChange={setStressLevel} lowLabel="Relaxed" highLabel="Very stressed" />
+                <ReadinessSlider label="Motivation" value={motivationLevel} onChange={setMotivationLevel} lowLabel="Low" highLabel="Fired up" />
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Any pain areas? (optional)</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PAIN_AREAS.map((area) => (
+                      <button
+                        key={area}
+                        type="button"
+                        onClick={() => togglePain(area)}
+                        className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${painAreas.includes(area) ? "bg-red-500/15 border-red-500/40 text-red-400" : "border-border text-muted-foreground hover:border-primary/40"}`}
+                        data-testid={`btn-pain-area-${area.toLowerCase().replace(/\s/g, "-")}`}
+                      >
+                        {area}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Additional notes (optional)</Label>
+                  <Textarea rows={2} placeholder="Anything else your coach should know?" value={readinessNotes} onChange={(e) => setReadinessNotes(e.target.value)} data-testid="input-readiness-notes" />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Notes (optional)</Label>
-                <Textarea rows={2} placeholder="How did it feel?" value={notes} onChange={(e) => setNotes(e.target.value)} data-testid="input-completion-notes" />
+            )}
+
+            {/* ── Step 2: Exercises ── */}
+            {step === "exercises" && (
+              <div className="space-y-4">
+                {session.focus && (
+                  <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg">
+                    <p className="text-xs font-medium text-primary">Session Focus</p>
+                    <p className="text-sm mt-0.5">{session.focus}</p>
+                  </div>
+                )}
+                {exercises.length === 0 && <p className="text-sm text-muted-foreground italic">No exercise details available.</p>}
+                {exLogs.map((log, i) => {
+                  const ex = exercises[i] ?? {};
+                  return (
+                    <Card key={i} className={`p-3 space-y-3 transition-colors ${log.completed ? "border-emerald-500/30 bg-emerald-500/5" : ""}`}>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateEx(i, "completed", !log.completed)}
+                          className={`h-5 w-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${log.completed ? "bg-emerald-500 border-emerald-500" : "border-border"}`}
+                          data-testid={`btn-exercise-complete-${i}`}
+                        >
+                          {log.completed && <Check className="h-3 w-3 text-white" />}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium">{log.exerciseName}</p>
+                          {(ex.sets || ex.reps || ex.load || ex.rest) && (
+                            <p className="text-xs text-muted-foreground">
+                              {[ex.sets && `${ex.sets} sets`, ex.reps && `${ex.reps} reps`, ex.load && `@ ${ex.load}`, ex.rest && `${ex.rest} rest`].filter(Boolean).join(" · ")}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {log.completed && (
+                        <div className="space-y-2 pt-1">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Sets done</Label>
+                              <Input value={log.actualSets} onChange={(e) => updateEx(i, "actualSets", e.target.value)} placeholder={ex.sets ?? "—"} className="h-8 text-sm" data-testid={`input-actual-sets-${i}`} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Reps done</Label>
+                              <Input value={log.actualReps} onChange={(e) => updateEx(i, "actualReps", e.target.value)} placeholder={ex.reps ?? "—"} className="h-8 text-sm" data-testid={`input-actual-reps-${i}`} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Load</Label>
+                              <Input value={log.actualLoad} onChange={(e) => updateEx(i, "actualLoad", e.target.value)} placeholder={ex.load ?? "—"} className="h-8 text-sm" data-testid={`input-actual-load-${i}`} />
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs">RPE (effort level)</Label>
+                              <span className={`text-xs font-bold ${log.rpe <= 0 ? "text-muted-foreground" : log.rpe <= 4 ? "text-emerald-400" : log.rpe <= 7 ? "text-amber-400" : "text-red-400"}`}>
+                                {log.rpe > 0 ? `${log.rpe}/10` : "—"}
+                              </span>
+                            </div>
+                            <Slider min={1} max={10} step={1} value={[log.rpe]} onValueChange={([v]) => updateEx(i, "rpe", v)} className="w-full" data-testid={`slider-rpe-${i}`} />
+                          </div>
+                          <Textarea rows={1} placeholder="Notes for this exercise (optional)" value={log.notes} onChange={(e) => updateEx(i, "notes", e.target.value)} className="text-xs" data-testid={`input-exercise-notes-${i}`} />
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+                <p className="text-xs text-muted-foreground text-center">{exLogs.filter((l) => l.completed).length} of {exercises.length} exercises marked complete</p>
               </div>
-              <Button size="sm" className="w-full" onClick={() => { onComplete(session.id, notes, rating); setOpen(false); }} data-testid="button-complete-session">
-                <Check className="h-4 w-4 mr-1.5" /> Mark Complete
+            )}
+
+            {/* ── Step 3: Finish ── */}
+            {step === "finish" && (
+              <div className="space-y-5">
+                <div>
+                  <p className="font-semibold text-sm">Great work! Wrap up this session.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{exLogs.filter((l) => l.completed).length}/{exercises.length} exercises completed.</p>
+                </div>
+                <Card className="p-4 space-y-3 bg-primary/5 border-primary/10">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Readiness</p>
+                      <p className="text-lg font-bold">{readinessScore}/10</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Fatigue</p>
+                      <p className="text-lg font-bold">{fatigueLevel}/10</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Exercises</p>
+                      <p className="text-lg font-bold">{exLogs.filter((l) => l.completed).length}/{exercises.length}</p>
+                    </div>
+                  </div>
+                </Card>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Overall difficulty</Label>
+                  <RatingStars rating={completionRating} onRate={setCompletionRating} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Session notes (optional)</Label>
+                  <Textarea rows={3} placeholder="How was the session overall? Any feedback for your coach?" value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} data-testid="input-session-completion-notes" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer actions */}
+          <div className="p-4 border-t flex gap-2">
+            {step !== "readiness" && (
+              <Button variant="outline" size="sm" onClick={() => setStep(step === "finish" ? "exercises" : "readiness")} data-testid="button-execution-back">
+                <ChevronLeft className="h-4 w-4 mr-1" /> Back
               </Button>
-            </div>
-          )}
-          {done && <p className="text-sm text-emerald-500 flex items-center gap-1 mt-2"><CheckCircle2 className="h-4 w-4" /> Completed</p>}
+            )}
+            {step === "readiness" && (
+              <Button size="sm" className="flex-1" onClick={() => setStep("exercises")} data-testid="button-execution-to-exercises">
+                Start Session <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+            {step === "exercises" && (
+              <Button size="sm" className="flex-1" onClick={() => setStep("finish")} data-testid="button-execution-to-finish">
+                Finish Up <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+            {step === "finish" && (
+              <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleFinish} data-testid="button-execution-save">
+                <Check className="h-4 w-4 mr-1.5" /> Save Session
+              </Button>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -677,11 +898,11 @@ function AthleteWorkoutsView({ orgSlug }: { orgSlug: string }) {
     queryFn: () => fetch("/api/org/workout-builder/my-workouts").then((r) => r.json()),
   });
 
-  const completeMutation = useMutation({
-    mutationFn: ({ sessionId, notes, rating }: { sessionId: string; notes: string; rating: number }) =>
-      apiRequest("POST", `/api/org/workout-builder/sessions/${sessionId}/complete`, { notes: notes || undefined, rating: rating > 0 ? rating : undefined }),
-    onSuccess: () => { toast({ title: "Session marked complete!" }); refetch(); },
-    onError: () => toast({ title: "Could not save", variant: "destructive" }),
+  const finishMutation = useMutation({
+    mutationFn: ({ sessionId, finishData }: { sessionId: string; finishData: any }) =>
+      apiRequest("POST", `/api/org/workout-execution/session/${sessionId}/finish`, finishData),
+    onSuccess: () => { toast({ title: "Session saved! Great work." }); refetch(); },
+    onError: () => toast({ title: "Could not save session", variant: "destructive" }),
   });
 
   if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" /></div>;
@@ -704,7 +925,6 @@ function AthleteWorkoutsView({ orgSlug }: { orgSlug: string }) {
 
   return (
     <div className="space-y-6" data-testid="view-athlete-workouts">
-      {/* Progress overview */}
       <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">Overall Progress</p>
@@ -742,7 +962,7 @@ function AthleteWorkoutsView({ orgSlug }: { orgSlug: string }) {
                       key={s.id}
                       session={s}
                       completions={completions}
-                      onComplete={(id, notes, rating) => completeMutation.mutate({ sessionId: id, notes, rating })}
+                      onFinish={(sessionId, finishData) => finishMutation.mutate({ sessionId, finishData })}
                     />
                   ))}
                 </div>
@@ -758,19 +978,254 @@ function AthleteWorkoutsView({ orgSlug }: { orgSlug: string }) {
   );
 }
 
+// ─── Execution Monitor (Coach) ─────────────────────────────────────────────────
+function ExecutionMonitorTab({ orgId }: { orgId: string }) {
+  const { toast } = useToast();
+  const [trainChatRecId, setTrainChatRecId] = useState<string | null>(null);
+  const [coachNotes, setCoachNotes] = useState("");
+  const [trainChatResult, setTrainChatResult] = useState<any>(null);
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/org/workout-execution/coach-monitor"],
+    queryFn: () => fetch("/api/org/workout-execution/coach-monitor").then((r) => r.json()),
+    refetchInterval: 30000,
+  });
+
+  const updateRecMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest("PATCH", `/api/org/workout-execution/recommendations/${id}`, { status }),
+    onSuccess: () => { toast({ title: "Recommendation updated" }); refetch(); },
+    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
+  });
+
+  const trainChatMutation = useMutation({
+    mutationFn: ({ id, notes }: { id: string; notes: string }) =>
+      apiRequest("POST", `/api/org/workout-execution/recommendations/${id}/trainchat-review`, { coachNotes: notes || undefined }),
+    onSuccess: (data: any) => { setTrainChatResult(data); toast({ title: "TrainChat suggestion ready" }); },
+    onError: () => toast({ title: "TrainChat review failed", variant: "destructive" }),
+  });
+
+  if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  const { summary = {}, athleteStatuses = [], pendingRecs = [] } = data ?? {};
+
+  const FLAG_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
+    low_readiness: { label: "Low Readiness", color: "text-amber-400 border-amber-500/30 bg-amber-500/5", icon: Gauge },
+    high_soreness: { label: "High Soreness", color: "text-orange-400 border-orange-500/30 bg-orange-500/5", icon: Flame },
+    high_fatigue: { label: "High Fatigue", color: "text-red-400 border-red-500/30 bg-red-500/5", icon: BedDouble },
+    high_rpe: { label: "High RPE", color: "text-red-400 border-red-500/30 bg-red-500/5", icon: TrendingUp },
+    pain_reported: { label: "Pain Reported", color: "text-red-500 border-red-500/40 bg-red-500/10", icon: ShieldAlert },
+    incomplete_today: { label: "Incomplete", color: "text-muted-foreground border-border bg-muted/20", icon: ClipboardList },
+  };
+
+  const SEV_CONFIG: Record<string, { color: string; label: string }> = {
+    info: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Info" },
+    moderate: { color: "bg-amber-500/10 text-amber-400 border-amber-500/20", label: "Moderate" },
+    important: { color: "bg-red-500/10 text-red-400 border-red-500/30", label: "Important" },
+  };
+
+  const REC_LABELS: Record<string, string> = {
+    modify_session: "Modify Session",
+    reduce_volume: "Reduce Volume",
+    increase_recovery: "Increase Recovery",
+    progress_load: "Progress Load",
+    coach_review: "Coach Review Required",
+  };
+
+  return (
+    <div className="space-y-6" data-testid="view-execution-monitor">
+      {/* Summary alert cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Needs Review", value: summary.needsReview ?? 0, color: "border-red-500/20 bg-red-500/5", text: "text-red-400", icon: ShieldAlert },
+          { label: "Low Readiness", value: summary.lowReadiness ?? 0, color: "border-amber-500/20 bg-amber-500/5", text: "text-amber-400", icon: Gauge },
+          { label: "High Fatigue", value: summary.highFatigue ?? 0, color: "border-orange-500/20 bg-orange-500/5", text: "text-orange-400", icon: BedDouble },
+          { label: "Completed Today", value: summary.completedToday ?? 0, color: "border-emerald-500/20 bg-emerald-500/5", text: "text-emerald-400", icon: CheckCircle2 },
+        ].map(({ label, value, color, text, icon: Icon }) => (
+          <Card key={label} className={`p-4 ${color}`} data-testid={`card-monitor-${label.toLowerCase().replace(/\s/g, "-")}`}>
+            <Icon className={`h-5 w-5 ${text} mb-2`} />
+            <p className={`text-2xl font-bold ${text}`}>{value}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+          </Card>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{summary.totalAthletes ?? 0} athletes assigned · refreshes every 30s</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-monitor">
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
+        </Button>
+      </div>
+
+      {/* Athlete status feed */}
+      {athleteStatuses.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold">Athlete Status</h3>
+          <div className="space-y-2">
+            {athleteStatuses.map((a: any) => (
+              <Card key={a.athleteId} className="p-3" data-testid={`card-athlete-status-${a.athleteId}`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                      <p className="text-sm font-medium">{a.name || a.athleteId}</p>
+                      {a.completedToday && (
+                        <Badge className="text-xs bg-emerald-500/10 text-emerald-500 border-emerald-500/30">Completed today</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      {a.flags.map((flag: string) => {
+                        const cfg = FLAG_CONFIG[flag];
+                        if (!cfg) return null;
+                        const Icon = cfg.icon;
+                        return (
+                          <Badge key={flag} variant="outline" className={`text-xs gap-1 ${cfg.color}`}>
+                            <Icon className="h-3 w-3" /> {cfg.label}
+                          </Badge>
+                        );
+                      })}
+                      {a.latestCheckin && (
+                        <span className="text-xs text-muted-foreground">
+                          Readiness {a.latestCheckin.readinessScore}/10
+                          {a.avgRpe !== null && ` · Avg RPE ${a.avgRpe.toFixed(1)}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {athleteStatuses.length === 0 && (
+        <Card className="p-8 text-center space-y-2" data-testid="card-no-athletes">
+          <Activity className="h-8 w-8 text-muted-foreground mx-auto" />
+          <p className="text-sm font-medium">No athlete data yet</p>
+          <p className="text-xs text-muted-foreground">Data appears when athletes complete sessions with readiness check-ins.</p>
+        </Card>
+      )}
+
+      {/* Recommendation queue */}
+      {pendingRecs.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold">Adaptation Recommendations <Badge variant="outline" className="ml-1 text-xs">{pendingRecs.length}</Badge></h3>
+          <div className="space-y-3">
+            {pendingRecs.map((rec: any) => {
+              const sevCfg = SEV_CONFIG[rec.severity] ?? SEV_CONFIG.info;
+              return (
+                <Card key={rec.id} className="p-4 space-y-3" data-testid={`card-rec-${rec.id}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className={`text-xs ${sevCfg.color}`}>{sevCfg.label}</Badge>
+                        <Badge variant="outline" className="text-xs">{REC_LABELS[rec.recommendationType] ?? rec.recommendationType}</Badge>
+                        <span className="text-xs text-muted-foreground">{new Date(rec.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <p className="text-sm">{rec.reason}</p>
+                      {rec.suggestedChange && Object.keys(rec.suggestedChange).length > 0 && (
+                        <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded mt-1">
+                          {Object.entries(rec.suggestedChange).filter(([k]) => k !== "flag").map(([k, v]) => (
+                            <span key={k} className="mr-3">{k}: <strong>{String(v)}</strong></span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button size="sm" variant="outline" className="text-xs h-7"
+                      onClick={() => updateRecMutation.mutate({ id: rec.id, status: "accepted" })}
+                      disabled={updateRecMutation.isPending}
+                      data-testid={`button-accept-rec-${rec.id}`}
+                    >
+                      <Check className="h-3 w-3 mr-1" /> Accept
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-xs h-7"
+                      onClick={() => updateRecMutation.mutate({ id: rec.id, status: "dismissed" })}
+                      disabled={updateRecMutation.isPending}
+                      data-testid={`button-dismiss-rec-${rec.id}`}
+                    >
+                      <X className="h-3 w-3 mr-1" /> Dismiss
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-xs h-7 gap-1"
+                      onClick={() => { setTrainChatRecId(rec.id); setTrainChatResult(null); setCoachNotes(""); }}
+                      data-testid={`button-trainchat-rec-${rec.id}`}
+                    >
+                      <Brain className="h-3 w-3" /> Ask TrainChat
+                    </Button>
+                  </div>
+                  {trainChatRecId === rec.id && (
+                    <div className="border-t pt-3 space-y-2">
+                      <Textarea
+                        rows={2}
+                        placeholder="Add coach notes for TrainChat context (optional)..."
+                        value={coachNotes}
+                        onChange={(e) => setCoachNotes(e.target.value)}
+                        className="text-xs"
+                        data-testid="input-trainchat-coach-notes"
+                      />
+                      <Button size="sm" className="w-full text-xs"
+                        onClick={() => trainChatMutation.mutate({ id: rec.id, notes: coachNotes })}
+                        disabled={trainChatMutation.isPending}
+                        data-testid="button-trainchat-submit"
+                      >
+                        {trainChatMutation.isPending ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Asking TrainChat...</> : <><Brain className="h-3 w-3 mr-1" /> Get Modification Suggestions</>}
+                      </Button>
+                      {trainChatResult && (
+                        <div className="bg-primary/5 border border-primary/10 rounded p-3 space-y-1.5">
+                          <p className="text-xs font-semibold text-primary flex items-center gap-1"><Brain className="h-3 w-3" /> TrainChat Suggestion</p>
+                          <p className="text-xs text-muted-foreground">Review carefully before applying. No changes are made automatically.</p>
+                          <pre className="text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                            {typeof trainChatResult.suggestion === "string"
+                              ? trainChatResult.suggestion
+                              : JSON.stringify(trainChatResult.suggestion, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {pendingRecs.length === 0 && athleteStatuses.length > 0 && (
+        <Card className="p-6 text-center border-emerald-500/20 bg-emerald-500/5">
+          <CheckCircle2 className="h-6 w-6 text-emerald-500 mx-auto mb-2" />
+          <p className="text-sm font-medium text-emerald-400">No pending recommendations</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Athletes are on track. Recommendations appear after sessions are completed with readiness data.</p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── Main WorkoutBuilderPage ──────────────────────────────────────────────────
 export default function WorkoutBuilderPage({ program, orgSlug }: { program: any; orgSlug: string }) {
   const [showWizard, setShowWizard] = useState(false);
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
+  const [coachTab, setCoachTab] = useState<"library" | "monitor">("library");
 
   const { data: bootstrap, isLoading } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/bootstrap"],
     queryFn: () => fetch("/api/org/workout-builder/bootstrap").then((r) => r.json()),
   });
 
+  // Execution monitor summary for badge count
+  const { data: monitorData } = useQuery<any>({
+    queryKey: ["/api/org/workout-execution/coach-monitor"],
+    queryFn: () => fetch("/api/org/workout-execution/coach-monitor").then((r) => r.json()),
+    enabled: !!bootstrap && ["ADMIN", "COACH"].includes(bootstrap?.currentUser?.role ?? ""),
+    refetchInterval: 60000,
+  });
+
   const isCoach = ["ADMIN", "COACH"].includes(bootstrap?.currentUser?.role ?? "");
   const programs: any[] = bootstrap?.programs ?? [];
   const trainChatConnected: boolean = bootstrap?.trainChatConnected ?? false;
+  const needsReviewCount: number = monitorData?.summary?.needsReview ?? 0;
 
   if (isLoading) {
     return (
@@ -817,14 +1272,16 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
               <WifiOff className="h-3 w-3" /> TrainChat Not Connected
             </Badge>
           )}
-          <Button
-            size="sm"
-            onClick={() => setShowWizard(true)}
-            disabled={!trainChatConnected}
-            data-testid="button-generate-program-header"
-          >
-            <Plus className="h-4 w-4 mr-1.5" /> Generate Program
-          </Button>
+          {coachTab === "library" && (
+            <Button
+              size="sm"
+              onClick={() => setShowWizard(true)}
+              disabled={!trainChatConnected}
+              data-testid="button-generate-program-header"
+            >
+              <Plus className="h-4 w-4 mr-1.5" /> Generate Program
+            </Button>
+          )}
         </div>
       </div>
 
@@ -838,23 +1295,53 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
         </Card>
       )}
 
+      {/* Tab switcher */}
+      <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit" data-testid="tabs-coach-workout-builder">
+        <button
+          type="button"
+          onClick={() => { setCoachTab("library"); setSelectedProgramId(null); }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${coachTab === "library" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          data-testid="tab-library"
+        >
+          <ClipboardList className="h-3.5 w-3.5" /> Library
+        </button>
+        <button
+          type="button"
+          onClick={() => setCoachTab("monitor")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${coachTab === "monitor" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          data-testid="tab-execution-monitor"
+        >
+          <Activity className="h-3.5 w-3.5" /> Execution Monitor
+          {needsReviewCount > 0 && (
+            <span className="ml-1 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{needsReviewCount}</span>
+          )}
+        </button>
+      </div>
+
       <Separator />
 
-      {/* Program detail or library */}
-      {selectedProgramId ? (
-        <ProgramDetail
-          programId={selectedProgramId}
-          orgId={bootstrap?.org?.id ?? null}
-          isCoach={isCoach}
-          onBack={() => setSelectedProgramId(null)}
-          orgSlug={orgSlug}
-        />
-      ) : (
-        <CoachLibraryView
-          programs={programs}
-          onSelect={setSelectedProgramId}
-          onGenerate={() => setShowWizard(true)}
-        />
+      {/* Library tab */}
+      {coachTab === "library" && (
+        selectedProgramId ? (
+          <ProgramDetail
+            programId={selectedProgramId}
+            orgId={bootstrap?.org?.id ?? null}
+            isCoach={isCoach}
+            onBack={() => setSelectedProgramId(null)}
+            orgSlug={orgSlug}
+          />
+        ) : (
+          <CoachLibraryView
+            programs={programs}
+            onSelect={setSelectedProgramId}
+            onGenerate={() => setShowWizard(true)}
+          />
+        )
+      )}
+
+      {/* Execution Monitor tab */}
+      {coachTab === "monitor" && (
+        <ExecutionMonitorTab orgId={bootstrap?.org?.id ?? ""} />
       )}
 
       {/* Generate wizard */}

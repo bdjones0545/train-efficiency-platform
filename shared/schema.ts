@@ -1989,6 +1989,57 @@ export type WorkoutProgramAssignment = typeof workoutProgramAssignments.$inferSe
 export type WorkoutSession = typeof workoutSessions.$inferSelect;
 export type WorkoutCompletionLog = typeof workoutCompletionLogs.$inferSelect;
 
+// ─── Workout Execution Tables ─────────────────────────────────────────────────
+
+export const workoutReadinessCheckins = pgTable("workout_readiness_checkins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  workoutSessionId: varchar("workout_session_id"),
+  readinessScore: integer("readiness_score").notNull(),
+  sleepQuality: integer("sleep_quality"),
+  sorenessLevel: integer("soreness_level"),
+  fatigueLevel: integer("fatigue_level"),
+  stressLevel: integer("stress_level"),
+  motivationLevel: integer("motivation_level"),
+  painAreas: jsonb("pain_areas"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const workoutSessionExerciseLogs = pgTable("workout_session_exercise_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workoutSessionId: varchar("workout_session_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  exerciseName: varchar("exercise_name").notNull(),
+  prescribedData: jsonb("prescribed_data"),
+  completedData: jsonb("completed_data"),
+  rpe: integer("rpe"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const workoutAdaptationRecommendations = pgTable("workout_adaptation_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  workoutProgramId: varchar("workout_program_id").notNull(),
+  workoutSessionId: varchar("workout_session_id"),
+  recommendationType: varchar("recommendation_type").notNull(),
+  severity: varchar("severity").notNull().default("info"),
+  reason: text("reason").notNull(),
+  suggestedChange: jsonb("suggested_change"),
+  source: varchar("source").notNull().default("rules"),
+  status: varchar("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type WorkoutReadinessCheckin = typeof workoutReadinessCheckins.$inferSelect;
+export type WorkoutSessionExerciseLog = typeof workoutSessionExerciseLogs.$inferSelect;
+export type WorkoutAdaptationRecommendation = typeof workoutAdaptationRecommendations.$inferSelect;
+
 // ─── Org AI Integrations ──────────────────────────────────────────────────────
 
 export const orgAiIntegrations = pgTable("org_ai_integrations", {
