@@ -28,10 +28,14 @@ import {
   Wallet,
   Mail,
   AlertTriangle,
+  Building2,
+  Users,
+  CalendarCheck,
+  Wrench,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Service, Organization, OrganizationSubscriptionPlan } from "@shared/schema";
 import { MapPin } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -518,6 +522,8 @@ export default function AdminConfigurationPage() {
   });
 
   const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"business" | "coaches" | "booking" | "programs" | "billing" | "advanced">("business");
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const deleteOrgMutation = useMutation({
     mutationFn: async () => {
@@ -872,22 +878,230 @@ export default function AdminConfigurationPage() {
     });
   };
 
+  const TAB_LIST = [
+    { id: "business" as const, label: "Business", icon: Building2 },
+    { id: "coaches" as const, label: "Coaches", icon: Users },
+    { id: "booking" as const, label: "Booking", icon: CalendarCheck },
+    { id: "programs" as const, label: "Programs", icon: Trophy },
+    { id: "billing" as const, label: "Billing", icon: CreditCard },
+    { id: "advanced" as const, label: "Advanced", icon: Wrench },
+  ];
+
   return (
-    <div className="space-y-8" data-testid="page-admin-configuration">
-      <div>
+    <div className="min-h-0" data-testid="page-admin-configuration">
+      {/* ── Page Header ─────────────────────────────────────────────────────── */}
+      <div className="pb-4">
         <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-config-title">
           <Settings className="h-6 w-6" />
-          Configuration
+          Options
         </h1>
-        <p className="text-muted-foreground mt-1">Manage coaches, training options, pricing, and payout settings.</p>
+        <p className="text-sm text-muted-foreground mt-1">Manage coaches, training options, pricing, and organization settings.</p>
       </div>
 
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <UserPlus className="h-5 w-5" />
-            Coaches
-          </h2>
+      {/* ── Sticky Tab Nav ───────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b border-border/60 -mx-4 sm:-mx-6 px-4 sm:px-6 mb-6">
+        <div className="flex overflow-x-auto gap-0 -mb-px" style={{ scrollbarWidth: "none" }}>
+          {TAB_LIST.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                data-testid={`tab-${tab.id}`}
+                className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0 ${
+                  isActive
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Tab Content ──────────────────────────────────────────────────────── */}
+      <div ref={contentRef}>
+
+        {/* ════════════════════ BUSINESS ════════════════════ */}
+        <div className={activeTab !== "business" ? "hidden" : "space-y-8"}>
+
+          {/* Inquiry Contact Settings */}
+          <section>
+            <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              Inquiry Contact
+            </h2>
+            <Card className="p-4 space-y-5" data-testid="card-inquiry-settings">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Allow User Scheduling Inquiries</p>
+                  <p className="text-xs text-muted-foreground">Let the AI assistant offer to email your scheduling contact when users ask about availability or booking.</p>
+                </div>
+                <Switch
+                  checked={allowInquiries}
+                  onCheckedChange={setAllowInquiries}
+                  data-testid="switch-allow-inquiry-emails"
+                />
+              </div>
+              {allowInquiries && (
+                <div className="space-y-4 pt-1 border-t">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="inquiry-email" className="text-sm">Scheduling Inquiry Email</Label>
+                    <Input
+                      id="inquiry-email"
+                      placeholder="e.g. scheduling@yourgym.com"
+                      value={inquiryEmail}
+                      onChange={(e) => setInquiryEmail(e.target.value)}
+                      data-testid="input-inquiry-email"
+                    />
+                    <p className="text-xs text-muted-foreground">Where user inquiries will be sent. If blank, inquiry emails are disabled even if the toggle is on.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="inquiry-name" className="text-sm">Scheduling Contact Name</Label>
+                    <Input
+                      id="inquiry-name"
+                      placeholder="e.g. Bryan or the Scheduling Team"
+                      value={inquiryName}
+                      onChange={(e) => setInquiryName(e.target.value)}
+                      data-testid="input-inquiry-name"
+                    />
+                    <p className="text-xs text-muted-foreground">The name the AI uses when offering to send an inquiry. E.g. "Want me to send this to Bryan?"</p>
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => saveInquirySettingsMutation.mutate()}
+                  disabled={saveInquirySettingsMutation.isPending}
+                  data-testid="button-save-inquiry-settings"
+                >
+                  {saveInquirySettingsMutation.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</>
+                  ) : inquirySaved ? (
+                    <><Check className="h-4 w-4 mr-1" /> Saved</>
+                  ) : (
+                    <><Save className="h-4 w-4 mr-1" /> Save Settings</>
+                  )}
+                </Button>
+              </div>
+            </Card>
+          </section>
+
+          {/* Session Locations */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                Session Locations
+              </h2>
+              <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" data-testid="button-add-location">
+                    <Plus className="h-4 w-4 mr-1" /> Add Location
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add Location</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <Label>Location Name</Label>
+                      <Input
+                        placeholder="e.g. Downtown Gym (City, State)"
+                        value={newLocation}
+                        onChange={(e) => setNewLocation(e.target.value)}
+                        data-testid="input-new-location"
+                      />
+                    </div>
+                    <Button
+                      onClick={addLocation}
+                      disabled={updateLocationsMutation.isPending || !newLocation.trim()}
+                      data-testid="button-submit-location"
+                    >
+                      {updateLocationsMutation.isPending ? "Adding..." : "Add Location"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <div className="grid gap-2">
+              {(orgData?.locations || []).length === 0 && (
+                <p className="text-sm text-muted-foreground">No locations configured yet. Add locations that coaches can select when scheduling sessions.</p>
+              )}
+              {(orgData?.locations || []).map((loc, index) => (
+                <Card key={index} className="p-3 flex items-center justify-between" data-testid={`card-location-${index}`}>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium" data-testid={`text-location-${index}`}>{loc}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeLocation(index)}
+                    disabled={updateLocationsMutation.isPending}
+                    data-testid={`button-remove-location-${index}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </Card>
+              ))}
+            </div>
+          </section>
+
+          {/* Athletic Scheduling Toggle */}
+          <section>
+            <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
+              <Trophy className="h-4 w-4 text-muted-foreground" />
+              Athletic Scheduling
+            </h2>
+            <Card className="p-4 space-y-4" data-testid="card-athletic-settings">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Enable Athletic Scheduling</p>
+                  <p className="text-xs text-muted-foreground">Allow teams to book athletic training time slots on your landing page.</p>
+                </div>
+                <Switch
+                  checked={athleticEnabled}
+                  onCheckedChange={(checked) => toggleAthleticMutation.mutate(checked)}
+                  data-testid="switch-athletic-enabled"
+                />
+              </div>
+              {athleticEnabled && (
+                <p className="text-xs text-muted-foreground border-t pt-3">
+                  Athletic scheduling is enabled. Manage programs in the{" "}
+                  <button
+                    className="underline font-medium text-primary"
+                    onClick={() => setActiveTab("programs")}
+                    data-testid="link-go-to-programs"
+                  >
+                    Programs
+                  </button>{" "}
+                  tab.
+                </p>
+              )}
+            </Card>
+          </section>
+        </div>
+
+        {/* ════════════════════ COACHES ════════════════════ */}
+        <div className={activeTab !== "coaches" ? "hidden" : "space-y-8"}>
+
+          {/* Coaches Roster */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                Coaches
+              </h2>
           <Dialog open={coachDialogOpen} onOpenChange={setCoachDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" data-testid="button-add-coach">
@@ -1135,16 +1349,76 @@ export default function AdminConfigurationPage() {
             })()}
           </DialogContent>
         </Dialog>
-      </section>
+          </section>
 
-      <Separator />
+          {/* Default Coach Payout */}
+          <section>
+            <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
+              <Percent className="h-4 w-4 text-muted-foreground" />
+              Default Coach Payout
+            </h2>
+            <Card className="p-4" data-testid="card-payout-percentage">
+              <p className="text-sm text-muted-foreground mb-3">
+                The default percentage for coaches without a custom payout set. Individual coach percentages override this value. The owner always receives 100%.
+              </p>
+              {settingsLoading ? (
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              ) : payoutEditing ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Input type="number" min="0" max="100" className="w-24" value={payoutPercentage} onChange={(e) => setPayoutPercentage(e.target.value)} data-testid="input-payout-percentage" />
+                    <span className="text-sm font-medium">%</span>
+                  </div>
+                  <Button size="sm" disabled={updateSettingMutation.isPending} onClick={savePayout} data-testid="button-save-payout">
+                    <Save className="h-4 w-4 mr-1" />
+                    {updateSettingMutation.isPending ? "Saving..." : "Save"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setPayoutEditing(false)} data-testid="button-cancel-payout">
+                    <X className="h-4 w-4 mr-1" /> Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-bold" data-testid="text-payout-value">{settings?.coach_payout_percentage || "50"}%</span>
+                  <Button size="sm" variant="outline" onClick={startEditPayout} data-testid="button-edit-payout">
+                    <Pencil className="h-4 w-4 mr-1" /> Edit
+                  </Button>
+                </div>
+              )}
+            </Card>
+          </section>
 
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Dumbbell className="h-5 w-5" />
-            Training Options
-          </h2>
+          {/* Coach Transactions */}
+          <section>
+            <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+              Coach Transactions
+            </h2>
+            <Card className="p-4" data-testid="card-coach-transactions-settings">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Show Transactions in Sidebar</p>
+                  <p className="text-xs text-muted-foreground">Control whether coaches can see the Transactions page in their sidebar navigation.</p>
+                </div>
+                <Switch
+                  checked={orgData?.coachTransactionsVisible !== false}
+                  onCheckedChange={(checked) => toggleCoachTransactionsMutation.mutate(checked)}
+                  disabled={toggleCoachTransactionsMutation.isPending}
+                  data-testid="switch-coach-transactions-visible"
+                />
+              </div>
+            </Card>
+          </section>
+        </div>
+
+        {/* ════════════════════ BOOKING ════════════════════ */}
+        <div className={activeTab !== "booking" ? "hidden" : "space-y-8"}>
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                Training Options
+              </h2>
           <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" data-testid="button-add-service">
@@ -1587,80 +1861,17 @@ export default function AdminConfigurationPage() {
             <p className="text-sm text-muted-foreground">No training options yet.</p>
           )}
         </div>
-      </section>
-
-      <Separator />
-
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <MapPin className="h-5 w-5" />
-            Session Locations
-          </h2>
-          <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" data-testid="button-add-location">
-                <Plus className="h-4 w-4 mr-1" /> Add Location
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Location</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3 pt-2">
-                <div>
-                  <Label>Location Name</Label>
-                  <Input
-                    placeholder="e.g. Downtown Gym (City, State)"
-                    value={newLocation}
-                    onChange={(e) => setNewLocation(e.target.value)}
-                    data-testid="input-new-location"
-                  />
-                </div>
-                <Button
-                  onClick={addLocation}
-                  disabled={updateLocationsMutation.isPending || !newLocation.trim()}
-                  data-testid="button-submit-location"
-                >
-                  {updateLocationsMutation.isPending ? "Adding..." : "Add Location"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          </section>
         </div>
 
-        <div className="grid gap-2">
-          {(orgData?.locations || []).length === 0 && (
-            <p className="text-sm text-muted-foreground">No locations configured yet. Add locations that coaches can select when scheduling sessions.</p>
-          )}
-          {(orgData?.locations || []).map((loc, index) => (
-            <Card key={index} className="p-3 flex items-center justify-between" data-testid={`card-location-${index}`}>
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium" data-testid={`text-location-${index}`}>{loc}</span>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => removeLocation(index)}
-                disabled={updateLocationsMutation.isPending}
-                data-testid={`button-remove-location-${index}`}
-              >
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <Separator />
-
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <CreditCard className="h-5 w-5" />
-            Subscriptions
-          </h2>
+        {/* ════════════════════ BILLING ════════════════════ */}
+        <div className={activeTab !== "billing" ? "hidden" : "space-y-8"}>
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                Subscriptions
+              </h2>
           <div className="flex items-center gap-2">
             <Label htmlFor="subscriptions-toggle" className="text-sm text-muted-foreground">
               {orgData?.subscriptionsEnabled ? "Enabled" : "Disabled"}
@@ -1948,171 +2159,31 @@ export default function AdminConfigurationPage() {
             )}
           </div>
         )}
-      </section>
+          </section>
+        </div>
 
-      <Separator />
-
-      <section>
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-          <Percent className="h-5 w-5" />
-          Default Coach Payout Percentage
-        </h2>
-        <Card className="p-4" data-testid="card-payout-percentage">
-          <p className="text-sm text-muted-foreground mb-3">
-            The default percentage for coaches without a custom payout set above. Individual coach percentages override this value. The owner always receives 100%.
-          </p>
-          {settingsLoading ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          ) : payoutEditing ? (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  className="w-24"
-                  value={payoutPercentage}
-                  onChange={(e) => setPayoutPercentage(e.target.value)}
-                  data-testid="input-payout-percentage"
-                />
-                <span className="text-sm font-medium">%</span>
+        {/* ════════════════════ PROGRAMS ════════════════════ */}
+        <div className={activeTab !== "programs" ? "hidden" : "space-y-8"}>
+          {!athleticEnabled && (
+            <Card className="p-4" data-testid="card-programs-disabled">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Athletic scheduling is not enabled</p>
+                  <p className="text-xs text-muted-foreground">Enable it in the Business tab first, then return here to manage programs.</p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("business")} data-testid="link-enable-athletic">
+                  Go to Business
+                </Button>
               </div>
-              <Button
-                size="sm"
-                disabled={updateSettingMutation.isPending}
-                onClick={savePayout}
-                data-testid="button-save-payout"
-              >
-                <Save className="h-4 w-4 mr-1" />
-                {updateSettingMutation.isPending ? "Saving..." : "Save"}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setPayoutEditing(false)} data-testid="button-cancel-payout">
-                <X className="h-4 w-4 mr-1" /> Cancel
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <span className="text-2xl font-bold" data-testid="text-payout-value">
-                {settings?.coach_payout_percentage || "50"}%
-              </span>
-              <Button size="sm" variant="outline" onClick={startEditPayout} data-testid="button-edit-payout">
-                <Pencil className="h-4 w-4 mr-1" /> Edit
-              </Button>
-            </div>
+            </Card>
           )}
-        </Card>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-          <Wallet className="h-5 w-5" />
-          Coach Transactions
-        </h2>
-        <Card className="p-4" data-testid="card-coach-transactions-settings">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Show Transactions in Sidebar</p>
-              <p className="text-xs text-muted-foreground">Control whether coaches can see the Transactions page in their sidebar navigation.</p>
-            </div>
-            <Switch
-              checked={orgData?.coachTransactionsVisible !== false}
-              onCheckedChange={(checked) => toggleCoachTransactionsMutation.mutate(checked)}
-              disabled={toggleCoachTransactionsMutation.isPending}
-              data-testid="switch-coach-transactions-visible"
-            />
-          </div>
-        </Card>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-          <Mail className="h-5 w-5" />
-          Inquiry Contact Settings
-        </h2>
-        <Card className="p-4 space-y-5" data-testid="card-inquiry-settings">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Allow User Scheduling Inquiries</p>
-              <p className="text-xs text-muted-foreground">Let the AI assistant offer to email your scheduling contact when users ask about availability or booking.</p>
-            </div>
-            <Switch
-              checked={allowInquiries}
-              onCheckedChange={setAllowInquiries}
-              data-testid="switch-allow-inquiry-emails"
-            />
-          </div>
-          {allowInquiries && (
-            <div className="space-y-4 pt-1 border-t">
-              <div className="space-y-1.5">
-                <Label htmlFor="inquiry-email" className="text-sm">Scheduling Inquiry Email</Label>
-                <Input
-                  id="inquiry-email"
-                  placeholder="e.g. scheduling@yourgym.com"
-                  value={inquiryEmail}
-                  onChange={(e) => setInquiryEmail(e.target.value)}
-                  data-testid="input-inquiry-email"
-                />
-                <p className="text-xs text-muted-foreground">Where user inquiries will be sent. If blank, inquiry emails are disabled even if the toggle is on.</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="inquiry-name" className="text-sm">Scheduling Contact Name</Label>
-                <Input
-                  id="inquiry-name"
-                  placeholder="e.g. Bryan or the Scheduling Team"
-                  value={inquiryName}
-                  onChange={(e) => setInquiryName(e.target.value)}
-                  data-testid="input-inquiry-name"
-                />
-                <p className="text-xs text-muted-foreground">The name the AI uses when offering to send an inquiry. E.g. "Want me to send this to Bryan?"</p>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              onClick={() => saveInquirySettingsMutation.mutate()}
-              disabled={saveInquirySettingsMutation.isPending}
-              data-testid="button-save-inquiry-settings"
-            >
-              {saveInquirySettingsMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</>
-              ) : inquirySaved ? (
-                <><Check className="h-4 w-4 mr-1" /> Saved</>
-              ) : (
-                <><Save className="h-4 w-4 mr-1" /> Save Settings</>
-              )}
-            </Button>
-          </div>
-        </Card>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-          <Trophy className="h-5 w-5" />
-          Athletic Programs
-        </h2>
-        <Card className="p-4 space-y-4" data-testid="card-athletic-settings">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Enable Athletic Scheduling</p>
-              <p className="text-xs text-muted-foreground">Allow teams to book athletic training time slots on your landing page.</p>
-            </div>
-            <Switch
-              checked={athleticEnabled}
-              onCheckedChange={(checked) => toggleAthleticMutation.mutate(checked)}
-              data-testid="switch-athletic-enabled"
-            />
-          </div>
-        </Card>
-      </section>
-
-      {athleticEnabled && (
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Trophy className="h-5 w-5" />
-              Programs
-            </h2>
+          {athleticEnabled && (
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-semibold flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-muted-foreground" />
+                  Athletic Programs
+                </h2>
             <Button size="sm" onClick={() => setAddingProgram(true)} data-testid="button-add-program">
               <Plus className="h-4 w-4 mr-1" /> Add Program
             </Button>
@@ -2372,11 +2443,50 @@ export default function AdminConfigurationPage() {
               <p className="text-sm text-muted-foreground text-center py-6">No athletic programs yet. Click "Add Program" to create one.</p>
             )}
           </div>
-        </section>
-      )}
+          </section>
+          )}
+        </div>
 
-      {/* ── Danger Zone ──────────────────────────────────────────────────────── */}
-      <section className="mt-8">
+        {/* ════════════════════ ADVANCED ════════════════════ */}
+        <div className={activeTab !== "advanced" ? "hidden" : "space-y-8"}>
+          <section>
+            <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              System
+            </h2>
+            <div className="grid gap-3">
+              <Card className="p-4 opacity-60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">AI Settings</p>
+                    <p className="text-xs text-muted-foreground">Configure AI assistant behavior and thresholds.</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
+                </div>
+              </Card>
+              <Card className="p-4 opacity-60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Automation Rules</p>
+                    <p className="text-xs text-muted-foreground">Set up automated follow-ups, reminders, and triggers.</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
+                </div>
+              </Card>
+              <Card className="p-4 opacity-60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Integrations</p>
+                    <p className="text-xs text-muted-foreground">Connect third-party tools and services.</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
+                </div>
+              </Card>
+            </div>
+          </section>
+
+          {/* ── Danger Zone ─────────────────────────────────────────────────────── */}
+          <section className="mt-4">
         <Card className="border-destructive/50 bg-destructive/5">
           <div className="p-6 space-y-4">
             <div className="flex items-center gap-2">
@@ -2402,7 +2512,9 @@ export default function AdminConfigurationPage() {
             </div>
           </div>
         </Card>
-      </section>
+          </section>
+        </div>
+      </div>
 
       {/* ── Delete org confirmation dialog ───────────────────────────────────── */}
       <AlertDialog open={deleteOrgDialogOpen} onOpenChange={setDeleteOrgDialogOpen}>
