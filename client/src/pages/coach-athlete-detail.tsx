@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import PlayerCard from "@/components/pr-tracker/PlayerCard";
 import type { PlayerCardProfile } from "@/components/pr-tracker/PlayerCard";
+import PRIntelligencePanel from "@/components/pr-tracker/PRIntelligencePanel";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -631,7 +632,15 @@ export default function CoachAthleteDetailPage() {
             </Card>
           </section>
 
-          {/* ── 8. Player Card Preview ──────────────────────────────────── */}
+          {/* ── 8. PR Intelligence Panel ────────────────────────────────── */}
+          <PRIntelligencePanel
+            athleteUserId={userId}
+            orgToken={orgToken}
+            athleteName={profile.athlete.name}
+            coachNotes={editingNotes}
+          />
+
+          {/* ── 9. Player Card Preview ──────────────────────────────────── */}
           <section data-testid="section-player-card">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">

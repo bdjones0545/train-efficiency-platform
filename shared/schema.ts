@@ -1816,6 +1816,51 @@ export const prImportJobs = pgTable("pr_import_jobs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ─── PR Intelligence Agent ────────────────────────────────────────────────────
+
+export const prAgentResearchJobs = pgTable("pr_agent_research_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  coachUserId: varchar("coach_user_id").notNull(),
+  status: varchar("status").notNull().default("pending"),
+  query: jsonb("query"),
+  result: jsonb("result"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const athletePublicProfiles = pgTable("athlete_public_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  sourceName: varchar("source_name"),
+  sourceUrl: text("source_url"),
+  sourceTitle: text("source_title"),
+  confidenceScore: doublePrecision("confidence_score").default(0),
+  extractedData: jsonb("extracted_data"),
+  approvedByCoachId: varchar("approved_by_coach_id"),
+  approvedAt: timestamp("approved_at"),
+  status: varchar("status").notNull().default("pending_review"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const athleteAiSummaries = pgTable("athlete_ai_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  coachUserId: varchar("coach_user_id").notNull(),
+  summaryType: varchar("summary_type").notNull(),
+  sourceSnapshot: jsonb("source_snapshot"),
+  generatedText: text("generated_text").notNull(),
+  editedText: text("edited_text"),
+  status: varchar("status").notNull().default("draft"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // ─── Org Notification Preferences ────────────────────────────────────────────
 
 export const orgNotificationPreferences = pgTable("org_notification_preferences", {

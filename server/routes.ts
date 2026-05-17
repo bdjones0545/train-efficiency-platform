@@ -13304,6 +13304,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerPrTrackerRoutes } = await import("./pr-tracker-routes");
   registerPrTrackerRoutes(app);
 
+  // ── PR Intelligence Agent ─────────────────────────────────────────────────
+  const { registerPrIntelligenceRoutes } = await import("./pr-intelligence-routes");
+  registerPrIntelligenceRoutes(app);
+
   // ── Org Schedule Routes ───────────────────────────────────────────────────
   const { registerOrgScheduleRoutes } = await import("./org-schedule-routes");
   registerOrgScheduleRoutes(app);
