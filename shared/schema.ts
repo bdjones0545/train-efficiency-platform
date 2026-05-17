@@ -48,6 +48,8 @@ export const organizations = pgTable("organizations", {
   allowUserInquiryEmails: boolean("allow_user_inquiry_emails").default(true),
   timezone: varchar("timezone").default("America/New_York"),
   socialPreviewImageUrl: text("social_preview_image_url"),
+  allowGuestBooking: boolean("allow_guest_booking").default(true),
+  requireLoginToBook: boolean("require_login_to_book").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -455,6 +457,8 @@ export const athleticBookings = pgTable("athletic_bookings", {
   teamName: varchar("team_name").notNull(),
   trainingType: varchar("training_type").notNull().default("strength"),
   bookedBy: varchar("booked_by"),
+  orgUserId: varchar("org_user_id"),
+  bookerEmail: varchar("booker_email"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

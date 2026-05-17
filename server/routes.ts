@@ -20,6 +20,9 @@ import {
   organizationSubscriptionPlans,
   availabilityBlocks as availabilityBlocksSchema,
   bookings as bookingsSchema,
+  athleticBookings,
+  orgSessions,
+  orgUsers,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql, or, lt, gt, ne } from "drizzle-orm";
@@ -6300,8 +6303,43 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       }
       const validTypes = program.trainingTypes || ["Strength", "Speed"];
       const finalType = trainingType || validTypes[0] || "Strength";
+      // Org auth integration — optionally link booking to an org user
+      let resolvedOrgUserId: string | null = null;
+      let resolvedBookerEmail: string | null = null;
+      const orgAuthToken = req.headers["x-org-auth-token"] as string | undefined;
+      if (orgAuthToken) {
+        try {
+          const tokenHash = crypto.createHash("sha256").update(orgAuthToken).digest("hex");
+          const now = new Date();
+          const sessions = await db.select().from(orgSessions)
+            .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
+            .limit(1);
+          if (sessions.length) {
+            const [orgUserRow] = await db.select().from(orgUsers)
+              .where(eq(orgUsers.id, sessions[0].userId)).limit(1);
+            if (orgUserRow) {
+              resolvedOrgUserId = orgUserRow.id;
+              resolvedBookerEmail = orgUserRow.email;
+            }
+          }
+        } catch {}
+      }
+
+      // Enforce login requirement if org setting is enabled
+      if (bookingOrg.requireLoginToBook && !resolvedOrgUserId) {
+        return res.status(401).json({ message: "Login required to book sessions for this program" });
+      }
+
       const booking = await storage.createAthleticBooking({ organizationId: program.organizationId, programId, date, timeSlot, teamName, trainingType: finalType, bookedBy: bookedBy || null });
-      res.json(booking);
+
+      // Attach org user identity to the booking if authenticated
+      if (resolvedOrgUserId) {
+        await db.update(athleticBookings)
+          .set({ orgUserId: resolvedOrgUserId, bookerEmail: resolvedBookerEmail })
+          .where(eq(athleticBookings.id, booking.id));
+      }
+
+      res.json({ ...booking, orgUserId: resolvedOrgUserId, bookerEmail: resolvedBookerEmail });
     } catch (error) {
       console.error("Error creating athletic booking:", error);
       res.status(500).json({ message: "Failed to create athletic booking" });
@@ -13265,6 +13303,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // ── PR Tracker & Shared Org Auth ─────────────────────────────────────────
   const { registerPrTrackerRoutes } = await import("./pr-tracker-routes");
   registerPrTrackerRoutes(app);
+
+  // ── Org Schedule Routes ───────────────────────────────────────────────────
+  const { registerOrgScheduleRoutes } = await import("./org-schedule-routes");
+  registerOrgScheduleRoutes(app);
 
   return httpServer;
 }

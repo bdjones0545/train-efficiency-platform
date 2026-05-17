@@ -74,6 +74,7 @@ import { AttentionBell } from "@/components/attention-bell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
+import OrgMySchedulePage from "@/pages/org-my-schedule";
 
 interface SubscriptionStatus {
   status: string;
@@ -188,6 +189,7 @@ function AuthenticatedLayout() {
                   <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
                   <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
                   <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
+                  <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/settings" component={SettingsPage} />
@@ -258,6 +260,7 @@ function PublicLayout() {
       <Route path="/sessions" component={OpenSessionsPublicPage} />
       <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
       <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
+      <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,30 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Clock, Users, Trophy, ArrowLeft, Zap, Dumbbell, X, AlertTriangle } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Users,
+  Trophy,
+  ArrowLeft,
+  Zap,
+  Dumbbell,
+  X,
+  AlertTriangle,
+  User,
+  LogOut,
+  CalendarCheck,
+  Settings2,
+  Lock,
+} from "lucide-react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
+import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import type { AthleticBooking, AthleticProgram } from "@shared/schema";
 
 const SLOT_HEIGHT_PX = 120;
@@ -135,6 +152,46 @@ export default function AthleticSchedulingPage() {
   const [trainingType, setTrainingType] = useState(trainingTypes[0] || "Strength");
   const { toast } = useToast();
 
+  // ── Org Auth State ────────────────────────────────────────────────────────
+  const [orgToken, setOrgToken] = useState<string | null>(null);
+  const [orgUser, setOrgUser] = useState<any>(null);
+  const [orgMembership, setOrgMembership] = useState<any>(null);
+  const [showOrgAuth, setShowOrgAuth] = useState(false);
+  const [pendingSlot, setPendingSlot] = useState<{ id: string; label: string; hour: number } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+
+  // Load org token after orgId is available
+  useEffect(() => {
+    if (!orgId) return;
+    const token = localStorage.getItem(`orgToken_${orgId}`);
+    if (!token) return;
+    fetch("/api/org-auth/me", { headers: { "X-Org-Auth-Token": token } })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data) => {
+        setOrgToken(token);
+        setOrgUser(data.user);
+        setOrgMembership(data.membership);
+      })
+      .catch(() => {
+        localStorage.removeItem(`orgToken_${orgId}`);
+      });
+  }, [orgId]);
+
+  // Booking settings
+  const { data: bookingSettings, refetch: refetchSettings } = useQuery<{
+    allowGuestBooking: boolean;
+    requireLoginToBook: boolean;
+  }>({
+    queryKey: ["/api/org/booking-settings", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/org/booking-settings?orgId=${orgId}`);
+      if (!res.ok) throw new Error("Failed to load settings");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
   const dateStr = format(selectedDate, "yyyy-MM-dd");
   const programId = resolvedProgram?.id;
 
@@ -164,7 +221,17 @@ export default function AthleticSchedulingPage() {
 
   const bookMutation = useMutation({
     mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; programId: string }) => {
-      const res = await apiRequest("POST", "/api/athletic/bookings", data);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const res = await fetch("/api/athletic/bookings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to book");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -173,16 +240,31 @@ export default function AthleticSchedulingPage() {
       setTeamName("");
       setTrainingType(trainingTypes[0] || "Strength");
       setSelectedSlot(null);
-      toast({ title: "Scheduled!", description: "Your team has been booked for this time slot." });
+      const scheduleUrl = `/org/${slug}/my-schedule`;
+      toast({
+        title: "Booked!",
+        description: orgToken
+          ? "Your session is confirmed and saved to your account."
+          : "Your team has been booked for this time slot.",
+        action: orgToken ? (
+          <a href={scheduleUrl} className="underline text-sm font-medium">View My Schedule</a>
+        ) : undefined,
+      } as any);
     },
     onError: (error: any) => {
+      if (error.message?.includes("Login required")) {
+        setPendingSlot(selectedSlot);
+        setScheduleDialogOpen(false);
+        setShowOrgAuth(true);
+        return;
+      }
       toast({ title: "Could not schedule", description: error.message || "This slot may be full.", variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (bookingId: string) => {
-      const res = await apiRequest("DELETE", `/api/athletic/bookings/${bookingId}`);
+      const res = await fetch(`/api/athletic/bookings/${bookingId}`, { method: "DELETE" });
       return res.json();
     },
     onSuccess: () => {
@@ -201,8 +283,16 @@ export default function AthleticSchedulingPage() {
   const handleSlotClick = (slot: { id: string; label: string; hour: number }) => {
     const slotBookings = getSlotBookings(slot.id);
     if (slotBookings.length >= maxTeamsPerSlot) return;
+
+    // If login is required and user is not logged in, prompt auth first
+    if (bookingSettings?.requireLoginToBook && !orgToken) {
+      setPendingSlot(slot);
+      setShowOrgAuth(true);
+      return;
+    }
+
     setSelectedSlot(slot);
-    setTeamName("");
+    setTeamName(orgUser?.name || "");
     setTrainingType(trainingTypes[0] || "Strength");
     setScheduleDialogOpen(true);
   };
@@ -219,9 +309,56 @@ export default function AthleticSchedulingPage() {
     });
   };
 
+  function handleOrgAuthenticated(token: string, user: any, membership: any) {
+    if (orgId) localStorage.setItem(`orgToken_${orgId}`, token);
+    setOrgToken(token);
+    setOrgUser(user);
+    setOrgMembership(membership);
+    setShowOrgAuth(false);
+    // If there was a pending slot, open the booking dialog for it
+    if (pendingSlot) {
+      setSelectedSlot(pendingSlot);
+      setTeamName(user.name || "");
+      setTrainingType(trainingTypes[0] || "Strength");
+      setScheduleDialogOpen(true);
+      setPendingSlot(null);
+    }
+  }
+
+  function handleLogout() {
+    if (orgId) localStorage.removeItem(`orgToken_${orgId}`);
+    setOrgToken(null);
+    setOrgUser(null);
+    setOrgMembership(null);
+  }
+
+  async function handleToggleSetting(key: "allowGuestBooking" | "requireLoginToBook", value: boolean) {
+    if (!orgToken) return;
+    setSettingsLoading(true);
+    try {
+      const res = await fetch("/api/org/booking-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      await refetchSettings();
+      toast({ title: "Setting updated" });
+    } catch (err: any) {
+      toast({ title: "Failed to update setting", description: err.message, variant: "destructive" });
+    } finally {
+      setSettingsLoading(false);
+    }
+  }
+
   const totalBooked = bookings?.length || 0;
   const slotsAvailable = timeSlots.filter(s => getSlotBookings(s.id).length < maxTeamsPerSlot).length;
   const backUrl = `/org/${slug}`;
+  const myScheduleUrl = `/org/${slug}/my-schedule`;
+  const isCoach = orgMembership?.role === "coach";
 
   if (orgLoading || programLoading) {
     return (
@@ -288,7 +425,42 @@ export default function AthleticSchedulingPage() {
               {org.name}
             </span>
           </a>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {orgUser ? (
+              <>
+                <span className="text-sm text-muted-foreground hidden sm:flex items-center gap-1.5">
+                  <User className="h-3.5 w-3.5" />
+                  <span data-testid="text-nav-user-name">{orgUser.name}</span>
+                </span>
+                <a href={myScheduleUrl}>
+                  <Button variant="ghost" size="sm" data-testid="link-my-schedule">
+                    <CalendarCheck className="h-4 w-4 mr-1" /> My Schedule
+                  </Button>
+                </a>
+                {isCoach && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowSettings(v => !v)}
+                    data-testid="button-settings-toggle"
+                  >
+                    <Settings2 className="h-4 w-4 mr-1" /> Settings
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" onClick={handleLogout} data-testid="button-logout">
+                  <LogOut className="h-4 w-4 mr-1" /> Log Out
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowOrgAuth(true)}
+                data-testid="button-login"
+              >
+                <User className="h-4 w-4 mr-1" /> Log In
+              </Button>
+            )}
             <a href={backUrl}>
               <Button variant="ghost" size="sm" data-testid="link-back-home">
                 <ArrowLeft className="h-4 w-4 mr-1" />
@@ -309,6 +481,83 @@ export default function AthleticSchedulingPage() {
               <p className="text-muted-foreground mt-1">Daily calendar view — {formatHour(startHour)} to {formatHour(endHour)}</p>
             </div>
           </div>
+
+          {/* Coach Settings Panel */}
+          {isCoach && showSettings && bookingSettings && (
+            <Card className="p-4 space-y-3 border-primary/20 bg-primary/5" data-testid="card-coach-settings">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-primary" />
+                Booking Settings
+              </h3>
+              <div className="space-y-2">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-sm text-muted-foreground">Allow guest booking (no login required)</span>
+                  <button
+                    type="button"
+                    disabled={settingsLoading}
+                    onClick={() => handleToggleSetting("allowGuestBooking", !bookingSettings.allowGuestBooking)}
+                    className={`relative inline-flex h-5 w-9 rounded-full transition-colors ${bookingSettings.allowGuestBooking ? "bg-primary" : "bg-muted-foreground/30"}`}
+                    data-testid="toggle-allow-guest"
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ${bookingSettings.allowGuestBooking ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                </label>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-sm text-muted-foreground">Require login to book</span>
+                  <button
+                    type="button"
+                    disabled={settingsLoading}
+                    onClick={() => handleToggleSetting("requireLoginToBook", !bookingSettings.requireLoginToBook)}
+                    className={`relative inline-flex h-5 w-9 rounded-full transition-colors ${bookingSettings.requireLoginToBook ? "bg-primary" : "bg-muted-foreground/30"}`}
+                    data-testid="toggle-require-login"
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ${bookingSettings.requireLoginToBook ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                </label>
+              </div>
+            </Card>
+          )}
+
+          {/* Soft login banner — shown to guests when login is not required */}
+          {!orgToken && bookingSettings && !bookingSettings.requireLoginToBook && (
+            <div
+              className="flex items-center gap-3 rounded-md border border-primary/20 bg-primary/5 px-4 py-2.5"
+              data-testid="banner-login-prompt"
+            >
+              <User className="h-4 w-4 text-primary flex-shrink-0" />
+              <p className="text-sm text-muted-foreground flex-1">
+                <button
+                  onClick={() => setShowOrgAuth(true)}
+                  className="underline text-primary font-medium"
+                  data-testid="link-banner-login"
+                >
+                  Log in
+                </button>{" "}
+                to track your bookings and view your schedule history.
+              </p>
+            </div>
+          )}
+
+          {/* Login required banner — shown when requireLoginToBook is true and guest is visiting */}
+          {!orgToken && bookingSettings?.requireLoginToBook && (
+            <div
+              className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-2.5"
+              data-testid="banner-login-required"
+            >
+              <Lock className="h-4 w-4 text-destructive flex-shrink-0" />
+              <p className="text-sm text-muted-foreground flex-1">
+                Login is required to book sessions.{" "}
+                <button
+                  onClick={() => setShowOrgAuth(true)}
+                  className="underline text-primary font-medium"
+                  data-testid="link-banner-login-required"
+                >
+                  Log in or sign up
+                </button>{" "}
+                to continue.
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-2">
@@ -398,37 +647,40 @@ export default function AthleticSchedulingPage() {
                   <div key={slot.id}>
                     <div
                       className="absolute left-0 right-0 border-b border-border/50"
-                      style={{ top: `${top}px` }}
+                      style={{ top: `${top}px`, height: `${SLOT_HEIGHT_PX}px` }}
+                      data-testid={`slot-row-${slot.id}`}
                     >
-                      <span className="absolute left-2 top-1 text-xs text-muted-foreground font-medium" data-testid={`text-hour-${slot.id}`}>
-                        {formatHour(slot.hour)}
+                      <span className="absolute left-2 top-2 text-xs text-muted-foreground font-medium w-10 text-right">
+                        {slot.label}
                       </span>
                     </div>
 
-                    <div
-                      className={`absolute left-0 right-0 ${isFull ? "bg-destructive/5" : "bg-primary/5"}`}
-                      style={{ top: `${top}px`, height: `${SLOT_HEIGHT_PX}px` }}
-                    />
-
-                    {slotBookings.map((booking, j) => (
+                    {slotBookings.map((booking, bi) => (
                       <div
                         key={booking.id}
-                        className="absolute left-14 right-2 rounded-md border px-3 py-2 bg-primary/10 border-primary/20"
+                        className={`absolute left-14 right-2 rounded-md px-3 flex items-center ${
+                          isFull
+                            ? "bg-destructive/10 border border-destructive/20"
+                            : "bg-primary/10 border border-primary/20"
+                        }`}
                         style={{
-                          top: `${top + 4 + j * 52}px`,
-                          height: "44px",
+                          top: `${top + 4 + bi * 52}px`,
+                          height: "48px",
                           zIndex: 10,
                         }}
                         data-testid={`booking-block-${booking.id}`}
                       >
-                        <div className="flex items-center gap-2 h-full">
+                        <div className="flex items-center gap-2 h-full w-full">
                           <Trophy className="h-4 w-4 text-primary flex-shrink-0" />
-                          <span className="text-sm font-semibold truncate" data-testid={`text-team-name-${booking.id}`}>
+                          <span className="text-sm font-semibold truncate flex-1" data-testid={`text-team-name-${booking.id}`}>
                             {booking.teamName}
                           </span>
                           <Badge variant="secondary" className="flex-shrink-0" data-testid={`badge-training-type-${booking.id}`}>
                             {booking.trainingType}
                           </Badge>
+                          {(booking as any).orgUserId && (
+                            <User className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" title="Booked by a logged-in member" />
+                          )}
                           <button
                             className="ml-auto flex-shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                             onClick={(e) => {
@@ -459,7 +711,9 @@ export default function AthleticSchedulingPage() {
                       >
                         <div className="h-full w-full rounded-md border border-dashed border-transparent group-hover:border-primary/30 group-hover:bg-primary/5 flex items-center justify-center transition-colors">
                           <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                            Click to schedule a team
+                            {bookingSettings?.requireLoginToBook && !orgToken
+                              ? "Log in to book a slot"
+                              : "Click to schedule a team"}
                           </span>
                         </div>
                       </div>
@@ -496,6 +750,7 @@ export default function AthleticSchedulingPage() {
         </div>
       </main>
 
+      {/* Booking Dialog */}
       <Dialog open={scheduleDialogOpen} onOpenChange={(open) => {
         setScheduleDialogOpen(open);
         if (!open) {
@@ -518,6 +773,12 @@ export default function AthleticSchedulingPage() {
               )}
             </DialogDescription>
           </DialogHeader>
+          {orgUser && (
+            <div className="flex items-center gap-2 px-1 py-1 bg-primary/5 rounded-md text-xs text-muted-foreground">
+              <User className="h-3.5 w-3.5 text-primary" />
+              Booking as <span className="font-medium text-foreground">{orgUser.name}</span> — saved to your account
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4 pt-2">
             <div className="space-y-2">
               <label htmlFor="team-name" className="text-sm font-medium">
@@ -571,6 +832,20 @@ export default function AthleticSchedulingPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Org Auth Modal */}
+      {showOrgAuth && org && orgId && (
+        <OrgAuthModal
+          orgId={orgId}
+          programId={resolvedProgram?.id}
+          programName={org.name}
+          onAuthenticated={handleOrgAuthenticated}
+          onClose={() => {
+            setShowOrgAuth(false);
+            setPendingSlot(null);
+          }}
+        />
+      )}
     </div>
   );
 }

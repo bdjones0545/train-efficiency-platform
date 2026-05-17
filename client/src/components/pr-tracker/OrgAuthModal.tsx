@@ -9,12 +9,13 @@ import { Loader2, Trophy } from "lucide-react";
 
 interface OrgAuthModalProps {
   orgId: string;
-  programId: string;
+  programId?: string;
   programName: string;
   onAuthenticated: (token: string, user: any, membership: any) => void;
+  onClose?: () => void;
 }
 
-export function OrgAuthModal({ orgId, programId, programName, onAuthenticated }: OrgAuthModalProps) {
+export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticated, onClose }: OrgAuthModalProps) {
   const { toast } = useToast();
   const [tab, setTab] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
@@ -83,14 +84,14 @@ export function OrgAuthModal({ orgId, programId, programName, onAuthenticated }:
   }
 
   return (
-    <Dialog open modal>
-      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+    <Dialog open modal onOpenChange={(open) => { if (!open && onClose) onClose(); }}>
+      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => { if (!onClose) e.preventDefault(); }}>
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">
             <Trophy className="h-5 w-5 text-primary" />
             <DialogTitle className="text-base">{programName}</DialogTitle>
           </div>
-          <p className="text-xs text-muted-foreground">Sign in to access PR Tracker</p>
+          <p className="text-xs text-muted-foreground">Sign in to your {programName} account</p>
         </DialogHeader>
 
         {/* Tab switcher */}

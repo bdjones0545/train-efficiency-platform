@@ -15,14 +15,14 @@ interface PrTrackerProps {
   orgSlug: string;
 }
 
-function getTokenKey(orgId: string, programId: string) {
-  return `prToken_${orgId}_${programId}`;
+function getTokenKey(orgId: string) {
+  return `orgToken_${orgId}`;
 }
 
 export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   const orgId = program.organizationId;
   const programId = program.id;
-  const tokenKey = getTokenKey(orgId, programId);
+  const tokenKey = getTokenKey(orgId);
 
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(tokenKey));
   const [bootstrap, setBootstrap] = useState<any>(null);
