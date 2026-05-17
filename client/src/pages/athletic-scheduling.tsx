@@ -28,6 +28,7 @@ import {
   CalendarCheck,
   Settings2,
   Lock,
+  LayoutDashboard,
 } from "lucide-react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
@@ -432,6 +433,11 @@ export default function AthleticSchedulingPage() {
                   <User className="h-3.5 w-3.5" />
                   <span data-testid="text-nav-user-name">{orgUser.name}</span>
                 </span>
+                <a href={`/org/${slug}/portal`} data-testid="link-portal">
+                  <Button variant="ghost" size="sm">
+                    <LayoutDashboard className="h-4 w-4 mr-1" /> Portal
+                  </Button>
+                </a>
                 <a href={myScheduleUrl}>
                   <Button variant="ghost" size="sm" data-testid="link-my-schedule">
                     <CalendarCheck className="h-4 w-4 mr-1" /> My Schedule

@@ -19,6 +19,7 @@ import {
   LogOut,
   ChevronDown,
   ChevronUp,
+  LayoutDashboard,
 } from "lucide-react";
 
 interface BootstrapData {
@@ -33,6 +34,7 @@ interface BootstrapData {
 interface CoachPrDashboardProps {
   bootstrap: BootstrapData;
   orgId: string;
+  orgSlug: string;
   programId: string;
   programName: string;
   token: string;
@@ -51,6 +53,7 @@ function prFetch(method: string, path: string, token: string, body?: any) {
 export function CoachPrDashboard({
   bootstrap,
   orgId,
+  orgSlug,
   programId,
   programName,
   token,
@@ -157,6 +160,11 @@ export function CoachPrDashboard({
           <p className="text-xs text-muted-foreground">{programName}</p>
         </div>
         <div className="flex items-center gap-2">
+          <a href={`/org/${orgSlug}/portal`} data-testid="link-portal">
+            <Button size="sm" variant="ghost" title="Portal Home">
+              <LayoutDashboard className="h-4 w-4" />
+            </Button>
+          </a>
           <Button size="sm" variant="ghost" onClick={onRefresh} data-testid="button-refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>

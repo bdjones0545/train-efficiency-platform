@@ -75,6 +75,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import OrgMySchedulePage from "@/pages/org-my-schedule";
+import OrgPortalPage from "@/pages/org-portal";
 
 interface SubscriptionStatus {
   status: string;
@@ -186,6 +187,7 @@ function AuthenticatedLayout() {
                   <Route path="/coaches" component={CoachesPage} />
                   <Route path="/coaches/:id" component={CoachSchedulePage} />
                   <Route path="/sessions" component={OpenSessionsPage} />
+                  <Route path="/org/:slug/portal" component={OrgPortalPage} />
                   <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
                   <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
                   <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
@@ -258,6 +260,7 @@ function PublicLayout() {
     <Switch>
       <Route path="/portal" component={ClientPortalPage} />
       <Route path="/sessions" component={OpenSessionsPublicPage} />
+      <Route path="/org/:slug/portal" component={OrgPortalPage} />
       <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
       <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
       <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />

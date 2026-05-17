@@ -1,0 +1,145 @@
+Build the shared Client/Athlete Portal Home for TrainEfficiency.
+
+GOAL:
+Create one central logged-in org portal that connects scheduling, PR Tracker, teams, and future tools.
+
+ROUTE:
+Create:
+/org/:slug/portal
+
+AUTH:
+Use the existing shared org auth system:
+- org_users
+- org_memberships
+- org_sessions
+- token key: orgToken_${orgId}
+
+If not logged in:
+- Show branded org login/signup modal
+- Also show a public preview card explaining what the portal gives access to
+
+If logged in:
+- Load the user’s org membership and role
+- Render role-aware portal home
+
+PORTAL HOME CONTENT:
+
+1. Header
+- Organization name/logo
+- Welcome message: “Welcome back, {name}”
+- Role badge: Athlete / Coach / Owner / Parent
+- Quick logout button or profile menu
+
+2. Primary Action Cards
+Show large mobile-friendly cards:
+- Book Session
+- My Schedule
+- My PRs
+- Join Team
+- Available Programs
+- Account/Profile
+
+Future placeholder:
+- My Workouts
+
+3. My Schedule Preview
+- Show next upcoming booking if available
+- Show total upcoming bookings
+- Button: View My Schedule
+- Button: Book Session
+
+4. PR Tracker Preview
+If org has at least one program tool with type = pr_tracker:
+- Show best recent PRs if available
+- Button: Open PR Tracker
+- Button: Add PR
+If no PR Tracker exists:
+- Hide this card for athletes
+- Show setup suggestion for coaches/admins
+
+5. Team Preview
+- If user is on a team, show team name, sport, and role
+- If not on a team, show “Join a Team” with join-code action
+- Coaches should see “Manage Teams”
+
+6. Available Programs / Tools
+List all organization program tools:
+- Scheduling Programs
+- PR Tracker
+- Workout Builder placeholder
+Each card should show:
+- Tool name
+- Type badge
+- Short description
+- Open button
+
+7. Coach View
+If role is coach or owner:
+Show additional management cards:
+- Coach Schedule
+- Manage Athletes
+- PR Tracker Admin
+- Program Tools
+- Booking Settings
+
+8. Profile / Account
+Add a simple Account/Profile card:
+- Name
+- Email
+- Role
+- Organization
+- Button: Edit Profile placeholder
+
+API:
+Create a portal bootstrap endpoint:
+GET /api/org/portal/bootstrap?orgId=xxx
+
+It should return:
+- org info
+- current user
+- membership
+- upcoming bookings
+- past booking count
+- program tools
+- PR Tracker availability
+- user teams
+- recent PR entries
+- best PR summaries
+
+Security:
+- Require valid org auth token
+- Enforce org scope
+- Never expose another user’s private data
+- Coaches may see team/org summaries only where appropriate
+- Athletes only see their own schedule and PR data
+
+UI REQUIREMENTS:
+- Mobile-first
+- Dark TrainEfficiency premium design
+- Large cards
+- Clear hierarchy
+- Smooth loading skeleton
+- Empty states
+- Success/error toasts
+- No giant tables on mobile
+- Reuse existing OrgAuthModal where possible
+- Reuse existing schedule and PR Tracker routes instead of duplicating functionality
+
+NAVIGATION:
+Add portal links:
+- On org scheduling page nav: “Portal”
+- On PR Tracker page nav/header: “Portal”
+- On My Schedule page: “Portal”
+- In logged-in user menu if one exists
+
+UX GOAL:
+The user should no longer feel like they are jumping between disconnected tools.
+They should feel like they logged into one organization portal where scheduling, PRs, teams, and future workouts all live together.
+
+DO NOT:
+- Rebuild scheduling
+- Rebuild PR Tracker
+- Build full Workout Builder yet
+- Build advanced analytics yet
+
+This is a portal shell + smart dashboard that connects existing modules.

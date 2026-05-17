@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trophy, ClipboardList, Users, Loader2, LogOut, RefreshCw, TrendingUp } from "lucide-react";
+import { Plus, Trophy, ClipboardList, Users, Loader2, LogOut, RefreshCw, TrendingUp, LayoutDashboard } from "lucide-react";
 
 interface BootstrapData {
   user: any;
@@ -22,6 +22,7 @@ interface BootstrapData {
 interface AthletePrDashboardProps {
   bootstrap: BootstrapData;
   orgId: string;
+  orgSlug: string;
   programId: string;
   programName: string;
   token: string;
@@ -55,6 +56,7 @@ function getBestByLift(entries: any[]): Record<string, any> {
 export function AthletePrDashboard({
   bootstrap,
   orgId,
+  orgSlug,
   programId,
   programName,
   token,
@@ -140,6 +142,11 @@ export function AthletePrDashboard({
           <p className="text-xs text-muted-foreground">{programName} · {bootstrap.user.name}</p>
         </div>
         <div className="flex items-center gap-2">
+          <a href={`/org/${orgSlug}/portal`} data-testid="link-portal">
+            <Button size="sm" variant="ghost" title="Portal Home">
+              <LayoutDashboard className="h-4 w-4" />
+            </Button>
+          </a>
           <Button size="sm" variant="ghost" onClick={onRefresh} data-testid="button-refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>

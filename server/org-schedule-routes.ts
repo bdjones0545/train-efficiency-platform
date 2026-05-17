@@ -8,8 +8,13 @@ import {
   orgSessions,
   athleticBookings,
   organizations,
+  athleticPrograms,
+  prTeams,
+  prTeamMembers,
+  prLiftEntries,
+  prLiftTypes,
 } from "@shared/schema";
-import { eq, and, desc, gt } from "drizzle-orm";
+import { eq, and, desc, gt, asc } from "drizzle-orm";
 
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
   const token = req.headers["x-org-auth-token"] as string;
@@ -168,6 +173,156 @@ export function registerOrgScheduleRoutes(app: Express) {
       const past = enriched.filter((b) => b.date < today);
 
       res.json({ upcoming, past, total: allBookings.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Portal Bootstrap ──────────────────────────────────────────────────────
+  app.get("/api/org/portal/bootstrap", requireOrgAuth, async (req: any, res: Response) => {
+    try {
+      const { user, membership } = req.orgAuth;
+      const orgId = membership.orgId;
+      const userId = user.id;
+      const isCoach = membership.role === "coach" || membership.role === "owner";
+
+      // Org info
+      const [org] = await db
+        .select({
+          id: organizations.id,
+          name: organizations.name,
+          slug: organizations.slug,
+          logoUrl: organizations.logoUrl,
+          tagline: organizations.tagline,
+          primaryColor: organizations.primaryColor,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      // All active programs
+      const programs = await db
+        .select()
+        .from(athleticPrograms)
+        .where(and(eq(athleticPrograms.organizationId, orgId), eq(athleticPrograms.active, true)))
+        .orderBy(asc(athleticPrograms.name));
+
+      const schedulingPrograms = programs.filter((p) => p.type === "scheduling" || !p.type);
+      const prTrackerPrograms = programs.filter((p) => p.type === "pr_tracker");
+      const hasPrTracker = prTrackerPrograms.length > 0;
+
+      // Bookings
+      const today = new Date().toISOString().split("T")[0];
+      const allBookings = await db
+        .select({
+          id: athleticBookings.id,
+          date: athleticBookings.date,
+          timeSlot: athleticBookings.timeSlot,
+          teamName: athleticBookings.teamName,
+          trainingType: athleticBookings.trainingType,
+          programId: athleticBookings.programId,
+        })
+        .from(athleticBookings)
+        .where(and(eq(athleticBookings.organizationId, orgId), eq(athleticBookings.orgUserId, userId)))
+        .orderBy(asc(athleticBookings.date));
+
+      const upcomingBookings = allBookings.filter((b) => b.date >= today);
+      const pastBookingCount = allBookings.filter((b) => b.date < today).length;
+
+      // User teams (join pr_team_members + pr_teams)
+      const teamMemberships = await db
+        .select({
+          teamId: prTeams.id,
+          teamName: prTeams.name,
+          sport: prTeams.sport,
+          season: prTeams.season,
+          memberRole: prTeamMembers.role,
+        })
+        .from(prTeamMembers)
+        .innerJoin(prTeams, eq(prTeamMembers.teamId, prTeams.id))
+        .where(and(eq(prTeamMembers.userId, userId), eq(prTeamMembers.orgId, orgId)));
+
+      // Recent PR entries + best PRs (if hasPrTracker)
+      let recentPrEntries: any[] = [];
+      let bestPrs: any[] = [];
+
+      if (hasPrTracker) {
+        const allEntries = await db
+          .select({
+            id: prLiftEntries.id,
+            liftTypeId: prLiftEntries.liftTypeId,
+            value: prLiftEntries.value,
+            unit: prLiftEntries.unit,
+            entryDate: prLiftEntries.entryDate,
+            liftTypeName: prLiftTypes.name,
+            liftTypeCategory: prLiftTypes.category,
+          })
+          .from(prLiftEntries)
+          .innerJoin(prLiftTypes, eq(prLiftEntries.liftTypeId, prLiftTypes.id))
+          .where(and(eq(prLiftEntries.userId, userId), eq(prLiftEntries.orgId, orgId)))
+          .orderBy(desc(prLiftEntries.createdAt));
+
+        recentPrEntries = allEntries.slice(0, 5);
+
+        // Best per lift type (max value)
+        const byLiftType: Record<string, any> = {};
+        for (const e of allEntries) {
+          if (!byLiftType[e.liftTypeId] || e.value > byLiftType[e.liftTypeId].value) {
+            byLiftType[e.liftTypeId] = e;
+          }
+        }
+        bestPrs = Object.values(byLiftType).map((e) => ({
+          liftTypeId: e.liftTypeId,
+          liftTypeName: e.liftTypeName,
+          value: e.value,
+          unit: e.unit,
+          category: e.liftTypeCategory,
+        }));
+      }
+
+      // Coach aggregates
+      let coachExtras: any = {};
+      if (isCoach) {
+        const [athleteRows, teamRows, bookingRows] = await Promise.all([
+          db
+            .select({ id: orgMemberships.id })
+            .from(orgMemberships)
+            .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete"))),
+          db
+            .select({ id: prTeams.id })
+            .from(prTeams)
+            .where(eq(prTeams.orgId, orgId)),
+          db
+            .select({ id: athleticBookings.id })
+            .from(athleticBookings)
+            .where(eq(athleticBookings.organizationId, orgId)),
+        ]);
+        coachExtras = {
+          totalAthletes: athleteRows.length,
+          totalTeams: teamRows.length,
+          totalBookings: bookingRows.length,
+        };
+      }
+
+      res.json({
+        org,
+        user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
+        membership: {
+          role: membership.role,
+          status: membership.status,
+          orgId: membership.orgId,
+          createdAt: membership.createdAt,
+        },
+        upcomingBookings,
+        pastBookingCount,
+        schedulingPrograms,
+        prTrackerPrograms,
+        hasPrTracker,
+        userTeams: teamMemberships,
+        recentPrEntries,
+        bestPrs,
+        ...coachExtras,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

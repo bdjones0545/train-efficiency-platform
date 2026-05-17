@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   History,
+  LayoutDashboard,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -156,6 +157,11 @@ export default function OrgMySchedulePage() {
                 <span data-testid="text-logged-in-user">{orgUser.name}</span>
               </div>
             )}
+            <a href={`/org/${slug}/portal`} data-testid="link-portal">
+              <Button variant="ghost" size="sm">
+                <LayoutDashboard className="h-4 w-4 mr-1" /> Portal
+              </Button>
+            </a>
             <a href={backUrl}>
               <Button variant="ghost" size="sm" data-testid="link-back-schedule">
                 <ArrowLeft className="h-4 w-4 mr-1" /> Schedule

@@ -121,6 +121,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
       <CoachPrDashboard
         bootstrap={bootstrap}
         orgId={orgId}
+        orgSlug={orgSlug}
         programId={programId}
         programName={program.name}
         token={token}
@@ -134,6 +135,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     <AthletePrDashboard
       bootstrap={bootstrap}
       orgId={orgId}
+      orgSlug={orgSlug}
       programId={programId}
       programName={program.name}
       token={token}
