@@ -13312,5 +13312,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerOrgProfileRoutes } = await import("./org-profile-routes");
   registerOrgProfileRoutes(app);
 
+  // ── Coach Team Routes ─────────────────────────────────────────────────────
+  const { registerCoachTeamRoutes } = await import("./coach-team-routes");
+  registerCoachTeamRoutes(app);
+
   return httpServer;
 }

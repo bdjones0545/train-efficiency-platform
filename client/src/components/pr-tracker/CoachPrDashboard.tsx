@@ -166,6 +166,11 @@ export function CoachPrDashboard({
               <LayoutDashboard className="h-4 w-4" />
             </Button>
           </a>
+          <a href={`/org/${orgSlug}/coach/teams`} data-testid="link-team-reports">
+            <Button size="sm" variant="ghost" title="Team Reports">
+              <Users className="h-4 w-4" />
+            </Button>
+          </a>
           <a href={`/org/${orgSlug}/profile`} data-testid="link-profile">
             <Button size="sm" variant="ghost" title="My Profile">
               <User className="h-4 w-4" />

@@ -504,11 +504,17 @@ function PortalHome({
                 description="All team bookings"
                 href={myScheduleUrl}
               />
+              <ActionCard
+                icon={<Users className="h-5 w-5 text-blue-400" />}
+                label="Team Reports"
+                description="Rosters & player cards"
+                href={`/org/${slug}/coach/teams`}
+              />
               {prTrackerUrl && (
                 <ActionCard
                   icon={<Users className="h-5 w-5 text-blue-400" />}
                   label="Manage Athletes"
-                  description="Teams & rosters"
+                  description="PR tracker teams"
                   href={prTrackerUrl}
                 />
               )}
