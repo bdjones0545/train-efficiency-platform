@@ -1,0 +1,218 @@
+Build TrainChat API Key Management into TrainEfficiency so platform admins can securely connect TrainEfficiency to the TrainChat external API.
+
+GOAL:
+Allow TrainEfficiency to securely store and manage TrainChat API credentials without exposing keys to the frontend.
+
+IMPORTANT SECURITY RULES:
+- Never expose raw API keys to the client after save
+- Never hardcode API keys
+- Never call TrainChat directly from the frontend
+- All TrainChat API requests must flow:
+  TrainEfficiency Frontend → TrainEfficiency Backend → TrainChat API
+
+====================================================
+1. ORGANIZATION SETTINGS SECTION
+====================================================
+
+Add a new section under:
+
+Organization → Options → Advanced
+
+Create a card:
+
+“TrainChat Integration”
+
+Description:
+“Connect your organization to the TrainChat AI Programming API.”
+
+====================================================
+2. DATABASE TABLE
+====================================================
+
+Create:
+
+org_ai_integrations
+- id
+- orgId
+- provider
+  ("trainchat")
+- apiKeyEncrypted
+- apiBaseUrl
+- isActive
+- lastTestedAt nullable
+- lastSuccessAt nullable
+- lastError nullable
+- createdAt
+- updatedAt
+
+Requirements:
+- Encrypt stored API keys
+- Never store plaintext unencrypted
+- Never return decrypted keys to frontend
+- Support future providers later
+
+====================================================
+3. BACKEND API ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/integrations/trainchat
+- returns:
+  - connected status
+  - masked key preview
+  - base URL
+  - last tested
+  - last success
+  - last error
+
+POST /api/org/integrations/trainchat
+- save/update integration
+
+POST /api/org/integrations/trainchat/test
+- test API connection against TrainChat
+
+DELETE /api/org/integrations/trainchat
+- disconnect integration
+
+Security:
+- owner/admin only
+- org scoped
+- never return decrypted keys
+
+====================================================
+4. TRAINCHAT CONNECTION TEST
+====================================================
+
+When “Test Connection” is clicked:
+- call TrainChat:
+  GET /api/external/docs
+or another lightweight endpoint
+
+Validate:
+- auth works
+- endpoint reachable
+- permissions valid
+
+Return:
+- success/failure
+- latency
+- permission summary if available
+
+====================================================
+5. FRONTEND UI
+====================================================
+
+Create a polished integration card.
+
+Fields:
+- TrainChat API Base URL
+- TrainChat API Key
+
+Buttons:
+- Save Connection
+- Test Connection
+- Disconnect
+
+UI states:
+- Connected
+- Invalid Key
+- Testing
+- Last synced
+- Error state
+
+Display:
+- masked key preview:
+  tc_xxxx••••••••
+
+Never reveal full key after save.
+
+====================================================
+6. ENCRYPTION
+====================================================
+
+Encrypt API keys server-side using:
+- AES encryption
+or existing secure encryption utilities
+
+Use environment secret:
+INTEGRATION_ENCRYPTION_SECRET
+
+Never decrypt on frontend.
+
+====================================================
+7. SERVER-SIDE API CLIENT
+====================================================
+
+Create reusable backend service:
+
+services/trainchat-client.ts
+
+Methods:
+- generateProgram()
+- editProgram()
+- generateSession()
+- swapExercise()
+- explainProgram()
+- getProgram()
+- listExercises()
+
+This service:
+- loads org integration
+- decrypts API key server-side
+- calls TrainChat securely
+- handles retries/errors
+- logs failures
+
+====================================================
+8. ERROR HANDLING
+====================================================
+
+Show clean errors:
+- Invalid API key
+- TrainChat unavailable
+- Missing permissions
+- Rate limited
+- Timeout
+- Connection failed
+
+====================================================
+9. FUTURE-READY DESIGN
+====================================================
+
+Structure integrations system so future providers can be added:
+- OpenAI
+- wearable APIs
+- GPS systems
+- HRV/readiness systems
+- nutrition platforms
+
+Do NOT build those yet.
+
+====================================================
+10. UX REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- enterprise integrations feel
+- clean status badges
+- subtle security messaging
+
+Add:
+- green connected badge
+- warning/error badges
+- last sync time
+- connection health indicator
+
+====================================================
+11. IMPORTANT
+====================================================
+
+This integration layer is the bridge between:
+- TrainEfficiency (management platform)
+and
+- TrainChat (AI programming engine)
+
+TrainEfficiency should never rebuild TrainChat logic.
+It should orchestrate TrainChat through secure backend API calls.
