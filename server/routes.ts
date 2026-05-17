@@ -13308,6 +13308,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerPrIntelligenceRoutes } = await import("./pr-intelligence-routes");
   registerPrIntelligenceRoutes(app);
 
+  const { registerIntelligenceRoutes, startIntelligenceCron } = await import("./intelligence-routes");
+  registerIntelligenceRoutes(app);
+  startIntelligenceCron();
+
   // ── Org Schedule Routes ───────────────────────────────────────────────────
   const { registerOrgScheduleRoutes } = await import("./org-schedule-routes");
   registerOrgScheduleRoutes(app);

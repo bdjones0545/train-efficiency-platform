@@ -11,6 +11,7 @@ import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import PlayerCard from "@/components/pr-tracker/PlayerCard";
 import type { PlayerCardProfile } from "@/components/pr-tracker/PlayerCard";
 import PRIntelligencePanel from "@/components/pr-tracker/PRIntelligencePanel";
+import WatchlistPanel from "@/components/pr-tracker/WatchlistPanel";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -638,6 +639,14 @@ export default function CoachAthleteDetailPage() {
             orgToken={orgToken}
             athleteName={profile.athlete.name}
             coachNotes={editingNotes}
+          />
+
+          {/* ── 8.5 Athlete Monitoring / Watchlist ──────────────────────── */}
+          <WatchlistPanel
+            athleteUserId={userId}
+            orgToken={orgToken}
+            athleteName={profile.athlete.name}
+            orgSlug={slug}
           />
 
           {/* ── 9. Player Card Preview ──────────────────────────────────── */}

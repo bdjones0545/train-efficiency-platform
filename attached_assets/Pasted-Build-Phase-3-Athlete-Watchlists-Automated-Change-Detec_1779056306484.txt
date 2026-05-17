@@ -1,0 +1,349 @@
+Build Phase 3: Athlete Watchlists + Automated Change Detection for TrainEfficiency.
+
+GOAL:
+Transform Athlete Intelligence from an on-demand research tool into a live athlete monitoring system.
+
+The system should help coaches:
+- monitor athlete development
+- detect public profile/stat/media changes
+- detect internal performance trends
+- identify athlete inactivity or risk
+- receive actionable alerts
+
+IMPORTANT:
+This is NOT autonomous scraping abuse.
+This is NOT continuous aggressive crawling.
+This is NOT public publishing.
+
+The system should:
+- run lightweight scheduled checks
+- respect rate limits and robots.txt
+- only monitor approved/public sources
+- operate coach-controlled watchlists
+- generate alerts, not autonomous actions
+
+====================================================
+CORE CONCEPT
+====================================================
+
+Coaches can:
+- Watch athletes
+- Configure monitoring categories
+- Receive alerts when important changes occur
+
+The platform becomes:
+- a live athlete intelligence system
+- a coach monitoring dashboard
+- a player development operations layer
+
+====================================================
+1. ATHLETE WATCHLISTS
+====================================================
+
+Create a new feature:
+“Athlete Watchlists”
+
+Coaches can:
+- Add/remove athletes from watchlist
+- Configure alert categories per athlete
+- Pause monitoring
+- Set monitoring frequency
+
+Database table:
+
+athlete_watchlists
+- id
+- orgId
+- athleteUserId
+- coachUserId
+- isActive
+- monitorPublicProfiles boolean
+- monitorStats boolean
+- monitorMedia boolean
+- monitorPrProgress boolean
+- monitorAttendance boolean
+- monitorBookingInactivity boolean
+- monitorTrainingConsistency boolean
+- frequency
+  (daily, every_3_days, weekly)
+- lastCheckedAt nullable
+- nextCheckAt nullable
+- createdAt
+- updatedAt
+
+====================================================
+2. CHANGE DETECTION ENGINE
+====================================================
+
+Create a scheduled monitoring engine.
+
+Purpose:
+- periodically re-check approved public sources
+- compare snapshots
+- detect meaningful changes
+
+Examples:
+- new Hudl highlight
+- new MaxPreps stat line
+- updated roster measurements
+- new recruiting profile
+- new PR spike
+- booking inactivity
+- missed sessions
+- sudden drop in training activity
+
+DO NOT:
+- aggressively crawl sites
+- repeatedly hit the same sources excessively
+- scrape private data
+
+Use:
+- cached snapshots
+- throttled requests
+- lightweight monitoring
+
+====================================================
+3. SNAPSHOT SYSTEM
+====================================================
+
+Create table:
+
+athlete_intelligence_snapshots
+- id
+- orgId
+- athleteUserId
+- sourceType
+- sourceUrl
+- snapshotHash
+- snapshotData jsonb
+- createdAt
+
+Purpose:
+- compare previous vs current data
+- identify meaningful changes
+- avoid duplicate alerts
+
+====================================================
+4. ALERT SYSTEM
+====================================================
+
+Create table:
+
+athlete_intelligence_alerts
+- id
+- orgId
+- athleteUserId
+- coachUserId
+- alertType
+  (new_media, stat_update, roster_update,
+   recruiting_update, pr_spike,
+   inactivity, missed_booking,
+   attendance_drop, trend_warning)
+- severity
+  (info, moderate, important, critical)
+- title
+- summary
+- metadata jsonb
+- sourceUrl nullable
+- isRead
+- createdAt
+
+====================================================
+5. ALERT TYPES
+====================================================
+
+A. External Athlete Intelligence Alerts
+- new highlight video detected
+- updated public stats
+- roster changes
+- recruiting profile changes
+- updated height/weight
+
+B. Internal Performance Alerts
+- new PR spike
+- major improvement trend
+- stagnation warning
+- attendance decline
+- booking inactivity
+- missed session patterns
+- training consistency drop
+
+====================================================
+6. COACH ALERT CENTER
+====================================================
+
+Create:
+
+/org/:slug/coach/intelligence
+
+Coach dashboard containing:
+- active alerts feed
+- watched athletes
+- alert filters
+- severity filters
+- unread count
+- athlete monitoring summaries
+
+Sections:
+- Important Alerts
+- New Highlights
+- PR Spikes
+- Inactivity Warnings
+- Recruiting Updates
+- Watchlist Overview
+
+====================================================
+7. ATHLETE PROFILE INTEGRATION
+====================================================
+
+On Coach Athlete Detail Page add:
+- Watch Athlete toggle
+- Monitoring settings
+- Recent alerts section
+- Monitoring status
+- Last checked time
+
+====================================================
+8. MONITORING SETTINGS UI
+====================================================
+
+Allow coaches to configure:
+- what to monitor
+- monitoring frequency
+- alert severity threshold
+- enable/disable categories
+
+Use:
+- toggle cards
+- clean mobile-first controls
+- grouped settings
+
+====================================================
+9. CHANGE COMPARISON LOGIC
+====================================================
+
+The engine should:
+- compare new snapshots to previous snapshots
+- ignore identical results
+- detect meaningful differences
+- generate concise alerts
+
+Examples:
+
+NEW:
+- "New Hudl highlight detected"
+- "Receiving yards updated from 840 → 1,120"
+- "Athlete has not booked a session in 21 days"
+- "Back squat increased 12% over 30 days"
+
+NOT useful:
+- duplicate unchanged pages
+- tiny/noisy stat fluctuations
+- repeated alerts
+
+====================================================
+10. INTERNAL ANALYTICS MONITORING
+====================================================
+
+Monitor internal TrainEfficiency activity:
+- PR entry frequency
+- booking frequency
+- attendance
+- missed sessions
+- inactivity windows
+- rapid improvement trends
+
+Examples:
+- no PR entries in 30 days
+- attendance dropped 40%
+- sudden PR spike
+- athlete consistently improving
+
+====================================================
+11. API ENDPOINTS
+====================================================
+
+POST /api/org/coach/watchlists
+PATCH /api/org/coach/watchlists/:id
+DELETE /api/org/coach/watchlists/:id
+
+GET /api/org/coach/intelligence/alerts
+GET /api/org/coach/intelligence/watchlists
+
+POST /api/org/coach/intelligence/run-check/:athleteUserId
+- manual refresh
+
+PATCH /api/org/coach/intelligence/alerts/:id/read
+
+====================================================
+12. SCHEDULED ENGINE
+====================================================
+
+Create lightweight cron/worker:
+- checks nextCheckAt
+- processes athletes gradually
+- updates snapshots
+- generates alerts
+
+Requirements:
+- rate-limited
+- retry-safe
+- idempotent
+- no duplicate alerts
+
+====================================================
+13. UI / UX REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- enterprise-athlete intelligence aesthetic
+
+UI elements:
+- severity badges
+- athlete avatars
+- source chips
+- alert cards
+- watchlist cards
+- monitoring status pills
+- activity timeline
+
+====================================================
+14. IMPORTANT SAFETY RULES
+====================================================
+
+The monitoring engine must:
+- only monitor approved/public sources
+- never bypass authentication
+- respect robots.txt
+- avoid aggressive crawling
+- never automatically publish athlete data
+- never auto-modify athlete profiles
+- always preserve coach review authority
+
+====================================================
+15. FUTURE-READY ARCHITECTURE
+====================================================
+
+Structure this to later support:
+- wearable integrations
+- GPS/performance devices
+- readiness monitoring
+- injury-risk indicators
+- recruiting dashboards
+- parent alerts
+- AI performance forecasting
+
+DO NOT build those yet.
+
+====================================================
+16. FINAL PRODUCT VISION
+====================================================
+
+TrainEfficiency should begin functioning like:
+- a live athlete intelligence platform
+- a player development operating system
+- a coach monitoring dashboard
+
+not just a scheduling + PR tracker app.

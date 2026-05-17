@@ -1861,6 +1861,55 @@ export const athleteAiSummaries = pgTable("athlete_ai_summaries", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// ─── Athlete Watchlists ───────────────────────────────────────────────────────
+export const athleteWatchlists = pgTable("athlete_watchlists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  coachUserId: varchar("coach_user_id").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  monitorPublicProfiles: boolean("monitor_public_profiles").notNull().default(true),
+  monitorStats: boolean("monitor_stats").notNull().default(true),
+  monitorMedia: boolean("monitor_media").notNull().default(true),
+  monitorPrProgress: boolean("monitor_pr_progress").notNull().default(true),
+  monitorAttendance: boolean("monitor_attendance").notNull().default(true),
+  monitorBookingInactivity: boolean("monitor_booking_inactivity").notNull().default(false),
+  monitorTrainingConsistency: boolean("monitor_training_consistency").notNull().default(true),
+  frequency: varchar("frequency").notNull().default("weekly"),
+  lastCheckedAt: timestamp("last_checked_at"),
+  nextCheckAt: timestamp("next_check_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// ─── Athlete Intelligence Snapshots ──────────────────────────────────────────
+export const athleteIntelligenceSnapshots = pgTable("athlete_intelligence_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  sourceType: varchar("source_type").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  snapshotHash: varchar("snapshot_hash").notNull(),
+  snapshotData: jsonb("snapshot_data"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ─── Athlete Intelligence Alerts ──────────────────────────────────────────────
+export const athleteIntelligenceAlerts = pgTable("athlete_intelligence_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  coachUserId: varchar("coach_user_id").notNull(),
+  alertType: varchar("alert_type").notNull(),
+  severity: varchar("severity").notNull().default("info"),
+  title: varchar("title").notNull(),
+  summary: text("summary"),
+  metadata: jsonb("metadata"),
+  sourceUrl: text("source_url"),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const athleteExternalAssets = pgTable("athlete_external_assets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),
