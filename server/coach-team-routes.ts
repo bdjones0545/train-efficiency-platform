@@ -13,7 +13,7 @@ import {
   prLiftEntries,
   athleticBookings,
 } from "@shared/schema";
-import { eq, and, gt, desc, asc, inArray } from "drizzle-orm";
+import { eq, and, gt, lte, desc, asc, inArray } from "drizzle-orm";
 import { pgTable, varchar, text, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -291,6 +291,162 @@ export function registerCoachTeamRoutes(app: Express) {
       }
     }
   );
+
+  // ── GET /api/org/coach/athletes/:userId ────────────────────────────────
+  app.get("/api/org/coach/athletes/:userId", requireOrgAuth, requireCoachRole, async (req: any, res: Response) => {
+    try {
+      const { user, membership } = req.orgAuth;
+      const orgId = membership.orgId;
+      const { userId: athleteId } = req.params;
+
+      // Security: owner can see all; coach can only view athletes on their teams
+      let hasAccess = membership.role === "owner";
+      if (!hasAccess) {
+        const coachTeams = await db.select({ id: prTeams.id }).from(prTeams).where(and(eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id)));
+        const coachTeamIds = coachTeams.map((t) => t.id);
+        if (coachTeamIds.length > 0) {
+          const athleteMem = await db.select({ id: prTeamMembers.id }).from(prTeamMembers)
+            .where(and(eq(prTeamMembers.orgId, orgId), eq(prTeamMembers.userId, athleteId), inArray(prTeamMembers.teamId, coachTeamIds)))
+            .limit(1);
+          hasAccess = athleteMem.length > 0;
+        }
+      }
+      if (!hasAccess) return res.status(403).json({ message: "Not authorized to view this athlete" });
+
+      const [athlete] = await db.select({ id: orgUsers.id, name: orgUsers.name, email: orgUsers.email, createdAt: orgUsers.createdAt })
+        .from(orgUsers).where(eq(orgUsers.id, athleteId)).limit(1);
+      if (!athlete) return res.status(404).json({ message: "Athlete not found" });
+
+      const [orgMembership] = await db.select({ role: orgMemberships.role, createdAt: orgMemberships.createdAt })
+        .from(orgMemberships).where(and(eq(orgMemberships.userId, athleteId), eq(orgMemberships.orgId, orgId))).limit(1);
+
+      // Teams this athlete is in
+      const athleteTeams = await db.select({
+        id: prTeams.id,
+        name: prTeams.name,
+        sport: prTeams.sport,
+        season: prTeams.season,
+        coachUserId: prTeams.coachUserId,
+        memberRole: prTeamMembers.role,
+        joinedAt: prTeamMembers.createdAt,
+      })
+        .from(prTeamMembers)
+        .innerJoin(prTeams, eq(prTeamMembers.teamId, prTeams.id))
+        .where(and(eq(prTeamMembers.userId, athleteId), eq(prTeamMembers.orgId, orgId)))
+        .orderBy(asc(prTeams.name));
+
+      // All PR entries
+      const allEntries = await db.select({
+        id: prLiftEntries.id,
+        liftTypeId: prLiftEntries.liftTypeId,
+        value: prLiftEntries.value,
+        unit: prLiftEntries.unit,
+        entryDate: prLiftEntries.entryDate,
+        notes: prLiftEntries.notes,
+        liftName: prLiftTypes.name,
+        liftUnit: prLiftTypes.unit,
+      })
+        .from(prLiftEntries)
+        .innerJoin(prLiftTypes, eq(prLiftEntries.liftTypeId, prLiftTypes.id))
+        .where(and(eq(prLiftEntries.orgId, orgId), eq(prLiftEntries.userId, athleteId)))
+        .orderBy(desc(prLiftEntries.entryDate));
+
+      const bestMap: Record<string, any> = {};
+      const historyMap: Record<string, any[]> = {};
+      for (const e of allEntries) {
+        if (!historyMap[e.liftTypeId]) historyMap[e.liftTypeId] = [];
+        historyMap[e.liftTypeId].push({ id: e.id, liftName: e.liftName, value: e.value, unit: e.liftUnit || e.unit, entryDate: e.entryDate, notes: e.notes });
+        if (!bestMap[e.liftTypeId] || e.value > bestMap[e.liftTypeId].bestValue) {
+          bestMap[e.liftTypeId] = {
+            liftTypeId: e.liftTypeId,
+            liftName: e.liftName,
+            unit: e.liftUnit || e.unit,
+            bestValue: e.value,
+            lastDate: e.entryDate,
+          };
+        }
+        bestMap[e.liftTypeId].entryCount = (bestMap[e.liftTypeId].entryCount || 0) + 1;
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      const upcomingBookings = await db.select({
+        id: athleticBookings.id,
+        date: athleticBookings.date,
+        timeSlot: athleticBookings.timeSlot,
+        teamName: athleticBookings.teamName,
+        trainingType: athleticBookings.trainingType,
+      })
+        .from(athleticBookings)
+        .where(and(eq(athleticBookings.organizationId, orgId), eq(athleticBookings.orgUserId, athleteId), gt(athleticBookings.date, today)))
+        .orderBy(asc(athleticBookings.date))
+        .limit(20);
+
+      const pastBookings = await db.select({
+        id: athleticBookings.id,
+        date: athleticBookings.date,
+        timeSlot: athleticBookings.timeSlot,
+        teamName: athleticBookings.teamName,
+        trainingType: athleticBookings.trainingType,
+      })
+        .from(athleticBookings)
+        .where(and(eq(athleticBookings.organizationId, orgId), eq(athleticBookings.orgUserId, athleteId), lte(athleticBookings.date, today)))
+        .orderBy(desc(athleticBookings.date))
+        .limit(20);
+
+      const notesRows = await db.select().from(coachAthleteNotes)
+        .where(and(eq(coachAthleteNotes.orgId, orgId), eq(coachAthleteNotes.athleteId, athleteId)))
+        .orderBy(desc(coachAthleteNotes.updatedAt));
+      const generalNote = notesRows.find((n) => n.teamId === "__general__") || notesRows[0] || null;
+
+      const bestPrs = Object.values(bestMap).sort((a: any, b: any) => a.liftName.localeCompare(b.liftName));
+
+      res.json({
+        athlete,
+        orgMembership: orgMembership || null,
+        teams: athleteTeams,
+        bestPrs,
+        prHistory: historyMap,
+        recentEntries: allEntries.slice(0, 20).map((e) => ({ id: e.id, liftName: e.liftName, value: e.value, unit: e.liftUnit || e.unit, entryDate: e.entryDate, notes: e.notes })),
+        upcomingBookings,
+        pastBookings,
+        notes: generalNote?.notes || "",
+        notesUpdatedAt: generalNote?.updatedAt || null,
+        stats: {
+          totalEntries: allEntries.length,
+          liftTypes: Object.keys(bestMap).length,
+          upcomingSessions: upcomingBookings.length,
+          pastSessions: pastBookings.length,
+          teamsCount: athleteTeams.length,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── PATCH /api/org/coach/athletes/:userId/notes ─────────────────────────
+  app.patch("/api/org/coach/athletes/:userId/notes", requireOrgAuth, requireCoachRole, async (req: any, res: Response) => {
+    try {
+      const { user, membership } = req.orgAuth;
+      const orgId = membership.orgId;
+      const { userId: athleteId } = req.params;
+      const { notes } = z.object({ notes: z.string().max(5000) }).parse(req.body);
+
+      const [existing] = await db.select().from(coachAthleteNotes)
+        .where(and(eq(coachAthleteNotes.orgId, orgId), eq(coachAthleteNotes.teamId, "__general__"), eq(coachAthleteNotes.athleteId, athleteId)))
+        .limit(1);
+
+      if (existing) {
+        await db.update(coachAthleteNotes).set({ notes, updatedAt: new Date() }).where(eq(coachAthleteNotes.id, existing.id));
+      } else {
+        await db.insert(coachAthleteNotes).values({ orgId, teamId: "__general__", coachId: user.id, athleteId, notes });
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // ── PATCH /api/org/coach/teams/:teamId/athletes/:userId/notes ──────────
   app.patch(

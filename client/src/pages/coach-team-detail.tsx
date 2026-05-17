@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, forwardRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import PlayerCard from "@/components/pr-tracker/PlayerCard";
+import type { PlayerCardProfile } from "@/components/pr-tracker/PlayerCard";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -76,281 +78,6 @@ function avatarColor(name: string) {
   return avatarColors[Math.abs(hash) % avatarColors.length];
 }
 
-// ─── PlayerCard (printable/screenshottable) ───────────────────────────────────
-
-interface PlayerCardProps {
-  profile: AthleteProfile;
-  orgLogo?: string;
-  orgName?: string;
-}
-
-const PlayerCard = forwardRef<HTMLDivElement, PlayerCardProps>(({ profile, orgLogo, orgName }, ref) => {
-  const { athlete, team, bestPrs, recentEntries, upcomingBookings, notes, stats } = profile;
-  const generatedDate = format(new Date(), "MMMM d, yyyy 'at' h:mm a");
-
-  const styles: Record<string, React.CSSProperties> = {
-    root: {
-      width: "800px",
-      background: "#ffffff",
-      fontFamily: "'Segoe UI', system-ui, Arial, sans-serif",
-      margin: 0,
-      padding: 0,
-      color: "#111827",
-      boxSizing: "border-box",
-    },
-    header: {
-      background: "#0f172a",
-      color: "#ffffff",
-      padding: "24px 32px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
-    headerLeft: { display: "flex", alignItems: "center", gap: "16px" },
-    logo: { height: "48px", width: "auto", borderRadius: "8px", objectFit: "contain" },
-    logoPlaceholder: {
-      height: "48px",
-      width: "48px",
-      borderRadius: "8px",
-      background: "#1e40af",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: "20px",
-      fontWeight: 800,
-      color: "#fff",
-    },
-    badge: {
-      fontSize: "10px",
-      letterSpacing: "2px",
-      textTransform: "uppercase" as const,
-      opacity: 0.6,
-      marginBottom: "2px",
-    },
-    orgName: { fontSize: "20px", fontWeight: 700 },
-    genDate: { fontSize: "11px", opacity: 0.6, textAlign: "right" as const },
-    athleteRow: {
-      padding: "24px 32px",
-      borderBottom: "1px solid #e5e7eb",
-      display: "flex",
-      alignItems: "center",
-      gap: "20px",
-    },
-    avatar: {
-      width: "64px",
-      height: "64px",
-      borderRadius: "50%",
-      background: "#1e40af",
-      color: "#fff",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: "24px",
-      fontWeight: 800,
-      flexShrink: 0,
-    },
-    athleteName: { fontSize: "28px", fontWeight: 800, color: "#0f172a", lineHeight: 1 },
-    subRow: { display: "flex", gap: "16px", marginTop: "8px", flexWrap: "wrap" as const },
-    subItem: { fontSize: "13px", color: "#6b7280" },
-    statsRow: { display: "flex", gap: "12px", marginLeft: "auto" },
-    statBox: (bg: string, border: string): React.CSSProperties => ({
-      textAlign: "center",
-      background: bg,
-      padding: "10px 16px",
-      borderRadius: "8px",
-      border: `1px solid ${border}`,
-      minWidth: "64px",
-    }),
-    statNum: (color: string): React.CSSProperties => ({ fontSize: "22px", fontWeight: 800, color }),
-    statLabel: { fontSize: "10px", color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: "1px" },
-    sectionPad: { padding: "20px 32px", borderBottom: "1px solid #e5e7eb" },
-    sectionTitle: {
-      fontSize: "10px",
-      fontWeight: 700,
-      letterSpacing: "2px",
-      textTransform: "uppercase" as const,
-      color: "#6b7280",
-      marginBottom: "12px",
-    },
-    table: { width: "100%", borderCollapse: "collapse" as const },
-    th: { padding: "8px 12px", textAlign: "left" as const, fontSize: "10px", fontWeight: 600, color: "#6b7280", background: "#f9fafb" },
-    thCenter: { padding: "8px 12px", textAlign: "center" as const, fontSize: "10px", fontWeight: 600, color: "#6b7280", background: "#f9fafb" },
-    tdName: { padding: "10px 12px", fontSize: "14px", fontWeight: 600, color: "#0f172a" },
-    tdCenter: { padding: "10px 12px", textAlign: "center" as const },
-    tdMuted: { padding: "10px 12px", textAlign: "center" as const, fontSize: "12px", color: "#6b7280" },
-    prBadge: {
-      background: "#fef08a",
-      color: "#713f12",
-      padding: "3px 10px",
-      borderRadius: "20px",
-      fontSize: "14px",
-      fontWeight: 700,
-      display: "inline-block",
-    },
-    entryRow: { borderBottom: "1px solid #f3f4f6" },
-    sessionWrap: { display: "flex", flexWrap: "wrap" as const, gap: "8px" },
-    sessionChip: {
-      background: "#f0fdf4",
-      border: "1px solid #86efac",
-      borderRadius: "6px",
-      padding: "8px 14px",
-      fontSize: "12px",
-    },
-    notesBox: {
-      background: "#f8fafc",
-      borderRadius: "8px",
-      padding: "16px",
-      minHeight: "80px",
-      fontSize: "13px",
-      color: "#374151",
-      lineHeight: 1.6,
-      border: "1px solid #e5e7eb",
-      whiteSpace: "pre-wrap" as const,
-    },
-    footer: {
-      padding: "16px 32px",
-      background: "#f8fafc",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-    },
-    footerText: { fontSize: "11px", color: "#9ca3af" },
-  };
-
-  return (
-    <div ref={ref} style={styles.root}>
-      {/* Header */}
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          {orgLogo ? (
-            <img src={orgLogo} alt={orgName} style={styles.logo} crossOrigin="anonymous" />
-          ) : (
-            <div style={styles.logoPlaceholder}>{orgName?.[0] || "O"}</div>
-          )}
-          <div>
-            <div style={styles.badge}>PLAYER CARD</div>
-            <div style={styles.orgName}>{orgName || "Organization"}</div>
-          </div>
-        </div>
-        <div style={styles.genDate}>Generated<br />{generatedDate}</div>
-      </div>
-
-      {/* Athlete Info */}
-      <div style={styles.athleteRow}>
-        <div style={styles.avatar}>
-          {getInitials(athlete.name)}
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={styles.athleteName}>{athlete.name}</div>
-          <div style={styles.subRow}>
-            <span style={styles.subItem}>📋 {team.name}</span>
-            {team.sport && <span style={styles.subItem}>🏋️ {team.sport}</span>}
-            {team.season && <span style={styles.subItem}>📅 {team.season}</span>}
-            {athlete.memberSince && (
-              <span style={styles.subItem}>⭐ Member since {format(new Date(athlete.memberSince), "MMM yyyy")}</span>
-            )}
-          </div>
-        </div>
-        <div style={styles.statsRow}>
-          <div style={styles.statBox("#f0fdf4", "#86efac")}>
-            <div style={styles.statNum("#15803d")}>{stats.totalEntries}</div>
-            <div style={styles.statLabel}>Entries</div>
-          </div>
-          <div style={styles.statBox("#eff6ff", "#93c5fd")}>
-            <div style={styles.statNum("#1d4ed8")}>{stats.liftTypes}</div>
-            <div style={styles.statLabel}>Lifts</div>
-          </div>
-          <div style={styles.statBox("#fdf4ff", "#d8b4fe")}>
-            <div style={styles.statNum("#7c3aed")}>{stats.upcomingSessions}</div>
-            <div style={styles.statLabel}>Sessions</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Best PRs */}
-      {bestPrs.length > 0 && (
-        <div style={styles.sectionPad}>
-          <div style={styles.sectionTitle}>Personal Records — Best Lifts</div>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>LIFT</th>
-                <th style={styles.thCenter}>BEST WEIGHT</th>
-                <th style={styles.thCenter}>DATE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bestPrs.map((pr, i) => (
-                <tr key={i} style={styles.entryRow}>
-                  <td style={styles.tdName}>{pr.liftName}</td>
-                  <td style={styles.tdCenter}>
-                    <span style={styles.prBadge}>{pr.value} {pr.unit}</span>
-                  </td>
-                  <td style={styles.tdMuted}>{pr.entryDate}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Recent Entries */}
-      {recentEntries.length > 0 && (
-        <div style={styles.sectionPad}>
-          <div style={styles.sectionTitle}>Recent Entries (Last {Math.min(recentEntries.length, 8)})</div>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>DATE</th>
-                <th style={styles.th}>LIFT</th>
-                <th style={styles.thCenter}>WEIGHT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentEntries.slice(0, 8).map((e, i) => (
-                <tr key={i} style={styles.entryRow}>
-                  <td style={{ ...styles.tdMuted, textAlign: "left" }}>{e.entryDate}</td>
-                  <td style={{ padding: "8px 12px", fontSize: "13px", color: "#374151" }}>{e.liftName}</td>
-                  <td style={styles.tdCenter}>
-                    <span style={{ fontSize: "13px", fontWeight: 600, color: "#1d4ed8" }}>{e.value} {e.unit}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Upcoming Sessions */}
-      {upcomingBookings.length > 0 && (
-        <div style={styles.sectionPad}>
-          <div style={styles.sectionTitle}>Upcoming Sessions</div>
-          <div style={styles.sessionWrap}>
-            {upcomingBookings.slice(0, 6).map((b, i) => (
-              <div key={i} style={styles.sessionChip}>
-                <div style={{ fontWeight: 600, color: "#15803d", fontSize: "13px" }}>{b.date}</div>
-                <div style={{ color: "#6b7280", fontSize: "11px" }}>{b.timeSlot} · {b.trainingType}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Coach Notes */}
-      <div style={styles.sectionPad}>
-        <div style={styles.sectionTitle}>Coach Notes</div>
-        <div style={styles.notesBox}>{notes || "No coach notes added yet."}</div>
-      </div>
-
-      {/* Footer */}
-      <div style={styles.footer}>
-        <div style={styles.footerText}>Generated by {orgName} · {generatedDate}</div>
-        <div style={styles.footerText}>Train Efficiency Business Solutions</div>
-      </div>
-    </div>
-  );
-});
-PlayerCard.displayName = "PlayerCard";
 
 // ─── Skeleton loaders ─────────────────────────────────────────────────────────
 
@@ -712,8 +439,21 @@ export default function CoachTeamDetailPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-center gap-1 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                    View Profile <ChevronRight className="h-3 w-3" />
+                  <div className="flex items-center justify-between gap-1 mt-1">
+                    <span
+                      className="text-[11px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                      onClick={(e) => { e.preventDefault(); loadAthleteProfile(member.userId); }}
+                    >
+                      Quick view
+                    </span>
+                    <a
+                      href={`/org/${slug}/coach/athletes/${member.userId}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[11px] text-primary font-medium flex items-center gap-0.5 hover:underline"
+                      data-testid={`link-athlete-profile-${member.userId}`}
+                    >
+                      Full Profile <ChevronRight className="h-3 w-3" />
+                    </a>
                   </div>
                 </Card>
               </button>
@@ -740,19 +480,28 @@ export default function CoachTeamDetailPage() {
                     {selectedProfile.team.sport && <Badge variant="outline" className="text-xs">{selectedProfile.team.sport}</Badge>}
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={downloadPlayerCardPng}
-                  disabled={isCapturing}
-                  className="flex-shrink-0"
-                  data-testid="button-download-player-card"
-                >
-                  {isCapturing ? (
-                    <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Capturing…</>
-                  ) : (
-                    <><Camera className="h-4 w-4 mr-1.5" /> Download Card</>
-                  )}
-                </Button>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <a
+                    href={`/org/${slug}/coach/athletes/${selectedProfile?.athlete.id}`}
+                    data-testid="link-full-profile"
+                  >
+                    <Button size="sm" variant="outline" className="text-xs">
+                      Full Profile
+                    </Button>
+                  </a>
+                  <Button
+                    size="sm"
+                    onClick={downloadPlayerCardPng}
+                    disabled={isCapturing}
+                    data-testid="button-download-player-card"
+                  >
+                    {isCapturing ? (
+                      <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Capturing…</>
+                    ) : (
+                      <><Camera className="h-4 w-4 mr-1.5" /> Card</>
+                    )}
+                  </Button>
+                </div>
               </div>
             ) : (
               <DialogTitle>Loading…</DialogTitle>

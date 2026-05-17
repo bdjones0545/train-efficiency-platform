@@ -79,6 +79,7 @@ import OrgPortalPage from "@/pages/org-portal";
 import OrgProfilePage from "@/pages/org-profile";
 import CoachTeamsPage from "@/pages/coach-teams";
 import CoachTeamDetailPage from "@/pages/coach-team-detail";
+import CoachAthleteDetailPage from "@/pages/coach-athlete-detail";
 
 interface SubscriptionStatus {
   status: string;
@@ -194,6 +195,7 @@ function AuthenticatedLayout() {
                   <Route path="/org/:slug/profile" component={OrgProfilePage} />
                   <Route path="/org/:slug/coach/teams" component={CoachTeamsPage} />
                   <Route path="/org/:slug/coach/teams/:teamId" component={CoachTeamDetailPage} />
+                  <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
                   <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
                   <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
                   <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
@@ -270,6 +272,7 @@ function PublicLayout() {
       <Route path="/org/:slug/profile" component={OrgProfilePage} />
       <Route path="/org/:slug/coach/teams" component={CoachTeamsPage} />
       <Route path="/org/:slug/coach/teams/:teamId" component={CoachTeamDetailPage} />
+      <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
       <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
       <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
       <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />

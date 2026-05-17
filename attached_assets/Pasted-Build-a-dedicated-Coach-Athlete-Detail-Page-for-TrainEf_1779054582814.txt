@@ -1,0 +1,142 @@
+Build a dedicated Coach Athlete Detail Page for TrainEfficiency.
+
+GOAL:
+Move the coach athlete profile experience from a temporary dialog into a permanent coach-facing athlete page.
+
+ROUTE:
+Create:
+/org/:slug/coach/athletes/:userId
+
+AUTH:
+Use existing org auth.
+Only allow:
+- coach
+- owner
+
+Security:
+- Enforce org scope
+- Coaches can only view athletes in teams they manage unless owner
+- Never expose password/session data
+- Athlete data must stay org-scoped
+
+BACKEND:
+Add endpoint:
+
+GET /api/org/coach/athletes/:userId
+
+Return:
+- athlete profile
+- org membership
+- teams the athlete belongs to
+- best PRs
+- full PR history grouped by lift
+- recent PR entries
+- upcoming bookings
+- past bookings
+- coach notes
+- available player card data
+
+Add endpoint:
+
+PATCH /api/org/coach/athletes/:userId/notes
+
+Reuse existing coach_athlete_notes table if possible.
+
+FRONTEND PAGE:
+Create CoachAthleteDetailPage.
+
+PAGE STRUCTURE:
+
+1. Sticky Top Nav
+- Back to Team Reports
+- Back to Portal
+- Download Player Card
+- Export PDF
+- Refresh
+
+2. Athlete Hero Card
+Show:
+- initials avatar
+- athlete name
+- email
+- role badge
+- team names
+- sport/season
+- member since
+- total PR entries
+- upcoming bookings count
+
+3. Quick Stat Cards
+- Total PR Entries
+- Best Strength PR
+- Most Recent PR
+- Upcoming Sessions
+- Teams Joined
+- Last Updated
+
+4. Best PRs Section
+- grouped by lift type
+- show value, unit, date
+- highlight top lifts
+- mobile card layout
+- no giant table on mobile
+
+5. PR History Section
+- filter by lift type
+- sort by newest/best
+- timeline/card view
+- show notes when present
+
+6. Bookings Section
+- upcoming bookings
+- past bookings
+- booking type
+- date/time
+- coach/location when available
+
+7. Team Membership Section
+- teams athlete belongs to
+- sport
+- season
+- join date
+- coach/owner controls later placeholder
+
+8. Coach Notes Section
+- private coach notes
+- autosave or save button
+- show last updated
+- clear note that notes are private to coaches
+
+9. Player Card Preview
+Reuse the existing clean html2canvas-safe Player Card component.
+Include:
+- Download PNG
+- Export PDF
+
+10. Future Placeholder Sections
+Add collapsed/placeholder cards:
+- Workout History coming soon
+- Readiness Trends coming soon
+- Attendance Trends coming soon
+
+NAVIGATION UPDATES:
+- From Team Roster cards, add “Open Profile” button linking to /org/:slug/coach/athletes/:userId
+- Keep existing dialog if useful, but primary action should be the dedicated profile page
+- From Player Card dialog, add “View Full Profile”
+
+UI REQUIREMENTS:
+- Mobile-first
+- TrainEfficiency dark premium style
+- Large touch targets
+- Clean hierarchy
+- Sticky nav
+- Loading skeleton
+- Empty states
+- Toasts
+- No giant tables on mobile
+
+IMPORTANT:
+Do not rebuild PR Tracker.
+Do not rebuild scheduling.
+Reuse existing APIs/components where possible.
+This page should become the permanent athlete profile hub for coaches.
