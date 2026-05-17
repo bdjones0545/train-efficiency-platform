@@ -1927,6 +1927,26 @@ export const athleteExternalAssets = pgTable("athlete_external_assets", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// ─── Org AI Integrations ──────────────────────────────────────────────────────
+
+export const orgAiIntegrations = pgTable("org_ai_integrations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  provider: varchar("provider").notNull(), // e.g. "trainchat"
+  apiKeyEncrypted: text("api_key_encrypted"),
+  apiBaseUrl: text("api_base_url"),
+  isActive: boolean("is_active").notNull().default(false),
+  lastTestedAt: timestamp("last_tested_at"),
+  lastSuccessAt: timestamp("last_success_at"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrgAiIntegrationSchema = createInsertSchema(orgAiIntegrations).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrgAiIntegration = typeof orgAiIntegrations.$inferSelect;
+export type InsertOrgAiIntegration = z.infer<typeof insertOrgAiIntegrationSchema>;
+
 // ─── Org Notification Preferences ────────────────────────────────────────────
 
 export const orgNotificationPreferences = pgTable("org_notification_preferences", {

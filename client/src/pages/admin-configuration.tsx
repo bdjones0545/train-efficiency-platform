@@ -34,6 +34,13 @@ import {
   Wrench,
   BarChart2,
   Hammer,
+  Link2,
+  Link2Off,
+  ShieldCheck,
+  Wifi,
+  WifiOff,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -63,6 +70,268 @@ type CoachWithUser = {
   payoutPercentage: number | null;
   user: { id: string; firstName: string; lastName: string; email: string };
 };
+
+type TrainChatStatus = {
+  connected: boolean;
+  maskedKey: string | null;
+  apiBaseUrl: string | null;
+  lastTestedAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+};
+
+function TrainChatIntegrationCard({ orgId }: { orgId?: string | null }) {
+  const { toast } = useToast();
+  const [apiKey, setApiKey] = useState("");
+  const [apiBaseUrl, setApiBaseUrl] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; latencyMs: number; message: string } | null>(null);
+
+  const { data: status, isLoading } = useQuery<TrainChatStatus>({
+    queryKey: ["/api/org/integrations/trainchat"],
+    enabled: !!orgId,
+  });
+
+  useEffect(() => {
+    if (status?.apiBaseUrl) setApiBaseUrl(status.apiBaseUrl);
+  }, [status?.apiBaseUrl]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/org/integrations/trainchat", { apiKey, apiBaseUrl }),
+    onSuccess: () => {
+      toast({ title: "Integration saved", description: "TrainChat API credentials saved securely." });
+      setApiKey("");
+      setTestResult(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/org/integrations/trainchat"] });
+    },
+    onError: () => {
+      toast({ title: "Save failed", description: "Could not save integration. Check your inputs.", variant: "destructive" });
+    },
+  });
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const body: Record<string, string> = {};
+      if (apiKey) body.apiKey = apiKey;
+      if (apiBaseUrl) body.apiBaseUrl = apiBaseUrl;
+      const res = await apiRequest("POST", "/api/org/integrations/trainchat/test", body);
+      const data = await res.json();
+      setTestResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/org/integrations/trainchat"] });
+      if (data.success) {
+        toast({ title: "Connection successful", description: `Latency: ${data.latencyMs}ms` });
+      } else {
+        toast({ title: "Connection failed", description: data.message, variant: "destructive" });
+      }
+    } catch {
+      setTestResult({ success: false, latencyMs: 0, message: "Request failed" });
+      toast({ title: "Test failed", description: "Could not reach the test endpoint.", variant: "destructive" });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await apiRequest("DELETE", "/api/org/integrations/trainchat");
+      toast({ title: "Disconnected", description: "TrainChat integration removed." });
+      setApiKey("");
+      setApiBaseUrl("");
+      setTestResult(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/org/integrations/trainchat"] });
+    } catch {
+      toast({ title: "Error", description: "Could not disconnect. Try again.", variant: "destructive" });
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const canSave = apiKey.trim().length > 0 && apiBaseUrl.trim().length > 0;
+  const isConnected = status?.connected ?? false;
+
+  return (
+    <section data-testid="section-trainchat-integration">
+      <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
+        <Link2 className="h-4 w-4 text-muted-foreground" />
+        Integrations
+      </h2>
+      <Card className="overflow-hidden" data-testid="card-trainchat-integration">
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold leading-tight">TrainChat Integration</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Connect your organization to the TrainChat AI Programming API.</p>
+            </div>
+          </div>
+          <div className="flex-shrink-0">
+            {isLoading ? (
+              <Badge variant="outline" className="text-xs gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" /> Checking…
+              </Badge>
+            ) : isConnected ? (
+              <Badge className="text-xs gap-1 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" data-testid="badge-trainchat-connected">
+                <Wifi className="h-3 w-3" /> Connected
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs gap-1 text-muted-foreground" data-testid="badge-trainchat-disconnected">
+                <WifiOff className="h-3 w-3" /> Not connected
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-5 space-y-5">
+          {/* Status info row */}
+          {isConnected && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-lg bg-muted/40 border border-border/40">
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Current Key</p>
+                <p className="text-sm font-mono font-medium" data-testid="text-trainchat-masked-key">
+                  {status?.maskedKey ?? "—"}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Last Tested</p>
+                <p className="text-sm" data-testid="text-trainchat-last-tested">
+                  {status?.lastTestedAt ? new Date(status.lastTestedAt).toLocaleString() : "Never"}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Last Success</p>
+                <p className="text-sm" data-testid="text-trainchat-last-success">
+                  {status?.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleString() : "Never"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Error state */}
+          {isConnected && status?.lastError && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-destructive text-sm" data-testid="text-trainchat-last-error">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span>{status.lastError}</span>
+            </div>
+          )}
+
+          {/* Test result */}
+          {testResult && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg border text-sm ${testResult.success ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-700 dark:text-emerald-400" : "bg-destructive/5 border-destructive/20 text-destructive"}`} data-testid="text-trainchat-test-result">
+              {testResult.success ? <Check className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+              <span>{testResult.message}{testResult.latencyMs > 0 ? ` (${testResult.latencyMs}ms)` : ""}</span>
+            </div>
+          )}
+
+          {/* Fields */}
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="tc-base-url" className="text-sm">TrainChat API Base URL</Label>
+              <Input
+                id="tc-base-url"
+                placeholder="https://api.trainchat.io"
+                value={apiBaseUrl}
+                onChange={(e) => setApiBaseUrl(e.target.value)}
+                data-testid="input-trainchat-base-url"
+              />
+              <p className="text-xs text-muted-foreground">The root URL of the TrainChat API (no trailing slash needed).</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="tc-api-key" className="text-sm">
+                TrainChat API Key
+                {isConnected && !apiKey && (
+                  <span className="ml-2 text-xs text-muted-foreground font-normal">(leave blank to keep existing key)</span>
+                )}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="tc-api-key"
+                  type={showKey ? "text" : "password"}
+                  placeholder={isConnected ? status?.maskedKey ?? "tc_••••••••" : "tc_xxxxxxxxxxxxxxxx"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="pr-10"
+                  data-testid="input-trainchat-api-key"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-trainchat-toggle-key-visibility"
+                >
+                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <ShieldCheck className="h-3 w-3" />
+                Keys are encrypted at rest. The full key is never shown after saving.
+              </p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending || !canSave}
+              data-testid="button-trainchat-save"
+            >
+              {saveMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Saving…</>
+              ) : saveMutation.isSuccess ? (
+                <><Check className="h-4 w-4 mr-1.5" /> Saved</>
+              ) : (
+                <><Save className="h-4 w-4 mr-1.5" /> Save Connection</>
+              )}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleTest}
+              disabled={isTesting}
+              data-testid="button-trainchat-test"
+            >
+              {isTesting ? (
+                <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Testing…</>
+              ) : (
+                <><Wifi className="h-4 w-4 mr-1.5" /> Test Connection</>
+              )}
+            </Button>
+
+            {isConnected && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive ml-auto"
+                onClick={handleDisconnect}
+                disabled={isDisconnecting}
+                data-testid="button-trainchat-disconnect"
+              >
+                {isDisconnecting ? (
+                  <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Disconnecting…</>
+                ) : (
+                  <><Link2Off className="h-4 w-4 mr-1.5" /> Disconnect</>
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
+    </section>
+  );
+}
 
 export default function AdminConfigurationPage() {
   const { toast } = useToast();
@@ -2618,17 +2887,11 @@ export default function AdminConfigurationPage() {
                   <Badge variant="outline" className="text-xs">Coming Soon</Badge>
                 </div>
               </Card>
-              <Card className="p-4 opacity-60">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Integrations</p>
-                    <p className="text-xs text-muted-foreground">Connect third-party tools and services.</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
-                </div>
-              </Card>
             </div>
           </section>
+
+          {/* ── Integrations ─────────────────────────────────────────────────── */}
+          <TrainChatIntegrationCard orgId={orgId} />
 
           {/* ── Danger Zone ─────────────────────────────────────────────────────── */}
           <section className="mt-4">
