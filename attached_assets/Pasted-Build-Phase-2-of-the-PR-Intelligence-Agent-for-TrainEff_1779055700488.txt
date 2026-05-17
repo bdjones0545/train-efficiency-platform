@@ -1,0 +1,360 @@
+Build Phase 2 of the PR Intelligence Agent for TrainEfficiency.
+
+GOAL:
+Transform the PR Intelligence system into a full Athlete Intelligence Layer that enriches athlete profiles using:
+- internal performance data
+- coach notes
+- public athletic information
+- public stats
+- highlight media
+- roster/recruiting data
+
+The system should function as:
+- a coach-controlled research assistant
+- an athlete enrichment engine
+- a player profile builder
+- a recruiting/performance context layer
+
+IMPORTANT:
+This is NOT autonomous scraping.
+This is NOT a truth engine.
+This is NOT automatic profile mutation.
+
+The workflow must always be:
+
+Find → Match → Confidence Score → Coach Review → Approve
+
+No public data should silently enter athlete profiles.
+
+====================================================
+PHASE 2 FEATURES
+====================================================
+
+1. Athlete Intelligence Panel
+On the Coach Athlete Detail Page add a new section:
+
+“Athlete Intelligence”
+
+Tabs:
+- AI Summary
+- Public Profile
+- Stats
+- Highlight Media
+- Research Jobs
+- Recruiting Snapshot
+
+This becomes the athlete enrichment hub.
+
+====================================================
+2. PUBLIC ATHLETE RESEARCH
+====================================================
+
+Add agent capability:
+“Find Public Athlete Information”
+
+Inputs:
+- athlete name
+- school
+- sport
+- graduation year
+- city/state
+- team
+- optional position
+
+Search only publicly available sources.
+
+Potential sources:
+- MaxPreps public profiles
+- Hudl public profiles
+- YouTube highlights
+- school athletics roster pages
+- athletic.net
+- MileSplit public profiles
+- recruiting/profile pages
+- public stat pages
+- public event result pages
+
+DO NOT:
+- scrape behind logins
+- bypass paywalls
+- violate robots.txt
+- access private athlete data
+
+====================================================
+3. EXTERNAL ATHLETE DATA
+====================================================
+
+The agent should attempt to find:
+
+A. Public Athlete Identity
+- height
+- weight
+- position
+- jersey number
+- graduation year
+- school
+- sport
+
+B. Public Performance Stats
+Examples:
+- touchdowns
+- receiving yards
+- tackles
+- rebounds
+- sprint/event times
+- event placements
+- seasonal stats
+
+C. Public Media
+- Hudl links
+- YouTube highlights
+- MaxPreps profiles
+- recruiting pages
+- public athlete images where available
+
+D. Recruiting Context
+- class year
+- recruiting tags
+- roster status
+- public rankings if available
+
+====================================================
+4. DATABASE TABLES
+====================================================
+
+Create:
+
+athlete_external_assets
+- id
+- orgId
+- athleteUserId
+- sourceType
+  (hudl, youtube, maxpreps, roster, recruiting, stats, image)
+- sourceUrl
+- title
+- thumbnailUrl nullable
+- extractedMetadata jsonb
+- confidenceScore
+- status: pending_review | approved | rejected
+- approvedByCoachId nullable
+- approvedAt nullable
+- createdAt
+- updatedAt
+
+athlete_public_profiles
+- id
+- orgId
+- athleteUserId
+- sourceName
+- sourceUrl
+- sourceTitle
+- confidenceScore
+- extractedData jsonb
+- status: pending_review | approved | rejected
+- approvedByCoachId nullable
+- approvedAt nullable
+- createdAt
+- updatedAt
+
+athlete_ai_summaries
+- id
+- orgId
+- athleteUserId
+- coachUserId
+- summaryType
+  (notes, pr_progress, player_report, recruiting_snapshot, full_profile)
+- sourceSnapshot jsonb
+- generatedText
+- editedText nullable
+- status: draft | approved | archived
+- createdAt
+- updatedAt
+
+pr_agent_research_jobs
+- id
+- orgId
+- athleteUserId
+- coachUserId
+- status
+- query jsonb
+- result jsonb
+- errorMessage nullable
+- createdAt
+- completedAt nullable
+
+====================================================
+5. AI SUMMARY TYPES
+====================================================
+
+Allow generation of:
+
+A. Coach Notes Summary
+- strengths
+- weaknesses
+- movement/performance trends
+- coaching focus areas
+- communication summary
+
+B. PR Progress Summary
+- strongest lifts
+- fastest improvements
+- stagnant metrics
+- new PRs
+- possible next targets
+
+C. Recruiting Snapshot
+- short athlete recruiting-style profile
+- public stat context
+- physical metrics
+- athletic strengths
+- public highlights
+
+D. Player Report Blurb
+Short clean export-ready summary for:
+- player cards
+- PDFs
+- parent reports
+- recruiting packets
+
+====================================================
+6. API ENDPOINTS
+====================================================
+
+POST /api/org/coach/athletes/:userId/ai/research
+- starts public research job
+
+GET /api/org/coach/athletes/:userId/ai/research-jobs
+
+POST /api/org/coach/athletes/:userId/ai/summary
+- generate AI summaries
+
+PATCH /api/org/coach/athletes/:userId/ai/summary/:summaryId
+
+PATCH /api/org/coach/athletes/:userId/public-profile/:profileId/approve
+
+PATCH /api/org/coach/athletes/:userId/public-profile/:profileId/reject
+
+PATCH /api/org/coach/athletes/:userId/external-asset/:assetId/approve
+
+PATCH /api/org/coach/athletes/:userId/external-asset/:assetId/reject
+
+====================================================
+7. APPROVAL WORKFLOW
+====================================================
+
+ALL external data must:
+- show source URL
+- show source title
+- show confidence score
+- show extracted fields
+- remain in pending_review state initially
+
+Coach must explicitly:
+- Approve
+or
+- Reject
+
+before external data becomes part of the athlete profile.
+
+Never automatically overwrite:
+- athlete-entered PRs
+- coach notes
+- internal profile fields
+
+====================================================
+8. ATHLETE PROFILE INTEGRATION
+====================================================
+
+Approved public data should appear in:
+- Coach Athlete Detail Page
+- Player Card exports
+- Team Reports PDF
+- Future recruiting/player packets
+
+Sections:
+- Verified Public Profile
+- Public Stats
+- Highlight Media
+- Recruiting Snapshot
+
+====================================================
+9. PLAYER CARD ENHANCEMENTS
+====================================================
+
+Allow exported player cards to include:
+
+- height/weight
+- position
+- school
+- class year
+- verified public stats
+- approved highlight links
+- AI player summary
+- recruiting snapshot
+
+Still maintain clean printable design.
+
+====================================================
+10. UI REQUIREMENTS
+====================================================
+
+Add “Athlete Intelligence” card to athlete profile.
+
+UI should include:
+- source chips
+- confidence badges
+- approve/reject controls
+- preview cards
+- highlight thumbnails
+- embedded media links
+- loading states
+- research progress indicators
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- clean enterprise-athlete aesthetic
+
+====================================================
+11. PERMISSIONS
+====================================================
+
+Only coach/owner can:
+- run research
+- approve/reject external data
+- generate summaries
+- edit AI summaries
+
+Athletes should NOT see:
+- private coach notes
+- unapproved research
+- internal coach-only summaries
+
+====================================================
+12. AGENT BEHAVIOR
+====================================================
+
+The PR Intelligence Agent must:
+- be conservative
+- avoid hallucinations
+- distinguish exact vs possible matches
+- show confidence levels
+- cite all external sources
+- never claim certainty without evidence
+- summarize instead of dumping raw data
+
+====================================================
+13. IMPORTANT
+====================================================
+
+DO NOT:
+- build autonomous crawling
+- continuously monitor athletes yet
+- auto-import public data
+- scrape private systems
+- contact athletes
+- publish athlete data externally
+
+Build this as:
+- an on-demand coach-controlled athlete intelligence assistant
+- integrated into the athlete profile ecosystem.
