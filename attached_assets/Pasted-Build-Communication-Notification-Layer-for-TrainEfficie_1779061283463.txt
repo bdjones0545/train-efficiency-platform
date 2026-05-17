@@ -1,0 +1,218 @@
+Build Communication + Notification Layer for TrainEfficiency.
+
+GOAL:
+Create the communication nervous system for the org portal.
+
+This should support:
+- coach-to-athlete messaging
+- team announcements
+- workout reminders
+- missed workout nudges
+- readiness follow-ups
+- PR celebration notifications
+- new workout assignment notifications
+- coach alerts
+
+====================================================
+1. DATABASE TABLES
+====================================================
+
+Create:
+
+org_messages
+- id
+- orgId
+- senderUserId
+- recipientUserId nullable
+- teamId nullable
+- messageType
+  (direct, team_announcement, system)
+- subject nullable
+- body
+- createdAt
+
+org_message_reads
+- id
+- orgId
+- messageId
+- userId
+- readAt nullable
+- createdAt
+
+org_notifications
+- id
+- orgId
+- userId
+- type
+  (workout_assigned, workout_reminder, missed_workout,
+   readiness_followup, pr_celebration, coach_message,
+   team_announcement, coach_alert)
+- title
+- message
+- actionUrl nullable
+- metadata jsonb
+- isRead
+- createdAt
+
+====================================================
+2. BACKEND ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/messages
+POST /api/org/messages
+PATCH /api/org/messages/:id/read
+
+GET /api/org/notifications
+PATCH /api/org/notifications/:id/read
+POST /api/org/notifications/mark-all-read
+
+POST /api/org/notifications/system-event
+
+====================================================
+3. COACH MESSAGING
+====================================================
+
+Coach/Owner can:
+- send direct message to athlete
+- send team announcement
+- send message from athlete profile
+- send message from team roster
+- send message from execution monitor
+
+Athletes can:
+- view messages
+- reply later placeholder
+- mark as read
+
+Do not build full chat yet. Phase 1 is inbox + announcements.
+
+====================================================
+4. SYSTEM NOTIFICATIONS
+====================================================
+
+Automatically create notifications for:
+- new workout assigned
+- workout completed
+- missed workout
+- low readiness follow-up
+- PR spike
+- new PR added
+- coach message
+- team announcement
+
+Tie into existing systems:
+- Workout Builder
+- Workout Execution
+- PR Tracker
+- Intelligence alerts
+
+====================================================
+5. NOTIFICATION CENTER
+====================================================
+
+Create route:
+
+/org/:slug/notifications
+
+Features:
+- unread count
+- filters by type
+- mark all read
+- notification cards
+- action buttons
+- links to relevant page
+
+====================================================
+6. PORTAL INTEGRATION
+====================================================
+
+Update portal header:
+- notification bell
+- unread count badge
+- messages shortcut
+
+Update athlete portal:
+- Today’s notices
+- unread messages
+- workout reminders
+
+Update coach portal:
+- coach alerts
+- athlete messages
+- team announcement shortcut
+
+====================================================
+7. MESSAGE COMPOSER
+====================================================
+
+Create reusable component:
+
+OrgMessageComposer
+
+Fields:
+- recipient type:
+  - athlete
+  - team
+- subject
+- message body
+- optional action link
+
+Use it in:
+- athlete profile
+- team roster
+- coach dashboard
+- notification center
+
+====================================================
+8. PERMISSIONS
+====================================================
+
+Coach/Owner:
+- message athletes
+- message teams
+- create announcements
+
+Athlete:
+- view own messages
+- view team announcements for teams they belong to
+- mark own notifications read
+
+Enforce:
+- org scope
+- role scope
+- no cross-org leakage
+
+====================================================
+9. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- inbox/card layout
+- clear unread states
+- badges
+- smooth empty states
+- fast tap actions
+
+Do not build:
+- real-time chat
+- SMS/email delivery yet
+- push notifications yet
+
+Phase 1 is internal portal communication only.
+
+====================================================
+10. FUTURE READY
+====================================================
+
+Structure this so later we can add:
+- email delivery
+- SMS delivery
+- push notifications
+- replies/threaded chat
+- parent notifications
+- automation rules
+- AI-generated message suggestions

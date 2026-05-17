@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,8 +23,13 @@ import {
   ChevronRight,
   Star,
   ShieldCheck,
+  Bell,
+  MessageSquare,
+  Megaphone,
+  Send,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { OrgMessageComposer } from "@/components/OrgMessageComposer";
 
 function formatHour(hour: number) {
   const suffix = hour >= 12 ? "PM" : "AM";
@@ -170,14 +175,36 @@ function PortalHome({
   data,
   slug,
   orgId,
+  orgToken,
   onLogout,
 }: {
   data: any;
   slug: string;
   orgId: string;
+  orgToken: string;
   onLogout: () => void;
 }) {
   const { org, user, membership, upcomingBookings, pastBookingCount, schedulingPrograms, prTrackerPrograms, workoutBuilderPrograms, hasPrTracker, userTeams, recentPrEntries, bestPrs } = data;
+
+  // Notification count
+  const { data: notifData } = useQuery<any>({
+    queryKey: ["/api/org/notifications", "unread"],
+    queryFn: () =>
+      fetch("/api/org/notifications?unreadOnly=true", { headers: { "X-Org-Auth-Token": orgToken } })
+        .then((r) => r.json()),
+    refetchInterval: 30000,
+  });
+  const unreadCount: number = notifData?.unreadCount ?? 0;
+
+  // Unread messages
+  const { data: messagesData } = useQuery<any[]>({
+    queryKey: ["/api/org/messages"],
+    queryFn: () =>
+      fetch("/api/org/messages", { headers: { "X-Org-Auth-Token": orgToken } })
+        .then((r) => r.json()),
+    refetchInterval: 60000,
+  });
+  const unreadMessages = (messagesData ?? []).filter((m: any) => !m.isRead);
 
   const isCoach = membership?.role === "coach" || membership?.role === "owner";
   const prTrackerUrl = prTrackerPrograms?.[0] ? `/org/${slug}/programs/${prTrackerPrograms[0].slug}` : null;
@@ -201,6 +228,17 @@ function PortalHome({
           </div>
           <div className="flex items-center gap-1">
             <span className="text-sm text-muted-foreground hidden sm:block" data-testid="text-portal-user-name">{user?.name}</span>
+            {/* Notification Bell */}
+            <a href={`/org/${slug}/notifications`} className="relative" data-testid="link-notifications-bell">
+              <Button size="sm" variant="ghost" title="Notifications">
+                <Bell className="h-4 w-4" />
+                {(unreadCount + unreadMessages.length) > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+                    {Math.min(unreadCount + unreadMessages.length, 99)}
+                  </span>
+                )}
+              </Button>
+            </a>
             <a href={`/org/${slug}/profile`} data-testid="link-profile-nav">
               <Button size="sm" variant="ghost" title="My Profile">
                 <div className="h-6 w-6 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center">
@@ -285,6 +323,53 @@ function PortalHome({
             />
           </div>
         </section>
+
+        {/* Notices & Messages */}
+        {(unreadMessages.length > 0 || (notifData?.notifications?.length ?? 0) > 0) && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <Bell className="h-3.5 w-3.5" /> Notices
+                {(unreadCount + unreadMessages.length) > 0 && (
+                  <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">{unreadCount + unreadMessages.length}</Badge>
+                )}
+              </h2>
+              <a href={`/org/${slug}/notifications`} className="text-xs text-primary hover:underline flex items-center gap-1" data-testid="link-view-all-notifications">
+                View all <ArrowRight className="h-3 w-3" />
+              </a>
+            </div>
+            <div className="space-y-2">
+              {unreadMessages.slice(0, 2).map((msg: any) => (
+                <a key={msg.id} href={`/org/${slug}/notifications`} data-testid={`card-notice-msg-${msg.id}`}>
+                  <Card className="p-3 flex items-start gap-3 border-primary/20 bg-primary/[0.02] hover:border-primary/30 transition-colors">
+                    <div className={`h-7 w-7 rounded-full flex items-center justify-center flex-shrink-0 ${msg.messageType === "team_announcement" ? "bg-violet-500/15 text-violet-400" : "bg-blue-500/15 text-blue-400"}`}>
+                      {msg.messageType === "team_announcement" ? <Megaphone className="h-3.5 w-3.5" /> : <MessageSquare className="h-3.5 w-3.5" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-snug">{msg.subject ?? (msg.messageType === "team_announcement" ? "Team Announcement" : "Message from Coach")}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{msg.body}</p>
+                    </div>
+                    <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                  </Card>
+                </a>
+              ))}
+              {(notifData?.notifications ?? []).filter((n: any) => !n.isRead).slice(0, 2).map((n: any) => (
+                <a key={n.id} href={`/org/${slug}/notifications`} data-testid={`card-notice-notif-${n.id}`}>
+                  <Card className="p-3 flex items-start gap-3 border-primary/20 bg-primary/[0.02] hover:border-primary/30 transition-colors">
+                    <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                      <Bell className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-snug">{n.title}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{n.message}</p>
+                    </div>
+                    <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                  </Card>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Upcoming Sessions */}
         <section>
@@ -686,6 +771,7 @@ export default function OrgPortalPage() {
       data={portalData}
       slug={slug}
       orgId={orgId}
+      orgToken={orgToken!}
       onLogout={handleLogout}
     />
   );

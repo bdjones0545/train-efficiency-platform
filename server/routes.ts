@@ -13336,5 +13336,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerWorkoutExecutionRoutes } = await import("./workout-execution-routes");
   registerWorkoutExecutionRoutes(app);
 
+  // ── Org Communication & Notifications Routes ──────────────────────────────
+  const { registerOrgCommunicationRoutes } = await import("./org-communication-routes");
+  registerOrgCommunicationRoutes(app);
+
   return httpServer;
 }

@@ -2040,6 +2040,46 @@ export type WorkoutReadinessCheckin = typeof workoutReadinessCheckins.$inferSele
 export type WorkoutSessionExerciseLog = typeof workoutSessionExerciseLogs.$inferSelect;
 export type WorkoutAdaptationRecommendation = typeof workoutAdaptationRecommendations.$inferSelect;
 
+// ─── Org Communication & Notifications ───────────────────────────────────────
+
+export const orgMessages = pgTable("org_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  senderUserId: varchar("sender_user_id").notNull(),
+  recipientUserId: varchar("recipient_user_id"),
+  teamId: varchar("team_id"),
+  messageType: varchar("message_type").notNull().default("direct"),
+  subject: varchar("subject"),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const orgMessageReads = pgTable("org_message_reads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  messageId: varchar("message_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const orgNotifications = pgTable("org_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  type: varchar("type").notNull(),
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  actionUrl: varchar("action_url"),
+  metadata: jsonb("metadata"),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type OrgMessage = typeof orgMessages.$inferSelect;
+export type OrgMessageRead = typeof orgMessageReads.$inferSelect;
+export type OrgNotification = typeof orgNotifications.$inferSelect;
+
 // ─── Org AI Integrations ──────────────────────────────────────────────────────
 
 export const orgAiIntegrations = pgTable("org_ai_integrations", {
