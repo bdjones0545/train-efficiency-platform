@@ -1,0 +1,66 @@
+Update the Options → Programs tab so organizations can create multiple program/tool types, not only athletic scheduling programs.
+
+Current behavior:
+- Programs tab only supports Athletic Programs / scheduling tabs.
+
+New behavior:
+- Programs tab should support 3 program/tool types:
+  1. Scheduling Program
+  2. PR Tracker
+  3. Workout Builder
+
+Goal:
+Add the foundation now. Do not fully build PR Tracker or Workout Builder yet. Create the data structure, UI entry points, and placeholder routing/states so we can build each tool individually later.
+
+Requirements:
+
+1. Rename section heading from “Athletic Programs” to “Program Tools” or “Athlete Tools”.
+
+2. Update the “Add Program” flow:
+   - When user taps “Add Program”, open a type-selection modal first.
+   - Modal title: “Choose Program Type”
+   - Options:
+     - Scheduling Program
+       Description: “Create a bookable training schedule for teams or groups.”
+     - PR Tracker
+       Description: “Let athletes log and track personal records.”
+     - Workout Builder
+       Description: “Create structured workouts athletes can access.”
+   - After selecting Scheduling Program, continue into the existing add-program flow.
+   - After selecting PR Tracker or Workout Builder, create a placeholder tool entry for now.
+
+3. Add a `type` field to the program/tool model:
+   - `scheduling`
+   - `pr_tracker`
+   - `workout_builder`
+
+4. Existing BLHS Athletic program should default/migrate to:
+   - type: `scheduling`
+
+5. Program cards should visually show their type:
+   - Scheduling Program
+   - PR Tracker
+   - Workout Builder
+
+6. For PR Tracker and Workout Builder entries:
+   - Show card with title, slug, type badge, and status.
+   - Edit button can open a placeholder dialog:
+     “This tool type is ready for buildout.”
+   - Delete should work normally.
+   - No advanced internal functionality yet.
+
+7. Add placeholder route support:
+   - `/programs/:slug`
+   - If type is scheduling, keep existing scheduling behavior.
+   - If type is pr_tracker, show placeholder page: “PR Tracker coming soon.”
+   - If type is workout_builder, show placeholder page: “Workout Builder coming soon.”
+
+8. Keep mobile UX clean:
+   - Type-selection modal should be thumb-friendly.
+   - Cards should not get taller than necessary.
+   - Use existing dark/glass style.
+
+9. Preserve all existing CRUD, ownership checks, and current scheduling program behavior.
+
+Strategic goal:
+This turns Programs from a scheduling-only feature into an extensible organization tool system. Scheduling, PR tracking, and workout building should all live under the same Program Tools architecture.
