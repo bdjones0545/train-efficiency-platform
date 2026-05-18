@@ -62,6 +62,9 @@ import {
   Clock,
   Lock,
   Sliders,
+  BarChart2,
+  ClipboardList,
+  Layers,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -600,6 +603,7 @@ export function AppSidebar() {
 
   const { data: organization, isLoading: orgLoading } = useQuery<{
     name: string;
+    slug?: string;
     logoUrl?: string | null;
     coachTransactionsVisible?: boolean;
     athleticEnabled?: boolean;
@@ -627,6 +631,16 @@ export function AppSidebar() {
 
   const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "scheduling" || !p.type)) || [];
 
+  const orgSlug = (organization as any)?.slug || "";
+  const activeProgramTools = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "pr_tracker" || p.type === "workout_builder")) || [];
+  const programToolItems: NavItem[] = orgSlug
+    ? activeProgramTools.map((p: any) => ({
+        title: p.name,
+        url: `/org/${orgSlug}/programs/${p.slug}`,
+        icon: p.type === "pr_tracker" ? BarChart2 : ClipboardList,
+        testId: `nav-program-tool-${p.id}`,
+      }))
+    : [];
 
   // ── Attention count chip handled inline via AttentionCountChip component ─────
 
@@ -687,6 +701,14 @@ export function AppSidebar() {
         { title: "My Profile", url: "/coach/profile", icon: UserCog, testId: "nav-my-profile" },
       ],
     },
+    ...(programToolItems.length > 0
+      ? [{
+          id: "program-tools",
+          label: "Program Tools",
+          icon: Layers,
+          items: programToolItems,
+        } as NavSection]
+      : []),
     {
       id: "growth",
       label: "Growth & Revenue",

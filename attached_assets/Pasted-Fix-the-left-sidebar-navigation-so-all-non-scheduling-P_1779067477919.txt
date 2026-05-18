@@ -1,0 +1,96 @@
+Fix the left sidebar navigation so all non-scheduling Program Tools appear as their own tool links.
+
+Current issue:
+PR Tracker and Workout Builder exist in Options → Programs, but they do not appear in the left sidebar.
+
+Correct behavior:
+The sidebar should clearly separate:
+- Scheduling Programs
+- Program Tools
+
+====================================================
+SIDEBAR STRUCTURE
+====================================================
+
+Scheduling programs:
+- remain under Clients & Scheduling / Athletic
+- ONLY include:
+  type === "scheduling" || !type
+
+Program Tools:
+- should appear in their own sidebar section/submenu
+- should include:
+  - PR Tracker
+  - Workout Builder
+  - future modular tools
+
+====================================================
+REQUIRED IMPLEMENTATION
+====================================================
+
+1. Keep scheduling programs filtered exactly as they are now:
+   type === "scheduling" || !type
+
+2. Add a new sidebar section:
+   "Program Tools"
+
+3. Under Program Tools render:
+   - all active programs where type === "pr_tracker"
+   - all active programs where type === "workout_builder"
+
+4. Each tool link should route to:
+   /org/:slug/programs/:programSlug
+
+5. Icons:
+   - PR Tracker → trophy/chart icon
+   - Workout Builder → dumbbell/clipboard icon
+
+6. Clicking PR Tracker opens:
+   PrTrackerPage
+
+7. Clicking Workout Builder opens:
+   WorkoutBuilderPage
+
+8. Do NOT render PR Tracker or Workout Builder under:
+   - Athletic Scheduling
+   - Team Training
+   - Scheduling tabs
+
+9. Preserve all existing BLHS Athletic scheduling behavior.
+
+====================================================
+RECENT SECTION
+====================================================
+
+10. When a Program Tool is visited:
+   - add it to Recent
+   - preserve icon and route
+
+Examples:
+- PR Tracker
+- Workout Builder
+
+====================================================
+MOBILE UX
+====================================================
+
+11. Mobile sidebar should:
+- keep Program Tools collapsible
+- maintain spacing hierarchy
+- visually separate scheduling vs tools
+
+====================================================
+GOAL
+====================================================
+
+TrainEfficiency should now clearly distinguish:
+
+Scheduling Layer
+→ booking/team schedules
+
+Program Tools Layer
+→ PR Tracker
+→ Workout Builder
+→ future athlete systems
+
+The sidebar should reflect the modular platform architecture.
