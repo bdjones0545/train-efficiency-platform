@@ -4,11 +4,13 @@ import {
   orgMessages,
   orgMessageReads,
   orgNotifications,
+  notificationAutomationLogs,
   userProfiles,
   prTeamMembers,
 } from "@shared/schema";
 import { eq, and, desc, inArray, or, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { triggerNotificationEvent, type NotificationEventType } from "./services/notification-automation";
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? null;
@@ -286,6 +288,60 @@ export function registerOrgCommunicationRoutes(app: Express) {
       res.json(n);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
+    }
+  });
+
+  // POST /api/org/notifications/trigger-event — trigger automation event (admin)
+  app.post("/api/org/notifications/trigger-event", requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const schema = z.object({
+        eventType: z.string(),
+        userId: z.string().optional(),
+        coachUserId: z.string().optional(),
+        teamId: z.string().optional(),
+        programId: z.string().optional(),
+        programName: z.string().optional(),
+        athleteName: z.string().optional(),
+        readinessScore: z.number().optional(),
+        fatigueLevel: z.number().optional(),
+        liftName: z.string().optional(),
+        liftValue: z.number().optional(),
+        liftUnit: z.string().optional(),
+        previousBest: z.number().optional(),
+        improvementPct: z.number().optional(),
+        highlightTitle: z.string().optional(),
+        metadata: z.record(z.any()).optional(),
+      });
+      const body = schema.parse(req.body);
+      const result = await triggerNotificationEvent(body.eventType as NotificationEventType, {
+        orgId: profile.organizationId,
+        ...body,
+      });
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // GET /api/org/notifications/automation-logs — debugging + event trace
+  app.get("/api/org/notifications/automation-logs", requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const { eventType, limit: limitQ } = req.query as any;
+      const limitN = Math.min(parseInt(limitQ ?? "50"), 200);
+
+      const conds: any[] = [eq(notificationAutomationLogs.orgId, profile.organizationId)];
+      if (eventType) conds.push(eq(notificationAutomationLogs.eventType, eventType));
+
+      const logs = await db.select().from(notificationAutomationLogs)
+        .where(and(...conds))
+        .orderBy(desc(notificationAutomationLogs.createdAt))
+        .limit(limitN);
+
+      res.json({ logs, total: logs.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
     }
   });
 }

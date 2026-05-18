@@ -2076,9 +2076,21 @@ export const orgNotifications = pgTable("org_notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const notificationAutomationLogs = pgTable("notification_automation_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventType: varchar("event_type").notNull(),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id"),
+  payload: jsonb("payload").notNull().default({}),
+  notificationIds: jsonb("notification_ids").notNull().default([]),
+  status: varchar("status").notNull().default("processed"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export type OrgMessage = typeof orgMessages.$inferSelect;
 export type OrgMessageRead = typeof orgMessageReads.$inferSelect;
 export type OrgNotification = typeof orgNotifications.$inferSelect;
+export type NotificationAutomationLog = typeof notificationAutomationLogs.$inferSelect;
 
 // ─── Org AI Integrations ──────────────────────────────────────────────────────
 

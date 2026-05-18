@@ -16,6 +16,7 @@ import {
 import { eq, and, desc, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { trainChatClient } from "./services/trainchat-client";
+import { triggerNotificationEvent } from "./services/notification-automation";
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? null;
@@ -293,6 +294,30 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       // Mark program as assigned
       await db.update(workoutPrograms).set({ status: "assigned", updatedAt: new Date() })
         .where(eq(workoutPrograms.id, program.id));
+
+      // Fire automation event
+      if (assignedToType === "athlete" && athleteUserId) {
+        triggerNotificationEvent("workout_assigned", {
+          orgId,
+          userId: athleteUserId,
+          coachUserId: profile.userId,
+          programId: program.id,
+          programName: program.name,
+        }).catch(() => {});
+      } else if (assignedToType === "team" && teamId) {
+        // Notify each team member
+        const members = await db.select().from(prTeamMembers).where(eq(prTeamMembers.teamId, teamId));
+        for (const member of members) {
+          if (member.userId === profile.userId) continue;
+          triggerNotificationEvent("workout_assigned", {
+            orgId,
+            userId: member.userId,
+            coachUserId: profile.userId,
+            programId: program.id,
+            programName: program.name,
+          }).catch(() => {});
+        }
+      }
 
       return res.json({ assignment });
     } catch (err: any) {

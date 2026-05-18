@@ -27,6 +27,9 @@ import {
   MessageSquare,
   Megaphone,
   Send,
+  Zap,
+  Heart,
+  AlertTriangle,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { OrgMessageComposer } from "@/components/OrgMessageComposer";
@@ -580,6 +583,138 @@ function PortalHome({
             ))}
           </div>
         </section>
+
+        {/* ─── Coach: Athlete Alerts Panel ─────────────────────────────────── */}
+        {isCoach && (() => {
+          const coachAlerts = (notifData?.notifications ?? []).filter((n: any) => n.type === "coach_alert" && !n.isRead);
+          if (coachAlerts.length === 0) return null;
+          const prSpikes    = coachAlerts.filter((n: any) => (n.metadata as any)?.severity === "positive").length;
+          const missed      = coachAlerts.filter((n: any) => (n.title ?? "").includes("missed")).length;
+          const lowReady    = coachAlerts.filter((n: any) => (n.title ?? "").toLowerCase().includes("readiness")).length;
+          const highFatigue = coachAlerts.filter((n: any) => (n.title ?? "").toLowerCase().includes("fatigue")).length;
+          return (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-orange-400" /> Athlete Alerts
+                  <Badge className="text-[10px] h-4 px-1.5 bg-orange-400/20 text-orange-400 border-orange-400/30">
+                    {coachAlerts.length}
+                  </Badge>
+                </h2>
+                <a href={`/org/${slug}/notifications`} className="text-xs text-primary hover:underline flex items-center gap-1" data-testid="link-coach-view-all-alerts">
+                  View all <ArrowRight className="h-3 w-3" />
+                </a>
+              </div>
+
+              {/* Digest summary row */}
+              {(prSpikes + missed + lowReady + highFatigue) > 0 && (
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                  {prSpikes > 0 && (
+                    <Card className="p-2.5 text-center border-emerald-500/20 bg-emerald-500/[0.03]">
+                      <TrendingUp className="h-3.5 w-3.5 text-emerald-400 mx-auto mb-0.5" />
+                      <p className="text-sm font-bold">{prSpikes}</p>
+                      <p className="text-[10px] text-muted-foreground">PR Spike{prSpikes !== 1 ? "s" : ""}</p>
+                    </Card>
+                  )}
+                  {missed > 0 && (
+                    <Card className="p-2.5 text-center border-red-500/20 bg-red-500/[0.03]">
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-400 mx-auto mb-0.5" />
+                      <p className="text-sm font-bold">{missed}</p>
+                      <p className="text-[10px] text-muted-foreground">Missed</p>
+                    </Card>
+                  )}
+                  {lowReady > 0 && (
+                    <Card className="p-2.5 text-center border-rose-500/20 bg-rose-500/[0.03]">
+                      <Heart className="h-3.5 w-3.5 text-rose-400 mx-auto mb-0.5" />
+                      <p className="text-sm font-bold">{lowReady}</p>
+                      <p className="text-[10px] text-muted-foreground">Low Ready</p>
+                    </Card>
+                  )}
+                  {highFatigue > 0 && (
+                    <Card className="p-2.5 text-center border-orange-500/20 bg-orange-500/[0.03]">
+                      <Zap className="h-3.5 w-3.5 text-orange-400 mx-auto mb-0.5" />
+                      <p className="text-sm font-bold">{highFatigue}</p>
+                      <p className="text-[10px] text-muted-foreground">Fatigue</p>
+                    </Card>
+                  )}
+                </div>
+              )}
+
+              {/* Top 3 alerts */}
+              <div className="space-y-2">
+                {coachAlerts.slice(0, 3).map((n: any) => {
+                  const meta = (n.metadata as any) ?? {};
+                  const isPositive = meta.severity === "positive";
+                  const isHigh     = meta.severity === "high";
+                  return (
+                    <a key={n.id} href={`/org/${slug}/notifications`} data-testid={`card-coach-alert-${n.id}`}>
+                      <Card className={`p-3 flex items-start gap-3 transition-colors hover:border-primary/20
+                        ${isPositive ? "border-emerald-500/20 bg-emerald-500/[0.02]" : ""}
+                        ${isHigh ? "border-red-500/20 bg-red-500/[0.02]" : ""}
+                        ${!isPositive && !isHigh ? "border-orange-500/20 bg-orange-500/[0.02]" : ""}
+                      `}>
+                        <div className={`h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
+                          ${isPositive ? "bg-emerald-500/15 text-emerald-400" : "bg-orange-500/15 text-orange-400"}
+                        `}>
+                          {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium leading-snug">{n.title}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{n.message}</p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-1" />
+                      </Card>
+                    </a>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
+
+        {/* ─── Athlete: Today's Reminders & Celebrations ────────────────────── */}
+        {!isCoach && (() => {
+          const todayItems = (notifData?.notifications ?? []).filter((n: any) => {
+            if (n.isRead) return false;
+            const hrs = (Date.now() - new Date(n.createdAt).getTime()) / 3600000;
+            return hrs < 24 && ["pr_celebration", "workout_assigned", "readiness_followup"].includes(n.type);
+          });
+          if (todayItems.length === 0) return null;
+          return (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                  <Star className="h-3.5 w-3.5 text-amber-400" /> Today's Highlights
+                </h2>
+                <a href={`/org/${slug}/notifications`} className="text-xs text-primary hover:underline flex items-center gap-1">
+                  See all <ArrowRight className="h-3 w-3" />
+                </a>
+              </div>
+              <div className="space-y-2">
+                {todayItems.slice(0, 3).map((n: any) => {
+                  const isPr = n.type === "pr_celebration";
+                  return (
+                    <a key={n.id} href={`/org/${slug}/notifications`} data-testid={`card-today-highlight-${n.id}`}>
+                      <Card className={`p-3 flex items-start gap-3 hover:border-primary/20 transition-colors
+                        ${isPr ? "border-amber-400/20 bg-amber-400/[0.03]" : "border-primary/20 bg-primary/[0.02]"}
+                      `}>
+                        <div className={`h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
+                          ${isPr ? "bg-amber-400/15 text-amber-400" : "bg-primary/10 text-primary"}
+                        `}>
+                          {isPr ? <Trophy className="h-3.5 w-3.5" /> : <Dumbbell className="h-3.5 w-3.5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium leading-snug">{n.title}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{n.message}</p>
+                        </div>
+                      </Card>
+                    </a>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Coach Admin Section */}
         {isCoach && (

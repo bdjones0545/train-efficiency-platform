@@ -15,6 +15,7 @@ import {
 import { eq, and, desc, asc, inArray, gte } from "drizzle-orm";
 import { z } from "zod";
 import { trainChatClient } from "./services/trainchat-client";
+import { triggerNotificationEvent } from "./services/notification-automation";
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? null;
@@ -200,6 +201,24 @@ export function registerWorkoutExecutionRoutes(app: Express) {
         athleteUserId: profile.userId,
         ...body,
       }).returning();
+
+      // Fire automation events based on readiness data
+      if (body.readinessScore <= 4) {
+        triggerNotificationEvent("readiness_low", {
+          orgId: profile.organizationId,
+          userId: profile.userId,
+          readinessScore: body.readinessScore,
+          fatigueLevel: body.fatigueLevel,
+        }).catch(() => {});
+      }
+      if (body.fatigueLevel && body.fatigueLevel >= 8) {
+        triggerNotificationEvent("high_fatigue", {
+          orgId: profile.organizationId,
+          userId: profile.userId,
+          fatigueLevel: body.fatigueLevel,
+        }).catch(() => {});
+      }
+
       res.json(checkin);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -355,6 +374,44 @@ export function registerWorkoutExecutionRoutes(app: Express) {
         checkin,
         body.exerciseLogs,
       );
+
+      // Fire automation events for session completion
+      triggerNotificationEvent("workout_completed", {
+        orgId: profile.organizationId,
+        userId: profile.userId,
+        programId: session.workoutProgramId,
+        sessionId,
+      }).catch(() => {});
+
+      // Alert on low readiness in session
+      if (body.checkinData.readinessScore <= 4) {
+        triggerNotificationEvent("readiness_low", {
+          orgId: profile.organizationId,
+          userId: profile.userId,
+          readinessScore: body.checkinData.readinessScore,
+          fatigueLevel: body.checkinData.fatigueLevel,
+        }).catch(() => {});
+      }
+      if (body.checkinData.fatigueLevel && body.checkinData.fatigueLevel >= 8) {
+        triggerNotificationEvent("high_fatigue", {
+          orgId: profile.organizationId,
+          userId: profile.userId,
+          fatigueLevel: body.checkinData.fatigueLevel,
+        }).catch(() => {});
+      }
+
+      // If adaptation conditions met, fire recommendation notification
+      const needsAdaptation = body.checkinData.readinessScore <= 4
+        || (body.checkinData.sorenessLevel ?? 0) >= 8
+        || (body.checkinData.fatigueLevel ?? 0) >= 8
+        || (body.checkinData.painAreas?.length ?? 0) > 0;
+      if (needsAdaptation) {
+        triggerNotificationEvent("adaptation_recommendation", {
+          orgId: profile.organizationId,
+          userId: profile.userId,
+          programId: session.workoutProgramId,
+        }).catch(() => {});
+      }
 
       res.json({ success: true });
     } catch (e: any) {

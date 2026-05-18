@@ -1,0 +1,296 @@
+Build Notification Automation Hooks for TrainEfficiency.
+
+GOAL:
+Transform the Communication + Notification Layer from a passive inbox into an active event-driven operating system.
+
+The system should automatically generate notifications and messages from existing platform events.
+
+CONTEXT:
+The following systems already exist:
+- PR Tracker
+- Workout Builder
+- Workout Execution + Readiness
+- Athlete Intelligence
+- Watchlists
+- Coach Alerts
+- Messaging System
+- Notification Center
+
+This phase connects those systems together.
+
+====================================================
+1. AUTOMATION ENGINE
+====================================================
+
+Create a lightweight internal automation/event hook layer.
+
+Purpose:
+- listen for important system events
+- generate notifications/messages automatically
+- centralize notification logic
+- avoid duplicated notification code everywhere
+
+Create:
+
+server/services/notification-automation.ts
+
+Core helper:
+triggerNotificationEvent(eventType, payload)
+
+This service should:
+- validate payload
+- determine recipients
+- generate notification(s)
+- optionally generate coach alerts
+- deduplicate repeated events where appropriate
+
+====================================================
+2. SUPPORTED EVENT TYPES
+====================================================
+
+Implement automation hooks for:
+
+WORKOUT EVENTS
+- workout_assigned
+- workout_completed
+- workout_missed
+- workout_updated
+- readiness_low
+- high_fatigue
+- adaptation_recommendation
+
+PR EVENTS
+- pr_added
+- new_pr
+- pr_spike
+- streak_milestone
+
+INTELLIGENCE EVENTS
+- new_highlight_found
+- public_profile_update
+- recruiting_update
+- inactivity_warning
+
+COMMUNICATION EVENTS
+- coach_message
+- team_announcement
+
+SYSTEM EVENTS
+- welcome_to_team
+- athlete_added
+- trainchat_adjustment_ready
+
+====================================================
+3. AUTOMATED ATHLETE NOTIFICATIONS
+====================================================
+
+Examples:
+
+Workout Assigned:
+“You have a new 6-week strength program assigned.”
+
+Workout Reminder:
+“You have a workout scheduled today.”
+
+Missed Workout:
+“You missed yesterday’s assigned workout.”
+
+PR Celebration:
+“New PR 🎉 Back Squat +15 lbs”
+
+Low Readiness:
+“Coach may adjust your workload based on your recent check-ins.”
+
+Coach Message:
+“Coach Bryan sent you a message.”
+
+====================================================
+4. AUTOMATED COACH ALERTS
+====================================================
+
+Examples:
+
+High Fatigue:
+“3 athletes flagged high fatigue today.”
+
+PR Spike:
+“James Carter improved Power Clean +12%.”
+
+Missed Sessions:
+“4 football athletes missed 2+ sessions.”
+
+New Highlight:
+“New Hudl highlight detected for Marcus Lee.”
+
+====================================================
+5. DATABASE ENHANCEMENTS
+====================================================
+
+Enhance org_notifications metadata support.
+
+Optional new table:
+
+notification_automation_logs
+- id
+- eventType
+- orgId
+- userId nullable
+- payload jsonb
+- notificationIds jsonb
+- status
+- createdAt
+
+Purpose:
+- debugging
+- event tracing
+- dedup tracking
+
+====================================================
+6. EVENT TRIGGERS
+====================================================
+
+Hook into existing systems.
+
+Examples:
+
+Workout Builder:
+- on assignment
+- on update
+
+Workout Execution:
+- on session completion
+- on readiness submission
+- on missed session detection
+
+PR Tracker:
+- on PR entry
+- on milestone detection
+
+Athlete Intelligence:
+- on new approved highlight/media/stat
+- on important alerts
+
+Messaging:
+- on coach message
+- on team announcement
+
+====================================================
+7. DEDUPLICATION RULES
+====================================================
+
+Avoid spam.
+
+Examples:
+- do not send 5 low-readiness alerts in one day
+- combine repeated missed-workout events
+- avoid duplicate PR celebration spam
+
+Implement:
+- cooldown windows
+- grouped alerts where appropriate
+
+====================================================
+8. NOTIFICATION PREFERENCES INTEGRATION
+====================================================
+
+Respect existing notification preferences.
+
+Examples:
+- user disabled PR updates
+- user disabled team announcements
+- coach disabled low-priority alerts
+
+Automation engine must check preferences before sending.
+
+====================================================
+9. FUTURE DELIVERY CHANNEL READY
+====================================================
+
+Structure notifications for future:
+- email
+- SMS
+- push notifications
+- in-app banners
+
+Current phase:
+internal portal notifications only.
+
+Add deliveryType support internally:
+- in_app
+- future_email
+- future_sms
+- future_push
+
+====================================================
+10. COACH DIGESTS
+====================================================
+
+Create lightweight digest support.
+
+Examples:
+- “Today’s Athlete Summary”
+- “3 athletes need review”
+- “2 PR spikes today”
+
+Do NOT build scheduled email digests yet.
+Only structure the aggregation layer.
+
+====================================================
+11. UI ENHANCEMENTS
+====================================================
+
+Notification Center improvements:
+- grouped notifications
+- event icons
+- severity indicators
+- celebration styling for PRs
+- alert styling for fatigue/readiness
+- quick action buttons
+
+Examples:
+- View Workout
+- View Athlete
+- Open Message
+- Review Recommendation
+
+====================================================
+12. PORTAL ENHANCEMENTS
+====================================================
+
+Athlete Portal:
+- Today’s reminders
+- PR celebrations
+- unread coach messages
+
+Coach Portal:
+- athlete alerts
+- missed workouts
+- readiness warnings
+- intelligence updates
+
+====================================================
+13. API ENDPOINTS
+====================================================
+
+Create:
+
+POST /api/org/notifications/trigger-event
+(admin/internal only)
+
+GET /api/org/notifications/automation-logs
+
+Optional internal-only routes for debugging.
+
+====================================================
+14. IMPORTANT
+====================================================
+
+Do NOT:
+- build email/SMS sending yet
+- spam notifications
+- duplicate alerts endlessly
+- bypass notification preferences
+- create noisy UX
+
+This phase should make TrainEfficiency feel:
+alive, responsive, and operationally intelligent.

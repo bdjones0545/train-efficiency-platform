@@ -14,7 +14,8 @@ import {
   prLiftEntries,
   prImportJobs,
 } from "@shared/schema";
-import { eq, and, desc, inArray, gt, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
+import { triggerNotificationEvent } from "./services/notification-automation";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -570,6 +571,36 @@ export function registerPrTrackerRoutes(app: Express) {
           teamId: body.teamId,
         })
         .returning();
+
+      // Fire PR automation: check if this is a new personal record
+      (async () => {
+        try {
+          const prevBest = await db.select().from(prLiftEntries)
+            .where(and(
+              eq(prLiftEntries.orgId, orgId),
+              eq(prLiftEntries.userId, req.orgUser.id),
+              eq(prLiftEntries.liftTypeId, body.liftTypeId),
+              lt(prLiftEntries.id, entry.id),
+            ))
+            .orderBy(desc(prLiftEntries.value))
+            .limit(1);
+
+          const isNewPr = !prevBest.length || entry.value > prevBest[0].value;
+          const improvementPct = prevBest.length
+            ? ((entry.value - prevBest[0].value) / prevBest[0].value) * 100
+            : undefined;
+
+          await triggerNotificationEvent(isNewPr ? "new_pr" : "pr_added", {
+            orgId,
+            userId: req.orgUser.id,
+            liftName: liftType[0].name,
+            liftValue: entry.value,
+            liftUnit: entry.unit,
+            previousBest: prevBest[0]?.value,
+            improvementPct,
+          });
+        } catch {}
+      })();
 
       res.json({ ...entry, liftTypeName: liftType[0].name });
     } catch (err: any) {
