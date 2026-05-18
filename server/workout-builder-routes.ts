@@ -26,8 +26,32 @@ function getUserId(req: any): string | null {
 async function getOrgProfile(req: any) {
   const userId = getUserId(req);
   if (!userId) return null;
-  const { userProfiles } = await import("@shared/schema");
+  const { userProfiles, coachProfiles } = await import("@shared/schema");
+
   const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
+
+  // If the userProfile already has a builder role, use it as-is
+  if (profile && ["ADMIN", "COACH", "STAFF"].includes(profile.role ?? "")) {
+    return profile;
+  }
+
+  // Fall back: check coachProfiles — coaches may have role: "CLIENT" in userProfiles
+  const [coachProfile] = await db
+    .select()
+    .from(coachProfiles)
+    .where(eq(coachProfiles.userId, userId))
+    .limit(1);
+
+  if (coachProfile?.organizationId) {
+    // Synthesize a coach-role profile using data from the coachProfile
+    return {
+      ...(profile ?? {}),
+      userId,
+      role: "COACH" as const,
+      organizationId: coachProfile.organizationId,
+    };
+  }
+
   return profile ?? null;
 }
 

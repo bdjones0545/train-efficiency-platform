@@ -1218,11 +1218,14 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
   const { data: monitorData } = useQuery<any>({
     queryKey: ["/api/org/workout-execution/coach-monitor"],
     queryFn: () => fetch("/api/org/workout-execution/coach-monitor").then((r) => r.json()),
-    enabled: !!bootstrap && ["ADMIN", "COACH"].includes(bootstrap?.currentUser?.role ?? ""),
+    enabled: !!bootstrap && ["ADMIN", "COACH", "STAFF"].includes(bootstrap?.currentUser?.role ?? ""),
     refetchInterval: 60000,
   });
 
-  const isCoach = ["ADMIN", "COACH"].includes(bootstrap?.currentUser?.role ?? "");
+  const BUILDER_ROLES = ["ADMIN", "COACH", "STAFF", "owner", "admin", "coach", "staff"];
+  const rawRole: string | undefined = bootstrap?.currentUser?.role;
+  const isCoach = rawRole !== undefined && BUILDER_ROLES.includes(rawRole);
+  const isAthlete = rawRole !== undefined && ["CLIENT", "athlete", "guardian"].includes(rawRole);
   const programs: any[] = bootstrap?.programs ?? [];
   const trainChatConnected: boolean = bootstrap?.trainChatConnected ?? false;
   const needsReviewCount: number = monitorData?.summary?.needsReview ?? 0;
@@ -1235,8 +1238,19 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
     );
   }
 
-  // Athlete view
-  if (!isCoach) {
+  // Role is missing or unrecognised — show a clear permission state, not the athlete view
+  if (bootstrap && rawRole === undefined) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-center" data-testid="page-workout-builder-no-role">
+        <ShieldAlert className="h-8 w-8 text-muted-foreground" />
+        <p className="font-semibold">Access not configured</p>
+        <p className="text-sm text-muted-foreground max-w-xs">Your account doesn't have a role assigned for this organization. Contact your admin to get access.</p>
+      </div>
+    );
+  }
+
+  // Athlete / guardian view
+  if (isAthlete) {
     return (
       <div className="space-y-6" data-testid="page-workout-builder-athlete">
         <div className="flex items-center justify-between">
@@ -1246,6 +1260,17 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
           </div>
         </div>
         <AthleteWorkoutsView orgSlug={orgSlug} />
+      </div>
+    );
+  }
+
+  // Any other unrecognised non-null role — show permission state rather than defaulting to athlete
+  if (!isCoach) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-center" data-testid="page-workout-builder-no-access">
+        <ShieldAlert className="h-8 w-8 text-muted-foreground" />
+        <p className="font-semibold">Access restricted</p>
+        <p className="text-sm text-muted-foreground max-w-xs">You don't have permission to access the Workout Builder. Contact your admin.</p>
       </div>
     );
   }
