@@ -1,0 +1,316 @@
+Build AI Coach Content Builder for Education Modules in TrainEfficiency.
+
+GOAL:
+Allow coaches/orgs to create, edit, assign, and track custom education pathways using AI assistance.
+
+This should expand the existing Nutrition Education module into a reusable Education Builder system.
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+Coaches can create education pathways for:
+- Nutrition
+- Recovery
+- Hydration
+- Sleep
+- Mindset
+- Team Standards
+- Injury Prevention
+- Recruiting Education
+- Custom topics
+
+AI should help generate:
+- lesson content
+- key takeaways
+- quizzes
+- module summaries
+- athlete-friendly rewrites
+- coach-approved edits
+
+IMPORTANT:
+AI-generated content must always be coach-reviewed before publishing.
+
+====================================================
+2. ROUTES
+====================================================
+
+Create coach builder route:
+
+/org/:slug/coach/education-builder
+
+Create athlete education route:
+
+/org/:slug/education/:pathwaySlug
+
+Keep existing nutrition route working:
+- /org/:slug/nutrition can redirect to nutrition pathway
+or remain as shortcut.
+
+====================================================
+3. DATABASE TABLES
+====================================================
+
+Create/extend:
+
+education_pathways
+- id
+- orgId
+- createdByUserId
+- title
+- slug
+- category
+  (nutrition, recovery, mindset, sleep, hydration, team_standards, custom)
+- description
+- status
+  (draft, published, archived)
+- isDefault
+- createdAt
+- updatedAt
+
+education_modules
+- id
+- orgId
+- pathwayId
+- moduleNumber
+- title
+- description
+- content jsonb
+- keyTakeaways jsonb
+- estimatedMinutes
+- status
+  (draft, published)
+- createdAt
+- updatedAt
+
+education_quiz_questions
+- id
+- orgId
+- pathwayId
+- moduleId
+- question
+- options jsonb
+- correctAnswer
+- explanation
+- createdAt
+
+education_progress
+- id
+- orgId
+- pathwayId
+- moduleId
+- athleteUserId
+- status
+  (not_started, in_progress, completed)
+- quizScore nullable
+- completedAt nullable
+- createdAt
+- updatedAt
+
+education_assignments
+- id
+- orgId
+- pathwayId
+- assignedToType
+  (athlete, team, all_athletes)
+- athleteUserId nullable
+- teamId nullable
+- assignedByUserId
+- dueDate nullable
+- createdAt
+
+education_ai_generations
+- id
+- orgId
+- pathwayId nullable
+- moduleId nullable
+- coachUserId
+- generationType
+  (pathway_outline, module_content, quiz_questions, rewrite, summary)
+- prompt
+- result jsonb
+- status
+  (draft, accepted, rejected)
+- createdAt
+
+====================================================
+4. AI BUILDER FEATURES
+====================================================
+
+Inside Education Builder add:
+
+A. Generate Pathway with AI
+Coach enters:
+- topic
+- athlete age group
+- sport/team
+- tone
+- number of modules
+- difficulty level
+- goal
+
+AI returns:
+- pathway title
+- module outline
+- learning goals
+- suggested quiz structure
+
+Coach can:
+- accept
+- edit
+- regenerate
+- discard
+
+B. Generate Module Content
+For each module AI can generate:
+- lesson sections
+- simple athlete language
+- key takeaways
+- examples
+- short summary
+
+C. Generate Quiz
+AI creates:
+- 3–5 questions
+- multiple choice answers
+- correct answer
+- explanation
+
+D. Rewrite Tools
+Buttons:
+- Make simpler
+- Make more athlete-friendly
+- Make shorter
+- Make more professional
+- Add examples
+- Turn into bullet points
+
+====================================================
+5. SAFETY RULES FOR AI CONTENT
+====================================================
+
+AI should avoid:
+- medical advice
+- supplement prescriptions
+- calorie/macronutrient prescriptions
+- eating disorder language
+- body-shaming
+- diagnosis/treatment claims
+- extreme dieting advice
+
+For nutrition content:
+- use education-only language
+- performance fueling
+- hydration
+- recovery basics
+- refer to qualified professionals for individual plans
+
+All AI content must show:
+“AI draft — coach review required.”
+
+====================================================
+6. COACH BUILDER UI
+====================================================
+
+Education Builder should include:
+
+- pathway list
+- create pathway
+- AI generate pathway
+- edit modules
+- add quiz questions
+- preview athlete view
+- publish/unpublish
+- assign to team/athletes
+- completion analytics
+
+Use tabs:
+- Pathways
+- Builder
+- Assignments
+- Analytics
+
+====================================================
+7. ATHLETE EXPERIENCE
+====================================================
+
+Athletes see:
+- assigned education pathways
+- progress bar
+- module cards
+- lessons
+- quizzes
+- completion badges
+- due dates if assigned
+
+====================================================
+8. COACH ANALYTICS
+====================================================
+
+Coach sees:
+- completion by pathway
+- completion by team
+- quiz averages
+- overdue athletes
+- failed quiz attempts
+- pathway completion rate
+
+====================================================
+9. API ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/education/pathways
+POST /api/org/education/pathways
+PATCH /api/org/education/pathways/:id
+
+POST /api/org/education/pathways/:id/publish
+POST /api/org/education/pathways/:id/assign
+
+GET /api/org/education/pathways/:slug/modules
+POST /api/org/education/modules
+PATCH /api/org/education/modules/:id
+
+POST /api/org/education/modules/:id/quiz
+
+POST /api/org/education/ai/generate-pathway
+POST /api/org/education/ai/generate-module
+POST /api/org/education/ai/generate-quiz
+POST /api/org/education/ai/rewrite
+
+GET /api/org/education/analytics
+
+====================================================
+10. NOTIFICATION HOOKS
+====================================================
+
+Trigger notifications:
+- education_pathway_assigned
+- education_module_completed
+- education_pathway_completed
+- education_overdue
+- quiz_failed_multiple_times
+
+====================================================
+11. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- modern builder feel
+- AI draft badges
+- publish status badges
+- preview mode
+- coach approval controls
+
+====================================================
+12. IMPORTANT
+====================================================
+
+Do NOT publish AI content automatically.
+Do NOT replace the current Nutrition Education module; migrate/bridge it into the broader education system.
+Do NOT make nutrition prescriptions.
+
+This should turn TrainEfficiency into a coach-owned education platform with AI-assisted content creation.

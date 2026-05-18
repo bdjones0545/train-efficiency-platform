@@ -33,6 +33,7 @@ import {
   CalendarDays,
   Activity,
   Leaf,
+  GraduationCap,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { OrgMessageComposer } from "@/components/OrgMessageComposer";
@@ -327,10 +328,10 @@ function PortalHome({
               href={`/org/${slug}/calendar`}
             />
             <ActionCard
-              icon={<Leaf className="h-5 w-5 text-emerald-400" />}
-              label="Nutrition Education"
-              description="6-module fueling pathway"
-              href={`/org/${slug}/nutrition`}
+              icon={<GraduationCap className="h-5 w-5 text-primary" />}
+              label="Education"
+              description="Pathways & learning modules"
+              href={`/org/${slug}/education`}
             />
             {userTeams?.length === 0 ? (
               <ActionCard
@@ -465,7 +466,7 @@ function PortalHome({
         {/* ─── Nutrition Education Progress Card ──────────────────────────────── */}
         {!isCoach && nutritionStats && nutritionStats.completed < nutritionStats.total && (
           <section>
-            <a href={`/org/${slug}/nutrition`} data-testid="card-nutrition-progress">
+            <a href={`/org/${slug}/education`} data-testid="card-nutrition-progress">
               <Card className="p-4 border-emerald-500/20 bg-emerald-500/[0.02] hover:border-emerald-500/30 transition-colors">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="h-8 w-8 rounded-lg bg-emerald-400/10 flex items-center justify-center">
@@ -883,10 +884,10 @@ function PortalHome({
                 href={`/org/${slug}/coach/timeline`}
               />
               <ActionCard
-                icon={<Leaf className="h-5 w-5 text-emerald-400" />}
-                label="Nutrition Progress"
-                description="Team fueling education"
-                href={`/org/${slug}/coach/nutrition`}
+                icon={<GraduationCap className="h-5 w-5 text-primary" />}
+                label="Education Builder"
+                description="Build & manage pathways"
+                href={`/org/${slug}/coach/education-builder`}
               />
               <ActionCard
                 icon={<CalendarDays className="h-5 w-5 text-violet-400" />}

@@ -2155,6 +2155,94 @@ export type NutritionQuizQuestion = typeof nutritionQuizQuestions.$inferSelect;
 export type NutritionProgress = typeof nutritionProgress.$inferSelect;
 export type NutritionQuizAttempt = typeof nutritionQuizAttempts.$inferSelect;
 
+// ─── Education Builder System ─────────────────────────────────────────────────
+
+export const educationPathways = pgTable("education_pathways", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  createdByUserId: varchar("created_by_user_id"),
+  title: varchar("title").notNull(),
+  slug: varchar("slug").notNull(),
+  category: varchar("category").notNull().default("custom"),
+  description: text("description"),
+  status: varchar("status").notNull().default("draft"),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const educationModules = pgTable("education_modules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  pathwayId: varchar("pathway_id").notNull(),
+  moduleNumber: integer("module_number").notNull(),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  content: jsonb("content").notNull().default({}),
+  keyTakeaways: jsonb("key_takeaways").notNull().default([]),
+  estimatedMinutes: integer("estimated_minutes").default(10),
+  status: varchar("status").notNull().default("draft"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const educationQuizQuestions = pgTable("education_quiz_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  pathwayId: varchar("pathway_id").notNull(),
+  moduleId: varchar("module_id").notNull(),
+  question: text("question").notNull(),
+  options: jsonb("options").notNull().default([]),
+  correctAnswer: integer("correct_answer").notNull(),
+  explanation: text("explanation"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const educationProgress = pgTable("education_progress", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  pathwayId: varchar("pathway_id").notNull(),
+  moduleId: varchar("module_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  status: varchar("status").notNull().default("not_started"),
+  quizScore: integer("quiz_score"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const educationAssignments = pgTable("education_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  pathwayId: varchar("pathway_id").notNull(),
+  assignedToType: varchar("assigned_to_type").notNull(),
+  athleteUserId: varchar("athlete_user_id"),
+  teamId: varchar("team_id"),
+  assignedByUserId: varchar("assigned_by_user_id").notNull(),
+  dueDate: timestamp("due_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const educationAiGenerations = pgTable("education_ai_generations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  pathwayId: varchar("pathway_id"),
+  moduleId: varchar("module_id"),
+  coachUserId: varchar("coach_user_id").notNull(),
+  generationType: varchar("generation_type").notNull(),
+  prompt: text("prompt").notNull(),
+  result: jsonb("result").notNull().default({}),
+  status: varchar("status").notNull().default("draft"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type EducationPathway = typeof educationPathways.$inferSelect;
+export type EducationModule = typeof educationModules.$inferSelect;
+export type EducationQuizQuestion = typeof educationQuizQuestions.$inferSelect;
+export type EducationProgress = typeof educationProgress.$inferSelect;
+export type EducationAssignment = typeof educationAssignments.$inferSelect;
+export type EducationAiGeneration = typeof educationAiGenerations.$inferSelect;
+
 export type OrgMessage = typeof orgMessages.$inferSelect;
 export type OrgMessageRead = typeof orgMessageReads.$inferSelect;
 export type OrgNotification = typeof orgNotifications.$inferSelect;
