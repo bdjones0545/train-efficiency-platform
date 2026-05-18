@@ -32,6 +32,7 @@ import {
   AlertTriangle,
   CalendarDays,
   Activity,
+  Leaf,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { OrgMessageComposer } from "@/components/OrgMessageComposer";
@@ -211,6 +212,16 @@ function PortalHome({
   });
   const todayEvents: any[] = todayEventsData?.events ?? [];
 
+  // Nutrition progress (athletes)
+  const { data: nutritionData } = useQuery<any>({
+    queryKey: ["/api/org/nutrition/modules", slug],
+    queryFn: () =>
+      fetch("/api/org/nutrition/modules", { headers: { "X-Org-Auth-Token": orgToken } })
+        .then((r) => r.json()),
+    refetchInterval: 120000,
+  });
+  const nutritionStats = nutritionData?.stats;
+
   // Unread messages
   const { data: messagesData } = useQuery<any[]>({
     queryKey: ["/api/org/messages"],
@@ -314,6 +325,12 @@ function PortalHome({
               label="My Calendar"
               description="Events & activity"
               href={`/org/${slug}/calendar`}
+            />
+            <ActionCard
+              icon={<Leaf className="h-5 w-5 text-emerald-400" />}
+              label="Nutrition Education"
+              description="6-module fueling pathway"
+              href={`/org/${slug}/nutrition`}
             />
             {userTeams?.length === 0 ? (
               <ActionCard
@@ -442,6 +459,53 @@ function PortalHome({
                 );
               })}
             </div>
+          </section>
+        )}
+
+        {/* ─── Nutrition Education Progress Card ──────────────────────────────── */}
+        {!isCoach && nutritionStats && nutritionStats.completed < nutritionStats.total && (
+          <section>
+            <a href={`/org/${slug}/nutrition`} data-testid="card-nutrition-progress">
+              <Card className="p-4 border-emerald-500/20 bg-emerald-500/[0.02] hover:border-emerald-500/30 transition-colors">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-8 w-8 rounded-lg bg-emerald-400/10 flex items-center justify-center">
+                    <Leaf className="h-4 w-4 text-emerald-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">Nutrition Education</p>
+                    <p className="text-xs text-muted-foreground">
+                      {nutritionStats.completed} of {nutritionStats.total} modules complete
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-xs text-emerald-400 border-emerald-400/30">
+                    {nutritionStats.percentComplete}%
+                  </Badge>
+                </div>
+                <div className="w-full bg-muted/30 rounded-full h-1.5">
+                  <div
+                    className="bg-emerald-400 h-1.5 rounded-full transition-all"
+                    style={{ width: `${nutritionStats.percentComplete}%` }}
+                  />
+                </div>
+                <p className="text-xs text-emerald-400 mt-2">
+                  {nutritionStats.completed === 0
+                    ? "Start Module 1 →"
+                    : `Continue — Module ${nutritionStats.completed + 1} next →`}
+                </p>
+              </Card>
+            </a>
+          </section>
+        )}
+
+        {!isCoach && nutritionStats && nutritionStats.completed === nutritionStats.total && nutritionStats.total > 0 && (
+          <section>
+            <Card className="p-3 border-emerald-500/20 bg-emerald-500/[0.03] flex items-center gap-3">
+              <Trophy className="h-5 w-5 text-emerald-400 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-emerald-400">Nutrition Pathway Complete! 🎉</p>
+                <p className="text-xs text-muted-foreground">All 6 fueling modules finished</p>
+              </div>
+            </Card>
           </section>
         )}
 
@@ -817,6 +881,12 @@ function PortalHome({
                 label="Team Timeline"
                 description="Org-wide activity feed"
                 href={`/org/${slug}/coach/timeline`}
+              />
+              <ActionCard
+                icon={<Leaf className="h-5 w-5 text-emerald-400" />}
+                label="Nutrition Progress"
+                description="Team fueling education"
+                href={`/org/${slug}/coach/nutrition`}
               />
               <ActionCard
                 icon={<CalendarDays className="h-5 w-5 text-violet-400" />}

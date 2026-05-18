@@ -1,0 +1,245 @@
+Build Nutrition Education Module Phase 1 for TrainEfficiency.
+
+GOAL:
+Give athletes a structured nutrition education pathway with 6 learning modules, quizzes, progress tracking, and coach visibility.
+
+This is education only.
+Do NOT build meal plans, calorie prescriptions, or medical nutrition advice.
+
+====================================================
+1. FEATURE NAME
+====================================================
+
+Nutrition Education
+
+Route:
+ /org/:slug/nutrition
+
+Add portal card:
+“Nutrition Education”
+
+====================================================
+2. MODULE STRUCTURE
+====================================================
+
+Create 6 athlete-facing modules:
+
+1. Fueling Basics
+- calories as energy
+- food quality
+- consistency
+
+2. Protein & Recovery
+- protein purpose
+- recovery support
+- simple protein examples
+
+3. Carbs for Performance
+- carbs for training
+- pre-workout fueling
+- game day basics
+
+4. Hydration & Electrolytes
+- daily hydration
+- sweat loss
+- signs of dehydration
+
+5. Meal Timing
+- before training
+- after training
+- school-day planning
+
+6. Building Your Plate
+- balanced meals
+- snacks
+- travel/game-day choices
+
+Each module should include:
+- title
+- short lesson content
+- key takeaways
+- quiz
+- completion status
+
+====================================================
+3. DATABASE TABLES
+====================================================
+
+Create:
+
+nutrition_modules
+- id
+- orgId nullable
+- moduleNumber
+- title
+- description
+- content jsonb
+- isDefault
+- createdAt
+- updatedAt
+
+nutrition_quiz_questions
+- id
+- moduleId
+- question
+- options jsonb
+- correctAnswer
+- explanation
+- createdAt
+
+nutrition_progress
+- id
+- orgId
+- athleteUserId
+- moduleId
+- status
+  (not_started, in_progress, completed)
+- quizScore nullable
+- completedAt nullable
+- createdAt
+- updatedAt
+
+nutrition_quiz_attempts
+- id
+- orgId
+- athleteUserId
+- moduleId
+- answers jsonb
+- score
+- passed boolean
+- createdAt
+
+====================================================
+4. ATHLETE EXPERIENCE
+====================================================
+
+Athletes see:
+- 6-module pathway
+- progress bar
+- locked/unlocked state optional
+- lesson cards
+- quiz after each module
+- score/result screen
+- completion badge
+
+Quiz behavior:
+- 3–5 questions per module
+- passing score: 80%
+- allow retakes
+- show explanations after submission
+
+====================================================
+5. COACH EXPERIENCE
+====================================================
+
+Add coach route:
+
+/org/:slug/coach/nutrition
+
+Coach sees:
+- team progress
+- athlete progress
+- module completion %
+- quiz scores
+- athletes not started
+- athletes stuck/incomplete
+
+Filters:
+- team
+- athlete
+- module
+- completion status
+
+Coach athlete profile should show:
+- Nutrition progress card
+- modules completed
+- latest quiz score
+- last activity
+
+====================================================
+6. API ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/nutrition/modules
+GET /api/org/nutrition/progress
+POST /api/org/nutrition/modules/:moduleId/start
+POST /api/org/nutrition/modules/:moduleId/quiz
+
+Coach endpoints:
+
+GET /api/org/coach/nutrition/progress
+GET /api/org/coach/nutrition/athlete/:userId
+
+====================================================
+7. NOTIFICATION HOOKS
+====================================================
+
+Use existing notification automation system.
+
+Trigger:
+- nutrition_module_completed
+- nutrition_pathway_completed
+- nutrition_quiz_failed
+- nutrition_reminder
+
+Notify:
+- athlete when next module is available
+- coach when athlete completes full pathway
+- coach if athlete fails quiz multiple times
+
+====================================================
+8. PORTAL INTEGRATION
+====================================================
+
+Update athlete portal:
+- Nutrition Education card
+- progress %
+- next module CTA
+
+Update coach portal:
+- Nutrition Progress card
+- athletes completed
+- athletes behind
+
+Update notifications:
+- link to /org/:slug/nutrition
+
+====================================================
+9. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- simple educational cards
+- progress pathway visual
+- quiz cards
+- completion badges
+- coach dashboard cards
+
+Avoid:
+- medical language
+- diet prescriptions
+- calorie targets
+- supplement advice
+- bodyweight-focused messaging
+
+Tone:
+- performance fueling
+- simple
+- athlete-friendly
+- educational
+- coach-approved
+
+====================================================
+10. IMPORTANT
+====================================================
+
+This is NOT a nutrition coaching platform yet.
+This is NOT a diet prescription tool.
+This is education and accountability.
+
+The goal:
+Athletes learn foundational fueling habits, and coaches can see who completed the education pathway.

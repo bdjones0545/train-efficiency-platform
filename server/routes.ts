@@ -13344,5 +13344,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerActivityRoutes } = await import("./activity-routes");
   registerActivityRoutes(app);
 
+  // ── Nutrition Education Routes ─────────────────────────────────────────────
+  const { registerNutritionRoutes } = await import("./nutrition-routes");
+  registerNutritionRoutes(app);
+
   return httpServer;
 }

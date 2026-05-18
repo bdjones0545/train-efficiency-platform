@@ -2105,6 +2105,56 @@ export const orgActivityEvents = pgTable("org_activity_events", {
 
 export type OrgActivityEvent = typeof orgActivityEvents.$inferSelect;
 
+export const nutritionModules = pgTable("nutrition_modules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  moduleNumber: integer("module_number").notNull(),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  content: jsonb("content").notNull().default({}),
+  isDefault: boolean("is_default").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const nutritionQuizQuestions = pgTable("nutrition_quiz_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  moduleId: varchar("module_id").notNull(),
+  question: text("question").notNull(),
+  options: jsonb("options").notNull().default([]),
+  correctAnswer: integer("correct_answer").notNull(),
+  explanation: text("explanation"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const nutritionProgress = pgTable("nutrition_progress", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  moduleId: varchar("module_id").notNull(),
+  status: varchar("status").notNull().default("not_started"),
+  quizScore: integer("quiz_score"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const nutritionQuizAttempts = pgTable("nutrition_quiz_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  moduleId: varchar("module_id").notNull(),
+  answers: jsonb("answers").notNull().default([]),
+  score: integer("score").notNull(),
+  passed: boolean("passed").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type NutritionModule = typeof nutritionModules.$inferSelect;
+export type NutritionQuizQuestion = typeof nutritionQuizQuestions.$inferSelect;
+export type NutritionProgress = typeof nutritionProgress.$inferSelect;
+export type NutritionQuizAttempt = typeof nutritionQuizAttempts.$inferSelect;
+
 export type OrgMessage = typeof orgMessages.$inferSelect;
 export type OrgMessageRead = typeof orgMessageReads.$inferSelect;
 export type OrgNotification = typeof orgNotifications.$inferSelect;

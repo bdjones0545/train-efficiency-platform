@@ -80,6 +80,8 @@ import OrgNotificationsPage from "@/pages/org-notifications";
 import OrgCalendarPage from "@/pages/org-calendar";
 import CoachTimelinePage from "@/pages/coach-timeline";
 import AthleteTimelinePage from "@/pages/athlete-timeline";
+import OrgNutritionPage from "@/pages/org-nutrition";
+import CoachNutritionPage from "@/pages/coach-nutrition";
 import OrgProfilePage from "@/pages/org-profile";
 import CoachTeamsPage from "@/pages/coach-teams";
 import CoachTeamDetailPage from "@/pages/coach-team-detail";
@@ -205,6 +207,8 @@ function AuthenticatedLayout() {
                   <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
                   <Route path="/org/:slug/calendar" component={OrgCalendarPage} />
                   <Route path="/org/:slug/coach/timeline" component={CoachTimelinePage} />
+                  <Route path="/org/:slug/nutrition" component={OrgNutritionPage} />
+                  <Route path="/org/:slug/coach/nutrition" component={CoachNutritionPage} />
                   <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
                   <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
                   <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
