@@ -298,6 +298,7 @@ function PublicLayout() {
       <Route path="/org/:slug/coach/teams/:teamId" component={CoachTeamDetailPage} />
       <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
       <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
+      <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
       <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
       <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
       <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />

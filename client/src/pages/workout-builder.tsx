@@ -21,6 +21,13 @@ import {
   Flame, Gauge, BedDouble, Siren, Sparkles, Wand2, Lock,
 } from "lucide-react";
 
+// ─── Org-auth header helper ────────────────────────────────────────────────────
+function getWbHeaders(orgId?: string): Record<string, string> {
+  if (!orgId) return {};
+  const token = localStorage.getItem(`orgToken_${orgId}`);
+  return token ? { "x-org-auth-token": token } : {};
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Program = any;
 type Session = any;
@@ -1137,16 +1144,18 @@ function AthleteCreateWizard({ open, onClose, programToolId, onCreated }: {
 }
 
 // ─── Athlete View ─────────────────────────────────────────────────────────────
-function AthleteWorkoutsView({ orgSlug, programToolId, trainChatConnected }: {
-  orgSlug: string; programToolId: string; trainChatConnected: boolean;
+function AthleteWorkoutsView({ orgSlug, orgId, programToolId, trainChatConnected }: {
+  orgSlug: string; orgId?: string; programToolId: string; trainChatConnected: boolean;
 }) {
   const { toast } = useToast();
   const [tab, setTab] = useState<"assigned" | "personal">("assigned");
   const [showWizard, setShowWizard] = useState(false);
 
+  const wbHeaders = getWbHeaders(orgId);
+
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/my-workouts"],
-    queryFn: () => fetch("/api/org/workout-builder/my-workouts").then((r) => r.json()),
+    queryFn: () => fetch("/api/org/workout-builder/my-workouts", { headers: wbHeaders }).then((r) => r.json()),
   });
 
   const finishMutation = useMutation({
@@ -1471,9 +1480,11 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [coachTab, setCoachTab] = useState<"library" | "monitor">("library");
 
+  const orgId: string | undefined = program?.organizationId;
+
   const { data: bootstrap, isLoading } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/bootstrap"],
-    queryFn: () => fetch("/api/org/workout-builder/bootstrap").then((r) => r.json()),
+    queryFn: () => fetch("/api/org/workout-builder/bootstrap", { headers: getWbHeaders(orgId) }).then((r) => r.json()),
   });
 
   // Execution monitor summary for badge count
@@ -1533,6 +1544,7 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
         </div>
         <AthleteWorkoutsView
           orgSlug={orgSlug}
+          orgId={orgId}
           programToolId={program?.id ?? ""}
           trainChatConnected={trainChatConnected}
         />
@@ -1557,6 +1569,7 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
         </Card>
         <AthleteWorkoutsView
           orgSlug={orgSlug}
+          orgId={orgId}
           programToolId=""
           trainChatConnected={false}
         />

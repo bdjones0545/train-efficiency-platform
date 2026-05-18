@@ -1,7 +1,9 @@
-import { useParams } from "wouter";
+import { useState, useEffect } from "react";
+import { useParams, Redirect } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { Redirect } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
+import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import PrTrackerPage from "@/pages/pr-tracker";
 import WorkoutBuilderPage from "@/pages/workout-builder";
 
@@ -10,7 +12,9 @@ export default function ProgramToolPage() {
   const orgSlug = params.slug;
   const programSlug = params.programSlug;
 
-  const { data: program, isLoading } = useQuery<any>({
+  const { user, isLoading: authLoading } = useAuth();
+
+  const { data: program, isLoading: programLoading } = useQuery<any>({
     queryKey: ["/api/athletic/programs/by-org-slug", orgSlug, programSlug],
     queryFn: () =>
       fetch(`/api/athletic/programs/by-org-slug/${orgSlug}/${programSlug}`).then(
@@ -19,9 +23,29 @@ export default function ProgramToolPage() {
     enabled: !!orgSlug && !!programSlug,
   });
 
+  const orgId: string | undefined = program?.organizationId;
+
+  const [orgToken, setOrgToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (orgId) {
+      const stored = localStorage.getItem(`orgToken_${orgId}`);
+      if (stored) setOrgToken(stored);
+    }
+  }, [orgId]);
+
+  function handleOrgAuthenticated(token: string, _user: any, _membership: any) {
+    if (orgId) {
+      localStorage.setItem(`orgToken_${orgId}`, token);
+      setOrgToken(token);
+    }
+  }
+
+  const isLoading = authLoading || programLoading;
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-64">
+      <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -32,6 +56,20 @@ export default function ProgramToolPage() {
       <div className="p-8 text-center text-muted-foreground">
         Program not found.
       </div>
+    );
+  }
+
+  const isMainAuthed = !!user;
+  const isOrgAuthed = !!orgToken;
+
+  if (!isMainAuthed && !isOrgAuthed) {
+    return (
+      <OrgAuthModal
+        orgId={program.organizationId}
+        programId={program.id}
+        programName={program.name}
+        onAuthenticated={handleOrgAuthenticated}
+      />
     );
   }
 

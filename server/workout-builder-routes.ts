@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { isAuthenticated } from "./replit_integrations/auth";
+import crypto from "crypto";
 import { db } from "./db";
 import {
   workoutPrograms,
@@ -12,47 +13,110 @@ import {
   prTeamMembers,
   prLiftEntries,
   prLiftTypes,
+  orgSessions,
+  orgUsers,
+  orgMemberships,
 } from "@shared/schema";
-import { eq, and, desc, asc, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, gt } from "drizzle-orm";
 import { z } from "zod";
 import { trainChatClient } from "./services/trainchat-client";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
 
 function getUserId(req: any): string | null {
-  return req.user?.claims?.sub ?? req.user?.id ?? null;
+  // Main app user (Replit session or Bearer token)
+  const mainId = req.user?.claims?.sub ?? req.user?.id ?? null;
+  if (mainId) return mainId;
+  // Org-auth user (set by acceptOrgOrMainAuth middleware)
+  return req.orgUser?.id ?? null;
 }
 
 async function getOrgProfile(req: any) {
   const userId = getUserId(req);
   if (!userId) return null;
-  const { userProfiles, coachProfiles } = await import("@shared/schema");
 
-  const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
+  // --- Main app user path ---
+  if (req.user) {
+    const { userProfiles, coachProfiles } = await import("@shared/schema");
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
 
-  // If the userProfile already has a builder role, use it as-is
-  if (profile && ["ADMIN", "COACH", "STAFF"].includes(profile.role ?? "")) {
-    return profile;
+    if (profile && ["ADMIN", "COACH", "STAFF"].includes(profile.role ?? "")) {
+      return profile;
+    }
+
+    const [coachProfile] = await db
+      .select()
+      .from(coachProfiles)
+      .where(eq(coachProfiles.userId, userId))
+      .limit(1);
+
+    if (coachProfile?.organizationId) {
+      return {
+        ...(profile ?? {}),
+        userId,
+        role: "COACH" as const,
+        organizationId: coachProfile.organizationId,
+      };
+    }
+
+    return profile ?? null;
   }
 
-  // Fall back: check coachProfiles — coaches may have role: "CLIENT" in userProfiles
-  const [coachProfile] = await db
-    .select()
-    .from(coachProfiles)
-    .where(eq(coachProfiles.userId, userId))
-    .limit(1);
+  // --- Org-auth user path (logged in via OrgAuthModal) ---
+  if (req.orgSession) {
+    const [membership] = await db
+      .select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.orgId, req.orgSession.orgId)))
+      .limit(1);
 
-  if (coachProfile?.organizationId) {
-    // Synthesize a coach-role profile using data from the coachProfile
+    if (!membership) return null;
+
+    const ORG_ROLE_MAP: Record<string, string> = {
+      coach: "COACH", admin: "ADMIN", staff: "STAFF", athlete: "CLIENT", guardian: "guardian",
+    };
     return {
-      ...(profile ?? {}),
       userId,
-      role: "COACH" as const,
-      organizationId: coachProfile.organizationId,
+      role: (ORG_ROLE_MAP[membership.role] ?? "CLIENT") as string,
+      organizationId: req.orgSession.orgId,
     };
   }
 
-  return profile ?? null;
+  return null;
+}
+
+// Accepts either a live Replit session (req.user) or an org-auth token header.
+// Replaces isAuthenticated for workout-builder routes so org-auth athletes can access them.
+async function acceptOrgOrMainAuth(req: any, res: any, next: any) {
+  try {
+    // Replit session already validated by upstream middleware
+    if (req.user) return next();
+
+    const token = req.headers["x-org-auth-token"] as string | undefined;
+    if (!token) return res.status(401).json({ message: "Not authenticated" });
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const now = new Date();
+
+    const [session] = await db
+      .select()
+      .from(orgSessions)
+      .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
+      .limit(1);
+
+    if (!session) return res.status(401).json({ message: "Session expired. Please log in again." });
+
+    await db.update(orgSessions).set({ lastUsedAt: now } as any).where(eq(orgSessions.id, session.id));
+
+    const [orgUser] = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
+    if (!orgUser) return res.status(401).json({ message: "User not found" });
+
+    req.orgSession = session;
+    req.orgUser = orgUser;
+    next();
+  } catch (err) {
+    res.status(500).json({ message: "Auth error" });
+  }
 }
 
 function requireCoachOrAdmin(req: any, res: any, next: any) {
@@ -130,7 +194,7 @@ async function getAthleteContextSummary(orgId: string, athleteUserIds: string[])
 
 export function registerWorkoutBuilderRoutes(app: Express) {
   // GET /api/org/workout-builder/bootstrap
-  app.get("/api/org/workout-builder/bootstrap", isAuthenticated, requireAuth, async (req: any, res) => {
+  app.get("/api/org/workout-builder/bootstrap", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -176,7 +240,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // POST /api/org/workout-builder/generate
-  app.post("/api/org/workout-builder/generate", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+  app.post("/api/org/workout-builder/generate", acceptOrgOrMainAuth, requireCoachOrAdmin, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -284,7 +348,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // POST /api/org/workout-builder/:programId/assign
-  app.post("/api/org/workout-builder/:programId/assign", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+  app.post("/api/org/workout-builder/:programId/assign", acceptOrgOrMainAuth, requireCoachOrAdmin, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -375,7 +439,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // GET /api/org/workout-builder/programs/:programId
-  app.get("/api/org/workout-builder/programs/:programId", isAuthenticated, requireAuth, async (req: any, res) => {
+  app.get("/api/org/workout-builder/programs/:programId", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -402,7 +466,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // PATCH /api/org/workout-builder/programs/:programId
-  app.patch("/api/org/workout-builder/programs/:programId", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+  app.patch("/api/org/workout-builder/programs/:programId", acceptOrgOrMainAuth, requireCoachOrAdmin, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -436,7 +500,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // POST /api/org/workout-builder/programs/:programId/edit
-  app.post("/api/org/workout-builder/programs/:programId/edit", isAuthenticated, requireCoachOrAdmin, async (req: any, res) => {
+  app.post("/api/org/workout-builder/programs/:programId/edit", acceptOrgOrMainAuth, requireCoachOrAdmin, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -498,7 +562,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // POST /api/org/workout-builder/sessions/:sessionId/complete
-  app.post("/api/org/workout-builder/sessions/:sessionId/complete", isAuthenticated, requireAuth, async (req: any, res) => {
+  app.post("/api/org/workout-builder/sessions/:sessionId/complete", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -531,7 +595,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // GET /api/org/workout-builder/my-workouts  (athlete view)
-  app.get("/api/org/workout-builder/my-workouts", isAuthenticated, requireAuth, async (req: any, res) => {
+  app.get("/api/org/workout-builder/my-workouts", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
@@ -588,7 +652,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
   });
 
   // POST /api/org/workout-builder/athlete/generate  (athlete self-service)
-  app.post("/api/org/workout-builder/athlete/generate", isAuthenticated, requireAuth, async (req: any, res) => {
+  app.post("/api/org/workout-builder/athlete/generate", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
     try {
       const profile = req._profile;
       const orgId = profile.organizationId;
