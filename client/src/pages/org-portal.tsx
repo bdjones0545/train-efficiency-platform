@@ -333,6 +333,12 @@ function PortalHome({
               description="Pathways & learning modules"
               href={`/org/${slug}/education`}
             />
+            <ActionCard
+              icon={<ShieldCheck className="h-5 w-5 text-violet-400" />}
+              label="Guardian Portal"
+              description="Family progress view"
+              href={`/org/${slug}/guardian`}
+            />
             {userTeams?.length === 0 ? (
               <ActionCard
                 icon={<Users className="h-5 w-5 text-blue-400" />}
@@ -888,6 +894,12 @@ function PortalHome({
                 label="Education Builder"
                 description="Build & manage pathways"
                 href={`/org/${slug}/coach/education-builder`}
+              />
+              <ActionCard
+                icon={<ShieldCheck className="h-5 w-5 text-violet-400" />}
+                label="Guardian Management"
+                description="Family access & invites"
+                href={`/org/${slug}/coach/guardians`}
               />
               <ActionCard
                 icon={<CalendarDays className="h-5 w-5 text-violet-400" />}

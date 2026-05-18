@@ -2243,6 +2243,47 @@ export type EducationProgress = typeof educationProgress.$inferSelect;
 export type EducationAssignment = typeof educationAssignments.$inferSelect;
 export type EducationAiGeneration = typeof educationAiGenerations.$inferSelect;
 
+// ─── Parent / Guardian Portal ─────────────────────────────────────────────────
+
+export const parentGuardians = pgTable("parent_guardians", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  orgUserId: varchar("org_user_id").notNull(),
+  relationshipType: varchar("relationship_type").notNull().default("guardian"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const athleteGuardianLinks = pgTable("athlete_guardian_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  guardianUserId: varchar("guardian_user_id").notNull(),
+  status: varchar("status").notNull().default("pending"),
+  invitedByUserId: varchar("invited_by_user_id"),
+  inviteEmail: varchar("invite_email"),
+  inviteToken: varchar("invite_token"),
+  permissions: jsonb("permissions").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  activatedAt: timestamp("activated_at"),
+});
+
+export const guardianNotifications = pgTable("guardian_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  guardianUserId: varchar("guardian_user_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  type: varchar("type").notNull(),
+  title: varchar("title").notNull(),
+  message: text("message").notNull(),
+  metadata: jsonb("metadata").notNull().default({}),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type ParentGuardian = typeof parentGuardians.$inferSelect;
+export type AthleteGuardianLink = typeof athleteGuardianLinks.$inferSelect;
+export type GuardianNotification = typeof guardianNotifications.$inferSelect;
+
 export type OrgMessage = typeof orgMessages.$inferSelect;
 export type OrgMessageRead = typeof orgMessageReads.$inferSelect;
 export type OrgNotification = typeof orgNotifications.$inferSelect;

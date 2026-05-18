@@ -1,0 +1,58 @@
+Here's a complete summary of everything built:
+
+AI Coach Education Builder — Complete
+
+Database (6 new tables)
+
+education_pathways — org-specific and default pathways with category, slug, status, and creator tracking
+education_modules — individual lesson modules with JSON content, key takeaways, estimated time, and draft/published status
+education_quiz_questions — per-module quiz questions with options, correct answers, and explanations
+education_progress — per-athlete progress across any pathway/module with quiz scores and completion timestamps; unique constraint prevents duplicates
+education_assignments — pathway assignments to individual athletes, teams, or all athletes with optional due dates
+education_ai_generations — full audit trail of every AI generation with prompt, result, type, and draft/accepted/rejected status
+Backend (server/education-routes.ts — 15 endpoints)
+
+Full pathway CRUD: create, update, publish/unpublish/archive, delete (soft)
+Module CRUD: create, update, start, quiz submit with auto-progression logic
+Quiz question management: replace all questions for a module in one call
+Sequential unlock enforced: athletes must pass module N before module N+1 unlocks
+AI generation endpoints (all gated by coach-only auth + safety system prompt):
+POST /ai/generate-pathway — full outline from topic, age group, sport, tone, difficulty, goal
+POST /ai/generate-module — lesson sections, key takeaways, estimated time
+POST /ai/generate-quiz — 3–5 questions with correct answers and explanations
+POST /ai/rewrite — 6 rewrite modes: simpler, athlete-friendly, shorter, professional, add examples, bullet points
+Analytics endpoint: per-pathway completion rates, avg scores, per-module breakdowns, in-progress counts
+Progress endpoint, assignments endpoint, notifications wired for pathway assigned, module completed, pathway completed, quiz failed
+AI Safety System
+
+Hard system prompt on every AI call: no medical advice, no calorie prescriptions, no supplement doses, no eating disorder language, no body shaming, no extreme dieting
+Nutrition content strictly performance-fueling and hydration education
+Every AI-generated module shows "AI draft — coach review required" badge in the UI
+AI content cannot be published without coach manually clicking Publish
+Coach Education Builder (/org/:slug/coach/education-builder)
+
+Pathways tab — list all pathways with status badges (Draft/Published/Archived/Default), create new, one-click publish/unpublish/archive, preview athlete view
+Builder tab — AI pathway generator (topic, age group, sport, goal, # modules), accepts draft into a real pathway; pathway selector with meta editing; module list with add/edit; full module editor with:
+Section editor with add/remove/reorder
+Per-section rewrite tool buttons (Simpler, Athlete-Friendly, Shorter, +Examples) — each calls the AI rewrite API in-place
+Key takeaways editor
+Quiz builder with add/remove questions, radio-select correct answer per question
+AI Generate Module Content button
+AI Generate Quiz button (draft result populates the quiz editor)
+Save Draft and Publish buttons
+Assignments tab — assign any published pathway to all athletes or specific targets, view assignment history
+Analytics tab — per-pathway completion rates, in-progress counts, avg quiz scores, per-module progress bars
+Athlete Education Page (/org/:slug/education and /org/:slug/education/:pathwaySlug)
+
+Pathway list with category icons, progress bars, module counts
+Sequential module unlock: module N+1 is locked until N is passed
+Lesson view: collapsible sections, key takeaways highlighted in amber, estimated time
+Quiz view: all questions shown, answer selection, disabled submit until all answered
+Result view: pass/fail, per-question breakdown with correct answers and explanations, retake or continue
+Completion badges when all modules done; pathway complete trophy card
+Portal Integration
+
+Athlete quick action: "Education" → /org/:slug/education
+Coach Admin quick action: "Education Builder" → /org/:slug/coach/education-builder
+Existing nutrition progress card still shows (links to Education hub)
+Original /org/:slug/nutrition route preserved as-is for backward compatibility

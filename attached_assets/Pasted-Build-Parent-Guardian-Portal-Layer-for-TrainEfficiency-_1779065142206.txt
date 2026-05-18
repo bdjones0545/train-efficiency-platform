@@ -1,0 +1,280 @@
+Build Parent / Guardian Portal Layer for TrainEfficiency.
+
+GOAL:
+Add parent/guardian accounts linked to athletes so families can monitor athlete participation, progress, communication, education completion, and scheduling.
+
+This is especially important for:
+- youth sports
+- high school programs
+- semi-private coaching
+- facilities with minors
+
+The Parent Portal should increase:
+- accountability
+- communication clarity
+- retention
+- professionalism
+- family engagement
+
+IMPORTANT:
+Parents are observers/supporters.
+They should NOT have unrestricted athlete control.
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+Parent accounts can:
+- view linked athlete activity
+- receive notifications
+- monitor progress
+- view schedules
+- view education completion
+- message coaches later (future phase)
+
+Parents cannot:
+- edit workouts
+- edit PRs
+- impersonate athletes
+- access coach-private notes
+- access hidden intelligence data
+- modify readiness data
+
+====================================================
+2. DATABASE TABLES
+====================================================
+
+Create:
+
+parent_guardians
+- id
+- orgId
+- orgUserId
+- relationshipType
+  (mother, father, guardian, other)
+- createdAt
+
+athlete_guardian_links
+- id
+- orgId
+- athleteUserId
+- guardianUserId
+- status
+  (pending, active, revoked)
+- invitedByUserId
+- createdAt
+- activatedAt nullable
+
+guardian_notifications
+- id
+- orgId
+- guardianUserId
+- athleteUserId
+- type
+  (attendance, workout_completion,
+   missed_workout, education_progress,
+   coach_announcement, pr_update)
+- title
+- message
+- metadata jsonb
+- isRead
+- createdAt
+
+====================================================
+3. AUTHENTICATION
+====================================================
+
+Reuse existing:
+- org_users
+- org_memberships
+- org_sessions
+
+Add new role:
+guardian
+
+Guardians log in through the same org auth system.
+
+====================================================
+4. GUARDIAN INVITE FLOW
+====================================================
+
+Coaches or athletes can:
+- invite guardian by email
+
+Flow:
+1. Send invite
+2. Guardian creates account
+3. Guardian linked to athlete
+4. Guardian receives portal access
+
+Add invite status:
+- pending
+- accepted
+- revoked
+
+====================================================
+5. GUARDIAN PORTAL
+====================================================
+
+Create route:
+
+/org/:slug/guardian
+
+Guardian sees:
+
+A. Linked Athletes
+- athlete cards
+- team
+- sport
+- progress summary
+
+B. Schedule
+- upcoming bookings
+- recent attendance
+- missed sessions
+
+C. Workout Activity
+- assigned workouts
+- completion %
+- recent sessions completed
+
+D. PR Progress
+- recent PRs
+- milestone badges
+- progress highlights
+
+E. Education Progress
+- module completion %
+- pathway progress
+- overdue modules
+
+F. Notifications
+- coach announcements
+- missed workout alerts
+- PR celebrations
+- schedule reminders
+
+====================================================
+6. COACH CONTROLS
+====================================================
+
+Coach can:
+- view guardian links
+- invite/remove guardians
+- control guardian permissions
+- choose visible categories
+
+Examples:
+- allow PR visibility
+- allow attendance visibility
+- hide readiness scores
+- hide private athlete notes
+
+====================================================
+7. PERMISSION LAYER
+====================================================
+
+Guardians CAN view:
+- schedules
+- attendance
+- workout completion
+- education progress
+- PR milestones
+- team announcements
+
+Guardians CANNOT view:
+- private coach notes
+- readiness scores/details
+- internal intelligence alerts
+- AI recommendations
+- hidden athlete metadata
+- other athletes
+
+====================================================
+8. API ENDPOINTS
+====================================================
+
+Create:
+
+POST /api/org/guardians/invite
+GET /api/org/guardians
+
+POST /api/org/guardians/link
+PATCH /api/org/guardians/link/:id
+DELETE /api/org/guardians/link/:id
+
+GET /api/org/guardian/portal
+GET /api/org/guardian/athlete/:userId
+
+GET /api/org/guardian/notifications
+PATCH /api/org/guardian/notifications/:id/read
+
+====================================================
+9. NOTIFICATION AUTOMATION
+====================================================
+
+Use existing automation engine.
+
+Guardian notifications:
+- workout completed
+- missed workout
+- PR achieved
+- education completed
+- team announcement
+- upcoming session reminder
+
+Respect guardian preferences.
+
+====================================================
+10. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- simple family-friendly UX
+- clear athlete cards
+- progress summaries
+- easy navigation
+
+Avoid:
+- overwhelming sports science data
+- coach operational dashboards
+- clutter
+
+====================================================
+11. PORTAL INTEGRATION
+====================================================
+
+Update:
+- org auth modal supports guardian role
+- athlete profile shows linked guardians (coach-only)
+- coach admin gets Guardian Management card
+- notifications integrate with existing center
+
+====================================================
+12. FUTURE-READY
+====================================================
+
+Structure for future:
+- billing/payments
+- guardian messaging
+- digital waivers
+- attendance excuses
+- athlete transportation coordination
+- report cards
+- monthly progress reports
+- shared family accounts
+
+Do NOT build those yet.
+
+====================================================
+13. IMPORTANT
+====================================================
+
+This should make TrainEfficiency feel:
+- family-aware
+- youth-sports ready
+- organization-grade
+
+without exposing sensitive coaching/intelligence data.
