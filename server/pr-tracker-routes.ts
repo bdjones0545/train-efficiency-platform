@@ -16,6 +16,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
 import { triggerNotificationEvent } from "./services/notification-automation";
+import { createActivityEvent } from "./services/activity-timeline";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -599,6 +600,33 @@ export function registerPrTrackerRoutes(app: Express) {
             previousBest: prevBest[0]?.value,
             improvementPct,
           });
+          const prTitle = isNewPr
+            ? `New PR: ${liftType[0].name} — ${entry.value}${entry.unit}`
+            : `PR logged: ${liftType[0].name} — ${entry.value}${entry.unit}`;
+          const prDesc = isNewPr && improvementPct
+            ? `Personal record! Improved by ${improvementPct.toFixed(1)}% from previous best of ${prevBest[0]?.value}${entry.unit}`
+            : isNewPr
+            ? "First entry — personal record set!"
+            : `Logged ${entry.value}${entry.unit} (PR: ${prevBest[0]?.value}${entry.unit})`;
+          createActivityEvent({
+            orgId,
+            userId: req.orgUser.id,
+            sourceType: "pr",
+            sourceId: entry.id,
+            eventType: isNewPr ? "new_pr" : "pr_added",
+            title: prTitle,
+            description: prDesc,
+            metadata: {
+              liftName: liftType[0].name,
+              liftValue: entry.value,
+              liftUnit: entry.unit,
+              isNewPr,
+              improvement: improvementPct ? Math.round(improvementPct) : undefined,
+              previousBest: prevBest[0]?.value,
+              severity: isNewPr ? "positive" : undefined,
+            },
+            visibility: "athlete",
+          }).catch(() => {});
         } catch {}
       })();
 

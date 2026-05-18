@@ -16,6 +16,7 @@ import { eq, and, desc, asc, inArray, gte } from "drizzle-orm";
 import { z } from "zod";
 import { trainChatClient } from "./services/trainchat-client";
 import { triggerNotificationEvent } from "./services/notification-automation";
+import { createActivityEvent } from "./services/activity-timeline";
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? null;
@@ -381,6 +382,22 @@ export function registerWorkoutExecutionRoutes(app: Express) {
         userId: profile.userId,
         programId: session.workoutProgramId,
         sessionId,
+      }).catch(() => {});
+      createActivityEvent({
+        orgId: profile.organizationId,
+        userId: profile.userId,
+        sourceType: "workout",
+        sourceId: sessionId,
+        eventType: "workout_completed",
+        title: "Workout session completed",
+        description: body.checkinData ? `Readiness: ${body.checkinData.readinessScore}/10, Fatigue: ${body.checkinData.fatigueLevel}/10` : undefined,
+        metadata: {
+          sessionId,
+          programId: session.workoutProgramId,
+          readinessScore: body.checkinData?.readinessScore,
+          fatigueLevel: body.checkinData?.fatigueLevel,
+        },
+        visibility: "athlete",
       }).catch(() => {});
 
       // Alert on low readiness in session

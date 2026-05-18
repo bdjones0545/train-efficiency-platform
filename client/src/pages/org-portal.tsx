@@ -30,6 +30,8 @@ import {
   Zap,
   Heart,
   AlertTriangle,
+  CalendarDays,
+  Activity,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { OrgMessageComposer } from "@/components/OrgMessageComposer";
@@ -199,6 +201,16 @@ function PortalHome({
   });
   const unreadCount: number = notifData?.unreadCount ?? 0;
 
+  // Today's activity events
+  const { data: todayEventsData } = useQuery<any>({
+    queryKey: ["/api/org/activity/calendar", "today", slug],
+    queryFn: () =>
+      fetch("/api/org/activity/calendar?view=today", { headers: { "X-Org-Auth-Token": orgToken } })
+        .then((r) => r.json()),
+    refetchInterval: 60000,
+  });
+  const todayEvents: any[] = todayEventsData?.events ?? [];
+
   // Unread messages
   const { data: messagesData } = useQuery<any[]>({
     queryKey: ["/api/org/messages"],
@@ -297,6 +309,12 @@ function PortalHome({
                 href={prTrackerUrl}
               />
             )}
+            <ActionCard
+              icon={<CalendarDays className="h-5 w-5 text-violet-400" />}
+              label="My Calendar"
+              description="Events & activity"
+              href={`/org/${slug}/calendar`}
+            />
             {userTeams?.length === 0 ? (
               <ActionCard
                 icon={<Users className="h-5 w-5 text-blue-400" />}
@@ -370,6 +388,59 @@ function PortalHome({
                   </Card>
                 </a>
               ))}
+            </div>
+          </section>
+        )}
+
+        {/* ─── Today's Events Preview ───────────────────────────────────────────── */}
+        {todayEvents.length > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5 text-violet-400" /> Today's Events
+                <Badge className="text-[10px] h-4 px-1.5 bg-violet-400/20 text-violet-400 border-violet-400/30">
+                  {todayEvents.length}
+                </Badge>
+              </h2>
+              <a href={`/org/${slug}/calendar`} className="text-xs text-primary hover:underline flex items-center gap-1" data-testid="link-calendar-view-all">
+                Calendar <ArrowRight className="h-3 w-3" />
+              </a>
+            </div>
+            <div className="space-y-2">
+              {todayEvents.slice(0, 3).map((ev: any) => {
+                const colorMap: Record<string, string> = {
+                  booking: "text-blue-400 bg-blue-400/10",
+                  workout: "text-green-400 bg-green-400/10",
+                  readiness: "text-rose-400 bg-rose-400/10",
+                  pr: "text-amber-400 bg-amber-400/10",
+                  alert: "text-orange-400 bg-orange-400/10",
+                  message: "text-violet-400 bg-violet-400/10",
+                  intelligence: "text-cyan-400 bg-cyan-400/10",
+                };
+                const IconMap: Record<string, any> = {
+                  booking: CalendarDays, workout: Dumbbell, readiness: Heart,
+                  pr: Trophy, alert: Zap, message: MessageSquare,
+                  intelligence: TrendingUp,
+                };
+                const colorClass = colorMap[ev.sourceType] ?? "text-muted-foreground bg-muted/30";
+                const Icon = IconMap[ev.sourceType] ?? Bell;
+                return (
+                  <a key={ev.id} href={`/org/${slug}/calendar`} data-testid={`card-today-event-${ev.id}`}>
+                    <Card className="p-3 flex items-center gap-3 hover:border-primary/20 transition-colors">
+                      <div className={`h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0 ${colorClass.split(" ")[1]}`}>
+                        <Icon className={`h-3.5 w-3.5 ${colorClass.split(" ")[0]}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium leading-snug truncate">{ev.title}</p>
+                        {ev.description && (
+                          <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{ev.description}</p>
+                        )}
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    </Card>
+                  </a>
+                );
+              })}
             </div>
           </section>
         )}
@@ -741,6 +812,18 @@ function PortalHome({
                   href={prTrackerUrl}
                 />
               )}
+              <ActionCard
+                icon={<Activity className="h-5 w-5 text-cyan-400" />}
+                label="Team Timeline"
+                description="Org-wide activity feed"
+                href={`/org/${slug}/coach/timeline`}
+              />
+              <ActionCard
+                icon={<CalendarDays className="h-5 w-5 text-violet-400" />}
+                label="Org Calendar"
+                description="All events at a glance"
+                href={`/org/${slug}/calendar`}
+              />
               <ActionCard
                 icon={<Settings2 className="h-5 w-5 text-muted-foreground" />}
                 label="Booking Settings"

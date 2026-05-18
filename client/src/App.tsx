@@ -77,6 +77,9 @@ import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import OrgMySchedulePage from "@/pages/org-my-schedule";
 import OrgPortalPage from "@/pages/org-portal";
 import OrgNotificationsPage from "@/pages/org-notifications";
+import OrgCalendarPage from "@/pages/org-calendar";
+import CoachTimelinePage from "@/pages/coach-timeline";
+import AthleteTimelinePage from "@/pages/athlete-timeline";
 import OrgProfilePage from "@/pages/org-profile";
 import CoachTeamsPage from "@/pages/coach-teams";
 import CoachTeamDetailPage from "@/pages/coach-team-detail";
@@ -198,7 +201,10 @@ function AuthenticatedLayout() {
                   <Route path="/org/:slug/profile" component={OrgProfilePage} />
                   <Route path="/org/:slug/coach/teams" component={CoachTeamsPage} />
                   <Route path="/org/:slug/coach/teams/:teamId" component={CoachTeamDetailPage} />
+                  <Route path="/org/:slug/coach/athletes/:userId/timeline" component={AthleteTimelinePage} />
                   <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
+                  <Route path="/org/:slug/calendar" component={OrgCalendarPage} />
+                  <Route path="/org/:slug/coach/timeline" component={CoachTimelinePage} />
                   <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
                   <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
                   <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />

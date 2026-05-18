@@ -319,6 +319,11 @@ export default function CoachAthleteDetailPage() {
           </span>
 
           <div className="flex items-center gap-0.5">
+            <a href={`/org/${slug}/coach/athletes/${userId}/timeline`} data-testid="link-athlete-timeline">
+              <Button size="sm" variant="ghost" title="Performance Story">
+                <Activity className="h-4 w-4" />
+              </Button>
+            </a>
             <Button size="sm" variant="ghost" onClick={() => refetch()} title="Refresh" data-testid="button-refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>

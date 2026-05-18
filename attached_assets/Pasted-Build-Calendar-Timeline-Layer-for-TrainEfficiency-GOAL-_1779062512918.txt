@@ -1,0 +1,209 @@
+Build Calendar + Timeline Layer for TrainEfficiency.
+
+GOAL:
+Create a unified temporal view of the athlete/team operation.
+
+The system already has:
+- scheduling bookings
+- workout assignments
+- workout completions
+- readiness check-ins
+- PR entries
+- alerts
+- messages
+- athlete intelligence events
+- notifications
+
+Now create one timeline/calendar layer that connects all of it.
+
+====================================================
+1. CORE ROUTES
+====================================================
+
+Create:
+
+/org/:slug/calendar
+/org/:slug/coach/timeline
+/org/:slug/coach/athletes/:userId/timeline
+
+====================================================
+2. DATABASE TABLE
+====================================================
+
+Create unified event table:
+
+org_activity_events
+- id
+- orgId
+- userId nullable
+- teamId nullable
+- sourceType
+  (booking, workout, readiness, pr, alert, message, intelligence, system)
+- sourceId
+- eventType
+- title
+- description nullable
+- eventDate
+- metadata jsonb
+- visibility
+  (athlete, coach, owner)
+- createdAt
+
+Purpose:
+Normalize important activity across the platform.
+
+====================================================
+3. EVENT INGESTION
+====================================================
+
+Create service:
+
+server/services/activity-timeline.ts
+
+Add helper:
+createActivityEvent(event)
+
+Hook into:
+- booking created
+- workout assigned
+- workout completed
+- readiness submitted
+- PR added
+- notification generated
+- coach message sent
+- athlete intelligence alert created
+
+====================================================
+4. UNIFIED CALENDAR
+====================================================
+
+Route:
+/org/:slug/calendar
+
+Show:
+- bookings
+- assigned workouts
+- completed workouts
+- team events
+- alerts/reminders
+
+Views:
+- Today
+- Week
+- Month
+- List
+
+Filters:
+- athlete
+- team
+- event type
+- booking/workout/PR/readiness/alert/message
+
+Coach/owner:
+- sees team/org calendar
+
+Athlete:
+- sees own calendar only
+
+====================================================
+5. COACH TIMELINE
+====================================================
+
+Route:
+/org/:slug/coach/timeline
+
+Show chronological activity feed:
+- PRs
+- completed workouts
+- readiness flags
+- missed workouts
+- bookings
+- messages
+- intelligence alerts
+
+Add:
+- date grouping
+- severity badges
+- quick actions
+- search/filter
+
+====================================================
+6. ATHLETE TIMELINE
+====================================================
+
+Route:
+/org/:slug/coach/athletes/:userId/timeline
+
+Show one athlete’s full development history:
+- PR history
+- readiness history
+- workout completions
+- bookings
+- coach notes
+- alerts
+- messages
+- public profile updates
+
+This should become the athlete’s “performance story.”
+
+====================================================
+7. API ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/activity/events
+GET /api/org/activity/calendar
+GET /api/org/activity/athlete/:userId
+POST /api/org/activity/events
+
+Query filters:
+- startDate
+- endDate
+- userId
+- teamId
+- sourceType
+- visibility
+
+Permissions:
+- athletes can only see their own visible events
+- coaches can see assigned/team athletes
+- owners can see org-wide
+
+====================================================
+8. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- mobile-first
+- card/list calendar hybrid
+- not a giant desktop-only calendar
+
+Use:
+- colored event chips
+- icons by source type
+- date headers
+- compact timeline cards
+- empty states
+- loading skeletons
+
+====================================================
+9. PORTAL INTEGRATION
+====================================================
+
+Add:
+- Calendar card to portal
+- Timeline card to coach admin section
+- Athlete timeline link on athlete detail page
+- Today’s Events preview on portal home
+
+====================================================
+10. IMPORTANT
+====================================================
+
+Do NOT rebuild Google Calendar sync.
+Do NOT create external calendar integrations yet.
+Do NOT expose private coach-only data to athletes.
+
+This phase creates the internal operational calendar and performance timeline for TrainEfficiency.

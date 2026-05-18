@@ -2087,6 +2087,24 @@ export const notificationAutomationLogs = pgTable("notification_automation_logs"
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const orgActivityEvents = pgTable("org_activity_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id"),
+  teamId: varchar("team_id"),
+  sourceType: varchar("source_type").notNull(),
+  sourceId: varchar("source_id"),
+  eventType: varchar("event_type").notNull(),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  eventDate: timestamp("event_date").notNull().defaultNow(),
+  metadata: jsonb("metadata").notNull().default({}),
+  visibility: varchar("visibility").notNull().default("athlete"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type OrgActivityEvent = typeof orgActivityEvents.$inferSelect;
+
 export type OrgMessage = typeof orgMessages.$inferSelect;
 export type OrgMessageRead = typeof orgMessageReads.$inferSelect;
 export type OrgNotification = typeof orgNotifications.$inferSelect;

@@ -17,6 +17,7 @@ import { eq, and, desc, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { trainChatClient } from "./services/trainchat-client";
 import { triggerNotificationEvent } from "./services/notification-automation";
+import { createActivityEvent } from "./services/activity-timeline";
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? null;
@@ -304,6 +305,17 @@ export function registerWorkoutBuilderRoutes(app: Express) {
           programId: program.id,
           programName: program.name,
         }).catch(() => {});
+        createActivityEvent({
+          orgId,
+          userId: athleteUserId,
+          sourceType: "workout",
+          sourceId: program.id,
+          eventType: "workout_assigned",
+          title: `Workout assigned: ${program.name}`,
+          description: "A new workout program was assigned to you.",
+          metadata: { programId: program.id, programName: program.name, assignedBy: profile.userId },
+          visibility: "athlete",
+        }).catch(() => {});
       } else if (assignedToType === "team" && teamId) {
         // Notify each team member
         const members = await db.select().from(prTeamMembers).where(eq(prTeamMembers.teamId, teamId));
@@ -315,6 +327,18 @@ export function registerWorkoutBuilderRoutes(app: Express) {
             coachUserId: profile.userId,
             programId: program.id,
             programName: program.name,
+          }).catch(() => {});
+          createActivityEvent({
+            orgId,
+            userId: member.userId,
+            teamId,
+            sourceType: "workout",
+            sourceId: program.id,
+            eventType: "workout_assigned",
+            title: `Team workout assigned: ${program.name}`,
+            description: "A new workout program was assigned to your team.",
+            metadata: { programId: program.id, programName: program.name, teamId },
+            visibility: "athlete",
           }).catch(() => {});
         }
       }

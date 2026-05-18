@@ -13340,5 +13340,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerOrgCommunicationRoutes } = await import("./org-communication-routes");
   registerOrgCommunicationRoutes(app);
 
+  // ── Activity Timeline Routes ───────────────────────────────────────────────
+  const { registerActivityRoutes } = await import("./activity-routes");
+  registerActivityRoutes(app);
+
   return httpServer;
 }
