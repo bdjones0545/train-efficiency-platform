@@ -13,6 +13,9 @@ import {
   prLiftTypes,
   prLiftEntries,
   prImportJobs,
+  coachProfiles,
+  userProfiles,
+  users,
 } from "@shared/schema";
 import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
 import { triggerNotificationEvent } from "./services/notification-automation";
@@ -73,23 +76,68 @@ async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
     .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
     .limit(1);
 
-  if (!sessions.length) return res.status(401).json({ message: "Session expired. Please log in again." });
+  if (sessions.length) {
+    // Normal orgSession path
+    const session = sessions[0];
+    await db.update(orgSessions).set({ lastUsedAt: now }).where(eq(orgSessions.id, session.id));
+    const foundUsers = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
+    if (!foundUsers.length) return res.status(401).json({ message: "User not found" });
+    const memberships = await db
+      .select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
+      .limit(1);
+    req.orgUser = foundUsers[0];
+    req.orgSession = session;
+    req.orgMembership = memberships[0] || null;
+    return next();
+  }
 
-  const session = sessions[0];
-  await db.update(orgSessions).set({ lastUsedAt: now }).where(eq(orgSessions.id, session.id));
+  // Fallback: accept main app auth token (for coaches/admins already logged in)
+  const mainAppResult = await db.execute(
+    sql`SELECT user_id FROM auth_tokens WHERE token = ${token} AND expires_at > NOW() LIMIT 1`
+  );
+  if (!mainAppResult.rows.length) {
+    return res.status(401).json({ message: "Session expired. Please log in again." });
+  }
 
-  const foundUsers = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
-  if (!foundUsers.length) return res.status(401).json({ message: "User not found" });
+  const mainUserId = (mainAppResult.rows[0] as any).user_id;
 
-  const memberships = await db
+  // Look up coach profile first
+  const coachRows = await db
     .select()
-    .from(orgMemberships)
-    .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
+    .from(coachProfiles)
+    .where(eq(coachProfiles.userId, mainUserId))
     .limit(1);
 
-  req.orgUser = foundUsers[0];
-  req.orgSession = session;
-  req.orgMembership = memberships[0] || null;
+  const coach = coachRows[0];
+  let orgId: string | null = coach?.organizationId ?? null;
+
+  // Fall back to userProfile (admin)
+  if (!orgId) {
+    const profileRows = await db
+      .select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, mainUserId))
+      .limit(1);
+    orgId = profileRows[0]?.organizationId ?? null;
+  }
+
+  if (!orgId) {
+    return res.status(403).json({ message: "No organization associated with this account" });
+  }
+
+  // Fetch the main app user record for name/email
+  const mainUserRows = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
+  const mainUser = mainUserRows[0];
+
+  req.orgUser = {
+    id: mainUserId,
+    name: `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim(),
+    email: coach?.email ?? mainUser?.email ?? "",
+  };
+  req.orgSession = { orgId };
+  req.orgMembership = { role: "coach" };
   next();
 }
 

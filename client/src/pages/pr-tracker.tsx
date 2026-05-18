@@ -3,6 +3,7 @@ import { Loader2, Trophy } from "lucide-react";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { CoachPrDashboard } from "@/components/pr-tracker/CoachPrDashboard";
 import { AthletePrDashboard } from "@/components/pr-tracker/AthletePrDashboard";
+import { getAuthToken } from "@/lib/authToken";
 
 interface PrTrackerProps {
   program: {
@@ -24,7 +25,13 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   const programId = program.id;
   const tokenKey = getTokenKey(orgId);
 
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(tokenKey));
+  // Use orgToken from localStorage, or fall back to the main app auth token (coaches/admins)
+  const [token, setToken] = useState<string | null>(() => {
+    return localStorage.getItem(tokenKey) || getAuthToken();
+  });
+  const [isCoachBypass, setIsCoachBypass] = useState(() => {
+    return !localStorage.getItem(tokenKey) && !!getAuthToken();
+  });
   const [bootstrap, setBootstrap] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,8 +45,11 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
           headers: { "X-Org-Auth-Token": authToken },
         });
         if (r.status === 401) {
-          localStorage.removeItem(tokenKey);
+          if (!isCoachBypass) {
+            localStorage.removeItem(tokenKey);
+          }
           setToken(null);
+          setIsCoachBypass(false);
           setBootstrap(null);
           return;
         }
@@ -52,7 +62,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
         setLoading(false);
       }
     },
-    [orgId, programId, tokenKey]
+    [orgId, programId, tokenKey, isCoachBypass]
   );
 
   useEffect(() => {
@@ -64,9 +74,17 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   function handleAuthenticated(newToken: string, user: any, membership: any) {
     localStorage.setItem(tokenKey, newToken);
     setToken(newToken);
+    setIsCoachBypass(false);
   }
 
   function handleLogout() {
+    if (isCoachBypass) {
+      // Don't clear the main app token — just reset the PR tracker state
+      setToken(null);
+      setIsCoachBypass(false);
+      setBootstrap(null);
+      return;
+    }
     if (token) {
       fetch("/api/org-auth/logout", {
         method: "POST",
