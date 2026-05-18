@@ -45,6 +45,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import type { Service, Organization, OrganizationSubscriptionPlan } from "@shared/schema";
 import { MapPin } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -335,6 +336,7 @@ function TrainChatIntegrationCard({ orgId }: { orgId?: string | null }) {
 
 export default function AdminConfigurationPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const { data: adminProfile } = useQuery<{ organizationId?: string | null }>({
     queryKey: ["/api/profile"],
@@ -471,7 +473,7 @@ export default function AdminConfigurationPage() {
   const [simpleProgramType, setSimpleProgramType] = useState<"pr_tracker" | "workout_builder">("pr_tracker");
   const [newSimpleProgramName, setNewSimpleProgramName] = useState("");
   const [newSimpleProgramSlug, setNewSimpleProgramSlug] = useState("");
-  const [placeholderEditProgramId, setPlaceholderEditProgramId] = useState<string | null>(null);
+
 
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [editProgramName, setEditProgramName] = useState("");
@@ -2541,17 +2543,6 @@ export default function AdminConfigurationPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Placeholder edit dialog */}
-          <Dialog open={!!placeholderEditProgramId} onOpenChange={(open) => { if (!open) setPlaceholderEditProgramId(null); }}>
-            <DialogContent data-testid="dialog-placeholder-edit">
-              <DialogHeader>
-                <DialogTitle>Tool Configuration</DialogTitle>
-              </DialogHeader>
-              <p className="text-sm text-muted-foreground py-2">This tool type is ready for buildout.</p>
-              <Button size="sm" variant="outline" onClick={() => setPlaceholderEditProgramId(null)}>Close</Button>
-            </DialogContent>
-          </Dialog>
-
           {addingSimpleProgram && (
             <Card className="p-4 space-y-3 mb-4" data-testid="card-add-simple-program">
               <p className="text-sm font-semibold">
@@ -2754,8 +2745,8 @@ export default function AdminConfigurationPage() {
                             </Button>
                           </>
                         ) : (
-                          <Button size="sm" variant="ghost" className="h-7" onClick={() => setPlaceholderEditProgramId(p.id)} data-testid={`button-edit-program-${p.id}`}>
-                            <Pencil className="h-3.5 w-3.5" />
+                          <Button size="sm" variant="ghost" className="h-7" onClick={() => navigate(`/org/${orgData?.slug}/programs/${p.slug}`)} data-testid={`button-open-program-${p.id}`}>
+                            <Link2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         <AlertDialog>
@@ -2777,11 +2768,19 @@ export default function AdminConfigurationPage() {
                         </AlertDialog>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatHourLabel(p.startHour)} - {formatHourLabel(p.endHour)}</span>
-                      <span className="flex items-center gap-1"><Dumbbell className="h-3.5 w-3.5" /> {(p.trainingTypes || []).join(", ")}</span>
-                      <span>Max {p.maxTeamsPerSlot} teams/slot</span>
-                    </div>
+                    {(p.type === "scheduling" || !p.type) && (
+                      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatHourLabel(p.startHour)} - {formatHourLabel(p.endHour)}</span>
+                        <span className="flex items-center gap-1"><Dumbbell className="h-3.5 w-3.5" /> {(p.trainingTypes || []).join(", ")}</span>
+                        <span>Max {p.maxTeamsPerSlot} teams/slot</span>
+                      </div>
+                    )}
+                    {p.type === "pr_tracker" && (
+                      <p className="text-xs text-muted-foreground">Athletes log and track personal records. Click the link icon to open.</p>
+                    )}
+                    {p.type === "workout_builder" && (
+                      <p className="text-xs text-muted-foreground">Create structured workouts athletes can access. Click the link icon to open.</p>
+                    )}
                   </>
                 )}
 
