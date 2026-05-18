@@ -539,7 +539,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
 
       const userId = profile.userId;
 
-      // Get assignments for this athlete
+      // Get coach-assigned programs for this athlete
       const assignments = await db.select()
         .from(workoutProgramAssignments)
         .where(and(
@@ -548,22 +548,140 @@ export function registerWorkoutBuilderRoutes(app: Express) {
           eq(workoutProgramAssignments.status, "active"),
         ));
 
-      if (assignments.length === 0) return res.json({ assignments: [], programs: [] });
+      const assignedProgramIds = assignments.length > 0
+        ? [...new Set(assignments.map((a) => a.workoutProgramId))]
+        : [];
 
-      const programIds = [...new Set(assignments.map((a) => a.workoutProgramId))];
-      const programs = await db.select().from(workoutPrograms)
-        .where(and(eq(workoutPrograms.orgId, orgId), inArray(workoutPrograms.id, programIds)));
+      const assignedPrograms = assignedProgramIds.length > 0
+        ? await db.select().from(workoutPrograms)
+            .where(and(eq(workoutPrograms.orgId, orgId), inArray(workoutPrograms.id, assignedProgramIds)))
+        : [];
 
-      const sessions = await db.select().from(workoutSessions)
-        .where(and(eq(workoutSessions.orgId, orgId), inArray(workoutSessions.workoutProgramId, programIds)))
-        .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber));
+      // Get self-created personal programs
+      const personalPrograms = await db.select()
+        .from(workoutPrograms)
+        .where(and(
+          eq(workoutPrograms.orgId, orgId),
+          eq(workoutPrograms.createdByUserId, userId),
+          eq(workoutPrograms.source, "athlete_self"),
+        ))
+        .orderBy(desc(workoutPrograms.createdAt));
+
+      const allProgramIds = [
+        ...new Set([...assignedProgramIds, ...personalPrograms.map((p) => p.id)]),
+      ];
+
+      const sessions = allProgramIds.length > 0
+        ? await db.select().from(workoutSessions)
+            .where(and(eq(workoutSessions.orgId, orgId), inArray(workoutSessions.workoutProgramId, allProgramIds)))
+            .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber))
+        : [];
 
       const completions = await db.select().from(workoutCompletionLogs)
         .where(and(eq(workoutCompletionLogs.orgId, orgId), eq(workoutCompletionLogs.athleteUserId, userId)));
 
-      return res.json({ assignments, programs, sessions, completions });
+      return res.json({ assignments, programs: assignedPrograms, personalPrograms, sessions, completions });
     } catch (err: any) {
       console.error("[workout-builder] my-workouts error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/athlete/generate  (athlete self-service)
+  app.post("/api/org/workout-builder/athlete/generate", isAuthenticated, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const userId = profile.userId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const bodySchema = z.object({
+        programToolId: z.string().min(1),
+        goal: z.string().min(1),
+        sport: z.string().optional(),
+        durationWeeks: z.number().int().min(1).max(52),
+        daysPerWeek: z.number().int().min(1).max(7),
+        equipment: z.string().optional(),
+        limitations: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
+
+      const { programToolId, goal, sport, durationWeeks, daysPerWeek, equipment, limitations } = parsed.data;
+
+      // Verify program tool belongs to org
+      const [programTool] = await db.select().from(athleticPrograms)
+        .where(and(eq(athleticPrograms.id, programToolId), eq(athleticPrograms.organizationId, orgId))).limit(1);
+      if (!programTool) return res.status(404).json({ message: "Program tool not found" });
+
+      // Check TrainChat integration
+      const [tcIntegration] = await db.select().from(orgAiIntegrations)
+        .where(and(eq(orgAiIntegrations.orgId, orgId), eq(orgAiIntegrations.provider, "trainchat"), eq(orgAiIntegrations.isActive, true))).limit(1);
+      if (!tcIntegration) return res.status(400).json({ message: "TrainChat is not connected for this organization." });
+
+      // Gather athlete's own PR context for personalization
+      const athleteContext = await getAthleteContextSummary(orgId, [userId]);
+
+      const tcParams = {
+        targetType: "athlete",
+        athleteUserIds: [userId],
+        goal,
+        sport,
+        durationWeeks,
+        daysPerWeek,
+        equipment,
+        constraints: limitations,
+        athleteContext,
+      };
+
+      let rawResponse: any = null;
+      let trainChatProgramId: string | null = null;
+      let generatedSummary: string | null = null;
+      let title = `${goal.charAt(0).toUpperCase() + goal.slice(1)} Program – ${durationWeeks}wk/${daysPerWeek}x`;
+      let generationError: string | null = null;
+
+      try {
+        const result = await trainChatClient.generateProgram(orgId, tcParams);
+        rawResponse = result.data;
+        if (rawResponse) {
+          trainChatProgramId = rawResponse.id ?? rawResponse.programId ?? null;
+          generatedSummary = rawResponse.summary ?? rawResponse.rationale ?? null;
+          if (rawResponse.title) title = rawResponse.title;
+        }
+      } catch (err: any) {
+        generationError = err?.message ?? "TrainChat generation failed";
+        rawResponse = { error: generationError };
+      }
+
+      // Store the program with athlete_self source
+      const [program] = await db.insert(workoutPrograms).values({
+        orgId,
+        programToolId,
+        createdByUserId: userId,
+        trainChatProgramId,
+        title,
+        goal,
+        sport: sport ?? null,
+        durationWeeks,
+        daysPerWeek,
+        status: "personal",
+        source: "athlete_self",
+        trainChatRawResponse: rawResponse,
+        generatedSummary,
+      }).returning();
+
+      // Parse and store sessions
+      if (rawResponse && !generationError) {
+        await parseAndStoreSessions(orgId, program.id, rawResponse).catch(() => {});
+      }
+
+      const sessions = await db.select().from(workoutSessions)
+        .where(eq(workoutSessions.workoutProgramId, program.id))
+        .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber));
+
+      return res.json({ program, sessions, generationError });
+    } catch (err: any) {
+      console.error("[workout-builder] athlete generate error:", err);
       return res.status(500).json({ message: "Internal server error" });
     }
   });

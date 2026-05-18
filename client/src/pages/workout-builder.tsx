@@ -18,7 +18,7 @@ import {
   Target, Clock, Zap, AlertTriangle, CheckCircle2, BarChart3,
   MessageSquarePlus, X, ClipboardList, Activity, Brain, TrendingUp,
   TrendingDown, ShieldAlert, Eye, ChevronDown, ChevronUp, RefreshCw,
-  Flame, Gauge, BedDouble, Siren,
+  Flame, Gauge, BedDouble, Siren, Sparkles, Wand2, Lock,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -889,52 +889,31 @@ function CoachLibraryView({ programs, onSelect, onGenerate }: { programs: any[];
   );
 }
 
-// ─── Athlete View ─────────────────────────────────────────────────────────────
-function AthleteWorkoutsView({ orgSlug }: { orgSlug: string }) {
-  const { toast } = useToast();
-
-  const { data, isLoading, refetch } = useQuery<any>({
-    queryKey: ["/api/org/workout-builder/my-workouts"],
-    queryFn: () => fetch("/api/org/workout-builder/my-workouts").then((r) => r.json()),
-  });
-
-  const finishMutation = useMutation({
-    mutationFn: ({ sessionId, finishData }: { sessionId: string; finishData: any }) =>
-      apiRequest("POST", `/api/org/workout-execution/session/${sessionId}/finish`, finishData),
-    onSuccess: () => { toast({ title: "Session saved! Great work." }); refetch(); },
-    onError: () => toast({ title: "Could not save session", variant: "destructive" }),
-  });
-
-  if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" /></div>;
-
-  const { programs = [], sessions = [], completions = [] } = data ?? {};
-
-  if (programs.length === 0) {
-    return (
-      <Card className="p-10 text-center space-y-3" data-testid="card-no-workouts">
-        <Dumbbell className="h-10 w-10 text-muted-foreground mx-auto" />
-        <p className="font-semibold">No workouts assigned yet</p>
-        <p className="text-sm text-muted-foreground">Your coach will assign programs once they're generated.</p>
-      </Card>
-    );
-  }
+// ─── Athlete Workout Program List ────────────────────────────────────────────
+function AthleteProgramList({ programs, sessions, completions, onFinish }: {
+  programs: any[]; sessions: any[]; completions: any[]; onFinish: (sessionId: string, data: any) => void;
+}) {
+  if (programs.length === 0) return null;
 
   const completedIds = new Set(completions.map((c: any) => c.workoutSessionId));
-  const totalSessions = sessions.length;
-  const completedCount = sessions.filter((s: any) => completedIds.has(s.id)).length;
+  const totalSessions = sessions.filter((s: any) => programs.some((p: any) => p.id === s.workoutProgramId)).length;
+  const completedCount = sessions.filter((s: any) =>
+    programs.some((p: any) => p.id === s.workoutProgramId) && completedIds.has(s.id)
+  ).length;
 
   return (
-    <div className="space-y-6" data-testid="view-athlete-workouts">
-      <Card className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold">Overall Progress</p>
-          <span className="text-sm text-muted-foreground">{completedCount}/{totalSessions} sessions</span>
-        </div>
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
-          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${totalSessions > 0 ? (completedCount / totalSessions) * 100 : 0}%` }} />
-        </div>
-      </Card>
-
+    <div className="space-y-6">
+      {totalSessions > 0 && (
+        <Card className="p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Overall Progress</p>
+            <span className="text-sm text-muted-foreground">{completedCount}/{totalSessions} sessions</span>
+          </div>
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${totalSessions > 0 ? (completedCount / totalSessions) * 100 : 0}%` }} />
+          </div>
+        </Card>
+      )}
       {programs.map((prog: any) => {
         const progSessions = sessions.filter((s: any) => s.workoutProgramId === prog.id);
         const weekGroups: Record<number, any[]> = {};
@@ -957,13 +936,8 @@ function AthleteWorkoutsView({ orgSlug }: { orgSlug: string }) {
               <div key={week} className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Week {week}</p>
                 <div className="space-y-2">
-                  {wSessions.sort((a, b) => a.dayNumber - b.dayNumber).map((s: any) => (
-                    <SessionCard
-                      key={s.id}
-                      session={s}
-                      completions={completions}
-                      onFinish={(sessionId, finishData) => finishMutation.mutate({ sessionId, finishData })}
-                    />
+                  {(wSessions as any[]).sort((a, b) => a.dayNumber - b.dayNumber).map((s: any) => (
+                    <SessionCard key={s.id} session={s} completions={completions} onFinish={onFinish} />
                   ))}
                 </div>
               </div>
@@ -974,6 +948,294 @@ function AthleteWorkoutsView({ orgSlug }: { orgSlug: string }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Athlete Create Wizard ────────────────────────────────────────────────────
+const WIZARD_DURATIONS = [4, 6, 8, 12];
+const WIZARD_DAYS = [2, 3, 4, 5, 6];
+
+function AthleteCreateWizard({ open, onClose, programToolId, onCreated }: {
+  open: boolean; onClose: () => void; programToolId: string; onCreated: () => void;
+}) {
+  const { toast } = useToast();
+  const [step, setStep] = useState(0);
+  const [goal, setGoal] = useState("");
+  const [sport, setSport] = useState("");
+  const [durationWeeks, setDurationWeeks] = useState(6);
+  const [daysPerWeek, setDaysPerWeek] = useState(3);
+  const [equipment, setEquipment] = useState("");
+  const [limitations, setLimitations] = useState("");
+
+  const generateMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/org/workout-builder/athlete/generate", {
+      programToolId, goal, sport: sport || undefined, durationWeeks, daysPerWeek,
+      equipment: equipment || undefined, limitations: limitations || undefined,
+    }).then((r) => r.json()),
+    onSuccess: (data: any) => {
+      if (data.generationError) {
+        toast({ title: "Program created with warnings", description: data.generationError });
+      } else {
+        toast({ title: "Workout program created!", description: "Your personal program is ready." });
+      }
+      onCreated();
+      onClose();
+      setStep(0); setGoal(""); setSport(""); setDurationWeeks(6); setDaysPerWeek(3); setEquipment(""); setLimitations("");
+    },
+    onError: (err: any) => toast({ title: "Could not generate workout", description: err?.message, variant: "destructive" }),
+  });
+
+  function handleClose() {
+    if (!generateMutation.isPending) { onClose(); setStep(0); }
+  }
+
+  const canNext0 = !!goal;
+  const steps = ["Your Goal", "Schedule", "Details"];
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-md" data-testid="dialog-athlete-create-wizard">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" /> Create My Workout
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Step indicator */}
+        <div className="flex items-center gap-1 mb-2">
+          {steps.map((label, i) => (
+            <div key={label} className="flex items-center gap-1 flex-1">
+              <div className={`h-1.5 flex-1 rounded-full transition-colors ${i <= step ? "bg-primary" : "bg-muted"}`} />
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">{steps[step]}</p>
+
+        {/* Step 0 — Goal & Sport */}
+        {step === 0 && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Training Goal <span className="text-destructive">*</span></Label>
+              <Select value={goal} onValueChange={setGoal}>
+                <SelectTrigger data-testid="select-wizard-goal">
+                  <SelectValue placeholder="Choose a goal…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {GOALS.map((g) => <SelectItem key={g} value={g}>{GOAL_LABELS[g] ?? g}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Sport / Activity <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Input
+                value={sport}
+                onChange={(e) => setSport(e.target.value)}
+                placeholder="e.g. Soccer, Track, General Fitness"
+                data-testid="input-wizard-sport"
+              />
+            </div>
+            <Button className="w-full" onClick={() => setStep(1)} disabled={!canNext0} data-testid="button-wizard-next-0">
+              Next <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        )}
+
+        {/* Step 1 — Schedule */}
+        {step === 1 && (
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <Label>Program Duration</Label>
+              <div className="grid grid-cols-4 gap-2">
+                {WIZARD_DURATIONS.map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setDurationWeeks(w)}
+                    data-testid={`button-wizard-duration-${w}`}
+                    className={`py-2 rounded-lg text-sm font-medium border transition-colors ${durationWeeks === w ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50"}`}
+                  >
+                    {w}wk
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <Label>Days Per Week</Label>
+              <div className="grid grid-cols-5 gap-2">
+                {WIZARD_DAYS.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDaysPerWeek(d)}
+                    data-testid={`button-wizard-days-${d}`}
+                    className={`py-2 rounded-lg text-sm font-medium border transition-colors ${daysPerWeek === d ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50"}`}
+                  >
+                    {d}x
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep(0)} className="flex-1" data-testid="button-wizard-back-1">Back</Button>
+              <Button onClick={() => setStep(2)} className="flex-1" data-testid="button-wizard-next-1">
+                Next <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2 — Details & Generate */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Available Equipment <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Input
+                value={equipment}
+                onChange={(e) => setEquipment(e.target.value)}
+                placeholder="e.g. Barbell, Dumbbells, Bodyweight only"
+                data-testid="input-wizard-equipment"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Limitations / Notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Textarea
+                value={limitations}
+                onChange={(e) => setLimitations(e.target.value)}
+                placeholder="e.g. No jumping, shoulder injury, focus on lower body"
+                rows={3}
+                data-testid="input-wizard-limitations"
+              />
+            </div>
+
+            {/* Summary */}
+            <Card className="p-3 bg-muted/30 space-y-1 text-sm">
+              <p className="font-medium text-xs text-muted-foreground uppercase tracking-wide mb-1.5">Your Program</p>
+              <div className="flex justify-between"><span className="text-muted-foreground">Goal</span><span className="font-medium">{GOAL_LABELS[goal] ?? goal}</span></div>
+              {sport && <div className="flex justify-between"><span className="text-muted-foreground">Sport</span><span className="font-medium">{sport}</span></div>}
+              <div className="flex justify-between"><span className="text-muted-foreground">Duration</span><span className="font-medium">{durationWeeks} weeks</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Frequency</span><span className="font-medium">{daysPerWeek}x / week</span></div>
+            </Card>
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep(1)} disabled={generateMutation.isPending} className="flex-1" data-testid="button-wizard-back-2">Back</Button>
+              <Button
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+                className="flex-1 gap-1.5"
+                data-testid="button-wizard-generate"
+              >
+                {generateMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</> : <><Sparkles className="h-4 w-4" /> Generate</>}
+              </Button>
+            </div>
+            {generateMutation.isPending && (
+              <p className="text-xs text-center text-muted-foreground">TrainChat is building your program — this takes about 20–30 seconds.</p>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Athlete View ─────────────────────────────────────────────────────────────
+function AthleteWorkoutsView({ orgSlug, programToolId, trainChatConnected }: {
+  orgSlug: string; programToolId: string; trainChatConnected: boolean;
+}) {
+  const { toast } = useToast();
+  const [tab, setTab] = useState<"assigned" | "personal">("assigned");
+  const [showWizard, setShowWizard] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/org/workout-builder/my-workouts"],
+    queryFn: () => fetch("/api/org/workout-builder/my-workouts").then((r) => r.json()),
+  });
+
+  const finishMutation = useMutation({
+    mutationFn: ({ sessionId, finishData }: { sessionId: string; finishData: any }) =>
+      apiRequest("POST", `/api/org/workout-execution/session/${sessionId}/finish`, finishData),
+    onSuccess: () => { toast({ title: "Session saved! Great work." }); refetch(); },
+    onError: () => toast({ title: "Could not save session", variant: "destructive" }),
+  });
+
+  if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  const { programs = [], personalPrograms = [], sessions = [], completions = [] } = data ?? {};
+
+  const handleFinish = (sessionId: string, finishData: any) => finishMutation.mutate({ sessionId, finishData });
+
+  return (
+    <div className="space-y-4" data-testid="view-athlete-workouts">
+      {/* Tab switcher */}
+      <div className="flex rounded-lg border p-0.5 bg-muted/30 gap-0.5">
+        <button
+          onClick={() => setTab("assigned")}
+          data-testid="tab-assigned-workouts"
+          className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${tab === "assigned" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          Assigned <span className="ml-1 text-xs opacity-70">({programs.length})</span>
+        </button>
+        <button
+          onClick={() => setTab("personal")}
+          data-testid="tab-my-workouts"
+          className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${tab === "personal" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          My Workouts <span className="ml-1 text-xs opacity-70">({personalPrograms.length})</span>
+        </button>
+      </div>
+
+      {/* Assigned tab */}
+      {tab === "assigned" && (
+        programs.length === 0 ? (
+          <Card className="p-10 text-center space-y-3" data-testid="card-no-assigned-workouts">
+            <Dumbbell className="h-10 w-10 text-muted-foreground mx-auto" />
+            <p className="font-semibold">No workouts assigned yet</p>
+            <p className="text-sm text-muted-foreground">Your coach will assign programs once they've been generated.</p>
+          </Card>
+        ) : (
+          <AthleteProgramList programs={programs} sessions={sessions} completions={completions} onFinish={handleFinish} />
+        )
+      )}
+
+      {/* My Workouts tab */}
+      {tab === "personal" && (
+        <div className="space-y-4">
+          {trainChatConnected ? (
+            <Button
+              onClick={() => setShowWizard(true)}
+              className="w-full gap-2"
+              data-testid="button-create-my-workout"
+            >
+              <Sparkles className="h-4 w-4" /> Create My Workout
+            </Button>
+          ) : (
+            <Card className="p-4 flex items-start gap-3 border-amber-500/20 bg-amber-500/5">
+              <WifiOff className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium">TrainChat Not Connected</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Personal workout creation requires TrainChat. Ask your coach to set it up.</p>
+              </div>
+            </Card>
+          )}
+          {personalPrograms.length === 0 ? (
+            <Card className="p-10 text-center space-y-3" data-testid="card-no-personal-workouts">
+              <Wand2 className="h-10 w-10 text-muted-foreground mx-auto" />
+              <p className="font-semibold">No personal workouts yet</p>
+              <p className="text-sm text-muted-foreground">Use "Create My Workout" to generate your own AI-powered program.</p>
+            </Card>
+          ) : (
+            <AthleteProgramList programs={personalPrograms} sessions={sessions} completions={completions} onFinish={handleFinish} />
+          )}
+        </div>
+      )}
+
+      {/* Athlete create wizard */}
+      {programToolId && (
+        <AthleteCreateWizard
+          open={showWizard}
+          onClose={() => setShowWizard(false)}
+          programToolId={programToolId}
+          onCreated={() => { refetch(); setTab("personal"); }}
+        />
+      )}
     </div>
   );
 }
@@ -1225,7 +1487,8 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
   const BUILDER_ROLES = ["ADMIN", "COACH", "STAFF", "owner", "admin", "coach", "staff"];
   const rawRole: string | undefined = bootstrap?.currentUser?.role;
   const isCoach = rawRole !== undefined && BUILDER_ROLES.includes(rawRole);
-  const isAthlete = rawRole !== undefined && ["CLIENT", "athlete", "guardian"].includes(rawRole);
+  const isGuardian = rawRole === "guardian";
+  const isAthlete = rawRole !== undefined && ["CLIENT", "athlete"].includes(rawRole);
   const programs: any[] = bootstrap?.programs ?? [];
   const trainChatConnected: boolean = bootstrap?.trainChatConnected ?? false;
   const needsReviewCount: number = monitorData?.summary?.needsReview ?? 0;
@@ -1249,17 +1512,54 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
     );
   }
 
-  // Athlete / guardian view
+  // Athlete view
   if (isAthlete) {
     return (
-      <div className="space-y-6" data-testid="page-workout-builder-athlete">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4" data-testid="page-workout-builder-athlete">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2"><Dumbbell className="h-5 w-5" /> My Workouts</h1>
             <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
           </div>
+          {trainChatConnected ? (
+            <Badge className="text-xs gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+              <Wifi className="h-3 w-3" /> TrainChat Active
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs gap-1 text-muted-foreground">
+              <WifiOff className="h-3 w-3" /> TrainChat Off
+            </Badge>
+          )}
         </div>
-        <AthleteWorkoutsView orgSlug={orgSlug} />
+        <AthleteWorkoutsView
+          orgSlug={orgSlug}
+          programToolId={program?.id ?? ""}
+          trainChatConnected={trainChatConnected}
+        />
+      </div>
+    );
+  }
+
+  // Guardian view — read-only, no creation
+  if (isGuardian) {
+    return (
+      <div className="space-y-4" data-testid="page-workout-builder-guardian">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Dumbbell className="h-5 w-5" /> Workouts</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
+        </div>
+        <Card className="p-4 flex items-start gap-3 border-muted">
+          <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium">Read-only view</p>
+            <p className="text-xs text-muted-foreground mt-0.5">As a guardian, you can view assigned workouts but cannot create or edit programs.</p>
+          </div>
+        </Card>
+        <AthleteWorkoutsView
+          orgSlug={orgSlug}
+          programToolId=""
+          trainChatConnected={false}
+        />
       </div>
     );
   }
