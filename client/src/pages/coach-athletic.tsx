@@ -61,7 +61,7 @@ export default function CoachAthleticPage() {
     enabled: !!orgId,
   });
 
-  const activePrograms = programs?.filter((p) => p.active) || [];
+  const activePrograms = programs?.filter((p) => p.active && (p.type === "scheduling" || !p.type)) || [];
   const currentProgram = selectedProgramId
     ? activePrograms.find((p) => p.id === selectedProgramId) || activePrograms[0]
     : activePrograms[0];

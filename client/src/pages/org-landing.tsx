@@ -271,7 +271,7 @@ export default function OrgLandingPage() {
     enabled: !!org?.id && org?.athleticEnabled === true,
   });
 
-  const activeAthleticPrograms = athleticPrograms?.filter((p: any) => p.active) || [];
+  const activeAthleticPrograms = athleticPrograms?.filter((p: any) => p.active && (p.type === "scheduling" || !p.type)) || [];
 
   const { data: mediaData } = useQuery<{ media: OrgMedia[]; grouped: Record<string, OrgMedia[]> }>({
     queryKey: ["/api/public/org", slug, "media"],

@@ -57,7 +57,7 @@ function buildTimeSlots(startHour: number, endHour: number) {
 
 function ProgramSelector({ org, programs }: { org: any; programs: AthleticProgram[] }) {
   const backUrl = `/org/${org.slug}`;
-  const activePrograms = programs.filter((p: any) => p.active);
+  const activePrograms = programs.filter((p: any) => p.active && (p.type === "scheduling" || !p.type));
 
   return (
     <div className="min-h-screen bg-background">
@@ -140,7 +140,7 @@ export default function AthleticSchedulingPage() {
     enabled: !!orgId && !!programSlug,
   });
 
-  const activePrograms = programs?.filter((p: any) => p.active) || [];
+  const activePrograms = programs?.filter((p: any) => p.active && (p.type === "scheduling" || !p.type)) || [];
   const resolvedProgram = programSlug ? program : (activePrograms.length === 1 ? activePrograms[0] : null);
   const maxTeamsPerSlot = resolvedProgram?.maxTeamsPerSlot ?? 2;
   const trainingTypes = resolvedProgram?.trainingTypes || ["Strength", "Speed"];
@@ -384,6 +384,12 @@ export default function AthleticSchedulingPage() {
         </Card>
       </div>
     );
+  }
+
+  // If a programSlug was given but resolves to a non-scheduling type, redirect to the correct tool route
+  if (programSlug && program && program.type && program.type !== "scheduling") {
+    navigate(`/org/${slug}/programs/${programSlug}`, { replace: true });
+    return null;
   }
 
   if (!programSlug && activePrograms.length > 1) {

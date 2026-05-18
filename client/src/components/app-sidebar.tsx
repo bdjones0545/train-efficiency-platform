@@ -625,7 +625,7 @@ export function AppSidebar() {
     enabled: !!orgId && athleticEnabled,
   });
 
-  const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active) || [];
+  const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "scheduling" || !p.type)) || [];
 
 
   // ── Attention count chip handled inline via AttentionCountChip component ─────
