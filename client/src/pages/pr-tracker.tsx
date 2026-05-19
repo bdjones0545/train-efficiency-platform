@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Trophy } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { CoachPrDashboard } from "@/components/pr-tracker/CoachPrDashboard";
 import { AthletePrDashboard } from "@/components/pr-tracker/AthletePrDashboard";
-import { getAuthToken } from "@/lib/authToken";
+import { useAuth } from "@/hooks/use-auth";
 
 interface PrTrackerProps {
   program: {
@@ -28,83 +28,110 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   const tokenKey = getTokenKey(orgId);
   const [, setLocation] = useLocation();
 
-  // Use orgToken from localStorage, or fall back to the main app auth token (coaches/admins)
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem(tokenKey) || getAuthToken();
-  });
-  const [isCoachBypass, setIsCoachBypass] = useState(() => {
-    return !localStorage.getItem(tokenKey) && !!getAuthToken();
-  });
+  // Main-app session (Replit Auth — cookie based, no localStorage token needed)
+  const { user: mainAppUser, isLoading: authLoading } = useAuth();
+
+  // Org-specific session token (stored in localStorage after OrgAuthModal login)
+  const [orgToken, setOrgToken] = useState<string | null>(() =>
+    localStorage.getItem(tokenKey)
+  );
+
   const [bootstrap, setBootstrap] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchBootstrap = useCallback(
-    async (authToken: string) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const r = await fetch(`/api/pr-tracker/bootstrap?orgId=${orgId}&programId=${programId}`, {
-          headers: { "X-Org-Auth-Token": authToken },
-        });
-        if (r.status === 401) {
-          if (!isCoachBypass) {
-            localStorage.removeItem(tokenKey);
-          }
-          setToken(null);
-          setIsCoachBypass(false);
-          setBootstrap(null);
-          return;
-        }
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.message || "Failed to load");
-        setBootstrap(data);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+  // Derived auth mode — no useState needed, computed each render
+  // org_token   → logged in via OrgAuthModal (stored JWT in localStorage)
+  // admin_session → logged in via main Replit app (session cookie)
+  // unauthenticated → neither
+  const authMode: "org_token" | "admin_session" | "unauthenticated" = orgToken
+    ? "org_token"
+    : mainAppUser
+    ? "admin_session"
+    : "unauthenticated";
+
+  const fetchBootstrap = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (authMode === "org_token" && orgToken) {
+        headers["X-Org-Auth-Token"] = orgToken;
       }
-    },
-    [orgId, programId, tokenKey, isCoachBypass]
-  );
+      // For admin_session: no token header — server reads req.user from session cookie
 
-  useEffect(() => {
-    if (token) {
-      fetchBootstrap(token);
+      const r = await fetch(
+        `/api/pr-tracker/bootstrap?orgId=${orgId}&programId=${programId}`,
+        { headers, credentials: "include" }
+      );
+
+      if (r.status === 401) {
+        // Org token expired — clear it and fall back to auth gate
+        if (authMode === "org_token") {
+          localStorage.removeItem(tokenKey);
+          setOrgToken(null);
+        }
+        setBootstrap(null);
+        return;
+      }
+
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.message || "Failed to load");
+      setBootstrap(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-  }, [token, fetchBootstrap]);
+  }, [orgId, programId, tokenKey, authMode, orgToken]);
 
-  function handleAuthenticated(newToken: string, user: any, membership: any) {
-    localStorage.setItem(tokenKey, newToken);
-    setToken(newToken);
-    setIsCoachBypass(false);
+  // Fetch bootstrap whenever auth mode resolves to something valid
+  useEffect(() => {
+    if (!authLoading && authMode !== "unauthenticated") {
+      fetchBootstrap();
+    }
+  }, [authLoading, authMode, fetchBootstrap]);
+
+  function handleAuthenticated(token: string, _user: any, _membership: any) {
+    localStorage.setItem(tokenKey, token);
+    setOrgToken(token);
+    setBootstrap(null); // trigger re-fetch via authMode change
   }
 
   function handleLogout() {
-    if (isCoachBypass) {
-      // Coach bypass users are still main-app authenticated — just navigate
-      // them to the org portal instead of showing the org auth modal.
+    if (authMode === "admin_session") {
+      // Main-app users stay logged in — just navigate them to the org portal
       setBootstrap(null);
       setLocation(`/org/${orgSlug}/portal`);
       return;
     }
-    if (token) {
+    // Org-token users: call logout API and clear token
+    if (orgToken) {
       fetch("/api/org-auth/logout", {
         method: "POST",
-        headers: { "X-Org-Auth-Token": token },
+        headers: { "X-Org-Auth-Token": orgToken },
       }).catch(() => {});
     }
     localStorage.removeItem(tokenKey);
-    setToken(null);
+    setOrgToken(null);
     setBootstrap(null);
   }
 
   function handleRefresh() {
-    if (token) fetchBootstrap(token);
+    if (authMode !== "unauthenticated") fetchBootstrap();
   }
 
-  // Not authenticated — show auth modal
-  if (!token) {
+  // Still figuring out auth state
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Not authenticated — show org login gate
+  if (authMode === "unauthenticated") {
     return (
       <OrgAuthModal
         orgId={orgId}
@@ -115,7 +142,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     );
   }
 
-  // Loading
+  // Loading bootstrap data
   if (loading || !bootstrap) {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-3">
@@ -125,17 +152,20 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     );
   }
 
-  // Error
+  // Error state
   if (error) {
     return (
       <div className="p-8 text-center">
         <p className="text-sm text-destructive mb-2">{error}</p>
-        <button onClick={handleRefresh} className="text-xs text-primary underline">Retry</button>
+        <button onClick={handleRefresh} className="text-xs text-primary underline">
+          Retry
+        </button>
       </div>
     );
   }
 
-  const isCoach = bootstrap.membership?.role === "coach";
+  // Coach/admin/owner → full coach dashboard
+  const isCoach = bootstrap.canManageTeams === true;
 
   if (isCoach) {
     return (
@@ -146,7 +176,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
         programId={programId}
         programSlug={programSlug}
         programName={program.name}
-        token={token}
+        token={orgToken ?? ""}
         onRefresh={handleRefresh}
         onLogout={handleLogout}
       />
@@ -161,7 +191,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
       programId={programId}
       programSlug={programSlug}
       programName={program.name}
-      token={token}
+      token={orgToken ?? ""}
       onRefresh={handleRefresh}
       onLogout={handleLogout}
     />

@@ -45,9 +45,12 @@ interface CoachPrDashboardProps {
 }
 
 function prFetch(method: string, path: string, token: string, body?: any) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["X-Org-Auth-Token"] = token;
   return fetch(path, {
     method,
-    headers: { "Content-Type": "application/json", "X-Org-Auth-Token": token },
+    headers,
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -113,9 +116,12 @@ export function CoachPrDashboard({
       formData.append("file", csvFile);
       formData.append("orgId", orgId);
       formData.append("programId", programId);
+      const csvHeaders: Record<string, string> = {};
+      if (token) csvHeaders["X-Org-Auth-Token"] = token;
       const r = await fetch("/api/pr-tracker/import-csv", {
         method: "POST",
-        headers: { "X-Org-Auth-Token": token },
+        headers: csvHeaders,
+        credentials: "include",
         body: formData,
       });
       const data = await r.json();

@@ -32,9 +32,12 @@ interface AthletePrDashboardProps {
 }
 
 function prFetch(method: string, path: string, token: string, body?: any) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["X-Org-Auth-Token"] = token;
   return fetch(path, {
     method,
-    headers: { "Content-Type": "application/json", "X-Org-Auth-Token": token },
+    headers,
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
 }

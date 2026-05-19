@@ -64,7 +64,49 @@ function generateJoinCode(): string {
 }
 
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
-  const token = req.headers["x-org-auth-token"] as string;
+  // ── Path 1: Replit session cookie (main-app admins/coaches) ──────────────
+  if (req.user) {
+    try {
+      const mainUserId: string = req.user?.claims?.sub ?? req.user?.id;
+      const requestedOrgId = (req.query.orgId ?? req.body?.orgId) as string | undefined;
+
+      const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+      const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
+
+      const userOrgId: string | null = coachRow?.organizationId ?? profileRow?.organizationId ?? null;
+      if (!userOrgId) {
+        return res.status(403).json({ message: "No organization associated with this account" });
+      }
+
+      // Security: must belong to the same org that was requested
+      if (requestedOrgId && userOrgId !== requestedOrgId) {
+        return res.status(403).json({ message: "Access denied: organization mismatch" });
+      }
+
+      // Determine effective role
+      const profileRole = profileRow?.role ?? null;
+      const isAdmin = ["ADMIN", "STAFF"].includes(profileRole ?? "");
+      const isCoach = !isAdmin && !!coachRow?.organizationId;
+      const effectiveRole: string = isAdmin ? "admin" : isCoach ? "coach" : "athlete";
+
+      const [mainUser] = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
+
+      req.orgUser = {
+        id: mainUserId,
+        name: `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim(),
+        email: coachRow?.email ?? mainUser?.email ?? "",
+      };
+      req.orgSession = { orgId: userOrgId };
+      req.orgMembership = { role: effectiveRole };
+      req.authMode = "admin_session";
+      return next();
+    } catch (err: any) {
+      return res.status(500).json({ message: "Auth error" });
+    }
+  }
+
+  // ── Path 2: Org session token (x-org-auth-token header) ─────────────────
+  const token = req.headers["x-org-auth-token"] as string | undefined;
   if (!token) return res.status(401).json({ message: "Not authenticated" });
 
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
@@ -77,7 +119,6 @@ async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
     .limit(1);
 
   if (sessions.length) {
-    // Normal orgSession path
     const session = sessions[0];
     await db.update(orgSessions).set({ lastUsedAt: now }).where(eq(orgSessions.id, session.id));
     const foundUsers = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
@@ -90,10 +131,11 @@ async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
     req.orgUser = foundUsers[0];
     req.orgSession = session;
     req.orgMembership = memberships[0] || null;
+    req.authMode = "org_token";
     return next();
   }
 
-  // Fallback: accept main app auth token (for coaches/admins already logged in)
+  // ── Path 3: Main-app Bearer token fallback (legacy / API clients) ────────
   const mainAppResult = await db.execute(
     sql`SELECT user_id FROM auth_tokens WHERE token = ${token} AND expires_at > NOW() LIMIT 1`
   );
@@ -102,48 +144,34 @@ async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
   }
 
   const mainUserId = (mainAppResult.rows[0] as any).user_id;
+  const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+  const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
+  const userOrgId: string | null = coachRow?.organizationId ?? profileRow?.organizationId ?? null;
 
-  // Look up coach profile first
-  const coachRows = await db
-    .select()
-    .from(coachProfiles)
-    .where(eq(coachProfiles.userId, mainUserId))
-    .limit(1);
-
-  const coach = coachRows[0];
-  let orgId: string | null = coach?.organizationId ?? null;
-
-  // Fall back to userProfile (admin)
-  if (!orgId) {
-    const profileRows = await db
-      .select()
-      .from(userProfiles)
-      .where(eq(userProfiles.userId, mainUserId))
-      .limit(1);
-    orgId = profileRows[0]?.organizationId ?? null;
-  }
-
-  if (!orgId) {
+  if (!userOrgId) {
     return res.status(403).json({ message: "No organization associated with this account" });
   }
 
-  // Fetch the main app user record for name/email
-  const mainUserRows = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
-  const mainUser = mainUserRows[0];
+  const [mainUser] = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
+  const profileRole = profileRow?.role ?? null;
+  const isAdmin = ["ADMIN", "STAFF"].includes(profileRole ?? "");
+  const effectiveRole = isAdmin ? "admin" : "coach";
 
   req.orgUser = {
     id: mainUserId,
     name: `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim(),
-    email: coach?.email ?? mainUser?.email ?? "",
+    email: coachRow?.email ?? mainUser?.email ?? "",
   };
-  req.orgSession = { orgId };
-  req.orgMembership = { role: "coach" };
+  req.orgSession = { orgId: userOrgId };
+  req.orgMembership = { role: effectiveRole };
+  req.authMode = "admin_session";
   next();
 }
 
 function requireCoach(req: any, res: Response, next: NextFunction) {
-  if (!req.orgMembership || req.orgMembership.role !== "coach") {
-    return res.status(403).json({ message: "Coach access required" });
+  const role = req.orgMembership?.role;
+  if (!role || !["coach", "admin", "owner"].includes(role)) {
+    return res.status(403).json({ message: "Coach login required to manage teams" });
   }
   next();
 }
@@ -367,7 +395,7 @@ export function registerPrTrackerRoutes(app: Express) {
         .from(prTeams)
         .where(and(eq(prTeams.orgId, orgId), eq(prTeams.programId, programId)));
 
-      const isCoach = req.orgMembership?.role === "coach";
+      const isCoach = ["coach", "admin", "owner"].includes(req.orgMembership?.role ?? "");
 
       let entries: any[];
       if (isCoach) {
@@ -433,9 +461,14 @@ export function registerPrTrackerRoutes(app: Express) {
         athleteCount = allMembers.length;
       }
 
+      const canManage = isCoach;
       res.json({
         user: safeUser(req.orgUser),
         membership: req.orgMembership,
+        authMode: req.authMode ?? "org_token",
+        canManageTeams: canManage,
+        canImportCsv: canManage,
+        canViewAthletes: canManage,
         liftTypes,
         teams: teams.map((t) => ({ ...t, memberCount: teamMemberCounts[t.id] || 0 })),
         entries: enrichedEntries,
