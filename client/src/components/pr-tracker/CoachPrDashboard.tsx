@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +46,10 @@ interface CoachPrDashboardProps {
 }
 
 function prFetch(method: string, path: string, token: string, body?: any) {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getAuthHeaders(),
+  };
   if (token) headers["X-Org-Auth-Token"] = token;
   return fetch(path, {
     method,
@@ -116,7 +120,7 @@ export function CoachPrDashboard({
       formData.append("file", csvFile);
       formData.append("orgId", orgId);
       formData.append("programId", programId);
-      const csvHeaders: Record<string, string> = {};
+      const csvHeaders: Record<string, string> = { ...getAuthHeaders() };
       if (token) csvHeaders["X-Org-Auth-Token"] = token;
       const r = await fetch("/api/pr-tracker/import-csv", {
         method: "POST",

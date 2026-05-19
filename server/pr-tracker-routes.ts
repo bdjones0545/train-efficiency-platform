@@ -63,44 +63,78 @@ function generateJoinCode(): string {
   return crypto.randomBytes(3).toString("hex").toUpperCase();
 }
 
+// Shared helper: resolve org membership for a known main-app userId and
+// populate req.orgUser / req.orgSession / req.orgMembership / req.authMode.
+// Returns true and calls next() on success; returns false and sends a response on failure.
+async function resolveMainAppUser(
+  req: any,
+  res: Response,
+  next: NextFunction,
+  mainUserId: string
+): Promise<boolean> {
+  const requestedOrgId = (req.query.orgId ?? req.body?.orgId) as string | undefined;
+
+  const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+  const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
+
+  const userOrgId: string | null = coachRow?.organizationId ?? profileRow?.organizationId ?? null;
+  if (!userOrgId) {
+    res.status(403).json({ message: "No organization associated with this account" });
+    return false;
+  }
+
+  if (requestedOrgId && userOrgId !== requestedOrgId) {
+    res.status(403).json({ message: "Access denied: organization mismatch" });
+    return false;
+  }
+
+  const profileRole = profileRow?.role ?? null;
+  const isAdminRole = ["ADMIN", "STAFF"].includes(profileRole ?? "");
+  const isCoachRole = !isAdminRole && !!coachRow?.organizationId;
+  const effectiveRole: string = isAdminRole ? "admin" : isCoachRole ? "coach" : "athlete";
+
+  const [mainUser] = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
+
+  req.orgUser = {
+    id: mainUserId,
+    name: `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim(),
+    email: coachRow?.email ?? mainUser?.email ?? "",
+  };
+  req.orgSession = { orgId: userOrgId };
+  req.orgMembership = { role: effectiveRole };
+  req.authMode = "admin_session";
+  next();
+  return true;
+}
+
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
-  // ── Path 1: Replit session cookie (main-app admins/coaches) ──────────────
+  // ── Path 1: Replit OIDC session cookie (passport sets req.user) ───────────
   if (req.user) {
     try {
       const mainUserId: string = req.user?.claims?.sub ?? req.user?.id;
-      const requestedOrgId = (req.query.orgId ?? req.body?.orgId) as string | undefined;
-
-      const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
-      const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
-
-      const userOrgId: string | null = coachRow?.organizationId ?? profileRow?.organizationId ?? null;
-      if (!userOrgId) {
-        return res.status(403).json({ message: "No organization associated with this account" });
-      }
-
-      // Security: must belong to the same org that was requested
-      if (requestedOrgId && userOrgId !== requestedOrgId) {
-        return res.status(403).json({ message: "Access denied: organization mismatch" });
-      }
-
-      // Determine effective role
-      const profileRole = profileRow?.role ?? null;
-      const isAdmin = ["ADMIN", "STAFF"].includes(profileRole ?? "");
-      const isCoach = !isAdmin && !!coachRow?.organizationId;
-      const effectiveRole: string = isAdmin ? "admin" : isCoach ? "coach" : "athlete";
-
-      const [mainUser] = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
-
-      req.orgUser = {
-        id: mainUserId,
-        name: `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim(),
-        email: coachRow?.email ?? mainUser?.email ?? "",
-      };
-      req.orgSession = { orgId: userOrgId };
-      req.orgMembership = { role: effectiveRole };
-      req.authMode = "admin_session";
-      return next();
+      await resolveMainAppUser(req, res, next, mainUserId);
+      return;
     } catch (err: any) {
+      console.error("[requireOrgAuth] Path 1 error:", err.message);
+      return res.status(500).json({ message: "Auth error" });
+    }
+  }
+
+  // ── Path 1b: Authorization: Bearer <token> (email/password coach login) ──
+  const authHeader = req.headers.authorization as string | undefined;
+  if (authHeader?.startsWith("Bearer ")) {
+    const bearerToken = authHeader.slice(7);
+    try {
+      const tokenResult = await db.execute(
+        sql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+      );
+      if (tokenResult.rows.length) {
+        const mainUserId = (tokenResult.rows[0] as any).user_id as string;
+        await resolveMainAppUser(req, res, next, mainUserId);
+        return;
+      }
+    } catch (err: any) {
+      console.error("[requireOrgAuth] Path 1b error:", err.message);
       return res.status(500).json({ message: "Auth error" });
     }
   }

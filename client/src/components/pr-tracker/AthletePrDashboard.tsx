@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,10 @@ interface AthletePrDashboardProps {
 }
 
 function prFetch(method: string, path: string, token: string, body?: any) {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getAuthHeaders(),
+  };
   if (token) headers["X-Org-Auth-Token"] = token;
   return fetch(path, {
     method,

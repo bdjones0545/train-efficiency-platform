@@ -5,6 +5,7 @@ import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { CoachPrDashboard } from "@/components/pr-tracker/CoachPrDashboard";
 import { AthletePrDashboard } from "@/components/pr-tracker/AthletePrDashboard";
 import { useAuth } from "@/hooks/use-auth";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Button } from "@/components/ui/button";
 
 interface PrTrackerProps {
@@ -69,7 +70,9 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
 
     try {
       const currentToken = orgTokenRef.current;
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        ...getAuthHeaders(),
+      };
       if (currentToken) {
         headers["X-Org-Auth-Token"] = currentToken;
       }
