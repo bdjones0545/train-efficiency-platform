@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation } from "wouter";
 import { Loader2, Trophy } from "lucide-react";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { CoachPrDashboard } from "@/components/pr-tracker/CoachPrDashboard";
@@ -23,7 +24,9 @@ function getTokenKey(orgId: string) {
 export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   const orgId = program.organizationId;
   const programId = program.id;
+  const programSlug = program.slug;
   const tokenKey = getTokenKey(orgId);
+  const [, setLocation] = useLocation();
 
   // Use orgToken from localStorage, or fall back to the main app auth token (coaches/admins)
   const [token, setToken] = useState<string | null>(() => {
@@ -79,10 +82,10 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
 
   function handleLogout() {
     if (isCoachBypass) {
-      // Don't clear the main app token — just reset the PR tracker state
-      setToken(null);
-      setIsCoachBypass(false);
+      // Coach bypass users are still main-app authenticated — just navigate
+      // them to the org portal instead of showing the org auth modal.
       setBootstrap(null);
+      setLocation(`/org/${orgSlug}/portal`);
       return;
     }
     if (token) {
@@ -141,6 +144,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
         orgId={orgId}
         orgSlug={orgSlug}
         programId={programId}
+        programSlug={programSlug}
         programName={program.name}
         token={token}
         onRefresh={handleRefresh}
@@ -155,6 +159,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
       orgId={orgId}
       orgSlug={orgSlug}
       programId={programId}
+      programSlug={programSlug}
       programName={program.name}
       token={token}
       onRefresh={handleRefresh}

@@ -24,6 +24,7 @@ interface AthletePrDashboardProps {
   orgId: string;
   orgSlug: string;
   programId: string;
+  programSlug: string;
   programName: string;
   token: string;
   onRefresh: () => void;
@@ -58,6 +59,7 @@ export function AthletePrDashboard({
   orgId,
   orgSlug,
   programId,
+  programSlug,
   programName,
   token,
   onRefresh,
@@ -142,20 +144,20 @@ export function AthletePrDashboard({
           <p className="text-xs text-muted-foreground">{programName} · {bootstrap.user.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          <a href={`/org/${orgSlug}/portal`} data-testid="link-portal">
-            <Button size="sm" variant="ghost" title="Portal Home">
+          <a href={`/org/${orgSlug}/programs/${programSlug}`} data-testid="link-dashboard">
+            <Button size="sm" variant="ghost" title="PR Tracker Dashboard">
               <LayoutDashboard className="h-4 w-4" />
             </Button>
           </a>
-          <a href={`/org/${orgSlug}/profile`} data-testid="link-profile">
-            <Button size="sm" variant="ghost" title="My Profile">
+          <a href={`/org/${orgSlug}/portal`} data-testid="link-portal">
+            <Button size="sm" variant="ghost" title="Portal Home">
               <User className="h-4 w-4" />
             </Button>
           </a>
-          <Button size="sm" variant="ghost" onClick={onRefresh} data-testid="button-refresh">
+          <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh" data-testid="button-refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={onLogout} data-testid="button-logout">
+          <Button size="sm" variant="ghost" onClick={onLogout} title="Log Out" data-testid="button-logout">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>

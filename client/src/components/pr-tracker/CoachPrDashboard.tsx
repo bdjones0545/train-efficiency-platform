@@ -37,6 +37,7 @@ interface CoachPrDashboardProps {
   orgId: string;
   orgSlug: string;
   programId: string;
+  programSlug: string;
   programName: string;
   token: string;
   onRefresh: () => void;
@@ -56,6 +57,7 @@ export function CoachPrDashboard({
   orgId,
   orgSlug,
   programId,
+  programSlug,
   programName,
   token,
   onRefresh,
@@ -161,25 +163,25 @@ export function CoachPrDashboard({
           <p className="text-xs text-muted-foreground">{programName}</p>
         </div>
         <div className="flex items-center gap-2">
-          <a href={`/org/${orgSlug}/portal`} data-testid="link-portal">
-            <Button size="sm" variant="ghost" title="Portal Home">
+          <a href={`/org/${orgSlug}/programs/${programSlug}`} data-testid="link-dashboard">
+            <Button size="sm" variant="ghost" title="PR Tracker Dashboard">
               <LayoutDashboard className="h-4 w-4" />
             </Button>
           </a>
-          <a href={`/org/${orgSlug}/coach/teams`} data-testid="link-team-reports">
-            <Button size="sm" variant="ghost" title="Team Reports">
+          <a href={`/org/${orgSlug}/coach/teams`} data-testid="link-teams">
+            <Button size="sm" variant="ghost" title="Teams">
               <Users className="h-4 w-4" />
             </Button>
           </a>
-          <a href={`/org/${orgSlug}/profile`} data-testid="link-profile">
-            <Button size="sm" variant="ghost" title="My Profile">
+          <a href={`/org/${orgSlug}/coach/teams`} data-testid="link-athletes">
+            <Button size="sm" variant="ghost" title="Athletes">
               <User className="h-4 w-4" />
             </Button>
           </a>
-          <Button size="sm" variant="ghost" onClick={onRefresh} data-testid="button-refresh">
+          <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh" data-testid="button-refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={onLogout} data-testid="button-logout">
+          <Button size="sm" variant="ghost" onClick={onLogout} title="Exit to Portal" data-testid="button-logout">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
