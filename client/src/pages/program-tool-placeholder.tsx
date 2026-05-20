@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Redirect } from "wouter";
+import { useParams, Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -11,6 +11,7 @@ export default function ProgramToolPage() {
   const params = useParams<{ slug: string; programSlug: string }>();
   const orgSlug = params.slug;
   const programSlug = params.programSlug;
+  const [, setLocation] = useLocation();
 
   const { user, isLoading: authLoading } = useAuth();
 
@@ -69,6 +70,7 @@ export default function ProgramToolPage() {
         programId={program.id}
         programName={program.name}
         onAuthenticated={handleOrgAuthenticated}
+        onClose={() => setLocation(`/org/${orgSlug}`)}
       />
     );
   }

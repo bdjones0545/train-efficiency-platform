@@ -152,6 +152,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
         programId={programId}
         programName={program.name}
         onAuthenticated={handleAuthenticated}
+        onClose={() => setLocation(`/org/${orgSlug}`)}
       />
     );
   }

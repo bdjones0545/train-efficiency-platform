@@ -86,7 +86,11 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
 
   return (
     <Dialog open modal onOpenChange={(open) => { if (!open && onClose) onClose(); }}>
-      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => { if (!onClose) e.preventDefault(); }}>
+      <DialogContent
+        className="sm:max-w-md"
+        onInteractOutside={(e) => { if (!onClose) e.preventDefault(); }}
+        closeLabel={onClose ? "Close and return to organization page" : undefined}
+      >
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">
             <Trophy className="h-5 w-5 text-primary" />
