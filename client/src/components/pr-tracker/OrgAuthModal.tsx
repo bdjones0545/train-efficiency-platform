@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Trophy } from "lucide-react";
+import { Loader2, Trophy, ShieldCheck, User } from "lucide-react";
 
 interface OrgAuthModalProps {
   orgId: string;
@@ -89,9 +90,12 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">
             <Trophy className="h-5 w-5 text-primary" />
-            <DialogTitle className="text-base">{programName}</DialogTitle>
+            <DialogTitle className="text-base">Sign in to {programName}</DialogTitle>
           </div>
-          <p className="text-xs text-muted-foreground">Sign in to your {programName} account</p>
+          <p className="text-xs text-muted-foreground">Use your coach, athlete, or team account.</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Coaches can use their TrainEfficiency login. Athletes can use their team account.
+          </p>
         </DialogHeader>
 
         {/* Tab switcher */}
@@ -148,6 +152,16 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
             <Button type="submit" className="w-full" disabled={loading} data-testid="button-login-submit">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log In"}
             </Button>
+            <div className="flex items-center justify-center gap-2 pt-0.5">
+              <Badge variant="secondary" className="text-xs gap-1 font-normal" data-testid="badge-coach-login">
+                <ShieldCheck className="h-3 w-3" />
+                Coach login supported
+              </Badge>
+              <Badge variant="secondary" className="text-xs gap-1 font-normal" data-testid="badge-athlete-login">
+                <User className="h-3 w-3" />
+                Athlete login supported
+              </Badge>
+            </div>
             <p className="text-center text-xs text-muted-foreground">
               No account?{" "}
               <button type="button" onClick={() => setTab("signup")} className="underline">
