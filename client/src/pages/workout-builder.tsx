@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,11 +22,26 @@ import {
   Flame, Gauge, BedDouble, Siren, Sparkles, Wand2, Lock,
 } from "lucide-react";
 
-// ─── Org-auth header helper ────────────────────────────────────────────────────
+// ─── Auth header helper ────────────────────────────────────────────────────────
+// Merges all three possible auth signals so every Workout Builder request
+// works regardless of whether the user authenticated via:
+//   1. Main-app OIDC session cookie (credentials: "include" handles this)
+//   2. Main-app email/password Bearer token (Authorization header)
+//   3. OrgAuthModal x-org-auth-token (per-org localStorage token)
 function getWbHeaders(orgId?: string): Record<string, string> {
-  if (!orgId) return {};
-  const token = localStorage.getItem(`orgToken_${orgId}`);
-  return token ? { "x-org-auth-token": token } : {};
+  const headers: Record<string, string> = {};
+
+  // Bearer token from email/password login (main app coaches/admins)
+  const bearerHeaders = getAuthHeaders();
+  Object.assign(headers, bearerHeaders);
+
+  // Org-specific token from OrgAuthModal (athletes / org members)
+  if (orgId) {
+    const orgToken = localStorage.getItem(`orgToken_${orgId}`);
+    if (orgToken) headers["x-org-auth-token"] = orgToken;
+  }
+
+  return headers;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -378,7 +394,11 @@ function ProgramDetail({ programId, orgId, isCoach, onBack, orgSlug }: { program
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/programs", programId],
-    queryFn: () => fetch(`/api/org/workout-builder/programs/${programId}`).then((r) => r.json()),
+    queryFn: () =>
+      fetch(`/api/org/workout-builder/programs/${programId}`, {
+        credentials: "include",
+        headers: getWbHeaders(orgId ?? undefined),
+      }).then((r) => r.json()),
     enabled: !!programId,
   });
 
@@ -1151,11 +1171,13 @@ function AthleteWorkoutsView({ orgSlug, orgId, programToolId, trainChatConnected
   const [tab, setTab] = useState<"assigned" | "personal">("assigned");
   const [showWizard, setShowWizard] = useState(false);
 
-  const wbHeaders = getWbHeaders(orgId);
-
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/my-workouts"],
-    queryFn: () => fetch("/api/org/workout-builder/my-workouts", { headers: wbHeaders }).then((r) => r.json()),
+    queryFn: () =>
+      fetch("/api/org/workout-builder/my-workouts", {
+        credentials: "include",
+        headers: getWbHeaders(orgId),
+      }).then((r) => r.json()),
   });
 
   const finishMutation = useMutation({
@@ -1484,22 +1506,31 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
 
   const { data: bootstrap, isLoading } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/bootstrap"],
-    queryFn: () => fetch("/api/org/workout-builder/bootstrap", { headers: getWbHeaders(orgId) }).then((r) => r.json()),
+    queryFn: () =>
+      fetch("/api/org/workout-builder/bootstrap", {
+        credentials: "include",
+        headers: getWbHeaders(orgId),
+      }).then((r) => r.json()),
   });
 
   // Execution monitor summary for badge count
   const { data: monitorData } = useQuery<any>({
     queryKey: ["/api/org/workout-execution/coach-monitor"],
-    queryFn: () => fetch("/api/org/workout-execution/coach-monitor").then((r) => r.json()),
-    enabled: !!bootstrap && ["ADMIN", "COACH", "STAFF"].includes(bootstrap?.currentUser?.role ?? ""),
+    queryFn: () =>
+      fetch("/api/org/workout-execution/coach-monitor", {
+        credentials: "include",
+        headers: getWbHeaders(orgId),
+      }).then((r) => r.json()),
+    enabled: !!(bootstrap?.canManagePrograms),
     refetchInterval: 60000,
   });
 
-  const BUILDER_ROLES = ["ADMIN", "COACH", "STAFF", "owner", "admin", "coach", "staff"];
-  const rawRole: string | undefined = bootstrap?.currentUser?.role;
-  const isCoach = rawRole !== undefined && BUILDER_ROLES.includes(rawRole);
-  const isGuardian = rawRole === "guardian";
-  const isAthlete = rawRole !== undefined && ["CLIENT", "athlete"].includes(rawRole);
+  // Use server-returned capability flags as the source of truth
+  const canManagePrograms: boolean = bootstrap?.canManagePrograms ?? false;
+  const canCreatePersonalWorkout: boolean = bootstrap?.canCreatePersonalWorkout ?? false;
+  const isCoach = canManagePrograms;
+  const isGuardian = bootstrap?.effectiveRole === "guardian";
+  const isAthlete = canCreatePersonalWorkout || bootstrap?.effectiveRole === "athlete";
   const programs: any[] = bootstrap?.programs ?? [];
   const trainChatConnected: boolean = bootstrap?.trainChatConnected ?? false;
   const needsReviewCount: number = monitorData?.summary?.needsReview ?? 0;
@@ -1512,13 +1543,15 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
     );
   }
 
-  // Role is missing or unrecognised — show a clear permission state, not the athlete view
-  if (bootstrap && rawRole === undefined) {
+  // Bootstrap failed (e.g. 401 response with message field, no effectiveRole)
+  if (!bootstrap || bootstrap.message) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3 text-center" data-testid="page-workout-builder-no-role">
         <ShieldAlert className="h-8 w-8 text-muted-foreground" />
         <p className="font-semibold">Access not configured</p>
-        <p className="text-sm text-muted-foreground max-w-xs">Your account doesn't have a role assigned for this organization. Contact your admin to get access.</p>
+        <p className="text-sm text-muted-foreground max-w-xs">
+          {bootstrap?.message ?? "Could not verify your access. Please try refreshing the page."}
+        </p>
       </div>
     );
   }
@@ -1577,7 +1610,25 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
     );
   }
 
-  // Any other unrecognised non-null role — show permission state rather than defaulting to athlete
+  // team_coach: limited team-scoped builder view (can view assigned workouts)
+  if (!isCoach && (bootstrap?.canViewAssignedWorkouts)) {
+    return (
+      <div className="space-y-4" data-testid="page-workout-builder-team-coach">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Dumbbell className="h-5 w-5" /> Workout Builder</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
+        </div>
+        <AthleteWorkoutsView
+          orgSlug={orgSlug}
+          orgId={orgId}
+          programToolId={program?.id ?? ""}
+          trainChatConnected={trainChatConnected}
+        />
+      </div>
+    );
+  }
+
+  // Any other unrecognised role — show permission state
   if (!isCoach) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3 text-center" data-testid="page-workout-builder-no-access">

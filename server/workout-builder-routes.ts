@@ -1,5 +1,4 @@
 import type { Express } from "express";
-import { isAuthenticated } from "./replit_integrations/auth";
 import crypto from "crypto";
 import { db } from "./db";
 import {
@@ -16,126 +15,148 @@ import {
   orgSessions,
   orgUsers,
   orgMemberships,
+  coachProfiles,
+  userProfiles,
+  users,
 } from "@shared/schema";
-import { eq, and, desc, asc, inArray, gt } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, gt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { trainChatClient } from "./services/trainchat-client";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
 
-function getUserId(req: any): string | null {
-  // Main app user (Replit session or Bearer token)
-  const mainId = req.user?.claims?.sub ?? req.user?.id ?? null;
-  if (mainId) return mainId;
-  // Org-auth user (set by acceptOrgOrMainAuth middleware)
-  return req.orgUser?.id ?? null;
-}
+// ── Shared helper: resolve org identity for a known main-app userId ───────────
+// Mirrors resolveMainAppUser from PR Tracker for consistent auth bridging.
+async function resolveWbMainUser(req: any, res: any, next: any, mainUserId: string): Promise<void> {
+  const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+  const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
 
-async function getOrgProfile(req: any) {
-  const userId = getUserId(req);
-  if (!userId) return null;
-
-  // --- Main app user path ---
-  if (req.user) {
-    const { userProfiles, coachProfiles } = await import("@shared/schema");
-    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-
-    if (profile && ["ADMIN", "COACH", "STAFF"].includes(profile.role ?? "")) {
-      return profile;
-    }
-
-    const [coachProfile] = await db
-      .select()
-      .from(coachProfiles)
-      .where(eq(coachProfiles.userId, userId))
-      .limit(1);
-
-    if (coachProfile?.organizationId) {
-      return {
-        ...(profile ?? {}),
-        userId,
-        role: "COACH" as const,
-        organizationId: coachProfile.organizationId,
-      };
-    }
-
-    return profile ?? null;
+  const userOrgId: string | null = coachRow?.organizationId ?? profileRow?.organizationId ?? null;
+  if (!userOrgId) {
+    res.status(403).json({ message: "No organization associated with this account" });
+    return;
   }
 
-  // --- Org-auth user path (logged in via OrgAuthModal) ---
-  if (req.orgSession) {
-    const [membership] = await db
-      .select()
-      .from(orgMemberships)
-      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.orgId, req.orgSession.orgId)))
-      .limit(1);
+  const profileRole = profileRow?.role ?? null;
+  const isAdminRole = ["ADMIN", "STAFF"].includes(profileRole ?? "");
+  const isCoachRole = !isAdminRole && !!coachRow?.organizationId;
+  const effectiveRole: string = isAdminRole ? "admin" : isCoachRole ? "coach" : "athlete";
 
-    if (!membership) return null;
+  const [mainUser] = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
 
-    const ORG_ROLE_MAP: Record<string, string> = {
-      coach: "COACH", admin: "ADMIN", staff: "STAFF", athlete: "CLIENT", guardian: "guardian",
-    };
-    return {
-      userId,
-      role: (ORG_ROLE_MAP[membership.role] ?? "CLIENT") as string,
-      organizationId: req.orgSession.orgId,
-    };
-  }
-
-  return null;
+  req.orgUser = {
+    id: mainUserId,
+    name: `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim(),
+    email: coachRow?.email ?? mainUser?.email ?? "",
+  };
+  req.orgSession = { orgId: userOrgId };
+  req.orgMembership = { role: effectiveRole };
+  req.authMode = "admin_session";
+  next();
 }
 
-// Accepts either a live Replit session (req.user) or an org-auth token header.
-// Replaces isAuthenticated for workout-builder routes so org-auth athletes can access them.
+// ── 3-path auth middleware (mirrors requireOrgAuth from PR Tracker) ────────────
+// Path 1 : Replit OIDC session cookie  (req.user set by passport)
+// Path 1b: Authorization: Bearer token (email/password coach login)
+// Path 2 : x-org-auth-token header     (athlete / org-member token)
 async function acceptOrgOrMainAuth(req: any, res: any, next: any) {
   try {
-    // Replit session already validated by upstream middleware
-    if (req.user) return next();
+    // Path 1: OIDC session cookie
+    if (req.user) {
+      const mainUserId: string = req.user?.claims?.sub ?? req.user?.id;
+      await resolveWbMainUser(req, res, next, mainUserId);
+      return;
+    }
 
+    // Path 1b: Bearer token (email/password login stored in localStorage)
+    const authHeader = req.headers.authorization as string | undefined;
+    if (authHeader?.startsWith("Bearer ")) {
+      const bearerToken = authHeader.slice(7);
+      try {
+        const tokenResult = await db.execute(
+          sql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+        );
+        if (tokenResult.rows.length) {
+          const mainUserId = (tokenResult.rows[0] as any).user_id as string;
+          await resolveWbMainUser(req, res, next, mainUserId);
+          return;
+        }
+      } catch (err: any) {
+        console.error("[workout-builder] Bearer token lookup error:", err.message);
+      }
+    }
+
+    // Path 2: x-org-auth-token (athlete / org-member token from OrgAuthModal)
     const token = req.headers["x-org-auth-token"] as string | undefined;
-    if (!token) return res.status(401).json({ message: "Not authenticated" });
+    if (token) {
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const now = new Date();
 
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-    const now = new Date();
+      const [session] = await db
+        .select()
+        .from(orgSessions)
+        .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
+        .limit(1);
 
-    const [session] = await db
-      .select()
-      .from(orgSessions)
-      .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
-      .limit(1);
+      if (session) {
+        await db.update(orgSessions).set({ lastUsedAt: now } as any).where(eq(orgSessions.id, session.id));
 
-    if (!session) return res.status(401).json({ message: "Session expired. Please log in again." });
+        const [orgUser] = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
+        if (!orgUser) return res.status(401).json({ message: "User not found" });
 
-    await db.update(orgSessions).set({ lastUsedAt: now } as any).where(eq(orgSessions.id, session.id));
+        const [membership] = await db
+          .select()
+          .from(orgMemberships)
+          .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
+          .limit(1);
 
-    const [orgUser] = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
-    if (!orgUser) return res.status(401).json({ message: "User not found" });
+        req.orgUser = orgUser;
+        req.orgSession = session;
+        req.orgMembership = membership ?? null;
+        req.authMode = "org_token";
+        return next();
+      }
+    }
 
-    req.orgSession = session;
-    req.orgUser = orgUser;
-    next();
+    return res.status(401).json({ message: "Not authenticated" });
   } catch (err) {
+    console.error("[workout-builder] acceptOrgOrMainAuth error:", err);
     res.status(500).json({ message: "Auth error" });
   }
 }
 
+// ── Profile resolver (uses data already set by acceptOrgOrMainAuth) ───────────
+function getOrgProfile(req: any) {
+  if (!req.orgUser || !req.orgSession) return null;
+
+  const ORG_ROLE_MAP: Record<string, string> = {
+    coach: "COACH", admin: "ADMIN", owner: "ADMIN", staff: "STAFF",
+    athlete: "CLIENT", guardian: "guardian", team_coach: "team_coach",
+  };
+
+  const memberRole = req.orgMembership?.role ?? "athlete";
+  return {
+    userId: req.orgUser.id,
+    role: ORG_ROLE_MAP[memberRole] ?? memberRole,
+    organizationId: req.orgSession.orgId,
+  };
+}
+
 function requireCoachOrAdmin(req: any, res: any, next: any) {
-  (async () => {
-    const profile = await getOrgProfile(req);
-    if (!profile) return res.status(401).json({ message: "Unauthorized" });
-    if (!["ADMIN", "COACH"].includes(profile.role ?? "")) return res.status(403).json({ message: "Coach or Admin required" });
-    (req as any)._profile = profile;
-    next();
-  })().catch(() => res.status(500).json({ message: "Auth error" }));
+  const profile = getOrgProfile(req);
+  if (!profile) return res.status(401).json({ message: "Unauthorized" });
+  if (!["ADMIN", "COACH"].includes(profile.role ?? "")) {
+    return res.status(403).json({ message: "Coach or Admin required" });
+  }
+  (req as any)._profile = profile;
+  next();
 }
 
 function requireAuth(req: any, res: any, next: any) {
-  (async () => {
-    const profile = await getOrgProfile(req);
-    if (!profile) return res.status(401).json({ message: "Unauthorized" });
-    (req as any)._profile = profile;
-    next();
-  })().catch(() => res.status(500).json({ message: "Auth error" }));
+  const profile = getOrgProfile(req);
+  if (!profile) return res.status(401).json({ message: "Unauthorized" });
+  (req as any)._profile = profile;
+  next();
 }
 
 async function parseAndStoreSessions(orgId: string, programId: string, rawResponse: any): Promise<void> {
@@ -200,12 +221,23 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       const orgId = profile.organizationId;
       if (!orgId) return res.status(400).json({ message: "No organization" });
 
-      const { users, organizations, orgMemberships } = await import("@shared/schema");
+      const memberRole = req.orgMembership?.role ?? "";
+      const isFullCoach = ["coach", "admin", "owner"].includes(memberRole);
+      const isTeamCoach = memberRole === "team_coach";
+      const isAthlete = memberRole === "athlete";
+      const isGuardian = memberRole === "guardian";
 
-      const [[org], programs, teams, athletes, tcIntegration] = await Promise.all([
+      const canManagePrograms = isFullCoach;
+      const canGeneratePrograms = isFullCoach;
+      const canAssignPrograms = isFullCoach;
+      const canViewAssignedWorkouts = isAthlete || isGuardian || isFullCoach || isTeamCoach;
+      const canCreatePersonalWorkout = isAthlete;
+
+      const { organizations } = await import("@shared/schema");
+
+      const [[org], teams, athletes, tcIntegration] = await Promise.all([
         db.select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
           .from(organizations).where(eq(organizations.id, orgId)).limit(1),
-        db.select().from(workoutPrograms).where(eq(workoutPrograms.orgId, orgId)).orderBy(desc(workoutPrograms.createdAt)),
         db.select().from(prTeams).where(eq(prTeams.orgId, orgId)).orderBy(asc(prTeams.name)),
         db.select({
           userId: orgMemberships.userId,
@@ -222,11 +254,23 @@ export function registerWorkoutBuilderRoutes(app: Express) {
           .limit(1),
       ]);
 
+      // Coaches see all programs; athletes/guardians only see what's assigned to them
+      const programs = canManagePrograms
+        ? await db.select().from(workoutPrograms).where(eq(workoutPrograms.orgId, orgId)).orderBy(desc(workoutPrograms.createdAt))
+        : [];
+
       const trainChatConnected = tcIntegration[0]?.isActive ?? false;
 
       return res.json({
         org,
+        authMode: req.authMode ?? "org_token",
+        effectiveRole: memberRole,
         currentUser: { id: profile.userId, role: profile.role },
+        canManagePrograms,
+        canGeneratePrograms,
+        canAssignPrograms,
+        canViewAssignedWorkouts,
+        canCreatePersonalWorkout,
         teams,
         athletes,
         programs,
