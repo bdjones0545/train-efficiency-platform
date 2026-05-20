@@ -204,10 +204,20 @@ async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
   next();
 }
 
+// Allows team_coach + full org coaches — use for team-scoped operations
 function requireCoach(req: any, res: Response, next: NextFunction) {
   const role = req.orgMembership?.role;
-  if (!role || !["coach", "admin", "owner"].includes(role)) {
+  if (!role || !["coach", "admin", "owner", "team_coach"].includes(role)) {
     return res.status(403).json({ message: "Coach login required to manage teams" });
+  }
+  next();
+}
+
+// Allows only official org-level coaches/admins — use for org-wide operations
+function requireFullCoach(req: any, res: Response, next: NextFunction) {
+  const role = req.orgMembership?.role;
+  if (!role || !["coach", "admin", "owner"].includes(role)) {
+    return res.status(403).json({ message: "Organization coach access required" });
   }
   next();
 }
@@ -259,7 +269,7 @@ export function registerPrTrackerRoutes(app: Express) {
         email: z.string().email(),
         password: z.string().min(6),
         confirmPassword: z.string(),
-        role: z.enum(["athlete", "coach"]).default("athlete"),
+        role: z.enum(["athlete", "team_coach"]).default("athlete"),
         orgId: z.string().min(1),
         programId: z.string().optional(),
         joinCode: z.string().optional(),
@@ -476,21 +486,72 @@ export function registerPrTrackerRoutes(app: Express) {
         .from(prLiftTypes)
         .where(and(eq(prLiftTypes.orgId, orgId), eq(prLiftTypes.programId, programId)));
 
-      const teams = await db
-        .select()
-        .from(prTeams)
-        .where(and(eq(prTeams.orgId, orgId), eq(prTeams.programId, programId)));
+      const role = req.orgMembership?.role ?? "";
+      const isFullCoach = ["coach", "admin", "owner"].includes(role);
+      const isTeamCoach = role === "team_coach";
+      const hasAnyCoachAccess = isFullCoach || isTeamCoach;
 
-      const isCoach = ["coach", "admin", "owner"].includes(req.orgMembership?.role ?? "");
+      // Teams: full coaches see all; team_coach sees only their own teams
+      let teams: any[];
+      if (isFullCoach) {
+        teams = await db
+          .select()
+          .from(prTeams)
+          .where(and(eq(prTeams.orgId, orgId), eq(prTeams.programId, programId)));
+      } else if (isTeamCoach) {
+        teams = await db
+          .select()
+          .from(prTeams)
+          .where(
+            and(
+              eq(prTeams.orgId, orgId),
+              eq(prTeams.programId, programId),
+              eq(prTeams.coachUserId, req.orgUser.id)
+            )
+          );
+      } else {
+        // Athletes: fetch all teams for join code resolution
+        teams = await db
+          .select()
+          .from(prTeams)
+          .where(and(eq(prTeams.orgId, orgId), eq(prTeams.programId, programId)));
+      }
 
+      // Entries: scoped by role
       let entries: any[];
-      if (isCoach) {
+      if (isFullCoach) {
         entries = await db
           .select()
           .from(prLiftEntries)
           .where(and(eq(prLiftEntries.orgId, orgId), eq(prLiftEntries.programId, programId)))
           .orderBy(desc(prLiftEntries.createdAt))
           .limit(50);
+      } else if (isTeamCoach) {
+        // Only entries for athletes on this coach's teams
+        const ownTeamIds = teams.map((t) => t.id);
+        if (ownTeamIds.length > 0) {
+          const ownTeamMembers = await db
+            .select()
+            .from(prTeamMembers)
+            .where(and(eq(prTeamMembers.orgId, orgId), inArray(prTeamMembers.teamId, ownTeamIds)));
+          const teamAthleteIds = [...new Set(ownTeamMembers.map((m) => m.userId))];
+          entries = teamAthleteIds.length > 0
+            ? await db
+                .select()
+                .from(prLiftEntries)
+                .where(
+                  and(
+                    eq(prLiftEntries.orgId, orgId),
+                    eq(prLiftEntries.programId, programId),
+                    inArray(prLiftEntries.userId, teamAthleteIds)
+                  )
+                )
+                .orderBy(desc(prLiftEntries.createdAt))
+                .limit(50)
+            : [];
+        } else {
+          entries = [];
+        }
       } else {
         entries = await db
           .select()
@@ -506,7 +567,7 @@ export function registerPrTrackerRoutes(app: Express) {
           .limit(100);
       }
 
-      // Get team member counts
+      // Team member counts
       const teamIds = teams.map((t) => t.id);
       let teamMemberCounts: Record<string, number> = {};
       if (teamIds.length > 0) {
@@ -519,9 +580,9 @@ export function registerPrTrackerRoutes(app: Express) {
         }
       }
 
-      // Athlete's team memberships
+      // Athlete's team memberships (for athlete view)
       let myTeamIds: string[] = [];
-      if (!isCoach) {
+      if (!hasAnyCoachAccess) {
         const myMemberships = await db
           .select()
           .from(prTeamMembers)
@@ -537,24 +598,36 @@ export function registerPrTrackerRoutes(app: Express) {
         unit: liftTypeMap[e.liftTypeId]?.unit ?? e.unit,
       }));
 
-      // Athlete count (for coach)
+      // Athlete count scoped by role
       let athleteCount = 0;
-      if (isCoach) {
+      if (isFullCoach) {
         const allMembers = await db
           .select()
           .from(orgMemberships)
           .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete")));
         athleteCount = allMembers.length;
+      } else if (isTeamCoach && teamIds.length > 0) {
+        const ownMembers = await db
+          .select()
+          .from(prTeamMembers)
+          .where(and(eq(prTeamMembers.orgId, orgId), inArray(prTeamMembers.teamId, teamIds)));
+        athleteCount = new Set(ownMembers.map((m) => m.userId)).size;
       }
 
-      const canManage = isCoach;
       res.json({
         user: safeUser(req.orgUser),
         membership: req.orgMembership,
         authMode: req.authMode ?? "org_token",
-        canManageTeams: canManage,
-        canImportCsv: canManage,
-        canViewAthletes: canManage,
+        // Granular permission flags
+        effectiveRole: role,
+        canManageAllTeams: isFullCoach,
+        canManageOwnTeams: hasAnyCoachAccess,
+        canImportCsv: hasAnyCoachAccess,
+        canViewAllAthletes: isFullCoach,
+        canViewOwnTeamAthletes: hasAnyCoachAccess,
+        // Legacy flag kept for compatibility — true for any coach type
+        canManageTeams: hasAnyCoachAccess,
+        canViewAthletes: hasAnyCoachAccess,
         liftTypes,
         teams: teams.map((t) => ({ ...t, memberCount: teamMemberCounts[t.id] || 0 })),
         entries: enrichedEntries,
@@ -572,10 +645,25 @@ export function registerPrTrackerRoutes(app: Express) {
       const programId = req.query.programId as string;
       if (!programId) return res.status(400).json({ message: "programId required" });
 
-      const teams = await db
-        .select()
-        .from(prTeams)
-        .where(and(eq(prTeams.orgId, orgId), eq(prTeams.programId, programId)));
+      const role = req.orgMembership?.role ?? "";
+      const isTeamCoach = role === "team_coach";
+
+      const teams = isTeamCoach
+        ? await db
+            .select()
+            .from(prTeams)
+            .where(
+              and(
+                eq(prTeams.orgId, orgId),
+                eq(prTeams.programId, programId),
+                eq(prTeams.coachUserId, req.orgUser.id)
+              )
+            )
+        : await db
+            .select()
+            .from(prTeams)
+            .where(and(eq(prTeams.orgId, orgId), eq(prTeams.programId, programId)));
+
       res.json(teams);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -681,8 +769,25 @@ export function registerPrTrackerRoutes(app: Express) {
       const targetUserId = req.query.userId as string | undefined;
       if (!programId) return res.status(400).json({ message: "programId required" });
 
-      const isCoach = req.orgMembership?.role === "coach";
-      const userId = targetUserId && isCoach ? targetUserId : req.orgUser.id;
+      const memberRole = req.orgMembership?.role ?? "";
+      const isFullCoach = ["coach", "admin", "owner"].includes(memberRole);
+      const isTeamCoach = memberRole === "team_coach";
+
+      // For team_coach requesting another user's entries, verify they are on their team
+      let userId = req.orgUser.id;
+      if (targetUserId && (isFullCoach || isTeamCoach)) {
+        if (isTeamCoach) {
+          // Verify the target athlete is on one of this coach's teams
+          const ownTeams = await db.select().from(prTeams).where(and(eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, req.orgUser.id)));
+          const ownTeamIds = ownTeams.map((t) => t.id);
+          if (ownTeamIds.length > 0) {
+            const [memberCheck] = await db.select().from(prTeamMembers).where(and(eq(prTeamMembers.userId, targetUserId), inArray(prTeamMembers.teamId, ownTeamIds))).limit(1);
+            if (memberCheck) userId = targetUserId;
+          }
+        } else {
+          userId = targetUserId;
+        }
+      }
 
       const entries = await db
         .select()
@@ -808,22 +913,60 @@ export function registerPrTrackerRoutes(app: Express) {
     try {
       const orgId = req.orgSession.orgId;
       const programId = req.query.programId as string;
+      const role = req.orgMembership?.role ?? "";
+      const isFullCoach = ["coach", "admin", "owner"].includes(role);
+      const isTeamCoach = role === "team_coach";
 
-      const memberships = await db
-        .select()
-        .from(orgMemberships)
-        .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete")));
+      let userIds: string[] = [];
+      let teamMembersForScope: any[] = [];
 
-      const userIds = memberships.map((m) => m.userId);
+      if (isFullCoach) {
+        // Org-wide: all athlete memberships
+        const memberships = await db
+          .select()
+          .from(orgMemberships)
+          .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete")));
+        userIds = memberships.map((m) => m.userId);
+      } else if (isTeamCoach) {
+        // Scoped: only athletes on this coach's teams
+        const ownTeams = await db
+          .select()
+          .from(prTeams)
+          .where(
+            and(
+              eq(prTeams.orgId, orgId),
+              eq(prTeams.coachUserId, req.orgUser.id),
+              ...(programId ? [eq(prTeams.programId, programId)] : [])
+            )
+          );
+        const ownTeamIds = ownTeams.map((t) => t.id);
+        if (!ownTeamIds.length) return res.json([]);
+        teamMembersForScope = await db
+          .select()
+          .from(prTeamMembers)
+          .where(and(eq(prTeamMembers.orgId, orgId), inArray(prTeamMembers.teamId, ownTeamIds)));
+        userIds = [...new Set(teamMembersForScope.map((m) => m.userId))];
+      }
+
       if (!userIds.length) return res.json([]);
 
       const athletes = await db.select().from(orgUsers).where(inArray(orgUsers.id, userIds));
+      const memberships = await db
+        .select()
+        .from(orgMemberships)
+        .where(and(eq(orgMemberships.orgId, orgId), inArray(orgMemberships.userId, userIds)));
 
       const recentEntries = programId
         ? await db
             .select()
             .from(prLiftEntries)
-            .where(and(eq(prLiftEntries.orgId, orgId), eq(prLiftEntries.programId, programId)))
+            .where(
+              and(
+                eq(prLiftEntries.orgId, orgId),
+                eq(prLiftEntries.programId, programId),
+                inArray(prLiftEntries.userId, userIds)
+              )
+            )
             .orderBy(desc(prLiftEntries.createdAt))
         : [];
 
@@ -834,9 +977,12 @@ export function registerPrTrackerRoutes(app: Express) {
         if (!latestEntryByUser[e.userId]) latestEntryByUser[e.userId] = e;
       }
 
-      const teamMembers = await db.select().from(prTeamMembers).where(eq(prTeamMembers.orgId, orgId));
+      // For full coach, fetch all team memberships; for team_coach reuse already fetched
+      const allTeamMembers = isTeamCoach
+        ? teamMembersForScope
+        : await db.select().from(prTeamMembers).where(eq(prTeamMembers.orgId, orgId));
       const userTeams: Record<string, string[]> = {};
-      for (const tm of teamMembers) {
+      for (const tm of allTeamMembers) {
         if (!userTeams[tm.userId]) userTeams[tm.userId] = [];
         userTeams[tm.userId].push(tm.teamId);
       }

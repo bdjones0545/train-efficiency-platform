@@ -31,7 +31,7 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirm, setSignupConfirm] = useState("");
-  const [signupRole, setSignupRole] = useState<"athlete" | "coach">("athlete");
+  const [signupRole, setSignupRole] = useState<"athlete" | "team_coach">("athlete");
   const [signupJoinCode, setSignupJoinCode] = useState("");
 
   async function handleLogin(e: React.FormEvent) {
@@ -219,22 +219,36 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
             <div className="space-y-1.5">
               <Label className="text-xs">I am a…</Label>
               <div className="flex gap-2">
-                {(["athlete", "coach"] as const).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setSignupRole(r)}
-                    className={`flex-1 py-2 text-sm font-medium rounded-md border transition-colors ${
-                      signupRole === r
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border text-muted-foreground"
-                    }`}
-                    data-testid={`button-role-${r}`}
-                  >
-                    {r.charAt(0).toUpperCase() + r.slice(1)}
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  onClick={() => setSignupRole("athlete")}
+                  className={`flex-1 py-2 text-sm font-medium rounded-md border transition-colors ${
+                    signupRole === "athlete"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground"
+                  }`}
+                  data-testid="button-role-athlete"
+                >
+                  Athlete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSignupRole("team_coach")}
+                  className={`flex-1 py-2 text-sm font-medium rounded-md border transition-colors ${
+                    signupRole === "team_coach"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground"
+                  }`}
+                  data-testid="button-role-team-coach"
+                >
+                  Team Coach
+                </button>
               </div>
+              {signupRole === "team_coach" && (
+                <p className="text-xs text-muted-foreground leading-snug">
+                  Team Coach accounts can manage their own team inside this PR Tracker. Organization admin access is controlled separately.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Team Join Code (optional)</Label>

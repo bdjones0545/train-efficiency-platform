@@ -1,0 +1,100 @@
+Fix PR Tracker coach signup permissions.
+
+Current issue:
+If someone signs up as a “coach” inside PR Tracker, they may become treated as a coach for the entire organization. That is incorrect.
+
+Correct rule:
+Only official TrainEfficiency org admins/staff/coaches should get full org coach permissions.
+
+PR Tracker “coach” accounts should mean:
+team coach / team manager inside the PR Tracker only.
+
+They should NOT automatically become:
+- org admin
+- org staff
+- full TrainEfficiency coach
+- scheduling manager
+- billing/admin user
+- organization manager
+
+Required role model:
+
+1. Main app org roles:
+- owner
+- admin
+- staff
+- coach
+
+These roles come only from the official TrainEfficiency admin/org system.
+
+2. Org portal roles:
+- athlete
+- guardian
+- team_coach
+
+A team_coach can:
+- create/manage their own PR Tracker team
+- invite/import athletes to their team
+- view athletes on their team
+- track PRs for their team
+
+A team_coach cannot:
+- access org-wide admin tools
+- manage billing
+- manage scheduling settings
+- view all org athletes
+- access other teams
+- manage organization options
+- become a TrainEfficiency coach automatically
+
+3. Signup behavior:
+When someone signs up through PR Tracker as “Coach”:
+- create org_user
+- create org_membership role = "team_coach"
+- do NOT create coachProfile
+- do NOT create admin/staff access
+- do NOT grant org-wide permissions
+
+4. Athlete signup behavior:
+When athlete signs up:
+- create org_user
+- create org_membership role = "athlete"
+- allow join code to attach them to the team
+
+5. Permission flags:
+Bootstrap should return:
+- effectiveRole
+- canManageOwnTeams
+- canManageAllTeams
+- canImportCsv
+- canViewAllAthletes
+- canViewOwnTeamAthletes
+
+Rules:
+- owner/admin/main-app coach = canManageAllTeams true
+- team_coach = canManageOwnTeams true only
+- athlete = no coach tools
+- guardian = read-only
+
+6. Team scoping:
+For team_coach:
+- all team queries must filter by coachUserId or team membership
+- athlete lists must only include their team athletes
+- CSV import can only import into their own teams
+- no cross-team visibility
+
+7. UI:
+In signup role selector, rename:
+“Coach”
+to:
+“Team Coach”
+
+Add helper text:
+“Team Coach accounts can manage their own team inside this PR Tracker. Organization admin access is controlled separately.”
+
+8. Security:
+Do not trust frontend role labels.
+Enforce all permissions server-side.
+
+Goal:
+PR Tracker can support outside/team coaches using the platform without accidentally giving them organization-level coach/admin access.

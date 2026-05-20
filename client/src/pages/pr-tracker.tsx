@@ -201,8 +201,8 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     );
   }
 
-  // 4. Coach/admin/owner → full coach dashboard
-  const isCoach = bootstrap.canManageTeams === true;
+  // 4. Any coach type (full org coach or team_coach) → coach dashboard
+  const isCoach = bootstrap.canManageAllTeams === true || bootstrap.canManageOwnTeams === true;
 
   if (isCoach) {
     return (
