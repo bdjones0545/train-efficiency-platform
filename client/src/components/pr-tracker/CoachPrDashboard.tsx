@@ -10,7 +10,6 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
   Users,
-  User,
   Upload,
   Copy,
   Loader2,
@@ -21,7 +20,6 @@ import {
   LogOut,
   ChevronDown,
   ChevronUp,
-  LayoutDashboard,
 } from "lucide-react";
 
 interface BootstrapData {
@@ -90,6 +88,7 @@ export function CoachPrDashboard({
   const [athletes, setAthletes] = useState<any[]>([]);
   const [loadingAthletes, setLoadingAthletes] = useState(false);
   const [showAthletes, setShowAthletes] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   async function createTeam(e: React.FormEvent) {
     e.preventDefault();
@@ -163,6 +162,24 @@ export function CoachPrDashboard({
 
   return (
     <div className="min-h-screen bg-background p-4 max-w-2xl mx-auto space-y-5">
+      {/* Logout confirmation dialog */}
+      <Dialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Exit PR Tracker?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">You'll be taken back to the portal. You can log back in anytime.</p>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={() => setShowLogoutConfirm(false)} data-testid="button-cancel-logout">
+              Cancel
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => { setShowLogoutConfirm(false); onLogout(); }} data-testid="button-confirm-logout">
+              Exit
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -172,26 +189,18 @@ export function CoachPrDashboard({
           </div>
           <p className="text-xs text-muted-foreground">{programName}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <a href={`/org/${orgSlug}/programs/${programSlug}`} data-testid="link-dashboard">
-            <Button size="sm" variant="ghost" title="PR Tracker Dashboard">
-              <LayoutDashboard className="h-4 w-4" />
-            </Button>
-          </a>
-          <a href={`/org/${orgSlug}/coach/teams`} data-testid="link-teams">
-            <Button size="sm" variant="ghost" title="Teams">
-              <Users className="h-4 w-4" />
-            </Button>
-          </a>
-          <a href={`/org/${orgSlug}/coach/teams`} data-testid="link-athletes">
-            <Button size="sm" variant="ghost" title="Athletes">
-              <User className="h-4 w-4" />
-            </Button>
-          </a>
-          <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh" data-testid="button-refresh">
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={onRefresh} title="Refresh data" data-testid="button-refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={onLogout} title="Exit to Portal" data-testid="button-logout">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowLogoutConfirm(true)}
+            title="Exit to Portal"
+            data-testid="button-logout"
+            className="text-muted-foreground hover:text-destructive"
+          >
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
