@@ -11,7 +11,7 @@ interface OrgAuthModalProps {
   orgId: string;
   programId?: string;
   programName: string;
-  onAuthenticated: (token: string, user: any, membership: any) => void;
+  onAuthenticated: (token: string, user: any, membership: any, mainAppToken?: string) => void;
   onClose?: () => void;
 }
 
@@ -45,7 +45,7 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.message || "Login failed");
-      onAuthenticated(data.token, data.user, data.membership);
+      onAuthenticated(data.token, data.user, data.membership, data.mainAppToken ?? undefined);
     } catch (err: any) {
       toast({ title: "Login failed", description: err.message, variant: "destructive" });
     } finally {

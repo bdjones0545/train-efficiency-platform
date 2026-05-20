@@ -4,8 +4,7 @@ import { Loader2, AlertCircle, RefreshCw, ArrowLeft } from "lucide-react";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { CoachPrDashboard } from "@/components/pr-tracker/CoachPrDashboard";
 import { AthletePrDashboard } from "@/components/pr-tracker/AthletePrDashboard";
-import { useAuth } from "@/hooks/use-auth";
-import { getAuthHeaders } from "@/lib/authToken";
+import { getAuthHeaders, setAuthToken } from "@/lib/authToken";
 import { Button } from "@/components/ui/button";
 
 interface PrTrackerProps {
@@ -32,68 +31,45 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   const tokenKey = getTokenKey(orgId);
   const [, setLocation] = useLocation();
 
-  // Main-app session (Replit Auth — cookie based)
-  const { user: mainAppUser, isLoading: authLoading } = useAuth();
-
-  // Org-specific session token (stored in localStorage after OrgAuthModal login)
   const [orgToken, setOrgToken] = useState<string | null>(() =>
     localStorage.getItem(tokenKey)
   );
-
   const [bootstrap, setBootstrap] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [bootstrapAttempted, setBootstrapAttempted] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
 
-  // Derived auth mode — computed each render
-  // org_token     → logged in via OrgAuthModal (JWT in localStorage)
-  // admin_session → logged in via main Replit app (session cookie)
-  // unauthenticated → neither
-  const authMode: "org_token" | "admin_session" | "unauthenticated" = orgToken
-    ? "org_token"
-    : mainAppUser
-    ? "admin_session"
-    : "unauthenticated";
-
-  // Keep a ref so fetchBootstrap can always read the latest orgToken without
-  // being listed as a dep (avoids infinite-loop edge cases on rapid token changes)
   const orgTokenRef = useRef(orgToken);
   useEffect(() => { orgTokenRef.current = orgToken; }, [orgToken]);
 
   const fetchBootstrap = useCallback(async () => {
-    console.log("[PrTracker] bootstrap fetch start — authMode:", authMode);
     setLoading(true);
     setError(null);
+    setShowAuthModal(false);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
 
     try {
       const currentToken = orgTokenRef.current;
-      const headers: Record<string, string> = {
-        ...getAuthHeaders(),
-      };
-      if (currentToken) {
-        headers["X-Org-Auth-Token"] = currentToken;
-      }
+      const headers: Record<string, string> = { ...getAuthHeaders() };
+      if (currentToken) headers["X-Org-Auth-Token"] = currentToken;
 
       const r = await fetch(
         `/api/pr-tracker/bootstrap?orgId=${orgId}&programId=${programId}`,
         { headers, credentials: "include", signal: controller.signal }
       );
-
       clearTimeout(timeoutId);
 
       if (r.status === 401) {
-        if (authMode === "org_token") {
-          // Expired org token — clear it; authMode → "unauthenticated" → OrgAuthModal
+        // Clear any stale org token so re-login starts fresh
+        if (orgTokenRef.current) {
           localStorage.removeItem(tokenKey);
           setOrgToken(null);
-        } else {
-          // admin_session 401: server didn't recognize the session cookie
-          setError({ message: "Session not recognized. Please refresh the page.", status: 401 });
         }
         setBootstrap(null);
+        setShowAuthModal(true);
         return;
       }
 
@@ -110,7 +86,6 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
         return;
       }
 
-      console.log("[PrTracker] bootstrap success — authMode:", data.authMode, "canManageTeams:", data.canManageTeams);
       setBootstrap(data);
     } catch (err: any) {
       clearTimeout(timeoutId);
@@ -123,37 +98,34 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
       setLoading(false);
       setBootstrapAttempted(true);
     }
-  }, [orgId, programId, tokenKey, authMode]);
+  }, [orgId, programId, tokenKey]);
 
-  // Fetch bootstrap whenever auth resolves and we have a valid session
+  // Fire immediately on mount — server decides auth, no useAuth dependency
   useEffect(() => {
-    if (!authLoading && authMode !== "unauthenticated") {
-      fetchBootstrap();
-    } else if (!authLoading && authMode === "unauthenticated") {
-      // Auth resolved to unauthenticated — mark attempted so we stop showing the spinner
-      setBootstrapAttempted(true);
-      setLoading(false);
-    }
-  }, [authLoading, authMode, fetchBootstrap]);
+    fetchBootstrap();
+  }, []);
 
-  function handleAuthenticated(token: string, _user: any, _membership: any) {
+  function handleAuthenticated(token: string, _user: any, _membership: any, mainAppToken?: string) {
+    // If the login also returned a main-app token, store it so the user is
+    // fully logged in across the entire app (unified auth)
+    if (mainAppToken) {
+      setAuthToken(mainAppToken);
+    }
     localStorage.setItem(tokenKey, token);
     setOrgToken(token);
+    setShowAuthModal(false);
     setBootstrap(null);
     setBootstrapAttempted(false);
     setError(null);
+    fetchBootstrap();
   }
 
   function handleLogout() {
-    if (authMode === "admin_session") {
-      setBootstrap(null);
-      setLocation(`/org/${orgSlug}/portal`);
-      return;
-    }
-    if (orgToken) {
+    const currentToken = orgTokenRef.current;
+    if (currentToken) {
       fetch("/api/org-auth/logout", {
         method: "POST",
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: { "X-Org-Auth-Token": currentToken, ...getAuthHeaders() },
       }).catch(() => {});
     }
     localStorage.removeItem(tokenKey);
@@ -161,29 +133,19 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     setBootstrap(null);
     setBootstrapAttempted(false);
     setError(null);
+    setLocation(`/org/${orgSlug}/portal`);
   }
 
   function handleRefresh() {
-    if (authMode !== "unauthenticated") {
-      setBootstrapAttempted(false);
-      setError(null);
-      fetchBootstrap();
-    }
+    setBootstrapAttempted(false);
+    setError(null);
+    fetchBootstrap();
   }
 
-  // ── Render gates — ordered so error always wins over spinner ──────────────
+  // ── Render gates ─────────────────────────────────────────────────────────
 
-  // 1. Still resolving Replit Auth
-  if (authLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  // 2. Not authenticated — show org login gate
-  if (authMode === "unauthenticated") {
+  // 1. Show org login gate when server says 401
+  if (showAuthModal) {
     return (
       <OrgAuthModal
         orgId={orgId}
@@ -194,7 +156,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     );
   }
 
-  // 3. Bootstrap errored — show error card (MUST come before the spinner check)
+  // 2. Bootstrap errored
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-4 p-8">
@@ -229,7 +191,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     );
   }
 
-  // 4. Still loading bootstrap (or haven't attempted yet)
+  // 3. Loading
   if (loading || !bootstrapAttempted || !bootstrap) {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-3">
@@ -239,7 +201,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     );
   }
 
-  // 5. Coach/admin/owner → full coach dashboard
+  // 4. Coach/admin/owner → full coach dashboard
   const isCoach = bootstrap.canManageTeams === true;
 
   if (isCoach) {
@@ -258,7 +220,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     );
   }
 
-  // 6. Athlete dashboard
+  // 5. Athlete dashboard
   return (
     <AthletePrDashboard
       bootstrap={bootstrap}

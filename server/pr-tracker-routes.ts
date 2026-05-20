@@ -20,6 +20,8 @@ import {
 import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
+import { storage } from "./storage";
+import { createAuthToken } from "./replit_integrations/auth";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -357,39 +359,89 @@ export function registerPrTrackerRoutes(app: Express) {
       });
       const body = schema.parse(req.body);
       const normalizedEmail = body.email.trim().toLowerCase();
+      const ttl = body.keepLoggedIn ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
 
-      const [user] = await db.select().from(orgUsers).where(eq(orgUsers.email, normalizedEmail)).limit(1);
-      if (!user) return res.status(401).json({ message: "Invalid email or password" });
+      async function createOrgSession(orgUserId: string) {
+        const rawToken = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+        const expiresAt = new Date(Date.now() + ttl);
+        await db.insert(orgSessions).values({ orgId: body.orgId, userId: orgUserId, tokenHash, expiresAt, keepLoggedIn: body.keepLoggedIn });
+        await db.update(orgUsers).set({ lastLoginAt: new Date() }).where(eq(orgUsers.id, orgUserId));
+        return rawToken;
+      }
 
-      const valid = await bcrypt.compare(body.password, user.passwordHash);
+      // ── Path A: orgUsers table ─────────────────────────────────────────
+      const [orgUser] = await db.select().from(orgUsers).where(eq(orgUsers.email, normalizedEmail)).limit(1);
+      if (orgUser) {
+        const valid = await bcrypt.compare(body.password, orgUser.passwordHash);
+        if (!valid) return res.status(401).json({ message: "Invalid email or password" });
+
+        const [membership] = await db.select().from(orgMemberships)
+          .where(and(eq(orgMemberships.userId, orgUser.id), eq(orgMemberships.orgId, body.orgId)))
+          .limit(1);
+        if (!membership) return res.status(403).json({ message: "You are not a member of this organization" });
+
+        const rawToken = await createOrgSession(orgUser.id);
+
+        // Opportunistically issue a main-app token if the same password works for a coach account
+        let mainAppToken: string | null = null;
+        try {
+          const coachProfile = await storage.getCoachProfileByEmail(normalizedEmail);
+          if (coachProfile?.passwordHash) {
+            const mainValid = await bcrypt.compare(body.password, coachProfile.passwordHash);
+            if (mainValid) mainAppToken = await createAuthToken(coachProfile.userId);
+          }
+        } catch {}
+
+        return res.json({ token: rawToken, user: safeUser(orgUser), membership, mainAppToken });
+      }
+
+      // ── Path B: main-app coach/admin credentials ───────────────────────
+      const coachProfile = await storage.getCoachProfileByEmail(normalizedEmail);
+      if (!coachProfile || !coachProfile.passwordHash) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      const valid = await bcrypt.compare(body.password, coachProfile.passwordHash);
       if (!valid) return res.status(401).json({ message: "Invalid email or password" });
 
-      const [membership] = await db
-        .select()
-        .from(orgMemberships)
-        .where(and(eq(orgMemberships.userId, user.id), eq(orgMemberships.orgId, body.orgId)))
-        .limit(1);
-
-      if (!membership) {
+      // Verify this coach belongs to the requested org
+      const [profileRow] = await db.select().from(userProfiles)
+        .where(eq(userProfiles.userId, coachProfile.userId)).limit(1);
+      const coachOrgId = (coachProfile as any).organizationId ?? profileRow?.organizationId ?? null;
+      if (!coachOrgId || coachOrgId !== body.orgId) {
         return res.status(403).json({ message: "You are not a member of this organization" });
       }
 
-      const rawToken = crypto.randomBytes(32).toString("hex");
-      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-      const ttl = body.keepLoggedIn ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
-      const expiresAt = new Date(Date.now() + ttl);
+      // Find or create an orgUser record mirroring this coach
+      const [existingOrgUser] = await db.select().from(orgUsers).where(eq(orgUsers.email, normalizedEmail)).limit(1);
+      let targetOrgUser: typeof orgUser;
+      if (existingOrgUser) {
+        targetOrgUser = existingOrgUser;
+      } else {
+        const [mainUser] = await db.select().from(users).where(eq(users.id, coachProfile.userId)).limit(1);
+        const displayName = mainUser
+          ? `${(mainUser as any).firstName ?? ""} ${(mainUser as any).lastName ?? ""}`.trim()
+          : normalizedEmail;
+        const [newOrgUser] = await db.insert(orgUsers).values({
+          name: displayName || normalizedEmail,
+          email: normalizedEmail,
+          passwordHash: coachProfile.passwordHash,
+        }).returning();
+        targetOrgUser = newOrgUser;
+      }
 
-      await db.insert(orgSessions).values({
-        orgId: body.orgId,
-        userId: user.id,
-        tokenHash,
-        expiresAt,
-        keepLoggedIn: body.keepLoggedIn,
-      });
+      // Find or create org membership as coach
+      const [existingMembership] = await db.select().from(orgMemberships)
+        .where(and(eq(orgMemberships.userId, targetOrgUser.id), eq(orgMemberships.orgId, body.orgId)))
+        .limit(1);
+      const membership = existingMembership ?? (await db.insert(orgMemberships).values({
+        orgId: body.orgId, userId: targetOrgUser.id, role: "coach", status: "active",
+      }).returning())[0];
 
-      await db.update(orgUsers).set({ lastLoginAt: new Date() }).where(eq(orgUsers.id, user.id));
+      const rawToken = await createOrgSession(targetOrgUser.id);
+      const mainAppToken = await createAuthToken(coachProfile.userId);
 
-      res.json({ token: rawToken, user: safeUser(user), membership });
+      return res.json({ token: rawToken, user: safeUser(targetOrgUser), membership, mainAppToken });
     } catch (err: any) {
       if (err?.name === "ZodError") return res.status(400).json({ message: "Invalid input" });
       res.status(500).json({ message: err.message || "Login failed" });
