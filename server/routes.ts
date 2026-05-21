@@ -13368,5 +13368,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerAdaptiveWorkflowRoutes } = await import("./adaptive-workflow-routes");
   registerAdaptiveWorkflowRoutes(app);
 
+  // ── Program Builder + Exercise Intelligence Layer ────────────────────────────
+  const { registerProgramBuilderRoutes } = await import("./program-builder-routes");
+  registerProgramBuilderRoutes(app);
+
   return httpServer;
 }

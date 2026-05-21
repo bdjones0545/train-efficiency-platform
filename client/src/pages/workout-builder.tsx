@@ -480,6 +480,13 @@ function ProgramDetail({ programId, orgId, isCoach, onBack, orgSlug }: { program
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => setShowAssignDialog(true)} data-testid="button-assign-program"><Users className="h-4 w-4 mr-1.5" /> Assign Program</Button>
           <Button size="sm" variant="outline" onClick={() => setShowRefineDialog(true)} data-testid="button-refine-program"><MessageSquarePlus className="h-4 w-4 mr-1.5" /> Refine with TrainChat</Button>
+          {bootstrap?.programTools?.[0]?.slug && (
+            <Button size="sm" variant="outline" className="border-emerald-700/60 text-emerald-400 hover:bg-emerald-900/30"
+              onClick={() => window.location.href = `/org/${orgSlug}/programs/${bootstrap.programTools[0].slug}/builder`}
+              data-testid="button-open-builder">
+              <Wand2 className="h-4 w-4 mr-1.5" /> Open in Builder
+            </Button>
+          )}
           {program.status !== "archived" && (
             <Button size="sm" variant="outline" className="text-muted-foreground" onClick={() => archiveMutation.mutate()} disabled={archiveMutation.isPending} data-testid="button-archive-program">
               {archiveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Archive className="h-4 w-4 mr-1.5" />} Archive

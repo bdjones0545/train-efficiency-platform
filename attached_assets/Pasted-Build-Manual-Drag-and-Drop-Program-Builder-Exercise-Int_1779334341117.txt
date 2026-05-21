@@ -1,0 +1,294 @@
+Build Manual Drag-and-Drop Program Builder + Exercise Intelligence Layer Phase 1 for TrainEfficiency.
+
+GOAL:
+Create a professional visual workout programming system that combines:
+- TrainChat AI generation
+- manual coach editing
+- drag-and-drop program construction
+- reusable templates
+- exercise intelligence/media
+
+This should NOT replace TrainChat.
+It should become the visual execution/editor layer on top of TrainChat.
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+Current:
+TrainChat generates programs.
+
+Next:
+Coaches can:
+- visually edit programs
+- drag/drop exercises
+- reorder weeks/sessions
+- create supersets/circuits
+- attach videos/cues
+- save templates
+- combine AI + manual programming
+
+====================================================
+2. DATABASE TABLES
+====================================================
+
+Create:
+
+exercise_library
+- id
+- name
+- slug
+- category
+  (strength, power, speed, mobility,
+   conditioning, recovery, plyometric, core)
+- movementPattern
+- primaryMuscles jsonb
+- secondaryMuscles jsonb
+- equipment jsonb
+- difficulty
+- description
+- coachingCues jsonb
+- commonMistakes jsonb
+- progressions jsonb
+- regressions jsonb
+- youtubeUrl nullable
+- videoUrl nullable
+- thumbnailUrl nullable
+- tags jsonb
+- createdAt
+
+program_templates
+- id
+- orgId nullable
+- createdByUserId
+- title
+- description
+- sport
+- category
+- visibility
+  (private, org, public)
+- templateData jsonb
+- createdAt
+
+program_blocks
+- id
+- workoutProgramId
+- weekNumber
+- title
+- description
+- blockType
+- createdAt
+
+program_session_groups
+- id
+- workoutSessionId
+- groupType
+  (superset, circuit, contrast, giant_set)
+- title
+- orderIndex
+- createdAt
+
+====================================================
+3. VISUAL PROGRAM BUILDER
+====================================================
+
+Create:
+ /org/:slug/programs/:programSlug/builder
+
+Coach builder should support:
+
+A. Week View
+- drag/drop weeks
+- duplicate week
+- rename week
+- reorder sessions
+
+B. Session View
+- drag/drop exercises
+- reorder exercises
+- duplicate exercise
+- delete exercise
+- inline editing
+
+C. Exercise Cards
+Each exercise card shows:
+- name
+- sets/reps/load
+- RPE
+- notes
+- media thumbnail
+- tags
+
+D. Grouping
+Allow:
+- supersets
+- circuits
+- giant sets
+- contrast pairings
+
+Visual grouping containers.
+
+====================================================
+4. EXERCISE LIBRARY
+====================================================
+
+Create searchable exercise library.
+
+Filters:
+- category
+- equipment
+- movement pattern
+- sport
+- difficulty
+- tags
+
+Search:
+- fuzzy search
+- keyboard navigation
+
+Add exercise to workout via:
+- click
+- drag/drop
+
+====================================================
+5. EXERCISE INTELLIGENCE LAYER
+====================================================
+
+Each exercise supports:
+
+- YouTube link
+- uploaded video
+- GIF/demo
+- coaching cues
+- common mistakes
+- progressions
+- regressions
+- tags
+
+Athlete session view should display:
+- media
+- cues
+- instructions
+- progression suggestions
+
+====================================================
+6. TRAINCHAT INTEGRATION
+====================================================
+
+TrainChat-generated programs should:
+- populate builder automatically
+- remain editable visually
+
+Add:
+“Refine with TrainChat”
+inside builder.
+
+Examples:
+- “Increase power emphasis”
+- “Reduce lower body volume”
+- “Add speed work”
+- “Swap to dumbbell-only”
+
+AI suggestions should:
+- preview changes
+- require coach approval
+
+====================================================
+7. TEMPLATE SYSTEM
+====================================================
+
+Allow coaches to:
+- save program as template
+- duplicate templates
+- assign templates
+- share templates org-wide
+
+Template categories:
+- off-season
+- in-season
+- speed
+- hypertrophy
+- return-to-play
+- conditioning
+
+====================================================
+8. ATHLETE EXPERIENCE
+====================================================
+
+Athlete session view should show:
+- clean exercise cards
+- embedded media
+- sets/reps
+- notes
+- supersets visually grouped
+- completion tracking
+
+Mobile-first execution experience.
+
+====================================================
+9. COACH UX
+====================================================
+
+Features:
+- undo/redo
+- autosave
+- publish/draft mode
+- live edit indicator
+- session duplication
+- copy/paste exercises
+- quick-add menu
+
+====================================================
+10. API ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/exercises
+POST /api/org/exercises
+
+GET /api/org/program-templates
+POST /api/org/program-templates
+
+PATCH /api/org/workout-builder/programs/:id/reorder
+PATCH /api/org/workout-builder/sessions/:id/reorder
+
+POST /api/org/workout-builder/groups
+PATCH /api/org/workout-builder/groups/:id
+
+POST /api/org/workout-builder/refine-with-trainchat
+
+====================================================
+11. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- modern drag/drop UX
+- smooth animations
+- professional coaching software feel
+- mobile-friendly
+
+Use:
+- visual hierarchy
+- clear grouping
+- intelligent spacing
+- fast interactions
+
+====================================================
+12. IMPORTANT
+====================================================
+
+Do NOT replace TrainChat generation.
+
+Architecture should be:
+TrainChat
+→ generates intelligence/program structure
+
+Workout Builder
+→ visual editing/execution layer
+
+Goal:
+TrainEfficiency becomes a true coach operating platform with both:
+- AI programming
+- elite manual programming workflows

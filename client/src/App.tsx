@@ -90,6 +90,7 @@ import CoachEducationRulesPage from "@/pages/coach-education-rules";
 import CoachEducationPlansPage from "@/pages/coach-education-plans";
 import CoachAthleteStatusPage from "@/pages/coach-athlete-status";
 import CoachWorkflowsPage from "@/pages/coach-workflows";
+import ProgramBuilderPage from "@/pages/program-builder";
 import OrgGuardianPage from "@/pages/org-guardian";
 import CoachGuardianManagementPage from "@/pages/coach-guardian-management";
 import OrgProfilePage from "@/pages/org-profile";
@@ -207,6 +208,7 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
                 <Route path="/org/:slug/guardian" component={OrgGuardianPage} />
                 <Route path="/org/:slug/coach/guardians" component={CoachGuardianManagementPage} />
                 <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
+                <Route path="/org/:slug/programs/:programSlug/builder" component={ProgramBuilderPage} />
                 <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
                 <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
                 <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />

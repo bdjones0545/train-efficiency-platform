@@ -25,6 +25,7 @@ import {
   PenSquare,
   Activity,
   Zap,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -231,11 +232,20 @@ function buildNavSections(
     ];
 
     if (toolItems.length > 0) {
+      const wbItems = [...toolItems];
+      if (wbTool) {
+        wbItems.push({
+          title: "Program Builder",
+          url: `/org/${orgSlug}/programs/${wbTool.slug}/builder`,
+          icon: Layers,
+          testId: "org-nav-program-builder",
+        });
+      }
       sections.push({
         id: "org-tools",
         label: "Program Tools",
         icon: ClipboardList,
-        items: toolItems,
+        items: wbItems,
       });
     }
 

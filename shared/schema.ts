@@ -2457,6 +2457,71 @@ export type AthleteStatusSnapshot = typeof athleteStatusSnapshots.$inferSelect;
 export type AthleteRiskFlag = typeof athleteRiskFlags.$inferSelect;
 export type AthleteInterventionRecommendation = typeof athleteInterventionRecommendations.$inferSelect;
 
+// ─── Program Builder + Exercise Intelligence ──────────────────────────────────
+
+export const exerciseLibrary = pgTable("exercise_library", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  name: varchar("name", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 200 }).notNull(),
+  category: varchar("category", { length: 100 }).notNull().default("strength"),
+  movementPattern: varchar("movement_pattern", { length: 100 }),
+  primaryMuscles: jsonb("primary_muscles").default([]),
+  secondaryMuscles: jsonb("secondary_muscles").default([]),
+  equipment: jsonb("equipment").default([]),
+  difficulty: varchar("difficulty", { length: 50 }).default("intermediate"),
+  description: text("description"),
+  coachingCues: jsonb("coaching_cues").default([]),
+  commonMistakes: jsonb("common_mistakes").default([]),
+  progressions: jsonb("progressions").default([]),
+  regressions: jsonb("regressions").default([]),
+  youtubeUrl: varchar("youtube_url", { length: 500 }),
+  videoUrl: varchar("video_url", { length: 500 }),
+  thumbnailUrl: varchar("thumbnail_url", { length: 500 }),
+  tags: jsonb("tags").default([]),
+  isGlobal: boolean("is_global").notNull().default(false),
+  createdByUserId: varchar("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const programTemplates = pgTable("program_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  createdByUserId: varchar("created_by_user_id"),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description"),
+  sport: varchar("sport", { length: 100 }),
+  category: varchar("category", { length: 100 }),
+  visibility: varchar("visibility", { length: 20 }).notNull().default("private"),
+  templateData: jsonb("template_data").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const programBlocks = pgTable("program_blocks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workoutProgramId: varchar("workout_program_id").notNull(),
+  weekNumber: integer("week_number").notNull(),
+  title: varchar("title", { length: 200 }),
+  description: text("description"),
+  blockType: varchar("block_type", { length: 50 }).default("standard"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const programSessionGroups = pgTable("program_session_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workoutSessionId: varchar("workout_session_id").notNull(),
+  groupType: varchar("group_type", { length: 50 }).notNull().default("superset"),
+  title: varchar("title", { length: 200 }),
+  exerciseIndices: jsonb("exercise_indices").default([]),
+  orderIndex: integer("order_index").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type ExerciseLibrary = typeof exerciseLibrary.$inferSelect;
+export type ProgramTemplate = typeof programTemplates.$inferSelect;
+export type ProgramBlock = typeof programBlocks.$inferSelect;
+export type ProgramSessionGroup = typeof programSessionGroups.$inferSelect;
+
 // ─── Adaptive Workflow Engine ─────────────────────────────────────────────────
 
 export const adaptiveWorkflows = pgTable("adaptive_workflows", {
