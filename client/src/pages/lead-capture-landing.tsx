@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,17 @@ import {
   Clock,
   Loader2,
 } from "lucide-react";
+
+function useUtmParams() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    utmSource: params.get("utm_source") || undefined,
+    utmMedium: params.get("utm_medium") || undefined,
+    utmCampaign: params.get("utm_campaign") || undefined,
+    utmContent: params.get("utm_content") || undefined,
+    utmTerm: params.get("utm_term") || undefined,
+  };
+}
 
 const GOAL_OPTIONS = [
   "Increase Speed & Explosiveness",
@@ -78,6 +89,9 @@ type ProgramData = {
     benefits: { icon?: string; title: string; desc: string }[] | null;
     socialProof: { quote: string; name: string; sport?: string }[] | null;
     whoIsThisFor: string | null;
+    metaPixelId: string | null;
+    googleAdsConversionId: string | null;
+    googleAdsConversionLabel: string | null;
   } | null;
 };
 
@@ -127,6 +141,9 @@ export default function LeadCaptureLanding() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [animDir, setAnimDir] = useState<"forward" | "back">("forward");
   const [submitted, setSubmitted] = useState(false);
+  const [abandonedId, setAbandonedId] = useState<string | null>(null);
+  const partialSavedRef = useRef(false);
+  const utm = useUtmParams();
 
   const TOTAL_STEPS = 5;
 
@@ -135,13 +152,72 @@ export default function LeadCaptureLanding() {
     enabled: !!orgSlug && !!programSlug,
   });
 
+  // Inject Meta Pixel if configured
+  useEffect(() => {
+    if (!data?.config?.metaPixelId) return;
+    const pixelId = data.config.metaPixelId;
+    if (document.getElementById("meta-pixel-script")) return;
+    const script = document.createElement("script");
+    script.id = "meta-pixel-script";
+    script.innerHTML = `
+      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+      n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+      document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init','${pixelId}');fbq('track','PageView');
+    `;
+    document.head.appendChild(script);
+  }, [data?.config?.metaPixelId]);
+
+  // Inject Google Ads tracking if configured
+  useEffect(() => {
+    if (!data?.config?.googleAdsConversionId) return;
+    const convId = data.config.googleAdsConversionId;
+    if (document.getElementById("gtag-script")) return;
+    const gtagScript = document.createElement("script");
+    gtagScript.id = "gtag-script";
+    gtagScript.async = true;
+    gtagScript.src = `https://www.googletagmanager.com/gtag/js?id=${convId}`;
+    document.head.appendChild(gtagScript);
+    const inlineScript = document.createElement("script");
+    inlineScript.innerHTML = `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${convId}');`;
+    document.head.appendChild(inlineScript);
+  }, [data?.config?.googleAdsConversionId]);
+
+  const partialMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/public/lead-capture/${orgSlug}/${programSlug}/partial`, {
+        athleteName: form.athleteName,
+        email: form.email,
+        phone: form.phone || undefined,
+        ...utm,
+      }).then((r) => r.json()),
+    onSuccess: (res) => {
+      if (res.abandonedId) setAbandonedId(res.abandonedId);
+    },
+  });
+
   const submitMutation = useMutation({
     mutationFn: () =>
-      apiRequest("POST", `/api/public/lead-capture/${orgSlug}/${programSlug}/submit`, form)
-        .then((r) => r.json()),
+      apiRequest("POST", `/api/public/lead-capture/${orgSlug}/${programSlug}/submit`, {
+        ...form,
+        ...utm,
+        abandonedId: abandonedId || undefined,
+      }).then((r) => r.json()),
     onSuccess: () => {
       setSubmitted(true);
       setStep(TOTAL_STEPS);
+      // Fire Meta Pixel conversion event
+      if (data?.config?.metaPixelId && (window as any).fbq) {
+        (window as any).fbq("track", "Lead");
+      }
+      // Fire Google Ads conversion
+      if (data?.config?.googleAdsConversionId && data?.config?.googleAdsConversionLabel && (window as any).gtag) {
+        (window as any).gtag("event", "conversion", {
+          send_to: `${data.config.googleAdsConversionId}/${data.config.googleAdsConversionLabel}`,
+        });
+      }
     },
     onError: () => {
       toast({ title: "Submission failed", description: "Please check your info and try again.", variant: "destructive" });
@@ -171,6 +247,11 @@ export default function LeadCaptureLanding() {
     if (!canNext()) {
       toast({ title: "Please fill in required fields", variant: "destructive" });
       return;
+    }
+    // Save partial capture after completing Step 1 (fire once)
+    if (step === 1 && !partialSavedRef.current && form.athleteName.trim() && form.email.trim()) {
+      partialSavedRef.current = true;
+      partialMutation.mutate();
     }
     if (step === 4) {
       submitMutation.mutate();

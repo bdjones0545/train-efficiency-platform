@@ -2720,6 +2720,10 @@ export const leadCapturePrograms = pgTable("lead_capture_programs", {
   benefits: jsonb("benefits").default(sql`'[]'::jsonb`),
   socialProof: jsonb("social_proof").default(sql`'[]'::jsonb`),
   whoIsThisFor: text("who_is_this_for").default(""),
+  // Conversion tracking
+  metaPixelId: varchar("meta_pixel_id"),
+  googleAdsConversionId: varchar("google_ads_conversion_id"),
+  googleAdsConversionLabel: varchar("google_ads_conversion_label"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -2748,8 +2752,38 @@ export const leadCaptureSubmissions = pgTable("lead_capture_submissions", {
   notes: text("notes"),
   aiQualificationScore: integer("ai_qualification_score"),
   aiQualificationReason: text("ai_qualification_reason"),
+  // UTM attribution
+  utmSource: varchar("utm_source"),
+  utmMedium: varchar("utm_medium"),
+  utmCampaign: varchar("utm_campaign"),
+  utmContent: varchar("utm_content"),
+  utmTerm: varchar("utm_term"),
+  abandonedId: varchar("abandoned_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const leadCaptureAbandoned = pgTable("lead_capture_abandoned", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  athleteName: varchar("athlete_name").notNull(),
+  email: varchar("email").notNull(),
+  phone: varchar("phone"),
+  utmSource: varchar("utm_source"),
+  utmMedium: varchar("utm_medium"),
+  utmCampaign: varchar("utm_campaign"),
+  utmContent: varchar("utm_content"),
+  utmTerm: varchar("utm_term"),
+  completedAt: timestamp("completed_at"),
+  submissionId: varchar("submission_id"),
+  followupSentAt: timestamp("followup_sent_at"),
+  followupCount: integer("followup_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertLeadCaptureAbandonedSchema = createInsertSchema(leadCaptureAbandoned).omit({ id: true, createdAt: true });
+export type LeadCaptureAbandoned = typeof leadCaptureAbandoned.$inferSelect;
+export type InsertLeadCaptureAbandoned = z.infer<typeof insertLeadCaptureAbandonedSchema>;
 
 export const insertLeadCaptureSubmissionSchema = createInsertSchema(leadCaptureSubmissions).omit({ id: true, createdAt: true });
 export type LeadCaptureSubmission = typeof leadCaptureSubmissions.$inferSelect;

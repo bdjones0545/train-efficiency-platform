@@ -2245,6 +2245,182 @@ function AiRevenuePanel() {
   );
 }
 
+// ─── Program Leads Panel ──────────────────────────────────────────────────────
+
+type ProgramLeadsSummary = {
+  totalSubmissions: number;
+  newToday: number;
+  highIntent: number;
+  abandonedCount: number;
+  recentLeads: {
+    id: string;
+    athleteName: string;
+    email: string;
+    phone: string | null;
+    sport: string | null;
+    school: string | null;
+    aiQualificationScore: number | null;
+    commitmentLevel: string | null;
+    utmSource: string | null;
+    createdAt: string;
+  }[];
+};
+
+function ProgramLeadsPanel() {
+  const { toast } = useToast();
+
+  const { data, isLoading, refetch } = useQuery<ProgramLeadsSummary>({
+    queryKey: ["/api/lead-capture/command-center-summary"],
+    refetchInterval: 60000,
+  });
+
+  const moveToDealMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/lead-capture/submissions/${id}/move-to-deal`, {}).then((r) => r.json()),
+    onSuccess: () => {
+      toast({ title: "Moved to Deal Pipeline", description: "Lead added to Team Training prospects." });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/command-center-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/business-command-center"] });
+    },
+    onError: () => toast({ title: "Failed to move to deal", variant: "destructive" }),
+  });
+
+  if (isLoading) return null;
+  if (!data || data.totalSubmissions === 0) {
+    return (
+      <section data-testid="section-program-leads-empty">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+            <Flame className="h-4 w-4 text-orange-500" />
+            Program Application Leads
+          </h2>
+        </div>
+        <Card className="p-4 text-center text-sm text-muted-foreground" data-testid="card-no-program-leads">
+          No program applications yet. Set up a Lead Capture Program in Admin → Programs.
+        </Card>
+      </section>
+    );
+  }
+
+  const scoreBadge = (score: number | null) => {
+    if (!score) return null;
+    const cls = score >= 80
+      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+      : score >= 60
+      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+    return <Badge className={`text-xs ${cls}`}>{score}/100</Badge>;
+  };
+
+  return (
+    <section data-testid="section-program-leads">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+          <Flame className="h-4 w-4 text-orange-500" />
+          Program Application Leads
+          {data.newToday > 0 && (
+            <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 text-xs">
+              {data.newToday} new today
+            </Badge>
+          )}
+        </h2>
+        <Button variant="ghost" size="sm" onClick={() => refetch()} className="h-7 w-7 p-0" data-testid="button-refresh-leads">
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+        <Card className="p-3 text-center" data-testid="card-leads-total">
+          <p className="text-lg font-bold">{data.totalSubmissions}</p>
+          <p className="text-xs text-muted-foreground">Total Apps</p>
+        </Card>
+        <Card className="p-3 text-center" data-testid="card-leads-today">
+          <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{data.newToday}</p>
+          <p className="text-xs text-muted-foreground">Today</p>
+        </Card>
+        <Card className="p-3 text-center" data-testid="card-leads-highintent">
+          <p className="text-lg font-bold text-green-600 dark:text-green-400">{data.highIntent}</p>
+          <p className="text-xs text-muted-foreground">High-Intent</p>
+        </Card>
+        <Card className="p-3 text-center" data-testid="card-leads-abandoned">
+          <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{data.abandonedCount}</p>
+          <p className="text-xs text-muted-foreground">Abandoned</p>
+        </Card>
+      </div>
+
+      {/* Recent leads list */}
+      {data.recentLeads.length > 0 && (
+        <div className="space-y-2" data-testid="list-program-leads">
+          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+            <Users className="h-3.5 w-3.5" /> Recent applications
+          </p>
+          {data.recentLeads.map((lead, i) => (
+            <Card key={lead.id} className="p-3" data-testid={`card-program-lead-${i}`}>
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold">{lead.athleteName}</p>
+                    {scoreBadge(lead.aiQualificationScore)}
+                    {lead.aiQualificationScore && lead.aiQualificationScore >= 80 && (
+                      <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">🔥 Hot</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {[lead.sport, lead.school].filter(Boolean).join(" · ")}
+                    {lead.utmSource && <span className="ml-2 text-blue-500">via {lead.utmSource}</span>}
+                  </p>
+                  {lead.commitmentLevel && (
+                    <p className="text-xs text-muted-foreground mt-0.5">Commitment: <span className="text-foreground">{lead.commitmentLevel}</span></p>
+                  )}
+                </div>
+                <div className="shrink-0 flex flex-col gap-1 items-end">
+                  <div className="flex gap-1">
+                    {lead.phone && (
+                      <a href={`tel:${lead.phone}`} data-testid={`button-call-lead-${i}`}>
+                        <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Call">
+                          <span className="text-xs">📞</span>
+                        </Button>
+                      </a>
+                    )}
+                    {lead.phone && (
+                      <a href={`sms:${lead.phone}`} data-testid={`button-sms-lead-${i}`}>
+                        <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Text">
+                          <MessageSquare className="h-3 w-3" />
+                        </Button>
+                      </a>
+                    )}
+                    <a href={`mailto:${lead.email}`} data-testid={`button-email-lead-${i}`}>
+                      <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Email">
+                        <Send className="h-3 w-3" />
+                      </Button>
+                    </a>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => moveToDealMutation.mutate(lead.id)}
+                      disabled={moveToDealMutation.isPending}
+                      title="Move to Deal Pipeline"
+                      data-testid={`button-move-deal-${i}`}
+                    >
+                      <ArrowRight className="h-3 w-3 mr-1" />
+                      Deal
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : ""}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function fmt$(cents: number) {
   if (cents >= 100000) return `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   return `$${(cents / 100).toFixed(0)}`;
@@ -2721,6 +2897,9 @@ export default function BusinessCommandCenterPage() {
           </Card>
         )}
       </section>
+
+      {/* ─── Program Leads ───────────────────────────────────────────────── */}
+      <ProgramLeadsPanel />
 
       {/* ─── Agent Quick Actions ──────────────────────────────────────────── */}
       <section>
