@@ -1682,10 +1682,29 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
           <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-medium">TrainChat not connected</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Go to Options → Advanced → Integrations to connect your TrainChat API key.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {bootstrap?.trainChatLastError
+                ? bootstrap.trainChatLastError
+                : "Go to Options → Advanced → Integrations to connect your TrainChat API key."}
+            </p>
           </div>
         </Card>
       )}
+
+      {/* ── Dev-only TrainChat debug card ─────────────────────────────────── */}
+      {import.meta.env.DEV && (
+        <Card className="p-3 border-dashed border-blue-500/40 bg-blue-500/5 text-xs space-y-1" data-testid="debug-trainchat-status">
+          <p className="font-semibold text-blue-500 uppercase tracking-wide">TrainChat Debug (dev only)</p>
+          <p><span className="text-muted-foreground">connected:</span> <span className={bootstrap?.trainChatConnected ? "text-emerald-500" : "text-destructive"}>{String(bootstrap?.trainChatConnected ?? false)}</span></p>
+          <p><span className="text-muted-foreground">mode:</span> {bootstrap?.connectionMode ?? "—"}</p>
+          <p><span className="text-muted-foreground">baseUrl:</span> {bootstrap?.trainChatBaseUrl ?? "(none)"}</p>
+          <p><span className="text-muted-foreground">maskedKey:</span> {bootstrap?.maskedKeyPreview ?? "(none)"}</p>
+          {bootstrap?.trainChatLastError && (
+            <p><span className="text-muted-foreground">error:</span> <span className="text-destructive">{bootstrap.trainChatLastError}</span></p>
+          )}
+        </Card>
+      )}
+      {/* ──────────────────────────────────────────────────────────────────── */}
 
       {/* Tab switcher */}
       <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit" data-testid="tabs-coach-workout-builder">

@@ -253,12 +253,29 @@ export function registerWorkoutBuilderRoutes(app: Express) {
           .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete")))
           .orderBy(asc(orgUsers.name))
           .catch(() => [] as any[]),
-        getConnectionStatus(orgId).catch(() => ({
+        getConnectionStatus(orgId).catch((err: any) => ({
           trainChatConnected: false,
           connectionMode: "none" as const,
-          lastError: "Connection status check failed",
+          lastError: `Connection status check threw: ${err?.message ?? "unknown"}`,
         })),
       ]);
+
+      // ── TrainChat diagnostic log (never logs raw keys) ────────────────────
+      console.log("[workout-builder] TrainChat env check:", {
+        TRAINCHAT_API_KEY_exists: !!process.env.TRAINCHAT_API_KEY,
+        TRAINCHAT_EXTERNAL_API_KEY_exists: !!process.env.TRAINCHAT_EXTERNAL_API_KEY,
+        TRAINCHAT_API_BASE_URL: process.env.TRAINCHAT_API_BASE_URL ?? "(not set)",
+        TRAINCHAT_EXTERNAL_API_BASE_URL: process.env.TRAINCHAT_EXTERNAL_API_BASE_URL ?? "(not set)",
+        TRAINCHAT_BASE_URL: process.env.TRAINCHAT_BASE_URL ?? "(not set)",
+      });
+      console.log("[workout-builder] getConnectionStatus result:", {
+        trainChatConnected: tcStatus.trainChatConnected,
+        connectionMode: tcStatus.connectionMode,
+        maskedKeyPreview: tcStatus.maskedKeyPreview ?? null,
+        baseUrl: tcStatus.baseUrl ?? null,
+        lastError: tcStatus.lastError ?? null,
+      });
+      // ─────────────────────────────────────────────────────────────────────
 
       // Coaches see all programs; athletes/guardians only see their own
       const programs = canManagePrograms

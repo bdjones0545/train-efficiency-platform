@@ -51,8 +51,8 @@ async function getDecryptedClient(orgId: string): Promise<{ baseUrl: string; api
     const apiKey = decryptApiKey(integration.apiKeyEncrypted);
     return { baseUrl: integration.apiBaseUrl.replace(/\/$/, ""), apiKey };
   }
-  const envKey = process.env.TRAINCHAT_API_KEY;
-  const envBase = process.env.TRAINCHAT_API_BASE_URL;
+  const envKey = resolvePlatformKey();
+  const envBase = resolvePlatformBaseUrl();
   if (envKey && envBase) {
     return { baseUrl: envBase.replace(/\/$/, ""), apiKey: envKey };
   }
@@ -66,6 +66,25 @@ export type TrainChatConnectionStatus = {
   baseUrl?: string;
   lastError?: string;
 };
+
+/** Resolve platform API key from multiple possible env var names (primary first). */
+function resolvePlatformKey(): string | undefined {
+  return (
+    process.env.TRAINCHAT_API_KEY ||
+    process.env.TRAINCHAT_EXTERNAL_API_KEY ||
+    undefined
+  );
+}
+
+/** Resolve platform base URL from multiple possible env var names (primary first). */
+function resolvePlatformBaseUrl(): string | undefined {
+  return (
+    process.env.TRAINCHAT_API_BASE_URL ||
+    process.env.TRAINCHAT_EXTERNAL_API_BASE_URL ||
+    process.env.TRAINCHAT_BASE_URL ||
+    undefined
+  );
+}
 
 export async function getConnectionStatus(orgId: string): Promise<TrainChatConnectionStatus> {
   try {
@@ -82,8 +101,10 @@ export async function getConnectionStatus(orgId: string): Promise<TrainChatConne
   } catch (err: any) {
     // org lookup failed — fall through to platform check
   }
-  const envKey = process.env.TRAINCHAT_API_KEY;
-  const envBase = process.env.TRAINCHAT_API_BASE_URL;
+
+  const envKey = resolvePlatformKey();
+  const envBase = resolvePlatformBaseUrl();
+
   if (envKey && envBase) {
     return {
       trainChatConnected: true,
@@ -92,10 +113,26 @@ export async function getConnectionStatus(orgId: string): Promise<TrainChatConne
       baseUrl: envBase.replace(/\/$/, ""),
     };
   }
+
+  // Build a precise error so the UI can surface what's actually missing
+  if (envKey && !envBase) {
+    return {
+      trainChatConnected: false,
+      connectionMode: "none",
+      lastError: "TRAINCHAT_API_KEY is set but TRAINCHAT_API_BASE_URL is missing.",
+    };
+  }
+  if (!envKey && envBase) {
+    return {
+      trainChatConnected: false,
+      connectionMode: "none",
+      lastError: "TRAINCHAT_API_BASE_URL is set but TRAINCHAT_API_KEY is missing.",
+    };
+  }
   return {
     trainChatConnected: false,
     connectionMode: "none",
-    lastError: "No org-level integration found and TRAINCHAT_API_KEY is not set.",
+    lastError: "No org-level integration configured and no platform secrets found (TRAINCHAT_API_KEY / TRAINCHAT_API_BASE_URL).",
   };
 }
 
