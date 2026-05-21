@@ -2794,6 +2794,10 @@ export const leadCaptureSubmissions = pgTable("lead_capture_submissions", {
   applicantEmailSentAt: timestamp("applicant_email_sent_at"),
   applicantEmailStatus: varchar("applicant_email_status"),
   applicantEmailError: text("applicant_email_error"),
+  // Post-submission onboarding conversion
+  linkedUserId: varchar("linked_user_id"),
+  signupConvertedAt: timestamp("signup_converted_at"),
+  bookingConvertedAt: timestamp("booking_converted_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

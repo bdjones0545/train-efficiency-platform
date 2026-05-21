@@ -13828,10 +13828,78 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
         } catch (_) {}
       })();
 
-      res.json({ success: true, submissionId: submission.id });
+      // Fetch booking context for success-screen CTA
+      let bookingUrl: string | null = null;
+      let bookingType: string = "none";
+      try {
+        const { leadCapturePrograms: lcpT2 } = await import("@shared/schema");
+        const { eq: eq2 } = await import("drizzle-orm");
+        const [lcRow] = await db.select({ bookingUrl: lcpT2.bookingUrl, bookingType: lcpT2.bookingType })
+          .from(lcpT2).where(eq2(lcpT2.programId, program.id)).limit(1);
+        bookingUrl = lcRow?.bookingUrl ?? null;
+        bookingType = lcRow?.bookingType ?? "none";
+      } catch (_) {}
+
+      res.json({
+        success: true,
+        submissionId: submission.id,
+        orgSlug: org.slug,
+        orgName: org.name,
+        orgId: org.id,
+        programId: program.id,
+        programName: program.name,
+        athleteName,
+        email,
+        bookingUrl,
+        bookingType,
+      });
     } catch (error) {
       console.error("Lead capture submit error:", error);
       res.status(500).json({ message: "Failed to submit application" });
+    }
+  });
+
+  // Authenticated: link a lead capture submission to the current user account
+  app.post("/api/lead-capture/link-submission", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const { submissionId } = req.body;
+      if (!submissionId) return res.status(400).json({ message: "submissionId required" });
+
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions, leadCapturePrograms } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [submission] = await db.select().from(leadCaptureSubmissions).where(eq(leadCaptureSubmissions.id, submissionId)).limit(1);
+      if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+      // Only link if not already linked
+      if (!submission.linkedUserId) {
+        await db.update(leadCaptureSubmissions).set({
+          linkedUserId: userId,
+          signupConvertedAt: new Date(),
+        }).where(eq(leadCaptureSubmissions.id, submissionId));
+      }
+
+      // Fetch booking context
+      const [lcConfig] = await db.select({ bookingUrl: leadCapturePrograms.bookingUrl, bookingType: leadCapturePrograms.bookingType })
+        .from(leadCapturePrograms).where(eq(leadCapturePrograms.programId, submission.programId)).limit(1);
+
+      // Fetch org slug
+      const org = await storage.getOrganizationById(submission.orgId);
+
+      res.json({
+        success: true,
+        bookingUrl: lcConfig?.bookingUrl || null,
+        bookingType: lcConfig?.bookingType || "none",
+        orgSlug: org?.slug || null,
+        programId: submission.programId,
+        athleteName: submission.athleteName,
+      });
+    } catch (error) {
+      console.error("link-submission error:", error);
+      res.status(500).json({ message: "Failed to link submission" });
     }
   });
 

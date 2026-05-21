@@ -145,6 +145,11 @@ export default function LeadCaptureLanding() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [animDir, setAnimDir] = useState<"forward" | "back">("forward");
   const [submitted, setSubmitted] = useState(false);
+  const [submitResult, setSubmitResult] = useState<{
+    submissionId: string; orgSlug: string; orgName: string; orgId: string;
+    programId: string; programName: string; athleteName: string; email: string;
+    bookingUrl: string | null; bookingType: string;
+  } | null>(null);
   const [abandonedId, setAbandonedId] = useState<string | null>(null);
   const partialSavedRef = useRef(false);
   const sessionIdRef = useRef(generateSessionId());
@@ -231,9 +236,23 @@ export default function LeadCaptureLanding() {
         ...utm,
         abandonedId: abandonedId || undefined,
       }).then((r) => r.json()),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       setSubmitted(true);
+      setSubmitResult(res);
       setStep(TOTAL_STEPS);
+      // Store for post-auth linking
+      try {
+        sessionStorage.setItem("pending_funnel_link", JSON.stringify({
+          submissionId: res.submissionId,
+          orgSlug: res.orgSlug,
+          orgId: res.orgId,
+          programId: res.programId,
+          athleteName: res.athleteName,
+          email: res.email,
+          bookingUrl: res.bookingUrl,
+          bookingType: res.bookingType,
+        }));
+      } catch (_) {}
       // Fire Meta Pixel conversion event
       if (data?.config?.metaPixelId && (window as any).fbq) {
         (window as any).fbq("track", "Lead");
@@ -527,7 +546,7 @@ export default function LeadCaptureLanding() {
           <div className="text-center mb-10">
             <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 mb-4 text-xs tracking-widest uppercase">Application</Badge>
             <h2 className="text-3xl md:text-4xl font-black text-white">
-              {submitted ? "You're In!" : `Apply to ${program.name}`}
+              {submitted ? "Application Complete" : `Apply to ${program.name}`}
             </h2>
             {!submitted && (
               <p className="text-white/60 mt-3 text-sm">Step {Math.min(step, 4)} of 4 — takes about 3 minutes</p>
@@ -796,48 +815,176 @@ export default function LeadCaptureLanding() {
               </StepCard>
             )}
 
-            {/* SUCCESS */}
+            {/* SUCCESS — Premium Onboarding Conversion Flow */}
             {(step === 5 || submitted) && (
-              <StepCard className="text-center">
-                <div className="space-y-6 py-8">
-                  <div className="relative inline-flex">
-                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center mx-auto shadow-2xl shadow-orange-500/30">
-                      <CheckCircle2 className="h-12 w-12 text-white" />
+              <div className="space-y-5" style={{ animation: "slideInRight 0.4s ease-out" }}>
+                {/* Confirmation badge */}
+                <div className="flex items-center justify-center">
+                  <div className="inline-flex items-center gap-2 bg-orange-500/15 border border-orange-500/30 rounded-full px-5 py-2">
+                    <CheckCircle2 className="h-4 w-4 text-orange-400 fill-orange-400/20" />
+                    <span className="text-orange-300 text-sm font-semibold tracking-wide">Application Received</span>
+                  </div>
+                </div>
+
+                {/* Hero confirmation */}
+                <StepCard className="text-center !pb-8">
+                  <div className="space-y-4 py-4">
+                    <div className="relative inline-flex mx-auto">
+                      <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center shadow-2xl shadow-orange-500/40">
+                        <CheckCircle2 className="h-10 w-10 text-white" />
+                      </div>
+                      <div className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/40">
+                        <Star className="h-3.5 w-3.5 text-white fill-white" />
+                      </div>
                     </div>
-                    <div className="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-green-400 flex items-center justify-center">
-                      <Star className="h-4 w-4 text-white fill-white" />
+                    <div>
+                      <h3 className="text-2xl md:text-3xl font-black text-white mb-2" data-testid="text-success-headline">
+                        You're In, {(submitResult?.athleteName || form.athleteName).split(" ")[0]}!
+                      </h3>
+                      <p className="text-white/60 text-sm leading-relaxed max-w-xs mx-auto">
+                        Your application to <strong className="text-orange-400">{submitResult?.programName || program.name}</strong> is being reviewed by the coaching staff.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-6 pt-2">
+                      {[
+                        { icon: <CheckCircle2 className="h-4 w-4" />, label: "Received" },
+                        { icon: <Clock className="h-4 w-4" />, label: "24hr Review" },
+                        { icon: <Zap className="h-4 w-4" />, label: "Start Training" },
+                      ].map((item, i) => (
+                        <div key={i} className="flex flex-col items-center gap-1.5 text-center">
+                          <div className="w-9 h-9 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400">
+                            {item.icon}
+                          </div>
+                          <p className="text-white/50 text-[11px] leading-tight">{item.label}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    <h3 className="text-3xl font-black text-white" data-testid="text-success-headline">Application Submitted!</h3>
-                    <p className="text-white/70 leading-relaxed max-w-sm mx-auto">
-                      Your application to <strong className="text-orange-400">{program.name}</strong> has been received.
-                      We'll be in touch within 24 hours.
+                </StepCard>
+
+                {/* Onboarding conversion CTA */}
+                <div className="relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-950/60 via-zinc-900/80 to-zinc-950/90 backdrop-blur-xl p-6 md:p-8">
+                  {/* Glow */}
+                  <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-green-500/8 blur-3xl pointer-events-none" />
+                  <div className="relative space-y-5">
+                    {/* Onboarding progress steps */}
+                    <div className="flex items-center gap-0 mb-2">
+                      {[
+                        { num: 1, label: "Applied", done: true },
+                        { num: 2, label: "Create Account", done: false, active: true },
+                        { num: 3, label: "Book Session", done: false },
+                      ].map((s, i) => (
+                        <div key={s.num} className="flex items-center flex-1">
+                          <div className="flex flex-col items-center flex-1">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                              s.done
+                                ? "bg-green-500 text-white shadow-lg shadow-green-500/40"
+                                : s.active
+                                ? "bg-white/10 border-2 border-green-500 text-green-400 ring-4 ring-green-500/20"
+                                : "bg-white/5 border border-white/15 text-white/25"
+                            }`}>
+                              {s.done ? <CheckCircle2 className="h-4 w-4" /> : s.num}
+                            </div>
+                            <span className={`text-[10px] mt-1.5 font-medium tracking-wide ${
+                              s.done ? "text-green-400" : s.active ? "text-white/80" : "text-white/25"
+                            }`}>{s.label}</span>
+                          </div>
+                          {i < 2 && (
+                            <div className={`h-px flex-1 mb-5 mx-1 ${s.done ? "bg-green-500/50" : "bg-white/10"}`} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Headline */}
+                    <div className="space-y-1.5">
+                      <h4 className="text-xl font-black text-white">Ready To Get Started?</h4>
+                      <p className="text-white/55 text-sm leading-relaxed">
+                        Create your athlete account to track your application, access training resources, and lock in your evaluation session.
+                      </p>
+                    </div>
+
+                    {/* Account benefits */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {[
+                        { icon: <Users className="h-3.5 w-3.5" />, text: "Track your application status" },
+                        { icon: <Zap className="h-3.5 w-3.5" />, text: "Access the athlete dashboard" },
+                        { icon: <Trophy className="h-3.5 w-3.5" />, text: "Book your evaluation session" },
+                        { icon: <Shield className="h-3.5 w-3.5" />, text: "Secure, private athlete profile" },
+                      ].map((b, i) => (
+                        <div key={i} className="flex items-center gap-2 text-white/60 text-xs">
+                          <div className="w-5 h-5 rounded-full bg-green-500/15 flex items-center justify-center text-green-400 flex-shrink-0">
+                            {b.icon}
+                          </div>
+                          {b.text}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Primary CTA */}
+                    <a
+                      href={`/api/auth/login?returnTo=/org/${submitResult?.orgSlug || org.slug}`}
+                      className="group w-full flex items-center justify-center gap-3 bg-gradient-to-r from-green-500 to-emerald-400 hover:from-green-400 hover:to-emerald-300 text-white font-bold py-4 px-6 rounded-2xl text-base transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-green-500/25"
+                      data-testid="button-create-account"
+                    >
+                      <CheckCircle2 className="h-5 w-5" />
+                      Create Account & Schedule
+                      <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </a>
+
+                    {/* Direct booking shortcut (if available) */}
+                    {(submitResult?.bookingUrl || (data as any)?.config?.bookingUrl) && (
+                      <a
+                        href={submitResult?.bookingUrl || (data as any).config.bookingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-2 border border-green-500/25 text-green-400 hover:bg-green-500/10 font-semibold py-3.5 px-6 rounded-2xl text-sm transition-all duration-200"
+                        data-testid="button-book-direct"
+                      >
+                        <Clock className="h-4 w-4" />
+                        Book Evaluation Directly (No Account Needed)
+                      </a>
+                    )}
+
+                    {/* Divider */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-px bg-white/8" />
+                      <span className="text-white/25 text-xs">or</span>
+                      <div className="flex-1 h-px bg-white/8" />
+                    </div>
+
+                    {/* Secondary CTAs */}
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      <a
+                        href={`/org/${submitResult?.orgSlug || org.slug}`}
+                        className="flex-1 flex items-center justify-center gap-2 bg-white/5 hover:bg-white/8 border border-white/10 hover:border-orange-500/30 text-white/70 hover:text-white font-semibold py-3.5 rounded-xl text-sm transition-all duration-200"
+                        data-testid="button-browse-training"
+                      >
+                        Browse Training Options
+                      </a>
+                      <a
+                        href={`/org/${submitResult?.orgSlug || org.slug}`}
+                        className="flex-1 flex items-center justify-center gap-2 bg-white/5 hover:bg-white/8 border border-white/10 text-white/50 hover:text-white/70 font-medium py-3.5 rounded-xl text-sm transition-all duration-200"
+                        data-testid="link-back-to-org"
+                      >
+                        Return to {submitResult?.orgName || org.name}
+                      </a>
+                    </div>
+
+                    {/* Continue as guest */}
+                    <p className="text-center text-white/25 text-xs">
+                      Already have an account?{" "}
+                      <a
+                        href={`/api/auth/login?returnTo=/org/${submitResult?.orgSlug || org.slug}`}
+                        className="text-white/40 hover:text-white/60 underline underline-offset-2 transition-colors"
+                        data-testid="link-sign-in"
+                      >
+                        Sign in
+                      </a>
                     </p>
                   </div>
-                  <div className="grid grid-cols-3 gap-4 pt-4">
-                    {[
-                      { icon: <CheckCircle2 className="h-5 w-5" />, label: "Application Received" },
-                      { icon: <Clock className="h-5 w-5" />, label: "Review in 24hrs" },
-                      { icon: <Zap className="h-5 w-5" />, label: "Start Training Soon" },
-                    ].map((item, i) => (
-                      <div key={i} className="flex flex-col items-center gap-2 text-center">
-                        <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400">
-                          {item.icon}
-                        </div>
-                        <p className="text-white/60 text-xs leading-tight">{item.label}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <a
-                    href={`/org/${org.slug}`}
-                    className="inline-flex items-center gap-2 text-orange-400 hover:text-orange-300 text-sm font-medium transition-colors mt-4"
-                    data-testid="link-back-to-org"
-                  >
-                    View {org.name} →
-                  </a>
                 </div>
-              </StepCard>
+              </div>
             )}
           </div>
 

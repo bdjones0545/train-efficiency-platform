@@ -199,6 +199,29 @@ function PortalHome({
   const careerFunnels: any[] = (leadCaptureFunnels ?? []).filter((f: any) => f.funnelType === "employment_opportunity");
   const isCoach = membership?.role === "coach" || membership?.role === "owner";
 
+  // Post-submission account linking — detect pending_funnel_link set by lead capture success screen
+  useEffect(() => {
+    const raw = sessionStorage.getItem("pending_funnel_link");
+    if (!raw) return;
+    let ctx: any;
+    try { ctx = JSON.parse(raw); } catch { return; }
+    if (!ctx?.submissionId) return;
+    sessionStorage.removeItem("pending_funnel_link");
+    fetch("/api/lead-capture/link-submission", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+      credentials: "include",
+      body: JSON.stringify({ submissionId: ctx.submissionId }),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((result) => {
+        if (result?.bookingUrl) {
+          window.open(result.bookingUrl, "_blank", "noopener,noreferrer");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Notification count
   const { data: notifData } = useQuery<any>({
     queryKey: ["/api/org/notifications", "unread"],
