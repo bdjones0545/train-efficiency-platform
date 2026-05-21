@@ -1,0 +1,135 @@
+Build a dedicated Lead Capture Program Editor page.
+
+Do not redirect Lead Capture settings to the generic Command Center homepage anymore.
+
+NEW ROUTE
+Create:
+- /lead-capture/programs/:programId
+
+The orange Settings button on Lead Capture cards should route directly to this editor.
+
+PRIMARY GOAL
+Allow organizations to fully customize and manage their athlete application landing pages visually.
+
+SECTIONS TO BUILD
+
+1. PAGE OVERVIEW
+Top summary bar:
+- public URL
+- total leads
+- high-intent leads
+- conversion %
+- booking rate
+- last submission
+- quick actions:
+  - preview page
+  - copy link
+  - open funnel analytics
+
+2. HERO SECTION EDITOR
+Editable:
+- headline
+- subheadline
+- CTA text
+- hero image upload
+- background overlay strength
+- hero alignment
+- optional video background
+- urgency badge (“Summer Enrollment”, etc.)
+
+3. MEDIA LIBRARY
+Allow:
+- upload new media
+- reuse already-uploaded organization media
+- drag-and-drop ordering
+- delete/reorder assets
+- image optimization/compression
+
+Create sections:
+- Hero Media
+- Athlete Gallery
+- Testimonial Photos
+- Logos/Branding
+
+4. TESTIMONIALS EDITOR
+CRUD interface for:
+- athlete name
+- sport
+- testimonial quote
+- rating
+- athlete photo
+- featured toggle
+
+Allow:
+- drag reorder
+- carousel preview
+
+5. “WHO THIS IS FOR” EDITOR
+Editable cards:
+- title
+- description
+- icon
+- ordering
+
+6. BENEFITS EDITOR
+Editable benefit cards:
+- title
+- description
+- icon
+- accent color
+
+7. FORM CONFIGURATION
+Allow:
+- enable/disable fields
+- custom questions
+- required vs optional
+- commitment question customization
+- add sport-specific questions
+- add parent-specific questions
+
+8. BOOKING CONFIGURATION
+Allow:
+- enable booking CTA
+- set booking URL
+- enable immediate redirect after submission
+- customize booking button text
+
+9. BRANDING
+Allow:
+- accent color
+- gradient presets
+- button style
+- dark/light intensity
+- logo upload
+- typography presets
+
+10. LIVE PREVIEW PANEL
+Desktop + mobile preview tabs.
+Preview updates live while editing.
+
+11. ANALYTICS TAB
+Embed:
+- funnel visualization
+- UTM performance
+- abandonment rates
+- high-intent %
+- conversion rates
+- revenue impact
+
+12. AI RECOMMENDATIONS
+AI suggestions like:
+- “Shorter forms may improve completion rate”
+- “Football athletes convert best from Instagram”
+- “Your hero CTA underperforms compared to org average”
+
+UX REQUIREMENTS
+- Mobile-first
+- Dark glass TrainEfficiency aesthetic
+- Orange/gold Lead Capture identity
+- Smooth transitions
+- Sticky save bar
+- Autosave drafts
+- Unsaved changes protection
+
+IMPORTANT
+This should feel like a premium athlete funnel builder — not a generic admin settings page.
