@@ -13376,5 +13376,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerAthleteProfileRoutes } = await import("./athlete-profile-routes");
   registerAthleteProfileRoutes(app);
 
+  // ── Coach Command Center + Daily AI Briefing ──────────────────────────────────
+  const { registerCoachCommandCenterRoutes } = await import("./coach-command-center-routes");
+  registerCoachCommandCenterRoutes(app);
+
   return httpServer;
 }

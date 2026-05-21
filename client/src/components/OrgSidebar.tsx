@@ -27,6 +27,7 @@ import {
   Zap,
   Layers,
   Film,
+  Command,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -271,6 +272,7 @@ function buildNavSections(
       label: "Athlete Intelligence",
       icon: Activity,
       items: [
+        { title: "Command Center", url: `/org/${orgSlug}/coach/command-center`, icon: Command, testId: "org-nav-command-center" },
         { title: "Athlete Status", url: `/org/${orgSlug}/coach/athlete-status`, icon: Activity, testId: "org-nav-athlete-status" },
         { title: "Workflows", url: `/org/${orgSlug}/coach/workflows`, icon: Zap, testId: "org-nav-workflows" },
       ],

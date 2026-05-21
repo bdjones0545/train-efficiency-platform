@@ -2628,3 +2628,19 @@ export const orgNotificationPreferences = pgTable("org_notification_preferences"
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// ─── Coach Daily Briefings ────────────────────────────────────────────────────
+
+export const coachDailyBriefings = pgTable("coach_daily_briefings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  briefing: jsonb("briefing").notNull().default(sql`'{}'::jsonb`),
+  generatedBy: varchar("generated_by").notNull().default("gpt-4o"),
+  summary: text("summary"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCoachDailyBriefingSchema = createInsertSchema(coachDailyBriefings).omit({ id: true, createdAt: true });
+export type CoachDailyBriefing = typeof coachDailyBriefings.$inferSelect;
+export type InsertCoachDailyBriefing = z.infer<typeof insertCoachDailyBriefingSchema>;
