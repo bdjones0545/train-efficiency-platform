@@ -14259,5 +14259,9 @@ Respond with this exact JSON structure:
   const { registerCoachOutreachEngineRoutes } = await import("./coach-outreach-engine-routes");
   registerCoachOutreachEngineRoutes(app);
 
+  // ── Meta Conversions API (server-side pixel) ──────────────────────────────────
+  const { registerMetaCapiRoutes } = await import("./meta-capi");
+  registerMetaCapiRoutes(app);
+
   return httpServer;
 }
