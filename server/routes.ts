@@ -13475,15 +13475,15 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         } catch (_) {}
       }
 
-      const sgKey = process.env.SENDGRID_API_KEY;
-      const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.FROM_EMAIL || "noreply@trainefficiency.com";
-
-      if (!sgKey) {
-        console.warn(`[LeadCapture] SENDGRID_API_KEY is not set — admin notification email will not be sent for org ${org.slug}`);
-      }
-      if (!process.env.SENDGRID_FROM_EMAIL && !process.env.FROM_EMAIL) {
-        console.warn(`[LeadCapture] No SENDGRID_FROM_EMAIL or FROM_EMAIL env var — using fallback noreply address`);
-      }
+      // SendGrid client resolved via verified sender identity (same as rest of app)
+      let _sgClient: { client: any; fromEmail: string } | null = null;
+      const getSg = async () => {
+        if (!_sgClient) {
+          const { getUncachableSendGridClient } = await import("./email");
+          _sgClient = await getUncachableSendGridClient();
+        }
+        return _sgClient;
+      };
 
       // 1. Resolve admin recipient with multi-fallback chain
       let adminEmail: string | null = org.ownerEmail || org.schedulingInquiryEmail || null;
@@ -13573,12 +13573,11 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       let adminEmailError: string | null = null;
       let adminEmailSentAt: Date | null = null;
 
-      if (adminEmail && sgKey) {
+      if (adminEmail) {
         try {
-          const sgMail = await import("@sendgrid/mail");
-          sgMail.default.setApiKey(sgKey);
+          const { client: sgMail, fromEmail } = await getSg();
           console.log(`[LeadCapture] Sending admin notification → ${adminEmail} (org: ${org.slug})`);
-          const [sgResponse] = await sgMail.default.send({
+          const [sgResponse] = await sgMail.send({
             to: adminEmail,
             from: fromEmail,
             subject: `🏆 New Lead: ${athleteName} applied to ${program.name}`,
@@ -13594,10 +13593,8 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             : (emailErr.message || "Unknown SendGrid error");
           console.error(`[LeadCapture] Admin email FAILED for org ${org.slug} → ${adminEmail}:`, adminEmailError);
         }
-      } else if (!adminEmail) {
-        adminEmailStatus = "no_recipient";
       } else {
-        adminEmailStatus = "no_api_key";
+        adminEmailStatus = "no_recipient";
       }
 
       // Update submission with email audit fields (non-blocking)
@@ -13730,10 +13727,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 </body>
 </html>`;
 
-          const sgMail = await import("@sendgrid/mail");
-          sgMail.default.setApiKey(sgKey);
+          const { client: sgMail, fromEmail } = await getSg();
           console.log(`[LeadCapture] Sending applicant confirmation → ${email} (org: ${org.slug}, program: ${program.name})`);
-          const [sgApplicantResp] = await sgMail.default.send({
+          const [sgApplicantResp] = await sgMail.send({
             to: email,
             from: fromEmail,
             subject: `Your Application Was Received — ${program.name}`,
@@ -13749,7 +13745,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             : (applicantEmailErr.message || "Unknown SendGrid error");
           console.error(`[LeadCapture] Applicant email FAILED → ${email}:`, applicantEmailError);
         }
-      } else if (!sgKey) {
+      } else {
         applicantEmailStatus = "no_api_key";
       }
 
@@ -13803,13 +13799,13 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
             }).where(eq(leadCaptureSubmissions.id, submission.id));
 
             // 5. High-intent admin alert (score >= 80)
-            if (aiResult.score >= 80 && adminEmail && sgKey) {
+            if (aiResult.score >= 80 && adminEmail) {
               try {
-                const sgMail = await import("@sendgrid/mail");
-                sgMail.default.setApiKey(sgKey);
-                await sgMail.default.send({
+                const { getUncachableSendGridClient } = await import("./email");
+                const { client: sgMail, fromEmail: sgFrom } = await getUncachableSendGridClient();
+                await sgMail.send({
                   to: adminEmail,
-                  from: fromEmail,
+                  from: sgFrom,
                   subject: `🔥 HIGH-INTENT LEAD: ${athleteName} scored ${aiResult.score}/100`,
                   html: `
                     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
@@ -13859,13 +13855,6 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       if (!org) return res.status(404).json({ message: "Organization not found" });
 
       const [program] = await db.select().from(athleticPrograms).where(eq(athleticPrograms.id, submission.programId)).limit(1);
-
-      const sgKey = process.env.SENDGRID_API_KEY;
-      const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.FROM_EMAIL || "noreply@trainefficiency.com";
-
-      if (!sgKey) {
-        return res.status(500).json({ message: "SENDGRID_API_KEY is not configured" });
-      }
 
       // Resolve admin recipient with fallback chain
       let adminEmail: string | null = org.ownerEmail || org.schedulingInquiryEmail || null;
@@ -13939,11 +13928,11 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       `;
 
       console.log(`[LeadCapture] Resending admin email → ${adminEmail} for submission ${submission.id}`);
-      const sgMail = await import("@sendgrid/mail");
-      sgMail.default.setApiKey(sgKey);
-      const [sgResponse] = await sgMail.default.send({
+      const { getUncachableSendGridClient: getSgAdmin } = await import("./email");
+      const { client: sgMailAdmin, fromEmail: sgFromAdmin } = await getSgAdmin();
+      const [sgResponse] = await sgMailAdmin.send({
         to: adminEmail,
-        from: fromEmail,
+        from: sgFromAdmin,
         subject: `[Resent] 🏆 ${athleteName} applied to ${programName}`,
         html,
       });
@@ -13991,15 +13980,14 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       const [program] = await db.select().from(athleticPrograms).where(eq(athleticPrograms.id, submission.programId)).limit(1);
       const [lcProgram] = await db.select().from(lcpTable).where(eq(lcpTable.programId, submission.programId)).limit(1);
 
-      const sgKey = process.env.SENDGRID_API_KEY;
-      const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.FROM_EMAIL || "noreply@trainefficiency.com";
-      if (!sgKey) return res.status(500).json({ message: "SENDGRID_API_KEY is not configured" });
+      const { getUncachableSendGridClient: getSgApplicant } = await import("./email");
+      const { client: sgMailApplicant, fromEmail: sgFromApplicant } = await getSgApplicant();
 
       const bookingUrl = lcProgram?.bookingUrl || null;
       const orgLogoUrl = org.logoUrl || null;
       const primaryColor = org.emailPrimaryColor || org.primaryColor || "#f97316";
       const athleteFirstName = submission.athleteName.split(" ")[0];
-      const contactEmail = org.ownerEmail || org.schedulingInquiryEmail || fromEmail;
+      const contactEmail = org.ownerEmail || org.schedulingInquiryEmail || sgFromApplicant;
       const websiteUrl = org.websiteUrl || null;
       const programName = program?.name || "Our Program";
       const submissionTimestamp = submission.createdAt ? new Date(submission.createdAt).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "Unknown";
@@ -14062,12 +14050,10 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
 </body>
 </html>`;
 
-      const sgMail = await import("@sendgrid/mail");
-      sgMail.default.setApiKey(sgKey);
       console.log(`[LeadCapture] Resending applicant confirmation → ${email} for submission ${submission.id}`);
-      const [sgResp] = await sgMail.default.send({
+      const [sgResp] = await sgMailApplicant.send({
         to: email,
-        from: fromEmail,
+        from: sgFromApplicant,
         subject: `Your Application Was Received — ${programName}`,
         html: applicantHtml,
       });

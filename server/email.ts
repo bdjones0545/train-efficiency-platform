@@ -130,7 +130,7 @@ async function getCredentials() {
   return { apiKey: connectionSettings.settings.api_key, email: connectionSettings.settings.from_email };
 }
 
-async function getUncachableSendGridClient() {
+export async function getUncachableSendGridClient() {
   const { apiKey, email } = await getCredentials();
   sgMail.setApiKey(apiKey);
   return { client: sgMail, fromEmail: email };
