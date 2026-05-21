@@ -1188,6 +1188,9 @@ export default function AdminConfigurationPage() {
       setAddingSimpleProgram(false);
       setNewSimpleProgramName("");
       setNewSimpleProgramSlug("");
+      if (simpleProgramType === "lead_capture") {
+        navigate("/command-center");
+      }
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -2667,7 +2670,7 @@ export default function AdminConfigurationPage() {
                   { type: "scheduling", label: "Scheduling Program", desc: "Create a bookable training schedule for teams or groups.", icon: <CalendarCheck className="h-5 w-5" /> },
                   { type: "pr_tracker", label: "PR Tracker", desc: "Let athletes log and track personal records.", icon: <BarChart2 className="h-5 w-5" /> },
                   { type: "workout_builder", label: "Workout Builder", desc: "Create structured workouts athletes can access.", icon: <Hammer className="h-5 w-5" /> },
-                  { type: "lead_capture", label: "Lead Capture Program", desc: "A public-facing high-conversion athlete application funnel.", icon: <Zap className="h-5 w-5" />, badge: "NEW" },
+                  { type: "lead_capture", label: "Lead Capture Program", desc: "Create high-converting athlete application funnels and paid-ad landing pages.", icon: <Zap className="h-5 w-5" />, badge: "NEW" },
                 ].map((opt) => (
                   <button
                     key={opt.type}
@@ -2910,9 +2913,14 @@ export default function AdminConfigurationPage() {
                             </Button>
                           </>
                         ) : p.type === "lead_capture" ? (
-                          <Button size="sm" variant="ghost" className="h-7 text-orange-500 hover:text-orange-600" onClick={() => window.open(`/apply/${orgData?.slug}/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </Button>
+                          <>
+                            <Button size="sm" variant="ghost" className="h-7 text-orange-500 hover:text-orange-600" onClick={() => navigate("/command-center")} data-testid={`button-configure-program-${p.id}`}>
+                              <Settings className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-muted-foreground hover:text-foreground" onClick={() => window.open(`/apply/${orgData?.slug}/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
                         ) : (
                           <Button size="sm" variant="ghost" className="h-7" onClick={() => navigate(`/org/${orgData?.slug}/programs/${p.slug}`)} data-testid={`button-open-program-${p.id}`}>
                             <Link2 className="h-3.5 w-3.5" />
