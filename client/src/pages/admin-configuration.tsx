@@ -621,6 +621,8 @@ export default function AdminConfigurationPage() {
   const [newProgramEndHour, setNewProgramEndHour] = useState("20");
 
   const [showProgramTypeModal, setShowProgramTypeModal] = useState(false);
+  const [showFunnelTypeModal, setShowFunnelTypeModal] = useState(false);
+  const [selectedFunnelType, setSelectedFunnelType] = useState<"athlete_application" | "team_training" | "employment_opportunity">("athlete_application");
   const [addingSimpleProgram, setAddingSimpleProgram] = useState(false);
   const [simpleProgramType, setSimpleProgramType] = useState<"pr_tracker" | "workout_builder" | "lead_capture">("pr_tracker");
   const [newSimpleProgramName, setNewSimpleProgramName] = useState("");
@@ -1182,14 +1184,14 @@ export default function AdminConfigurationPage() {
       const res = await apiRequest("POST", "/api/athletic/programs", data);
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Program tool created" });
+    onSuccess: (data: any) => {
+      toast({ title: "Program created" });
       queryClient.invalidateQueries({ queryKey: ["/api/athletic/programs", orgId] });
       setAddingSimpleProgram(false);
       setNewSimpleProgramName("");
       setNewSimpleProgramSlug("");
       if (simpleProgramType === "lead_capture") {
-        navigate("/command-center");
+        navigate(`/lead-capture/programs/${data.id}?funnelType=${selectedFunnelType}`);
       }
     },
     onError: (error: Error) => {
@@ -2679,8 +2681,13 @@ export default function AdminConfigurationPage() {
                       setShowProgramTypeModal(false);
                       if (opt.type === "scheduling") {
                         setAddingProgram(true);
+                      } else if (opt.type === "lead_capture") {
+                        setSimpleProgramType("lead_capture");
+                        setNewSimpleProgramName("");
+                        setNewSimpleProgramSlug("");
+                        setShowFunnelTypeModal(true);
                       } else {
-                        setSimpleProgramType(opt.type as "pr_tracker" | "workout_builder" | "lead_capture");
+                        setSimpleProgramType(opt.type as "pr_tracker" | "workout_builder");
                         setNewSimpleProgramName("");
                         setNewSimpleProgramSlug("");
                         setAddingSimpleProgram(true);
@@ -2704,16 +2711,105 @@ export default function AdminConfigurationPage() {
             </DialogContent>
           </Dialog>
 
+          {/* Funnel Type selection modal (second step after choosing Lead Capture) */}
+          <Dialog open={showFunnelTypeModal} onOpenChange={setShowFunnelTypeModal}>
+            <DialogContent data-testid="dialog-funnel-type">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-orange-500" /> Choose Funnel Type
+                </DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground -mt-1">Select the purpose of this funnel. Each type comes pre-loaded with optimized fields, automations, and AI scoring.</p>
+              <div className="space-y-3 pt-1">
+                {[
+                  {
+                    value: "athlete_application" as const,
+                    label: "Athlete Application",
+                    desc: "High-converting B2C funnels for individual athlete recruiting. Captures goals, experience, commitment, and AI qualifies each lead.",
+                    icon: <Dumbbell className="h-5 w-5" />,
+                    color: "border-orange-500/40 bg-orange-50/30 dark:bg-orange-950/20",
+                    iconColor: "text-orange-500",
+                    badge: "bg-orange-500",
+                    badgeLabel: "B2C",
+                  },
+                  {
+                    value: "team_training" as const,
+                    label: "Team Training",
+                    desc: "B2B outreach to schools and organizations. Captures budget, team size, decision-maker info, and auto-creates pipeline deals.",
+                    icon: <Users className="h-5 w-5" />,
+                    color: "border-cyan-500/40 bg-cyan-50/30 dark:bg-cyan-950/20",
+                    iconColor: "text-cyan-500",
+                    badge: "bg-cyan-500",
+                    badgeLabel: "B2B",
+                  },
+                  {
+                    value: "employment_opportunity" as const,
+                    label: "Employment Opportunities",
+                    desc: "Recruit coaches and staff. Collects certifications, experience, availability, and triggers an AI-powered candidate scoring workflow.",
+                    icon: <Award className="h-5 w-5" />,
+                    color: "border-purple-500/40 bg-purple-50/30 dark:bg-purple-950/20",
+                    iconColor: "text-purple-500",
+                    badge: "bg-purple-500",
+                    badgeLabel: "HIRING",
+                  },
+                ].map((ft) => (
+                  <button
+                    key={ft.value}
+                    className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left hover:opacity-90 transition-all ${ft.color} ${selectedFunnelType === ft.value ? "ring-2 ring-offset-1 ring-offset-background ring-current" : ""}`}
+                    onClick={() => {
+                      setSelectedFunnelType(ft.value);
+                      setShowFunnelTypeModal(false);
+                      setAddingSimpleProgram(true);
+                    }}
+                    data-testid={`button-funnel-type-${ft.value}`}
+                  >
+                    <span className={`mt-0.5 ${ft.iconColor}`}>{ft.icon}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold">{ft.label}</p>
+                        <span className={`text-[10px] font-bold ${ft.badge} text-white px-1.5 py-0.5 rounded-full tracking-wide`}>{ft.badgeLabel}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{ft.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {addingSimpleProgram && (
-            <Card className={`p-4 space-y-3 mb-4 ${simpleProgramType === "lead_capture" ? "border-orange-500/40 bg-orange-50/30 dark:bg-orange-950/10" : ""}`} data-testid="card-add-simple-program">
+            <Card
+              className={`p-4 space-y-3 mb-4 ${
+                simpleProgramType === "lead_capture" && selectedFunnelType === "team_training"
+                  ? "border-cyan-500/40 bg-cyan-50/30 dark:bg-cyan-950/10"
+                  : simpleProgramType === "lead_capture" && selectedFunnelType === "employment_opportunity"
+                  ? "border-purple-500/40 bg-purple-50/30 dark:bg-purple-950/10"
+                  : simpleProgramType === "lead_capture"
+                  ? "border-orange-500/40 bg-orange-50/30 dark:bg-orange-950/10"
+                  : ""
+              }`}
+              data-testid="card-add-simple-program"
+            >
               <div className="flex items-center gap-2">
-                {simpleProgramType === "lead_capture" && <Zap className="h-4 w-4 text-orange-500" />}
+                {simpleProgramType === "lead_capture" && selectedFunnelType === "team_training" && <Users className="h-4 w-4 text-cyan-500" />}
+                {simpleProgramType === "lead_capture" && selectedFunnelType === "employment_opportunity" && <Award className="h-4 w-4 text-purple-500" />}
+                {simpleProgramType === "lead_capture" && selectedFunnelType === "athlete_application" && <Zap className="h-4 w-4 text-orange-500" />}
                 <p className="text-sm font-semibold">
-                  New {simpleProgramType === "pr_tracker" ? "PR Tracker" : simpleProgramType === "workout_builder" ? "Workout Builder" : "Lead Capture Program"}
+                  New {simpleProgramType === "pr_tracker" ? "PR Tracker" : simpleProgramType === "workout_builder" ? "Workout Builder" :
+                    selectedFunnelType === "team_training" ? "Team Training Funnel" :
+                    selectedFunnelType === "employment_opportunity" ? "Employment Funnel" :
+                    "Athlete Application Funnel"}
                 </p>
               </div>
               {simpleProgramType === "lead_capture" && (
-                <p className="text-xs text-muted-foreground">Creates a public athlete application funnel at <code className="bg-muted px-1 rounded">/apply/[your-org]/[slug]</code></p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedFunnelType === "team_training"
+                    ? "Generates B2B team/school leads at"
+                    : selectedFunnelType === "employment_opportunity"
+                    ? "Recruits coaches & staff at"
+                    : "Creates a public athlete application funnel at"}{" "}
+                  <code className="bg-muted px-1 rounded">/apply/[your-org]/[slug]</code>
+                </p>
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">

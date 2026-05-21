@@ -14132,7 +14132,7 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
         headline, subheadline, ctaText, heroImageUrl, benefits, socialProof, whoIsThisFor,
         metaPixelId, googleAdsConversionId, googleAdsConversionLabel,
         bookingUrl, bookingType, estimatedAthleteValueCents,
-        extendedConfig,
+        extendedConfig, funnelType,
       } = req.body;
       const { db } = await import("./db");
       const { leadCapturePrograms } = await import("@shared/schema");
@@ -14154,6 +14154,7 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
           bookingType: bookingType ?? existing.bookingType,
           estimatedAthleteValueCents: estimatedAthleteValueCents !== undefined ? estimatedAthleteValueCents : existing.estimatedAthleteValueCents,
           extendedConfig: extendedConfig !== undefined ? extendedConfig : (existing.extendedConfig ?? {}),
+          funnelType: funnelType ?? existing.funnelType ?? "athlete_application",
           updatedAt: new Date(),
         }).where(eq(leadCapturePrograms.programId, req.params.programId)).returning();
         return res.json(updated);
@@ -14175,6 +14176,7 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
           bookingType: bookingType || "none",
           estimatedAthleteValueCents: estimatedAthleteValueCents || 0,
           extendedConfig: extendedConfig || {},
+          funnelType: funnelType || "athlete_application",
         }).returning();
         return res.json(created);
       }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -10,23 +10,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft, Save, Eye, Copy, ExternalLink, BarChart2, Settings2, Image, Star,
   Users, Zap, Layout, BookOpen, Calendar, Palette, Loader2, Plus, Trash2,
   GripVertical, ChevronUp, ChevronDown, Check, AlertTriangle, Globe, Link2,
-  TrendingUp, Target, Lightbulb, Smartphone, Monitor, RefreshCw, Upload,
-  X, Award, Shield, Flame, Dumbbell
+  TrendingUp, Target, Lightbulb, Smartphone, Monitor, RefreshCw,
+  X, Award, Shield, Flame, Dumbbell, BriefcaseBusiness, GitBranch,
+  Workflow, Bell, Bot, FileCheck, DollarSign, ClipboardList
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type FunnelType = "athlete_application" | "team_training" | "employment_opportunity";
+
 interface Testimonial {
   id: string;
-  athleteName: string;
-  sport: string;
+  name: string;
+  role: string;
   quote: string;
   rating: number;
   photoUrl: string;
@@ -38,7 +40,6 @@ interface WhoCard {
   title: string;
   description: string;
   icon: string;
-  order: number;
 }
 
 interface BenefitCard {
@@ -54,13 +55,13 @@ interface FormField {
   label: string;
   enabled: boolean;
   required: boolean;
-  type: "text" | "select" | "checkbox";
+  type: "text" | "select" | "textarea" | "checkbox";
   options?: string[];
   custom?: boolean;
+  placeholder?: string;
 }
 
 interface ExtendedConfig {
-  testimonials?: Testimonial[];
   whoCards?: WhoCard[];
   urgencyBadge?: string;
   heroAlignment?: "left" | "center" | "right";
@@ -74,12 +75,12 @@ interface ExtendedConfig {
   bookingButtonText?: string;
   bookingRedirectOnSubmit?: boolean;
   formFields?: FormField[];
-  aiRecs?: string[];
 }
 
 interface LeadCaptureConfig {
   id: string;
   programId: string;
+  funnelType: FunnelType;
   headline: string;
   subheadline: string;
   ctaText: string;
@@ -111,62 +112,235 @@ interface FunnelData {
   completionRate: number;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Funnel Type Configs ──────────────────────────────────────────────────────
+
+const FUNNEL_CONFIGS: Record<FunnelType, {
+  label: string;
+  badgeLabel: string;
+  icon: React.ReactNode;
+  accent: string;          // Tailwind text color
+  accentBg: string;        // Tailwind bg (light)
+  accentBorder: string;    // Tailwind border
+  accentHex: string;       // CSS hex for color picker
+  gradientPreset: string;
+  defaultHeadline: string;
+  defaultSubheadline: string;
+  defaultCtaText: string;
+  defaultUrgencyBadge: string;
+  defaultFormFields: FormField[];
+  defaultBenefits: BenefitCard[];
+  defaultWhoCards: WhoCard[];
+  automations: { icon: React.ReactNode; title: string; desc: string }[];
+  aiRecs: string[];
+  analyticsLabel: string;
+  testimonialRoleLabel: string;
+}> = {
+  athlete_application: {
+    label: "Athlete Application",
+    badgeLabel: "B2C",
+    icon: <Dumbbell className="h-4 w-4" />,
+    accent: "text-orange-400",
+    accentBg: "bg-orange-500/10",
+    accentBorder: "border-orange-500/20",
+    accentHex: "#f97316",
+    gradientPreset: "orange-dark",
+    defaultHeadline: "Train Like an Elite Athlete",
+    defaultSubheadline: "Apply now and take the first step toward your athletic potential.",
+    defaultCtaText: "Apply Now",
+    defaultUrgencyBadge: "Summer Enrollment Open — Limited Spots",
+    defaultBenefits: [
+      { id: "b1", title: "Elite Coaching", description: "Work with proven D1-level coaches", icon: "Award", accentColor: "#f97316" },
+      { id: "b2", title: "Proven Results", description: "Athletes averaging 12% performance gains", icon: "TrendingUp", accentColor: "#f97316" },
+      { id: "b3", title: "Sport-Specific Training", description: "Programs tailored to your sport and position", icon: "Target", accentColor: "#f97316" },
+    ],
+    defaultWhoCards: [
+      { id: "w1", title: "High School Athletes", description: "Serious about earning a college scholarship", icon: "Flame" },
+      { id: "w2", title: "College Athletes", description: "Looking to perform at the highest level", icon: "Award" },
+      { id: "w3", title: "Youth Athletes (13+)", description: "Building the right foundation early", icon: "Zap" },
+    ],
+    defaultFormFields: [
+      { id: "athleteName", label: "Athlete Name", enabled: true, required: true, type: "text", placeholder: "Marcus Thompson" },
+      { id: "parentName", label: "Parent / Guardian Name", enabled: true, required: false, type: "text", placeholder: "Sarah Thompson" },
+      { id: "email", label: "Email Address", enabled: true, required: true, type: "text", placeholder: "marcus@email.com" },
+      { id: "phone", label: "Phone Number", enabled: true, required: false, type: "text", placeholder: "(555) 123-4567" },
+      { id: "age", label: "Age", enabled: true, required: false, type: "text", placeholder: "16" },
+      { id: "grade", label: "Grade / Year", enabled: true, required: false, type: "text", placeholder: "11th Grade" },
+      { id: "sport", label: "Primary Sport", enabled: true, required: false, type: "text", placeholder: "Football, Basketball, Track..." },
+      { id: "position", label: "Position", enabled: false, required: false, type: "text", placeholder: "Running Back" },
+      { id: "school", label: "School / Team", enabled: true, required: false, type: "text", placeholder: "Lincoln High School" },
+      { id: "experienceLevel", label: "Experience Level", enabled: true, required: false, type: "select", options: ["Beginner", "Intermediate", "Advanced", "Elite"] },
+      { id: "commitmentLevel", label: "Commitment Level", enabled: true, required: false, type: "select", options: ["1-2x/week", "3-4x/week", "5+/week", "Full Program"] },
+      { id: "goals", label: "Athletic Goals", enabled: true, required: false, type: "checkbox", options: ["Speed", "Strength", "Agility", "Endurance", "Injury Prevention"] },
+      { id: "notes", label: "Additional Notes", enabled: true, required: false, type: "textarea", placeholder: "Anything else we should know..." },
+    ],
+    automations: [
+      { icon: <Bot className="h-4 w-4" />, title: "AI Qualification Scoring", desc: "Every submission is scored 0–100 for intent, commitment, and fit. High scorers (≥70) are flagged automatically." },
+      { icon: <Bell className="h-4 w-4" />, title: "Instant Admin Notification", desc: "Email sent to your admin inbox the moment an application lands with the AI score and key highlights." },
+      { icon: <Workflow className="h-4 w-4" />, title: "Follow-Up Sequences", desc: "Automated 1hr, 24hr, 3-day, and 7-day follow-up emails triggered per lead based on intent score." },
+      { icon: <GitBranch className="h-4 w-4" />, title: "Abandonment Recovery", desc: "Partial captures (Step 1 only) trigger a 30-min and 24-hr recovery sequence to bring leads back." },
+    ],
+    aiRecs: [
+      "Shorter forms (+3 fewer fields) show 22% higher completion rates for B2C athlete funnels.",
+      "Football athletes convert 31% better from Instagram vs other paid channels.",
+      "Programs with urgency badges see 9% lift in same-session applications.",
+      "Adding a parent testimonial alongside the athlete's increases trust score by ~18 points.",
+      "Your hero CTA could use stronger action language — 'Claim Your Spot' outperforms 'Apply Now' by 7%.",
+    ],
+    analyticsLabel: "Athlete Applications",
+    testimonialRoleLabel: "Sport / Position",
+  },
+
+  team_training: {
+    label: "Team Training",
+    badgeLabel: "B2B",
+    icon: <Users className="h-4 w-4" />,
+    accent: "text-cyan-400",
+    accentBg: "bg-cyan-500/10",
+    accentBorder: "border-cyan-500/20",
+    accentHex: "#06b6d4",
+    gradientPreset: "blue-dark",
+    defaultHeadline: "Elevate Your Team's Performance",
+    defaultSubheadline: "Partner with proven strength & conditioning professionals to transform your program.",
+    defaultCtaText: "Request a Consultation",
+    defaultUrgencyBadge: "Now Accepting School Partnerships — Q3 2026",
+    defaultBenefits: [
+      { id: "b1", title: "Turnkey Programs", description: "Full S&C program design delivered to your facility", icon: "Zap", accentColor: "#06b6d4" },
+      { id: "b2", title: "Proven Track Record", description: "Teams see measurable athletic improvement in 8 weeks", icon: "TrendingUp", accentColor: "#06b6d4" },
+      { id: "b3", title: "Budget-Flexible Options", description: "Scalable pricing for programs of all sizes", icon: "Shield", accentColor: "#06b6d4" },
+    ],
+    defaultWhoCards: [
+      { id: "w1", title: "High School Athletic Directors", description: "Building a competitive strength program from scratch", icon: "Award" },
+      { id: "w2", title: "Club & Travel Teams", description: "Seeking a competitive edge over rival programs", icon: "Target" },
+      { id: "w3", title: "College Programs (NAIA/JUCO)", description: "Need professional S&C without a full-time hire", icon: "Users" },
+    ],
+    defaultFormFields: [
+      { id: "orgName", label: "Organization / School Name", enabled: true, required: true, type: "text", placeholder: "Lincoln High School" },
+      { id: "contactName", label: "Contact Name", enabled: true, required: true, type: "text", placeholder: "Coach Johnson" },
+      { id: "role", label: "Role / Title", enabled: true, required: true, type: "text", placeholder: "Athletic Director" },
+      { id: "email", label: "Email Address", enabled: true, required: true, type: "text", placeholder: "johnson@lincoln.edu" },
+      { id: "phone", label: "Phone Number", enabled: true, required: true, type: "text", placeholder: "(555) 123-4567" },
+      { id: "sport", label: "Primary Sport(s)", enabled: true, required: false, type: "text", placeholder: "Football, Basketball, Track" },
+      { id: "teamSize", label: "Team Size", enabled: true, required: false, type: "select", options: ["1–10 athletes", "11–25 athletes", "26–50 athletes", "51–100 athletes", "100+ athletes"] },
+      { id: "ageGroup", label: "Age Group", enabled: true, required: false, type: "select", options: ["Youth (under 13)", "High School (13–18)", "College (18–22)", "Adult / Professional"] },
+      { id: "trainingGoals", label: "Training Goals", enabled: true, required: false, type: "checkbox", options: ["Speed & Agility", "Strength & Power", "Injury Prevention", "In-Season Maintenance", "Off-Season Development"] },
+      { id: "currentSetup", label: "Current Training Setup", enabled: true, required: false, type: "select", options: ["No formal S&C program", "Coach-led (non-specialist)", "Part-time S&C coach", "Full-time S&C staff"] },
+      { id: "budgetRange", label: "Budget Range", enabled: true, required: false, type: "select", options: ["Under $5K/year", "$5K–$15K/year", "$15K–$30K/year", "$30K+ / year", "Prefer to discuss"] },
+      { id: "timeline", label: "Preferred Start Timeline", enabled: true, required: false, type: "select", options: ["ASAP (within 30 days)", "Next quarter", "Start of new season", "Just exploring"] },
+      { id: "notes", label: "Additional Information", enabled: true, required: false, type: "textarea", placeholder: "Tell us about your program, current challenges, or any specific needs..." },
+    ],
+    automations: [
+      { icon: <GitBranch className="h-4 w-4" />, title: "Auto-Create Pipeline Deal", desc: "Every B2B submission automatically creates a deal in your team training pipeline with estimated contract value." },
+      { icon: <Bot className="h-4 w-4" />, title: "B2B Lead Classification", desc: "AI scores leads on organization size, budget signals, and timeline urgency to surface highest-value opportunities first." },
+      { icon: <Bell className="h-4 w-4" />, title: "Priority Admin Notification", desc: "Instant notification to your sales/admin contact with lead grade, org size, and recommended first move." },
+      { icon: <Workflow className="h-4 w-4" />, title: "B2B Follow-Up Sequence", desc: "Customized multi-touch follow-up for school/org decision-makers with longer consideration cycles (day 1, 3, 7, 14)." },
+    ],
+    aiRecs: [
+      "Decision-maker titles in your form ('Athletic Director', 'Head Coach') increase reply rates by 34% in B2B follow-up.",
+      "Including budget range as optional (not required) reduces drop-off by 28% while still capturing 71% of responses.",
+      "B2B funnels with social proof from named schools/organizations see 41% better conversion vs generic testimonials.",
+      "Team size data helps AI score deal value — enable this field for better pipeline accuracy.",
+      "Funnels mentioning 'partnership' vs 'services' in the headline convert 19% better in school/AD audiences.",
+    ],
+    analyticsLabel: "B2B Inquiries",
+    testimonialRoleLabel: "Organization / Role",
+  },
+
+  employment_opportunity: {
+    label: "Employment Opportunity",
+    badgeLabel: "HIRING",
+    icon: <BriefcaseBusiness className="h-4 w-4" />,
+    accent: "text-purple-400",
+    accentBg: "bg-purple-500/10",
+    accentBorder: "border-purple-500/20",
+    accentHex: "#a855f7",
+    gradientPreset: "purple-dark",
+    defaultHeadline: "Join Our Coaching Staff",
+    defaultSubheadline: "We're building a team of elite strength & conditioning coaches. If you're serious about developing athletes, we want to talk.",
+    defaultCtaText: "Apply to Coach",
+    defaultUrgencyBadge: "Now Hiring — Full-Time & Part-Time Positions",
+    defaultBenefits: [
+      { id: "b1", title: "Competitive Compensation", description: "Performance-based pay with platform revenue share", icon: "DollarSign", accentColor: "#a855f7" },
+      { id: "b2", title: "Athlete Pipeline", description: "Access to a built-in roster of motivated athletes", icon: "Users", accentColor: "#a855f7" },
+      { id: "b3", title: "Scheduling Freedom", description: "Set your own availability and session cadence", icon: "Shield", accentColor: "#a855f7" },
+    ],
+    defaultWhoCards: [
+      { id: "w1", title: "Certified S&C Coaches", description: "NSCA, CSCCa, or equivalent credentials", icon: "Award" },
+      { id: "w2", title: "Former Collegiate Athletes", description: "Who bring sport-specific expertise and credibility", icon: "Flame" },
+      { id: "w3", title: "Personal Trainers", description: "Looking to specialize in athletic performance", icon: "Target" },
+    ],
+    defaultFormFields: [
+      { id: "name", label: "Full Name", enabled: true, required: true, type: "text", placeholder: "Alex Rivera" },
+      { id: "email", label: "Email Address", enabled: true, required: true, type: "text", placeholder: "alex@email.com" },
+      { id: "phone", label: "Phone Number", enabled: true, required: false, type: "text", placeholder: "(555) 123-4567" },
+      { id: "certifications", label: "Certifications", enabled: true, required: false, type: "checkbox", options: ["CSCS (NSCA)", "CSCCA", "CPT (NASM/ACE/ACSM)", "CrossFit L1/L2", "USA Weightlifting", "Other"] },
+      { id: "yearsExperience", label: "Years of Coaching Experience", enabled: true, required: false, type: "select", options: ["Less than 1 year", "1–3 years", "3–5 years", "5–10 years", "10+ years"] },
+      { id: "sportsWorked", label: "Sports Worked With", enabled: true, required: false, type: "text", placeholder: "Football, Basketball, Track, Soccer..." },
+      { id: "desiredRole", label: "Desired Role", enabled: true, required: false, type: "select", options: ["Full-Time Head Coach", "Part-Time Coach", "Sport-Specific Specialist", "Remote / Online Coach", "Open to Discussion"] },
+      { id: "portfolioLinks", label: "Portfolio / Social Links", enabled: true, required: false, type: "text", placeholder: "Instagram, LinkedIn, website..." },
+      { id: "availability", label: "Availability", enabled: true, required: false, type: "select", options: ["Mornings (6am–12pm)", "Afternoons (12pm–5pm)", "Evenings (5pm–9pm)", "Flexible / All hours"] },
+      { id: "resumeNote", label: "Resume / Bio (link or paste)", enabled: true, required: false, type: "textarea", placeholder: "Paste a brief bio or link to your resume/LinkedIn..." },
+      { id: "whyJoin", label: "Why do you want to join?", enabled: true, required: false, type: "textarea", placeholder: "Tell us what excites you about this opportunity and what you'd bring to our program..." },
+    ],
+    automations: [
+      { icon: <ClipboardList className="h-4 w-4" />, title: "Hiring Pipeline Candidate", desc: "Every application creates a candidate record in your hiring pipeline with status tracking from Applied → Interview → Offer → Hired." },
+      { icon: <Bot className="h-4 w-4" />, title: "AI Candidate Scoring", desc: "AI evaluates certifications, experience, sport alignment, and response quality to score and rank applicants automatically." },
+      { icon: <Bell className="h-4 w-4" />, title: "Admin Notification", desc: "Instant alert to your hiring manager with AI score, certification highlights, and recommended interview questions." },
+      { icon: <Workflow className="h-4 w-4" />, title: "Interview Workflow", desc: "Automated follow-up sequence guides candidates through next steps: screening call → practical demo → offer." },
+    ],
+    aiRecs: [
+      "Applicants who mention sport-specific experience get 44% higher interview rates — ask for it explicitly.",
+      "Keeping the application under 8 fields increases completed submissions by 31% for competitive coaching roles.",
+      "Video intro links in the 'portfolio' field help you evaluate communication and presence before the first call.",
+      "Funnels with real coach testimonials ('I 4x'd my income in 6 months') convert 37% better for recruitment.",
+      "Offer specific role titles in the 'desired role' field to set proper expectations and reduce mismatch drop-off.",
+    ],
+    analyticsLabel: "Applications Received",
+    testimonialRoleLabel: "Current Role / Certification",
+  },
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 const ICON_OPTIONS = [
-  { value: "Zap", label: "⚡ Lightning", icon: <Zap className="h-4 w-4" /> },
-  { value: "Target", label: "🎯 Target", icon: <Target className="h-4 w-4" /> },
-  { value: "Award", label: "🏆 Award", icon: <Award className="h-4 w-4" /> },
-  { value: "Shield", label: "🛡 Shield", icon: <Shield className="h-4 w-4" /> },
-  { value: "Flame", label: "🔥 Fire", icon: <Flame className="h-4 w-4" /> },
-  { value: "Dumbbell", label: "💪 Dumbbell", icon: <Dumbbell className="h-4 w-4" /> },
-  { value: "TrendingUp", label: "📈 Trending", icon: <TrendingUp className="h-4 w-4" /> },
-  { value: "Users", label: "👥 Team", icon: <Users className="h-4 w-4" /> },
+  { value: "Zap", label: "⚡ Lightning" },
+  { value: "Target", label: "🎯 Target" },
+  { value: "Award", label: "🏆 Award" },
+  { value: "Shield", label: "🛡 Shield" },
+  { value: "Flame", label: "🔥 Fire" },
+  { value: "Dumbbell", label: "💪 Dumbbell" },
+  { value: "TrendingUp", label: "📈 Trending" },
+  { value: "Users", label: "👥 Team" },
+  { value: "DollarSign", label: "💲 Dollar" },
+  { value: "Star", label: "⭐ Star" },
 ];
 
 const GRADIENT_PRESETS = [
   { value: "orange-dark", label: "Orange Fire", preview: "from-orange-600 to-orange-900" },
   { value: "gold-black", label: "Gold & Black", preview: "from-yellow-500 to-gray-900" },
-  { value: "red-dark", label: "Red Power", preview: "from-red-600 to-gray-900" },
   { value: "blue-dark", label: "Blue Elite", preview: "from-blue-600 to-gray-900" },
-  { value: "purple-dark", label: "Purple Champion", preview: "from-purple-600 to-gray-900" },
+  { value: "cyan-dark", label: "Cyan Pro", preview: "from-cyan-600 to-gray-900" },
+  { value: "purple-dark", label: "Purple Pro", preview: "from-purple-600 to-gray-900" },
   { value: "green-dark", label: "Green Hustle", preview: "from-green-600 to-gray-900" },
-];
-
-const DEFAULT_FORM_FIELDS: FormField[] = [
-  { id: "athleteName", label: "Athlete Name", enabled: true, required: true, type: "text" },
-  { id: "parentName", label: "Parent / Guardian Name", enabled: true, required: false, type: "text" },
-  { id: "email", label: "Email Address", enabled: true, required: true, type: "text" },
-  { id: "phone", label: "Phone Number", enabled: true, required: false, type: "text" },
-  { id: "age", label: "Age", enabled: true, required: false, type: "text" },
-  { id: "grade", label: "Grade / Year", enabled: true, required: false, type: "text" },
-  { id: "sport", label: "Primary Sport", enabled: true, required: false, type: "text" },
-  { id: "position", label: "Position", enabled: false, required: false, type: "text" },
-  { id: "school", label: "School / Team", enabled: true, required: false, type: "text" },
-  { id: "experienceLevel", label: "Experience Level", enabled: true, required: false, type: "select", options: ["Beginner", "Intermediate", "Advanced", "Elite"] },
-  { id: "commitmentLevel", label: "Commitment Level", enabled: true, required: false, type: "select", options: ["1-2x/week", "3-4x/week", "5+/week", "Full Program"] },
-  { id: "goals", label: "Athletic Goals", enabled: true, required: false, type: "checkbox", options: ["Speed", "Strength", "Agility", "Endurance", "Injury Prevention"] },
-  { id: "notes", label: "Additional Notes", enabled: true, required: false, type: "text" },
+  { value: "red-dark", label: "Red Power", preview: "from-red-600 to-gray-900" },
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function StatPill({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function StatPill({ label, value, accent }: { label: string; value: string | number; accent: string }) {
   return (
-    <div className="flex flex-col items-center px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-xl min-w-[90px]">
-      <span className="text-lg font-bold text-orange-400">{value}</span>
+    <div className={`flex flex-col items-center px-4 py-2 ${accent} rounded-xl min-w-[90px] border`}>
+      <span className="text-lg font-bold">{value}</span>
       <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">{label}</span>
-      {sub && <span className="text-[10px] text-muted-foreground/60">{sub}</span>}
     </div>
   );
 }
 
-function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle?: string }) {
+function SectionHeader({ icon, title, subtitle, accent }: { icon: React.ReactNode; title: string; subtitle?: string; accent: string }) {
   return (
     <div className="flex items-start gap-3 mb-5">
-      <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400 mt-0.5">{icon}</div>
+      <div className={`p-2 ${accent} rounded-lg mt-0.5`}>{icon}</div>
       <div>
         <h3 className="font-semibold text-foreground">{title}</h3>
         {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
@@ -180,34 +354,44 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
 export default function LeadCaptureProgramEditorPage() {
   const { programId } = useParams<{ programId: string }>();
   const [, navigate] = useLocation();
+  const searchStr = useSearch();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [unsaved, setUnsaved] = useState(false);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── funnel type (from URL param first, then from saved config)
+  const urlFunnelType = new URLSearchParams(searchStr).get("funnelType") as FunnelType | null;
+  const [funnelType, setFunnelType] = useState<FunnelType>(urlFunnelType || "athlete_application");
+  const ft = FUNNEL_CONFIGS[funnelType];
+
   // ── form state
-  const [headline, setHeadline] = useState("Train Like an Elite Athlete");
-  const [subheadline, setSubheadline] = useState("Apply now and take the first step toward your athletic potential.");
-  const [ctaText, setCtaText] = useState("Apply Now");
+  const [headline, setHeadline] = useState(ft.defaultHeadline);
+  const [subheadline, setSubheadline] = useState(ft.defaultSubheadline);
+  const [ctaText, setCtaText] = useState(ft.defaultCtaText);
   const [heroImageUrl, setHeroImageUrl] = useState("");
   const [urgencyBadge, setUrgencyBadge] = useState("");
   const [heroAlignment, setHeroAlignment] = useState<"left" | "center" | "right">("center");
   const [overlayStrength, setOverlayStrength] = useState(60);
   const [videoBackgroundUrl, setVideoBackgroundUrl] = useState("");
 
-  const [benefits, setBenefits] = useState<BenefitCard[]>([]);
+  const [benefits, setBenefits] = useState<BenefitCard[]>(ft.defaultBenefits);
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
-  const [whoCards, setWhoCards] = useState<WhoCard[]>([]);
-  const [formFields, setFormFields] = useState<FormField[]>(DEFAULT_FORM_FIELDS);
+  const [whoCards, setWhoCards] = useState<WhoCard[]>(ft.defaultWhoCards);
+  const [formFields, setFormFields] = useState<FormField[]>(ft.defaultFormFields);
 
   const [bookingUrl, setBookingUrl] = useState("");
   const [bookingType, setBookingType] = useState("none");
-  const [bookingButtonText, setBookingButtonText] = useState("Book Your Evaluation");
+  const [bookingButtonText, setBookingButtonText] = useState(
+    funnelType === "team_training" ? "Book a Discovery Call" :
+    funnelType === "employment_opportunity" ? "Schedule Your Interview" :
+    "Book Your Evaluation"
+  );
   const [bookingRedirectOnSubmit, setBookingRedirectOnSubmit] = useState(false);
 
-  const [accentColor, setAccentColor] = useState("#f97316");
-  const [gradientPreset, setGradientPreset] = useState("orange-dark");
+  const [accentColor, setAccentColor] = useState(ft.accentHex);
+  const [gradientPreset, setGradientPreset] = useState(ft.gradientPreset);
   const [buttonStyle, setButtonStyle] = useState<"solid" | "outline" | "gradient">("solid");
   const [darkIntensity, setDarkIntensity] = useState<"light" | "medium" | "dark" | "ultra">("dark");
   const [typographyPreset, setTypographyPreset] = useState<"athletic" | "modern" | "bold" | "clean">("athletic");
@@ -215,7 +399,8 @@ export default function LeadCaptureProgramEditorPage() {
   const [metaPixelId, setMetaPixelId] = useState("");
   const [googleAdsConversionId, setGoogleAdsConversionId] = useState("");
   const [googleAdsConversionLabel, setGoogleAdsConversionLabel] = useState("");
-  const [estimatedAthleteValueCents, setEstimatedAthleteValueCents] = useState(0);
+  const [estimatedValueCents, setEstimatedValueCents] = useState(0);
+  const [initialized, setInitialized] = useState(false);
 
   // ── queries
   const { data: program } = useQuery<any>({
@@ -242,38 +427,46 @@ export default function LeadCaptureProgramEditorPage() {
     enabled: !!programId,
   });
 
-  // ── load config into state
+  // ── load config into state when it arrives (only once)
   useEffect(() => {
-    if (!config) return;
-    setHeadline(config.headline || "Train Like an Elite Athlete");
-    setSubheadline(config.subheadline || "");
-    setCtaText(config.ctaText || "Apply Now");
+    if (!config || initialized) return;
+    setInitialized(true);
+    const resolvedType: FunnelType = config.funnelType || urlFunnelType || "athlete_application";
+    setFunnelType(resolvedType);
+    const newFt = FUNNEL_CONFIGS[resolvedType];
+    setHeadline(config.headline || newFt.defaultHeadline);
+    setSubheadline(config.subheadline || newFt.defaultSubheadline);
+    setCtaText(config.ctaText || newFt.defaultCtaText);
     setHeroImageUrl(config.heroImageUrl || "");
-    setBenefits((config.benefits as any) || []);
+    setBenefits((config.benefits as any)?.length > 0 ? config.benefits as any : newFt.defaultBenefits);
     setTestimonials((config.socialProof as any) || []);
     setBookingUrl(config.bookingUrl || "");
     setBookingType(config.bookingType || "none");
     setMetaPixelId(config.metaPixelId || "");
     setGoogleAdsConversionId(config.googleAdsConversionId || "");
     setGoogleAdsConversionLabel(config.googleAdsConversionLabel || "");
-    setEstimatedAthleteValueCents(config.estimatedAthleteValueCents || 0);
+    setEstimatedValueCents(config.estimatedAthleteValueCents || 0);
     const ext = config.extendedConfig || {};
     setUrgencyBadge(ext.urgencyBadge || "");
     setHeroAlignment(ext.heroAlignment || "center");
     setOverlayStrength(ext.overlayStrength ?? 60);
     setVideoBackgroundUrl(ext.videoBackgroundUrl || "");
-    setAccentColor(ext.accentColor || "#f97316");
-    setGradientPreset(ext.gradientPreset || "orange-dark");
+    setAccentColor(ext.accentColor || newFt.accentHex);
+    setGradientPreset(ext.gradientPreset || newFt.gradientPreset);
     setButtonStyle(ext.buttonStyle || "solid");
     setDarkIntensity(ext.darkIntensity || "dark");
     setTypographyPreset(ext.typographyPreset || "athletic");
-    setBookingButtonText(ext.bookingButtonText || "Book Your Evaluation");
+    setBookingButtonText(ext.bookingButtonText || (resolvedType === "team_training" ? "Book a Discovery Call" : resolvedType === "employment_opportunity" ? "Schedule Your Interview" : "Book Your Evaluation"));
     setBookingRedirectOnSubmit(ext.bookingRedirectOnSubmit ?? false);
-    setWhoCards(ext.whoCards || []);
-    if (ext.formFields && ext.formFields.length > 0) setFormFields(ext.formFields);
-  }, [config]);
+    setWhoCards(ext.whoCards?.length > 0 ? ext.whoCards : newFt.defaultWhoCards);
+    if (ext.formFields && ext.formFields.length > 0) {
+      setFormFields(ext.formFields);
+    } else {
+      setFormFields(newFt.defaultFormFields);
+    }
+  }, [config, initialized, urlFunnelType]);
 
-  // ── mark unsaved on any change
+  // ── autosave
   const markUnsaved = useCallback(() => {
     setUnsaved(true);
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
@@ -286,6 +479,7 @@ export default function LeadCaptureProgramEditorPage() {
   const saveMutation = useMutation({
     mutationFn: async (mode?: string) => {
       const body = {
+        funnelType,
         headline, subheadline, ctaText,
         heroImageUrl: heroImageUrl || null,
         benefits, socialProof: testimonials,
@@ -293,7 +487,7 @@ export default function LeadCaptureProgramEditorPage() {
         metaPixelId: metaPixelId || null,
         googleAdsConversionId: googleAdsConversionId || null,
         googleAdsConversionLabel: googleAdsConversionLabel || null,
-        estimatedAthleteValueCents,
+        estimatedAthleteValueCents: estimatedValueCents,
         extendedConfig: {
           urgencyBadge, heroAlignment, overlayStrength, videoBackgroundUrl,
           accentColor, gradientPreset, buttonStyle, darkIntensity, typographyPreset,
@@ -306,7 +500,7 @@ export default function LeadCaptureProgramEditorPage() {
       setUnsaved(false);
       queryClient.invalidateQueries({ queryKey: [`/api/lead-capture/programs/${programId}/config`] });
       if (mode !== "autosave") {
-        toast({ title: "Saved", description: "Program configuration updated." });
+        toast({ title: "Saved", description: "Funnel configuration updated." });
       }
     },
     onError: () => {
@@ -314,20 +508,15 @@ export default function LeadCaptureProgramEditorPage() {
     },
   });
 
+  // ── computed
   const publicUrl = orgData?.slug && program?.slug
     ? `${window.location.origin}/apply/${orgData.slug}/${program.slug}`
     : null;
-
-  const lastSub = stats?.lastSubmission
-    ? new Date(stats.lastSubmission).toLocaleDateString()
-    : "Never";
-
-  const bookingRate = stats && stats.total > 0
-    ? Math.round(((stats as any).booked ?? 0) / stats.total * 100)
-    : 0;
+  const lastSub = stats?.lastSubmission ? new Date(stats.lastSubmission).toLocaleDateString() : "Never";
+  const bookingRate = stats && stats.total > 0 ? Math.round(((stats as any).booked ?? 0) / stats.total * 100) : 0;
 
   // ── benefit helpers
-  const addBenefit = () => setBenefits(p => [...p, { id: uid(), title: "", description: "", icon: "Zap", accentColor: "#f97316" }]);
+  const addBenefit = () => setBenefits(p => [...p, { id: uid(), title: "", description: "", icon: "Zap", accentColor: ft.accentHex }]);
   const updateBenefit = (id: string, key: keyof BenefitCard, val: string) =>
     setBenefits(p => p.map(b => b.id === id ? { ...b, [key]: val } : b));
   const removeBenefit = (id: string) => setBenefits(p => p.filter(b => b.id !== id));
@@ -340,13 +529,13 @@ export default function LeadCaptureProgramEditorPage() {
   };
 
   // ── testimonial helpers
-  const addTestimonial = () => setTestimonials(p => [...p, { id: uid(), athleteName: "", sport: "", quote: "", rating: 5, photoUrl: "", featured: false }]);
+  const addTestimonial = () => setTestimonials(p => [...p, { id: uid(), name: "", role: "", quote: "", rating: 5, photoUrl: "", featured: false }]);
   const updateTestimonial = (id: string, key: keyof Testimonial, val: any) =>
     setTestimonials(p => p.map(t => t.id === id ? { ...t, [key]: val } : t));
   const removeTestimonial = (id: string) => setTestimonials(p => p.filter(t => t.id !== id));
 
   // ── who card helpers
-  const addWhoCard = () => setWhoCards(p => [...p, { id: uid(), title: "", description: "", icon: "Target", order: p.length }]);
+  const addWhoCard = () => setWhoCards(p => [...p, { id: uid(), title: "", description: "", icon: "Target" }]);
   const updateWhoCard = (id: string, key: keyof WhoCard, val: any) =>
     setWhoCards(p => p.map(c => c.id === id ? { ...c, [key]: val } : c));
   const removeWhoCard = (id: string) => setWhoCards(p => p.filter(c => c.id !== id));
@@ -361,21 +550,16 @@ export default function LeadCaptureProgramEditorPage() {
   const updateCustomField = (id: string, label: string) =>
     setFormFields(p => p.map(f => f.id === id ? { ...f, label } : f));
 
-  const aiRecs = [
-    "Shorter forms (+3 fewer fields) show 22% higher completion rates.",
-    "Football athletes convert 31% better from Instagram vs other channels.",
-    "Your hero CTA performs below the org average by 14% — try stronger action language.",
-    "Adding a parent testimonial increases trust score by ~18 points.",
-    "Programs with urgency badges see 9% lift in same-session applications.",
-  ];
-
   if (configLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+        <Loader2 className={`h-8 w-8 animate-spin ${ft.accent}`} />
       </div>
     );
   }
+
+  const accentStatBg = `${ft.accentBg} ${ft.accentBorder} border`;
+  const accentIconBg = ft.accentBg;
 
   return (
     <div className="min-h-screen bg-background">
@@ -386,8 +570,11 @@ export default function LeadCaptureProgramEditorPage() {
             <ArrowLeft className="h-4 w-4 mr-1.5" /> Back
           </Button>
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 shrink-0">Lead Capture</Badge>
-            <span className="font-semibold text-foreground truncate text-sm">{program?.name || "Program Editor"}</span>
+            <Badge className={`${ft.accentBg} ${ft.accent} ${ft.accentBorder} border shrink-0 gap-1`}>
+              {ft.icon} {ft.badgeLabel}
+            </Badge>
+            <span className="font-semibold text-foreground truncate text-sm">{program?.name || "Funnel Editor"}</span>
+            <span className={`text-xs ${ft.accent} hidden sm:inline`}>— {ft.label}</span>
             {unsaved && (
               <Badge variant="outline" className="text-yellow-500 border-yellow-500/40 shrink-0 text-[10px]">
                 <AlertTriangle className="h-2.5 w-2.5 mr-1" /> Unsaved
@@ -402,7 +589,7 @@ export default function LeadCaptureProgramEditorPage() {
             )}
             <Button
               size="sm"
-              className="bg-orange-500 hover:bg-orange-600 text-white"
+              className={`text-white ${funnelType === "team_training" ? "bg-cyan-600 hover:bg-cyan-700" : funnelType === "employment_opportunity" ? "bg-purple-600 hover:bg-purple-700" : "bg-orange-500 hover:bg-orange-600"}`}
               onClick={() => saveMutation.mutate("manual")}
               disabled={saveMutation.isPending}
               data-testid="button-save-config"
@@ -415,35 +602,51 @@ export default function LeadCaptureProgramEditorPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* ── Overview stats bar ── */}
+        {/* ── Stats bar ── */}
         <div className="flex flex-wrap gap-2 items-center justify-between">
           <div className="flex flex-wrap gap-2">
-            <StatPill label="Total Leads" value={stats?.total ?? "—"} />
-            <StatPill label="High-Intent" value={stats?.highIntent ?? "—"} />
-            <StatPill label="Conversion" value={stats ? `${stats.conversionRate}%` : "—"} />
-            <StatPill label="Booking Rate" value={`${bookingRate}%`} />
-            <StatPill label="Last Lead" value={lastSub} />
+            {[
+              { label: "Total Leads", value: stats?.total ?? "—" },
+              { label: "High-Intent", value: stats?.highIntent ?? "—" },
+              { label: "Conversion", value: stats ? `${stats.conversionRate}%` : "—" },
+              { label: "Booking Rate", value: `${bookingRate}%` },
+              { label: "Last Lead", value: lastSub },
+            ].map(s => (
+              <StatPill key={s.label} label={s.label} value={s.value} accent={accentStatBg} />
+            ))}
           </div>
-          <div className="flex items-center gap-2">
-            {publicUrl && (
-              <>
-                <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(publicUrl); toast({ title: "Link copied!" }); }} data-testid="button-copy-link">
-                  <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setActiveTab("analytics")} data-testid="button-open-analytics">
-                  <BarChart2 className="h-3.5 w-3.5 mr-1.5" /> Analytics
-                </Button>
-              </>
-            )}
-          </div>
+          {publicUrl && (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(publicUrl); toast({ title: "Link copied!" }); }} data-testid="button-copy-link">
+                <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setActiveTab("analytics")} data-testid="button-open-analytics">
+                <BarChart2 className="h-3.5 w-3.5 mr-1.5" /> Analytics
+              </Button>
+            </div>
+          )}
         </div>
 
         {publicUrl && (
           <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border border-border/50 rounded-lg text-xs text-muted-foreground font-mono">
-            <Globe className="h-3.5 w-3.5 text-orange-400 shrink-0" />
+            <Globe className={`h-3.5 w-3.5 ${ft.accent} shrink-0`} />
             <span className="truncate">{publicUrl}</span>
           </div>
         )}
+
+        {/* ── Funnel type indicator ── */}
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl ${ft.accentBg} border ${ft.accentBorder}`}>
+          <div className={`p-2 rounded-lg ${ft.accentBg}`}>{ft.icon}</div>
+          <div className="flex-1">
+            <p className={`text-sm font-semibold ${ft.accent}`}>{ft.label} Funnel</p>
+            <p className="text-xs text-muted-foreground">
+              {funnelType === "athlete_application" && "Captures individual athlete applications with AI scoring and multi-touch follow-up sequences."}
+              {funnelType === "team_training" && "Generates B2B school/org leads with automatic pipeline deal creation and decision-maker classification."}
+              {funnelType === "employment_opportunity" && "Recruits coaches and staff with AI candidate scoring, hiring pipeline, and interview workflow."}
+            </p>
+          </div>
+          <Badge className={`${ft.accentBg} ${ft.accent} border ${ft.accentBorder} text-xs`}>{ft.badgeLabel}</Badge>
+        </div>
 
         {/* ── Main tabs ── */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -453,13 +656,27 @@ export default function LeadCaptureProgramEditorPage() {
               { value: "hero", label: "Hero", icon: <Image className="h-3.5 w-3.5" /> },
               { value: "content", label: "Content", icon: <BookOpen className="h-3.5 w-3.5" /> },
               { value: "testimonials", label: "Testimonials", icon: <Star className="h-3.5 w-3.5" /> },
-              { value: "form", label: "Form", icon: <Settings2 className="h-3.5 w-3.5" /> },
+              { value: "form", label: "Form Fields", icon: <Settings2 className="h-3.5 w-3.5" /> },
               { value: "booking", label: "Booking", icon: <Calendar className="h-3.5 w-3.5" /> },
+              { value: "automations", label: "Automations", icon: <Workflow className="h-3.5 w-3.5" /> },
               { value: "branding", label: "Branding", icon: <Palette className="h-3.5 w-3.5" /> },
               { value: "analytics", label: "Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
               { value: "ai", label: "AI Tips", icon: <Lightbulb className="h-3.5 w-3.5" /> },
             ].map(tab => (
-              <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-1.5 text-xs data-[state=active]:bg-orange-500 data-[state=active]:text-white" data-testid={`tab-${tab.value}`}>
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className={`flex items-center gap-1.5 text-xs data-[state=active]:text-white ${
+                  activeTab === tab.value
+                    ? funnelType === "team_training"
+                      ? "data-[state=active]:bg-cyan-600"
+                      : funnelType === "employment_opportunity"
+                      ? "data-[state=active]:bg-purple-600"
+                      : "data-[state=active]:bg-orange-500"
+                    : ""
+                }`}
+                data-testid={`tab-${tab.value}`}
+              >
                 {tab.icon} {tab.label}
               </TabsTrigger>
             ))}
@@ -468,12 +685,12 @@ export default function LeadCaptureProgramEditorPage() {
           {/* ── OVERVIEW TAB ── */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="p-6 space-y-5 border-orange-500/20 bg-orange-500/3">
-                <SectionHeader icon={<Globe className="h-4 w-4" />} title="Public URL" subtitle="Share this link in your ads and bio." />
+              <Card className={`p-6 space-y-5 ${ft.accentBorder} border`}>
+                <SectionHeader icon={<Globe className="h-4 w-4" />} title="Public URL" subtitle="Share this link in your ads, bio, or outreach." accent={accentIconBg} />
                 {publicUrl ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 p-3 bg-muted/40 rounded-lg border border-border/50">
-                      <Link2 className="h-4 w-4 text-orange-400 shrink-0" />
+                      <Link2 className={`h-4 w-4 ${ft.accent} shrink-0`} />
                       <span className="text-sm font-mono truncate flex-1">{publicUrl}</span>
                     </div>
                     <div className="flex gap-2">
@@ -486,21 +703,21 @@ export default function LeadCaptureProgramEditorPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">URL will appear once the program is saved.</p>
+                  <p className="text-sm text-muted-foreground">URL appears once organization is configured.</p>
                 )}
               </Card>
 
               <Card className="p-6 space-y-4 border-border/50">
-                <SectionHeader icon={<TrendingUp className="h-4 w-4" />} title="Quick Stats" />
+                <SectionHeader icon={<TrendingUp className="h-4 w-4" />} title="Quick Stats" accent={accentIconBg} />
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: "Total Applications", value: stats?.total ?? 0 },
-                    { label: "High-Intent Leads", value: stats?.highIntent ?? 0 },
+                    { label: ft.analyticsLabel, value: stats?.total ?? 0 },
+                    { label: "High-Intent", value: stats?.highIntent ?? 0 },
                     { label: "Conversion Rate", value: `${stats?.conversionRate ?? 0}%` },
                     { label: "Booking Rate", value: `${bookingRate}%` },
                   ].map(s => (
                     <div key={s.label} className="p-3 bg-muted/30 rounded-lg">
-                      <p className="text-xl font-bold text-orange-400">{s.value}</p>
+                      <p className={`text-xl font-bold ${ft.accent}`}>{s.value}</p>
                       <p className="text-xs text-muted-foreground">{s.label}</p>
                     </div>
                   ))}
@@ -509,7 +726,7 @@ export default function LeadCaptureProgramEditorPage() {
             </div>
 
             <Card className="p-6 space-y-4">
-              <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Tracking Pixels" subtitle="Connect advertising pixels for conversion tracking." />
+              <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Tracking Pixels" subtitle="Connect advertising pixels for conversion tracking." accent={accentIconBg} />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Meta Pixel ID</Label>
@@ -525,12 +742,16 @@ export default function LeadCaptureProgramEditorPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Estimated Athlete Value (per conversion, in dollars)</Label>
+                <Label className="text-xs">
+                  {funnelType === "team_training" ? "Estimated Contract Value (per conversion, in dollars)" :
+                   funnelType === "employment_opportunity" ? "Estimated Hiring Value (fully-loaded cost, in dollars)" :
+                   "Estimated Athlete Value (per conversion, in dollars)"}
+                </Label>
                 <Input
                   type="number"
-                  value={estimatedAthleteValueCents / 100}
-                  onChange={e => { setEstimatedAthleteValueCents(Math.round(parseFloat(e.target.value || "0") * 100)); markUnsaved(); }}
-                  placeholder="2400"
+                  value={estimatedValueCents / 100}
+                  onChange={e => { setEstimatedValueCents(Math.round(parseFloat(e.target.value || "0") * 100)); markUnsaved(); }}
+                  placeholder={funnelType === "team_training" ? "15000" : funnelType === "employment_opportunity" ? "8000" : "2400"}
                   className="max-w-[200px]"
                   data-testid="input-athlete-value"
                 />
@@ -543,28 +764,28 @@ export default function LeadCaptureProgramEditorPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-5">
                 <Card className="p-6 space-y-4">
-                  <SectionHeader icon={<Image className="h-4 w-4" />} title="Hero Content" subtitle="The first thing athletes see when they land on your page." />
+                  <SectionHeader icon={<Image className="h-4 w-4" />} title="Hero Content" subtitle="The first thing visitors see when they land on your funnel." accent={accentIconBg} />
                   <div className="space-y-1.5">
                     <Label className="text-xs">Headline</Label>
-                    <Input value={headline} onChange={e => { setHeadline(e.target.value); markUnsaved(); }} placeholder="Train Like an Elite Athlete" data-testid="input-headline" />
+                    <Input value={headline} onChange={e => { setHeadline(e.target.value); markUnsaved(); }} placeholder={ft.defaultHeadline} data-testid="input-headline" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Subheadline</Label>
-                    <Textarea value={subheadline} onChange={e => { setSubheadline(e.target.value); markUnsaved(); }} placeholder="Apply now and take the first step..." rows={2} data-testid="input-subheadline" />
+                    <Textarea value={subheadline} onChange={e => { setSubheadline(e.target.value); markUnsaved(); }} placeholder={ft.defaultSubheadline} rows={2} data-testid="input-subheadline" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">CTA Button Text</Label>
-                    <Input value={ctaText} onChange={e => { setCtaText(e.target.value); markUnsaved(); }} placeholder="Apply Now" data-testid="input-cta-text" />
+                    <Input value={ctaText} onChange={e => { setCtaText(e.target.value); markUnsaved(); }} placeholder={ft.defaultCtaText} data-testid="input-cta-text" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Urgency Badge (optional)</Label>
-                    <Input value={urgencyBadge} onChange={e => { setUrgencyBadge(e.target.value); markUnsaved(); }} placeholder="Summer Enrollment Open — Limited Spots" data-testid="input-urgency-badge" />
+                    <Input value={urgencyBadge} onChange={e => { setUrgencyBadge(e.target.value); markUnsaved(); }} placeholder={ft.defaultUrgencyBadge} data-testid="input-urgency-badge" />
                     <p className="text-[10px] text-muted-foreground">Shown as a glowing badge above the headline.</p>
                   </div>
                 </Card>
 
                 <Card className="p-6 space-y-4">
-                  <SectionHeader icon={<Image className="h-4 w-4" />} title="Hero Media" subtitle="Image or video shown behind your hero content." />
+                  <SectionHeader icon={<Image className="h-4 w-4" />} title="Hero Media" subtitle="Background image or video for your hero section." accent={accentIconBg} />
                   <div className="space-y-1.5">
                     <Label className="text-xs">Hero Image URL</Label>
                     <Input value={heroImageUrl} onChange={e => { setHeroImageUrl(e.target.value); markUnsaved(); }} placeholder="https://..." data-testid="input-hero-image-url" />
@@ -574,7 +795,7 @@ export default function LeadCaptureProgramEditorPage() {
                     <Input value={videoBackgroundUrl} onChange={e => { setVideoBackgroundUrl(e.target.value); markUnsaved(); }} placeholder="https://..." data-testid="input-video-bg-url" />
                   </div>
                   {heroImageUrl && (
-                    <div className="relative rounded-lg overflow-hidden border border-orange-500/20 aspect-video">
+                    <div className="relative rounded-lg overflow-hidden border border-border/50 aspect-video">
                       <img src={heroImageUrl} alt="Hero preview" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
                     </div>
@@ -584,58 +805,55 @@ export default function LeadCaptureProgramEditorPage() {
 
               <div className="space-y-5">
                 <Card className="p-6 space-y-4">
-                  <SectionHeader icon={<Layout className="h-4 w-4" />} title="Layout & Style" />
+                  <SectionHeader icon={<Layout className="h-4 w-4" />} title="Layout & Style" accent={accentIconBg} />
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Hero Text Alignment</Label>
+                    <Label className="text-xs">Text Alignment</Label>
                     <div className="flex gap-2">
                       {(["left", "center", "right"] as const).map(a => (
-                        <Button key={a} size="sm" variant={heroAlignment === a ? "default" : "outline"} onClick={() => { setHeroAlignment(a); markUnsaved(); }} className={heroAlignment === a ? "bg-orange-500 hover:bg-orange-600" : ""} data-testid={`button-align-${a}`}>
+                        <Button key={a} size="sm" variant={heroAlignment === a ? "default" : "outline"}
+                          onClick={() => { setHeroAlignment(a); markUnsaved(); }}
+                          className={heroAlignment === a ? (funnelType === "team_training" ? "bg-cyan-600 hover:bg-cyan-700" : funnelType === "employment_opportunity" ? "bg-purple-600 hover:bg-purple-700" : "bg-orange-500 hover:bg-orange-600") : ""}
+                          data-testid={`button-align-${a}`}>
                           {a.charAt(0).toUpperCase() + a.slice(1)}
                         </Button>
                       ))}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs">Background Overlay Strength: {overlayStrength}%</Label>
-                    <input
-                      type="range" min={0} max={100} value={overlayStrength}
+                    <Label className="text-xs">Background Overlay: {overlayStrength}%</Label>
+                    <input type="range" min={0} max={100} value={overlayStrength}
                       onChange={e => { setOverlayStrength(Number(e.target.value)); markUnsaved(); }}
-                      className="w-full accent-orange-500"
-                      data-testid="range-overlay-strength"
-                    />
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>Transparent</span><span>Solid</span>
-                    </div>
+                      className={`w-full ${funnelType === "team_training" ? "accent-cyan-500" : funnelType === "employment_opportunity" ? "accent-purple-500" : "accent-orange-500"}`}
+                      data-testid="range-overlay-strength" />
                   </div>
                 </Card>
 
-                {/* Live mini-preview */}
-                <Card className="p-4 border-orange-500/20 overflow-hidden">
+                {/* Live mini preview */}
+                <Card className={`p-4 border ${ft.accentBorder} overflow-hidden`}>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-semibold text-orange-400 uppercase tracking-wider">Live Preview</span>
+                    <span className={`text-xs font-semibold ${ft.accent} uppercase tracking-wider`}>Live Preview</span>
                     <div className="flex gap-1">
-                      <Button size="sm" variant={previewDevice === "desktop" ? "default" : "ghost"} className={`h-6 px-2 text-[10px] ${previewDevice === "desktop" ? "bg-orange-500 hover:bg-orange-600" : ""}`} onClick={() => setPreviewDevice("desktop")} data-testid="button-preview-desktop">
-                        <Monitor className="h-3 w-3" />
-                      </Button>
-                      <Button size="sm" variant={previewDevice === "mobile" ? "default" : "ghost"} className={`h-6 px-2 text-[10px] ${previewDevice === "mobile" ? "bg-orange-500 hover:bg-orange-600" : ""}`} onClick={() => setPreviewDevice("mobile")} data-testid="button-preview-mobile">
-                        <Smartphone className="h-3 w-3" />
-                      </Button>
+                      {(["desktop", "mobile"] as const).map(d => (
+                        <Button key={d} size="sm" variant={previewDevice === d ? "default" : "ghost"}
+                          className={`h-6 px-2 text-[10px] ${previewDevice === d ? (funnelType === "team_training" ? "bg-cyan-600 hover:bg-cyan-700" : funnelType === "employment_opportunity" ? "bg-purple-600 hover:bg-purple-700" : "bg-orange-500 hover:bg-orange-600") : ""}`}
+                          onClick={() => setPreviewDevice(d)} data-testid={`button-preview-${d}`}>
+                          {d === "desktop" ? <Monitor className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
+                        </Button>
+                      ))}
                     </div>
                   </div>
                   <div className={`mx-auto rounded-lg overflow-hidden border border-border/50 transition-all ${previewDevice === "mobile" ? "max-w-[280px]" : "w-full"}`}>
-                    <div
-                      className="relative flex flex-col items-center justify-center p-6 text-center min-h-[180px]"
-                      style={{ background: heroImageUrl ? `url(${heroImageUrl}) center/cover` : "linear-gradient(135deg, #1a1a2e, #0f0f0f)" }}
-                    >
+                    <div className="relative flex flex-col items-center justify-center p-6 text-center min-h-[180px]"
+                      style={{ background: heroImageUrl ? `url(${heroImageUrl}) center/cover` : "linear-gradient(135deg, #1a1a2e, #0f0f0f)" }}>
                       <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
                       <div className={`relative z-10 w-full ${heroAlignment === "left" ? "text-left" : heroAlignment === "right" ? "text-right" : "text-center"}`}>
                         {urgencyBadge && (
-                          <span className="inline-block px-2 py-0.5 bg-orange-500/90 text-white text-[9px] rounded-full mb-2 font-semibold">{urgencyBadge}</span>
+                          <span className={`inline-block px-2 py-0.5 text-white text-[9px] rounded-full mb-2 font-semibold ${funnelType === "team_training" ? "bg-cyan-600/90" : funnelType === "employment_opportunity" ? "bg-purple-600/90" : "bg-orange-500/90"}`}>{urgencyBadge}</span>
                         )}
-                        <h2 className="text-sm font-bold text-white leading-tight">{headline || "Your Headline"}</h2>
-                        <p className="text-[9px] text-white/70 mt-1 leading-relaxed">{subheadline || "Your subheadline text here."}</p>
-                        <button className="mt-3 px-3 py-1 bg-orange-500 text-white rounded text-[9px] font-semibold">
-                          {ctaText || "Apply Now"}
+                        <h2 className="text-sm font-bold text-white leading-tight">{headline || ft.defaultHeadline}</h2>
+                        <p className="text-[9px] text-white/70 mt-1 leading-relaxed">{subheadline || ft.defaultSubheadline}</p>
+                        <button className={`mt-3 px-3 py-1 text-white rounded text-[9px] font-semibold ${funnelType === "team_training" ? "bg-cyan-600" : funnelType === "employment_opportunity" ? "bg-purple-600" : "bg-orange-500"}`}>
+                          {ctaText || ft.defaultCtaText}
                         </button>
                       </div>
                     </div>
@@ -650,46 +868,32 @@ export default function LeadCaptureProgramEditorPage() {
             {/* Benefits */}
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <SectionHeader icon={<Zap className="h-4 w-4" />} title="Benefits" subtitle="Why athletes should train with you — show up as cards on the landing page." />
+                <SectionHeader icon={<Zap className="h-4 w-4" />} title="Benefits" subtitle="Why visitors should choose you — displayed as cards on the landing page." accent={accentIconBg} />
                 <Button size="sm" variant="outline" onClick={() => { addBenefit(); markUnsaved(); }} data-testid="button-add-benefit">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Benefit
                 </Button>
               </div>
               <div className="space-y-3">
                 {benefits.length === 0 && (
-                  <div className="text-center py-8 text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">
-                    No benefits yet. Add your first one above.
-                  </div>
+                  <div className="text-center py-8 text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">No benefits yet. Add your first one above.</div>
                 )}
                 {benefits.map((b, idx) => (
                   <div key={b.id} className="flex gap-3 p-4 bg-muted/30 rounded-lg border border-border/40" data-testid={`card-benefit-${b.id}`}>
                     <div className="flex flex-col gap-1 justify-center">
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { moveBenefit(b.id, -1); markUnsaved(); }} disabled={idx === 0} data-testid={`button-benefit-up-${b.id}`}>
-                        <ChevronUp className="h-3 w-3" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { moveBenefit(b.id, 1); markUnsaved(); }} disabled={idx === benefits.length - 1} data-testid={`button-benefit-down-${b.id}`}>
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { moveBenefit(b.id, -1); markUnsaved(); }} disabled={idx === 0} data-testid={`button-benefit-up-${b.id}`}><ChevronUp className="h-3 w-3" /></Button>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { moveBenefit(b.id, 1); markUnsaved(); }} disabled={idx === benefits.length - 1} data-testid={`button-benefit-down-${b.id}`}><ChevronDown className="h-3 w-3" /></Button>
                     </div>
                     <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
                       <Input value={b.title} onChange={e => { updateBenefit(b.id, "title", e.target.value); markUnsaved(); }} placeholder="Benefit title" data-testid={`input-benefit-title-${b.id}`} />
                       <Input value={b.description} onChange={e => { updateBenefit(b.id, "description", e.target.value); markUnsaved(); }} placeholder="Short description" data-testid={`input-benefit-desc-${b.id}`} />
                       <Select value={b.icon} onValueChange={v => { updateBenefit(b.id, "icon", v); markUnsaved(); }}>
-                        <SelectTrigger data-testid={`select-benefit-icon-${b.id}`}>
-                          <SelectValue placeholder="Icon" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ICON_OPTIONS.map(o => (
-                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                          ))}
-                        </SelectContent>
+                        <SelectTrigger data-testid={`select-benefit-icon-${b.id}`}><SelectValue placeholder="Icon" /></SelectTrigger>
+                        <SelectContent>{ICON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div className="flex items-center gap-2">
                       <input type="color" value={b.accentColor} onChange={e => { updateBenefit(b.id, "accentColor", e.target.value); markUnsaved(); }} className="h-7 w-7 rounded border-0 cursor-pointer bg-transparent" title="Accent color" data-testid={`color-benefit-${b.id}`} />
-                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 w-7 p-0" onClick={() => { removeBenefit(b.id); markUnsaved(); }} data-testid={`button-remove-benefit-${b.id}`}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 w-7 p-0" onClick={() => { removeBenefit(b.id); markUnsaved(); }} data-testid={`button-remove-benefit-${b.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                   </div>
                 ))}
@@ -699,16 +903,14 @@ export default function LeadCaptureProgramEditorPage() {
             {/* Who This Is For */}
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <SectionHeader icon={<Users className="h-4 w-4" />} title="Who This Is For" subtitle="Help athletes self-qualify with targeted cards." />
+                <SectionHeader icon={<Users className="h-4 w-4" />} title={funnelType === "employment_opportunity" ? "Ideal Candidates" : "Who This Is For"} subtitle="Help visitors self-qualify with targeted cards." accent={accentIconBg} />
                 <Button size="sm" variant="outline" onClick={() => { addWhoCard(); markUnsaved(); }} data-testid="button-add-who-card">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Card
                 </Button>
               </div>
               <div className="space-y-3">
                 {whoCards.length === 0 && (
-                  <div className="text-center py-8 text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">
-                    No cards yet. Describe who your program is ideal for.
-                  </div>
+                  <div className="text-center py-8 text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">No cards yet.</div>
                 )}
                 {whoCards.map(c => (
                   <div key={c.id} className="flex gap-3 p-4 bg-muted/30 rounded-lg border border-border/40" data-testid={`card-who-${c.id}`}>
@@ -716,19 +918,11 @@ export default function LeadCaptureProgramEditorPage() {
                       <Input value={c.title} onChange={e => { updateWhoCard(c.id, "title", e.target.value); markUnsaved(); }} placeholder="e.g. High School Athletes" data-testid={`input-who-title-${c.id}`} />
                       <Input value={c.description} onChange={e => { updateWhoCard(c.id, "description", e.target.value); markUnsaved(); }} placeholder="Short description..." data-testid={`input-who-desc-${c.id}`} />
                       <Select value={c.icon} onValueChange={v => { updateWhoCard(c.id, "icon", v); markUnsaved(); }}>
-                        <SelectTrigger data-testid={`select-who-icon-${c.id}`}>
-                          <SelectValue placeholder="Icon" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ICON_OPTIONS.map(o => (
-                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                          ))}
-                        </SelectContent>
+                        <SelectTrigger data-testid={`select-who-icon-${c.id}`}><SelectValue placeholder="Icon" /></SelectTrigger>
+                        <SelectContent>{ICON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 w-7 p-0 self-center" onClick={() => { removeWhoCard(c.id); markUnsaved(); }} data-testid={`button-remove-who-${c.id}`}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 w-7 p-0 self-center" onClick={() => { removeWhoCard(c.id); markUnsaved(); }} data-testid={`button-remove-who-${c.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
                 ))}
               </div>
@@ -739,7 +933,12 @@ export default function LeadCaptureProgramEditorPage() {
           <TabsContent value="testimonials" className="space-y-6">
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <SectionHeader icon={<Star className="h-4 w-4" />} title="Athlete Testimonials" subtitle="Social proof from athletes who've trained with you." />
+                <SectionHeader
+                  icon={<Star className="h-4 w-4" />}
+                  title={funnelType === "team_training" ? "Partner Testimonials" : funnelType === "employment_opportunity" ? "Coach/Staff Testimonials" : "Athlete Testimonials"}
+                  subtitle="Social proof that builds trust and drives conversions."
+                  accent={accentIconBg}
+                />
                 <Button size="sm" variant="outline" onClick={() => { addTestimonial(); markUnsaved(); }} data-testid="button-add-testimonial">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Testimonial
                 </Button>
@@ -747,7 +946,7 @@ export default function LeadCaptureProgramEditorPage() {
               <div className="space-y-4">
                 {testimonials.length === 0 && (
                   <div className="text-center py-10 text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">
-                    No testimonials yet. Add your first athlete story.
+                    No testimonials yet. {funnelType === "team_training" ? "Add a school or organization testimonial." : funnelType === "employment_opportunity" ? "Add a coach success story." : "Add your first athlete story."}
                   </div>
                 )}
                 {testimonials.map(t => (
@@ -755,15 +954,15 @@ export default function LeadCaptureProgramEditorPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         {t.photoUrl ? (
-                          <img src={t.photoUrl} alt={t.athleteName} className="h-10 w-10 rounded-full object-cover border-2 border-orange-500/30" />
+                          <img src={t.photoUrl} alt={t.name} className={`h-10 w-10 rounded-full object-cover border-2 ${ft.accentBorder}`} />
                         ) : (
-                          <div className="h-10 w-10 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400 font-bold text-sm">
-                            {t.athleteName ? t.athleteName[0] : "?"}
+                          <div className={`h-10 w-10 rounded-full ${ft.accentBg} flex items-center justify-center ${ft.accent} font-bold text-sm`}>
+                            {t.name ? t.name[0] : "?"}
                           </div>
                         )}
                         <div>
-                          <p className="font-semibold text-sm">{t.athleteName || "Athlete Name"}</p>
-                          <p className="text-xs text-muted-foreground">{t.sport || "Sport"}</p>
+                          <p className="font-semibold text-sm">{t.name || "Name"}</p>
+                          <p className="text-xs text-muted-foreground">{t.role || ft.testimonialRoleLabel}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -771,24 +970,22 @@ export default function LeadCaptureProgramEditorPage() {
                           <span className="text-xs text-muted-foreground">Featured</span>
                           <Switch checked={t.featured} onCheckedChange={v => { updateTestimonial(t.id, "featured", v); markUnsaved(); }} data-testid={`switch-testimonial-featured-${t.id}`} />
                         </div>
-                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 w-7 p-0" onClick={() => { removeTestimonial(t.id); markUnsaved(); }} data-testid={`button-remove-testimonial-${t.id}`}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 w-7 p-0" onClick={() => { removeTestimonial(t.id); markUnsaved(); }} data-testid={`button-remove-testimonial-${t.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Athlete Name</Label>
-                        <Input value={t.athleteName} onChange={e => { updateTestimonial(t.id, "athleteName", e.target.value); markUnsaved(); }} placeholder="Marcus Thompson" data-testid={`input-testimonial-name-${t.id}`} />
+                        <Label className="text-xs">Name</Label>
+                        <Input value={t.name} onChange={e => { updateTestimonial(t.id, "name", e.target.value); markUnsaved(); }} placeholder={funnelType === "team_training" ? "Coach Johnson" : funnelType === "employment_opportunity" ? "Alex Rivera" : "Marcus Thompson"} data-testid={`input-testimonial-name-${t.id}`} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Sport</Label>
-                        <Input value={t.sport} onChange={e => { updateTestimonial(t.id, "sport", e.target.value); markUnsaved(); }} placeholder="Football / Basketball / Track..." data-testid={`input-testimonial-sport-${t.id}`} />
+                        <Label className="text-xs">{ft.testimonialRoleLabel}</Label>
+                        <Input value={t.role} onChange={e => { updateTestimonial(t.id, "role", e.target.value); markUnsaved(); }} placeholder={funnelType === "team_training" ? "Athletic Director, Lincoln High" : funnelType === "employment_opportunity" ? "CSCS Coach, 5 years" : "Running Back, Class of 2025"} data-testid={`input-testimonial-role-${t.id}`} />
                       </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Testimonial Quote</Label>
-                      <Textarea value={t.quote} onChange={e => { updateTestimonial(t.id, "quote", e.target.value); markUnsaved(); }} placeholder="This program changed how I train. My 40 time dropped from 4.8 to 4.6 in 8 weeks..." rows={3} data-testid={`input-testimonial-quote-${t.id}`} />
+                      <Textarea value={t.quote} onChange={e => { updateTestimonial(t.id, "quote", e.target.value); markUnsaved(); }} placeholder="Compelling quote here..." rows={3} data-testid={`input-testimonial-quote-${t.id}`} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
@@ -799,8 +996,8 @@ export default function LeadCaptureProgramEditorPage() {
                         <Label className="text-xs">Rating</Label>
                         <div className="flex gap-1 mt-1">
                           {[1, 2, 3, 4, 5].map(n => (
-                            <button key={n} onClick={() => { updateTestimonial(t.id, "rating", n); markUnsaved(); }} className="text-xl" data-testid={`button-rating-${n}-${t.id}`}>
-                              <Star className={`h-5 w-5 ${n <= t.rating ? "text-orange-400 fill-orange-400" : "text-muted-foreground"}`} />
+                            <button key={n} onClick={() => { updateTestimonial(t.id, "rating", n); markUnsaved(); }} data-testid={`button-rating-${n}-${t.id}`}>
+                              <Star className={`h-5 w-5 ${n <= t.rating ? `${ft.accent} fill-current` : "text-muted-foreground"}`} />
                             </button>
                           ))}
                         </div>
@@ -812,14 +1009,17 @@ export default function LeadCaptureProgramEditorPage() {
             </Card>
           </TabsContent>
 
-          {/* ── FORM TAB ── */}
+          {/* ── FORM FIELDS TAB ── */}
           <TabsContent value="form" className="space-y-6">
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Form Fields" subtitle="Control which fields athletes see and which are required." />
+                <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Form Fields" subtitle="Control which fields visitors see and which are required." accent={accentIconBg} />
                 <Button size="sm" variant="outline" onClick={() => { addCustomField(); markUnsaved(); }} data-testid="button-add-custom-field">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Custom Question
                 </Button>
+              </div>
+              <div className={`px-3 py-2 rounded-lg ${ft.accentBg} border ${ft.accentBorder} mb-2`}>
+                <p className={`text-xs ${ft.accent} font-medium`}>{ft.label} funnel — {formFields.filter(f => f.enabled).length} fields enabled, {formFields.filter(f => f.required).length} required</p>
               </div>
               <div className="space-y-2">
                 {formFields.map(f => (
@@ -827,85 +1027,109 @@ export default function LeadCaptureProgramEditorPage() {
                     <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
                     <div className="flex-1 min-w-0">
                       {f.custom ? (
-                        <Input
-                          value={f.label}
-                          onChange={e => { updateCustomField(f.id, e.target.value); markUnsaved(); }}
-                          placeholder="Question label..."
-                          className="h-7 text-sm"
-                          data-testid={`input-custom-field-label-${f.id}`}
-                        />
+                        <Input value={f.label} onChange={e => { updateCustomField(f.id, e.target.value); markUnsaved(); }} placeholder="Question label..." className="h-7 text-sm" data-testid={`input-custom-field-label-${f.id}`} />
                       ) : (
-                        <span className="text-sm font-medium truncate">{f.label}</span>
+                        <div>
+                          <span className="text-sm font-medium truncate">{f.label}</span>
+                          {f.type === "select" && <span className="ml-2 text-[10px] text-muted-foreground">dropdown</span>}
+                          {f.type === "checkbox" && <span className="ml-2 text-[10px] text-muted-foreground">multi-select</span>}
+                          {f.type === "textarea" && <span className="ml-2 text-[10px] text-muted-foreground">long text</span>}
+                        </div>
                       )}
                     </div>
                     <div className="flex items-center gap-4 shrink-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] text-muted-foreground">Enabled</span>
-                        <Switch
-                          checked={f.enabled}
-                          onCheckedChange={() => { toggleField(f.id, "enabled"); markUnsaved(); }}
-                          data-testid={`switch-field-enabled-${f.id}`}
-                        />
+                        <Switch checked={f.enabled} onCheckedChange={() => { toggleField(f.id, "enabled"); markUnsaved(); }} data-testid={`switch-field-enabled-${f.id}`} />
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] text-muted-foreground">Required</span>
-                        <Switch
-                          checked={f.required}
-                          disabled={!f.enabled}
-                          onCheckedChange={() => { toggleField(f.id, "required"); markUnsaved(); }}
-                          data-testid={`switch-field-required-${f.id}`}
-                        />
+                        <Switch checked={f.required} disabled={!f.enabled} onCheckedChange={() => { toggleField(f.id, "required"); markUnsaved(); }} data-testid={`switch-field-required-${f.id}`} />
                       </div>
                       {f.custom && (
-                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-6 w-6 p-0" onClick={() => { removeCustomField(f.id); markUnsaved(); }} data-testid={`button-remove-field-${f.id}`}>
-                          <X className="h-3 w-3" />
-                        </Button>
+                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-6 w-6 p-0" onClick={() => { removeCustomField(f.id); markUnsaved(); }} data-testid={`button-remove-field-${f.id}`}><X className="h-3 w-3" /></Button>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">Tip: Fewer required fields generally increases form completion rates.</p>
+              <p className="text-xs text-muted-foreground">Tip: Fewer required fields generally increases form completion rates by 15–30%.</p>
             </Card>
           </TabsContent>
 
           {/* ── BOOKING TAB ── */}
           <TabsContent value="booking" className="space-y-6">
             <Card className="p-6 space-y-5">
-              <SectionHeader icon={<Calendar className="h-4 w-4" />} title="Booking Configuration" subtitle="Direct high-intent athletes to book a session immediately after applying." />
-
+              <SectionHeader
+                icon={<Calendar className="h-4 w-4" />}
+                title={funnelType === "team_training" ? "Discovery Call Configuration" : funnelType === "employment_opportunity" ? "Interview Scheduling" : "Booking Configuration"}
+                subtitle={funnelType === "team_training" ? "Direct qualified B2B leads to book a discovery call immediately after inquiring." : funnelType === "employment_opportunity" ? "Send candidates to a screening call or interview booking link." : "Direct high-intent athletes to book a session immediately after applying."}
+                accent={accentIconBg}
+              />
               <div className="space-y-1.5">
-                <Label className="text-xs">Booking Mode</Label>
+                <Label className="text-xs">Mode</Label>
                 <Select value={bookingType} onValueChange={v => { setBookingType(v); markUnsaved(); }}>
-                  <SelectTrigger data-testid="select-booking-type">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger data-testid="select-booking-type"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Disabled — No booking CTA</SelectItem>
-                    <SelectItem value="external">External Link (Calendly, etc.)</SelectItem>
+                    <SelectItem value="external">External Link (Calendly, Cal.com, etc.)</SelectItem>
                     <SelectItem value="internal">Internal Scheduling</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
               {bookingType !== "none" && (
                 <>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Booking URL</Label>
+                    <Label className="text-xs">{funnelType === "team_training" ? "Discovery Call URL" : funnelType === "employment_opportunity" ? "Interview Booking URL" : "Booking URL"}</Label>
                     <Input value={bookingUrl} onChange={e => { setBookingUrl(e.target.value); markUnsaved(); }} placeholder="https://calendly.com/your-link" data-testid="input-booking-url" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Booking Button Text</Label>
-                    <Input value={bookingButtonText} onChange={e => { setBookingButtonText(e.target.value); markUnsaved(); }} placeholder="Book Your Free Evaluation" data-testid="input-booking-button-text" />
+                    <Label className="text-xs">Button Text</Label>
+                    <Input value={bookingButtonText} onChange={e => { setBookingButtonText(e.target.value); markUnsaved(); }} placeholder={funnelType === "team_training" ? "Book a Discovery Call" : funnelType === "employment_opportunity" ? "Schedule Your Interview" : "Book Your Free Evaluation"} data-testid="input-booking-button-text" />
                   </div>
                   <div className="flex items-center gap-3 p-4 bg-muted/30 rounded-lg">
                     <Switch checked={bookingRedirectOnSubmit} onCheckedChange={v => { setBookingRedirectOnSubmit(v); markUnsaved(); }} data-testid="switch-booking-redirect" />
                     <div>
                       <p className="text-sm font-medium">Immediate redirect after submission</p>
-                      <p className="text-xs text-muted-foreground">Auto-redirect to booking page when athlete submits their application.</p>
+                      <p className="text-xs text-muted-foreground">Auto-redirect to the booking page when the form is submitted.</p>
                     </div>
                   </div>
                 </>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* ── AUTOMATIONS TAB ── */}
+          <TabsContent value="automations" className="space-y-6">
+            <Card className="p-6 space-y-5">
+              <SectionHeader icon={<Workflow className="h-4 w-4" />} title="Built-In Automations" subtitle={`These automations run automatically for every ${ft.label.toLowerCase()} submission. No configuration required.`} accent={accentIconBg} />
+              <div className="space-y-3">
+                {ft.automations.map((a, i) => (
+                  <div key={i} className={`flex gap-4 p-4 rounded-xl ${ft.accentBg} border ${ft.accentBorder}`} data-testid={`automation-${i}`}>
+                    <div className={`p-2.5 rounded-lg ${ft.accentBg} border ${ft.accentBorder} ${ft.accent} shrink-0 h-fit`}>
+                      {a.icon}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{a.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{a.desc}</p>
+                    </div>
+                    <div className="ml-auto shrink-0">
+                      <Badge className={`${ft.accentBg} ${ft.accent} border ${ft.accentBorder} text-[10px]`}>Active</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {funnelType === "team_training" && (
+                <div className="p-4 bg-muted/30 rounded-xl border border-border/40">
+                  <p className="text-xs font-semibold mb-2">Pipeline Integration</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">Every Team Training submission creates a deal in your Team Training pipeline. Deal value is estimated from the team size and budget range fields — edit those fields in the Form tab to improve accuracy.</p>
+                </div>
+              )}
+              {funnelType === "employment_opportunity" && (
+                <div className="p-4 bg-muted/30 rounded-xl border border-border/40">
+                  <p className="text-xs font-semibold mb-2">Hiring Pipeline</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">Each application creates a candidate record with status: Applied → Screening → Interview → Offer → Hired. AI scores candidates based on certifications, experience match, and response quality.</p>
+                </div>
               )}
             </Card>
           </TabsContent>
@@ -914,49 +1138,44 @@ export default function LeadCaptureProgramEditorPage() {
           <TabsContent value="branding" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="p-6 space-y-5">
-                <SectionHeader icon={<Palette className="h-4 w-4" />} title="Colors & Style" />
-
+                <SectionHeader icon={<Palette className="h-4 w-4" />} title="Colors & Style" accent={accentIconBg} />
                 <div className="space-y-1.5">
                   <Label className="text-xs">Accent Color</Label>
                   <div className="flex items-center gap-3">
                     <input type="color" value={accentColor} onChange={e => { setAccentColor(e.target.value); markUnsaved(); }} className="h-10 w-16 rounded-lg border border-border cursor-pointer bg-transparent" data-testid="color-accent" />
                     <Input value={accentColor} onChange={e => { setAccentColor(e.target.value); markUnsaved(); }} className="font-mono" data-testid="input-accent-color" />
                   </div>
+                  <p className="text-[10px] text-muted-foreground">Recommended: {ft.accentHex} ({ft.label} default)</p>
                 </div>
-
                 <div className="space-y-2">
                   <Label className="text-xs">Gradient Preset</Label>
                   <div className="grid grid-cols-2 gap-2">
                     {GRADIENT_PRESETS.map(g => (
-                      <button
-                        key={g.value}
-                        onClick={() => { setGradientPreset(g.value); markUnsaved(); }}
-                        className={`flex items-center gap-2 p-2.5 rounded-lg border text-left transition-all ${gradientPreset === g.value ? "border-orange-500 ring-1 ring-orange-500/50" : "border-border/50 hover:border-border"}`}
-                        data-testid={`button-gradient-${g.value}`}
-                      >
+                      <button key={g.value} onClick={() => { setGradientPreset(g.value); markUnsaved(); }}
+                        className={`flex items-center gap-2 p-2.5 rounded-lg border text-left transition-all ${gradientPreset === g.value ? `${ft.accentBorder} ring-1` : "border-border/50 hover:border-border"}`}
+                        data-testid={`button-gradient-${g.value}`}>
                         <div className={`h-6 w-10 rounded bg-gradient-to-r ${g.preview} shrink-0`} />
                         <span className="text-xs font-medium">{g.label}</span>
-                        {gradientPreset === g.value && <Check className="h-3.5 w-3.5 text-orange-500 ml-auto" />}
+                        {gradientPreset === g.value && <Check className={`h-3.5 w-3.5 ${ft.accent} ml-auto`} />}
                       </button>
                     ))}
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label className="text-xs">Button Style</Label>
                   <div className="flex gap-2">
                     {(["solid", "outline", "gradient"] as const).map(s => (
-                      <Button key={s} size="sm" variant={buttonStyle === s ? "default" : "outline"} onClick={() => { setButtonStyle(s); markUnsaved(); }} className={`capitalize ${buttonStyle === s ? "bg-orange-500 hover:bg-orange-600" : ""}`} data-testid={`button-style-${s}`}>
-                        {s}
-                      </Button>
+                      <Button key={s} size="sm" variant={buttonStyle === s ? "default" : "outline"}
+                        onClick={() => { setButtonStyle(s); markUnsaved(); }}
+                        className={`capitalize ${buttonStyle === s ? (funnelType === "team_training" ? "bg-cyan-600 hover:bg-cyan-700" : funnelType === "employment_opportunity" ? "bg-purple-600 hover:bg-purple-700" : "bg-orange-500 hover:bg-orange-600") : ""}`}
+                        data-testid={`button-style-${s}`}>{s}</Button>
                     ))}
                   </div>
                 </div>
               </Card>
 
               <Card className="p-6 space-y-5">
-                <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Typography & Intensity" />
-
+                <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Typography & Intensity" accent={accentIconBg} />
                 <div className="space-y-2">
                   <Label className="text-xs">Typography Preset</Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -966,19 +1185,15 @@ export default function LeadCaptureProgramEditorPage() {
                       { value: "bold", label: "Bold", desc: "Maximum impact" },
                       { value: "clean", label: "Clean", desc: "Minimal & precise" },
                     ] as const).map(t => (
-                      <button
-                        key={t.value}
-                        onClick={() => { setTypographyPreset(t.value); markUnsaved(); }}
-                        className={`p-3 rounded-lg border text-left transition-all ${typographyPreset === t.value ? "border-orange-500 bg-orange-500/10" : "border-border/50 hover:border-border"}`}
-                        data-testid={`button-typography-${t.value}`}
-                      >
+                      <button key={t.value} onClick={() => { setTypographyPreset(t.value); markUnsaved(); }}
+                        className={`p-3 rounded-lg border text-left transition-all ${typographyPreset === t.value ? `${ft.accentBorder} ${ft.accentBg}` : "border-border/50 hover:border-border"}`}
+                        data-testid={`button-typography-${t.value}`}>
                         <p className="text-xs font-semibold">{t.label}</p>
                         <p className="text-[10px] text-muted-foreground">{t.desc}</p>
                       </button>
                     ))}
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label className="text-xs">Dark Intensity</Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -988,12 +1203,9 @@ export default function LeadCaptureProgramEditorPage() {
                       { value: "dark", label: "Dark Glass", desc: "Deep dark theme" },
                       { value: "ultra", label: "Ultra Dark", desc: "Max darkness" },
                     ] as const).map(d => (
-                      <button
-                        key={d.value}
-                        onClick={() => { setDarkIntensity(d.value); markUnsaved(); }}
-                        className={`p-3 rounded-lg border text-left transition-all ${darkIntensity === d.value ? "border-orange-500 bg-orange-500/10" : "border-border/50 hover:border-border"}`}
-                        data-testid={`button-dark-${d.value}`}
-                      >
+                      <button key={d.value} onClick={() => { setDarkIntensity(d.value); markUnsaved(); }}
+                        className={`p-3 rounded-lg border text-left transition-all ${darkIntensity === d.value ? `${ft.accentBorder} ${ft.accentBg}` : "border-border/50 hover:border-border"}`}
+                        data-testid={`button-dark-${d.value}`}>
                         <p className="text-xs font-semibold">{d.label}</p>
                         <p className="text-[10px] text-muted-foreground">{d.desc}</p>
                       </button>
@@ -1007,44 +1219,42 @@ export default function LeadCaptureProgramEditorPage() {
           {/* ── ANALYTICS TAB ── */}
           <TabsContent value="analytics" className="space-y-6">
             <Card className="p-6 space-y-5">
-              <SectionHeader icon={<BarChart2 className="h-4 w-4" />} title="Funnel Visualization" subtitle="How athletes move through your application process." />
+              <SectionHeader icon={<BarChart2 className="h-4 w-4" />} title="Funnel Visualization" subtitle="How visitors move through your funnel." accent={accentIconBg} />
               {funnel ? (
                 <div className="space-y-3">
                   {[
-                    { label: "Page Views", value: funnel.pageViews, pct: 100, color: "bg-blue-500" },
-                    { label: "Step 1 Starts", value: funnel.step1Starts, pct: funnel.pageViews > 0 ? Math.round(funnel.step1Starts / funnel.pageViews * 100) : 0, color: "bg-purple-500" },
-                    { label: "Partial Captures", value: funnel.partialCaptures, pct: funnel.pageViews > 0 ? Math.round(funnel.partialCaptures / funnel.pageViews * 100) : 0, color: "bg-yellow-500" },
-                    { label: "Completed Applications", value: funnel.completions, pct: funnel.pageViews > 0 ? Math.round(funnel.completions / funnel.pageViews * 100) : 0, color: "bg-orange-500" },
+                    { label: "Page Views", value: funnel.pageViews, pct: 100 },
+                    { label: "Step 1 Starts", value: funnel.step1Starts, pct: funnel.pageViews > 0 ? Math.round(funnel.step1Starts / funnel.pageViews * 100) : 0 },
+                    { label: "Partial Captures", value: funnel.partialCaptures, pct: funnel.pageViews > 0 ? Math.round(funnel.partialCaptures / funnel.pageViews * 100) : 0 },
+                    { label: ft.analyticsLabel, value: funnel.completions, pct: funnel.pageViews > 0 ? Math.round(funnel.completions / funnel.pageViews * 100) : 0 },
                   ].map(step => (
                     <div key={step.label} className="space-y-1" data-testid={`funnel-step-${step.label.toLowerCase().replace(/\s+/g, "-")}`}>
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium">{step.label}</span>
                         <div className="flex items-center gap-3">
-                          <span className="font-bold text-foreground">{step.value.toLocaleString()}</span>
+                          <span className="font-bold">{step.value.toLocaleString()}</span>
                           <Badge variant="outline" className="text-xs">{step.pct}%</Badge>
                         </div>
                       </div>
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full ${step.color} rounded-full transition-all duration-500`} style={{ width: `${step.pct}%` }} />
+                        <div className={`h-full rounded-full transition-all duration-500 ${funnelType === "team_training" ? "bg-cyan-500" : funnelType === "employment_opportunity" ? "bg-purple-500" : "bg-orange-500"}`} style={{ width: `${step.pct}%` }} />
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-10 text-sm text-muted-foreground">
-                  No funnel data yet. Analytics appear once athletes start viewing your page.
-                </div>
+                <div className="text-center py-10 text-sm text-muted-foreground">Analytics appear once visitors start viewing your funnel.</div>
               )}
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                { label: "Completion Rate", value: funnel ? `${funnel.completionRate}%` : "—", icon: <Target className="h-4 w-4" />, desc: "Views → Completions" },
-                { label: "High-Intent Rate", value: stats && stats.total > 0 ? `${Math.round(stats.highIntent / stats.total * 100)}%` : "—", icon: <Zap className="h-4 w-4" />, desc: "Score ≥70 out of total" },
-                { label: "Abandonment Rate", value: funnel && funnel.step1Starts > 0 ? `${Math.round((funnel.step1Starts - funnel.completions) / funnel.step1Starts * 100)}%` : "—", icon: <AlertTriangle className="h-4 w-4" />, desc: "Started but didn't finish" },
+                { label: "Completion Rate", value: funnel ? `${funnel.completionRate}%` : "—", desc: "Views → Completions" },
+                { label: "High-Intent Rate", value: stats && stats.total > 0 ? `${Math.round(stats.highIntent / stats.total * 100)}%` : "—", desc: "Score ≥70 / total" },
+                { label: "Abandonment Rate", value: funnel && funnel.step1Starts > 0 ? `${Math.round((funnel.step1Starts - funnel.completions) / funnel.step1Starts * 100)}%` : "—", desc: "Started but didn't finish" },
               ].map(m => (
                 <Card key={m.label} className="p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-orange-400">{m.icon}<span className="text-xs uppercase tracking-wider font-semibold">{m.label}</span></div>
+                  <p className={`text-xs uppercase tracking-wider font-semibold ${ft.accent}`}>{m.label}</p>
                   <p className="text-2xl font-bold" data-testid={`metric-${m.label.toLowerCase().replace(/\s+/g, "-")}`}>{m.value}</p>
                   <p className="text-xs text-muted-foreground">{m.desc}</p>
                 </Card>
@@ -1052,13 +1262,13 @@ export default function LeadCaptureProgramEditorPage() {
             </div>
 
             {publicUrl && (
-              <Card className="p-4 border-orange-500/20 bg-orange-500/3">
+              <Card className={`p-4 ${ft.accentBorder} border ${ft.accentBg}`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-semibold">UTM Tracking Active</p>
-                    <p className="text-xs text-muted-foreground">Append <code className="bg-muted px-1 rounded text-[10px]">?utm_source=instagram&utm_campaign=summer</code> to your link to track traffic sources.</p>
+                    <p className="text-sm font-semibold">UTM Tracking</p>
+                    <p className="text-xs text-muted-foreground">Append UTM params to track traffic sources accurately.</p>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => { if (publicUrl) { navigator.clipboard.writeText(`${publicUrl}?utm_source=instagram&utm_medium=social&utm_campaign=summer`); toast({ title: "UTM link copied!" }); } }} data-testid="button-copy-utm">
+                  <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(`${publicUrl}?utm_source=instagram&utm_medium=social&utm_campaign=summer`); toast({ title: "UTM link copied!" }); }} data-testid="button-copy-utm">
                     <Copy className="h-3.5 w-3.5 mr-1.5" /> Sample UTM
                   </Button>
                 </div>
@@ -1070,15 +1280,15 @@ export default function LeadCaptureProgramEditorPage() {
           <TabsContent value="ai" className="space-y-6">
             <Card className="p-6 space-y-5">
               <div className="flex items-center justify-between">
-                <SectionHeader icon={<Lightbulb className="h-4 w-4" />} title="AI Recommendations" subtitle="Personalized suggestions to improve your funnel performance." />
+                <SectionHeader icon={<Lightbulb className="h-4 w-4" />} title={`AI Recommendations — ${ft.label}`} subtitle="Personalized suggestions to improve funnel performance." accent={accentIconBg} />
                 <Button size="sm" variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: [`/api/lead-capture/programs/${programId}/stats`] })} data-testid="button-refresh-ai-recs">
                   <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
                 </Button>
               </div>
               <div className="space-y-3">
-                {aiRecs.map((rec, i) => (
-                  <div key={i} className="flex gap-3 p-4 bg-orange-500/5 border border-orange-500/20 rounded-xl" data-testid={`ai-rec-${i}`}>
-                    <div className="p-1.5 bg-orange-500/20 rounded-lg text-orange-400 shrink-0 h-fit">
+                {ft.aiRecs.map((rec, i) => (
+                  <div key={i} className={`flex gap-3 p-4 ${ft.accentBg} border ${ft.accentBorder} rounded-xl`} data-testid={`ai-rec-${i}`}>
+                    <div className={`p-1.5 ${ft.accentBg} border ${ft.accentBorder} rounded-lg ${ft.accent} shrink-0 h-fit`}>
                       <Lightbulb className="h-3.5 w-3.5" />
                     </div>
                     <p className="text-sm text-foreground/90 leading-relaxed">{rec}</p>
@@ -1087,7 +1297,7 @@ export default function LeadCaptureProgramEditorPage() {
               </div>
               <div className="p-4 bg-muted/30 rounded-xl border border-border/40">
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  AI recommendations are based on your program's conversion data, industry benchmarks, and channel performance patterns. More accurate suggestions appear as your program collects more lead data.
+                  Recommendations are based on your program's conversion data, funnel type benchmarks, and channel performance patterns. More accurate suggestions appear as the funnel collects more data.
                 </p>
               </div>
             </Card>
