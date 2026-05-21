@@ -186,6 +186,13 @@ function AthleteDetail({
           {refreshMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
           Refresh
         </Button>
+        <Button size="sm" className="h-7 text-xs gap-1.5 bg-emerald-700 hover:bg-emerald-600"
+          onClick={() => {
+            const slug = window.location.pathname.split("/")[2];
+            window.location.href = `/org/${slug}/athlete/${userId}`;
+          }}>
+          Full Profile
+        </Button>
       </div>
 
       {isLoading ? (

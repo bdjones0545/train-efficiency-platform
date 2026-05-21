@@ -13372,5 +13372,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerProgramBuilderRoutes } = await import("./program-builder-routes");
   registerProgramBuilderRoutes(app);
 
+  // ── Unified Athlete Profile ───────────────────────────────────────────────────
+  const { registerAthleteProfileRoutes } = await import("./athlete-profile-routes");
+  registerAthleteProfileRoutes(app);
+
   return httpServer;
 }

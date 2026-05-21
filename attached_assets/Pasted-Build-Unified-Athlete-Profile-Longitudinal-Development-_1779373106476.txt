@@ -1,0 +1,221 @@
+Build Unified Athlete Profile + Longitudinal Development Graph Phase 1 for TrainEfficiency.
+
+GOAL:
+Create a single “Athlete Intelligence Profile” that combines all athlete systems into one longitudinal development view.
+
+This becomes:
+- the athlete’s operating profile
+- the coach’s intelligence dashboard
+- the foundation for recruiting and long-term development
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+Every athlete should have:
+
+Unified Athlete Profile
+
+Combining:
+- PR history
+- workout adherence
+- readiness trends
+- fatigue trends
+- education completion
+- intervention history
+- streaks
+- attendance
+- notes
+- badges
+- timeline events
+- body metrics (future-ready)
+- recruiting data (future-ready)
+
+====================================================
+2. NEW PAGE
+====================================================
+
+Create:
+ /org/:slug/athlete/:userId
+
+This is the central athlete intelligence page.
+
+====================================================
+3. PROFILE HEADER
+====================================================
+
+Top section includes:
+- athlete photo/avatar
+- name
+- team
+- sport
+- graduation year
+- position
+- status score ring
+- risk level badge
+- streak counter
+- badges earned
+- join date
+
+Quick actions:
+- message athlete
+- assign pathway
+- trigger workflow
+- generate AI review
+- export report
+
+====================================================
+4. LONGITUDINAL DEVELOPMENT GRAPH
+====================================================
+
+Create interactive graphs for:
+
+A. Readiness Trend
+- 7d / 30d / 90d
+
+B. PR Progression
+- squat
+- bench
+- deadlift
+- sprint metrics
+- jump metrics
+
+C. Workout Adherence
+- completion %
+- missed sessions
+
+D. Education Compliance
+- modules completed
+- quiz averages
+
+E. Fatigue / Soreness Trends
+
+====================================================
+5. ATHLETE INTELLIGENCE SUMMARY
+====================================================
+
+AI-generated athlete summary:
+
+Examples:
+“Jordan has shown strong adherence over the last 30 days but declining recovery scores after lower body sessions.”
+
+“Hydration education remains incomplete while fatigue trends are increasing.”
+
+“Bench press has improved 8% since March.”
+
+Generated from:
+- readiness
+- PRs
+- education
+- interventions
+- attendance
+- workouts
+
+Coach can:
+- regenerate
+- save notes
+- approve summaries
+
+====================================================
+6. COACH NOTES SYSTEM
+====================================================
+
+Add:
+- private coach notes
+- pinned observations
+- tags
+- communication history
+
+====================================================
+7. PERFORMANCE STORY TIMELINE
+====================================================
+
+Unified timeline combining:
+- workouts
+- PRs
+- education
+- interventions
+- readiness
+- missed workouts
+- badges
+- messages
+- attendance
+
+Filterable by type.
+
+====================================================
+8. ATHLETE HEALTH SNAPSHOT
+====================================================
+
+Visual cards:
+- readiness average
+- fatigue trend
+- soreness trend
+- adherence %
+- education %
+- streaks
+
+Color-coded:
+green / yellow / red
+
+====================================================
+9. RECRUITING / SHAREABLE PROFILE FOUNDATION
+====================================================
+
+Prepare schema for:
+- verified metrics
+- highlight videos
+- testing history
+- coach endorsements
+- shareable athlete profile
+
+No public sharing yet — foundation only.
+
+====================================================
+10. EXPORTABLE REPORTS
+====================================================
+
+Generate:
+- athlete PDF summary
+- coach review report
+- progress report
+- readiness snapshot
+
+====================================================
+11. API ENDPOINTS
+====================================================
+
+Create:
+GET /api/org/athlete-profile/:userId
+GET /api/org/athlete-profile/:userId/timeline
+GET /api/org/athlete-profile/:userId/graphs
+POST /api/org/athlete-profile/:userId/ai-summary
+POST /api/org/athlete-profile/:userId/export
+
+====================================================
+12. UI REQUIREMENTS
+====================================================
+
+Design:
+- premium dark TrainEfficiency UI
+- elite athlete dossier feel
+- modern graphs
+- responsive layout
+- fast coach scanning
+
+Think:
+“sports science command center”
+
+====================================================
+13. IMPORTANT
+====================================================
+
+This is NOT medical software.
+
+Avoid:
+- diagnoses
+- injury prediction claims
+- medical terminology
+
+Goal:
+Create a living athlete intelligence profile that tracks long-term development across the entire platform ecosystem.

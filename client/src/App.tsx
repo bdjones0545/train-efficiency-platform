@@ -93,6 +93,7 @@ import CoachWorkflowsPage from "@/pages/coach-workflows";
 import ProgramBuilderPage from "@/pages/program-builder";
 import AthleteExecutionPage from "@/pages/athlete-execution";
 import ExerciseMediaManagerPage from "@/pages/exercise-media-manager";
+import AthleteProfilePage from "@/pages/athlete-profile";
 import OrgGuardianPage from "@/pages/org-guardian";
 import CoachGuardianManagementPage from "@/pages/coach-guardian-management";
 import OrgProfilePage from "@/pages/org-profile";
@@ -210,6 +211,7 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
                 <Route path="/org/:slug/guardian" component={OrgGuardianPage} />
                 <Route path="/org/:slug/coach/guardians" component={CoachGuardianManagementPage} />
                 <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
+                <Route path="/org/:slug/athlete/:userId" component={AthleteProfilePage} />
                 <Route path="/org/:slug/coach/exercise-media" component={ExerciseMediaManagerPage} />
                 <Route path="/org/:slug/workout/:sessionId/execute" component={AthleteExecutionPage} />
                 <Route path="/org/:slug/programs/:programSlug/builder" component={ProgramBuilderPage} />
