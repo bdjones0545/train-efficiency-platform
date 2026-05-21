@@ -65,6 +65,7 @@ import {
   BarChart2,
   ClipboardList,
   Layers,
+  Zap,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -632,12 +633,12 @@ export function AppSidebar() {
   const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "scheduling" || !p.type)) || [];
 
   const orgSlug = (organization as any)?.slug || "";
-  const activeProgramTools = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "pr_tracker" || p.type === "workout_builder")) || [];
+  const activeProgramTools = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "pr_tracker" || p.type === "workout_builder" || p.type === "lead_capture")) || [];
   const programToolItems: NavItem[] = orgSlug
     ? activeProgramTools.map((p: any) => ({
         title: p.name,
-        url: `/org/${orgSlug}/programs/${p.slug}`,
-        icon: p.type === "pr_tracker" ? BarChart2 : ClipboardList,
+        url: p.type === "lead_capture" ? `/lead-capture/programs/${p.id}` : `/org/${orgSlug}/programs/${p.slug}`,
+        icon: p.type === "pr_tracker" ? BarChart2 : p.type === "lead_capture" ? Zap : ClipboardList,
         testId: `nav-program-tool-${p.id}`,
       }))
     : [];
