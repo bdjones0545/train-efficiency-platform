@@ -83,7 +83,8 @@ function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: stri
 
   const publicUrl = `/apply/${orgSlug}/${programSlug}`;
 
-  const funnelMax = funnel ? Math.max(...funnel.funnel.map((s) => s.value), 1) : 1;
+  const funnelSteps = funnel?.funnel ?? [];
+  const funnelMax = funnelSteps.length > 0 ? Math.max(...funnelSteps.map((s) => s.value), 1) : 1;
 
   return (
     <div className="space-y-3">
@@ -136,7 +137,7 @@ function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: stri
 
           {/* Funnel bars */}
           <div className="space-y-2.5">
-            {funnel.funnel.map((step, i) => (
+            {funnelSteps.map((step, i) => (
               <div key={step.key} data-testid={`funnel-step-${step.key}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-muted-foreground">{step.label}</span>

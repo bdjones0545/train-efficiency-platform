@@ -363,8 +363,12 @@ export default function LeadCaptureProgramEditorPage() {
 
   // ── funnel type (from URL param first, then from saved config)
   const urlFunnelType = new URLSearchParams(searchStr).get("funnelType") as FunnelType | null;
-  const [funnelType, setFunnelType] = useState<FunnelType>(urlFunnelType || "athlete_application");
-  const ft = FUNNEL_CONFIGS[funnelType];
+  const validFunnelTypes: FunnelType[] = ["athlete_application", "team_training", "employment_opportunity"];
+  const safeUrlFunnelType: FunnelType = validFunnelTypes.includes(urlFunnelType as FunnelType)
+    ? (urlFunnelType as FunnelType)
+    : "athlete_application";
+  const [funnelType, setFunnelType] = useState<FunnelType>(safeUrlFunnelType);
+  const ft = FUNNEL_CONFIGS[funnelType] ?? FUNNEL_CONFIGS["athlete_application"];
 
   // ── form state
   const [headline, setHeadline] = useState(ft.defaultHeadline);
@@ -434,9 +438,12 @@ export default function LeadCaptureProgramEditorPage() {
   useEffect(() => {
     if (!config || initialized) return;
     setInitialized(true);
-    const resolvedType: FunnelType = config.funnelType || urlFunnelType || "athlete_application";
+    const rawType = config.funnelType || urlFunnelType || "athlete_application";
+    const resolvedType: FunnelType = validFunnelTypes.includes(rawType as FunnelType)
+      ? (rawType as FunnelType)
+      : "athlete_application";
     setFunnelType(resolvedType);
-    const newFt = FUNNEL_CONFIGS[resolvedType];
+    const newFt = FUNNEL_CONFIGS[resolvedType] ?? FUNNEL_CONFIGS["athlete_application"];
     setHeadline(config.headline || newFt.defaultHeadline);
     setSubheadline(config.subheadline || newFt.defaultSubheadline);
     setCtaText(config.ctaText || newFt.defaultCtaText);
