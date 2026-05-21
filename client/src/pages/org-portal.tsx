@@ -34,6 +34,7 @@ import {
   Activity,
   Leaf,
   GraduationCap,
+  BarChart2,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { OrgMessageComposer } from "@/components/OrgMessageComposer";
@@ -192,6 +193,7 @@ function PortalHome({
   onLogout: () => void;
 }) {
   const { org, user, membership, upcomingBookings, pastBookingCount, schedulingPrograms, prTrackerPrograms, workoutBuilderPrograms, hasPrTracker, userTeams, recentPrEntries, bestPrs } = data;
+  const isCoach = membership?.role === "coach" || membership?.role === "owner";
 
   // Notification count
   const { data: notifData } = useQuery<any>({
@@ -223,6 +225,26 @@ function PortalHome({
   });
   const nutritionStats = nutritionData?.stats;
 
+  // Education progress (athletes + coach summary)
+  const { data: educationPathwaysData } = useQuery<any>({
+    queryKey: ["/api/org/education/pathways", slug],
+    queryFn: () =>
+      fetch("/api/org/education/pathways", { headers: { "X-Org-Auth-Token": orgToken } })
+        .then((r) => r.json()),
+    refetchInterval: 120000,
+  });
+  const educationPathways: any[] = educationPathwaysData?.pathways ?? [];
+
+  // Coach education analytics summary
+  const { data: educationAnalyticsData } = useQuery<any>({
+    queryKey: ["/api/org/education/analytics", slug],
+    queryFn: () =>
+      fetch("/api/org/education/analytics", { headers: { "X-Org-Auth-Token": orgToken } })
+        .then((r) => r.json()),
+    enabled: isCoach,
+    refetchInterval: 120000,
+  });
+
   // Unread messages
   const { data: messagesData } = useQuery<any[]>({
     queryKey: ["/api/org/messages"],
@@ -232,8 +254,6 @@ function PortalHome({
     refetchInterval: 60000,
   });
   const unreadMessages = (messagesData ?? []).filter((m: any) => !m.isRead);
-
-  const isCoach = membership?.role === "coach" || membership?.role === "owner";
   const prTrackerUrl = prTrackerPrograms?.[0] ? `/org/${slug}/programs/${prTrackerPrograms[0].slug}` : null;
   const scheduleUrl = `/org/${slug}/athletic`;
   const myScheduleUrl = `/org/${slug}/my-schedule`;
@@ -468,6 +488,68 @@ function PortalHome({
             </div>
           </section>
         )}
+
+        {/* ─── Education Progress Card (athletes) ─────────────────────────────── */}
+        {!isCoach && educationPathways.length > 0 && (() => {
+          const pathwaysWithProgress = educationPathways.filter((p: any) => p.progress !== null);
+          const totalPathways = educationPathways.filter((p: any) => p.status === "published").length;
+          const completedPathways = pathwaysWithProgress.filter((p: any) => p.progress?.percent === 100).length;
+          const inProgressPathways = pathwaysWithProgress.filter((p: any) => p.progress && p.progress.percent > 0 && p.progress.percent < 100);
+          const nextPathway = inProgressPathways[0] ?? educationPathways.find((p: any) => p.status === "published" && (!p.progress || p.progress.percent === 0));
+          const overallModulesCompleted = pathwaysWithProgress.reduce((sum: number, p: any) => sum + (p.progress?.completed ?? 0), 0);
+          const overallModulesTotal = pathwaysWithProgress.reduce((sum: number, p: any) => sum + (p.progress?.total ?? 0), 0);
+          const overallPercent = overallModulesTotal > 0 ? Math.round((overallModulesCompleted / overallModulesTotal) * 100) : 0;
+
+          if (totalPathways === 0) return null;
+
+          return (
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                  <GraduationCap className="h-3.5 w-3.5" /> Education
+                </h2>
+                <a href={`/org/${slug}/education`} className="text-xs text-primary hover:underline flex items-center gap-1" data-testid="link-view-all-education">
+                  View all <ArrowRight className="h-3 w-3" />
+                </a>
+              </div>
+              <a href={`/org/${slug}/education`} data-testid="card-education-progress">
+                <Card className="p-4 border-primary/20 bg-primary/[0.02] hover:border-primary/30 transition-colors">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <GraduationCap className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold">My Learning</p>
+                      <p className="text-xs text-muted-foreground">
+                        {completedPathways === totalPathways && totalPathways > 0
+                          ? `All ${totalPathways} pathways complete!`
+                          : `${completedPathways} of ${totalPathways} pathway${totalPathways !== 1 ? "s" : ""} complete`}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs text-primary border-primary/30 flex-shrink-0" data-testid="text-education-progress-pct">
+                      {overallPercent}%
+                    </Badge>
+                  </div>
+                  <div className="w-full bg-muted/30 rounded-full h-1.5 mb-2">
+                    <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${overallPercent}%` }} />
+                  </div>
+                  {nextPathway && (
+                    <p className="text-xs text-primary">
+                      {nextPathway.progress?.percent > 0
+                        ? `Continue: ${nextPathway.title} →`
+                        : `Start: ${nextPathway.title} →`}
+                    </p>
+                  )}
+                  {completedPathways === totalPathways && totalPathways > 0 && (
+                    <p className="text-xs text-emerald-400 flex items-center gap-1">
+                      <Trophy className="h-3 w-3" /> All pathways complete — great work!
+                    </p>
+                  )}
+                </Card>
+              </a>
+            </section>
+          );
+        })()}
 
         {/* ─── Nutrition Education Progress Card ──────────────────────────────── */}
         {!isCoach && nutritionStats && nutritionStats.completed < nutritionStats.total && (
@@ -894,6 +976,12 @@ function PortalHome({
                 label="Education Builder"
                 description="Build & manage pathways"
                 href={`/org/${slug}/coach/education-builder`}
+              />
+              <ActionCard
+                icon={<BarChart2 className="h-5 w-5 text-indigo-400" />}
+                label="Education Progress"
+                description="Athlete completion stats"
+                href={`/org/${slug}/coach/education-progress`}
               />
               <ActionCard
                 icon={<ShieldCheck className="h-5 w-5 text-violet-400" />}

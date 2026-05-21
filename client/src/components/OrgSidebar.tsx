@@ -21,6 +21,8 @@ import {
   ChevronDown,
   Loader2,
   Lock,
+  GraduationCap,
+  PenSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -236,12 +238,21 @@ function buildNavSections(
     }
 
     sections.push({
+      id: "org-education",
+      label: "Education",
+      icon: GraduationCap,
+      items: [
+        { title: "Education Builder", url: `/org/${orgSlug}/coach/education-builder`, icon: PenSquare, testId: "org-nav-education-builder" },
+        { title: "Education Progress", url: `/org/${orgSlug}/coach/education-progress`, icon: BarChart2, testId: "org-nav-education-progress" },
+      ],
+    });
+
+    sections.push({
       id: "org-manage",
       label: "Manage",
       icon: UsersRound,
       items: [
         { title: "Teams", url: `/org/${orgSlug}/coach/teams`, icon: UsersRound, testId: "org-nav-teams" },
-        { title: "Education", url: `/org/${orgSlug}/education`, icon: BookOpen, testId: "org-nav-education" },
       ],
     });
 
@@ -278,6 +289,15 @@ function buildNavSections(
         items: toolItems,
       });
     }
+
+    sections.push({
+      id: "org-education",
+      label: "Education",
+      icon: GraduationCap,
+      items: [
+        { title: "Education Progress", url: `/org/${orgSlug}/coach/education-progress`, icon: BarChart2, testId: "org-nav-education-progress" },
+      ],
+    });
 
     sections.push({
       id: "org-account",
@@ -318,11 +338,19 @@ function buildNavSections(
     }
 
     sections.push({
+      id: "org-education",
+      label: "Education",
+      icon: GraduationCap,
+      items: [
+        { title: "My Learning", url: `/org/${orgSlug}/education`, icon: BookOpen, testId: "org-nav-education" },
+      ],
+    });
+
+    sections.push({
       id: "org-account",
       label: "Account",
       icon: UserCog,
       items: [
-        { title: "Education", url: `/org/${orgSlug}/education`, icon: BookOpen, testId: "org-nav-education" },
         { title: "Notifications", url: `/org/${orgSlug}/notifications`, icon: Bell, testId: "org-nav-notifications" },
         { title: "My Profile", url: `/org/${orgSlug}/profile`, icon: UserCog, testId: "org-nav-profile" },
       ],
@@ -344,19 +372,27 @@ function buildNavSections(
       },
     ];
 
-    const guardianTools: NavItem[] = [
+    const athleteItems: NavItem[] = [
       ...(wbTool ? [{ title: "Workouts", url: `/org/${orgSlug}/programs/${wbTool.slug}`, icon: ClipboardList, testId: `org-nav-tool-${wbTool.slug}` }] : []),
-      { title: "Education", url: `/org/${orgSlug}/education`, icon: BookOpen, testId: "org-nav-education" },
     ];
 
-    if (guardianTools.length > 0) {
+    if (athleteItems.length > 0) {
       sections.push({
         id: "org-tools",
         label: "Athlete",
         icon: ClipboardList,
-        items: guardianTools,
+        items: athleteItems,
       });
     }
+
+    sections.push({
+      id: "org-education",
+      label: "Education",
+      icon: GraduationCap,
+      items: [
+        { title: "Athlete Education", url: `/org/${orgSlug}/education`, icon: BookOpen, testId: "org-nav-education" },
+      ],
+    });
 
     sections.push({
       id: "org-account",
