@@ -2728,6 +2728,8 @@ export const leadCapturePrograms = pgTable("lead_capture_programs", {
   bookingUrl: text("booking_url"),
   bookingType: varchar("booking_type").default("none"),
   estimatedAthleteValueCents: integer("estimated_athlete_value_cents").default(0),
+  // v5: Extended editor config (testimonials, form config, branding, hero options, who-this-is-for cards)
+  extendedConfig: jsonb("extended_config").default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

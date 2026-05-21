@@ -14128,7 +14128,12 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
       const program = await storage.getAthleticProgramById(req.params.programId);
       if (!program || program.organizationId !== profile.organizationId) return res.status(404).json({ message: "Program not found" });
-      const { headline, subheadline, ctaText, heroImageUrl, benefits, socialProof, whoIsThisFor, metaPixelId, googleAdsConversionId, googleAdsConversionLabel } = req.body;
+      const {
+        headline, subheadline, ctaText, heroImageUrl, benefits, socialProof, whoIsThisFor,
+        metaPixelId, googleAdsConversionId, googleAdsConversionLabel,
+        bookingUrl, bookingType, estimatedAthleteValueCents,
+        extendedConfig,
+      } = req.body;
       const { db } = await import("./db");
       const { leadCapturePrograms } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -14138,13 +14143,17 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
           headline: headline ?? existing.headline,
           subheadline: subheadline ?? existing.subheadline,
           ctaText: ctaText ?? existing.ctaText,
-          heroImageUrl: heroImageUrl ?? existing.heroImageUrl,
+          heroImageUrl: heroImageUrl !== undefined ? (heroImageUrl || null) : existing.heroImageUrl,
           benefits: benefits ?? existing.benefits,
           socialProof: socialProof ?? existing.socialProof,
           whoIsThisFor: whoIsThisFor ?? existing.whoIsThisFor,
           metaPixelId: metaPixelId !== undefined ? (metaPixelId || null) : existing.metaPixelId,
           googleAdsConversionId: googleAdsConversionId !== undefined ? (googleAdsConversionId || null) : existing.googleAdsConversionId,
           googleAdsConversionLabel: googleAdsConversionLabel !== undefined ? (googleAdsConversionLabel || null) : existing.googleAdsConversionLabel,
+          bookingUrl: bookingUrl !== undefined ? (bookingUrl || null) : existing.bookingUrl,
+          bookingType: bookingType ?? existing.bookingType,
+          estimatedAthleteValueCents: estimatedAthleteValueCents !== undefined ? estimatedAthleteValueCents : existing.estimatedAthleteValueCents,
+          extendedConfig: extendedConfig !== undefined ? extendedConfig : (existing.extendedConfig ?? {}),
           updatedAt: new Date(),
         }).where(eq(leadCapturePrograms.programId, req.params.programId)).returning();
         return res.json(updated);
@@ -14162,6 +14171,10 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
           metaPixelId: metaPixelId || null,
           googleAdsConversionId: googleAdsConversionId || null,
           googleAdsConversionLabel: googleAdsConversionLabel || null,
+          bookingUrl: bookingUrl || null,
+          bookingType: bookingType || "none",
+          estimatedAthleteValueCents: estimatedAthleteValueCents || 0,
+          extendedConfig: extendedConfig || {},
         }).returning();
         return res.json(created);
       }

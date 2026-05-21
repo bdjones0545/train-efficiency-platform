@@ -2914,7 +2914,7 @@ export default function AdminConfigurationPage() {
                           </>
                         ) : p.type === "lead_capture" ? (
                           <>
-                            <Button size="sm" variant="ghost" className="h-7 text-orange-500 hover:text-orange-600" onClick={() => navigate("/command-center")} data-testid={`button-configure-program-${p.id}`}>
+                            <Button size="sm" variant="ghost" className="h-7 text-orange-500 hover:text-orange-600" onClick={() => navigate(`/lead-capture/programs/${p.id}`)} data-testid={`button-configure-program-${p.id}`}>
                               <Settings className="h-3.5 w-3.5" />
                             </Button>
                             <Button size="sm" variant="ghost" className="h-7 text-muted-foreground hover:text-foreground" onClick={() => window.open(`/apply/${orgData?.slug}/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>

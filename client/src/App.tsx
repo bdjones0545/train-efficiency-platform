@@ -104,6 +104,7 @@ import OrgIntelligencePage from "@/pages/org-intelligence";
 import CoachCommandCenterPage from "@/pages/coach-command-center";
 import CoachCommunicationsCenterPage from "@/pages/coach-communications-center";
 import LeadCaptureLandingPage from "@/pages/lead-capture-landing";
+import LeadCaptureProgramEditorPage from "@/pages/lead-capture-program-editor";
 
 interface SubscriptionStatus {
   status: string;
@@ -311,6 +312,7 @@ function AuthenticatedLayout() {
                   <Route path="/scheduling/agent" component={SchedulingAgentPage} />
                   <Route path="/admin" component={AdminDashboardPage} />
                   <Route path="/admin/configuration" component={AdminConfigurationPage} />
+                  <Route path="/lead-capture/programs/:programId" component={LeadCaptureProgramEditorPage} />
                   <Route path="/admin/branding" component={AdminBrandingPage} />
                   <Route path="/admin/media" component={AdminMediaPage} />
                   <Route path="/admin/stripe" component={AdminStripePage} />
