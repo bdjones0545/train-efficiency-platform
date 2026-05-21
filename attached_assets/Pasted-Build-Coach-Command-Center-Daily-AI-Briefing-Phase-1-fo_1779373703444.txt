@@ -1,0 +1,218 @@
+Build Coach Command Center + Daily AI Briefing Phase 1 for TrainEfficiency.
+
+GOAL:
+Create a centralized AI-powered operational dashboard for coaches.
+
+The system should synthesize:
+- readiness
+- workouts
+- PRs
+- interventions
+- education
+- streaks
+- attendance
+- missed sessions
+- risk flags
+- athlete engagement
+
+into one actionable daily command center.
+
+====================================================
+1. NEW PAGE
+====================================================
+
+Create:
+ /org/:slug/coach/command-center
+
+This becomes the coach’s home base.
+
+====================================================
+2. DAILY AI BRIEFING
+====================================================
+
+Top hero section:
+“Today’s AI Briefing”
+
+Generated daily by GPT-4o.
+
+AI receives:
+- athlete status scores
+- active risk flags
+- readiness trends
+- missed workouts
+- PR spikes
+- intervention queue
+- education compliance
+- upcoming sessions
+- follow-ups due
+
+AI returns:
+
+A. Top Priorities
+Examples:
+- “3 athletes show declining recovery scores.”
+- “Hydration compliance dropped among linemen.”
+- “2 interventions require follow-up today.”
+
+B. Positive Wins
+- PR streaks
+- education completions
+- adherence improvements
+
+C. Recommended Actions
+- assign recovery pathway
+- review athlete workload
+- follow up with disengaged athletes
+
+Tone:
+professional coaching operations assistant.
+
+====================================================
+3. COMMAND CENTER SECTIONS
+====================================================
+
+A. Athlete Risk Overview
+- green/yellow/red counts
+- highest-risk athletes
+- trend arrows
+
+B. Today’s Alerts
+- low readiness
+- missed workouts
+- overdue interventions
+- quiz failures
+- inactivity
+
+C. Team Readiness Heatmap
+Visual grid:
+athlete → status color
+
+D. Intervention Queue
+- pending interventions
+- due follow-ups
+- unresolved flags
+
+E. Performance Highlights
+- PRs this week
+- streak leaders
+- adherence improvements
+
+F. Education Compliance
+- overdue pathways
+- top-performing athletes
+- low completion teams
+
+====================================================
+4. AI INSIGHT CARDS
+====================================================
+
+Examples:
+“Bench PRs rising while readiness declining.”
+
+“Morning group adherence higher than afternoon group.”
+
+“Recovery scores improve after hydration module completion.”
+
+These should be:
+- generated insights
+- concise
+- actionable
+- non-medical
+
+====================================================
+5. FOLLOW-UP PRIORITIZATION
+====================================================
+
+AI should rank:
+- who needs attention first
+- severity
+- urgency
+- intervention impact
+
+====================================================
+6. COACH TASKS PANEL
+====================================================
+
+Auto-generated tasks:
+- review athlete
+- approve intervention
+- assign education
+- follow up
+- adjust program
+
+Tasks can be:
+- completed
+- snoozed
+- delegated (future-ready)
+
+====================================================
+7. DAILY DIGEST INFRASTRUCTURE
+====================================================
+
+Create:
+coach_daily_briefings
+- orgId
+- generatedAt
+- briefing jsonb
+- generatedBy
+- summary
+- createdAt
+
+Allow:
+- regenerate briefing
+- store daily history
+
+====================================================
+8. COMMAND CENTER API
+====================================================
+
+Create:
+GET /api/org/command-center
+POST /api/org/command-center/regenerate-briefing
+GET /api/org/command-center/history
+
+====================================================
+9. PORTAL / SIDEBAR
+====================================================
+
+Add:
+“Command Center”
+under:
+Athlete Intelligence
+
+Make this the default landing page for:
+- owner
+- admin
+- coach
+
+====================================================
+10. UI REQUIREMENTS
+====================================================
+
+Design:
+- elite sports science operations center
+- premium dark UI
+- high information density
+- fast scanning
+- responsive layout
+
+Think:
+“AI-assisted coaching headquarters”
+
+====================================================
+11. IMPORTANT
+====================================================
+
+Avoid:
+- medical diagnosis
+- injury prediction
+- alarming language
+
+Focus:
+- operational coaching intelligence
+- prioritization
+- intervention management
+- athlete development oversight
+
+Goal:
+TrainEfficiency becomes a daily AI operating system for coaches.
