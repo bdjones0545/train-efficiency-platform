@@ -4,7 +4,7 @@ import crypto from "crypto";
 import {
   exerciseLibrary, programTemplates, programBlocks, programSessionGroups,
   workoutPrograms, workoutSessions, orgSessions, orgMemberships, orgUsers,
-  coachProfiles, userProfiles,
+  coachProfiles, userProfiles, workoutSetLogs, athleteStreaks,
 } from "@shared/schema";
 import { eq, and, desc, asc, or, sql as drizzleSql, gt } from "drizzle-orm";
 import OpenAI from "openai";
@@ -530,4 +530,190 @@ Return JSON: { "exercises": [{ "name": "...", "sets": "3", "reps": "8", "load": 
       res.status(500).json({ error: "AI refinement failed" });
     }
   });
+
+  // ── POST /api/org/workout-execution/session/:id/finish ────────────────────────
+  app.post("/api/org/workout-execution/session/:id/finish", resolveAuth, async (req: any, res) => {
+    const { id } = req.params;
+    const { orgId, userId } = req._pbAuth;
+
+    // Verify session belongs to org
+    const [session] = await db.select().from(workoutSessions)
+      .where(and(eq(workoutSessions.id, id), eq(workoutSessions.orgId, orgId))).limit(1);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { readinessData, exerciseLogs, completionNotes, completionRating } = req.body ?? {};
+
+    // Persist set logs
+    if (Array.isArray(exerciseLogs)) {
+      for (let ei = 0; ei < exerciseLogs.length; ei++) {
+        const exLog = exerciseLogs[ei];
+        const setLogs: any[] = exLog.setLogs ?? exLog.completedData ? [exLog.completedData] : [];
+        for (let si = 0; si < setLogs.length; si++) {
+          const s = setLogs[si];
+          if (!s) continue;
+          await db.insert(workoutSetLogs).values({
+            orgId, workoutSessionId: id, athleteUserId: userId,
+            exerciseIndex: ei, exerciseName: exLog.exerciseName ?? `Exercise ${ei + 1}`,
+            setNumber: si + 1,
+            actualReps: s.actualReps ?? s.reps ?? null,
+            actualLoad: s.actualLoad ?? s.load ?? null,
+            rpe: s.rpe ?? null,
+            completed: s.completed ?? true,
+            notes: exLog.notes ?? null,
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // Update streak
+    const streak = await updateAthleteStreak(orgId, userId);
+
+    res.json({ success: true, streak });
+  });
+
+  // ── GET single session (for athlete execution) ──────────────────────────────
+  app.get("/api/org/workout-builder/session/:id", resolveAuth, async (req: any, res) => {
+    const { id } = req.params;
+    const { orgId } = req._pbAuth;
+
+    const [session] = await db.select().from(workoutSessions)
+      .where(and(eq(workoutSessions.id, id), eq(workoutSessions.orgId, orgId))).limit(1);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const groups = await db.select().from(programSessionGroups)
+      .where(eq(programSessionGroups.workoutSessionId, id))
+      .orderBy(asc(programSessionGroups.orderIndex));
+
+    res.json({ session, groups });
+  });
+
+  // ── POST /api/org/exercises/:id/media — attach media to exercise ────────────
+  app.post("/api/org/exercises/:id/media", requireCoach, async (req: any, res) => {
+    const { orgId } = req._pbAuth;
+    const { id } = req.params;
+    const { youtubeUrl, embeddedVideoUrl, videoUrl, gifUrl, thumbnailUrl, coachVoiceoverUrl, demoType } = req.body;
+
+    const updates: any = {};
+    if (youtubeUrl !== undefined) updates.youtubeUrl = youtubeUrl;
+    if (embeddedVideoUrl !== undefined) updates.embeddedVideoUrl = embeddedVideoUrl;
+    if (videoUrl !== undefined) updates.videoUrl = videoUrl;
+    if (gifUrl !== undefined) updates.gifUrl = gifUrl;
+    if (thumbnailUrl !== undefined) updates.thumbnailUrl = thumbnailUrl;
+    if (coachVoiceoverUrl !== undefined) updates.coachVoiceoverUrl = coachVoiceoverUrl;
+    if (demoType !== undefined) updates.demoType = demoType;
+
+    // Allow updating global exercises too (coaches can add media to global library)
+    const [updated] = await db.update(exerciseLibrary).set(updates)
+      .where(or(
+        and(eq(exerciseLibrary.id, id), eq(exerciseLibrary.orgId, orgId)),
+        eq(exerciseLibrary.id, id),
+      )).returning();
+
+    res.json({ exercise: updated });
+  });
+
+  // ── POST /api/org/exercises/:id/ask-trainchat ────────────────────────────────
+  app.post("/api/org/exercises/:id/ask-trainchat", resolveAuth, async (req: any, res) => {
+    const { id } = req.params;
+    const { question, exerciseName } = req.body;
+    if (!question) return res.status(400).json({ error: "question required" });
+
+    // Get exercise context from DB if available
+    const [ex] = await db.select().from(exerciseLibrary).where(eq(exerciseLibrary.id, id)).limit(1);
+    const context = ex ? JSON.stringify({
+      name: ex.name,
+      category: ex.category,
+      movementPattern: ex.movementPattern,
+      primaryMuscles: ex.primaryMuscles,
+      coachingCues: ex.coachingCues,
+      commonMistakes: ex.commonMistakes,
+      description: ex.description,
+    }) : `Exercise: ${exerciseName ?? "Unknown"}`;
+
+    const systemPrompt = `You are an expert strength and conditioning coach. Answer athlete questions about exercises clearly and concisely. Be encouraging and practical. Keep answers to 2-4 sentences.`;
+    const userPrompt = `Exercise context: ${context}\n\nAthlete question: "${question}"`;
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 300,
+      });
+      res.json({ answer: completion.choices[0].message.content ?? "No answer available." });
+    } catch {
+      res.status(500).json({ error: "AI unavailable" });
+    }
+  });
+
+  // ── PATCH /api/org/workout-execution/set-log — log individual set ─────────────
+  app.patch("/api/org/workout-execution/set-log", resolveAuth, async (req: any, res) => {
+    const { orgId, userId } = req._pbAuth;
+    const { workoutSessionId, exerciseIndex, exerciseName, setNumber, actualReps, actualLoad, rpe, completed, notes } = req.body;
+    if (!workoutSessionId || !exerciseName) return res.status(400).json({ error: "workoutSessionId and exerciseName required" });
+
+    const [log] = await db.insert(workoutSetLogs).values({
+      orgId, workoutSessionId, athleteUserId: userId,
+      exerciseIndex: exerciseIndex ?? 0, exerciseName,
+      setNumber: setNumber ?? 1, actualReps, actualLoad,
+      rpe: rpe ?? null, completed: completed ?? false, notes,
+    }).returning();
+
+    res.json({ log });
+  });
+
+  // ── GET /api/org/workout-execution/streak — get athlete streak ────────────────
+  app.get("/api/org/workout-execution/streak", resolveAuth, async (req: any, res) => {
+    const { orgId, userId } = req._pbAuth;
+    const [streak] = await db.select().from(athleteStreaks)
+      .where(and(eq(athleteStreaks.orgId, orgId), eq(athleteStreaks.athleteUserId, userId))).limit(1);
+    res.json({ streak: streak ?? { currentStreak: 0, longestStreak: 0, totalSessionsCompleted: 0 } });
+  });
+}
+
+// ── Helper: update streak after session completion ───────────────────────────
+export async function updateAthleteStreak(orgId: string, athleteUserId: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [existing] = await db.select().from(athleteStreaks)
+    .where(and(eq(athleteStreaks.orgId, orgId), eq(athleteStreaks.athleteUserId, athleteUserId))).limit(1);
+
+  if (!existing) {
+    const [created] = await db.insert(athleteStreaks).values({
+      orgId, athleteUserId,
+      currentStreak: 1, longestStreak: 1,
+      lastCompletedDate: new Date(),
+      totalSessionsCompleted: 1,
+    }).returning();
+    return created;
+  }
+
+  const lastDate = existing.lastCompletedDate ? new Date(existing.lastCompletedDate) : null;
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  let newStreak = 1;
+  if (lastDate) {
+    const lastDay = new Date(lastDate);
+    lastDay.setHours(0, 0, 0, 0);
+    if (lastDay.getTime() === today.getTime()) {
+      newStreak = existing.currentStreak; // Already completed today
+    } else if (lastDay.getTime() === yesterday.getTime()) {
+      newStreak = existing.currentStreak + 1; // Consecutive day
+    }
+    // else streak resets to 1
+  }
+
+  const [updated] = await db.update(athleteStreaks).set({
+    currentStreak: newStreak,
+    longestStreak: Math.max(newStreak, existing.longestStreak),
+    lastCompletedDate: new Date(),
+    totalSessionsCompleted: existing.totalSessionsCompleted + 1,
+    updatedAt: new Date(),
+  }).where(eq(athleteStreaks.id, existing.id)).returning();
+
+  return updated;
 }

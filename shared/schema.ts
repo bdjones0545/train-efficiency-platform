@@ -2476,13 +2476,50 @@ export const exerciseLibrary = pgTable("exercise_library", {
   progressions: jsonb("progressions").default([]),
   regressions: jsonb("regressions").default([]),
   youtubeUrl: varchar("youtube_url", { length: 500 }),
+  embeddedVideoUrl: varchar("embedded_video_url", { length: 500 }),
   videoUrl: varchar("video_url", { length: 500 }),
+  gifUrl: varchar("gif_url", { length: 500 }),
   thumbnailUrl: varchar("thumbnail_url", { length: 500 }),
+  coachVoiceoverUrl: varchar("coach_voiceover_url", { length: 500 }),
+  demoType: varchar("demo_type", { length: 30 }).default("youtube"),
   tags: jsonb("tags").default([]),
   isGlobal: boolean("is_global").notNull().default(false),
   createdByUserId: varchar("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const workoutSetLogs = pgTable("workout_set_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workoutSessionId: varchar("workout_session_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  exerciseIndex: integer("exercise_index").notNull().default(0),
+  exerciseName: varchar("exercise_name", { length: 200 }).notNull(),
+  setNumber: integer("set_number").notNull().default(1),
+  prescribedReps: varchar("prescribed_reps", { length: 50 }),
+  prescribedLoad: varchar("prescribed_load", { length: 50 }),
+  actualReps: varchar("actual_reps", { length: 50 }),
+  actualLoad: varchar("actual_load", { length: 50 }),
+  rpe: integer("rpe"),
+  completed: boolean("completed").notNull().default(false),
+  durationSeconds: integer("duration_seconds"),
+  notes: text("notes"),
+  loggedAt: timestamp("logged_at").defaultNow(),
+});
+
+export const athleteStreaks = pgTable("athlete_streaks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  currentStreak: integer("current_streak").notNull().default(0),
+  longestStreak: integer("longest_streak").notNull().default(0),
+  lastCompletedDate: timestamp("last_completed_date"),
+  totalSessionsCompleted: integer("total_sessions_completed").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type WorkoutSetLog = typeof workoutSetLogs.$inferSelect;
+export type AthleteStreak = typeof athleteStreaks.$inferSelect;
 
 export const programTemplates = pgTable("program_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

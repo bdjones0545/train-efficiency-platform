@@ -115,10 +115,10 @@ function InlineField({ label, value, onChange, placeholder, className }: { label
 
 // ─── Exercise Card ─────────────────────────────────────────────────────────────
 function ExerciseCard({
-  ex, index, sessionId, orgId, onUpdate, onDelete, onMoveUp, onMoveDown,
+  ex, index, sessionId, orgId, headers, onUpdate, onDelete, onMoveUp, onMoveDown,
   isDragging, onDragStart, onDragOver, onDrop,
 }: {
-  ex: Exercise; index: number; sessionId: string; orgId: string;
+  ex: Exercise; index: number; sessionId: string; orgId: string; headers: Record<string, string>;
   onUpdate: (idx: number, field: string, val: string) => void;
   onDelete: (idx: number) => void;
   onMoveUp: (idx: number) => void;
@@ -129,6 +129,34 @@ function ExerciseCard({
   onDrop: (e: React.DragEvent, idx: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [showMedia, setShowMedia] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState(ex.youtubeUrl ?? "");
+  const [savingMedia, setSavingMedia] = useState(false);
+  const { toast } = useToast();
+
+  async function saveMedia() {
+    if (!ex._exId) return;
+    setSavingMedia(true);
+    try {
+      const r = await fetch(`/api/org/exercises/${ex._exId}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        credentials: "include",
+        body: JSON.stringify({ youtubeUrl: youtubeUrl || null, demoType: youtubeUrl ? "youtube" : undefined }),
+      });
+      if (r.ok) {
+        onUpdate(index, "youtubeUrl", youtubeUrl);
+        toast({ title: "Media saved" });
+        setShowMedia(false);
+      } else {
+        toast({ title: "Failed to save media", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error saving media", variant: "destructive" });
+    } finally { setSavingMedia(false); }
+  }
+
+  const hasCues = (ex.coachingCues?.length ?? 0) > 0;
 
   return (
     <div
@@ -150,11 +178,15 @@ function ExerciseCard({
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="font-medium text-sm text-white truncate">{ex.name}</span>
             <CatBadge cat={ex.category} />
-            {ex.youtubeUrl && (
-              <a href={ex.youtubeUrl} target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-300">
+            {ex.youtubeUrl ? (
+              <button onClick={() => setShowMedia((v) => !v)} className="text-red-400 hover:text-red-300" title="YouTube demo attached">
                 <Youtube className="h-3.5 w-3.5" />
-              </a>
-            )}
+              </button>
+            ) : ex._exId ? (
+              <button onClick={() => setShowMedia((v) => !v)} className="text-neutral-600 hover:text-neutral-400" title="Add demo media">
+                <Youtube className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             <InlineField label="Sets" value={ex.sets} onChange={(v) => onUpdate(index, "sets", v)} />
@@ -170,11 +202,35 @@ function ExerciseCard({
             </div>
           </div>
 
-          {expanded && ex.coachingCues && ex.coachingCues.length > 0 && (
+          {/* Coach media management */}
+          {showMedia && ex._exId && (
+            <div className="mt-2 pt-2 border-t border-neutral-800 space-y-2">
+              <p className="text-xs text-neutral-400 font-medium flex items-center gap-1.5">
+                <Youtube className="h-3 w-3 text-red-400" /> Demo Media
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="YouTube URL (e.g. https://youtube.com/watch?v=...)"
+                  className="flex-1 h-7 bg-neutral-800 border-neutral-700 text-white text-xs"
+                  data-testid={`input-youtube-url-${index}`}
+                />
+                <Button size="sm" className="h-7 bg-emerald-700 hover:bg-emerald-600 text-xs"
+                  disabled={savingMedia} onClick={saveMedia}>
+                  {savingMedia ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                </Button>
+              </div>
+              <p className="text-xs text-neutral-600">Athletes will see an embedded demo on their execution screen.</p>
+            </div>
+          )}
+
+          {/* Coaching cues */}
+          {expanded && hasCues && (
             <div className="mt-2 pt-2 border-t border-neutral-800">
               <p className="text-xs text-neutral-500 mb-1">Coaching Cues:</p>
               <ul className="space-y-0.5">
-                {ex.coachingCues.map((cue, i) => (
+                {ex.coachingCues!.map((cue, i) => (
                   <li key={i} className="text-xs text-neutral-300 flex items-start gap-1.5">
                     <Check className="h-3 w-3 text-emerald-400 mt-0.5 shrink-0" />
                     {cue}
@@ -195,7 +251,7 @@ function ExerciseCard({
             onClick={() => onMoveDown(index)} data-testid={`btn-move-down-${index}`}>
             <ChevronDown className="h-3 w-3" />
           </Button>
-          {ex.coachingCues && ex.coachingCues.length > 0 && (
+          {hasCues && (
             <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-neutral-400 hover:text-neutral-200"
               onClick={() => setExpanded((v) => !v)} data-testid={`btn-expand-${index}`}>
               <BookOpen className="h-3 w-3" />
@@ -410,7 +466,7 @@ function SessionPanel({
       ) : (
         <div className="space-y-2">
           {exercises.map((ex, i) => (
-            <ExerciseCard key={i} ex={ex} index={i} sessionId={session.id} orgId={orgId}
+            <ExerciseCard key={i} ex={ex} index={i} sessionId={session.id} orgId={orgId} headers={headers}
               onUpdate={handleUpdateEx} onDelete={handleDeleteEx}
               onMoveUp={handleMoveUp} onMoveDown={handleMoveDown}
               isDragging={dragIdx.current === i}

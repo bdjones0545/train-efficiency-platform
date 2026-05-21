@@ -1,0 +1,180 @@
+Build Exercise Media + Athlete Execution Experience Phase 2 for TrainEfficiency.
+
+GOAL:
+Transform athlete workout execution into a premium guided training experience.
+
+Current:
+Athletes mostly see:
+- exercise name
+- sets/reps
+- notes
+
+Next:
+Athletes should experience:
+- embedded media
+- coaching cues
+- guided supersets/circuits
+- timers
+- completion tracking
+- progression assistance
+- modern mobile workout UX
+
+====================================================
+1. EXERCISE MEDIA SYSTEM
+====================================================
+
+Expand exercise_library support:
+
+Add:
+- youtubeUrl
+- embeddedVideoUrl
+- gifUrl
+- thumbnailUrl
+- coachVoiceoverUrl nullable
+- demoType
+  (youtube, upload, gif)
+
+Exercise cards should render:
+- embedded YouTube player OR
+- uploaded video OR
+- GIF demo
+
+====================================================
+2. ATHLETE EXECUTION UI
+====================================================
+
+Upgrade athlete session execution experience.
+
+Session page should include:
+
+A. Exercise Card
+- exercise name
+- demo media
+- sets/reps/load
+- RPE target
+- coaching cues
+- common mistakes
+- progression/regression notes
+
+B. Completion Controls
+- mark set complete
+- actual reps/load
+- RPE logging
+- notes
+
+C. Session Progress
+- total completion %
+- current exercise
+- estimated time remaining
+
+====================================================
+3. SUPERSET / CIRCUIT FLOW
+====================================================
+
+Visually group:
+- supersets
+- circuits
+- giant sets
+- contrast sets
+
+Features:
+- linked exercise flow
+- round tracking
+- rest timer between rounds
+
+====================================================
+4. REST TIMER SYSTEM
+====================================================
+
+Add:
+- built-in timer
+- auto-start after set completion
+- coach-defined rest durations
+- optional sound/vibration
+
+====================================================
+5. EXERCISE INTELLIGENCE PANEL
+====================================================
+
+Expandable athlete panel:
+
+Show:
+- coaching cues
+- common mistakes
+- regressions
+- progressions
+- target muscles
+- movement category
+
+====================================================
+6. COACH MEDIA MANAGEMENT
+====================================================
+
+Allow coaches to:
+- attach YouTube videos
+- upload custom demo videos
+- upload GIFs
+- attach team-specific coaching videos
+
+====================================================
+7. AI EXERCISE HELP
+====================================================
+
+Add:
+“Ask TrainChat About This Exercise”
+
+AI can explain:
+- purpose
+- technique
+- common errors
+- breathing
+- progression options
+
+Coach-controlled.
+
+====================================================
+8. MOBILE-FIRST EXECUTION
+====================================================
+
+Design for:
+- one-thumb navigation
+- large tap targets
+- swipe between exercises
+- sticky progress/footer
+- quick logging
+
+====================================================
+9. ATHLETE MOTIVATION LAYER
+====================================================
+
+Add:
+- completion streaks
+- session completion celebration
+- PR indicators
+- coach encouragement prompts
+
+====================================================
+10. API ENDPOINTS
+====================================================
+
+Create:
+PATCH /api/org/workout-execution/set-log
+PATCH /api/org/workout-execution/rest-timer
+POST /api/org/exercises/:id/media
+POST /api/org/exercises/:id/ask-trainchat
+
+====================================================
+11. IMPORTANT
+====================================================
+
+This should feel like:
+- a premium athlete training app
+NOT
+- a spreadsheet viewer
+
+Goal:
+Athletes should feel guided through workouts with:
+- media
+- cues
+- intelligent assistance
+- smooth execution UX
