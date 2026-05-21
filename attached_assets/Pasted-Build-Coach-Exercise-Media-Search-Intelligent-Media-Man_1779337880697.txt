@@ -1,0 +1,219 @@
+Build Coach Exercise Media Search + Intelligent Media Management Phase 3 for TrainEfficiency.
+
+GOAL:
+Make exercise media scalable and fast to manage across the entire platform.
+
+Current:
+Coaches manually paste YouTube links one-by-one.
+
+Next:
+Coaches should be able to:
+- search YouTube directly inside TrainEfficiency
+- attach videos instantly
+- auto-populate thumbnails/embed URLs
+- bulk assign media
+- manage media coverage across the exercise library
+
+====================================================
+1. YOUTUBE SEARCH INTEGRATION
+====================================================
+
+Inside Program Builder and Exercise Library:
+
+Add:
+“Search YouTube”
+
+Coach can:
+- search exercise demos
+- preview videos
+- attach selected video
+
+When selected:
+Automatically save:
+- youtubeUrl
+- embeddedVideoUrl
+- thumbnailUrl
+- video title
+- channel name
+
+====================================================
+2. EXERCISE MEDIA COVERAGE SYSTEM
+====================================================
+
+Add media completeness tracking.
+
+Each exercise should show:
+- has video
+- has cues
+- has progressions
+- has regressions
+- has mistakes
+
+Create:
+mediaCoverageScore
+
+Examples:
+100% = fully enriched
+40% = partial
+0% = missing
+
+====================================================
+3. MEDIA MANAGEMENT DASHBOARD
+====================================================
+
+Create:
+ /org/:slug/coach/exercise-media
+
+Features:
+
+A. Media Coverage Stats
+- total exercises
+- fully enriched
+- missing videos
+- missing cues
+- missing progressions
+
+B. Missing Media Queue
+- exercises missing videos
+- exercises missing cues
+
+C. Bulk Actions
+- bulk attach videos
+- bulk assign cues
+- bulk import metadata
+
+D. Search + Filters
+- category
+- equipment
+- movement pattern
+- media completeness
+
+====================================================
+4. AUTO-ENRICHMENT ENGINE
+====================================================
+
+Create:
+“Auto Find Media”
+
+System searches:
+- YouTube
+- existing org media
+- global exercise matches
+
+Returns:
+- suggested demo videos
+- thumbnails
+- confidence score
+
+Coach must approve.
+
+====================================================
+5. GLOBAL VS ORG MEDIA
+====================================================
+
+Support:
+- global default media
+- org-specific preferred media
+
+Priority:
+1. org-specific
+2. global default
+
+Example:
+A school can override squat demo with their own coaching video.
+
+====================================================
+6. EXERCISE MEDIA MODAL
+====================================================
+
+Clicking exercise media opens:
+
+Tabs:
+- Demo Video
+- Coaching Cues
+- Common Mistakes
+- Progressions
+- Regressions
+
+Coach can edit all in one place.
+
+====================================================
+7. ATHLETE EXPERIENCE IMPROVEMENTS
+====================================================
+
+Athletes should see:
+- polished embedded video
+- autoplay-safe previews
+- swipeable media
+- cue callouts
+- common mistakes warnings
+- progression alternatives
+
+====================================================
+8. AI MEDIA ASSISTANT
+====================================================
+
+Add:
+“Generate Coaching Cues with TrainChat”
+
+AI generates:
+- cues
+- common mistakes
+- progressions
+- regressions
+- breathing instructions
+
+Coach reviews before saving.
+
+====================================================
+9. EXERCISE RELATIONSHIP ENGINE
+====================================================
+
+Create related exercise mapping.
+
+Example:
+Back Squat →
+- Front Squat
+- Goblet Squat
+- Safety Bar Squat
+
+Use for:
+- substitutions
+- regressions
+- equipment limitations
+- injury modifications
+
+====================================================
+10. API ENDPOINTS
+====================================================
+
+Create:
+GET /api/org/exercises/media-coverage
+POST /api/org/exercises/search-youtube
+POST /api/org/exercises/:id/auto-enrich
+PATCH /api/org/exercises/:id/media
+POST /api/org/exercises/:id/generate-cues
+
+====================================================
+11. UI REQUIREMENTS
+====================================================
+
+Design:
+- premium dark TrainEfficiency UI
+- fast media preview
+- clean exercise management
+- coach productivity focused
+- mobile-friendly
+
+====================================================
+12. IMPORTANT
+====================================================
+
+This system should:
+- reduce manual coach workload
+- scale exercise intelligence rapidly
+- improve athlete execution quality
+- create a richer coaching ecosystem
+
+Goal:
+TrainEfficiency becomes a complete intelligent exercise ecosystem, not just a workout logger.

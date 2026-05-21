@@ -671,6 +671,186 @@ Return JSON: { "exercises": [{ "name": "...", "sets": "3", "reps": "8", "load": 
       .where(and(eq(athleteStreaks.orgId, orgId), eq(athleteStreaks.athleteUserId, userId))).limit(1);
     res.json({ streak: streak ?? { currentStreak: 0, longestStreak: 0, totalSessionsCompleted: 0 } });
   });
+
+  // ── GET /api/org/exercises/media-coverage ──────────────────────────────────────
+  app.get("/api/org/exercises/media-coverage", requireCoach, async (req: any, res) => {
+    const { orgId } = req._pbAuth;
+    const { search, category, hasVideo, hasNoCues } = req.query;
+
+    // Fetch all exercises visible to this org (global + org-specific)
+    const exercises = await db.select().from(exerciseLibrary)
+      .where(or(eq(exerciseLibrary.isGlobal, true), eq(exerciseLibrary.orgId, orgId)))
+      .orderBy(asc(exerciseLibrary.name));
+
+    function scoreExercise(ex: any) {
+      let score = 0;
+      const maxScore = 5;
+      if (ex.youtubeUrl || ex.videoUrl || ex.gifUrl) score++;
+      if ((ex.coachingCues as any[])?.length > 0) score++;
+      if ((ex.progressions as any[])?.length > 0) score++;
+      if ((ex.regressions as any[])?.length > 0) score++;
+      if ((ex.commonMistakes as any[])?.length > 0) score++;
+      return { score, pct: Math.round((score / maxScore) * 100) };
+    }
+
+    let enriched = exercises.map((ex) => {
+      const { score, pct } = scoreExercise(ex);
+      return {
+        ...ex,
+        mediaCoverageScore: pct,
+        hasVideo: !!(ex.youtubeUrl || ex.videoUrl || ex.gifUrl),
+        hasCues: (ex.coachingCues as any[])?.length > 0,
+        hasProgressions: (ex.progressions as any[])?.length > 0,
+        hasRegressions: (ex.regressions as any[])?.length > 0,
+        hasMistakes: (ex.commonMistakes as any[])?.length > 0,
+      };
+    });
+
+    // Apply filters
+    if (search) enriched = enriched.filter((e) => e.name.toLowerCase().includes((search as string).toLowerCase()));
+    if (category && category !== "all") enriched = enriched.filter((e) => e.category === category);
+    if (hasVideo === "false") enriched = enriched.filter((e) => !e.hasVideo);
+    if (hasNoCues === "true") enriched = enriched.filter((e) => !e.hasCues);
+
+    const total = enriched.length;
+    const fullyEnriched = enriched.filter((e) => e.mediaCoverageScore === 100).length;
+    const missingVideo = enriched.filter((e) => !e.hasVideo).length;
+    const missingCues = enriched.filter((e) => !e.hasCues).length;
+    const missingProgressions = enriched.filter((e) => !e.hasProgressions).length;
+    const avgCoverage = total > 0 ? Math.round(enriched.reduce((a, e) => a + e.mediaCoverageScore, 0) / total) : 0;
+
+    res.json({
+      exercises: enriched,
+      stats: { total, fullyEnriched, missingVideo, missingCues, missingProgressions, avgCoverage },
+    });
+  });
+
+  // ── POST /api/org/exercises/search-youtube ─────────────────────────────────────
+  app.post("/api/org/exercises/search-youtube", requireCoach, async (req: any, res) => {
+    const { query } = req.body;
+    if (!query) return res.status(400).json({ error: "query required" });
+
+    const searchQuery = `${query} exercise tutorial demonstration site:youtube.com`;
+
+    try {
+      // Use OpenAI Responses API with web_search_preview
+      const response = await (openai as any).responses.create({
+        model: "gpt-4o",
+        tools: [{ type: "web_search_preview" }],
+        input: `Search YouTube for the best exercise demonstration video for: "${query}". Return the top 5 results as JSON array with fields: title, youtubeUrl (full youtube.com/watch?v= URL), channelName, description, thumbnailUrl (use https://i.ytimg.com/vi/{VIDEO_ID}/hqdefault.jpg). Ensure youtubeUrl is a real YouTube link. Only return the JSON array, no other text.`,
+      });
+
+      const text = response.output_text ?? "";
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const results = JSON.parse(jsonMatch[0]);
+        return res.json({ results: results.slice(0, 6) });
+      }
+      return res.json({ results: [] });
+    } catch {
+      // Fallback: use chat completions to suggest known YouTube channels
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{
+            role: "user",
+            content: `Suggest 5 real YouTube exercise tutorial video URLs for "${query}". Format as JSON array: [{"title":"...", "youtubeUrl":"https://youtube.com/watch?v=REAL_ID", "channelName":"...", "description":"..."}]. Use well-known channels like Jeff Nippard, Alan Thrall, Mark Rippetoe, Juggernaut, Starting Strength. Return ONLY the JSON array.`,
+          }],
+          response_format: { type: "json_object" },
+          max_tokens: 600,
+        });
+        const data = JSON.parse(completion.choices[0].message.content ?? "{}");
+        const results = data.results ?? data.videos ?? [];
+        return res.json({ results: results.slice(0, 6) });
+      } catch {
+        return res.json({ results: [] });
+      }
+    }
+  });
+
+  // ── POST /api/org/exercises/:id/auto-enrich ────────────────────────────────────
+  app.post("/api/org/exercises/:id/auto-enrich", requireCoach, async (req: any, res) => {
+    const { id } = req.params;
+    const [ex] = await db.select().from(exerciseLibrary).where(eq(exerciseLibrary.id, id)).limit(1);
+    if (!ex) return res.status(404).json({ error: "Exercise not found" });
+
+    const prompt = `You are an expert S&C coach. Return coaching intelligence for the exercise "${ex.name}" as JSON.
+Return: {
+  "suggestedYoutubeSearch": "best search query for YouTube demo",
+  "coachingCues": ["cue1","cue2","cue3","cue4","cue5"],
+  "commonMistakes": ["mistake1","mistake2","mistake3"],
+  "progressions": ["progression1","progression2"],
+  "regressions": ["regression1","regression2"],
+  "breathingCue": "single breath cue",
+  "relatedExercises": ["related1","related2","related3"],
+  "confidenceScore": 0.85
+}`;
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        max_tokens: 700,
+      });
+      const suggestion = JSON.parse(completion.choices[0].message.content ?? "{}");
+      res.json({ suggestion, exerciseName: ex.name });
+    } catch {
+      res.status(500).json({ error: "Auto-enrichment failed" });
+    }
+  });
+
+  // ── POST /api/org/exercises/:id/generate-cues ──────────────────────────────────
+  app.post("/api/org/exercises/:id/generate-cues", requireCoach, async (req: any, res) => {
+    const { id } = req.params;
+    const { field } = req.body; // "coachingCues" | "commonMistakes" | "progressions" | "regressions" | "all"
+    const [ex] = await db.select().from(exerciseLibrary).where(eq(exerciseLibrary.id, id)).limit(1);
+    if (!ex) return res.status(404).json({ error: "Exercise not found" });
+
+    const prompt = `You are an expert S&C coach. Generate coaching intelligence for "${ex.name}" (category: ${ex.category}, pattern: ${ex.movementPattern ?? "general"}).
+Return JSON:
+{
+  "coachingCues": ["up to 5 coaching cues"],
+  "commonMistakes": ["up to 3 common mistakes"],
+  "progressions": ["up to 3 harder progressions"],
+  "regressions": ["up to 3 easier regressions"]
+}
+Be specific, action-oriented, and practical. Short phrases only.`;
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        max_tokens: 500,
+      });
+      const generated = JSON.parse(completion.choices[0].message.content ?? "{}");
+      res.json({ generated });
+    } catch {
+      res.status(500).json({ error: "Generation failed" });
+    }
+  });
+
+  // ── PATCH /api/org/exercises/:id — full exercise update ────────────────────────
+  app.patch("/api/org/exercises/:id", requireCoach, async (req: any, res) => {
+    const { orgId } = req._pbAuth;
+    const { id } = req.params;
+    const updates: any = {};
+    const allowed = ["name", "description", "coachingCues", "commonMistakes", "progressions", "regressions",
+      "youtubeUrl", "embeddedVideoUrl", "videoUrl", "gifUrl", "thumbnailUrl", "coachVoiceoverUrl", "demoType",
+      "category", "movementPattern", "primaryMuscles", "secondaryMuscles", "equipment", "difficulty", "tags"];
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No updates" });
+
+    const [updated] = await db.update(exerciseLibrary).set(updates)
+      .where(or(
+        and(eq(exerciseLibrary.id, id), eq(exerciseLibrary.orgId, orgId)),
+        eq(exerciseLibrary.id, id),
+      )).returning();
+    res.json({ exercise: updated });
+  });
 }
 
 // ── Helper: update streak after session completion ───────────────────────────

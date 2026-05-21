@@ -26,6 +26,7 @@ import {
   Activity,
   Zap,
   Layers,
+  Film,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -239,6 +240,12 @@ function buildNavSections(
           url: `/org/${orgSlug}/programs/${wbTool.slug}/builder`,
           icon: Layers,
           testId: "org-nav-program-builder",
+        });
+        wbItems.push({
+          title: "Exercise Media",
+          url: `/org/${orgSlug}/coach/exercise-media`,
+          icon: Film,
+          testId: "org-nav-exercise-media",
         });
       }
       sections.push({
