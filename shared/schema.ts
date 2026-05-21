@@ -2782,6 +2782,10 @@ export const leadCaptureSubmissions = pgTable("lead_capture_submissions", {
   adminEmailSentAt: timestamp("admin_email_sent_at"),
   adminEmailStatus: varchar("admin_email_status"),
   adminEmailError: text("admin_email_error"),
+  // Applicant confirmation email audit
+  applicantEmailSentAt: timestamp("applicant_email_sent_at"),
+  applicantEmailStatus: varchar("applicant_email_status"),
+  applicantEmailError: text("applicant_email_error"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -13609,33 +13609,158 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         }).where(eq(leadCaptureSubmissions.id, submission.id));
       } catch (_) {}
 
-      // 2. Confirmation email to athlete/parent
-      const confirmEmail = email;
-      if (confirmEmail && sgKey) {
+      // 2. Applicant confirmation email
+      let applicantEmailStatus = "pending";
+      let applicantEmailError: string | null = null;
+      let applicantEmailSentAt: Date | null = null;
+
+      if (email && sgKey) {
         try {
+          // Fetch lead capture program config for bookingUrl + hero image
+          const { leadCapturePrograms: lcpTable } = await import("@shared/schema");
+          const { eq: eqLC } = await import("drizzle-orm");
+          const [lcProgram] = await db.select().from(lcpTable).where(eqLC(lcpTable.programId, program.id)).limit(1);
+
+          const bookingUrl = lcProgram?.bookingUrl || null;
+          const orgLogoUrl = org.logoUrl || null;
+          const primaryColor = org.emailPrimaryColor || org.primaryColor || "#f97316";
+          const athleteFirstName = athleteName.split(" ")[0];
+          const contactEmail = org.ownerEmail || org.schedulingInquiryEmail || fromEmail;
+          const websiteUrl = org.websiteUrl || null;
+
+          const applicantHtml = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Application Received</title></head>
+<body style="margin:0;padding:0;background-color:#09090b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 16px">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">
+
+        <!-- HEADER -->
+        <tr><td style="background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:16px 16px 0 0;padding:40px 32px;text-align:center">
+          ${orgLogoUrl ? `<img src="${orgLogoUrl}" alt="${org.name}" style="height:48px;margin-bottom:16px;object-fit:contain" />` : ""}
+          <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:50px;padding:6px 18px;margin-bottom:16px">
+            <span style="color:white;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Application Received</span>
+          </div>
+          <h1 style="color:white;margin:0 0 8px;font-size:28px;font-weight:800;line-height:1.2">You're In the Pipeline,<br />${athleteFirstName}.</h1>
+          <p style="color:rgba(255,255,255,0.85);margin:0;font-size:16px;font-weight:500">${program.name} — ${org.name}</p>
+        </td></tr>
+
+        <!-- BODY -->
+        <tr><td style="background:#18181b;padding:36px 32px">
+
+          <!-- Confirmation message -->
+          <p style="color:#e4e4e7;font-size:16px;line-height:1.7;margin:0 0 24px">
+            Hey <strong style="color:white">${athleteFirstName}</strong>, your application has been received and is being reviewed by our coaching staff. This is the first step toward elite-level performance.
+          </p>
+
+          <!-- Divider -->
+          <hr style="border:none;border-top:1px solid #3f3f46;margin:0 0 28px" />
+
+          <!-- Next Steps -->
+          <p style="color:#a1a1aa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 20px">What Happens Next</p>
+
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <!-- Step 1 -->
+            <tr>
+              <td style="width:48px;vertical-align:top;padding-bottom:20px">
+                <div style="width:36px;height:36px;background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:50%;text-align:center;line-height:36px;font-size:15px;font-weight:800;color:white">1</div>
+              </td>
+              <td style="vertical-align:top;padding-bottom:20px;padding-left:8px">
+                <p style="color:white;font-size:15px;font-weight:700;margin:6px 0 4px">Application Review</p>
+                <p style="color:#a1a1aa;font-size:13px;margin:0;line-height:1.6">Our coaches review every application personally — your goals, sport background, and training history.</p>
+              </td>
+            </tr>
+            <!-- Step 2 -->
+            <tr>
+              <td style="width:48px;vertical-align:top;padding-bottom:20px">
+                <div style="width:36px;height:36px;background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:50%;text-align:center;line-height:36px;font-size:15px;font-weight:800;color:white">2</div>
+              </td>
+              <td style="vertical-align:top;padding-bottom:20px;padding-left:8px">
+                <p style="color:white;font-size:15px;font-weight:700;margin:6px 0 4px">Coach Outreach</p>
+                <p style="color:#a1a1aa;font-size:13px;margin:0;line-height:1.6">A coach will contact you within <strong style="color:#e4e4e7">24–48 hours</strong> to discuss your goals and answer any questions.</p>
+              </td>
+            </tr>
+            <!-- Step 3 -->
+            <tr>
+              <td style="width:48px;vertical-align:top">
+                <div style="width:36px;height:36px;background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:50%;text-align:center;line-height:36px;font-size:15px;font-weight:800;color:white">3</div>
+              </td>
+              <td style="vertical-align:top;padding-left:8px">
+                <p style="color:white;font-size:15px;font-weight:700;margin:6px 0 4px">Training Evaluation</p>
+                <p style="color:#a1a1aa;font-size:13px;margin:0;line-height:1.6">We'll schedule your evaluation session where you'll meet the team and experience the training firsthand.</p>
+              </td>
+            </tr>
+          </table>
+
+          ${bookingUrl ? `
+          <!-- Booking CTA -->
+          <div style="margin-top:32px;background:#27272a;border-radius:12px;padding:24px;text-align:center;border:1px solid #3f3f46">
+            <p style="color:#a1a1aa;font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;font-weight:600">Ready to Skip the Wait?</p>
+            <p style="color:white;font-size:16px;font-weight:700;margin:0 0 20px">Book your evaluation session directly</p>
+            <a href="${bookingUrl}" style="display:inline-block;background:linear-gradient(135deg,${primaryColor},#f59e0b);color:white;font-size:15px;font-weight:700;padding:14px 36px;border-radius:8px;text-decoration:none;letter-spacing:.03em">Book My Evaluation →</a>
+          </div>
+          ` : ""}
+
+          <!-- Application summary -->
+          <div style="margin-top:28px;background:#27272a;border-radius:10px;padding:20px;border:1px solid #3f3f46">
+            <p style="color:#a1a1aa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 14px">Your Application Summary</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0;width:40%">Program</td><td style="color:#e4e4e7;font-size:13px;font-weight:600;padding:5px 0">${program.name}</td></tr>
+              ${sport ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Sport</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${sport}${position ? ` / ${position}` : ""}</td></tr>` : ""}
+              ${age ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Age</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${age}</td></tr>` : ""}
+              ${school ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">School</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${school}</td></tr>` : ""}
+              ${commitmentLevel ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Commitment</td><td style="color:#4ade80;font-size:13px;font-weight:600;padding:5px 0">${commitmentLevel}</td></tr>` : ""}
+              <tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Submitted</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${submissionTimestamp}</td></tr>
+            </table>
+          </div>
+
+        </td></tr>
+
+        <!-- FOOTER -->
+        <tr><td style="background:#09090b;border-radius:0 0 16px 16px;padding:28px 32px;border-top:1px solid #27272a;text-align:center">
+          <p style="color:#71717a;font-size:13px;margin:0 0 8px">Questions? Contact us at <a href="mailto:${contactEmail}" style="color:${primaryColor};text-decoration:none">${contactEmail}</a></p>
+          ${websiteUrl ? `<p style="color:#71717a;font-size:13px;margin:0 0 12px"><a href="${websiteUrl}" style="color:#71717a;text-decoration:underline">${websiteUrl}</a></p>` : ""}
+          <p style="color:#52525b;font-size:12px;margin:0">© ${new Date().getFullYear()} ${org.name}. All rights reserved.</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
           const sgMail = await import("@sendgrid/mail");
           sgMail.default.setApiKey(sgKey);
-          await sgMail.default.send({
-            to: confirmEmail,
+          console.log(`[LeadCapture] Sending applicant confirmation → ${email} (org: ${org.slug}, program: ${program.name})`);
+          const [sgApplicantResp] = await sgMail.default.send({
+            to: email,
             from: fromEmail,
-            subject: `Application Received — ${program.name}`,
-            html: `
-              <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-                <div style="background:linear-gradient(135deg,#f97316,#f59e0b);padding:24px;border-radius:12px 12px 0 0;text-align:center">
-                  <h2 style="color:white;margin:0;font-size:24px">Application Received! 🏆</h2>
-                </div>
-                <div style="background:#18181b;padding:24px;border-radius:0 0 12px 12px;color:#e4e4e7">
-                  <p>Hey ${athleteName},</p>
-                  <p>We received your application to <strong style="color:#fb923c">${program.name}</strong> at ${org.name}. You're one step closer to elite performance.</p>
-                  <p>Our coaching staff will review your application and reach out within <strong>24 hours</strong> to discuss next steps.</p>
-                  <p style="color:#71717a;font-size:13px">Questions? Reply to this email or contact us directly.</p>
-                  <p style="margin-top:24px">— The ${org.name} Team</p>
-                </div>
-              </div>
-            `,
+            subject: `Your Application Was Received — ${program.name}`,
+            html: applicantHtml,
           });
-        } catch (_) {}
+          console.log(`[LeadCapture] Applicant email accepted — SendGrid status ${sgApplicantResp?.statusCode}`);
+          applicantEmailStatus = "sent";
+          applicantEmailSentAt = new Date();
+        } catch (applicantEmailErr: any) {
+          applicantEmailStatus = "failed";
+          applicantEmailError = applicantEmailErr?.response?.body
+            ? JSON.stringify(applicantEmailErr.response.body)
+            : (applicantEmailErr.message || "Unknown SendGrid error");
+          console.error(`[LeadCapture] Applicant email FAILED → ${email}:`, applicantEmailError);
+        }
+      } else if (!sgKey) {
+        applicantEmailStatus = "no_api_key";
       }
+
+      // Persist applicant email audit fields (non-blocking)
+      try {
+        await db.update(leadCaptureSubmissions).set({
+          applicantEmailSentAt,
+          applicantEmailStatus,
+          applicantEmailError,
+        }).where(eq(leadCaptureSubmissions.id, submission.id));
+      } catch (_) {}
 
       // 3. Create CRM prospect entry
       try {
@@ -13841,6 +13966,130 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
         await db.update(leadCaptureSubmissions).set({ adminEmailStatus: "failed", adminEmailError: errMsg }).where(eq(leadCaptureSubmissions.id, req.params.id));
       } catch (_) {}
       res.status(500).json({ message: "Failed to resend admin email", error: errMsg });
+    }
+  });
+
+  // Admin: resend applicant confirmation email for a submission
+  app.post("/api/lead-capture/submissions/:id/resend-applicant-email", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions, athleticPrograms, organizations, leadCapturePrograms: lcpTable } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [submission] = await db.select().from(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)))
+        .limit(1);
+      if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, profile.organizationId)).limit(1);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const [program] = await db.select().from(athleticPrograms).where(eq(athleticPrograms.id, submission.programId)).limit(1);
+      const [lcProgram] = await db.select().from(lcpTable).where(eq(lcpTable.programId, submission.programId)).limit(1);
+
+      const sgKey = process.env.SENDGRID_API_KEY;
+      const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.FROM_EMAIL || "noreply@trainefficiency.com";
+      if (!sgKey) return res.status(500).json({ message: "SENDGRID_API_KEY is not configured" });
+
+      const bookingUrl = lcProgram?.bookingUrl || null;
+      const orgLogoUrl = org.logoUrl || null;
+      const primaryColor = org.emailPrimaryColor || org.primaryColor || "#f97316";
+      const athleteFirstName = submission.athleteName.split(" ")[0];
+      const contactEmail = org.ownerEmail || org.schedulingInquiryEmail || fromEmail;
+      const websiteUrl = org.websiteUrl || null;
+      const programName = program?.name || "Our Program";
+      const submissionTimestamp = submission.createdAt ? new Date(submission.createdAt).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "Unknown";
+      const { athleteName, email, phone, sport, position, age, grade, school, commitmentLevel } = submission;
+
+      const applicantHtml = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Application Received</title></head>
+<body style="margin:0;padding:0;background-color:#09090b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 16px">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">
+        <tr><td style="background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:16px 16px 0 0;padding:40px 32px;text-align:center">
+          ${orgLogoUrl ? `<img src="${orgLogoUrl}" alt="${org.name}" style="height:48px;margin-bottom:16px;object-fit:contain" />` : ""}
+          <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:50px;padding:6px 18px;margin-bottom:16px">
+            <span style="color:white;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Application Confirmed (Resent)</span>
+          </div>
+          <h1 style="color:white;margin:0 0 8px;font-size:28px;font-weight:800;line-height:1.2">You're In the Pipeline,<br />${athleteFirstName}.</h1>
+          <p style="color:rgba(255,255,255,0.85);margin:0;font-size:16px;font-weight:500">${programName} — ${org.name}</p>
+        </td></tr>
+        <tr><td style="background:#18181b;padding:36px 32px">
+          <p style="color:#e4e4e7;font-size:16px;line-height:1.7;margin:0 0 24px">Hey <strong style="color:white">${athleteFirstName}</strong>, this is a confirmation that your application has been received and is being reviewed by our coaching staff. This is the first step toward elite-level performance.</p>
+          <hr style="border:none;border-top:1px solid #3f3f46;margin:0 0 28px" />
+          <p style="color:#a1a1aa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 20px">What Happens Next</p>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="width:48px;vertical-align:top;padding-bottom:20px"><div style="width:36px;height:36px;background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:50%;text-align:center;line-height:36px;font-size:15px;font-weight:800;color:white">1</div></td>
+              <td style="vertical-align:top;padding-bottom:20px;padding-left:8px"><p style="color:white;font-size:15px;font-weight:700;margin:6px 0 4px">Application Review</p><p style="color:#a1a1aa;font-size:13px;margin:0;line-height:1.6">Our coaches review every application personally — your goals, sport background, and training history.</p></td>
+            </tr>
+            <tr>
+              <td style="width:48px;vertical-align:top;padding-bottom:20px"><div style="width:36px;height:36px;background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:50%;text-align:center;line-height:36px;font-size:15px;font-weight:800;color:white">2</div></td>
+              <td style="vertical-align:top;padding-bottom:20px;padding-left:8px"><p style="color:white;font-size:15px;font-weight:700;margin:6px 0 4px">Coach Outreach</p><p style="color:#a1a1aa;font-size:13px;margin:0;line-height:1.6">A coach will contact you within <strong style="color:#e4e4e7">24–48 hours</strong> to discuss your goals and answer any questions.</p></td>
+            </tr>
+            <tr>
+              <td style="width:48px;vertical-align:top"><div style="width:36px;height:36px;background:linear-gradient(135deg,${primaryColor},#f59e0b);border-radius:50%;text-align:center;line-height:36px;font-size:15px;font-weight:800;color:white">3</div></td>
+              <td style="vertical-align:top;padding-left:8px"><p style="color:white;font-size:15px;font-weight:700;margin:6px 0 4px">Training Evaluation</p><p style="color:#a1a1aa;font-size:13px;margin:0;line-height:1.6">We'll schedule your evaluation session where you'll meet the team and experience the training firsthand.</p></td>
+            </tr>
+          </table>
+          ${bookingUrl ? `<div style="margin-top:32px;background:#27272a;border-radius:12px;padding:24px;text-align:center;border:1px solid #3f3f46"><p style="color:#a1a1aa;font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;font-weight:600">Ready to Skip the Wait?</p><p style="color:white;font-size:16px;font-weight:700;margin:0 0 20px">Book your evaluation session directly</p><a href="${bookingUrl}" style="display:inline-block;background:linear-gradient(135deg,${primaryColor},#f59e0b);color:white;font-size:15px;font-weight:700;padding:14px 36px;border-radius:8px;text-decoration:none;letter-spacing:.03em">Book My Evaluation →</a></div>` : ""}
+          <div style="margin-top:28px;background:#27272a;border-radius:10px;padding:20px;border:1px solid #3f3f46">
+            <p style="color:#a1a1aa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 14px">Your Application Summary</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0;width:40%">Program</td><td style="color:#e4e4e7;font-size:13px;font-weight:600;padding:5px 0">${programName}</td></tr>
+              ${sport ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Sport</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${sport}${position ? ` / ${position}` : ""}</td></tr>` : ""}
+              ${age ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Age</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${age}</td></tr>` : ""}
+              ${school ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">School</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${school}</td></tr>` : ""}
+              ${commitmentLevel ? `<tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Commitment</td><td style="color:#4ade80;font-size:13px;font-weight:600;padding:5px 0">${commitmentLevel}</td></tr>` : ""}
+              <tr><td style="color:#a1a1aa;font-size:13px;padding:5px 0">Submitted</td><td style="color:#e4e4e7;font-size:13px;padding:5px 0">${submissionTimestamp}</td></tr>
+            </table>
+          </div>
+        </td></tr>
+        <tr><td style="background:#09090b;border-radius:0 0 16px 16px;padding:28px 32px;border-top:1px solid #27272a;text-align:center">
+          <p style="color:#71717a;font-size:13px;margin:0 0 8px">Questions? Contact us at <a href="mailto:${contactEmail}" style="color:${primaryColor};text-decoration:none">${contactEmail}</a></p>
+          ${websiteUrl ? `<p style="color:#71717a;font-size:13px;margin:0 0 12px"><a href="${websiteUrl}" style="color:#71717a;text-decoration:underline">${websiteUrl}</a></p>` : ""}
+          <p style="color:#52525b;font-size:12px;margin:0">© ${new Date().getFullYear()} ${org.name}. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+      const sgMail = await import("@sendgrid/mail");
+      sgMail.default.setApiKey(sgKey);
+      console.log(`[LeadCapture] Resending applicant confirmation → ${email} for submission ${submission.id}`);
+      const [sgResp] = await sgMail.default.send({
+        to: email,
+        from: fromEmail,
+        subject: `Your Application Was Received — ${programName}`,
+        html: applicantHtml,
+      });
+      console.log(`[LeadCapture] Resend applicant email accepted — status ${sgResp?.statusCode}`);
+
+      await db.update(leadCaptureSubmissions).set({
+        applicantEmailSentAt: new Date(),
+        applicantEmailStatus: "sent",
+        applicantEmailError: null,
+      }).where(eq(leadCaptureSubmissions.id, submission.id));
+
+      res.json({ success: true, sentTo: email });
+    } catch (error: any) {
+      const errMsg = error?.response?.body ? JSON.stringify(error.response.body) : (error.message || "Unknown error");
+      console.error("[LeadCapture] Resend applicant email failed:", errMsg);
+      try {
+        const { db } = await import("./db");
+        const { leadCaptureSubmissions } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(leadCaptureSubmissions).set({ applicantEmailStatus: "failed", applicantEmailError: errMsg }).where(eq(leadCaptureSubmissions.id, req.params.id));
+      } catch (_) {}
+      res.status(500).json({ message: "Failed to resend applicant confirmation email", error: errMsg });
     }
   });
 

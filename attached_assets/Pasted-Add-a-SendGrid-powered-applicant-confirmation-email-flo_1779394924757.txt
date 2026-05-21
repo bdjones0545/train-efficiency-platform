@@ -1,0 +1,103 @@
+Add a SendGrid-powered applicant confirmation email flow to the Lead Capture Program submission pipeline.
+
+Goal:
+Immediately send a professional confirmation email to the applicant after a successful Lead Capture submission.
+
+Do not rebuild the existing funnel.
+Extend the current SendGrid infrastructure surgically.
+
+AUDIT FIRST
+- Verify SendGrid is configured and working:
+  - SENDGRID_API_KEY
+  - SENDGRID_FROM_EMAIL or FROM_EMAIL
+- Ensure applicant email sends independently from admin notification emails.
+- Do not fail the submission if email delivery fails.
+
+BACKEND
+Update:
+POST /api/public/lead-capture/:orgSlug/:programSlug/submit
+
+After successful submission:
+1. Send applicant confirmation email through SendGrid
+2. Record delivery status on the submission row
+
+DATABASE
+Add fields to lead_capture_submissions:
+- applicant_email_sent_at
+- applicant_email_status
+- applicant_email_error
+
+Possible statuses:
+- pending
+- sent
+- failed
+
+EMAIL TEMPLATE
+Create a premium HTML email template matching the TrainEfficiency dark/orange aesthetic.
+
+Subject:
+"Your Application Was Received"
+
+Email content should include:
+- Athlete first name
+- Program name
+- Organization name
+- Confirmation that the application was received
+- Expected response window
+- Next steps section:
+  1. Application Review
+  2. Coach Outreach
+  3. Training/Evaluation
+- Optional “Book Evaluation” CTA button if bookingUrl exists
+- Organization logo if available
+- Footer/contact information
+
+Tone:
+- premium
+- athletic
+- professional
+- high-performance
+
+SENDGRID IMPLEMENTATION
+- Use dynamic HTML email generation
+- Wrap in try/catch
+- Log SendGrid response status
+- Save delivery result to DB
+- Do not block the API response if email sending fails
+
+ADMIN + APPLICANT EMAILS
+Ensure BOTH emails are sent:
+1. Admin notification email
+2. Applicant confirmation email
+
+Both should operate independently.
+
+ERROR HANDLING
+If applicant email fails:
+- submission should still succeed
+- admin email should still attempt
+- log the failure
+- persist applicant_email_status = "failed"
+
+ADMIN UI
+On lead cards:
+- add applicant email delivery indicator
+- show:
+  - Sent
+  - Failed
+  - Pending
+
+Optional:
+Add “Resend Confirmation Email” action.
+
+TEST FLOW
+Verify:
+- submission succeeds
+- applicant receives email through SendGrid
+- admin receives notification email
+- DB status fields update correctly
+- booking CTA appears if bookingUrl exists
+- mobile email rendering looks clean
+
+IMPORTANT
+This should feel like a premium athlete onboarding confirmation — not a generic contact form autoresponder.

@@ -2292,6 +2292,8 @@ type ProgramLead = {
   timeSinceContactHrs: number | null;
   adminEmailStatus: string | null;
   adminEmailError: string | null;
+  applicantEmailStatus: string | null;
+  applicantEmailError: string | null;
 };
 
 type AbandonedLead = {
@@ -2427,6 +2429,12 @@ function ProgramLeadsPanel() {
     mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/resend-admin-email`, {}).then((r) => r.json()),
     onSuccess: (data) => { toast({ title: `Admin notification resent to ${data.sentTo || "admin"}` }); invalidate(); },
     onError: (err: any) => toast({ title: err?.message || "Failed to resend", variant: "destructive" }),
+  });
+
+  const resendApplicantEmail = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/resend-applicant-email`, {}).then((r) => r.json()),
+    onSuccess: (data) => { toast({ title: `Confirmation email resent to ${data.sentTo || "applicant"}` }); invalidate(); },
+    onError: (err: any) => toast({ title: err?.message || "Failed to resend confirmation", variant: "destructive" }),
   });
 
   if (isLoading) return null;
@@ -2882,6 +2890,39 @@ function ProgramLeadsPanel() {
                       >
                         <Send className="h-3 w-3 mr-1" />
                         {resendAdminEmail.isPending && resendAdminEmail.variables === lead.id ? "Sending…" : "Notify Admin"}
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Applicant confirmation email status row */}
+                  <div className="flex items-center gap-2 pt-1 border-t border-border/30">
+                    <span className="text-xs text-muted-foreground">Confirmation email:</span>
+                    {lead.applicantEmailStatus === "sent" ? (
+                      <Badge className="h-5 px-2 text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
+                        ✓ Sent
+                      </Badge>
+                    ) : lead.applicantEmailStatus === "failed" ? (
+                      <Badge
+                        className="h-5 px-2 text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0 cursor-help"
+                        title={lead.applicantEmailError || "Unknown error"}
+                      >
+                        ✗ Failed
+                      </Badge>
+                    ) : (
+                      <Badge className="h-5 px-2 text-[10px] bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-0">
+                        ⏳ Pending
+                      </Badge>
+                    )}
+                    {lead.applicantEmailStatus !== "sent" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 px-2 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                        onClick={() => resendApplicantEmail.mutate(lead.id)}
+                        disabled={resendApplicantEmail.isPending && resendApplicantEmail.variables === lead.id}
+                        data-testid={`button-resend-applicant-email-${i}`}
+                      >
+                        {resendApplicantEmail.isPending && resendApplicantEmail.variables === lead.id ? "Sending…" : "Resend →"}
                       </Button>
                     )}
                   </div>
