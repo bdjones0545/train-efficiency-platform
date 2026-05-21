@@ -2732,6 +2732,10 @@ export const leadCapturePrograms = pgTable("lead_capture_programs", {
   extendedConfig: jsonb("extended_config").default(sql`'{}'::jsonb`),
   // v6: Funnel template system
   funnelType: varchar("funnel_type").default("athlete_application"),
+  // v7: Public org menu visibility
+  showInOrgMenu: boolean("show_in_org_menu").default(true).notNull(),
+  navLabel: varchar("nav_label", { length: 120 }),
+  navOrder: integer("nav_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

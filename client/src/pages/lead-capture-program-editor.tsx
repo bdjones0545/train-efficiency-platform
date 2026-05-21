@@ -400,6 +400,9 @@ export default function LeadCaptureProgramEditorPage() {
   const [googleAdsConversionId, setGoogleAdsConversionId] = useState("");
   const [googleAdsConversionLabel, setGoogleAdsConversionLabel] = useState("");
   const [estimatedValueCents, setEstimatedValueCents] = useState(0);
+  const [showInOrgMenu, setShowInOrgMenu] = useState(true);
+  const [navLabel, setNavLabel] = useState("");
+  const [navOrder, setNavOrder] = useState(0);
   const [initialized, setInitialized] = useState(false);
 
   // ── queries
@@ -446,6 +449,9 @@ export default function LeadCaptureProgramEditorPage() {
     setGoogleAdsConversionId(config.googleAdsConversionId || "");
     setGoogleAdsConversionLabel(config.googleAdsConversionLabel || "");
     setEstimatedValueCents(config.estimatedAthleteValueCents || 0);
+    setShowInOrgMenu((config as any).showInOrgMenu !== false);
+    setNavLabel((config as any).navLabel || "");
+    setNavOrder((config as any).navOrder ?? 0);
     const ext = config.extendedConfig || {};
     setUrgencyBadge(ext.urgencyBadge || "");
     setHeroAlignment(ext.heroAlignment || "center");
@@ -488,6 +494,9 @@ export default function LeadCaptureProgramEditorPage() {
         googleAdsConversionId: googleAdsConversionId || null,
         googleAdsConversionLabel: googleAdsConversionLabel || null,
         estimatedAthleteValueCents: estimatedValueCents,
+        showInOrgMenu,
+        navLabel: navLabel || null,
+        navOrder,
         extendedConfig: {
           urgencyBadge, heroAlignment, overlayStrength, videoBackgroundUrl,
           accentColor, gradientPreset, buttonStyle, darkIntensity, typographyPreset,
@@ -724,6 +733,54 @@ export default function LeadCaptureProgramEditorPage() {
                 </div>
               </Card>
             </div>
+
+            {/* Org Menu Visibility */}
+            <Card className={`p-6 space-y-4 ${ft.accentBorder} border`}>
+              <SectionHeader icon={<Globe className="h-4 w-4" />} title="Public Org Menu" subtitle="Control whether this funnel appears in your public organization portal." accent={accentIconBg} />
+              <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/40">
+                <div>
+                  <p className="text-sm font-semibold">Show in org portal menu</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Members will see this funnel listed under the {funnelType === "team_training" ? "Team Training" : funnelType === "employment_opportunity" ? "Careers" : "Athlete Programs"} section of the org portal.</p>
+                </div>
+                <Switch
+                  checked={showInOrgMenu}
+                  onCheckedChange={v => { setShowInOrgMenu(v); markUnsaved(); }}
+                  data-testid="switch-show-in-org-menu"
+                />
+              </div>
+              {showInOrgMenu && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Custom Menu Label <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <Input
+                      value={navLabel}
+                      onChange={e => { setNavLabel(e.target.value); markUnsaved(); }}
+                      placeholder={program?.name || "e.g. Summer Athlete Application"}
+                      data-testid="input-nav-label"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Overrides the program name in the org menu. Leave blank to use the program name.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Menu Order <span className="text-muted-foreground font-normal">(lower = first)</span></Label>
+                    <Input
+                      type="number"
+                      value={navOrder}
+                      onChange={e => { setNavOrder(Number(e.target.value)); markUnsaved(); }}
+                      placeholder="0"
+                      className="max-w-[120px]"
+                      data-testid="input-nav-order"
+                    />
+                  </div>
+                </div>
+              )}
+              {publicUrl && showInOrgMenu && (
+                <div className={`flex items-center gap-2 px-3 py-2 ${ft.accentBg} border ${ft.accentBorder} rounded-lg text-xs`}>
+                  <Globe className={`h-3.5 w-3.5 ${ft.accent} shrink-0`} />
+                  <span className="text-muted-foreground">Public funnel URL:</span>
+                  <span className={`font-mono ${ft.accent} truncate`}>{publicUrl}</span>
+                </div>
+              )}
+            </Card>
 
             <Card className="p-6 space-y-4">
               <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Tracking Pixels" subtitle="Connect advertising pixels for conversion tracking." accent={accentIconBg} />

@@ -35,6 +35,7 @@ import {
   Leaf,
   GraduationCap,
   BarChart2,
+  BriefcaseBusiness,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { OrgMessageComposer } from "@/components/OrgMessageComposer";
@@ -192,7 +193,10 @@ function PortalHome({
   orgToken: string;
   onLogout: () => void;
 }) {
-  const { org, user, membership, upcomingBookings, pastBookingCount, schedulingPrograms, prTrackerPrograms, workoutBuilderPrograms, hasPrTracker, userTeams, recentPrEntries, bestPrs } = data;
+  const { org, user, membership, upcomingBookings, pastBookingCount, schedulingPrograms, prTrackerPrograms, workoutBuilderPrograms, hasPrTracker, userTeams, recentPrEntries, bestPrs, leadCaptureFunnels } = data;
+  const athleteFunnels: any[] = (leadCaptureFunnels ?? []).filter((f: any) => f.funnelType === "athlete_application");
+  const teamFunnels: any[] = (leadCaptureFunnels ?? []).filter((f: any) => f.funnelType === "team_training");
+  const careerFunnels: any[] = (leadCaptureFunnels ?? []).filter((f: any) => f.funnelType === "employment_opportunity");
   const isCoach = membership?.role === "coach" || membership?.role === "owner";
 
   // Notification count
@@ -807,6 +811,108 @@ function PortalHome({
             ))}
           </div>
         </section>
+
+        {/* ─── Athlete Programs (lead capture funnels) ─────────────────────────── */}
+        {athleteFunnels.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Zap className="h-3.5 w-3.5 text-orange-400" />
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Athlete Programs</h2>
+            </div>
+            <div className="space-y-2">
+              {athleteFunnels.map((f: any) => (
+                <a
+                  key={f.id}
+                  href={`/apply/${org?.slug}/${f.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`link-athlete-funnel-${f.id}`}
+                >
+                  <Card className="p-4 flex items-center gap-3 border-orange-500/20 hover:border-orange-500/40 hover:bg-orange-500/[0.03] transition-colors">
+                    <div className="rounded-lg bg-orange-500/10 p-2 flex-shrink-0">
+                      <Zap className="h-5 w-5 text-orange-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">{f.navLabel || f.name}</p>
+                      {f.subheadline && (
+                        <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{f.subheadline}</p>
+                      )}
+                    </div>
+                    <Badge className="flex-shrink-0 bg-orange-500/10 text-orange-400 border-orange-500/20 border text-[10px]">Apply</Badge>
+                  </Card>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ─── Team Training funnels ────────────────────────────────────────────── */}
+        {teamFunnels.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="h-3.5 w-3.5 text-cyan-400" />
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Team Training</h2>
+            </div>
+            <div className="space-y-2">
+              {teamFunnels.map((f: any) => (
+                <a
+                  key={f.id}
+                  href={`/apply/${org?.slug}/${f.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`link-team-funnel-${f.id}`}
+                >
+                  <Card className="p-4 flex items-center gap-3 border-cyan-500/20 hover:border-cyan-500/40 hover:bg-cyan-500/[0.03] transition-colors">
+                    <div className="rounded-lg bg-cyan-500/10 p-2 flex-shrink-0">
+                      <Users className="h-5 w-5 text-cyan-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">{f.navLabel || f.name}</p>
+                      {f.subheadline && (
+                        <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{f.subheadline}</p>
+                      )}
+                    </div>
+                    <Badge className="flex-shrink-0 bg-cyan-500/10 text-cyan-400 border-cyan-500/20 border text-[10px]">B2B</Badge>
+                  </Card>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ─── Careers / Employment funnels ─────────────────────────────────────── */}
+        {careerFunnels.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <BriefcaseBusiness className="h-3.5 w-3.5 text-purple-400" />
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Careers</h2>
+            </div>
+            <div className="space-y-2">
+              {careerFunnels.map((f: any) => (
+                <a
+                  key={f.id}
+                  href={`/apply/${org?.slug}/${f.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`link-career-funnel-${f.id}`}
+                >
+                  <Card className="p-4 flex items-center gap-3 border-purple-500/20 hover:border-purple-500/40 hover:bg-purple-500/[0.03] transition-colors">
+                    <div className="rounded-lg bg-purple-500/10 p-2 flex-shrink-0">
+                      <BriefcaseBusiness className="h-5 w-5 text-purple-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">{f.navLabel || f.name}</p>
+                      {f.subheadline && (
+                        <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{f.subheadline}</p>
+                      )}
+                    </div>
+                    <Badge className="flex-shrink-0 bg-purple-500/10 text-purple-400 border-purple-500/20 border text-[10px]">Hiring</Badge>
+                  </Card>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ─── Coach: Athlete Alerts Panel ─────────────────────────────────── */}
         {isCoach && (() => {

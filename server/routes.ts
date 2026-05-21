@@ -14155,6 +14155,9 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
           estimatedAthleteValueCents: estimatedAthleteValueCents !== undefined ? estimatedAthleteValueCents : existing.estimatedAthleteValueCents,
           extendedConfig: extendedConfig !== undefined ? extendedConfig : (existing.extendedConfig ?? {}),
           funnelType: funnelType ?? existing.funnelType ?? "athlete_application",
+          showInOrgMenu: req.body.showInOrgMenu !== undefined ? req.body.showInOrgMenu : existing.showInOrgMenu,
+          navLabel: req.body.navLabel !== undefined ? (req.body.navLabel || null) : existing.navLabel,
+          navOrder: req.body.navOrder !== undefined ? req.body.navOrder : existing.navOrder,
           updatedAt: new Date(),
         }).where(eq(leadCapturePrograms.programId, req.params.programId)).returning();
         return res.json(updated);
