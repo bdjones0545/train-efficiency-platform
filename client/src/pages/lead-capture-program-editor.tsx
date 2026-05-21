@@ -21,7 +21,7 @@ import {
   TrendingUp, Target, Lightbulb, Smartphone, Monitor, RefreshCw,
   X, Award, Shield, Flame, Dumbbell, BriefcaseBusiness, GitBranch,
   Workflow, Bell, Bot, FileCheck, DollarSign, ClipboardList,
-  Upload, Video, Film, ImagePlus, ChevronDown as ChevronDownIcon, Library
+  Upload, Video, Film, ImagePlus, ChevronDown as ChevronDownIcon, Library, UserCircle2
 } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
 
@@ -1516,10 +1516,23 @@ export default function LeadCaptureProgramEditorPage() {
                       <Label className="text-xs">Testimonial Quote</Label>
                       <Textarea value={t.quote} onChange={e => { updateTestimonial(t.id, "quote", e.target.value); markUnsaved(); }} placeholder="Compelling quote here..." rows={3} data-testid={`input-testimonial-quote-${t.id}`} />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Photo URL (optional)</Label>
-                        <Input value={t.photoUrl} onChange={e => { updateTestimonial(t.id, "photoUrl", e.target.value); markUnsaved(); }} placeholder="https://..." data-testid={`input-testimonial-photo-${t.id}`} />
+                        <div className="flex items-center gap-2">
+                          <UserCircle2 className={`h-3.5 w-3.5 ${ft.accent}`} />
+                          <span className="text-xs font-medium">Photo (optional)</span>
+                          <Badge className={`ml-auto text-[10px] ${ft.accentBg} ${ft.accent} border ${ft.accentBorder}`}>Avatar</Badge>
+                        </div>
+                        <MediaUploadZone
+                          label="Testimonial Photo"
+                          accept="image"
+                          value={t.photoUrl}
+                          onChange={url => { updateTestimonial(t.id, "photoUrl", url); markUnsaved(); }}
+                          accentColor={ft.accent}
+                          accentBg={ft.accentBg}
+                          accentBorder={ft.accentBorder}
+                          maxSizeMB={5}
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">Rating</Label>
