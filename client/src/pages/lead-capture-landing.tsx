@@ -78,6 +78,22 @@ const EMPTY_FORM: FormData = {
   goals: [], experienceLevel: "", currentTrainingStatus: "", commitmentLevel: "", notes: "",
 };
 
+type ExtendedConfig = {
+  urgencyBadge?: string;
+  heroAlignment?: "left" | "center" | "right";
+  overlayStrength?: number;
+  videoBackgroundUrl?: string;
+  accentColor?: string;
+  gradientPreset?: string;
+  buttonStyle?: "solid" | "outline" | "gradient";
+  darkIntensity?: string;
+  typographyPreset?: string;
+  whoCards?: { id: string; title: string; description: string; icon: string }[];
+  formFields?: any[];
+  bookingButtonText?: string;
+  bookingRedirectOnSubmit?: boolean;
+};
+
 type ProgramData = {
   org: { name: string; slug: string; logoUrl: string | null; primaryColor: string | null };
   program: { id: string; name: string; slug: string; type: string };
@@ -86,12 +102,16 @@ type ProgramData = {
     subheadline: string | null;
     ctaText: string | null;
     heroImageUrl: string | null;
-    benefits: { icon?: string; title: string; desc: string }[] | null;
-    socialProof: { quote: string; name: string; sport?: string }[] | null;
+    benefits: any[] | null;
+    socialProof: any[] | null;
     whoIsThisFor: string | null;
     metaPixelId: string | null;
     googleAdsConversionId: string | null;
     googleAdsConversionLabel: string | null;
+    bookingUrl: string | null;
+    bookingType: string | null;
+    funnelType: string | null;
+    extendedConfig: ExtendedConfig | null;
   } | null;
 };
 
@@ -339,25 +359,130 @@ export default function LeadCaptureLanding() {
   }
 
   const { org, program, config } = data;
-  const headline = config?.headline || "Train Like an Elite Athlete";
-  const subheadline = config?.subheadline || "Apply now and take the first step toward your athletic potential.";
-  const ctaText = config?.ctaText || "Apply Now";
-  const benefits: { icon?: string; title: string; desc: string }[] = Array.isArray(config?.benefits) && config.benefits.length > 0
-    ? (config.benefits as { icon?: string; title: string; desc: string }[])
-    : [
-        { title: "Elite Coaching", desc: "Train with certified S&C specialists who've developed champions." },
-        { title: "Proven Results", desc: "Athletes see measurable performance gains in 4-6 weeks." },
-        { title: "Sport-Specific Programming", desc: "Every session is designed around your specific sport demands." },
-        { title: "Athlete-First Culture", desc: "A community built on discipline, accountability, and growth." },
-      ];
-  const socialProof: { quote: string; name: string; sport?: string }[] = Array.isArray(config?.socialProof) && config.socialProof.length > 0
-    ? (config.socialProof as { quote: string; name: string; sport?: string }[])
-    : [
-        { quote: "This program changed my game completely. I added 15 yards to my 40 time in 8 weeks.", name: "Marcus T.", sport: "Football" },
-        { quote: "Best investment I've made in my athletic career. The coaches actually care.", name: "Jaylen R.", sport: "Basketball" },
-        { quote: "My confidence on the field is through the roof. I got recruited after training here.", name: "Sofia M.", sport: "Soccer" },
-      ];
+
+  // ── ExtendedConfig fields ─────────────────────────────────────────────────
+  const ext: ExtendedConfig = config?.extendedConfig || {};
+  const funnelType = config?.funnelType || "athlete_application";
+  const urgencyBadge = ext.urgencyBadge || "";
+  const heroAlignment = ext.heroAlignment || "center";
+  const overlayStrength = ext.overlayStrength ?? 60;
+  const videoBackgroundUrl = ext.videoBackgroundUrl || "";
+  const accentColor = ext.accentColor || (
+    funnelType === "team_training" ? "#06b6d4" :
+    funnelType === "employment_opportunity" ? "#a855f7" :
+    "#f97316"
+  );
+  const buttonStyle = ext.buttonStyle || "solid";
+  const whoCards = ext.whoCards || [];
+  const savedBookingUrl = config?.bookingUrl || "";
+  const savedBookingType = config?.bookingType || "none";
+  const bookingButtonText = ext.bookingButtonText || (
+    funnelType === "team_training" ? "Book a Discovery Call" :
+    funnelType === "employment_opportunity" ? "Schedule Your Interview" :
+    "Book Your Evaluation"
+  );
+
+  // Funnel-type headline/subhead/cta defaults
+  const defaultHeadline =
+    funnelType === "team_training" ? "Elevate Your Team's Performance" :
+    funnelType === "employment_opportunity" ? "Join Our Coaching Staff" :
+    "Train Like an Elite Athlete";
+  const defaultSubheadline =
+    funnelType === "team_training" ? "Partner with proven strength & conditioning professionals to transform your program." :
+    funnelType === "employment_opportunity" ? "We're building a team of elite strength & conditioning coaches." :
+    "Apply now and take the first step toward your athletic potential.";
+  const defaultCtaText =
+    funnelType === "team_training" ? "Request a Consultation" :
+    funnelType === "employment_opportunity" ? "Apply to Coach" :
+    "Apply Now";
+
+  const headline = config?.headline || defaultHeadline;
+  const subheadline = config?.subheadline || defaultSubheadline;
+  const ctaText = config?.ctaText || defaultCtaText;
+
+  // ── Benefits — fix desc/description field name mismatch ───────────────────
+  const defaultBenefitsForType =
+    funnelType === "team_training" ? [
+      { title: "Turnkey Programs", desc: "Full S&C program design delivered to your facility." },
+      { title: "Proven Track Record", desc: "Teams see measurable athletic improvement in 8 weeks." },
+      { title: "Budget-Flexible Options", desc: "Scalable pricing for programs of all sizes." },
+      { title: "Expert Staffing", desc: "Certified S&C professionals who know your sport." },
+    ] : funnelType === "employment_opportunity" ? [
+      { title: "Competitive Compensation", desc: "Performance-based pay with platform revenue share." },
+      { title: "Athlete Pipeline", desc: "Access to a built-in roster of motivated athletes." },
+      { title: "Scheduling Freedom", desc: "Set your own availability and session cadence." },
+      { title: "Growth Opportunity", desc: "Expand your coaching career with a proven platform." },
+    ] : [
+      { title: "Elite Coaching", desc: "Train with certified S&C specialists who've developed champions." },
+      { title: "Proven Results", desc: "Athletes see measurable performance gains in 4-6 weeks." },
+      { title: "Sport-Specific Programming", desc: "Every session is designed around your specific sport demands." },
+      { title: "Athlete-First Culture", desc: "A community built on discipline, accountability, and growth." },
+    ];
+
+  const benefits: { icon?: string; title: string; desc: string }[] =
+    Array.isArray(config?.benefits) && config.benefits.length > 0
+      ? config.benefits.map((b: any) => ({
+          icon: b.icon,
+          title: b.title || "",
+          desc: b.desc || b.description || "",
+        }))
+      : defaultBenefitsForType;
+
+  // ── Social proof — handle both "role" (editor) and "sport" (legacy) ───────
+  const defaultSocialProofForType =
+    funnelType === "team_training" ? [
+      { quote: "Our athletes' performance metrics improved across the board within one semester.", name: "Coach Johnson", sport: "Athletic Director, Lincoln High" },
+      { quote: "Best investment our program has made. The S&C coaching is elite-level.", name: "Director Williams", sport: "Club Director, Metro FC" },
+      { quote: "We finally have a real strength program our coaches trust.", name: "Coach Rivera", sport: "Head Coach, Westfield HS" },
+    ] : funnelType === "employment_opportunity" ? [
+      { quote: "This platform gave me the infrastructure to grow my coaching business without the admin overhead.", name: "Alex M.", sport: "CSCS Coach" },
+      { quote: "I 4x'd my income in 6 months. The athlete pipeline is real.", name: "Jordan T.", sport: "Performance Coach" },
+      { quote: "Best coaching opportunity I've found — full schedule, great athletes, flexible hours.", name: "Taylor R.", sport: "S&C Specialist" },
+    ] : [
+      { quote: "This program changed my game completely. I added 15 yards to my 40 time in 8 weeks.", name: "Marcus T.", sport: "Football" },
+      { quote: "Best investment I've made in my athletic career. The coaches actually care.", name: "Jaylen R.", sport: "Basketball" },
+      { quote: "My confidence on the field is through the roof. I got recruited after training here.", name: "Sofia M.", sport: "Soccer" },
+    ];
+
+  const socialProof: { quote: string; name: string; sport?: string }[] =
+    Array.isArray(config?.socialProof) && config.socialProof.length > 0
+      ? config.socialProof.map((s: any) => ({
+          quote: s.quote || "",
+          name: s.name || "",
+          sport: s.sport || s.role || "",
+        }))
+      : defaultSocialProofForType;
+
   const whoIsThisFor = config?.whoIsThisFor || "";
+
+  // ── Gradient background ────────────────────────────────────────────────────
+  const gradientPreset = ext.gradientPreset || (
+    funnelType === "team_training" ? "blue-dark" :
+    funnelType === "employment_opportunity" ? "purple-dark" :
+    "orange-dark"
+  );
+  const gradientBg: Record<string, string> = {
+    "orange-dark": "linear-gradient(135deg, #9a3412 0%, #0f0f0f 100%)",
+    "gold-black": "linear-gradient(135deg, #a16207 0%, #111 100%)",
+    "blue-dark": "linear-gradient(135deg, #1e40af 0%, #0f0f0f 100%)",
+    "cyan-dark": "linear-gradient(135deg, #0e7490 0%, #0f0f0f 100%)",
+    "purple-dark": "linear-gradient(135deg, #7e22ce 0%, #0f0f0f 100%)",
+    "green-dark": "linear-gradient(135deg, #15803d 0%, #0f0f0f 100%)",
+    "red-dark": "linear-gradient(135deg, #991b1b 0%, #0f0f0f 100%)",
+  };
+  const heroBg = gradientBg[gradientPreset] || gradientBg["orange-dark"];
+
+  // ── Accent-color inline style helpers ─────────────────────────────────────
+  const accentStyle = { color: accentColor };
+  const accentBgStyle = { backgroundColor: accentColor };
+  const accentBgAlphaStyle = { backgroundColor: `${accentColor}22` };
+
+  const ctaBtnStyle: React.CSSProperties =
+    buttonStyle === "outline"
+      ? { border: `2px solid ${accentColor}`, color: accentColor, background: "transparent" }
+      : buttonStyle === "gradient"
+      ? { background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)` }
+      : { background: accentColor };
 
   const defaultBenefitIcons = [<Zap key={0} />, <Target key={1} />, <Trophy key={2} />, <Shield key={3} />, <Flame key={4} />, <Star key={5} />];
 
@@ -365,29 +490,58 @@ export default function LeadCaptureLanding() {
     <div className="min-h-screen bg-zinc-950 text-white">
       {/* ── HERO ── */}
       <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
-        {config?.heroImageUrl ? (
+        {/* Background: video > image > gradient */}
+        {videoBackgroundUrl ? (
+          <>
+            <video
+              src={videoBackgroundUrl}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="absolute inset-0 w-full h-full object-cover"
+              data-testid="video-hero-bg"
+            />
+            <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
+          </>
+        ) : config?.heroImageUrl ? (
           <div
             className="absolute inset-0 bg-cover bg-center bg-no-repeat"
             style={{ backgroundImage: `url(${config.heroImageUrl})` }}
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/70 via-zinc-950/60 to-zinc-950" />
+            <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
           </div>
         ) : (
-          <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-orange-500/10 blur-[120px] translate-x-1/3 -translate-y-1/3" />
-            <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-amber-500/10 blur-[100px] -translate-x-1/3 translate-y-1/3" />
+          <div className="absolute inset-0 overflow-hidden" style={{ background: heroBg }}>
+            <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full blur-[120px] translate-x-1/3 -translate-y-1/3" style={{ backgroundColor: `${accentColor}18` }} />
+            <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full blur-[100px] -translate-x-1/3 translate-y-1/3" style={{ backgroundColor: `${accentColor}12` }} />
             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:60px_60px]" />
           </div>
         )}
 
-        <div className="relative z-10 max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center gap-8">
+        <div
+          className={`relative z-10 max-w-4xl mx-auto px-6 py-20 flex flex-col gap-8
+            ${heroAlignment === "left" ? "items-start text-left" : heroAlignment === "right" ? "items-end text-right" : "items-center text-center"}`}
+        >
           {org.logoUrl && (
             <img src={org.logoUrl} alt={org.name} className="h-16 w-auto object-contain rounded-xl" data-testid="img-org-logo" />
           )}
           {!org.logoUrl && (
-            <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/30 rounded-full px-4 py-1.5">
-              <Flame className="h-4 w-4 text-orange-400" />
-              <span className="text-orange-400 text-sm font-semibold tracking-wide uppercase">{org.name}</span>
+            <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 border" style={{ ...accentBgAlphaStyle, borderColor: `${accentColor}4d` }}>
+              <Flame className="h-4 w-4" style={accentStyle} />
+              <span className="text-sm font-semibold tracking-wide uppercase" style={accentStyle}>{org.name}</span>
+            </div>
+          )}
+
+          {/* Urgency badge */}
+          {urgencyBadge && (
+            <div
+              className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-white text-sm font-semibold animate-pulse"
+              style={{ ...accentBgStyle, boxShadow: `0 0 20px ${accentColor}60` }}
+              data-testid="badge-urgency"
+            >
+              <Flame className="h-4 w-4" />
+              {urgencyBadge}
             </div>
           )}
 
@@ -396,7 +550,7 @@ export default function LeadCaptureLanding() {
               className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tight leading-none"
               data-testid="text-hero-headline"
               style={{
-                background: "linear-gradient(135deg, #fff 0%, #fed7aa 50%, #fb923c 100%)",
+                background: `linear-gradient(135deg, #fff 0%, ${accentColor}cc 50%, ${accentColor} 100%)`,
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
@@ -404,15 +558,19 @@ export default function LeadCaptureLanding() {
             >
               {headline}
             </h1>
-            <p className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto leading-relaxed" data-testid="text-hero-subheadline">
+            <p
+              className={`text-lg md:text-xl text-white/70 max-w-2xl leading-relaxed ${heroAlignment === "center" ? "mx-auto" : ""}`}
+              data-testid="text-hero-subheadline"
+            >
               {subheadline}
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className={`flex flex-col sm:flex-row items-center gap-4 ${heroAlignment === "center" ? "justify-center" : heroAlignment === "right" ? "justify-end" : ""}`}>
             <button
               onClick={() => document.getElementById("apply-form")?.scrollIntoView({ behavior: "smooth" })}
-              className="group flex items-center gap-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white font-bold px-8 py-4 rounded-2xl text-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-orange-500/30"
+              className="group flex items-center gap-3 text-white font-bold px-8 py-4 rounded-2xl text-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl"
+              style={{ ...ctaBtnStyle, boxShadow: `0 0 0 0 ${accentColor}00` }}
               data-testid="button-hero-cta"
             >
               {ctaText}
@@ -424,7 +582,7 @@ export default function LeadCaptureLanding() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-6 pt-4">
+          <div className={`flex flex-wrap items-center gap-6 pt-4 ${heroAlignment === "center" ? "justify-center" : heroAlignment === "right" ? "justify-end" : ""}`}>
             {["Free Application", "No Commitment Required", "Response in 24hrs"].map((t) => (
               <div key={t} className="flex items-center gap-1.5 text-white/50 text-sm">
                 <CheckCircle2 className="h-4 w-4 text-green-400" />
@@ -445,14 +603,24 @@ export default function LeadCaptureLanding() {
       <section className="py-20 px-6 bg-zinc-900/50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
-            <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 mb-4 text-xs tracking-widest uppercase">Athlete Results</Badge>
-            <h2 className="text-3xl md:text-4xl font-black text-white">What Athletes Are Saying</h2>
+            <Badge
+              className="mb-4 text-xs tracking-widest uppercase border"
+              style={{ ...accentBgAlphaStyle, color: accentColor, borderColor: `${accentColor}4d` }}
+            >
+              {funnelType === "team_training" ? "Partner Results" : funnelType === "employment_opportunity" ? "Coach Stories" : "Athlete Results"}
+            </Badge>
+            <h2 className="text-3xl md:text-4xl font-black text-white">
+              {funnelType === "team_training" ? "What Programs Are Saying" : funnelType === "employment_opportunity" ? "From Our Coaching Team" : "What Athletes Are Saying"}
+            </h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {socialProof.map((sp, i) => (
               <div
                 key={i}
-                className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 space-y-4 hover:border-orange-500/30 transition-colors"
+                className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 space-y-4 transition-colors"
+                style={{ ["--hover-border" as any]: `${accentColor}4d` }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = `${accentColor}4d`)}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
                 data-testid={`card-social-proof-${i}`}
               >
                 <div className="flex gap-0.5">
@@ -462,7 +630,7 @@ export default function LeadCaptureLanding() {
                 </div>
                 <p className="text-white/80 text-sm leading-relaxed italic">"{sp.quote}"</p>
                 <div className="flex items-center gap-2 pt-2 border-t border-white/10">
-                  <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400 font-bold text-xs">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs" style={{ ...accentBgAlphaStyle, color: accentColor }}>
                     {sp.name[0]}
                   </div>
                   <div>
@@ -480,17 +648,26 @@ export default function LeadCaptureLanding() {
       <section className="py-20 px-6">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
-            <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 mb-4 text-xs tracking-widest uppercase">The Program</Badge>
-            <h2 className="text-3xl md:text-4xl font-black text-white">Why Athletes Choose {org.name}</h2>
+            <Badge
+              className="mb-4 text-xs tracking-widest uppercase border"
+              style={{ ...accentBgAlphaStyle, color: accentColor, borderColor: `${accentColor}4d` }}
+            >
+              {funnelType === "team_training" ? "The Partnership" : funnelType === "employment_opportunity" ? "The Opportunity" : "The Program"}
+            </Badge>
+            <h2 className="text-3xl md:text-4xl font-black text-white">
+              {funnelType === "team_training" ? `Why Programs Partner With ${org.name}` : funnelType === "employment_opportunity" ? `Why Coaches Join ${org.name}` : `Why Athletes Choose ${org.name}`}
+            </h2>
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             {benefits.map((b, i) => (
               <div
                 key={i}
-                className="group flex items-start gap-4 bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 hover:border-orange-500/30 hover:bg-white/8 transition-all duration-300"
+                className="group flex items-start gap-4 bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 hover:bg-white/8 transition-all duration-300"
+                onMouseEnter={e => (e.currentTarget.style.borderColor = `${accentColor}4d`)}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
                 data-testid={`card-benefit-${i}`}
               >
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400 group-hover:bg-orange-500/30 transition-colors">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-colors" style={{ ...accentBgAlphaStyle, color: accentColor }}>
                   {defaultBenefitIcons[i % defaultBenefitIcons.length]}
                 </div>
                 <div>
@@ -504,34 +681,58 @@ export default function LeadCaptureLanding() {
       </section>
 
       {/* ── WHO IS THIS FOR ── */}
-      {whoIsThisFor && (
-        <section className="py-20 px-6 bg-gradient-to-r from-orange-500/10 via-transparent to-amber-500/10">
+      {(whoIsThisFor || whoCards.length > 0) ? (
+        <section className="py-20 px-6" style={{ background: `linear-gradient(to right, ${accentColor}18, transparent, ${accentColor}10)` }}>
           <div className="max-w-3xl mx-auto text-center space-y-6">
-            <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs tracking-widest uppercase">Is This For You?</Badge>
+            <Badge className="text-xs tracking-widest uppercase border" style={{ ...accentBgAlphaStyle, color: accentColor, borderColor: `${accentColor}4d` }}>Is This For You?</Badge>
             <h2 className="text-3xl md:text-4xl font-black text-white">Who This Program Is For</h2>
-            <div className="text-white/70 text-lg leading-relaxed whitespace-pre-line">{whoIsThisFor}</div>
+            {whoIsThisFor && <div className="text-white/70 text-lg leading-relaxed whitespace-pre-line">{whoIsThisFor}</div>}
+            {whoCards.length > 0 && (
+              <div className="grid sm:grid-cols-3 gap-4 text-left mt-4">
+                {whoCards.map((card) => (
+                  <div key={card.id} className="rounded-xl border p-4 bg-white/5" style={{ borderColor: `${accentColor}30` }}>
+                    <p className="font-bold text-white text-sm mb-1">{card.title}</p>
+                    <p className="text-white/55 text-xs leading-relaxed">{card.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
-      )}
-
-      {!whoIsThisFor && (
-        <section className="py-20 px-6 bg-gradient-to-r from-orange-500/10 via-transparent to-amber-500/10">
+      ) : (
+        <section className="py-20 px-6" style={{ background: `linear-gradient(to right, ${accentColor}18, transparent, ${accentColor}10)` }}>
           <div className="max-w-3xl mx-auto">
             <div className="text-center mb-10">
-              <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 mb-4 text-xs tracking-widest uppercase">Is This For You?</Badge>
-              <h2 className="text-3xl md:text-4xl font-black text-white">Built For Serious Athletes</h2>
+              <Badge className="mb-4 text-xs tracking-widest uppercase border" style={{ ...accentBgAlphaStyle, color: accentColor, borderColor: `${accentColor}4d` }}>Is This For You?</Badge>
+              <h2 className="text-3xl md:text-4xl font-black text-white">
+                {funnelType === "team_training" ? "Built For Competitive Programs" : funnelType === "employment_opportunity" ? "Built For Elite Coaches" : "Built For Serious Athletes"}
+              </h2>
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
-              {[
+              {(funnelType === "team_training" ? [
+                "High school and club athletic programs",
+                "ADs looking for professional S&C infrastructure",
+                "Programs that want measurable athlete improvement",
+                "Teams seeking a budget-flexible coaching solution",
+                "Organizations without a full-time S&C hire",
+                "Any sport — football, basketball, soccer, track, and more",
+              ] : funnelType === "employment_opportunity" ? [
+                "Certified S&C coaches (CSCS, CSCCA, CPT)",
+                "Former collegiate athletes with sport-specific expertise",
+                "Coaches looking to grow a performance coaching business",
+                "Trainers ready to specialize in athletic performance",
+                "Coaches who want flexibility and a steady client pipeline",
+                "Full-time or part-time — we fit your schedule",
+              ] : [
                 "Athletes serious about next-level performance",
                 "Student-athletes pursuing college recruitment",
                 "Competitors who want an edge in their sport",
                 "Athletes recovering and building back stronger",
                 "Athletes ready to commit to the process",
                 "Any age level — youth through college",
-              ].map((item, i) => (
+              ]).map((item, i) => (
                 <div key={i} className="flex items-center gap-3 text-white/80">
-                  <CheckCircle2 className="h-5 w-5 text-orange-400 flex-shrink-0" />
+                  <CheckCircle2 className="h-5 w-5 flex-shrink-0" style={accentStyle} />
                   <span className="text-sm">{item}</span>
                 </div>
               ))}
@@ -544,7 +745,9 @@ export default function LeadCaptureLanding() {
       <section id="apply-form" className="py-20 px-6 bg-zinc-900/70">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-10">
-            <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 mb-4 text-xs tracking-widest uppercase">Application</Badge>
+            <Badge className="mb-4 text-xs tracking-widest uppercase border" style={{ ...accentBgAlphaStyle, color: accentColor, borderColor: `${accentColor}4d` }}>
+              {funnelType === "team_training" ? "Consultation Request" : funnelType === "employment_opportunity" ? "Coach Application" : "Application"}
+            </Badge>
             <h2 className="text-3xl md:text-4xl font-black text-white">
               {submitted ? "Application Complete" : `Apply to ${program.name}`}
             </h2>
@@ -1005,7 +1208,8 @@ export default function LeadCaptureLanding() {
               <button
                 onClick={goNext}
                 disabled={submitMutation.isPending}
-                className="flex-1 flex items-center justify-center gap-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-50 text-white font-bold h-14 rounded-xl text-base transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-orange-500/20"
+                className="flex-1 flex items-center justify-center gap-3 disabled:opacity-50 text-white font-bold h-14 rounded-xl text-base transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                style={{ ...ctaBtnStyle }}
                 data-testid="button-next-step"
               >
                 {submitMutation.isPending ? (
@@ -1015,7 +1219,7 @@ export default function LeadCaptureLanding() {
                   </>
                 ) : step === 4 ? (
                   <>
-                    Submit Application
+                    {funnelType === "team_training" ? "Request Consultation" : funnelType === "employment_opportunity" ? "Submit Application" : "Submit Application"}
                     <CheckCircle2 className="h-5 w-5" />
                   </>
                 ) : (
@@ -1035,7 +1239,8 @@ export default function LeadCaptureLanding() {
         <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden px-4 pb-4 pt-2 bg-gradient-to-t from-zinc-950 to-transparent">
           <button
             onClick={() => document.getElementById("apply-form")?.scrollIntoView({ behavior: "smooth" })}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold py-4 rounded-2xl text-base shadow-2xl shadow-orange-500/30"
+            className="w-full flex items-center justify-center gap-2 text-white font-bold py-4 rounded-2xl text-base shadow-2xl"
+            style={{ ...ctaBtnStyle, boxShadow: `0 8px 32px ${accentColor}40` }}
             data-testid="button-sticky-cta"
           >
             {ctaText}

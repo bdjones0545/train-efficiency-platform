@@ -936,6 +936,10 @@ export default function LeadCaptureProgramEditorPage() {
     onSuccess: (_, mode) => {
       setUnsaved(false);
       queryClient.invalidateQueries({ queryKey: [`/api/lead-capture/programs/${programId}/config`] });
+      // Also bust the public landing page cache so changes show immediately
+      if (orgData?.slug && program?.slug) {
+        queryClient.invalidateQueries({ queryKey: [`/api/public/lead-capture/${orgData.slug}/${program.slug}`] });
+      }
       if (mode !== "autosave") {
         toast({ title: "Saved", description: "Funnel configuration updated." });
       }

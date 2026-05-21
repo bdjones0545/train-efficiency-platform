@@ -1,0 +1,95 @@
+Fix Lead Capture Editor save persistence.
+
+Issue:
+The editor lets me change branding/content and click Save, but the public apply page does not reflect the changes.
+
+Likely causes:
+- editor state is not being sent in PUT payload
+- backend PUT route is ignoring new editor fields
+- DB columns/json config are not storing new fields
+- public GET route is not returning saved config
+- landing page is still using FUNNEL_CONFIGS defaults instead of saved program config
+- React Query cache is stale after save
+
+Audit the full save/read pipeline:
+
+1. Editor state
+Check lead-capture-program-editor.tsx:
+- confirm Save button calls the correct mutation
+- confirm payload includes all editable fields:
+  - headline
+  - subheadline
+  - ctaText
+  - urgencyBadge
+  - heroImageUrl
+  - videoBackgroundUrl
+  - textAlignment
+  - accentColor
+  - gradientPreset
+  - buttonStyle
+  - benefits
+  - testimonials
+  - whoCards
+  - formFields
+  - bookingUrl
+  - showInOrgMenu
+  - navLabel
+  - navOrder
+  - funnelType
+  - funnelLayout
+
+2. Backend config update
+Check:
+PUT /api/lead-capture/programs/:programId/config
+
+Ensure it persists every editable field from the editor.
+If fields are stored in JSON config, merge carefully instead of overwriting with partial undefined values.
+
+3. Database
+Confirm lead_capture_programs has storage for all editor fields.
+Either:
+- real columns
+or
+- config jsonb
+
+Do not drop existing data.
+
+4. Public config route
+Check:
+GET /api/public/lead-capture/:orgSlug/:programSlug
+
+Ensure it returns saved DB values, not only template defaults.
+
+5. Landing page rendering
+Check lead-capture-landing.tsx:
+- saved program config must override template defaults
+- template defaults should only be fallback values
+- accentColor, gradientPreset, buttonStyle, headline, subheadline, CTA, media, benefits, testimonials, and sections must all use saved values first
+
+6. Cache invalidation
+After save:
+- invalidate editor query
+- invalidate public preview query if used
+- show saved toast only after successful response
+- optionally refetch config after save
+
+7. Add debug logging temporarily:
+- save payload
+- backend received payload
+- DB updated row/config
+- public GET returned config
+
+8. Test:
+- change accent color
+- change headline
+- change CTA text
+- upload/set hero image
+- save
+- refresh editor
+- open public apply URL in incognito/private tab
+Expected:
+All changes persist and display publicly.
+
+Important:
+Do not rebuild the funnel editor.
+Fix the persistence contract between editor → backend → DB → public landing page.
