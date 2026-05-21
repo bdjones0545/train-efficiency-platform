@@ -178,9 +178,22 @@ export default function LeadCaptureLanding() {
     bookingUrl: string | null; bookingType: string;
   } | null>(null);
   const [abandonedId, setAbandonedId] = useState<string | null>(null);
+  const [formInView, setFormInView] = useState(false);
   const partialSavedRef = useRef(false);
   const sessionIdRef = useRef(generateSessionId());
   const utm = useUtmParams();
+
+  // Hide sticky CTA once the form section scrolls into view
+  useEffect(() => {
+    const el = document.getElementById("apply-form");
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setFormInView(entry.isIntersecting),
+      { threshold: 0.08 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const TOTAL_STEPS = 5;
 
@@ -783,7 +796,7 @@ export default function LeadCaptureLanding() {
       )}
 
       {/* ── MULTI-STEP FORM ── */}
-      <section id="apply-form" className="py-20 px-6 bg-zinc-900/70">
+      <section id="apply-form" className="py-20 px-6 bg-zinc-900/70" style={{ paddingBottom: "max(80px, calc(80px + env(safe-area-inset-bottom)))" }}>
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-10">
             <Badge className="mb-4 text-xs tracking-widest uppercase border" style={{ ...accentBgAlphaStyle, color: accentColor, borderColor: `${accentColor}4d` }}>
@@ -1282,20 +1295,62 @@ export default function LeadCaptureLanding() {
         </div>
       </section>
 
-      {/* ── STICKY CTA (mobile) ── */}
-      {step === 1 && !submitted && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden px-4 pb-4 pt-2 bg-gradient-to-t from-zinc-950 to-transparent">
-          <button
-            onClick={() => document.getElementById("apply-form")?.scrollIntoView({ behavior: "smooth" })}
-            className="w-full flex items-center justify-center gap-2 text-white font-bold py-4 rounded-2xl text-base shadow-2xl"
-            style={{ ...ctaBtnStyle, boxShadow: `0 8px 32px ${accentColor}40` }}
-            data-testid="button-sticky-cta"
+      {/* ── STICKY CTA (mobile only) ──
+           Pre-form:  visible when form section is NOT in viewport
+           Mid-form:  hidden — inline Continue/Submit buttons take over
+           Success:   shows primary post-submission action
+      */}
+      {(() => {
+        // A step > 1 means user has advanced through the form (form always in view)
+        const isFormActive = (formInView || step > 1) && !submitted;
+        const showPreForm  = !isFormActive && !submitted;
+        const showSuccess  = submitted;
+        const visible      = showPreForm || showSuccess;
+
+        const successHref = submitResult?.bookingUrl
+          ? submitResult.bookingUrl
+          : `/api/auth/login?returnTo=/org/${submitResult?.orgSlug || orgSlug}`;
+        const successLabel = submitResult?.bookingUrl
+          ? (funnelType === "team_training" ? "Book Consultation" : "Book Your Evaluation")
+          : "Create Account & Schedule";
+
+        return (
+          <div
+            className={`fixed bottom-0 left-0 right-0 z-50 md:hidden transition-all duration-300 ease-in-out ${
+              visible ? "translate-y-0 opacity-100 pointer-events-auto" : "translate-y-full opacity-0 pointer-events-none"
+            }`}
+            style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
+            aria-hidden={!visible}
           >
-            {ctaText}
-            <ArrowRight className="h-5 w-5" />
-          </button>
-        </div>
-      )}
+            <div className="px-4 pt-3 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent">
+              {showSuccess ? (
+                <a
+                  href={successHref}
+                  target={submitResult?.bookingUrl ? "_blank" : undefined}
+                  rel={submitResult?.bookingUrl ? "noopener noreferrer" : undefined}
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-emerald-400 text-white font-bold py-4 rounded-2xl text-base shadow-2xl"
+                  style={{ boxShadow: "0 8px 32px rgba(34,197,94,0.35)" }}
+                  data-testid="button-sticky-success-cta"
+                >
+                  <CheckCircle2 className="h-5 w-5" />
+                  {successLabel}
+                  <ArrowRight className="h-5 w-5" />
+                </a>
+              ) : (
+                <button
+                  onClick={() => document.getElementById("apply-form")?.scrollIntoView({ behavior: "smooth" })}
+                  className="w-full flex items-center justify-center gap-2 text-white font-bold py-4 rounded-2xl text-base shadow-2xl"
+                  style={{ ...ctaBtnStyle, boxShadow: `0 8px 32px ${accentColor}40` }}
+                  data-testid="button-sticky-cta"
+                >
+                  {ctaText}
+                  <ArrowRight className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── FOOTER ── */}
       <footer className="py-8 px-6 border-t border-white/5 bg-zinc-950">
