@@ -16,6 +16,8 @@ import {
   coachProfiles,
   userProfiles,
   users,
+  organizations,
+  athleticPrograms,
 } from "@shared/schema";
 import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
 import { triggerNotificationEvent } from "./services/notification-automation";
@@ -260,6 +262,137 @@ function parseCSV(text: string): { headers: string[]; rows: Record<string, strin
 }
 
 export function registerPrTrackerRoutes(app: Express) {
+  // ── Org Nav Context ────────────────────────────────────────────────────────
+  // Public endpoint — returns org info + active program tools.
+  // Accepts optional auth (org token, Bearer, or OIDC) to enrich with role.
+
+  app.get("/api/org/by-slug/:slug/nav-context", async (req: any, res) => {
+    try {
+      const { slug } = req.params;
+
+      // 1. Fetch org by slug (public)
+      const [org] = await db.select({
+        id: organizations.id,
+        name: organizations.name,
+        slug: organizations.slug,
+        logoUrl: organizations.logoUrl,
+        primaryColor: organizations.primaryColor,
+      }).from(organizations).where(eq(organizations.slug, slug)).limit(1);
+
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      // 2. Fetch active program tools for this org
+      const tools = await db.select({
+        id: athleticPrograms.id,
+        name: athleticPrograms.name,
+        slug: athleticPrograms.slug,
+        type: athleticPrograms.type,
+      }).from(athleticPrograms).where(
+        and(
+          eq(athleticPrograms.organizationId, org.id),
+          eq(athleticPrograms.active, true),
+          inArray(athleticPrograms.type, ["pr_tracker", "workout_builder"]),
+        )
+      );
+
+      // 3. Resolve auth context (try all three paths; first match wins)
+      let effectiveRole: string | null = null;
+      let userName: string | null = null;
+      let userEmail: string | null = null;
+      let userId: string | null = null;
+      let isAuthenticated = false;
+
+      // Path A: OIDC session cookie (passport sets req.user)
+      if (!isAuthenticated && req.user) {
+        try {
+          const mainUserId: string = req.user?.claims?.sub ?? req.user?.id;
+          const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+          const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
+          const userOrgId = coachRow?.organizationId ?? profileRow?.organizationId;
+          if (userOrgId === org.id) {
+            const [mainUser] = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
+            const profileRole = profileRow?.role ?? null;
+            const isAdmin = ["ADMIN", "STAFF"].includes(profileRole ?? "");
+            effectiveRole = isAdmin ? "admin" : "coach";
+            userName = `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim() || null;
+            userEmail = coachRow?.email ?? mainUser?.email ?? null;
+            userId = mainUserId;
+            isAuthenticated = true;
+          }
+        } catch { /* ignore, try next path */ }
+      }
+
+      // Path B: Bearer token (email/password main app login)
+      const authHeader = req.headers.authorization as string | undefined;
+      if (!isAuthenticated && authHeader?.startsWith("Bearer ")) {
+        try {
+          const bearerToken = authHeader.slice(7);
+          const tokenResult = await db.execute(
+            sql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+          );
+          if (tokenResult.rows.length) {
+            const mainUserId = (tokenResult.rows[0] as any).user_id as string;
+            const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+            const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
+            const userOrgId = coachRow?.organizationId ?? profileRow?.organizationId;
+            if (userOrgId === org.id) {
+              const [mainUser] = await db.select().from(users).where(eq(users.id, mainUserId)).limit(1);
+              const profileRole = profileRow?.role ?? null;
+              const isAdmin = ["ADMIN", "STAFF"].includes(profileRole ?? "");
+              effectiveRole = isAdmin ? "admin" : "coach";
+              userName = `${mainUser?.firstName ?? ""} ${mainUser?.lastName ?? ""}`.trim() || null;
+              userEmail = coachRow?.email ?? mainUser?.email ?? null;
+              userId = mainUserId;
+              isAuthenticated = true;
+            }
+          }
+        } catch { /* ignore, try next path */ }
+      }
+
+      // Path C: X-Org-Auth-Token (org-specific JWT stored in client localStorage)
+      const orgTokenHeader = req.headers["x-org-auth-token"] as string | undefined;
+      if (!isAuthenticated && orgTokenHeader) {
+        try {
+          const tokenHash = crypto.createHash("sha256").update(orgTokenHeader).digest("hex");
+          const now = new Date();
+          const [session] = await db.select().from(orgSessions)
+            .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
+            .limit(1);
+          if (session && session.orgId === org.id) {
+            const [orgUser] = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
+            const [membership] = await db.select().from(orgMemberships)
+              .where(and(eq(orgMemberships.orgId, org.id), eq(orgMemberships.userId, session.userId)))
+              .limit(1);
+            if (orgUser && membership) {
+              effectiveRole = membership.role;
+              userName = orgUser.name;
+              userEmail = orgUser.email;
+              userId = orgUser.id;
+              isAuthenticated = true;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      return res.json({
+        orgId: org.id,
+        orgName: org.name,
+        orgSlug: org.slug,
+        orgLogoUrl: org.logoUrl ?? null,
+        primaryColor: org.primaryColor ?? null,
+        tools,
+        effectiveRole,
+        userName,
+        userEmail,
+        userId,
+        isAuthenticated,
+      });
+    } catch (err: any) {
+      console.error("[nav-context] error:", err);
+      return res.status(500).json({ message: err?.message ?? "Failed to load nav context" });
+    }
+  });
+
   // ── Org Auth ──────────────────────────────────────────────────────────────
 
   app.post("/api/org-auth/signup", async (req: any, res) => {

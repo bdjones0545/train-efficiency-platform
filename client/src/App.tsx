@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { OrgSidebar } from "@/components/OrgSidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
@@ -159,11 +160,71 @@ function SubscriptionGate({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Layout with OrgSidebar — used for all /org/:slug/* inner routes
+function OrgLayout({ orgSlug }: { orgSlug: string }) {
+  const style = {
+    "--sidebar-width": "15rem",
+    "--sidebar-width-icon": "3rem",
+  };
+
+  return (
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex h-[100dvh] w-full overflow-hidden">
+        <OrgSidebar orgSlug={orgSlug} />
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          <header className="flex items-center gap-2 p-3 border-b sticky top-0 z-50 bg-background/80 backdrop-blur-md shrink-0">
+            <SidebarTrigger data-testid="button-org-sidebar-toggle" />
+            <div className="flex-1" />
+            <ThemeToggle />
+          </header>
+          <main className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+            <div className="max-w-5xl mx-auto">
+              <Switch>
+                <Route path="/org/:slug/portal" component={OrgPortalPage} />
+                <Route path="/org/:slug/notifications" component={OrgNotificationsPage} />
+                <Route path="/org/:slug/profile" component={OrgProfilePage} />
+                <Route path="/org/:slug/coach/teams/:teamId" component={CoachTeamDetailPage} />
+                <Route path="/org/:slug/coach/teams" component={CoachTeamsPage} />
+                <Route path="/org/:slug/coach/athletes/:userId/timeline" component={AthleteTimelinePage} />
+                <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
+                <Route path="/org/:slug/calendar" component={OrgCalendarPage} />
+                <Route path="/org/:slug/coach/timeline" component={CoachTimelinePage} />
+                <Route path="/org/:slug/nutrition" component={OrgNutritionPage} />
+                <Route path="/org/:slug/coach/nutrition" component={CoachNutritionPage} />
+                <Route path="/org/:slug/education/:pathwaySlug" component={OrgEducationPage} />
+                <Route path="/org/:slug/education" component={OrgEducationPage} />
+                <Route path="/org/:slug/coach/education-builder" component={CoachEducationBuilderPage} />
+                <Route path="/org/:slug/guardian" component={OrgGuardianPage} />
+                <Route path="/org/:slug/coach/guardians" component={CoachGuardianManagementPage} />
+                <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
+                <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
+                <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
+                <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
+                <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />
+                <Route component={NotFound} />
+              </Switch>
+            </div>
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
+  );
+}
+
 function AuthenticatedLayout() {
   const [location] = useLocation();
 
   if (location === "/admin/setup") {
     return <AdminSetupPage />;
+  }
+
+  // Detect org inner routes: /org/:slug/<something> (not just /org/:slug)
+  const orgInnerMatch = location.match(/^\/org\/([^/]+)\//);
+  const orgSlug = orgInnerMatch?.[1] ?? null;
+
+  // Show OrgSidebar layout when inside an org section
+  if (orgSlug) {
+    return <OrgLayout orgSlug={orgSlug} />;
   }
 
   const isFullscreenPage = location === "/scheduling/agent";
@@ -202,27 +263,7 @@ function AuthenticatedLayout() {
                   <Route path="/coaches" component={CoachesPage} />
                   <Route path="/coaches/:id" component={CoachSchedulePage} />
                   <Route path="/sessions" component={OpenSessionsPage} />
-                  <Route path="/org/:slug/portal" component={OrgPortalPage} />
-                  <Route path="/org/:slug/notifications" component={OrgNotificationsPage} />
-                  <Route path="/org/:slug/profile" component={OrgProfilePage} />
-                  <Route path="/org/:slug/coach/teams" component={CoachTeamsPage} />
-                  <Route path="/org/:slug/coach/teams/:teamId" component={CoachTeamDetailPage} />
-                  <Route path="/org/:slug/coach/athletes/:userId/timeline" component={AthleteTimelinePage} />
-                  <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
-                  <Route path="/org/:slug/calendar" component={OrgCalendarPage} />
-                  <Route path="/org/:slug/coach/timeline" component={CoachTimelinePage} />
-                  <Route path="/org/:slug/nutrition" component={OrgNutritionPage} />
-                  <Route path="/org/:slug/coach/nutrition" component={CoachNutritionPage} />
-                  <Route path="/org/:slug/education/:pathwaySlug" component={OrgEducationPage} />
-                  <Route path="/org/:slug/education" component={OrgEducationPage} />
-                  <Route path="/org/:slug/coach/education-builder" component={CoachEducationBuilderPage} />
-                  <Route path="/org/:slug/guardian" component={OrgGuardianPage} />
-                  <Route path="/org/:slug/coach/guardians" component={CoachGuardianManagementPage} />
-                  <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
-                  <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
-                  <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
-                  <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
-                  <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />
+                  <Route path="/org/:slug" component={OrgLandingPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/settings" component={SettingsPage} />
@@ -240,7 +281,6 @@ function AuthenticatedLayout() {
                   <Route path="/team-training" component={TeamTrainingPage} />
                   <Route path="/portal" component={ClientPortalPage} />
                   <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
-                  <Route path="/org/:slug" component={OrgLandingPage} />
                   <Route path="/privacy" component={PrivacyPolicyPage} />
                   <Route path="/terms" component={TermsConditionsPage} />
                   <Route path="/scheduling" component={SchedulingPage} />
@@ -287,24 +327,23 @@ function AuthenticatedLayout() {
 
 
 function PublicLayout() {
+  const [location] = useLocation();
+
+  // Org inner routes get the OrgSidebar layout even for unauthenticated users
+  // (the sidebar itself handles showing a login prompt when not authenticated)
+  const orgInnerMatch = location.match(/^\/org\/([^/]+)\//);
+  const orgSlug = orgInnerMatch?.[1] ?? null;
+  if (orgSlug) {
+    return <OrgLayout orgSlug={orgSlug} />;
+  }
+
   return (
     <Switch>
       <Route path="/portal" component={ClientPortalPage} />
       <Route path="/sessions" component={OpenSessionsPublicPage} />
-      <Route path="/org/:slug/portal" component={OrgPortalPage} />
-      <Route path="/org/:slug/notifications" component={OrgNotificationsPage} />
-      <Route path="/org/:slug/profile" component={OrgProfilePage} />
-      <Route path="/org/:slug/coach/teams" component={CoachTeamsPage} />
-      <Route path="/org/:slug/coach/teams/:teamId" component={CoachTeamDetailPage} />
-      <Route path="/org/:slug/coach/athletes/:userId" component={CoachAthleteDetailPage} />
-      <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
-      <Route path="/org/:slug/programs/:programSlug" component={ProgramToolPage} />
-      <Route path="/org/:slug/athletic/:programSlug" component={AthleticSchedulingPage} />
-      <Route path="/org/:slug/athletic" component={AthleticSchedulingPage} />
-      <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />
+      <Route path="/org/:slug" component={OrgLandingPage} />
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
-      <Route path="/org/:slug" component={OrgLandingPage} />
       <Route path="/subscribe/:planId" component={SubscribePage} />
       <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
       <Route path="/create-password" component={CreatePasswordPage} />
