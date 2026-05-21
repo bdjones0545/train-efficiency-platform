@@ -1799,7 +1799,7 @@ function GlobalPriorityPanel() {
   function execute(action: GlobalAction) {
     sessionStorage.setItem(
       "agent_prefill_message",
-      `Execute this top priority action: ${action.title}. Reason: ${action.reason}. Estimated value: $${action.estimatedValue.toLocaleString()}.`
+      `Execute this top priority action: ${action.title}. Reason: ${action.reason}. Estimated value: $${(action.estimatedValue ?? 0).toLocaleString()}.`
     );
     setLocation("/scheduling/agent");
   }

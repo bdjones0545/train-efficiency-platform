@@ -1287,10 +1287,10 @@ export default function LeadCaptureProgramEditorPage() {
               {funnel ? (
                 <div className="space-y-3">
                   {[
-                    { label: "Page Views", value: funnel.pageViews, pct: 100 },
-                    { label: "Step 1 Starts", value: funnel.step1Starts, pct: funnel.pageViews > 0 ? Math.round(funnel.step1Starts / funnel.pageViews * 100) : 0 },
-                    { label: "Partial Captures", value: funnel.partialCaptures, pct: funnel.pageViews > 0 ? Math.round(funnel.partialCaptures / funnel.pageViews * 100) : 0 },
-                    { label: ft.analyticsLabel, value: funnel.completions, pct: funnel.pageViews > 0 ? Math.round(funnel.completions / funnel.pageViews * 100) : 0 },
+                    { label: "Page Views", value: funnel.pageViews ?? 0, pct: 100 },
+                    { label: "Step 1 Starts", value: funnel.step1Starts ?? 0, pct: (funnel.pageViews ?? 0) > 0 ? Math.round((funnel.step1Starts ?? 0) / (funnel.pageViews ?? 1) * 100) : 0 },
+                    { label: "Partial Captures", value: funnel.partialCaptures ?? 0, pct: (funnel.pageViews ?? 0) > 0 ? Math.round((funnel.partialCaptures ?? 0) / (funnel.pageViews ?? 1) * 100) : 0 },
+                    { label: ft.analyticsLabel, value: funnel.completions ?? 0, pct: (funnel.pageViews ?? 0) > 0 ? Math.round((funnel.completions ?? 0) / (funnel.pageViews ?? 1) * 100) : 0 },
                   ].map(step => (
                     <div key={step.label} className="space-y-1" data-testid={`funnel-step-${step.label.toLowerCase().replace(/\s+/g, "-")}`}>
                       <div className="flex items-center justify-between text-sm">

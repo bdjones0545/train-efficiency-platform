@@ -142,7 +142,7 @@ function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: stri
               <div key={step.key} data-testid={`funnel-step-${step.key}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-muted-foreground">{step.label}</span>
-                  <span className="text-xs font-semibold">{step.value.toLocaleString()}</span>
+                  <span className="text-xs font-semibold">{(step.value ?? 0).toLocaleString()}</span>
                 </div>
                 <div className="h-5 bg-muted/40 rounded-full overflow-hidden">
                   <div
@@ -152,7 +152,7 @@ function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: stri
                       i === 2 ? "bg-orange-500" :
                       i === 3 ? "bg-green-500" : "bg-amber-500"
                     }`}
-                    style={{ width: `${(step.value / funnelMax) * 100}%` }}
+                    style={{ width: `${((step.value ?? 0) / funnelMax) * 100}%` }}
                   />
                 </div>
               </div>
@@ -174,7 +174,7 @@ function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: stri
               <p className="text-xs text-muted-foreground">High-Intent Rate</p>
             </div>
             <div className="text-center">
-              <p className="text-base font-bold text-violet-500">{funnel.pageViews.toLocaleString()}</p>
+              <p className="text-base font-bold text-violet-500">{(funnel.pageViews ?? 0).toLocaleString()}</p>
               <p className="text-xs text-muted-foreground">Page Views</p>
             </div>
           </div>

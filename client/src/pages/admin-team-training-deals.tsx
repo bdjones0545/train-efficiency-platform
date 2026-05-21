@@ -530,7 +530,7 @@ function StalledDealsPanel({
                 <HealthTierBadge tier={tier} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{deal.prospect?.prospectName ?? "Unknown Team"}</p>
-                  <p className="text-xs text-muted-foreground">{statusInfo(deal.status).label} · {days}d inactive · ${deal.estimatedValue.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">{statusInfo(deal.status).label} · {days}d inactive · ${(deal.estimatedValue ?? 0).toLocaleString()}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onView(deal)} data-testid={`button-stalled-view-${deal.id}`}>
@@ -1172,7 +1172,7 @@ function DailyRevenueBrief({ onRunAgent, isRunning }: { onRunAgent: () => void; 
           { label: "Follow-Ups Due", value: brief.followUpDueToday.length, icon: Bell, urgent: brief.followUpDueToday.length > 0, color: brief.followUpDueToday.length > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground" },
           { label: "Active Deals", value: brief.totalActive, icon: Briefcase, urgent: false, color: "text-blue-600 dark:text-blue-400" },
           { label: "Hot Leads", value: brief.hotLeadsCount, icon: Flame, urgent: brief.hotLeadsCount > 0, color: brief.hotLeadsCount > 0 ? "text-orange-600 dark:text-orange-400" : "text-muted-foreground" },
-          { label: "Proj. Revenue", value: `$${brief.projectedRevenue.toLocaleString()}`, icon: TrendingUp, urgent: false, color: "text-emerald-600 dark:text-emerald-400" },
+          { label: "Proj. Revenue", value: `$${(brief.projectedRevenue ?? 0).toLocaleString()}`, icon: TrendingUp, urgent: false, color: "text-emerald-600 dark:text-emerald-400" },
         ].map(({ label, value, icon: Icon, urgent, color }) => (
           <div key={label} className="flex flex-col items-center justify-center py-3 px-2 text-center">
             <Icon className={`h-3.5 w-3.5 mb-1 ${color}`} />
