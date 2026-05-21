@@ -13475,6 +13475,37 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         } catch (_) {}
       }
 
+      // Fetch booking context needed for the immediate response
+      let bookingUrl: string | null = null;
+      let bookingType: string = "none";
+      try {
+        const { leadCapturePrograms: lcpResp } = await import("@shared/schema");
+        const { eq: eqResp } = await import("drizzle-orm");
+        const [lcRow] = await db.select({ bookingUrl: lcpResp.bookingUrl, bookingType: lcpResp.bookingType })
+          .from(lcpResp).where(eqResp(lcpResp.programId, program.id)).limit(1);
+        bookingUrl = lcRow?.bookingUrl ?? null;
+        bookingType = lcRow?.bookingType ?? "none";
+      } catch (_) {}
+
+      // ✅ Respond immediately — submission is persisted. Side effects below are fully non-blocking.
+      res.status(201).json({
+        success: true,
+        submissionId: submission.id,
+        orgSlug: org.slug,
+        orgName: org.name,
+        orgId: org.id,
+        programId: program.id,
+        programName: program.name,
+        athleteName,
+        email,
+        bookingUrl,
+        bookingType,
+        emailStatus: { admin: "pending", applicant: "pending" },
+      });
+
+      // ---- Fire-and-forget side effects (closure has access to db, eq, org, program, submission, etc.) ----
+      (async () => {
+
       // SendGrid client resolved via verified sender identity (same as rest of app)
       let _sgClient: { client: any; fromEmail: string } | null = null;
       const getSg = async () => {
@@ -13611,7 +13642,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       let applicantEmailError: string | null = null;
       let applicantEmailSentAt: Date | null = null;
 
-      if (email && sgKey) {
+      if (email) {
         try {
           // Fetch lead capture program config for bookingUrl + hero image
           const { leadCapturePrograms: lcpTable } = await import("@shared/schema");
@@ -13828,31 +13859,8 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
         } catch (_) {}
       })();
 
-      // Fetch booking context for success-screen CTA
-      let bookingUrl: string | null = null;
-      let bookingType: string = "none";
-      try {
-        const { leadCapturePrograms: lcpT2 } = await import("@shared/schema");
-        const { eq: eq2 } = await import("drizzle-orm");
-        const [lcRow] = await db.select({ bookingUrl: lcpT2.bookingUrl, bookingType: lcpT2.bookingType })
-          .from(lcpT2).where(eq2(lcpT2.programId, program.id)).limit(1);
-        bookingUrl = lcRow?.bookingUrl ?? null;
-        bookingType = lcRow?.bookingType ?? "none";
-      } catch (_) {}
+      })().catch((err) => console.error("[LeadCapture] Background side-effect error (submission already saved):", err));
 
-      res.json({
-        success: true,
-        submissionId: submission.id,
-        orgSlug: org.slug,
-        orgName: org.name,
-        orgId: org.id,
-        programId: program.id,
-        programName: program.name,
-        athleteName,
-        email,
-        bookingUrl,
-        bookingType,
-      });
     } catch (error) {
       console.error("Lead capture submit error:", error);
       res.status(500).json({ message: "Failed to submit application" });
