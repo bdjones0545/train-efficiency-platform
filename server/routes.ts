@@ -13380,5 +13380,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerCoachCommandCenterRoutes } = await import("./coach-command-center-routes");
   registerCoachCommandCenterRoutes(app);
 
+  // ── Communication Automation + Multi-Channel Outreach Engine ─────────────────
+  const { registerCoachOutreachEngineRoutes } = await import("./coach-outreach-engine-routes");
+  registerCoachOutreachEngineRoutes(app);
+
   return httpServer;
 }

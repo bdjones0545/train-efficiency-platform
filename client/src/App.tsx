@@ -102,6 +102,7 @@ import CoachTeamDetailPage from "@/pages/coach-team-detail";
 import CoachAthleteDetailPage from "@/pages/coach-athlete-detail";
 import OrgIntelligencePage from "@/pages/org-intelligence";
 import CoachCommandCenterPage from "@/pages/coach-command-center";
+import CoachCommunicationsCenterPage from "@/pages/coach-communications-center";
 
 interface SubscriptionStatus {
   status: string;
@@ -213,6 +214,7 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
                 <Route path="/org/:slug/coach/guardians" component={CoachGuardianManagementPage} />
                 <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
                 <Route path="/org/:slug/coach/command-center" component={CoachCommandCenterPage} />
+                <Route path="/org/:slug/coach/communications-center" component={CoachCommunicationsCenterPage} />
                 <Route path="/org/:slug/athlete/:userId" component={AthleteProfilePage} />
                 <Route path="/org/:slug/coach/exercise-media" component={ExerciseMediaManagerPage} />
                 <Route path="/org/:slug/workout/:sessionId/execute" component={AthleteExecutionPage} />

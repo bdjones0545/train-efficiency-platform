@@ -1,0 +1,241 @@
+Build Communication Automation + Multi-Channel Outreach Engine Phase 1 for TrainEfficiency.
+
+GOAL:
+Create an intelligent communication layer that automates coach outreach, athlete accountability, reminders, encouragement, and intervention follow-up.
+
+The system should connect:
+- Command Center
+- Risk Engine
+- Education
+- Workout Builder
+- Notifications
+- Adaptive Workflows
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+The platform should intelligently communicate with:
+- athletes
+- team coaches
+- guardians
+- org coaches
+
+Examples:
+
+Low readiness:
+→ supportive athlete reminder
+→ coach alert
+
+Missed workouts:
+→ accountability reminder
+→ follow-up escalation
+
+Education overdue:
+→ reminder + encouragement
+
+PR achieved:
+→ celebration message
+
+Streak milestone:
+→ motivational message
+
+====================================================
+2. COMMUNICATION CHANNELS
+====================================================
+
+Support:
+- in-app notifications
+- email
+- SMS (future-ready)
+- guardian notifications
+- coach inbox
+
+Delivery preferences per user.
+
+====================================================
+3. DATABASE TABLES
+====================================================
+
+Create:
+
+communication_campaigns
+- id
+- orgId
+- title
+- type
+- status
+- createdBy
+- createdAt
+
+communication_messages
+- id
+- campaignId nullable
+- recipientUserId
+- recipientType
+- channel
+- messageType
+- subject nullable
+- body
+- status
+- sentAt
+- metadata jsonb
+
+communication_preferences
+- userId
+- emailEnabled
+- smsEnabled
+- inAppEnabled
+- guardianEnabled
+- quietHours
+- createdAt
+
+communication_templates
+- id
+- orgId nullable
+- templateType
+- title
+- subject
+- body
+- variables jsonb
+
+====================================================
+4. AUTOMATED MESSAGE TYPES
+====================================================
+
+Seed templates for:
+
+- missed workout reminder
+- low readiness encouragement
+- hydration reminder
+- education overdue
+- PR celebration
+- streak milestone
+- coach follow-up request
+- intervention reminder
+- upcoming session reminder
+- recovery encouragement
+
+Tone:
+supportive, performance-focused, positive.
+
+====================================================
+5. AI MESSAGE GENERATION
+====================================================
+
+Create:
+POST /api/org/communication/ai-generate
+
+AI receives:
+- athlete context
+- risk data
+- streaks
+- recent activity
+- intervention context
+
+AI generates:
+- athlete-facing message
+- coach-facing summary
+- guardian summary (optional)
+
+Rules:
+- encouraging tone
+- no medical claims
+- no alarming language
+
+====================================================
+6. COACH COMMUNICATION CENTER
+====================================================
+
+Create:
+ /org/:slug/coach/communications
+
+Features:
+- message history
+- scheduled messages
+- templates
+- campaign builder
+- AI message suggestions
+- delivery analytics
+- unread inbox
+
+====================================================
+7. AUTOMATED WORKFLOW INTEGRATION
+====================================================
+
+Adaptive workflows can trigger:
+- reminders
+- encouragement
+- follow-up requests
+- education nudges
+- streak celebrations
+
+====================================================
+8. GUARDIAN COMMUNICATIONS
+====================================================
+
+Guardians can receive:
+- missed workout notifications
+- streak celebrations
+- education completion
+- attendance summaries
+
+Opt-in only.
+
+====================================================
+9. ATHLETE INBOX
+====================================================
+
+Athletes get:
+- coach messages
+- reminders
+- AI encouragement
+- pathway reminders
+- achievement celebrations
+
+====================================================
+10. DELIVERY ANALYTICS
+====================================================
+
+Track:
+- open rate
+- response rate
+- completion after reminder
+- intervention success rate
+
+====================================================
+11. API ENDPOINTS
+====================================================
+
+Create:
+GET /api/org/communications
+POST /api/org/communications/send
+POST /api/org/communications/ai-generate
+GET /api/org/communications/templates
+PATCH /api/org/communications/preferences
+
+====================================================
+12. UI REQUIREMENTS
+====================================================
+
+Design:
+- premium communication center
+- organized inbox feel
+- actionable
+- mobile-friendly
+
+Think:
+“AI-powered athlete engagement center”
+
+====================================================
+13. IMPORTANT
+====================================================
+
+This system should:
+- reduce coach administrative burden
+- improve athlete accountability
+- improve engagement
+- strengthen coach-athlete communication
+
+Goal:
+TrainEfficiency becomes a fully connected athlete communication and intervention platform.

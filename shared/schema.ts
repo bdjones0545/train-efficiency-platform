@@ -2629,6 +2629,84 @@ export const orgNotificationPreferences = pgTable("org_notification_preferences"
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// ─── Communication Automation Engine ─────────────────────────────────────────
+
+export const communicationCampaigns = pgTable("communication_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  title: varchar("title").notNull(),
+  type: varchar("type").notNull().default("manual"),
+  status: varchar("status").notNull().default("draft"),
+  createdBy: varchar("created_by").notNull(),
+  audienceFilter: jsonb("audience_filter").default({}),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const communicationMessages = pgTable("communication_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id"),
+  orgId: varchar("org_id").notNull(),
+  recipientUserId: varchar("recipient_user_id"),
+  recipientType: varchar("recipient_type").notNull().default("athlete"),
+  channel: varchar("channel").notNull().default("in_app"),
+  messageType: varchar("message_type").notNull().default("reminder"),
+  subject: varchar("subject"),
+  body: text("body").notNull(),
+  status: varchar("status").notNull().default("pending"),
+  sentAt: timestamp("sent_at"),
+  readAt: timestamp("read_at"),
+  sentBy: varchar("sent_by"),
+  aiGenerated: boolean("ai_generated").default(false),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const communicationPreferences = pgTable("communication_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  smsEnabled: boolean("sms_enabled").notNull().default(false),
+  inAppEnabled: boolean("in_app_enabled").notNull().default(true),
+  guardianEnabled: boolean("guardian_enabled").notNull().default(false),
+  quietHoursStart: integer("quiet_hours_start"),
+  quietHoursEnd: integer("quiet_hours_end"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const communicationTemplates = pgTable("communication_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  templateType: varchar("template_type").notNull(),
+  title: varchar("title").notNull(),
+  subject: varchar("subject"),
+  body: text("body").notNull(),
+  variables: jsonb("variables").default([]),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertCommunicationCampaignSchema = createInsertSchema(communicationCampaigns).omit({ id: true, createdAt: true, updatedAt: true });
+export type CommunicationCampaign = typeof communicationCampaigns.$inferSelect;
+export type InsertCommunicationCampaign = z.infer<typeof insertCommunicationCampaignSchema>;
+
+export const insertCommunicationMessageSchema = createInsertSchema(communicationMessages).omit({ id: true, createdAt: true });
+export type CommunicationMessage = typeof communicationMessages.$inferSelect;
+export type InsertCommunicationMessage = z.infer<typeof insertCommunicationMessageSchema>;
+
+export const insertCommunicationPreferencesSchema = createInsertSchema(communicationPreferences).omit({ id: true, createdAt: true, updatedAt: true });
+export type CommunicationPreferences = typeof communicationPreferences.$inferSelect;
+export type InsertCommunicationPreferences = z.infer<typeof insertCommunicationPreferencesSchema>;
+
+export const insertCommunicationTemplateSchema = createInsertSchema(communicationTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type CommunicationTemplate = typeof communicationTemplates.$inferSelect;
+export type InsertCommunicationTemplate = z.infer<typeof insertCommunicationTemplateSchema>;
+
 // ─── Coach Daily Briefings ────────────────────────────────────────────────────
 
 export const coachDailyBriefings = pgTable("coach_daily_briefings", {
