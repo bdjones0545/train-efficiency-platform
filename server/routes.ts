@@ -13368,6 +13368,246 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerAdaptiveWorkflowRoutes } = await import("./adaptive-workflow-routes");
   registerAdaptiveWorkflowRoutes(app);
 
+  // ── Lead Capture Programs ─────────────────────────────────────────────────────
+
+  // Public: get lead capture program details by org slug + program slug
+  app.get("/api/public/lead-capture/:orgSlug/:programSlug", async (req, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.orgSlug);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      const program = await storage.getAthleticProgramBySlug(org.id, req.params.programSlug);
+      if (!program || program.type !== "lead_capture") return res.status(404).json({ message: "Program not found" });
+      const { db } = await import("./db");
+      const { leadCapturePrograms } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [config] = await db.select().from(leadCapturePrograms).where(eq(leadCapturePrograms.programId, program.id));
+      res.json({ org: { name: org.name, slug: org.slug, logoUrl: org.logoUrl, primaryColor: org.primaryColor }, program, config: config || null });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch lead capture program" });
+    }
+  });
+
+  // Public: submit lead capture form
+  app.post("/api/public/lead-capture/:orgSlug/:programSlug/submit", async (req, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.orgSlug);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      const program = await storage.getAthleticProgramBySlug(org.id, req.params.programSlug);
+      if (!program || program.type !== "lead_capture") return res.status(404).json({ message: "Program not found" });
+
+      const { athleteName, parentName, email, phone, age, grade, sport, position, school, goals, experienceLevel, currentTrainingStatus, commitmentLevel, notes } = req.body;
+      if (!athleteName || !email) return res.status(400).json({ message: "athleteName and email are required" });
+
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+
+      const [submission] = await db.insert(leadCaptureSubmissions).values({
+        orgId: org.id,
+        programId: program.id,
+        athleteName,
+        parentName: parentName || null,
+        email,
+        phone: phone || null,
+        age: age ? String(age) : null,
+        grade: grade || null,
+        sport: sport || null,
+        position: position || null,
+        school: school || null,
+        goals: Array.isArray(goals) ? goals : [],
+        experienceLevel: experienceLevel || null,
+        currentTrainingStatus: currentTrainingStatus || null,
+        commitmentLevel: commitmentLevel || null,
+        notes: notes || null,
+        aiQualificationScore: null,
+        aiQualificationReason: null,
+      }).returning();
+
+      // 1. Email org admin
+      const adminEmail = org.ownerEmail || org.schedulingInquiryEmail;
+      if (adminEmail) {
+        try {
+          const sgKey = process.env.SENDGRID_API_KEY;
+          if (sgKey) {
+            const sgMail = await import("@sendgrid/mail");
+            sgMail.default.setApiKey(sgKey);
+            const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@trainefficiency.com";
+            await sgMail.default.send({
+              to: adminEmail,
+              from: fromEmail,
+              subject: `New Lead: ${athleteName} applied to ${program.name}`,
+              html: `
+                <h2>New Athlete Application — ${program.name}</h2>
+                <p><strong>Athlete:</strong> ${athleteName}</p>
+                ${parentName ? `<p><strong>Parent:</strong> ${parentName}</p>` : ""}
+                <p><strong>Email:</strong> ${email}</p>
+                ${phone ? `<p><strong>Phone:</strong> ${phone}</p>` : ""}
+                ${sport ? `<p><strong>Sport:</strong> ${sport}${position ? ` / ${position}` : ""}</p>` : ""}
+                ${school ? `<p><strong>School:</strong> ${school}${grade ? ` | Grade ${grade}` : ""}</p>` : ""}
+                ${age ? `<p><strong>Age:</strong> ${age}</p>` : ""}
+                ${goals?.length ? `<p><strong>Goals:</strong> ${Array.isArray(goals) ? goals.join(", ") : goals}</p>` : ""}
+                ${experienceLevel ? `<p><strong>Experience:</strong> ${experienceLevel}</p>` : ""}
+                ${commitmentLevel ? `<p><strong>Commitment:</strong> ${commitmentLevel}</p>` : ""}
+                ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ""}
+                <hr/>
+                <p style="color:#888;font-size:12px">Submitted via Lead Capture — ${program.name}</p>
+              `,
+            });
+          }
+        } catch (_) {}
+      }
+
+      // 2. Create CRM prospect entry
+      try {
+        const { teamTrainingProspects } = await import("@shared/schema");
+        await db.insert(teamTrainingProspects).values({
+          orgId: org.id,
+          prospectName: athleteName + (school ? ` / ${school}` : ""),
+          sport: sport || "General",
+          city: school || "Unknown",
+          state: "Unknown",
+          contactEmail: email,
+          contactName: athleteName,
+          notes: `Lead Capture: ${program.name}. ${notes || ""}`.trim(),
+        } as any).onConflictDoNothing();
+      } catch (_) {}
+
+      // 3. AI qualification scoring (async, non-blocking)
+      (async () => {
+        try {
+          const openai = new (await import("openai")).default({ apiKey: process.env.OPENAI_API_KEY });
+          const prompt = `You are an athletic recruiting specialist. Score this lead 1-100 for likelihood of becoming a paying client.
+
+Athlete: ${athleteName}, Age: ${age || "?"}, Grade: ${grade || "?"}, Sport: ${sport || "?"}, School: ${school || "?"}
+Goals: ${Array.isArray(goals) ? goals.join(", ") : "?"}, Experience: ${experienceLevel || "?"}, Commitment: ${commitmentLevel || "?"}
+Training Status: ${currentTrainingStatus || "?"}, Notes: ${notes || ""}
+
+Return JSON: { "score": number, "reason": "one sentence" }`;
+
+          const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+            max_tokens: 100,
+          });
+          const result = JSON.parse(response.choices[0].message.content || "{}");
+          if (result.score) {
+            const { eq } = await import("drizzle-orm");
+            await db.update(leadCaptureSubmissions).set({
+              aiQualificationScore: result.score,
+              aiQualificationReason: result.reason || null,
+            }).where(eq(leadCaptureSubmissions.id, submission.id));
+          }
+        } catch (_) {}
+      })();
+
+      res.json({ success: true, submissionId: submission.id });
+    } catch (error) {
+      console.error("Lead capture submit error:", error);
+      res.status(500).json({ message: "Failed to submit application" });
+    }
+  });
+
+  // Admin: get submissions for a program
+  app.get("/api/lead-capture/submissions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const programId = req.query.programId as string;
+      if (!programId) return res.status(400).json({ message: "programId required" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const { desc } = await import("drizzle-orm");
+      const rows = await db.select().from(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.orgId, profile.organizationId), eq(leadCaptureSubmissions.programId, programId)))
+        .orderBy(desc(leadCaptureSubmissions.createdAt));
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch submissions" });
+    }
+  });
+
+  // Admin: get stats for a program
+  app.get("/api/lead-capture/programs/:programId/stats", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and, gte } = await import("drizzle-orm");
+      const rows = await db.select().from(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.orgId, profile.organizationId), eq(leadCaptureSubmissions.programId, req.params.programId)));
+      const total = rows.length;
+      const highIntent = rows.filter((r: any) => (r.aiQualificationScore ?? 0) >= 70).length;
+      const lastSubmission = rows.length > 0 ? rows.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0].createdAt : null;
+      res.json({ total, highIntent, conversionRate: total > 0 ? Math.round((highIntent / total) * 100) : 0, lastSubmission });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch stats" });
+    }
+  });
+
+  // Admin: upsert lead capture config
+  app.put("/api/lead-capture/programs/:programId/config", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const program = await storage.getAthleticProgramById(req.params.programId);
+      if (!program || program.organizationId !== profile.organizationId) return res.status(404).json({ message: "Program not found" });
+      const { headline, subheadline, ctaText, heroImageUrl, benefits, socialProof, whoIsThisFor } = req.body;
+      const { db } = await import("./db");
+      const { leadCapturePrograms } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [existing] = await db.select().from(leadCapturePrograms).where(eq(leadCapturePrograms.programId, req.params.programId));
+      if (existing) {
+        const [updated] = await db.update(leadCapturePrograms).set({
+          headline: headline ?? existing.headline,
+          subheadline: subheadline ?? existing.subheadline,
+          ctaText: ctaText ?? existing.ctaText,
+          heroImageUrl: heroImageUrl ?? existing.heroImageUrl,
+          benefits: benefits ?? existing.benefits,
+          socialProof: socialProof ?? existing.socialProof,
+          whoIsThisFor: whoIsThisFor ?? existing.whoIsThisFor,
+          updatedAt: new Date(),
+        }).where(eq(leadCapturePrograms.programId, req.params.programId)).returning();
+        return res.json(updated);
+      } else {
+        const [created] = await db.insert(leadCapturePrograms).values({
+          organizationId: profile.organizationId,
+          programId: req.params.programId,
+          headline: headline || "Train Like an Elite Athlete",
+          subheadline: subheadline || "Apply now and take the first step toward your athletic potential.",
+          ctaText: ctaText || "Apply Now",
+          heroImageUrl: heroImageUrl || null,
+          benefits: benefits || [],
+          socialProof: socialProof || [],
+          whoIsThisFor: whoIsThisFor || "",
+        }).returning();
+        return res.json(created);
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to save config" });
+    }
+  });
+
+  // Admin: get lead capture config
+  app.get("/api/lead-capture/programs/:programId/config", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCapturePrograms } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [config] = await db.select().from(leadCapturePrograms).where(eq(leadCapturePrograms.programId, req.params.programId));
+      res.json(config || null);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch config" });
+    }
+  });
+
   // ── Program Builder + Exercise Intelligence Layer ────────────────────────────
   const { registerProgramBuilderRoutes } = await import("./program-builder-routes");
   registerProgramBuilderRoutes(app);

@@ -2707,6 +2707,54 @@ export const insertCommunicationTemplateSchema = createInsertSchema(communicatio
 export type CommunicationTemplate = typeof communicationTemplates.$inferSelect;
 export type InsertCommunicationTemplate = z.infer<typeof insertCommunicationTemplateSchema>;
 
+// ─── Lead Capture Programs ────────────────────────────────────────────────────
+
+export const leadCapturePrograms = pgTable("lead_capture_programs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull().unique(),
+  headline: text("headline").default("Train Like an Elite Athlete"),
+  subheadline: text("subheadline").default("Apply now and take the first step toward your athletic potential."),
+  ctaText: varchar("cta_text").default("Apply Now"),
+  heroImageUrl: text("hero_image_url"),
+  benefits: jsonb("benefits").default(sql`'[]'::jsonb`),
+  socialProof: jsonb("social_proof").default(sql`'[]'::jsonb`),
+  whoIsThisFor: text("who_is_this_for").default(""),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertLeadCaptureProgramSchema = createInsertSchema(leadCapturePrograms).omit({ id: true, createdAt: true, updatedAt: true });
+export type LeadCaptureProgram = typeof leadCapturePrograms.$inferSelect;
+export type InsertLeadCaptureProgram = z.infer<typeof insertLeadCaptureProgramSchema>;
+
+export const leadCaptureSubmissions = pgTable("lead_capture_submissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  athleteName: varchar("athlete_name").notNull(),
+  parentName: varchar("parent_name"),
+  email: varchar("email").notNull(),
+  phone: varchar("phone"),
+  age: varchar("age"),
+  grade: varchar("grade"),
+  sport: varchar("sport"),
+  position: varchar("position"),
+  school: varchar("school"),
+  goals: text("goals").array().default(sql`'{}'::text[]`),
+  experienceLevel: varchar("experience_level"),
+  currentTrainingStatus: varchar("current_training_status"),
+  commitmentLevel: varchar("commitment_level"),
+  notes: text("notes"),
+  aiQualificationScore: integer("ai_qualification_score"),
+  aiQualificationReason: text("ai_qualification_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertLeadCaptureSubmissionSchema = createInsertSchema(leadCaptureSubmissions).omit({ id: true, createdAt: true });
+export type LeadCaptureSubmission = typeof leadCaptureSubmissions.$inferSelect;
+export type InsertLeadCaptureSubmission = z.infer<typeof insertLeadCaptureSubmissionSchema>;
+
 // ─── Coach Daily Briefings ────────────────────────────────────────────────────
 
 export const coachDailyBriefings = pgTable("coach_daily_briefings", {

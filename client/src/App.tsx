@@ -103,6 +103,7 @@ import CoachAthleteDetailPage from "@/pages/coach-athlete-detail";
 import OrgIntelligencePage from "@/pages/org-intelligence";
 import CoachCommandCenterPage from "@/pages/coach-command-center";
 import CoachCommunicationsCenterPage from "@/pages/coach-communications-center";
+import LeadCaptureLandingPage from "@/pages/lead-capture-landing";
 
 interface SubscriptionStatus {
   status: string;
@@ -286,6 +287,7 @@ function AuthenticatedLayout() {
                   <Route path="/coaches/:id" component={CoachSchedulePage} />
                   <Route path="/sessions" component={OpenSessionsPage} />
                   <Route path="/org/:slug" component={OrgLandingPage} />
+                  <Route path="/apply/:orgSlug/:programSlug" component={LeadCaptureLandingPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/settings" component={SettingsPage} />
@@ -364,6 +366,7 @@ function PublicLayout() {
       <Route path="/portal" component={ClientPortalPage} />
       <Route path="/sessions" component={OpenSessionsPublicPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />
+      <Route path="/apply/:orgSlug/:programSlug" component={LeadCaptureLandingPage} />
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/subscribe/:planId" component={SubscribePage} />

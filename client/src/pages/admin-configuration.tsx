@@ -41,6 +41,9 @@ import {
   WifiOff,
   Eye,
   EyeOff,
+  Zap,
+  TrendingUp,
+  ExternalLink,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -50,6 +53,52 @@ import type { Service, Organization, OrganizationSubscriptionPlan } from "@share
 import { MapPin } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { clearAuthToken } from "@/lib/authToken";
+
+function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: string; orgSlug?: string; programSlug: string }) {
+  const { data: stats } = useQuery<{ total: number; highIntent: number; conversionRate: number; lastSubmission: string | null }>({
+    queryKey: [`/api/lead-capture/programs/${programId}/stats`],
+    enabled: !!programId,
+    refetchInterval: 30000,
+  });
+
+  const publicUrl = `/apply/${orgSlug}/${programSlug}`;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-muted/50 rounded-lg px-3 py-2 text-center" data-testid={`stat-total-submissions-${programId}`}>
+          <p className="text-lg font-bold">{stats?.total ?? "—"}</p>
+          <p className="text-xs text-muted-foreground">Total Leads</p>
+        </div>
+        <div className="bg-orange-50 dark:bg-orange-950/20 rounded-lg px-3 py-2 text-center" data-testid={`stat-high-intent-${programId}`}>
+          <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{stats?.highIntent ?? "—"}</p>
+          <p className="text-xs text-muted-foreground">High Intent</p>
+        </div>
+        <div className="bg-muted/50 rounded-lg px-3 py-2 text-center" data-testid={`stat-conversion-${programId}`}>
+          <p className="text-lg font-bold">{stats !== undefined ? `${stats.conversionRate}%` : "—"}</p>
+          <p className="text-xs text-muted-foreground">Conversion</p>
+        </div>
+        <div className="bg-muted/50 rounded-lg px-3 py-2 text-center" data-testid={`stat-last-submission-${programId}`}>
+          <p className="text-xs font-medium">{stats?.lastSubmission ? new Date(stats.lastSubmission).toLocaleDateString() : "None yet"}</p>
+          <p className="text-xs text-muted-foreground">Last Lead</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <TrendingUp className="h-3 w-3 text-orange-400" />
+        <span>Public URL:</span>
+        <a
+          href={publicUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-orange-500 hover:text-orange-600 font-mono underline underline-offset-2"
+          data-testid={`link-public-url-${programId}`}
+        >
+          {publicUrl}
+        </a>
+      </div>
+    </div>
+  );
+}
 
 type StripeProduct = {
   productId: string;
@@ -470,7 +519,7 @@ export default function AdminConfigurationPage() {
 
   const [showProgramTypeModal, setShowProgramTypeModal] = useState(false);
   const [addingSimpleProgram, setAddingSimpleProgram] = useState(false);
-  const [simpleProgramType, setSimpleProgramType] = useState<"pr_tracker" | "workout_builder">("pr_tracker");
+  const [simpleProgramType, setSimpleProgramType] = useState<"pr_tracker" | "workout_builder" | "lead_capture">("pr_tracker");
   const [newSimpleProgramName, setNewSimpleProgramName] = useState("");
   const [newSimpleProgramSlug, setNewSimpleProgramSlug] = useState("");
 
@@ -2515,16 +2564,17 @@ export default function AdminConfigurationPage() {
                   { type: "scheduling", label: "Scheduling Program", desc: "Create a bookable training schedule for teams or groups.", icon: <CalendarCheck className="h-5 w-5" /> },
                   { type: "pr_tracker", label: "PR Tracker", desc: "Let athletes log and track personal records.", icon: <BarChart2 className="h-5 w-5" /> },
                   { type: "workout_builder", label: "Workout Builder", desc: "Create structured workouts athletes can access.", icon: <Hammer className="h-5 w-5" /> },
+                  { type: "lead_capture", label: "Lead Capture Program", desc: "A public-facing high-conversion athlete application funnel.", icon: <Zap className="h-5 w-5" />, badge: "NEW" },
                 ].map((opt) => (
                   <button
                     key={opt.type}
-                    className="w-full flex items-start gap-3 rounded-lg border p-4 text-left hover:bg-muted transition-colors"
+                    className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left hover:bg-muted transition-colors ${opt.type === "lead_capture" ? "border-orange-500/40 bg-orange-50/40 dark:bg-orange-950/20 hover:bg-orange-50 dark:hover:bg-orange-950/30" : ""}`}
                     onClick={() => {
                       setShowProgramTypeModal(false);
                       if (opt.type === "scheduling") {
                         setAddingProgram(true);
                       } else {
-                        setSimpleProgramType(opt.type as "pr_tracker" | "workout_builder");
+                        setSimpleProgramType(opt.type as "pr_tracker" | "workout_builder" | "lead_capture");
                         setNewSimpleProgramName("");
                         setNewSimpleProgramSlug("");
                         setAddingSimpleProgram(true);
@@ -2532,9 +2582,14 @@ export default function AdminConfigurationPage() {
                     }}
                     data-testid={`button-select-type-${opt.type}`}
                   >
-                    <span className="mt-0.5 text-muted-foreground">{opt.icon}</span>
-                    <div>
-                      <p className="text-sm font-semibold">{opt.label}</p>
+                    <span className={`mt-0.5 ${opt.type === "lead_capture" ? "text-orange-500" : "text-muted-foreground"}`}>{opt.icon}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold">{opt.label}</p>
+                        {"badge" in opt && opt.badge && (
+                          <span className="text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full tracking-wide">{opt.badge}</span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">{opt.desc}</p>
                     </div>
                   </button>
@@ -2544,15 +2599,21 @@ export default function AdminConfigurationPage() {
           </Dialog>
 
           {addingSimpleProgram && (
-            <Card className="p-4 space-y-3 mb-4" data-testid="card-add-simple-program">
-              <p className="text-sm font-semibold">
-                New {simpleProgramType === "pr_tracker" ? "PR Tracker" : "Workout Builder"}
-              </p>
+            <Card className={`p-4 space-y-3 mb-4 ${simpleProgramType === "lead_capture" ? "border-orange-500/40 bg-orange-50/30 dark:bg-orange-950/10" : ""}`} data-testid="card-add-simple-program">
+              <div className="flex items-center gap-2">
+                {simpleProgramType === "lead_capture" && <Zap className="h-4 w-4 text-orange-500" />}
+                <p className="text-sm font-semibold">
+                  New {simpleProgramType === "pr_tracker" ? "PR Tracker" : simpleProgramType === "workout_builder" ? "Workout Builder" : "Lead Capture Program"}
+                </p>
+              </div>
+              {simpleProgramType === "lead_capture" && (
+                <p className="text-xs text-muted-foreground">Creates a public athlete application funnel at <code className="bg-muted px-1 rounded">/apply/[your-org]/[slug]</code></p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Tool Name</Label>
+                  <Label className="text-xs">{simpleProgramType === "lead_capture" ? "Program Name" : "Tool Name"}</Label>
                   <Input
-                    placeholder={simpleProgramType === "pr_tracker" ? "e.g., Varsity PRs" : "e.g., Team Workouts"}
+                    placeholder={simpleProgramType === "pr_tracker" ? "e.g., Varsity PRs" : simpleProgramType === "workout_builder" ? "e.g., Team Workouts" : "e.g., Athlete Recruiting"}
                     value={newSimpleProgramName}
                     onChange={(e) => { setNewSimpleProgramName(e.target.value); setNewSimpleProgramSlug(slugify(e.target.value)); }}
                     data-testid="input-simple-program-name"
@@ -2728,6 +2789,7 @@ export default function AdminConfigurationPage() {
                             const t = p.type ?? "scheduling";
                             if (t === "pr_tracker") return <Badge className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-0" data-testid={`badge-type-${p.id}`}>PR Tracker</Badge>;
                             if (t === "workout_builder") return <Badge className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 border-0" data-testid={`badge-type-${p.id}`}>Workout Builder</Badge>;
+                            if (t === "lead_capture") return <Badge className="text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-0 flex items-center gap-1" data-testid={`badge-type-${p.id}`}><Zap className="h-2.5 w-2.5" />Lead Capture</Badge>;
                             return <Badge className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-0" data-testid={`badge-type-${p.id}`}>Scheduling Program</Badge>;
                           })()}
                           {!p.active && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
@@ -2744,6 +2806,10 @@ export default function AdminConfigurationPage() {
                               <Clock className="h-3.5 w-3.5" />
                             </Button>
                           </>
+                        ) : p.type === "lead_capture" ? (
+                          <Button size="sm" variant="ghost" className="h-7 text-orange-500 hover:text-orange-600" onClick={() => window.open(`/apply/${orgData?.slug}/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Button>
                         ) : (
                           <Button size="sm" variant="ghost" className="h-7" onClick={() => navigate(`/org/${orgData?.slug}/programs/${p.slug}`)} data-testid={`button-open-program-${p.id}`}>
                             <Link2 className="h-3.5 w-3.5" />
@@ -2780,6 +2846,9 @@ export default function AdminConfigurationPage() {
                     )}
                     {p.type === "workout_builder" && (
                       <p className="text-xs text-muted-foreground">Create structured workouts athletes can access. Click the link icon to open.</p>
+                    )}
+                    {p.type === "lead_capture" && (
+                      <LeadCaptureStats programId={p.id} orgSlug={orgData?.slug} programSlug={p.slug} />
                     )}
                   </>
                 )}
