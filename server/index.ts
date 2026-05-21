@@ -123,6 +123,9 @@ app.use((req, res, next) => {
   const { seedDatabase } = await import("./seed");
   await seedDatabase();
 
+  const { seedDefaultEducationLibrary } = await import("./education-seed");
+  await seedDefaultEducationLibrary();
+
   const { detectOutcomesForOrg, executeAutoActions, runCampaignEngine } = await import("./action-tracking");
   const { db: actionDb } = await import("./db");
   const { organizations: orgsTable } = await import("@shared/schema");
