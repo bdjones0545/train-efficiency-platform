@@ -13893,6 +13893,171 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
     }
   });
 
+  // Admin v4: Update booking status for a submission
+  app.post("/api/lead-capture/submissions/:id/update-booking", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const { status } = req.body as { status: "not_booked" | "booked" | "completed" | "converted" | "lost" };
+      if (!status) return res.status(400).json({ message: "status required" });
+      const now = new Date();
+      const updates: Record<string, any> = { bookingStatus: status };
+      if (status === "booked") { updates.bookedAt = now; updates.evaluationBookedAt = now; updates.sequenceStatus = "booked"; }
+      if (status === "completed") { updates.attendedAt = now; }
+      if (status === "converted") { updates.convertedAt = now; updates.sequenceStatus = "converted"; }
+      if (status === "lost") { updates.lostAt = now; updates.sequenceStatus = "lost"; }
+      await db.update(leadCaptureSubmissions).set(updates).where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)));
+      res.json({ success: true });
+    } catch (error) { res.status(500).json({ message: "Failed to update booking status" }); }
+  });
+
+  // Admin v4: Generate AI sales analysis for a submission
+  app.post("/api/lead-capture/submissions/:id/ai-sales-analysis", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [sub] = await db.select().from(leadCaptureSubmissions).where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)));
+      if (!sub) return res.status(404).json({ message: "Not found" });
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const ageHours = (Date.now() - new Date(sub.createdAt!).getTime()) / 3600000;
+      const prompt = `You are a sports performance sales coach. Analyze this lead and respond with JSON only.
+
+Lead data:
+- Name: ${sub.athleteName}
+- Sport: ${sub.sport || "Not specified"}
+- Age/Grade: ${sub.age || sub.grade || "Unknown"}
+- Goals: ${Array.isArray(sub.goals) ? sub.goals.join(", ") : sub.goals || "Not specified"}
+- Commitment level: ${sub.commitmentLevel || "Unknown"}
+- Experience: ${sub.experienceLevel || "Unknown"}
+- Current training: ${sub.currentTrainingStatus || "Unknown"}
+- AI Qualification Score: ${sub.aiQualificationScore || "N/A"}/100
+- Hours since submission: ${Math.round(ageHours)}
+- UTM source: ${sub.utmSource || "direct"}
+- Contacted yet: ${sub.contactedAt ? "Yes" : "No"}
+- Follow-ups sent: ${sub.followUpCount || 0}
+
+Respond with this exact JSON structure:
+{
+  "recommendedTone": "one of: urgent|warm|professional|consultative",
+  "recommendedCta": "specific CTA text for this athlete",
+  "objectionLikelihood": "one of: low|medium|high",
+  "topObjection": "most likely objection this athlete has",
+  "probabilityToBook": number 0-100,
+  "probabilityToConvert": number 0-100,
+  "suggestedSms": "1-2 sentence SMS text (casual, direct)",
+  "suggestedEmail": "2-3 sentence email opener (personalized)",
+  "urgencyNote": "why timing matters for this lead",
+  "recommendedAction": "single most important thing to do right now"
+}`;
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.4,
+      });
+      const analysis = JSON.parse(completion.choices[0].message.content || "{}");
+      await db.update(leadCaptureSubmissions).set({ aiSalesAnalysis: analysis }).where(eq(leadCaptureSubmissions.id, sub.id));
+      res.json({ success: true, analysis });
+    } catch (error: any) { res.status(500).json({ message: "AI analysis failed", error: error.message }); }
+  });
+
+  // Admin v4: Revenue intelligence dashboard
+  app.get("/api/lead-capture/revenue-intelligence", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions, leadCapturePrograms } = await import("@shared/schema");
+      const { eq, and, isNull, desc } = await import("drizzle-orm");
+
+      const subs = await db.select().from(leadCaptureSubmissions).where(eq(leadCaptureSubmissions.orgId, profile.organizationId));
+      const programs = await db.select().from(leadCapturePrograms).where(eq(leadCapturePrograms.organizationId, profile.organizationId));
+
+      const progMap: Record<string, typeof programs[0]> = {};
+      for (const p of programs) progMap[p.programId] = p;
+
+      const now = new Date();
+      // Revenue calculations
+      let projectedRevenue = 0, bookedRevenue = 0, convertedRevenue = 0;
+      const byUtm: Record<string, { count: number; revenue: number }> = {};
+      const bySport: Record<string, { count: number; revenue: number }> = {};
+      const byCampaign: Record<string, { count: number; revenue: number }> = {};
+      const pipelineStages = { applied: 0, contacted: 0, booked: 0, attended: 0, converted: 0 };
+
+      for (const s of subs) {
+        const prog = progMap[s.programId];
+        const val = prog?.estimatedAthleteValueCents || s.estimatedValueCents || 0;
+        pipelineStages.applied++;
+        if (s.contactedAt) pipelineStages.contacted++;
+        if (s.bookingStatus === "booked" || s.bookingStatus === "completed" || s.bookingStatus === "converted") pipelineStages.booked++;
+        if (s.bookingStatus === "completed" || s.bookingStatus === "converted") pipelineStages.attended++;
+        if (s.bookingStatus === "converted") { pipelineStages.converted++; convertedRevenue += val; }
+        if (s.bookingStatus === "booked" || s.bookingStatus === "completed") bookedRevenue += val;
+        projectedRevenue += val;
+        const utm = s.utmSource || "direct";
+        const sport = s.sport || "unknown";
+        const camp = s.utmCampaign || "none";
+        byUtm[utm] = byUtm[utm] || { count: 0, revenue: 0 };
+        byUtm[utm].count++; byUtm[utm].revenue += val;
+        bySport[sport] = bySport[sport] || { count: 0, revenue: 0 };
+        bySport[sport].count++; bySport[sport].revenue += val;
+        byCampaign[camp] = byCampaign[camp] || { count: 0, revenue: 0 };
+        byCampaign[camp].count++; byCampaign[camp].revenue += val;
+      }
+
+      // Avg days to convert
+      const convertedSubs = subs.filter((s: any) => s.convertedAt && s.createdAt);
+      const avgDaysToConvert = convertedSubs.length > 0
+        ? Math.round(convertedSubs.reduce((acc: number, s: any) => acc + (new Date(s.convertedAt).getTime() - new Date(s.createdAt).getTime()) / 86400000, 0) / convertedSubs.length)
+        : null;
+
+      // Booking conversion + close rate
+      const bookingRate = subs.length > 0 ? Math.round((pipelineStages.booked / subs.length) * 100) : 0;
+      const closeRate = subs.length > 0 ? Math.round((pipelineStages.converted / subs.length) * 100) : 0;
+
+      // MRR impact estimate (converted / 12 months)
+      const estimatedMrrImpact = Math.round(convertedRevenue / 12);
+
+      // Best converting source (by conversion rate, min 2 leads)
+      const sourceConversions: Record<string, { total: number; converted: number }> = {};
+      for (const s of subs) {
+        const src = s.utmSource || "direct";
+        sourceConversions[src] = sourceConversions[src] || { total: 0, converted: 0 };
+        sourceConversions[src].total++;
+        if (s.bookingStatus === "converted") sourceConversions[src].converted++;
+      }
+      const fastestSource = Object.entries(sourceConversions)
+        .filter(([, v]) => v.total >= 2)
+        .map(([src, v]) => ({ source: src, rate: Math.round((v.converted / v.total) * 100) }))
+        .sort((a, b) => b.rate - a.rate)[0];
+
+      res.json({
+        projectedRevenue,
+        bookedRevenue,
+        convertedRevenue,
+        estimatedMrrImpact,
+        bookingRate,
+        closeRate,
+        avgDaysToConvert,
+        pipelineStages,
+        byUtm: Object.entries(byUtm).sort((a, b) => b[1].revenue - a[1].revenue).map(([source, d]) => ({ source, ...d })),
+        bySport: Object.entries(bySport).sort((a, b) => b[1].revenue - a[1].revenue).map(([sport, d]) => ({ sport, ...d })),
+        byCampaign: Object.entries(byCampaign).sort((a, b) => b[1].revenue - a[1].revenue).map(([campaign, d]) => ({ campaign, ...d })),
+        fastestConvertingSource: fastestSource || null,
+      });
+    } catch (error) { res.status(500).json({ message: "Failed to fetch revenue intelligence" }); }
+  });
+
   // Admin: get abandoned (partial) lead capture submissions
   app.get("/api/lead-capture/abandoned", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -13955,13 +14120,56 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       // Estimated pipeline value (high-intent × avg session ~$300)
       const estimatedPipelineValue = highIntent * 300 * 100; // cents
 
-      // Build enriched recent leads with AI next action
-      const recentLeads = allSubs.slice(0, 15).map((s: any) => {
+      // v4: Pipeline stage counts
+      const pipelineStages = {
+        applied: allSubs.length,
+        contacted: allSubs.filter((s: any) => s.contactedAt).length,
+        booked: allSubs.filter((s: any) => ["booked","completed","converted"].includes(s.bookingStatus)).length,
+        attended: allSubs.filter((s: any) => ["completed","converted"].includes(s.bookingStatus)).length,
+        converted: allSubs.filter((s: any) => s.bookingStatus === "converted").length,
+      };
+
+      // v4: SLA urgency buckets for hot uncontacted leads
+      const hotUncontacted = allSubs.filter((s: any) => (s.aiQualificationScore ?? 0) >= 75 && !s.contactedAt);
+      const slaData = {
+        green: hotUncontacted.filter((s: any) => (now.getTime() - new Date(s.createdAt).getTime()) < 5 * 60 * 1000).length,
+        yellow: hotUncontacted.filter((s: any) => { const age = now.getTime() - new Date(s.createdAt).getTime(); return age >= 5 * 60 * 1000 && age < 60 * 60 * 1000; }).length,
+        red: hotUncontacted.filter((s: any) => (now.getTime() - new Date(s.createdAt).getTime()) >= 60 * 60 * 1000).length,
+        critical: hotUncontacted.filter((s: any) => (now.getTime() - new Date(s.createdAt).getTime()) >= 24 * 60 * 60 * 1000).length,
+      };
+
+      // v4: Revenue stats
+      const { leadCapturePrograms } = await import("@shared/schema");
+      const programs = await db.select().from(leadCapturePrograms).where(eq(leadCapturePrograms.organizationId, profile.organizationId));
+      const progValueMap: Record<string, number> = {};
+      for (const p of programs) progValueMap[p.programId] = p.estimatedAthleteValueCents || 0;
+      let projectedRevenue = 0, bookedRevenue = 0, convertedRevenue = 0;
+      for (const s of allSubs) {
+        const val = progValueMap[s.programId] || (s as any).estimatedValueCents || 0;
+        projectedRevenue += val;
+        if (["booked","completed","converted"].includes((s as any).bookingStatus || "not_booked")) bookedRevenue += val;
+        if ((s as any).bookingStatus === "converted") convertedRevenue += val;
+      }
+
+      // v4: Best campaign this week
+      const campMap: Record<string, number> = {};
+      for (const s of weekSubs) {
+        const camp = (s as any).utmCampaign || "none";
+        campMap[camp] = (campMap[camp] || 0) + 1;
+      }
+      const bestCampaignEntry = Object.entries(campMap).sort((a, b) => b[1] - a[1])[0];
+      const bestCampaign = bestCampaignEntry ? { campaign: bestCampaignEntry[0], count: bestCampaignEntry[1] } : null;
+
+      // Build enriched recent leads with AI next action + v4 booking data
+      const recentLeads = allSubs.slice(0, 20).map((s: any) => {
         const ageHours = (now.getTime() - new Date(s.createdAt).getTime()) / (60 * 60 * 1000);
         const score = s.aiQualificationScore ?? 0;
         const isHot = score >= 75;
         const isContacted = !!s.contactedAt;
         const needsAction = !isContacted && ageHours > 24;
+        const slaUrgency = isHot && !isContacted
+          ? ageHours < 0.083 ? "green" : ageHours < 1 ? "yellow" : ageHours < 24 ? "orange" : "red"
+          : null;
 
         let aiNextAction = s.aiNextAction;
         if (!aiNextAction) {
@@ -13971,12 +14179,14 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
           else if (!isContacted && ageHours > 24) aiNextAction = "Send 24-hour follow-up — no contact yet";
           else if (s.commitmentLevel === "Ready to start immediately") aiNextAction = "Book evaluation call — athlete is ready to start";
           else if (s.commitmentLevel === "Ready to start this month") aiNextAction = "Schedule this week — athlete ready to commit";
+          else if (s.bookingStatus === "booked") aiNextAction = "✅ Booked — confirm attendance before session";
           else if (isContacted) aiNextAction = "Monitor — contacted, await response";
           else aiNextAction = "Send intro follow-up email";
         }
 
         const isAbandonedRisk = !isContacted && ageHours > 72;
-        return { ...s, aiNextAction, isHot, isContacted, needsAction, isAbandonedRisk, ageHours: Math.round(ageHours) };
+        const timeSinceContactHrs = s.contactedAt ? (now.getTime() - new Date(s.contactedAt).getTime()) / 3600000 : null;
+        return { ...s, aiNextAction, isHot, isContacted, needsAction, isAbandonedRisk, ageHours: Math.round(ageHours), slaUrgency, timeSinceContactHrs: timeSinceContactHrs ? Math.round(timeSinceContactHrs) : null };
       });
 
       res.json({
@@ -13991,6 +14201,12 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
         estimatedPipelineValue,
         recentLeads,
         abandonedLeads: abandonedRows.slice(0, 5),
+        pipelineStages,
+        slaData,
+        projectedRevenue,
+        bookedRevenue,
+        convertedRevenue,
+        bestCampaign,
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch lead capture summary" });

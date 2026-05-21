@@ -2724,6 +2724,10 @@ export const leadCapturePrograms = pgTable("lead_capture_programs", {
   metaPixelId: varchar("meta_pixel_id"),
   googleAdsConversionId: varchar("google_ads_conversion_id"),
   googleAdsConversionLabel: varchar("google_ads_conversion_label"),
+  // v4: Booking + Revenue
+  bookingUrl: text("booking_url"),
+  bookingType: varchar("booking_type").default("none"),
+  estimatedAthleteValueCents: integer("estimated_athlete_value_cents").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -2759,6 +2763,21 @@ export const leadCaptureSubmissions = pgTable("lead_capture_submissions", {
   utmContent: varchar("utm_content"),
   utmTerm: varchar("utm_term"),
   abandonedId: varchar("abandoned_id"),
+  // v3: Follow-up sequences
+  contactedAt: timestamp("contacted_at"),
+  lastFollowUpAt: timestamp("last_follow_up_at"),
+  followUpCount: integer("follow_up_count").default(0),
+  sequenceStatus: varchar("sequence_status").default("pending"),
+  aiNextAction: text("ai_next_action"),
+  // v4: Booking + Revenue Intelligence
+  bookingStatus: varchar("booking_status").default("not_booked"),
+  bookedAt: timestamp("booked_at"),
+  evaluationBookedAt: timestamp("evaluation_booked_at"),
+  attendedAt: timestamp("attended_at"),
+  convertedAt: timestamp("converted_at"),
+  lostAt: timestamp("lost_at"),
+  estimatedValueCents: integer("estimated_value_cents").default(0),
+  aiSalesAnalysis: jsonb("ai_sales_analysis"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

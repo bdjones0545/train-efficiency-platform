@@ -60,7 +60,19 @@ async function logFollowUp(params: {
 
 // ─── Submission Sequences ─────────────────────────────────────────────────────
 
-function buildHighIntentFollowUp(athleteName: string, orgName: string, programName: string, coachName: string) {
+function bookingCta(bookingUrl: string | null | undefined, label = "Book Your Free Evaluation →") {
+  if (!bookingUrl) return "";
+  return `
+    <p style="text-align:center;margin:24px 0">
+      <a href="${bookingUrl}" style="background:linear-gradient(135deg,#f97316,#f59e0b);color:white;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">
+        ${label}
+      </a>
+    </p>
+    <p style="color:#71717a;font-size:12px;text-align:center;margin:0">Takes 60 seconds. No commitment required.</p>
+  `;
+}
+
+function buildHighIntentFollowUp(athleteName: string, orgName: string, programName: string, coachName: string, bookingUrl?: string | null) {
   return {
     subject: `${athleteName}, your application is being reviewed now 🏆`,
     html: `
@@ -71,8 +83,9 @@ function buildHighIntentFollowUp(athleteName: string, orgName: string, programNa
         <div style="background:#18181b;padding:24px;border-radius:0 0 12px 12px;color:#e4e4e7">
           <p>Hey ${athleteName},</p>
           <p>I just reviewed your application to <strong style="color:#fb923c">${programName}</strong> and I want to connect with you personally.</p>
-          <p>Your goals and commitment level are exactly what we look for in athletes who make real breakthroughs. I'd love to schedule a quick 15-minute evaluation call to discuss whether you're the right fit.</p>
-          <p>Reply directly to this email or give us a call and we'll get something on the calendar this week.</p>
+          <p>Your goals and commitment level are exactly what we look for in athletes who make real breakthroughs. I'd love to schedule a quick 15-minute evaluation to discuss whether you're the right fit.</p>
+          ${bookingCta(bookingUrl, "Book Your Evaluation Now →")}
+          <p>Or reply directly to this email — we'll find a time that works for you.</p>
           <p style="margin-top:24px">— ${coachName}<br><span style="color:#71717a">${orgName}</span></p>
         </div>
       </div>
@@ -80,7 +93,7 @@ function buildHighIntentFollowUp(athleteName: string, orgName: string, programNa
   };
 }
 
-function build24hrFollowUp(athleteName: string, orgName: string, programName: string, coachName: string) {
+function build24hrFollowUp(athleteName: string, orgName: string, programName: string, coachName: string, bookingUrl?: string | null) {
   return {
     subject: `Still thinking it over, ${athleteName.split(" ")[0]}?`,
     html: `
@@ -91,7 +104,9 @@ function build24hrFollowUp(athleteName: string, orgName: string, programName: st
         <div style="background:#18181b;padding:24px;border-radius:0 0 12px 12px;color:#e4e4e7">
           <p>Hey ${athleteName.split(" ")[0]},</p>
           <p>Just checking in on your application to <strong style="color:#fb923c">${programName}</strong>. We typically respond within 24 hours and I want to make sure you're not waiting on us.</p>
-          <p>If you have any questions about the program, pricing, or what to expect in your first session — just hit reply. There's no commitment required to have a conversation.</p>
+          <p>If you're ready, the fastest next step is to book a free evaluation — it takes 60 seconds:</p>
+          ${bookingCta(bookingUrl, "Schedule My Evaluation →")}
+          <p>Or just reply to this email if you have questions. There's no commitment required to have a conversation.</p>
           <p style="color:#4ade80;font-weight:600">Spots are limited and we're currently accepting a small group of new athletes.</p>
           <p style="margin-top:24px">— ${coachName}<br><span style="color:#71717a">${orgName}</span></p>
         </div>
@@ -100,7 +115,7 @@ function build24hrFollowUp(athleteName: string, orgName: string, programName: st
   };
 }
 
-function build3DayNurture(athleteName: string, orgName: string, programName: string, coachName: string, sport: string | null) {
+function build3DayNurture(athleteName: string, orgName: string, programName: string, coachName: string, sport: string | null, bookingUrl?: string | null) {
   const sportLine = sport ? `Whether it's ${sport} or any other sport` : "Whatever your sport";
   return {
     subject: `${athleteName.split(" ")[0]}, athletes who act now see results by next season`,
@@ -119,7 +134,8 @@ function build3DayNurture(athleteName: string, orgName: string, programName: str
             <li>"My confidence on the field went through the roof"</li>
             <li>"Best investment I've made in my athletic career"</li>
           </ul>
-          <p>Ready to get started? Just reply and we'll schedule your evaluation this week.</p>
+          ${bookingCta(bookingUrl, "Claim My Evaluation Spot →")}
+          <p>Or just reply — we'll reach out within the hour.</p>
           <p style="margin-top:24px">— ${coachName}<br><span style="color:#71717a">${orgName}</span></p>
         </div>
       </div>
@@ -194,6 +210,7 @@ export async function sendSubmissionFollowUp(params: {
   orgName: string;
   orgSlug: string;
   coachName?: string;
+  bookingUrl?: string | null;
 }): Promise<boolean> {
   const sg = await getSgMail();
   if (!sg) return false;
@@ -201,11 +218,11 @@ export async function sendSubmissionFollowUp(params: {
   let emailData: { subject: string; html: string } | null = null;
 
   if (params.step === "high_intent_1hr") {
-    emailData = buildHighIntentFollowUp(params.athleteName, params.orgName, params.programName, coachName);
+    emailData = buildHighIntentFollowUp(params.athleteName, params.orgName, params.programName, coachName, params.bookingUrl);
   } else if (params.step === "followup_24hr") {
-    emailData = build24hrFollowUp(params.athleteName, params.orgName, params.programName, coachName);
+    emailData = build24hrFollowUp(params.athleteName, params.orgName, params.programName, coachName, params.bookingUrl);
   } else if (params.step === "nurture_3day") {
-    emailData = build3DayNurture(params.athleteName, params.orgName, params.programName, coachName, params.sport || null);
+    emailData = build3DayNurture(params.athleteName, params.orgName, params.programName, coachName, params.sport || null, params.bookingUrl);
   }
 
   if (!emailData) return false;
@@ -284,21 +301,23 @@ async function runLeadCaptureSequenceCron(): Promise<void> {
         const coachName = owner?.firstName ? `${owner.firstName} ${owner.lastName || ""}`.trim() : "Coach";
         const subAge = now.getTime() - new Date(sub.createdAt!).getTime();
 
+        const bookingUrl = (program as any).bookingUrl || null;
+
         if (sub.sequenceStatus === "pending" && (sub.aiQualificationScore ?? 0) >= 75 && subAge >= 60 * 60 * 1000) {
           // 1hr high-intent follow-up
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "high_intent_1hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+          await sendSubmissionFollowUp({ submissionId: sub.id, step: "high_intent_1hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
           await db.update(leadCaptureSubmissions).set({ sequenceStatus: "high_intent_sent", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
         } else if (sub.sequenceStatus === "pending" && subAge >= 24 * 60 * 60 * 1000 && !sub.contactedAt) {
           // 24hr follow-up for uncontacted
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "followup_24hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+          await sendSubmissionFollowUp({ submissionId: sub.id, step: "followup_24hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
           await db.update(leadCaptureSubmissions).set({ sequenceStatus: "followup_24hr_sent", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
         } else if (sub.sequenceStatus === "high_intent_sent" && subAge >= 24 * 60 * 60 * 1000 && !sub.contactedAt) {
           // 24hr follow-up after high-intent
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "followup_24hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+          await sendSubmissionFollowUp({ submissionId: sub.id, step: "followup_24hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
           await db.update(leadCaptureSubmissions).set({ sequenceStatus: "followup_24hr_sent", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
         } else if (sub.sequenceStatus === "followup_24hr_sent" && subAge >= 3 * 24 * 60 * 60 * 1000 && !sub.contactedAt) {
           // 3-day nurture
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "nurture_3day", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+          await sendSubmissionFollowUp({ submissionId: sub.id, step: "nurture_3day", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
           await db.update(leadCaptureSubmissions).set({ sequenceStatus: "completed", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
         }
       } catch (_) {}

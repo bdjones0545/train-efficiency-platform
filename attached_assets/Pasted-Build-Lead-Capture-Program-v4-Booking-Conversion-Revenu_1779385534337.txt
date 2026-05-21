@@ -1,0 +1,86 @@
+Build Lead Capture Program v4: Booking Conversion + Revenue Intelligence.
+
+Do not rebuild the existing infrastructure.
+Extend it surgically.
+
+PRIMARY GOAL
+Turn applications into booked evaluations and paid athletes.
+
+ADD:
+
+BOOKING CONVERSION LAYER
+- After a successful application submission, optionally redirect to:
+  - Calendly-style evaluation booking
+  - Internal TrainEfficiency scheduler
+  - Coach selection flow
+- Add “Book Evaluation” CTA inside all follow-up emails.
+- Add booking status tracking:
+  - not_booked
+  - booked
+  - completed
+  - converted
+  - lost
+
+SPEED-TO-LEAD SYSTEM
+- Add “response timer” on hot leads.
+- Show:
+  - time since submission
+  - time since first contact
+  - time-to-book
+- Add urgency indicators:
+  - under 5 minutes = green
+  - under 1 hour = yellow
+  - over 24 hours = red
+
+REVENUE INTELLIGENCE
+- Add estimated athlete value field per program.
+- Calculate:
+  - projected revenue
+  - booked revenue
+  - converted revenue
+  - revenue by UTM source
+  - revenue by sport
+  - revenue by campaign
+- Add estimated monthly recurring revenue impact.
+
+AI SALES ASSISTANT
+- Generate:
+  - recommended outreach tone
+  - recommended CTA
+  - objection likelihood
+  - probability to book
+  - probability to convert
+- Add AI-generated suggested SMS/email reply drafts.
+
+COMMAND CENTER UPGRADES
+- Add “Hot Leads SLA” widget.
+- Add “Revenue At Risk” widget.
+- Add “Best Performing Campaign” widget.
+- Add “Fastest Converting Source” widget.
+- Add “Conversion Pipeline” visualization:
+  Applied → Contacted → Booked → Attended → Converted
+
+PIPELINE AUTOMATION
+- If booked:
+  - pause nurture sequence
+- If no booking after X days:
+  - restart nurture
+- If converted:
+  - move to athlete onboarding workflow automatically
+
+ANALYTICS
+- Add cohort tracking:
+  - by campaign
+  - by sport
+  - by month
+- Add booking conversion rate.
+- Add close rate.
+- Add average days to convert.
+
+UI/UX
+- Maintain TrainEfficiency dark glass aesthetic.
+- Gold/orange reserved for revenue/conversion metrics.
+- Make the Command Center feel like a live sales intelligence dashboard.
+
+IMPORTANT:
+This should feel like a professional sports-performance sales OS, not a gym contact form system.

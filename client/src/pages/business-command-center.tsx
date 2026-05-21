@@ -57,6 +57,7 @@ import {
   Inbox,
   AlertCircle,
   Lightbulb,
+  CalendarCheck,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -2245,7 +2246,20 @@ function AiRevenuePanel() {
   );
 }
 
-// ─── Program Leads Panel v3 ───────────────────────────────────────────────────
+// ─── Program Leads Panel v4 — Sales Intelligence OS ──────────────────────────
+
+type AiSalesAnalysis = {
+  recommendedTone: string;
+  recommendedCta: string;
+  objectionLikelihood: "low" | "medium" | "high";
+  topObjection: string;
+  probabilityToBook: number;
+  probabilityToConvert: number;
+  suggestedSms: string;
+  suggestedEmail: string;
+  urgencyNote: string;
+  recommendedAction: string;
+};
 
 type ProgramLead = {
   id: string;
@@ -2257,17 +2271,25 @@ type ProgramLead = {
   aiQualificationScore: number | null;
   commitmentLevel: string | null;
   utmSource: string | null;
+  utmCampaign: string | null;
   createdAt: string;
   contactedAt: string | null;
   lastFollowUpAt: string | null;
   followUpCount: number | null;
   sequenceStatus: string | null;
   aiNextAction: string | null;
+  bookingStatus: string | null;
+  bookedAt: string | null;
+  convertedAt: string | null;
+  estimatedValueCents: number | null;
+  aiSalesAnalysis: AiSalesAnalysis | null;
   isHot: boolean;
   isContacted: boolean;
   needsAction: boolean;
   isAbandonedRisk: boolean;
   ageHours: number;
+  slaUrgency: "green" | "yellow" | "orange" | "red" | null;
+  timeSinceContactHrs: number | null;
 };
 
 type AbandonedLead = {
@@ -2281,6 +2303,9 @@ type AbandonedLead = {
   recoverySequenceStatus: string | null;
 };
 
+type PipelineStages = { applied: number; contacted: number; booked: number; attended: number; converted: number };
+type SlaData = { green: number; yellow: number; red: number; critical: number };
+
 type ProgramLeadsSummary = {
   totalSubmissions: number;
   newToday: number;
@@ -2290,15 +2315,49 @@ type ProgramLeadsSummary = {
   hotNotContacted: number;
   needsFollowUp: number;
   bestSourceThisWeek: { source: string; count: number } | null;
+  bestCampaign: { campaign: string; count: number } | null;
   estimatedPipelineValue: number;
+  projectedRevenue: number;
+  bookedRevenue: number;
+  convertedRevenue: number;
+  pipelineStages: PipelineStages;
+  slaData: SlaData;
   recentLeads: ProgramLead[];
   abandonedLeads: AbandonedLead[];
 };
 
+function bookingStatusBadge(status: string | null) {
+  switch (status) {
+    case "booked": return <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-xs">📅 Booked</Badge>;
+    case "completed": return <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-xs">✅ Attended</Badge>;
+    case "converted": return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">🏆 Converted</Badge>;
+    case "lost": return <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">✗ Lost</Badge>;
+    default: return null;
+  }
+}
+
+function slaTimerLabel(lead: ProgramLead) {
+  if (!lead.slaUrgency) return null;
+  const h = lead.ageHours;
+  const mins = Math.round(h * 60);
+  const label = h < 1 ? `${mins}m ago` : `${Math.round(h)}h ago`;
+  const cls =
+    lead.slaUrgency === "green" ? "text-green-600 dark:text-green-400" :
+    lead.slaUrgency === "yellow" ? "text-yellow-600 dark:text-yellow-400" :
+    lead.slaUrgency === "orange" ? "text-orange-500" :
+    "text-red-600 dark:text-red-400 font-bold";
+  return (
+    <span className={`text-xs font-medium ${cls}`}>
+      {lead.slaUrgency === "red" ? `🚨 ${label}` : lead.slaUrgency === "orange" ? `⚠️ ${label}` : label}
+    </span>
+  );
+}
+
 function ProgramLeadsPanel() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<"hot" | "followup" | "abandoned" | "all">("all");
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"hot" | "followup" | "booked" | "abandoned" | "all">("all");
+  const [expandedAnalysis, setExpandedAnalysis] = useState<string | null>(null);
+  const [expandedDraft, setExpandedDraft] = useState<string | null>(null);
 
   const { data, isLoading, refetch } = useQuery<ProgramLeadsSummary>({
     queryKey: ["/api/lead-capture/command-center-summary"],
@@ -2319,13 +2378,13 @@ function ProgramLeadsPanel() {
   const sendFollowUp = useMutation({
     mutationFn: ({ id, step }: { id: string; step: string }) =>
       apiRequest("POST", `/api/lead-capture/submissions/${id}/send-followup`, { step }).then((r) => r.json()),
-    onSuccess: () => { toast({ title: "Follow-up sent" }); invalidate(); setPendingAction(null); },
+    onSuccess: () => { toast({ title: "Follow-up sent" }); invalidate(); },
     onError: () => toast({ title: "Failed to send", variant: "destructive" }),
   });
 
   const startSequence = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/start-sequence`, {}).then((r) => r.json()),
-    onSuccess: () => { toast({ title: "Sequence started", description: "Automated follow-ups will send based on the schedule." }); invalidate(); },
+    onSuccess: () => { toast({ title: "Sequence started" }); invalidate(); },
     onError: () => toast({ title: "Failed", variant: "destructive" }),
   });
 
@@ -2333,6 +2392,27 @@ function ProgramLeadsPanel() {
     mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/mark-contacted`, {}).then((r) => r.json()),
     onSuccess: () => { toast({ title: "Marked as contacted" }); invalidate(); },
     onError: () => toast({ title: "Failed", variant: "destructive" }),
+  });
+
+  const updateBooking = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest("POST", `/api/lead-capture/submissions/${id}/update-booking`, { status }).then((r) => r.json()),
+    onSuccess: (_, { status }) => {
+      toast({ title: status === "converted" ? "🏆 Marked as Converted!" : status === "booked" ? "📅 Booking confirmed!" : "Status updated" });
+      invalidate();
+    },
+    onError: () => toast({ title: "Failed", variant: "destructive" }),
+  });
+
+  const generateAiAnalysis = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/lead-capture/submissions/${id}/ai-sales-analysis`, {}).then((r) => r.json()),
+    onSuccess: (data, id) => {
+      toast({ title: "AI analysis complete" });
+      setExpandedAnalysis(id);
+      invalidate();
+    },
+    onError: () => toast({ title: "AI analysis failed", variant: "destructive" }),
   });
 
   const recoverAbandoned = useMutation({
@@ -2366,18 +2446,24 @@ function ProgramLeadsPanel() {
     return <Badge className={`text-xs ${cls}`}>{score}/100</Badge>;
   };
 
+  const pipeline = data.pipelineStages || { applied: 0, contacted: 0, booked: 0, attended: 0, converted: 0 };
+  const sla = data.slaData || { green: 0, yellow: 0, red: 0, critical: 0 };
+  const total = pipeline.applied || 1;
+
   const filteredLeads = (() => {
     if (!data.recentLeads) return [];
     if (activeTab === "hot") return data.recentLeads.filter((l) => l.isHot && !l.isContacted);
     if (activeTab === "followup") return data.recentLeads.filter((l) => l.needsAction);
+    if (activeTab === "booked") return data.recentLeads.filter((l) => l.bookingStatus === "booked" || l.bookingStatus === "completed");
     return data.recentLeads;
   })();
 
-  const tabs: { key: typeof activeTab; label: string; count: number; cls: string }[] = [
-    { key: "all", label: "All", count: data.totalSubmissions, cls: "" },
-    { key: "hot", label: "🔥 Hot", count: data.hotNotContacted, cls: "text-orange-600 dark:text-orange-400" },
-    { key: "followup", label: "⏰ Needs Follow-up", count: data.needsFollowUp, cls: "text-yellow-600 dark:text-yellow-400" },
-    { key: "abandoned", label: "↩ Abandoned", count: data.abandonedCount, cls: "text-blue-600 dark:text-blue-400" },
+  const tabs: { key: typeof activeTab; label: string; count: number }[] = [
+    { key: "all", label: "All", count: data.totalSubmissions },
+    { key: "hot", label: "🔥 Hot", count: data.hotNotContacted },
+    { key: "followup", label: "⏰ Follow-up", count: data.needsFollowUp },
+    { key: "booked", label: "📅 Booked", count: pipeline.booked },
+    { key: "abandoned", label: "↩ Abandoned", count: data.abandonedCount },
   ];
 
   return (
@@ -2386,7 +2472,7 @@ function ProgramLeadsPanel() {
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
           <Flame className="h-4 w-4 text-orange-500" />
-          Program Application Leads
+          Program Leads — Sales Intelligence
           {data.newToday > 0 && (
             <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 text-xs">
               {data.newToday} new today
@@ -2398,35 +2484,101 @@ function ProgramLeadsPanel() {
         </Button>
       </div>
 
-      {/* Intelligence strip */}
+      {/* SLA + Hot Lead Urgency Widget */}
+      {data.hotNotContacted > 0 && (
+        <Card className="p-3 mb-3 border-orange-500/30 bg-orange-500/5" data-testid="card-sla-widget">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
+            <p className="text-xs font-semibold text-orange-700 dark:text-orange-400">Hot Lead SLA — Speed-to-Lead Response Required</p>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <div className="text-center">
+              <p className="text-base font-bold text-green-600 dark:text-green-400">{sla.green}</p>
+              <p className="text-xs text-muted-foreground">&lt;5 min</p>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-yellow-600 dark:text-yellow-400">{sla.yellow}</p>
+              <p className="text-xs text-muted-foreground">&lt;1 hr</p>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-orange-500">{sla.red}</p>
+              <p className="text-xs text-muted-foreground">&gt;1 hr</p>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-red-600 dark:text-red-400">{sla.critical}</p>
+              <p className="text-xs text-muted-foreground">&gt;24 hr ⚠</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Revenue Intelligence Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-        <Card className="p-3 text-center border-orange-500/20" data-testid="card-leads-hot">
-          <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{data.hotNotContacted}</p>
-          <p className="text-xs text-muted-foreground">Hot Uncontacted</p>
+        <Card className="p-3 text-center" data-testid="card-revenue-projected">
+          <p className="text-sm font-bold text-muted-foreground">${((data.projectedRevenue || 0) / 100).toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">Projected</p>
         </Card>
-        <Card className="p-3 text-center border-yellow-500/20" data-testid="card-leads-followup">
-          <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{data.needsFollowUp}</p>
-          <p className="text-xs text-muted-foreground">Needs Follow-up</p>
+        <Card className="p-3 text-center border-blue-500/20" data-testid="card-revenue-booked">
+          <p className="text-sm font-bold text-blue-600 dark:text-blue-400">${((data.bookedRevenue || 0) / 100).toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">Booked</p>
         </Card>
-        <Card className="p-3 text-center" data-testid="card-leads-abandoned-today">
-          <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{data.abandonedToday}</p>
+        <Card className="p-3 text-center border-green-500/20" data-testid="card-revenue-converted">
+          <p className="text-sm font-bold text-green-600 dark:text-green-400">${((data.convertedRevenue || 0) / 100).toLocaleString()}</p>
+          <p className="text-xs text-muted-foreground">Converted</p>
+        </Card>
+        <Card className="p-3 text-center border-yellow-500/20" data-testid="card-leads-abandoned-today">
+          <p className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{data.abandonedToday}</p>
           <p className="text-xs text-muted-foreground">Abandoned Today</p>
-        </Card>
-        <Card className="p-3 text-center border-green-500/20" data-testid="card-leads-pipeline">
-          <p className="text-sm font-bold text-green-600 dark:text-green-400">
-            ${((data.estimatedPipelineValue || 0) / 100).toLocaleString()}
-          </p>
-          <p className="text-xs text-muted-foreground">Est. Pipeline</p>
         </Card>
       </div>
 
-      {/* Best source this week */}
-      {data.bestSourceThisWeek && (
-        <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
-          <TrendingUp className="h-3.5 w-3.5 text-green-500" />
-          <span>Best source this week: <span className="text-foreground font-medium">{data.bestSourceThisWeek.source}</span> — {data.bestSourceThisWeek.count} leads</span>
+      {/* Conversion Pipeline Visualization */}
+      <Card className="p-3 mb-3" data-testid="card-conversion-pipeline">
+        <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Conversion Pipeline</p>
+        <div className="space-y-1.5">
+          {([
+            { label: "Applied", key: "applied" as const, color: "bg-slate-400 dark:bg-slate-500" },
+            { label: "Contacted", key: "contacted" as const, color: "bg-blue-500" },
+            { label: "Booked", key: "booked" as const, color: "bg-purple-500" },
+            { label: "Attended", key: "attended" as const, color: "bg-orange-500" },
+            { label: "Converted", key: "converted" as const, color: "bg-green-500" },
+          ] as const).map(({ label, key, color }) => {
+            const count = pipeline[key];
+            const pct = Math.round((count / total) * 100);
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+                <div className="flex-1 h-2 bg-muted/50 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-xs font-medium w-6 text-right">{count}</span>
+              </div>
+            );
+          })}
         </div>
-      )}
+        {pipeline.applied > 0 && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Booking rate: <span className="text-foreground font-medium">{Math.round((pipeline.booked / pipeline.applied) * 100)}%</span>
+            {" · "}Close rate: <span className="text-foreground font-medium">{Math.round((pipeline.converted / pipeline.applied) * 100)}%</span>
+          </p>
+        )}
+      </Card>
+
+      {/* Best source + campaign strip */}
+      <div className="flex items-center gap-4 mb-3 text-xs text-muted-foreground flex-wrap">
+        {data.bestSourceThisWeek && (
+          <div className="flex items-center gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5 text-green-500" />
+            <span>Top source: <span className="text-foreground font-medium">{data.bestSourceThisWeek.source}</span> ({data.bestSourceThisWeek.count})</span>
+          </div>
+        )}
+        {data.bestCampaign && data.bestCampaign.campaign !== "none" && (
+          <div className="flex items-center gap-1.5">
+            <Target className="h-3.5 w-3.5 text-blue-500" />
+            <span>Top campaign: <span className="text-foreground font-medium">{data.bestCampaign.campaign}</span> ({data.bestCampaign.count})</span>
+          </div>
+        )}
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-3 overflow-x-auto pb-1">
@@ -2474,8 +2626,7 @@ function ProgramLeadsPanel() {
                     disabled={recoverAbandoned.isPending}
                     data-testid={`button-recover-${i}`}
                   >
-                    <Send className="h-3 w-3 mr-1" />
-                    Recover
+                    <Send className="h-3 w-3 mr-1" />Recover
                   </Button>
                 </div>
               </div>
@@ -2484,123 +2635,238 @@ function ProgramLeadsPanel() {
         </div>
       )}
 
-      {/* Submissions tabs (all / hot / followup) */}
+      {/* Submissions tabs (all / hot / followup / booked) */}
       {activeTab !== "abandoned" && (
         <div className="space-y-2" data-testid="list-program-leads">
           {filteredLeads.length === 0 ? (
             <Card className="p-4 text-center text-sm text-muted-foreground">No leads in this view</Card>
-          ) : filteredLeads.map((lead, i) => (
-            <Card
-              key={lead.id}
-              className={`p-3 transition-colors ${lead.isHot && !lead.isContacted ? "border-orange-500/30 bg-orange-500/3" : lead.needsAction ? "border-yellow-500/20" : ""}`}
-              data-testid={`card-program-lead-${i}`}
-            >
-              <div className="space-y-2">
-                {/* Top row */}
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold">{lead.athleteName}</p>
-                      {scoreBadge(lead.aiQualificationScore)}
-                      {lead.isHot && !lead.isContacted && (
-                        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">🔥 Hot</Badge>
-                      )}
-                      {lead.isContacted && (
-                        <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">✓ Contacted</Badge>
-                      )}
-                      {lead.needsAction && !lead.isContacted && (
-                        <Badge className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">⏰ Follow-up</Badge>
+          ) : filteredLeads.map((lead, i) => {
+            const isExpanded = expandedAnalysis === lead.id;
+            const isDraftExpanded = expandedDraft === lead.id;
+            const cardBorder = lead.bookingStatus === "converted" ? "border-green-500/30 bg-green-500/3"
+              : lead.bookingStatus === "booked" ? "border-blue-500/20"
+              : lead.isHot && !lead.isContacted ? "border-orange-500/30 bg-orange-500/3"
+              : lead.needsAction ? "border-yellow-500/20"
+              : "";
+
+            return (
+              <Card key={lead.id} className={`p-3 transition-colors ${cardBorder}`} data-testid={`card-program-lead-${i}`}>
+                <div className="space-y-2">
+                  {/* Top row */}
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold">{lead.athleteName}</p>
+                        {scoreBadge(lead.aiQualificationScore)}
+                        {lead.isHot && !lead.isContacted && <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">🔥 Hot</Badge>}
+                        {lead.isContacted && <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">✓ Contacted</Badge>}
+                        {lead.needsAction && !lead.isContacted && <Badge className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">⏰ Follow-up</Badge>}
+                        {bookingStatusBadge(lead.bookingStatus)}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {[lead.sport, lead.school].filter(Boolean).join(" · ")}
+                        {lead.utmSource && <span className="ml-2 text-blue-500">via {lead.utmSource}</span>}
+                      </p>
+                      {lead.commitmentLevel && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Commitment: <span className="text-foreground">{lead.commitmentLevel}</span>
+                        </p>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {[lead.sport, lead.school].filter(Boolean).join(" · ")}
-                      {lead.utmSource && <span className="ml-2 text-blue-500">via {lead.utmSource}</span>}
-                    </p>
-                    {lead.commitmentLevel && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Commitment: <span className="text-foreground">{lead.commitmentLevel}</span>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs text-muted-foreground">
+                        {lead.ageHours < 24 ? `${Math.round(lead.ageHours)}h ago` : `${Math.round(lead.ageHours / 24)}d ago`}
                       </p>
+                      {slaTimerLabel(lead)}
+                    </div>
+                  </div>
+
+                  {/* AI Next Action */}
+                  {lead.aiNextAction && (
+                    <div className="flex items-start gap-1.5 bg-amber-500/8 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
+                      <Sparkles className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">{lead.aiNextAction}</p>
+                    </div>
+                  )}
+
+                  {/* AI Sales Analysis (expanded) */}
+                  {lead.aiSalesAnalysis && isExpanded && (
+                    <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-2.5 space-y-1.5" data-testid={`card-ai-analysis-${i}`}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                          <Brain className="h-3 w-3" />AI Sales Analysis
+                        </p>
+                        <button onClick={() => setExpandedAnalysis(null)} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <span className="text-muted-foreground">Book prob:</span>
+                        <span className={`font-medium ${(lead.aiSalesAnalysis.probabilityToBook || 0) >= 70 ? "text-green-600 dark:text-green-400" : "text-foreground"}`}>{lead.aiSalesAnalysis.probabilityToBook}%</span>
+                        <span className="text-muted-foreground">Convert prob:</span>
+                        <span className={`font-medium ${(lead.aiSalesAnalysis.probabilityToConvert || 0) >= 60 ? "text-green-600 dark:text-green-400" : "text-foreground"}`}>{lead.aiSalesAnalysis.probabilityToConvert}%</span>
+                        <span className="text-muted-foreground">Tone:</span>
+                        <span className="font-medium capitalize">{lead.aiSalesAnalysis.recommendedTone}</span>
+                        <span className="text-muted-foreground">Objection:</span>
+                        <span className={`font-medium capitalize ${lead.aiSalesAnalysis.objectionLikelihood === "high" ? "text-red-500" : lead.aiSalesAnalysis.objectionLikelihood === "medium" ? "text-yellow-500" : "text-green-500"}`}>{lead.aiSalesAnalysis.objectionLikelihood}</span>
+                      </div>
+                      {lead.aiSalesAnalysis.topObjection && (
+                        <p className="text-xs text-muted-foreground">Top objection: <span className="text-foreground">{lead.aiSalesAnalysis.topObjection}</span></p>
+                      )}
+                      <p className="text-xs font-medium text-purple-700 dark:text-purple-300">{lead.aiSalesAnalysis.recommendedAction}</p>
+                      <button
+                        onClick={() => setExpandedDraft(isDraftExpanded ? null : lead.id)}
+                        className="text-xs text-blue-500 underline"
+                        data-testid={`button-toggle-draft-${i}`}
+                      >
+                        {isDraftExpanded ? "Hide drafts" : "Show reply drafts →"}
+                      </button>
+                      {isDraftExpanded && (
+                        <div className="space-y-2 pt-1">
+                          {lead.aiSalesAnalysis.suggestedSms && (
+                            <div className="rounded bg-muted/50 p-2">
+                              <p className="text-xs font-medium text-muted-foreground mb-0.5">📱 SMS Draft</p>
+                              <p className="text-xs">{lead.aiSalesAnalysis.suggestedSms}</p>
+                            </div>
+                          )}
+                          {lead.aiSalesAnalysis.suggestedEmail && (
+                            <div className="rounded bg-muted/50 p-2">
+                              <p className="text-xs font-medium text-muted-foreground mb-0.5">✉️ Email Draft</p>
+                              <p className="text-xs">{lead.aiSalesAnalysis.suggestedEmail}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Primary action row */}
+                  <div className="flex gap-1 flex-wrap">
+                    {lead.phone && (
+                      <a href={`tel:${lead.phone}`} data-testid={`button-call-lead-${i}`}>
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs">📞 Call</Button>
+                      </a>
                     )}
-                  </div>
-                  <p className="text-xs text-muted-foreground shrink-0">
-                    {lead.ageHours < 24 ? `${Math.round(lead.ageHours)}h ago` : `${Math.round(lead.ageHours / 24)}d ago`}
-                  </p>
-                </div>
-
-                {/* AI Next Action */}
-                {lead.aiNextAction && (
-                  <div className="flex items-start gap-1.5 bg-amber-500/8 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
-                    <Sparkles className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">{lead.aiNextAction}</p>
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div className="flex gap-1 flex-wrap">
-                  {lead.phone && (
-                    <a href={`tel:${lead.phone}`} data-testid={`button-call-lead-${i}`}>
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs">📞 Call</Button>
+                    {lead.phone && (
+                      <a href={`sms:${lead.phone}`} data-testid={`button-sms-lead-${i}`}>
+                        <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Text"><MessageSquare className="h-3 w-3" /></Button>
+                      </a>
+                    )}
+                    <a href={`mailto:${lead.email}`} data-testid={`button-email-lead-${i}`}>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs"><Send className="h-3 w-3 mr-1" />Email</Button>
                     </a>
-                  )}
-                  {lead.phone && (
-                    <a href={`sms:${lead.phone}`} data-testid={`button-sms-lead-${i}`}>
-                      <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Text">
-                        <MessageSquare className="h-3 w-3" />
-                      </Button>
-                    </a>
-                  )}
-                  <a href={`mailto:${lead.email}`} data-testid={`button-email-lead-${i}`}>
-                    <Button size="sm" variant="outline" className="h-7 px-2 text-xs">
-                      <Send className="h-3 w-3 mr-1" />Email
-                    </Button>
-                  </a>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => sendFollowUp.mutate({ id: lead.id, step: "followup_24hr" })}
-                    disabled={sendFollowUp.isPending}
-                    data-testid={`button-followup-lead-${i}`}
-                  >
-                    <Zap className="h-3 w-3 mr-1" />Follow-up
-                  </Button>
-                  {lead.sequenceStatus === "pending" || !lead.sequenceStatus ? (
                     <Button
                       size="sm"
                       variant="outline"
                       className="h-7 px-2 text-xs"
-                      onClick={() => startSequence.mutate(lead.id)}
-                      disabled={startSequence.isPending}
-                      data-testid={`button-sequence-lead-${i}`}
+                      onClick={() => sendFollowUp.mutate({ id: lead.id, step: "followup_24hr" })}
+                      disabled={sendFollowUp.isPending}
+                      data-testid={`button-followup-lead-${i}`}
                     >
-                      <Play className="h-3 w-3 mr-1" />Sequence
+                      <Zap className="h-3 w-3 mr-1" />Follow-up
                     </Button>
-                  ) : null}
-                  {!lead.isContacted && (
+                    {(!lead.sequenceStatus || lead.sequenceStatus === "pending") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => startSequence.mutate(lead.id)}
+                        disabled={startSequence.isPending}
+                        data-testid={`button-sequence-lead-${i}`}
+                      >
+                        <Play className="h-3 w-3 mr-1" />Sequence
+                      </Button>
+                    )}
+                    {!lead.isContacted && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs text-green-600"
+                        onClick={() => markContacted.mutate(lead.id)}
+                        disabled={markContacted.isPending}
+                        data-testid={`button-contacted-lead-${i}`}
+                      >
+                        <CheckCircle className="h-3 w-3 mr-1" />Contacted
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Booking status + AI analysis row */}
+                  <div className="flex gap-1 flex-wrap">
+                    {(!lead.bookingStatus || lead.bookingStatus === "not_booked") && (
+                      <Button
+                        size="sm"
+                        className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => updateBooking.mutate({ id: lead.id, status: "booked" })}
+                        disabled={updateBooking.isPending}
+                        data-testid={`button-book-lead-${i}`}
+                      >
+                        <CalendarCheck className="h-3 w-3 mr-1" />Mark Booked
+                      </Button>
+                    )}
+                    {lead.bookingStatus === "booked" && (
+                      <Button
+                        size="sm"
+                        className="h-7 px-2 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                        onClick={() => updateBooking.mutate({ id: lead.id, status: "completed" })}
+                        disabled={updateBooking.isPending}
+                        data-testid={`button-attended-lead-${i}`}
+                      >
+                        <CheckCircle className="h-3 w-3 mr-1" />Attended
+                      </Button>
+                    )}
+                    {(lead.bookingStatus === "completed" || lead.bookingStatus === "booked") && (
+                      <Button
+                        size="sm"
+                        className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => updateBooking.mutate({ id: lead.id, status: "converted" })}
+                        disabled={updateBooking.isPending}
+                        data-testid={`button-convert-lead-${i}`}
+                      >
+                        <TrendingUp className="h-3 w-3 mr-1" />Convert
+                      </Button>
+                    )}
+                    {lead.bookingStatus !== "lost" && lead.bookingStatus !== "converted" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs text-red-500 hover:text-red-600"
+                        onClick={() => updateBooking.mutate({ id: lead.id, status: "lost" })}
+                        disabled={updateBooking.isPending}
+                        data-testid={`button-lost-lead-${i}`}
+                      >
+                        ✗ Lost
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 px-2 text-xs text-green-600"
-                      onClick={() => markContacted.mutate(lead.id)}
-                      disabled={markContacted.isPending}
-                      data-testid={`button-contacted-lead-${i}`}
+                      className={`h-7 px-2 text-xs ${lead.aiSalesAnalysis ? "text-purple-600 border-purple-500/30" : ""}`}
+                      onClick={() => {
+                        if (lead.aiSalesAnalysis) {
+                          setExpandedAnalysis(isExpanded ? null : lead.id);
+                        } else {
+                          generateAiAnalysis.mutate(lead.id);
+                        }
+                      }}
+                      disabled={generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id}
+                      data-testid={`button-ai-analysis-lead-${i}`}
                     >
-                      <CheckCircle className="h-3 w-3 mr-1" />Contacted
+                      <Brain className="h-3 w-3 mr-1" />
+                      {lead.aiSalesAnalysis ? (isExpanded ? "Hide AI" : "AI Intel") : generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id ? "Analyzing…" : "AI Analyze"}
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    className="h-7 px-2 text-xs bg-orange-500 hover:bg-orange-600 text-white"
-                    onClick={() => moveToDeal.mutate(lead.id)}
-                    disabled={moveToDeal.isPending}
-                    data-testid={`button-move-deal-${i}`}
-                  >
-                    <ArrowRight className="h-3 w-3 mr-1" />Deal
-                  </Button>
+                    <Button
+                      size="sm"
+                      className="h-7 px-2 text-xs bg-orange-500 hover:bg-orange-600 text-white"
+                      onClick={() => moveToDeal.mutate(lead.id)}
+                      disabled={moveToDeal.isPending}
+                      data-testid={`button-move-deal-${i}`}
+                    >
+                      <ArrowRight className="h-3 w-3 mr-1" />Deal
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
     </section>
