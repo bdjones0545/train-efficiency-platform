@@ -96,6 +96,9 @@ type ExtendedConfig = {
   laserEffectsEnabled?: boolean;
   laserIntensity?: "subtle" | "standard" | "high";
   laserPreset?: "performance-orange" | "team-cyan" | "career-purple" | "elite-green";
+  heroImageFit?: "cover" | "contain" | "fill";
+  heroImagePosition?: string;
+  mobileHeroImagePosition?: string;
 };
 
 type ProgramData = {
@@ -372,6 +375,9 @@ export default function LeadCaptureLanding() {
   const laserEnabled = ext.laserEffectsEnabled ?? false;
   const laserIntensity = ext.laserIntensity || "subtle";
   const laserPreset = ext.laserPreset || getDefaultLaserPreset(funnelType);
+  const heroImageFit = ext.heroImageFit || "cover";
+  const heroImagePosition = ext.heroImagePosition || "center center";
+  const mobileHeroImagePosition = ext.mobileHeroImagePosition || "";
   const overlayStrength = ext.overlayStrength ?? 60;
   const videoBackgroundUrl = ext.videoBackgroundUrl || "";
   const accentColor = ext.accentColor || (
@@ -512,10 +518,22 @@ export default function LeadCaptureLanding() {
             <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
           </>
         ) : config?.heroImageUrl ? (
-          <div
-            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-            style={{ backgroundImage: `url(${config.heroImageUrl})` }}
-          >
+          <div className="absolute inset-0">
+            {/* Mobile focal point override via injected CSS */}
+            {mobileHeroImagePosition && mobileHeroImagePosition !== heroImagePosition && (
+              <style>{`@media (max-width: 768px) { .hero-bg-img { object-position: ${mobileHeroImagePosition} !important; } }`}</style>
+            )}
+            <img
+              src={config.heroImageUrl}
+              alt=""
+              aria-hidden="true"
+              className="hero-bg-img absolute inset-0 w-full h-full"
+              style={{
+                objectFit: heroImageFit,
+                objectPosition: heroImagePosition,
+              }}
+              data-testid="img-hero-bg"
+            />
             <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
           </div>
         ) : (

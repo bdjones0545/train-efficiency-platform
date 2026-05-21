@@ -82,6 +82,9 @@ interface ExtendedConfig {
   laserEffectsEnabled?: boolean;
   laserIntensity?: "subtle" | "standard" | "high";
   laserPreset?: "performance-orange" | "team-cyan" | "career-purple" | "elite-green";
+  heroImageFit?: "cover" | "contain" | "fill";
+  heroImagePosition?: string;
+  mobileHeroImagePosition?: string;
 }
 
 interface LeadCaptureConfig {
@@ -826,6 +829,9 @@ export default function LeadCaptureProgramEditorPage() {
   const [laserEffectsEnabled, setLaserEffectsEnabled] = useState(false);
   const [laserIntensity, setLaserIntensity] = useState<"subtle" | "standard" | "high">("subtle");
   const [laserPreset, setLaserPreset] = useState<"performance-orange" | "team-cyan" | "career-purple" | "elite-green">("performance-orange");
+  const [heroImageFit, setHeroImageFit] = useState<"cover" | "contain" | "fill">("cover");
+  const [heroImagePosition, setHeroImagePosition] = useState("center center");
+  const [mobileHeroImagePosition, setMobileHeroImagePosition] = useState("");
 
   const [metaPixelId, setMetaPixelId] = useState("");
   const [googleAdsConversionId, setGoogleAdsConversionId] = useState("");
@@ -901,6 +907,9 @@ export default function LeadCaptureProgramEditorPage() {
     setLaserEffectsEnabled(ext.laserEffectsEnabled ?? false);
     setLaserIntensity(ext.laserIntensity || "subtle");
     setLaserPreset(ext.laserPreset || (resolvedType === "team_training" ? "team-cyan" : resolvedType === "employment_opportunity" ? "career-purple" : "performance-orange"));
+    setHeroImageFit(ext.heroImageFit || "cover");
+    setHeroImagePosition(ext.heroImagePosition || "center center");
+    setMobileHeroImagePosition(ext.mobileHeroImagePosition || "");
     setWhoCards(ext.whoCards?.length > 0 ? ext.whoCards : newFt.defaultWhoCards);
     if (ext.formFields && ext.formFields.length > 0) {
       setFormFields(ext.formFields);
@@ -939,6 +948,8 @@ export default function LeadCaptureProgramEditorPage() {
           accentColor, gradientPreset, buttonStyle, darkIntensity, typographyPreset,
           bookingButtonText, bookingRedirectOnSubmit, whoCards, formFields,
           laserEffectsEnabled, laserIntensity, laserPreset,
+          heroImageFit, heroImagePosition,
+          mobileHeroImagePosition: mobileHeroImagePosition || undefined,
         },
       };
       return apiRequest("PUT", `/api/lead-capture/programs/${programId}/config`, body);
@@ -1365,6 +1376,79 @@ export default function LeadCaptureProgramEditorPage() {
                       className={`w-full ${funnelType === "team_training" ? "accent-cyan-500" : funnelType === "employment_opportunity" ? "accent-purple-500" : "accent-orange-500"}`}
                       data-testid="range-overlay-strength" />
                   </div>
+
+                  {/* Image fit & focal point — only relevant when a hero image is set */}
+                  {heroImageUrl && (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Image Fit</Label>
+                        <div className="flex gap-2">
+                          {(["cover", "contain", "fill"] as const).map(f => (
+                            <Button key={f} size="sm" variant={heroImageFit === f ? "default" : "outline"}
+                              onClick={() => { setHeroImageFit(f); markUnsaved(); }}
+                              className={`capitalize ${heroImageFit === f ? (funnelType === "team_training" ? "bg-cyan-600 hover:bg-cyan-700" : funnelType === "employment_opportunity" ? "bg-purple-600 hover:bg-purple-700" : "bg-orange-500 hover:bg-orange-600") : ""}`}
+                              data-testid={`button-image-fit-${f}`}>
+                              {f}
+                            </Button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">Cover: fills frame (recommended). Contain: shows full image. Fill: stretches to fit.</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs">Focal Point — Desktop</Label>
+                        <p className="text-[10px] text-muted-foreground -mt-1">Click the area of the image that should stay visible when cropped.</p>
+                        <div className="inline-grid grid-cols-3 gap-1 p-1 bg-muted/40 rounded-lg border border-border/40" data-testid="grid-focal-point">
+                          {[
+                            ["top left","top center","top right"],
+                            ["center left","center center","center right"],
+                            ["bottom left","bottom center","bottom right"],
+                          ].map((row, ri) => row.map((pos, ci) => (
+                            <button
+                              key={pos}
+                              onClick={() => { setHeroImagePosition(pos); markUnsaved(); }}
+                              title={pos}
+                              className={`w-8 h-8 rounded flex items-center justify-center transition-all ${heroImagePosition === pos ? `${ft.accentBg} border ${ft.accentBorder}` : "hover:bg-muted/60"}`}
+                              data-testid={`button-focal-${pos.replace(/ /g, "-")}`}
+                            >
+                              <div className={`w-2 h-2 rounded-full ${heroImagePosition === pos ? ft.accent.replace("text-", "bg-") : "bg-muted-foreground/40"}`} />
+                            </button>
+                          )))}
+                        </div>
+                        <p className={`text-[10px] font-medium ${ft.accent}`}>Current: {heroImagePosition}</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Mobile Focal Point Override</Label>
+                          {mobileHeroImagePosition && (
+                            <button onClick={() => { setMobileHeroImagePosition(""); markUnsaved(); }} className="text-[10px] text-muted-foreground hover:text-foreground underline" data-testid="button-clear-mobile-focal">Clear</button>
+                          )}
+                        </div>
+                        <div className="inline-grid grid-cols-3 gap-1 p-1 bg-muted/40 rounded-lg border border-border/40" data-testid="grid-mobile-focal-point">
+                          {[
+                            ["top left","top center","top right"],
+                            ["center left","center center","center right"],
+                            ["bottom left","bottom center","bottom right"],
+                          ].map((row) => row.map((pos) => {
+                            const active = mobileHeroImagePosition === pos;
+                            return (
+                              <button
+                                key={pos}
+                                onClick={() => { setMobileHeroImagePosition(active ? "" : pos); markUnsaved(); }}
+                                title={pos}
+                                className={`w-8 h-8 rounded flex items-center justify-center transition-all ${active ? `${ft.accentBg} border ${ft.accentBorder}` : "hover:bg-muted/60"}`}
+                                data-testid={`button-mobile-focal-${pos.replace(/ /g, "-")}`}
+                              >
+                                <div className={`w-2 h-2 rounded-full ${active ? ft.accent.replace("text-", "bg-") : "bg-muted-foreground/30"}`} />
+                              </button>
+                            );
+                          }))}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{mobileHeroImagePosition ? `Mobile focal: ${mobileHeroImagePosition}` : "Using desktop focal point on mobile"}</p>
+                      </div>
+                    </>
+                  )}
                 </Card>
 
                 {/* Live mini preview */}
@@ -1383,7 +1467,21 @@ export default function LeadCaptureProgramEditorPage() {
                   </div>
                   <div className={`mx-auto rounded-lg overflow-hidden border border-border/50 transition-all ${previewDevice === "mobile" ? "max-w-[280px]" : "w-full"}`}>
                     <div className="relative flex flex-col items-center justify-center p-6 text-center min-h-[180px]"
-                      style={{ background: heroImageUrl ? `url(${heroImageUrl}) center/cover` : "linear-gradient(135deg, #1a1a2e, #0f0f0f)" }}>
+                      style={{ background: heroImageUrl ? undefined : "linear-gradient(135deg, #1a1a2e, #0f0f0f)" }}>
+                      {heroImageUrl && (
+                        <img
+                          src={heroImageUrl}
+                          alt=""
+                          aria-hidden="true"
+                          className="absolute inset-0 w-full h-full"
+                          style={{
+                            objectFit: heroImageFit,
+                            objectPosition: previewDevice === "mobile" && mobileHeroImagePosition
+                              ? mobileHeroImagePosition
+                              : heroImagePosition,
+                          }}
+                        />
+                      )}
                       <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
                       <div className={`relative z-10 w-full ${heroAlignment === "left" ? "text-left" : heroAlignment === "right" ? "text-right" : "text-center"}`}>
                         {urgencyBadge && (
