@@ -8,6 +8,7 @@ import {
   workoutCompletionLogs,
   orgAiIntegrations,
   athleticPrograms,
+  organizations,
   prTeams,
   prTeamMembers,
   prLiftEntries,
@@ -233,36 +234,44 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       const canViewAssignedWorkouts = isAthlete || isGuardian || isFullCoach || isTeamCoach;
       const canCreatePersonalWorkout = isAthlete;
 
-      const { organizations } = await import("@shared/schema");
-
+      // Fetch org, teams, athletes (via orgUsers — athletes sign up through OrgAuthModal),
+      // and TrainChat integration status in parallel.
+      // NOTE: orgUsers has `name`; the main-app `users` table uses firstName/lastName only.
       const [[org], teams, athletes, tcIntegration] = await Promise.all([
         db.select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
-          .from(organizations).where(eq(organizations.id, orgId)).limit(1),
-        db.select().from(prTeams).where(eq(prTeams.orgId, orgId)).orderBy(asc(prTeams.name)),
+          .from(organizations).where(eq(organizations.id, orgId)).limit(1)
+          .catch(() => [] as any[]),
+        db.select().from(prTeams).where(eq(prTeams.orgId, orgId)).orderBy(asc(prTeams.name))
+          .catch(() => [] as any[]),
         db.select({
           userId: orgMemberships.userId,
-          name: users.name,
-          email: users.email,
+          name: orgUsers.name,
+          email: orgUsers.email,
         })
           .from(orgMemberships)
-          .innerJoin(users, eq(orgMemberships.userId, users.id))
+          .innerJoin(orgUsers, eq(orgMemberships.userId, orgUsers.id))
           .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete")))
-          .orderBy(asc(users.name)),
+          .orderBy(asc(orgUsers.name))
+          .catch(() => [] as any[]),
         db.select({ isActive: orgAiIntegrations.isActive, lastSuccessAt: orgAiIntegrations.lastSuccessAt })
           .from(orgAiIntegrations)
           .where(and(eq(orgAiIntegrations.orgId, orgId), eq(orgAiIntegrations.provider, "trainchat")))
-          .limit(1),
+          .limit(1)
+          .catch(() => [] as any[]),
       ]);
 
-      // Coaches see all programs; athletes/guardians only see what's assigned to them
+      // Coaches see all programs; athletes/guardians only see their own
       const programs = canManagePrograms
-        ? await db.select().from(workoutPrograms).where(eq(workoutPrograms.orgId, orgId)).orderBy(desc(workoutPrograms.createdAt))
+        ? await db.select().from(workoutPrograms)
+            .where(eq(workoutPrograms.orgId, orgId))
+            .orderBy(desc(workoutPrograms.createdAt))
+            .catch(() => [] as any[])
         : [];
 
-      const trainChatConnected = tcIntegration[0]?.isActive ?? false;
+      const trainChatConnected = tcIntegration?.[0]?.isActive ?? false;
 
       return res.json({
-        org,
+        org: org ?? null,
         authMode: req.authMode ?? "org_token",
         effectiveRole: memberRole,
         currentUser: { id: profile.userId, role: profile.role },
@@ -271,15 +280,15 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         canAssignPrograms,
         canViewAssignedWorkouts,
         canCreatePersonalWorkout,
-        teams,
-        athletes,
-        programs,
+        teams: teams ?? [],
+        athletes: athletes ?? [],
+        programs: programs ?? [],
         trainChatConnected,
-        trainChatLastSync: tcIntegration[0]?.lastSuccessAt ?? null,
+        trainChatLastSync: tcIntegration?.[0]?.lastSuccessAt ?? null,
       });
     } catch (err: any) {
       console.error("[workout-builder] bootstrap error:", err);
-      return res.status(500).json({ message: "Internal server error" });
+      return res.status(500).json({ message: err?.message ?? "Bootstrap failed" });
     }
   });
 
