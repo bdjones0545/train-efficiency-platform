@@ -14,7 +14,7 @@ import {
   BookOpen, Plus, Sparkles, ChevronLeft, ChevronRight, Eye, Pencil,
   CheckCircle, Circle, BarChart2, Users, Trophy, AlertTriangle,
   Loader2, Save, Trash2, Send, RefreshCw, GraduationCap,
-  ClipboardList, Settings, Archive, Globe,
+  ClipboardList, Settings, Archive, Globe, Copy,
 } from "lucide-react";
 
 const STORAGE_KEY = (slug: string) => `orgToken_${slug}`;
@@ -131,6 +131,17 @@ export default function CoachEducationBuilderPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/org/education/assignments", slug] }); toast({ title: "Assigned!" }); },
   });
 
+  const copyPathwayMut = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {}, { headers }),
+    onSuccess: (data: any) => {
+      refetchPathways();
+      toast({ title: "Pathway copied to your library", description: "You can now customize it for your organization." });
+      setSelectedPathway(data.pathway);
+      setActiveTab("builder");
+    },
+    onError: () => toast({ title: "Error copying pathway", variant: "destructive" }),
+  });
+
   // ── AI Helpers ─────────────────────────────────────────────────────────────
   async function aiGeneratePathway() {
     setAiLoading("pathway");
@@ -163,11 +174,16 @@ export default function CoachEducationBuilderPage() {
       });
       const data = await r.json();
       const r2 = data.result;
+      // Normalize AI sections: AI returns `heading`, seed/save uses `title`
+      const normalizedSections = (r2.sections ?? []).map((s: any) => ({
+        title: s.title ?? s.heading ?? "",
+        body: s.body ?? "",
+      }));
       setModuleForm((prev: any) => ({
         ...prev,
         description: r2.description ?? prev.description,
         estimatedMinutes: r2.estimatedMinutes ?? prev.estimatedMinutes,
-        content: { sections: r2.sections ?? [] },
+        content: { sections: normalizedSections },
         keyTakeaways: r2.keyTakeaways ?? [],
       }));
       toast({ title: "AI draft ready — review before saving", description: "Marked as AI draft. Coach review required." });
@@ -351,10 +367,21 @@ export default function CoachEducationBuilderPage() {
                     <p className="text-xs text-muted-foreground mt-1">{p.moduleCount ?? 0} modules</p>
                   </div>
                   <div className="flex gap-1.5 flex-shrink-0">
-                    <Button size="sm" variant="outline" className="h-7 text-xs px-2"
-                      onClick={() => { setSelectedPathway(p); setActiveTab("builder"); }}>
-                      <Pencil className="h-3 w-3" />
-                    </Button>
+                    {p.isDefault ? (
+                      <Button size="sm" variant="outline"
+                        className="h-7 text-xs px-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                        onClick={() => copyPathwayMut.mutate(p.id)}
+                        disabled={copyPathwayMut.isPending}
+                        title="Copy to My Library to customize"
+                        data-testid={`button-copy-pathway-${p.id}`}>
+                        {copyPathwayMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                        onClick={() => { setSelectedPathway(p); setActiveTab("builder"); }}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
                     <Button size="sm" variant="outline" className="h-7 text-xs px-2"
                       onClick={() => setLocation(`/org/${slug}/education/${p.slug}`)}>
                       <Eye className="h-3 w-3" />
@@ -572,7 +599,7 @@ export default function CoachEducationBuilderPage() {
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Lesson Sections</p>
                   <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => setModuleForm((p: any) => ({
-                    ...p, content: { ...p.content, sections: [...(p.content.sections ?? []), { heading: "", body: "" }] }
+                    ...p, content: { ...p.content, sections: [...(p.content.sections ?? []), { title: "", body: "" }] }
                   }))}>
                     <Plus className="h-3 w-3" />Add
                   </Button>
@@ -580,10 +607,10 @@ export default function CoachEducationBuilderPage() {
                 {(moduleForm.content?.sections ?? []).map((s: any, i: number) => (
                   <Card key={i} className="p-3 space-y-2">
                     <div className="flex gap-2">
-                      <Input placeholder="Section heading" value={s.heading}
+                      <Input placeholder="Section title" value={s.title ?? s.heading ?? ""}
                         onChange={(e) => {
                           const sections = [...(moduleForm.content?.sections ?? [])];
-                          sections[i] = { ...sections[i], heading: e.target.value };
+                          sections[i] = { ...sections[i], title: e.target.value, heading: undefined };
                           setModuleForm((p: any) => ({ ...p, content: { ...p.content, sections } }));
                         }}
                         className="h-8 text-xs flex-1" />

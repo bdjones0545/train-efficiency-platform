@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,11 +58,16 @@ export default function OrgEducationPage() {
     queryKey: ["/api/org/education/pathways/modules", effectiveSlug],
     queryFn: () => fetch(`/api/org/education/pathways/${effectiveSlug}/modules`, { headers }).then((r) => r.json()),
     enabled: !!effectiveSlug,
-    onSuccess: (data) => {
-      if (pathwaySlug && !selectedPathway) setSelectedPathway(data.pathway);
-      if (pathwaySlug) setView("modules");
-    },
   });
+
+  // Auto-navigate when pathway loads from URL slug (replaces removed onSuccess)
+  useEffect(() => {
+    if (pathwayData && pathwaySlug) {
+      if (!selectedPathway) setSelectedPathway(pathwayData.pathway);
+      setView("modules");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathwayData?.pathway?.id, pathwaySlug]);
   const modules: any[] = pathwayData?.modules ?? [];
   const pathway = pathwayData?.pathway ?? selectedPathway;
   const stats = pathwayData?.stats;
@@ -86,6 +91,9 @@ export default function OrgEducationPage() {
     onSuccess: (data: any) => {
       setQuizResult(data);
       setView("result");
+      // Refresh modules so progress bars and completion badges update immediately
+      queryClient.invalidateQueries({ queryKey: ["/api/org/education/pathways/modules", effectiveSlug] });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/education/pathways", slug] });
     },
     onError: () => toast({ title: "Error submitting quiz", variant: "destructive" }),
   });
@@ -332,7 +340,7 @@ export default function OrgEducationPage() {
                 });
               }}>
                 <div className="flex items-center justify-between py-2">
-                  <p className="text-sm font-semibold">{s.heading}</p>
+                  <p className="text-sm font-semibold">{s.title ?? s.heading}</p>
                   <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${expandedSections.has(i) ? "rotate-90" : ""}`} />
                 </div>
               </button>

@@ -941,4 +941,82 @@ Return a JSON object:
       res.status(500).json({ message: e.message });
     }
   });
+
+  // ── POST /api/org/education/pathways/:id/copy ────────────────────────────────
+  // Coach: fork a default (or any) pathway into the org's own library for customization
+  app.post("/api/org/education/pathways/:id/copy", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const userId = getUserId(req)!;
+      const { id } = req.params;
+      const orgId = profile.organizationId;
+
+      // Fetch source pathway
+      const [source] = await db.select().from(educationPathways)
+        .where(eq(educationPathways.id, id))
+        .limit(1);
+      if (!source) return res.status(404).json({ message: "Pathway not found" });
+
+      // Build a unique slug for the org copy
+      const baseSlug = `${source.slug}-copy`;
+      const existingSlugs = await db.select({ slug: educationPathways.slug })
+        .from(educationPathways)
+        .where(drizzleSql`${educationPathways.slug} LIKE ${baseSlug + "%"}`);
+      const slug = existingSlugs.length === 0 ? baseSlug : `${baseSlug}-${existingSlugs.length + 1}`;
+
+      // Create org-owned copy
+      const [newPathway] = await db.insert(educationPathways).values({
+        orgId,
+        createdByUserId: userId,
+        title: `${source.title} (Custom)`,
+        slug,
+        category: source.category,
+        description: source.description ?? "",
+        status: "draft",
+        isDefault: false,
+      }).returning();
+
+      // Fetch source modules
+      const sourceModules = await db.select().from(educationModules)
+        .where(and(eq(educationModules.pathwayId, id), eq(educationModules.status, "published")))
+        .orderBy(asc(educationModules.moduleNumber));
+
+      // Copy each module and its quiz questions
+      for (const mod of sourceModules) {
+        const [newMod] = await db.insert(educationModules).values({
+          orgId,
+          pathwayId: newPathway.id,
+          moduleNumber: mod.moduleNumber,
+          title: mod.title,
+          description: mod.description ?? "",
+          content: mod.content ?? {},
+          keyTakeaways: mod.keyTakeaways ?? [],
+          estimatedMinutes: mod.estimatedMinutes ?? 10,
+          status: "draft",
+        }).returning();
+
+        // Copy quiz questions
+        const sourceQuestions = await db.select().from(educationQuizQuestions)
+          .where(eq(educationQuizQuestions.moduleId, mod.id));
+
+        if (sourceQuestions.length > 0) {
+          await db.insert(educationQuizQuestions).values(
+            sourceQuestions.map((q: any) => ({
+              orgId,
+              pathwayId: newPathway.id,
+              moduleId: newMod.id,
+              question: q.question,
+              options: q.options,
+              correctAnswer: q.correctAnswer,
+              explanation: q.explanation ?? "",
+            }))
+          );
+        }
+      }
+
+      res.json({ pathway: newPathway, modulesCount: sourceModules.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
 }

@@ -1,0 +1,194 @@
+Run a full end-to-end UX verification of the Education System.
+
+GOAL:
+Verify the complete athlete + coach education workflow works correctly from assignment → completion → tracking.
+
+====================================================
+TEST FLOW 1 — COACH ASSIGNMENT
+====================================================
+
+1. Log in as:
+- owner
+- admin
+- coach
+- team_coach
+
+2. Open:
+ /org/:slug/coach/education-builder
+
+Verify:
+- Pathways load correctly
+- Default pathways appear
+- Status badges render
+- Module counts display
+- Analytics load
+- No console errors
+
+3. Assign:
+“Nutrition Foundations”
+to:
+- one athlete
+- one team
+- all athletes
+
+Verify:
+- Assignment saves
+- Notification fires
+- Activity event logs
+- Assignment appears in athlete portal
+
+====================================================
+TEST FLOW 2 — ATHLETE EXPERIENCE
+====================================================
+
+1. Log in as athlete
+
+2. Open:
+ /org/:slug/education
+
+Verify:
+- Assigned pathways appear
+- Progress bar renders
+- Module count correct
+- Locked modules visually locked
+- Continue button works
+
+3. Open first module
+
+Verify:
+- Lesson sections render
+- Key takeaways render
+- Estimated time displays
+- Mobile layout clean
+- Scroll behavior smooth
+
+4. Start quiz
+
+Verify:
+- Questions load
+- Correct answer selection works
+- Cannot submit incomplete quiz
+- Scoring calculates correctly
+- Explanations display
+- Pass/fail state renders
+- Retake works
+
+5. Pass module
+
+Verify:
+- Progress updates immediately
+- Next module unlocks
+- Completion notification fires
+- Activity timeline logs event
+- Portal card updates
+
+====================================================
+TEST FLOW 3 — COACH TRACKING
+====================================================
+
+1. Return to coach account
+
+2. Open:
+ /org/:slug/coach/education-progress
+
+Verify:
+- Athlete completion updates
+- Quiz score updates
+- Module completion counts update
+- Progress bars update
+- In-progress counts update
+
+3. Drill into pathway details
+
+Verify:
+- Per-module stats render
+- Avg scores display
+- Athlete completion breakdown correct
+
+====================================================
+TEST FLOW 4 — PORTAL INTEGRATION
+====================================================
+
+Athlete portal:
+Verify:
+- Education card visible
+- Next module CTA works
+- Progress % accurate
+- Completion badge appears after full pathway
+
+Coach portal:
+Verify:
+- Education Builder card works
+- Education Progress card works
+- Completion summaries accurate
+
+====================================================
+TEST FLOW 5 — NOTIFICATIONS & TIMELINE
+====================================================
+
+Verify notifications fire for:
+- pathway assigned
+- module completed
+- pathway completed
+- repeated quiz failure
+
+Verify activity timeline events appear:
+- module completion
+- pathway completion
+
+====================================================
+TEST FLOW 6 — ROLE SECURITY
+====================================================
+
+Athlete:
+- cannot access coach routes
+
+Guardian:
+- can view athlete education progress
+- cannot edit or take quizzes
+
+Team Coach:
+- sees only their team progress
+
+Coach/Admin:
+- full org visibility
+
+====================================================
+TEST FLOW 7 — MOBILE QA
+====================================================
+
+Test on:
+- iPhone Safari
+- mobile Chrome
+
+Verify:
+- quiz buttons accessible
+- progress bars responsive
+- sidebar navigation clean
+- no overflow/cutoff
+- modals close correctly
+- sticky nav behaves correctly
+
+====================================================
+TEST FLOW 8 — FAILURE STATES
+====================================================
+
+Verify graceful handling for:
+- no assigned pathways
+- failed quiz
+- network failure
+- empty analytics
+- deleted pathway
+- expired session
+
+====================================================
+EXPECTED RESULT
+====================================================
+
+Education should feel like:
+- a real athlete learning system
+- integrated into the athlete portal
+- coach-trackable
+- mobile-friendly
+- assignment-driven
+- production-ready
