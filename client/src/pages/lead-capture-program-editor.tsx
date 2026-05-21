@@ -79,6 +79,9 @@ interface ExtendedConfig {
   bookingButtonText?: string;
   bookingRedirectOnSubmit?: boolean;
   formFields?: FormField[];
+  laserEffectsEnabled?: boolean;
+  laserIntensity?: "subtle" | "standard" | "high";
+  laserPreset?: "performance-orange" | "team-cyan" | "career-purple" | "elite-green";
 }
 
 interface LeadCaptureConfig {
@@ -820,6 +823,9 @@ export default function LeadCaptureProgramEditorPage() {
   const [buttonStyle, setButtonStyle] = useState<"solid" | "outline" | "gradient">("solid");
   const [darkIntensity, setDarkIntensity] = useState<"light" | "medium" | "dark" | "ultra">("dark");
   const [typographyPreset, setTypographyPreset] = useState<"athletic" | "modern" | "bold" | "clean">("athletic");
+  const [laserEffectsEnabled, setLaserEffectsEnabled] = useState(false);
+  const [laserIntensity, setLaserIntensity] = useState<"subtle" | "standard" | "high">("subtle");
+  const [laserPreset, setLaserPreset] = useState<"performance-orange" | "team-cyan" | "career-purple" | "elite-green">("performance-orange");
 
   const [metaPixelId, setMetaPixelId] = useState("");
   const [googleAdsConversionId, setGoogleAdsConversionId] = useState("");
@@ -892,6 +898,9 @@ export default function LeadCaptureProgramEditorPage() {
     setTypographyPreset(ext.typographyPreset || "athletic");
     setBookingButtonText(ext.bookingButtonText || (resolvedType === "team_training" ? "Book a Discovery Call" : resolvedType === "employment_opportunity" ? "Schedule Your Interview" : "Book Your Evaluation"));
     setBookingRedirectOnSubmit(ext.bookingRedirectOnSubmit ?? false);
+    setLaserEffectsEnabled(ext.laserEffectsEnabled ?? false);
+    setLaserIntensity(ext.laserIntensity || "subtle");
+    setLaserPreset(ext.laserPreset || (resolvedType === "team_training" ? "team-cyan" : resolvedType === "employment_opportunity" ? "career-purple" : "performance-orange"));
     setWhoCards(ext.whoCards?.length > 0 ? ext.whoCards : newFt.defaultWhoCards);
     if (ext.formFields && ext.formFields.length > 0) {
       setFormFields(ext.formFields);
@@ -929,6 +938,7 @@ export default function LeadCaptureProgramEditorPage() {
           urgencyBadge, heroAlignment, overlayStrength, videoBackgroundUrl,
           accentColor, gradientPreset, buttonStyle, darkIntensity, typographyPreset,
           bookingButtonText, bookingRedirectOnSubmit, whoCards, formFields,
+          laserEffectsEnabled, laserIntensity, laserPreset,
         },
       };
       return apiRequest("PUT", `/api/lead-capture/programs/${programId}/config`, body);
@@ -1756,6 +1766,73 @@ export default function LeadCaptureProgramEditorPage() {
                 </div>
               </Card>
             </div>
+            {/* Laser Effects Card */}
+            <Card className="p-6 space-y-5">
+              <SectionHeader icon={<Zap className="h-4 w-4" />} title="Laser Effects" subtitle="Dynamic visual system for hero sections and success screens." accent={accentIconBg} />
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Enable Laser Effects</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Subtle animated beams and scanning lines behind the hero content.</p>
+                </div>
+                <Switch
+                  checked={laserEffectsEnabled}
+                  onCheckedChange={v => { setLaserEffectsEnabled(v); markUnsaved(); }}
+                  data-testid="switch-laser-enabled"
+                />
+              </div>
+              {laserEffectsEnabled && (
+                <div className="space-y-5 pt-1">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Intensity</Label>
+                    <div className="flex gap-2">
+                      {([
+                        { value: "subtle", label: "Subtle", desc: "Minimal glow" },
+                        { value: "standard", label: "Standard", desc: "Balanced" },
+                        { value: "high", label: "High", desc: "Bold beams" },
+                      ] as const).map(i => (
+                        <button
+                          key={i.value}
+                          onClick={() => { setLaserIntensity(i.value); markUnsaved(); }}
+                          className={`flex-1 p-3 rounded-lg border text-left transition-all ${laserIntensity === i.value ? `${ft.accentBorder} ${ft.accentBg}` : "border-border/50 hover:border-border"}`}
+                          data-testid={`button-laser-intensity-${i.value}`}
+                        >
+                          <p className="text-xs font-semibold">{i.label}</p>
+                          <p className="text-[10px] text-muted-foreground">{i.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Color Preset</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        { value: "performance-orange", label: "Performance Orange", color: "#f97316", desc: "Athlete funnels" },
+                        { value: "team-cyan",          label: "Team Cyan",          color: "#06b6d4", desc: "Team training" },
+                        { value: "career-purple",      label: "Career Purple",      color: "#a855f7", desc: "Employment" },
+                        { value: "elite-green",        label: "Elite Green",        color: "#22c55e", desc: "Premium feel" },
+                      ] as const).map(p => (
+                        <button
+                          key={p.value}
+                          onClick={() => { setLaserPreset(p.value); markUnsaved(); }}
+                          className={`flex items-center gap-2.5 p-3 rounded-lg border text-left transition-all ${laserPreset === p.value ? `${ft.accentBorder} ring-1` : "border-border/50 hover:border-border"}`}
+                          data-testid={`button-laser-preset-${p.value}`}
+                        >
+                          <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: p.color, boxShadow: `0 0 6px ${p.color}80` }} />
+                          <div>
+                            <p className="text-xs font-semibold leading-none">{p.label}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{p.desc}</p>
+                          </div>
+                          {laserPreset === p.value && <Check className={`h-3.5 w-3.5 ${ft.accent} ml-auto`} />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className={`px-4 py-3 rounded-lg ${ft.accentBg} border ${ft.accentBorder}`}>
+                    <p className={`text-xs ${ft.accent} font-medium`}>Effects applied to: hero background, urgency badge glow, and success screen verification sweep.</p>
+                  </div>
+                </div>
+              )}
+            </Card>
           </TabsContent>
 
           {/* ── ANALYTICS TAB ── */}

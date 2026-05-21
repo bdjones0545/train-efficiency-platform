@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
+import { LeadCaptureLaserEffects, LaserUrgencyGlow, getDefaultLaserPreset } from "@/components/lead-capture-laser-effects";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,6 +93,9 @@ type ExtendedConfig = {
   formFields?: any[];
   bookingButtonText?: string;
   bookingRedirectOnSubmit?: boolean;
+  laserEffectsEnabled?: boolean;
+  laserIntensity?: "subtle" | "standard" | "high";
+  laserPreset?: "performance-orange" | "team-cyan" | "career-purple" | "elite-green";
 };
 
 type ProgramData = {
@@ -146,9 +150,9 @@ function ProgressBar({ step, total }: { step: number; total: number }) {
   );
 }
 
-function StepCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function StepCard({ children, className = "", style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
-    <div className={`bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 md:p-8 shadow-2xl ${className}`}>
+    <div className={`bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 md:p-8 shadow-2xl ${className}`} style={style}>
       {children}
     </div>
   );
@@ -365,6 +369,9 @@ export default function LeadCaptureLanding() {
   const funnelType = config?.funnelType || "athlete_application";
   const urgencyBadge = ext.urgencyBadge || "";
   const heroAlignment = ext.heroAlignment || "center";
+  const laserEnabled = ext.laserEffectsEnabled ?? false;
+  const laserIntensity = ext.laserIntensity || "subtle";
+  const laserPreset = ext.laserPreset || getDefaultLaserPreset(funnelType);
   const overlayStrength = ext.overlayStrength ?? 60;
   const videoBackgroundUrl = ext.videoBackgroundUrl || "";
   const accentColor = ext.accentColor || (
@@ -519,6 +526,15 @@ export default function LeadCaptureLanding() {
           </div>
         )}
 
+        {/* Laser Effects — rendered above background, behind content */}
+        <LeadCaptureLaserEffects
+          enabled={laserEnabled}
+          intensity={laserIntensity}
+          preset={laserPreset}
+          accentColor={accentColor}
+          variant="hero"
+        />
+
         <div
           className={`relative z-10 max-w-4xl mx-auto px-6 py-20 flex flex-col gap-8
             ${heroAlignment === "left" ? "items-start text-left" : heroAlignment === "right" ? "items-end text-right" : "items-center text-center"}`}
@@ -535,13 +551,20 @@ export default function LeadCaptureLanding() {
 
           {/* Urgency badge */}
           {urgencyBadge && (
-            <div
-              className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-white text-sm font-semibold animate-pulse"
-              style={{ ...accentBgStyle, boxShadow: `0 0 20px ${accentColor}60` }}
-              data-testid="badge-urgency"
-            >
-              <Flame className="h-4 w-4" />
-              {urgencyBadge}
+            <div className="relative inline-flex" data-testid="badge-urgency">
+              <LaserUrgencyGlow
+                enabled={laserEnabled}
+                intensity={laserIntensity}
+                preset={laserPreset}
+                accentColor={accentColor}
+              />
+              <div
+                className="relative inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-white text-sm font-semibold animate-pulse"
+                style={{ ...accentBgStyle, boxShadow: `0 0 20px ${accentColor}60` }}
+              >
+                <Flame className="h-4 w-4" />
+                {urgencyBadge}
+              </div>
             </div>
           )}
 
@@ -1030,8 +1053,15 @@ export default function LeadCaptureLanding() {
                 </div>
 
                 {/* Hero confirmation */}
-                <StepCard className="text-center !pb-8">
-                  <div className="space-y-4 py-4">
+                <StepCard className="text-center !pb-8" style={{ position: "relative", overflow: "hidden" }}>
+                  <LeadCaptureLaserEffects
+                    enabled={laserEnabled}
+                    intensity={laserIntensity}
+                    preset={laserPreset}
+                    accentColor={accentColor}
+                    variant="success"
+                  />
+                  <div className="space-y-4 py-4 relative z-10">
                     <div className="relative inline-flex mx-auto">
                       <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center shadow-2xl shadow-orange-500/40">
                         <CheckCircle2 className="h-10 w-10 text-white" />
