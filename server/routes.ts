@@ -13352,6 +13352,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerEducationRoutes } = await import("./education-routes");
   registerEducationRoutes(app);
 
+  // ── Education Phase 2: Adaptive Learning System ───────────────────────────
+  const { registerEducationPhase2Routes } = await import("./education-phase2-routes");
+  registerEducationPhase2Routes(app);
+
   // ── Guardian Portal Routes ─────────────────────────────────────────────────
   const { registerGuardianRoutes } = await import("./guardian-routes");
   registerGuardianRoutes(app);

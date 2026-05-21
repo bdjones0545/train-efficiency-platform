@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { educationPathways, educationModules, educationQuizQuestions } from "@shared/schema";
+import { educationPathways, educationModules, educationQuizQuestions, educationBadges } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2030,6 +2030,39 @@ export async function seedDefaultEducationLibrary() {
     }
 
     console.log("[Education Seed] Default education library seeded successfully!");
+
+    // ── Seed default badges (one per pathway) ────────────────────────────────
+    const DEFAULT_BADGES = [
+      { pathwayId: "default-pathway-nutrition",         name: "Fueling Certified",          icon: "zap",       color: "emerald", description: "Completed the Nutrition Foundations pathway" },
+      { pathwayId: "default-pathway-recovery",          name: "Recovery Ready",              icon: "heart",     color: "blue",    description: "Completed the Recovery & Sleep pathway" },
+      { pathwayId: "default-pathway-hydration",         name: "Hydration Champion",          icon: "droplets",  color: "cyan",    description: "Completed the Hydration Mastery pathway" },
+      { pathwayId: "default-pathway-training-habits",   name: "Training Habits Pro",         icon: "dumbbell",  color: "violet",  description: "Completed the Training Habits pathway" },
+      { pathwayId: "default-pathway-readiness",         name: "Readiness Master",            icon: "activity",  color: "amber",   description: "Completed the Readiness & Recovery pathway" },
+      { pathwayId: "default-pathway-mindset",           name: "Mindset Champion",            icon: "brain",     color: "pink",    description: "Completed the Mindset & Mental Performance pathway" },
+      { pathwayId: "default-pathway-injury-prevention", name: "Injury Prevention Pro",       icon: "shield",    color: "orange",  description: "Completed the Injury Prevention pathway" },
+      { pathwayId: "default-pathway-recruiting",        name: "Recruiting Ready",            icon: "star",      color: "rose",    description: "Completed the Recruiting Excellence pathway" },
+    ];
+
+    for (const badge of DEFAULT_BADGES) {
+      const existing = await db.select({ id: educationBadges.id }).from(educationBadges)
+        .where(and(eq(educationBadges.pathwayId, badge.pathwayId), eq(educationBadges.isDefault, true)))
+        .limit(1);
+      if (existing.length === 0) {
+        await db.insert(educationBadges).values({
+          orgId: null,
+          pathwayId: badge.pathwayId,
+          name: badge.name,
+          description: badge.description,
+          icon: badge.icon,
+          color: badge.color,
+          criteria: "pathway_completed",
+          isDefault: true,
+        });
+        console.log(`[Education Seed] Badge seeded: ${badge.name}`);
+      }
+    }
+
+    console.log("[Education Seed] Default badges seeded.");
   } catch (error) {
     console.error("[Education Seed] Error seeding education library:", error);
     throw error;

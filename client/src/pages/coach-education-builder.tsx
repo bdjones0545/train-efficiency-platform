@@ -14,7 +14,7 @@ import {
   BookOpen, Plus, Sparkles, ChevronLeft, ChevronRight, Eye, Pencil,
   CheckCircle, Circle, BarChart2, Users, Trophy, AlertTriangle,
   Loader2, Save, Trash2, Send, RefreshCw, GraduationCap,
-  ClipboardList, Settings, Archive, Globe, Copy,
+  ClipboardList, Settings, Archive, Globe, Copy, Zap, CalendarDays,
 } from "lucide-react";
 
 const STORAGE_KEY = (slug: string) => `orgToken_${slug}`;
@@ -96,43 +96,43 @@ export default function CoachEducationBuilderPage() {
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const createPathwayMut = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/pathways", data, { headers }),
+    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/pathways", data,  headers),
     onSuccess: () => { refetchPathways(); setShowCreatePathway(false); setNewPathway({ title: "", category: "custom", description: "" }); toast({ title: "Pathway created" }); },
     onError: () => toast({ title: "Error", description: "Failed to create pathway", variant: "destructive" }),
   });
 
   const updatePathwayMut = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/pathways/${id}`, data, { headers }),
+    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/pathways/${id}`, data,  headers),
     onSuccess: () => { refetchPathways(); toast({ title: "Saved" }); },
   });
 
   const publishPathwayMut = useMutation({
-    mutationFn: ({ id, action }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/publish`, { action }, { headers }),
+    mutationFn: ({ id, action }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/publish`, { action },  headers),
     onSuccess: () => { refetchPathways(); toast({ title: "Status updated" }); },
   });
 
   const createModuleMut = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/modules", data, { headers }),
+    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/modules", data,  headers),
     onSuccess: () => { refetchModules(); setEditingModule(false); toast({ title: "Module created" }); },
   });
 
   const updateModuleMut = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/modules/${id}`, data, { headers }),
+    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/modules/${id}`, data,  headers),
     onSuccess: () => { refetchModules(); setEditingModule(false); toast({ title: "Module saved" }); },
   });
 
   const saveQuizMut = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/quiz-questions", data, { headers }),
+    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/quiz-questions", data,  headers),
     onSuccess: () => toast({ title: "Quiz saved" }),
   });
 
   const assignPathwayMut = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/assign`, data, { headers }),
+    mutationFn: ({ id, ...data }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/assign`, data,  headers),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/org/education/assignments", slug] }); toast({ title: "Assigned!" }); },
   });
 
   const copyPathwayMut = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {}, { headers }),
+    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {},  headers),
     onSuccess: (data: any) => {
       refetchPathways();
       toast({ title: "Pathway copied to your library", description: "You can now customize it for your organization." });
@@ -292,7 +292,20 @@ export default function CoachEducationBuilderPage() {
         </button>
         <GraduationCap className="h-5 w-5 text-primary" />
         <h1 className="font-semibold text-sm">Education Builder</h1>
-        <Badge variant="outline" className="text-xs ml-auto border-primary/30 text-primary">Coach</Badge>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-amber-400 hover:bg-amber-500/10"
+            onClick={() => setLocation(`/org/${slug}/coach/education-rules`)}>
+            <Zap className="h-3 w-3" />Rules
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-blue-400 hover:bg-blue-500/10"
+            onClick={() => setLocation(`/org/${slug}/coach/education-plans`)}>
+            <CalendarDays className="h-3 w-3" />Plans
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={() => setLocation(`/org/${slug}/coach/education-progress`)}>
+            <BarChart2 className="h-3 w-3" />Progress
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-[calc(100vh-57px)]">

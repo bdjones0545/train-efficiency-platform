@@ -9,10 +9,53 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, ChevronRight, BookOpen, CheckCircle, Circle,
   Lock, Trophy, Loader2, Sparkles, AlertTriangle, GraduationCap,
-  Clock, Leaf,
+  Clock, Leaf, Medal,
 } from "lucide-react";
 
 const STORAGE_KEY = (slug: string) => `orgToken_${slug}`;
+
+// ── Athlete Badges Panel ──────────────────────────────────────────────────────
+function BadgesPanel({ slug: _slug, headers }: { slug: string; headers: Record<string, string> }) {
+  const { data: earned = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/org/education/my-badges"],
+    queryFn: () =>
+      fetch("/api/org/education/my-badges", { headers }).then((r) =>
+        r.ok ? r.json() : []
+      ),
+    staleTime: 30_000,
+  });
+
+  if (isLoading) return null;
+  if (!earned.length) return null;
+
+  return (
+    <div className="pt-2">
+      <div className="flex items-center gap-2 mb-3">
+        <Medal className="h-4 w-4 text-amber-400" />
+        <h3 className="text-sm font-semibold">My Badges</h3>
+        <span className="ml-auto text-xs text-muted-foreground">{earned.length} earned</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {earned.map((ab: any) => {
+          const b = ab.badge ?? ab;
+          return (
+            <div
+              key={ab.id}
+              className="flex flex-col items-center gap-1 p-2.5 rounded-xl border border-border/50 bg-card/40 min-w-[72px] text-center"
+              data-testid={`badge-earned-${ab.id}`}
+            >
+              <span className="text-2xl leading-none">{b.iconEmoji ?? "🏅"}</span>
+              <p className="text-[10px] font-medium leading-tight line-clamp-2">{b.name}</p>
+              <span className="text-[9px] text-muted-foreground">
+                {ab.awardedAt ? new Date(ab.awardedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 type ViewMode = "pathways" | "modules" | "lesson" | "quiz" | "result";
 
@@ -82,12 +125,12 @@ export default function OrgEducationPage() {
   // ── Mutations ──────────────────────────────────────────────────────────────
   const startModuleMut = useMutation({
     mutationFn: ({ moduleId, pathwayId }: any) =>
-      apiRequest("POST", `/api/org/education/modules/${moduleId}/start`, { pathwayId }, { headers }),
+      apiRequest("POST", `/api/org/education/modules/${moduleId}/start`, { pathwayId },  headers),
   });
 
   const submitQuizMut = useMutation({
     mutationFn: ({ moduleId, answers, pathwayId }: any) =>
-      apiRequest("POST", `/api/org/education/modules/${moduleId}/quiz`, { answers, pathwayId }, { headers }),
+      apiRequest("POST", `/api/org/education/modules/${moduleId}/quiz`, { answers, pathwayId },  headers),
     onSuccess: (data: any) => {
       setQuizResult(data);
       setView("result");
@@ -208,6 +251,9 @@ export default function OrgEducationPage() {
               </div>
             )}
           </div>
+
+          {/* My Badges section */}
+          <BadgesPanel slug={slug} headers={headers} />
         </div>
       </div>
     );

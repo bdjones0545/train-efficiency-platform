@@ -3,6 +3,8 @@ import { db } from "./db";
 import {
   educationPathways, educationModules, educationQuizQuestions,
   educationProgress, educationAssignments, educationAiGenerations,
+  educationBadges, educationAthleteBadges,
+  orgNotifications, orgActivityEvents,
   userProfiles, orgUsers,
 } from "@shared/schema";
 import { eq, and, inArray, desc, asc, sql as drizzleSql } from "drizzle-orm";
@@ -543,6 +545,39 @@ export function registerEducationRoutes(app: Express) {
                 userId,
                 metadata: { pathwayId },
               });
+
+              // Auto-award badge if one exists for this pathway
+              try {
+                const [badge] = await db.select().from(educationBadges)
+                  .where(and(
+                    eq(educationBadges.pathwayId, pathwayId),
+                    eq(educationBadges.isDefault, true),
+                  )).limit(1);
+                if (badge) {
+                  const [alreadyEarned] = await db.select().from(educationAthleteBadges)
+                    .where(and(
+                      eq(educationAthleteBadges.athleteUserId, userId),
+                      eq(educationAthleteBadges.badgeId, badge.id),
+                    )).limit(1);
+                  if (!alreadyEarned) {
+                    await db.insert(educationAthleteBadges).values({
+                      orgId: profile.organizationId,
+                      athleteUserId: userId,
+                      badgeId: badge.id,
+                      pathwayId,
+                      metadata: { source: "pathway_completion" },
+                    });
+                    await db.insert(orgNotifications).values({
+                      orgId: profile.organizationId,
+                      userId,
+                      type: "badge_earned",
+                      title: `🏅 Badge Earned: ${badge.name}`,
+                      message: badge.description ?? `You earned the ${badge.name} badge!`,
+                      metadata: { badgeId: badge.id, pathwayId },
+                    });
+                  }
+                }
+              } catch {}
             }
           }
         } catch {}

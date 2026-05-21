@@ -2243,6 +2243,98 @@ export type EducationProgress = typeof educationProgress.$inferSelect;
 export type EducationAssignment = typeof educationAssignments.$inferSelect;
 export type EducationAiGeneration = typeof educationAiGenerations.$inferSelect;
 
+// ─── Education Phase 2: Adaptive Learning System ──────────────────────────────
+
+// Rules Engine — IF trigger → THEN action
+export const educationRules = pgTable("education_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  createdByUserId: varchar("created_by_user_id").notNull(),
+  name: varchar("name").notNull(),
+  triggerType: varchar("trigger_type").notNull(),
+  // "athlete_joined" | "readiness_low" | "quiz_failed" | "pathway_completed" | "module_overdue"
+  triggerConfig: jsonb("trigger_config").notNull().default({}),
+  // e.g. { threshold: 3, days: 7, pathwayId: "...", score: 80 }
+  actionType: varchar("action_type").notNull(),
+  // "assign_pathway" | "notify_coach" | "award_badge" | "send_reminder"
+  actionConfig: jsonb("action_config").notNull().default({}),
+  // e.g. { pathwayId: "...", badgeId: "...", message: "..." }
+  isActive: boolean("is_active").notNull().default(true),
+  requiresApproval: boolean("requires_approval").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Assignment Plans — week-by-week curriculum builder
+export const educationAssignmentPlans = pgTable("education_assignment_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  createdByUserId: varchar("created_by_user_id").notNull(),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  weeks: jsonb("weeks").notNull().default([]),
+  // [{ week: 1, pathwayId: "...", title: "Nutrition Foundations", notes: "..." }]
+  assignedToType: varchar("assigned_to_type").notNull().default("all_athletes"),
+  // "all_athletes" | "team" | "individual"
+  athleteUserId: varchar("athlete_user_id"),
+  teamId: varchar("team_id"),
+  status: varchar("status").notNull().default("draft"),
+  // "draft" | "active" | "completed" | "paused"
+  startDate: timestamp("start_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Badge Definitions
+export const educationBadges = pgTable("education_badges", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id"),
+  // null = system/default badge available to all orgs
+  pathwayId: varchar("pathway_id"),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  icon: varchar("icon").notNull().default("trophy"),
+  color: varchar("color").notNull().default("amber"),
+  // "amber" | "emerald" | "blue" | "violet" | "rose" | "cyan"
+  criteria: varchar("criteria").notNull().default("pathway_completed"),
+  // "pathway_completed" | "quiz_perfect" | "all_modules"
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Athlete Earned Badges
+export const educationAthleteBadges = pgTable("education_athlete_badges", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  badgeId: varchar("badge_id").notNull(),
+  pathwayId: varchar("pathway_id"),
+  earnedAt: timestamp("earned_at").notNull().defaultNow(),
+  metadata: jsonb("metadata").notNull().default({}),
+});
+
+// AI Recommendations — coach must approve before assignment
+export const educationAiRecommendations = pgTable("education_ai_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  pathwayId: varchar("pathway_id").notNull(),
+  reasoning: text("reasoning").notNull(),
+  triggerContext: jsonb("trigger_context").notNull().default({}),
+  // { readinessScore, quizScore, missedSessions, triggerType }
+  status: varchar("status").notNull().default("pending"),
+  // "pending" | "approved" | "rejected" | "expired"
+  reviewedByUserId: varchar("reviewed_by_user_id"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type EducationRule = typeof educationRules.$inferSelect;
+export type EducationAssignmentPlan = typeof educationAssignmentPlans.$inferSelect;
+export type EducationBadge = typeof educationBadges.$inferSelect;
+export type EducationAthleteBadge = typeof educationAthleteBadges.$inferSelect;
+export type EducationAiRecommendation = typeof educationAiRecommendations.$inferSelect;
+
 // ─── Parent / Guardian Portal ─────────────────────────────────────────────────
 
 export const parentGuardians = pgTable("parent_guardians", {

@@ -1,0 +1,100 @@
+Build Advanced Education System Phase 2 for TrainEfficiency.
+
+GOAL:
+Evolve Education from static pathways into an adaptive coach-controlled learning system.
+
+Add:
+
+1. Smart Assignments
+- assign pathway by team
+- assign by athlete
+- assign by role/sport
+- assign by trigger/event
+Examples:
+- low readiness → Recovery pathway
+- missed workouts → Training Habits pathway
+- nutrition quiz failed → Nutrition Foundations reminder
+- new athlete joined → onboarding pathway
+
+2. Education Rules Engine
+Create rules:
+- IF athlete joins team → assign Team Standards
+- IF readiness low 3 times in 7 days → assign Recovery & Sleep
+- IF hydration quiz failed twice → notify coach
+- IF athlete completes all modules → award badge
+- IF pathway overdue → send reminder
+
+3. Coach Assignment Plans
+Allow coaches to build an education plan:
+- Week 1: Nutrition Foundations
+- Week 2: Hydration
+- Week 3: Recovery & Sleep
+- Week 4: Mindset & Team Standards
+
+4. AI Assignment Suggestions
+AI recommends pathways based on:
+- PR data
+- workout completion
+- readiness
+- coach notes
+- quiz history
+- missed sessions
+
+Coach must approve before assignment.
+
+5. Athlete Badges / Certificates
+Add completion badges:
+- Fueling Certified
+- Recovery Ready
+- Team Standards Complete
+- Recruiting Ready
+
+Optional PDF certificate later.
+
+6. Coach Dashboard Enhancements
+Show:
+- athletes behind
+- failed quizzes
+- overdue modules
+- pathway completion by team
+- recommended interventions
+- education compliance score
+
+7. Education Notifications
+Automate:
+- pathway assigned
+- module unlocked
+- quiz failed
+- pathway overdue
+- badge earned
+- coach review needed
+
+8. Education Timeline Integration
+Log:
+- pathway assigned
+- module started
+- quiz passed/failed
+- pathway completed
+- badge earned
+
+9. Database Additions
+Create:
+education_rules
+education_assignment_plans
+education_badges
+education_certificates
+education_ai_recommendations
+
+10. UI Requirements
+- TrainEfficiency dark premium style
+- mobile-first
+- coach-controlled AI
+- clear athlete progress
+- no overwhelming admin screens
+
+IMPORTANT:
+AI should suggest, not auto-assign, unless coach enables a rule.
+Education remains coach-approved and org-scoped.
+
+Goal:
+Education becomes an adaptive learning layer connected to athlete behavior, readiness, workouts, and team culture.
