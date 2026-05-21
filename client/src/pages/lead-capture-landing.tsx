@@ -134,6 +134,10 @@ function StepCard({ children, className = "" }: { children: React.ReactNode; cla
   );
 }
 
+function generateSessionId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 export default function LeadCaptureLanding() {
   const { orgSlug, programSlug } = useParams<{ orgSlug: string; programSlug: string }>();
   const { toast } = useToast();
@@ -143,6 +147,7 @@ export default function LeadCaptureLanding() {
   const [submitted, setSubmitted] = useState(false);
   const [abandonedId, setAbandonedId] = useState<string | null>(null);
   const partialSavedRef = useRef(false);
+  const sessionIdRef = useRef(generateSessionId());
   const utm = useUtmParams();
 
   const TOTAL_STEPS = 5;
@@ -151,6 +156,27 @@ export default function LeadCaptureLanding() {
     queryKey: [`/api/public/lead-capture/${orgSlug}/${programSlug}`],
     enabled: !!orgSlug && !!programSlug,
   });
+
+  // Track funnel event silently
+  const trackFunnelEvent = (eventType: string) => {
+    if (!orgSlug || !programSlug) return;
+    fetch(`/api/public/lead-capture/${orgSlug}/${programSlug}/funnel-event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventType,
+        sessionId: sessionIdRef.current,
+        utmSource: utm.utmSource || null,
+        utmMedium: utm.utmMedium || null,
+        utmCampaign: utm.utmCampaign || null,
+      }),
+    }).catch(() => {});
+  };
+
+  // Fire page_view once program data is loaded
+  useEffect(() => {
+    if (data) trackFunnelEvent("page_view");
+  }, [data?.program?.id]);
 
   // Inject Meta Pixel if configured
   useEffect(() => {
@@ -248,6 +274,8 @@ export default function LeadCaptureLanding() {
       toast({ title: "Please fill in required fields", variant: "destructive" });
       return;
     }
+    // Fire funnel step event
+    trackFunnelEvent(`step_${step}`);
     // Save partial capture after completing Step 1 (fire once)
     if (step === 1 && !partialSavedRef.current && form.athleteName.trim() && form.email.trim()) {
       partialSavedRef.current = true;

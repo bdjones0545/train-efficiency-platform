@@ -54,14 +54,36 @@ import { MapPin } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { clearAuthToken } from "@/lib/authToken";
 
+type FunnelData = {
+  pageViews: number;
+  step1Starts: number;
+  partialCaptures: number;
+  completedApplications: number;
+  abandonmentRate: number;
+  completionRate: number;
+  highIntentRate: number;
+  movedToDealRate: number;
+  utmBreakdown: { source: string; views: number }[];
+  funnel: { label: string; value: number; key: string }[];
+};
+
 function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: string; orgSlug?: string; programSlug: string }) {
+  const [showFunnel, setShowFunnel] = useState(false);
+
   const { data: stats } = useQuery<{ total: number; highIntent: number; conversionRate: number; lastSubmission: string | null }>({
     queryKey: [`/api/lead-capture/programs/${programId}/stats`],
     enabled: !!programId,
     refetchInterval: 30000,
   });
 
+  const { data: funnel } = useQuery<FunnelData>({
+    queryKey: [`/api/lead-capture/programs/${programId}/funnel`],
+    enabled: showFunnel,
+  });
+
   const publicUrl = `/apply/${orgSlug}/${programSlug}`;
+
+  const funnelMax = funnel ? Math.max(...funnel.funnel.map((s) => s.value), 1) : 1;
 
   return (
     <div className="space-y-3">
@@ -83,6 +105,7 @@ function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: stri
           <p className="text-xs text-muted-foreground">Last Lead</p>
         </div>
       </div>
+
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <TrendingUp className="h-3 w-3 text-orange-400" />
         <span>Public URL:</span>
@@ -95,7 +118,87 @@ function LeadCaptureStats({ programId, orgSlug, programSlug }: { programId: stri
         >
           {publicUrl}
         </a>
+        <button
+          onClick={() => setShowFunnel((v) => !v)}
+          className="ml-auto text-orange-500 hover:text-orange-600 flex items-center gap-1 font-medium"
+          data-testid={`button-toggle-funnel-${programId}`}
+        >
+          <BarChart2 className="h-3 w-3" />
+          {showFunnel ? "Hide" : "Funnel"}
+        </button>
       </div>
+
+      {showFunnel && funnel && (
+        <div className="border border-orange-500/20 rounded-xl p-4 space-y-4 bg-orange-500/3">
+          <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+            <BarChart2 className="h-3.5 w-3.5" /> Conversion Funnel
+          </p>
+
+          {/* Funnel bars */}
+          <div className="space-y-2.5">
+            {funnel.funnel.map((step, i) => (
+              <div key={step.key} data-testid={`funnel-step-${step.key}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-muted-foreground">{step.label}</span>
+                  <span className="text-xs font-semibold">{step.value.toLocaleString()}</span>
+                </div>
+                <div className="h-5 bg-muted/40 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      i === 0 ? "bg-blue-500" :
+                      i === 1 ? "bg-violet-500" :
+                      i === 2 ? "bg-orange-500" :
+                      i === 3 ? "bg-green-500" : "bg-amber-500"
+                    }`}
+                    style={{ width: `${(step.value / funnelMax) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Key metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="text-center">
+              <p className="text-base font-bold text-orange-500">{funnel.completionRate}%</p>
+              <p className="text-xs text-muted-foreground">Completion Rate</p>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-red-500">{funnel.abandonmentRate}%</p>
+              <p className="text-xs text-muted-foreground">Abandonment</p>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-green-500">{funnel.highIntentRate}%</p>
+              <p className="text-xs text-muted-foreground">High-Intent Rate</p>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-violet-500">{funnel.pageViews.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground">Page Views</p>
+            </div>
+          </div>
+
+          {/* UTM source breakdown */}
+          {funnel.utmBreakdown.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Traffic sources</p>
+              <div className="space-y-1">
+                {funnel.utmBreakdown.slice(0, 5).map((u, i) => (
+                  <div key={u.source} className="flex items-center gap-2 text-xs" data-testid={`utm-source-${i}`}>
+                    <span className="w-20 truncate text-muted-foreground capitalize">{u.source}</span>
+                    <div className="flex-1 h-3 bg-muted/40 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500/70 rounded-full"
+                        style={{ width: `${(u.views / (funnel.utmBreakdown[0]?.views || 1)) * 100}%` }}
+                      />
+                    </div>
+                    <span className="w-6 text-right font-medium">{u.views}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

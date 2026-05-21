@@ -13074,6 +13074,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { initializeFollowUpCron } = await import("./email-agent/follow-up-cron");
   initializeFollowUpCron();
 
+  const { initializeLeadCaptureSequenceCron } = await import("./lead-capture-sequences");
+  initializeLeadCaptureSequenceCron();
+
   // Revenue Agent daily cron
   const { startRevenueAgentCron } = await import("./revenue-agent");
   startRevenueAgentCron(async () => {
@@ -13723,6 +13726,173 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
     }
   });
 
+  // Public: track funnel events (page_view, step_1 … step_4, submit)
+  app.post("/api/public/lead-capture/:orgSlug/:programSlug/funnel-event", async (req, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.orgSlug);
+      if (!org) return res.status(404).json({ message: "Not found" });
+      const program = await storage.getAthleticProgramBySlug(org.id, req.params.programSlug);
+      if (!program) return res.status(404).json({ message: "Not found" });
+      const { eventType, sessionId, utmSource, utmMedium, utmCampaign } = req.body;
+      if (!eventType) return res.status(400).json({ message: "eventType required" });
+      const { db } = await import("./db");
+      const { leadCaptureFunnelEvents } = await import("@shared/schema");
+      await db.insert(leadCaptureFunnelEvents).values({
+        orgId: org.id,
+        programId: program.id,
+        eventType,
+        sessionId: sessionId || null,
+        utmSource: utmSource || null,
+        utmMedium: utmMedium || null,
+        utmCampaign: utmCampaign || null,
+      });
+      res.json({ ok: true });
+    } catch (_) { res.json({ ok: false }); }
+  });
+
+  // Admin: funnel analytics for a program
+  app.get("/api/lead-capture/programs/:programId/funnel", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureFunnelEvents, leadCaptureSubmissions, leadCaptureAbandoned } = await import("@shared/schema");
+      const { eq, and, gte, count, desc, sql: drizzleSql } = await import("drizzle-orm");
+      const programId = req.params.programId;
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const events = await db.select().from(leadCaptureFunnelEvents)
+        .where(and(eq(leadCaptureFunnelEvents.orgId, profile.organizationId), eq(leadCaptureFunnelEvents.programId, programId)));
+
+      const countByType = (type: string) => events.filter((e: any) => e.eventType === type).length;
+      const pageViews = countByType("page_view");
+      const step1 = countByType("step_1");
+      const partials = await db.select().from(leadCaptureAbandoned).where(and(eq(leadCaptureAbandoned.orgId, profile.organizationId), eq(leadCaptureAbandoned.programId, programId)));
+      const submissions = await db.select().from(leadCaptureSubmissions).where(and(eq(leadCaptureSubmissions.orgId, profile.organizationId), eq(leadCaptureSubmissions.programId, programId)));
+      const completed = submissions.length;
+      const abandoned = partials.filter((p: any) => !p.completedAt).length;
+      const highIntent = submissions.filter((s: any) => (s.aiQualificationScore ?? 0) >= 70).length;
+      const movedToDeal = submissions.filter((s: any) => s.sequenceStatus === "moved_to_deal").length;
+
+      // UTM source breakdown
+      const utmMap: Record<string, number> = {};
+      for (const e of events.filter((e: any) => e.eventType === "page_view" && e.utmSource)) {
+        utmMap[(e as any).utmSource!] = (utmMap[(e as any).utmSource!] || 0) + 1;
+      }
+      const utmBreakdown = Object.entries(utmMap).sort((a, b) => b[1] - a[1]).map(([source, views]) => ({ source, views }));
+
+      res.json({
+        pageViews,
+        step1Starts: step1,
+        partialCaptures: partials.length,
+        completedApplications: completed,
+        abandonmentRate: step1 > 0 ? Math.round(((step1 - completed) / step1) * 100) : 0,
+        completionRate: step1 > 0 ? Math.round((completed / step1) * 100) : 0,
+        highIntentRate: completed > 0 ? Math.round((highIntent / completed) * 100) : 0,
+        movedToDealRate: completed > 0 ? Math.round((movedToDeal / completed) * 100) : 0,
+        utmBreakdown,
+        funnel: [
+          { label: "Page Views", value: pageViews, key: "page_view" },
+          { label: "Step 1 Starts", value: step1, key: "step_1" },
+          { label: "Partial Captures", value: partials.length, key: "partial" },
+          { label: "Completed Apps", value: completed, key: "submit" },
+          { label: "High Intent", value: highIntent, key: "high_intent" },
+        ],
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch funnel" });
+    }
+  });
+
+  // Admin: send manual follow-up to a submission
+  app.post("/api/lead-capture/submissions/:id/send-followup", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [sub] = await db.select().from(leadCaptureSubmissions).where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)));
+      if (!sub) return res.status(404).json({ message: "Not found" });
+      const program = await storage.getAthleticProgramById(sub.programId);
+      const org = await storage.getOrganizationById(sub.orgId);
+      if (!program || !org) return res.status(404).json({ message: "Program/org not found" });
+      const owner = org.ownerUserId ? await storage.getUser(org.ownerUserId) : null;
+      const coachName = owner?.firstName ? `${owner.firstName} ${owner.lastName || ""}`.trim() : "Coach";
+      const step = req.body.step || "followup_24hr";
+      const { sendSubmissionFollowUp } = await import("./lead-capture-sequences");
+      const sent = await sendSubmissionFollowUp({ submissionId: sub.id, step, orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+      if (sent) {
+        await db.update(leadCaptureSubmissions).set({ lastFollowUpAt: new Date(), followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
+      }
+      res.json({ success: sent });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to send follow-up" });
+    }
+  });
+
+  // Admin: start full sequence for a submission
+  app.post("/api/lead-capture/submissions/:id/start-sequence", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [sub] = await db.select().from(leadCaptureSubmissions).where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)));
+      if (!sub) return res.status(404).json({ message: "Not found" });
+      await db.update(leadCaptureSubmissions).set({ sequenceStatus: "pending" }).where(eq(leadCaptureSubmissions.id, sub.id));
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to start sequence" });
+    }
+  });
+
+  // Admin: mark a submission as contacted
+  app.post("/api/lead-capture/submissions/:id/mark-contacted", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      await db.update(leadCaptureSubmissions).set({ contactedAt: new Date(), sequenceStatus: "contacted" }).where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)));
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark contacted" });
+    }
+  });
+
+  // Admin: send recovery message to an abandoned lead (manual)
+  app.post("/api/lead-capture/abandoned/:id/recover", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureAbandoned } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [ab] = await db.select().from(leadCaptureAbandoned).where(and(eq(leadCaptureAbandoned.id, req.params.id), eq(leadCaptureAbandoned.orgId, profile.organizationId)));
+      if (!ab) return res.status(404).json({ message: "Not found" });
+      const program = await storage.getAthleticProgramById(ab.programId);
+      const org = await storage.getOrganizationById(ab.orgId);
+      if (!program || !org) return res.status(404).json({ message: "Program/org not found" });
+      const { sendAbandonedRecovery } = await import("./lead-capture-sequences");
+      const step = req.body.step || "recovery_30min";
+      const sent = await sendAbandonedRecovery({ abandonedId: ab.id, step, orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
+      if (sent) {
+        await db.update(leadCaptureAbandoned).set({ contactedAt: new Date(), followupSentAt: new Date(), followupCount: (ab.followupCount ?? 0) + 1 }).where(eq(leadCaptureAbandoned.id, ab.id));
+      }
+      res.json({ success: sent });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to send recovery" });
+    }
+  });
+
   // Admin: get abandoned (partial) lead capture submissions
   app.get("/api/lead-capture/abandoned", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -13750,24 +13920,77 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
       const { db } = await import("./db");
       const { leadCaptureSubmissions, leadCaptureAbandoned } = await import("@shared/schema");
-      const { eq, and, gte, isNull, desc } = await import("drizzle-orm");
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+      const { eq, and, isNull, desc } = await import("drizzle-orm");
+      const now = new Date();
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
       const allSubs = await db.select().from(leadCaptureSubmissions)
         .where(eq(leadCaptureSubmissions.orgId, profile.organizationId))
         .orderBy(desc(leadCaptureSubmissions.createdAt))
         .limit(200);
+
       const newToday = allSubs.filter((s: any) => s.createdAt && new Date(s.createdAt) >= todayStart).length;
       const highIntent = allSubs.filter((s: any) => (s.aiQualificationScore ?? 0) >= 70).length;
-      const recentLeads = allSubs.slice(0, 10);
-      const abandonedCount = await db.select().from(leadCaptureAbandoned)
-        .where(and(eq(leadCaptureAbandoned.orgId, profile.organizationId), isNull(leadCaptureAbandoned.completedAt)));
+      const hotNotContacted = allSubs.filter((s: any) => (s.aiQualificationScore ?? 0) >= 75 && !s.contactedAt);
+      const needsFollowUp = allSubs.filter((s: any) => !s.contactedAt && s.createdAt && new Date(s.createdAt) <= oneDayAgo && (s.sequenceStatus === "pending" || !s.sequenceStatus));
+
+      const abandonedRows = await db.select().from(leadCaptureAbandoned)
+        .where(and(eq(leadCaptureAbandoned.orgId, profile.organizationId), isNull(leadCaptureAbandoned.completedAt)))
+        .orderBy(desc(leadCaptureAbandoned.createdAt))
+        .limit(20);
+
+      const abandonedToday = abandonedRows.filter((a: any) => a.createdAt && new Date(a.createdAt) >= todayStart).length;
+
+      // UTM source performance this week
+      const weekSubs = allSubs.filter((s: any) => s.createdAt && new Date(s.createdAt) >= weekStart);
+      const utmMap: Record<string, number> = {};
+      for (const s of weekSubs) {
+        const src = (s as any).utmSource || "direct";
+        utmMap[src] = (utmMap[src] || 0) + 1;
+      }
+      const bestSourceThisWeek = Object.entries(utmMap).sort((a, b) => b[1] - a[1])[0];
+
+      // Estimated pipeline value (high-intent × avg session ~$300)
+      const estimatedPipelineValue = highIntent * 300 * 100; // cents
+
+      // Build enriched recent leads with AI next action
+      const recentLeads = allSubs.slice(0, 15).map((s: any) => {
+        const ageHours = (now.getTime() - new Date(s.createdAt).getTime()) / (60 * 60 * 1000);
+        const score = s.aiQualificationScore ?? 0;
+        const isHot = score >= 75;
+        const isContacted = !!s.contactedAt;
+        const needsAction = !isContacted && ageHours > 24;
+
+        let aiNextAction = s.aiNextAction;
+        if (!aiNextAction) {
+          if (isHot && !isContacted && ageHours < 2) aiNextAction = "🔥 Call now — high-intent lead just submitted";
+          else if (isHot && !isContacted) aiNextAction = "📞 Hot lead uncontacted — call or text immediately";
+          else if (!isContacted && ageHours > 48) aiNextAction = "Send 3-day nurture email — lead going cold";
+          else if (!isContacted && ageHours > 24) aiNextAction = "Send 24-hour follow-up — no contact yet";
+          else if (s.commitmentLevel === "Ready to start immediately") aiNextAction = "Book evaluation call — athlete is ready to start";
+          else if (s.commitmentLevel === "Ready to start this month") aiNextAction = "Schedule this week — athlete ready to commit";
+          else if (isContacted) aiNextAction = "Monitor — contacted, await response";
+          else aiNextAction = "Send intro follow-up email";
+        }
+
+        const isAbandonedRisk = !isContacted && ageHours > 72;
+        return { ...s, aiNextAction, isHot, isContacted, needsAction, isAbandonedRisk, ageHours: Math.round(ageHours) };
+      });
+
       res.json({
         totalSubmissions: allSubs.length,
         newToday,
         highIntent,
-        abandonedCount: abandonedCount.length,
+        abandonedCount: abandonedRows.length,
+        abandonedToday,
+        hotNotContacted: hotNotContacted.length,
+        needsFollowUp: needsFollowUp.length,
+        bestSourceThisWeek: bestSourceThisWeek ? { source: bestSourceThisWeek[0], count: bestSourceThisWeek[1] } : null,
+        estimatedPipelineValue,
         recentLeads,
+        abandonedLeads: abandonedRows.slice(0, 5),
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch lead capture summary" });

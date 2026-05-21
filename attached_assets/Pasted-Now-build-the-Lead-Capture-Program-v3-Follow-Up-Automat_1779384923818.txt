@@ -1,0 +1,74 @@
+Now build the Lead Capture Program v3: Follow-Up Automation + Funnel Intelligence.
+
+Do not rebuild the existing system. Extend it surgically.
+
+Goals:
+1. Convert more submitted applications into booked evaluations.
+2. Recover abandoned applications.
+3. Give the org owner clear funnel intelligence.
+
+Add:
+
+FOLLOW-UP AUTOMATION
+- Create automated follow-up sequences for lead submissions.
+- Sequence templates:
+  - Immediate confirmation
+  - 1-hour follow-up for high-intent leads
+  - 24-hour follow-up if no action taken
+  - 3-day nurture follow-up
+  - abandoned application recovery
+- Support email and SMS channels.
+- Respect communication preferences and opt-out fields.
+- Log every follow-up in the existing communication/outreach logs if available.
+
+ABANDONED APPLICATION RECOVERY
+- Add one-click “Send Recovery Message” on abandoned leads.
+- Add automated recovery sequence:
+  - 30 minutes after abandonment
+  - 24 hours later
+- Message should include the public application link with UTM recovery parameters.
+
+FUNNEL INTELLIGENCE
+- Add funnel analytics per Lead Capture Program:
+  - page views
+  - Step 1 starts
+  - partial captures
+  - completed applications
+  - abandonment rate
+  - high-intent rate
+  - moved-to-deal rate
+  - source/UTM performance
+- Add a simple funnel visualization on the program stats page.
+
+COMMAND CENTER
+- Upgrade Program Application Leads card with:
+  - “Needs follow-up”
+  - “Hot leads not contacted”
+  - “Abandoned today”
+  - “Best source this week”
+  - “Estimated pipeline value”
+- Add one-click actions:
+  - Send follow-up
+  - Start sequence
+  - Mark contacted
+  - Move to Deal
+
+AI
+- Generate recommended next action for each lead based on:
+  - AI qualification score
+  - commitment level
+  - sport
+  - goals
+  - time since submission
+  - whether they abandoned or completed
+  - UTM source
+- Show recommendation in admin UI as a short sentence.
+
+UI/UX
+- Keep the dark glass TrainEfficiency design system.
+- Use orange/gold accent for Lead Capture.
+- Mobile-first for admin and public pages.
+- Add loading, empty, and error states.
+
+Important:
+This should feel like a revenue command system, not just a form dashboard.

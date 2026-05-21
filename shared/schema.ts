@@ -2789,6 +2789,32 @@ export const insertLeadCaptureSubmissionSchema = createInsertSchema(leadCaptureS
 export type LeadCaptureSubmission = typeof leadCaptureSubmissions.$inferSelect;
 export type InsertLeadCaptureSubmission = z.infer<typeof insertLeadCaptureSubmissionSchema>;
 
+export const leadCaptureFollowUps = pgTable("lead_capture_follow_ups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  submissionId: varchar("submission_id"),
+  abandonedId: varchar("abandoned_id"),
+  sequenceStep: varchar("sequence_step").notNull(),
+  channel: varchar("channel").notNull().default("email"),
+  status: varchar("status").notNull().default("sent"),
+  subject: varchar("subject"),
+  body: text("body"),
+  sentAt: timestamp("sent_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const leadCaptureFunnelEvents = pgTable("lead_capture_funnel_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  eventType: varchar("event_type").notNull(),
+  sessionId: varchar("session_id"),
+  utmSource: varchar("utm_source"),
+  utmMedium: varchar("utm_medium"),
+  utmCampaign: varchar("utm_campaign"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // ─── Coach Daily Briefings ────────────────────────────────────────────────────
 
 export const coachDailyBriefings = pgTable("coach_daily_briefings", {

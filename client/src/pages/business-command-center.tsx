@@ -2245,44 +2245,100 @@ function AiRevenuePanel() {
   );
 }
 
-// ─── Program Leads Panel ──────────────────────────────────────────────────────
+// ─── Program Leads Panel v3 ───────────────────────────────────────────────────
+
+type ProgramLead = {
+  id: string;
+  athleteName: string;
+  email: string;
+  phone: string | null;
+  sport: string | null;
+  school: string | null;
+  aiQualificationScore: number | null;
+  commitmentLevel: string | null;
+  utmSource: string | null;
+  createdAt: string;
+  contactedAt: string | null;
+  lastFollowUpAt: string | null;
+  followUpCount: number | null;
+  sequenceStatus: string | null;
+  aiNextAction: string | null;
+  isHot: boolean;
+  isContacted: boolean;
+  needsAction: boolean;
+  isAbandonedRisk: boolean;
+  ageHours: number;
+};
+
+type AbandonedLead = {
+  id: string;
+  athleteName: string;
+  email: string;
+  phone: string | null;
+  utmSource: string | null;
+  createdAt: string;
+  followupCount: number | null;
+  recoverySequenceStatus: string | null;
+};
 
 type ProgramLeadsSummary = {
   totalSubmissions: number;
   newToday: number;
   highIntent: number;
   abandonedCount: number;
-  recentLeads: {
-    id: string;
-    athleteName: string;
-    email: string;
-    phone: string | null;
-    sport: string | null;
-    school: string | null;
-    aiQualificationScore: number | null;
-    commitmentLevel: string | null;
-    utmSource: string | null;
-    createdAt: string;
-  }[];
+  abandonedToday: number;
+  hotNotContacted: number;
+  needsFollowUp: number;
+  bestSourceThisWeek: { source: string; count: number } | null;
+  estimatedPipelineValue: number;
+  recentLeads: ProgramLead[];
+  abandonedLeads: AbandonedLead[];
 };
 
 function ProgramLeadsPanel() {
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<"hot" | "followup" | "abandoned" | "all">("all");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const { data, isLoading, refetch } = useQuery<ProgramLeadsSummary>({
     queryKey: ["/api/lead-capture/command-center-summary"],
     refetchInterval: 60000,
   });
 
-  const moveToDealMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiRequest("POST", `/api/lead-capture/submissions/${id}/move-to-deal`, {}).then((r) => r.json()),
-    onSuccess: () => {
-      toast({ title: "Moved to Deal Pipeline", description: "Lead added to Team Training prospects." });
-      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/command-center-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/business-command-center"] });
-    },
-    onError: () => toast({ title: "Failed to move to deal", variant: "destructive" }),
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/command-center-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/business-command-center"] });
+  };
+
+  const moveToDeal = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/move-to-deal`, {}).then((r) => r.json()),
+    onSuccess: () => { toast({ title: "Moved to Deal Pipeline" }); invalidate(); },
+    onError: () => toast({ title: "Failed", variant: "destructive" }),
+  });
+
+  const sendFollowUp = useMutation({
+    mutationFn: ({ id, step }: { id: string; step: string }) =>
+      apiRequest("POST", `/api/lead-capture/submissions/${id}/send-followup`, { step }).then((r) => r.json()),
+    onSuccess: () => { toast({ title: "Follow-up sent" }); invalidate(); setPendingAction(null); },
+    onError: () => toast({ title: "Failed to send", variant: "destructive" }),
+  });
+
+  const startSequence = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/start-sequence`, {}).then((r) => r.json()),
+    onSuccess: () => { toast({ title: "Sequence started", description: "Automated follow-ups will send based on the schedule." }); invalidate(); },
+    onError: () => toast({ title: "Failed", variant: "destructive" }),
+  });
+
+  const markContacted = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/mark-contacted`, {}).then((r) => r.json()),
+    onSuccess: () => { toast({ title: "Marked as contacted" }); invalidate(); },
+    onError: () => toast({ title: "Failed", variant: "destructive" }),
+  });
+
+  const recoverAbandoned = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/abandoned/${id}/recover`, { step: "recovery_30min" }).then((r) => r.json()),
+    onSuccess: () => { toast({ title: "Recovery email sent" }); invalidate(); },
+    onError: () => toast({ title: "Failed to send", variant: "destructive" }),
   });
 
   if (isLoading) return null;
@@ -2304,16 +2360,29 @@ function ProgramLeadsPanel() {
 
   const scoreBadge = (score: number | null) => {
     if (!score) return null;
-    const cls = score >= 80
-      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-      : score >= 60
-      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+    const cls = score >= 80 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+      : score >= 60 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
       : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
     return <Badge className={`text-xs ${cls}`}>{score}/100</Badge>;
   };
 
+  const filteredLeads = (() => {
+    if (!data.recentLeads) return [];
+    if (activeTab === "hot") return data.recentLeads.filter((l) => l.isHot && !l.isContacted);
+    if (activeTab === "followup") return data.recentLeads.filter((l) => l.needsAction);
+    return data.recentLeads;
+  })();
+
+  const tabs: { key: typeof activeTab; label: string; count: number; cls: string }[] = [
+    { key: "all", label: "All", count: data.totalSubmissions, cls: "" },
+    { key: "hot", label: "🔥 Hot", count: data.hotNotContacted, cls: "text-orange-600 dark:text-orange-400" },
+    { key: "followup", label: "⏰ Needs Follow-up", count: data.needsFollowUp, cls: "text-yellow-600 dark:text-yellow-400" },
+    { key: "abandoned", label: "↩ Abandoned", count: data.abandonedCount, cls: "text-blue-600 dark:text-blue-400" },
+  ];
+
   return (
     <section data-testid="section-program-leads">
+      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
           <Flame className="h-4 w-4 text-orange-500" />
@@ -2329,88 +2398,205 @@ function ProgramLeadsPanel() {
         </Button>
       </div>
 
-      {/* Stats row */}
+      {/* Intelligence strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-        <Card className="p-3 text-center" data-testid="card-leads-total">
-          <p className="text-lg font-bold">{data.totalSubmissions}</p>
-          <p className="text-xs text-muted-foreground">Total Apps</p>
+        <Card className="p-3 text-center border-orange-500/20" data-testid="card-leads-hot">
+          <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{data.hotNotContacted}</p>
+          <p className="text-xs text-muted-foreground">Hot Uncontacted</p>
         </Card>
-        <Card className="p-3 text-center" data-testid="card-leads-today">
-          <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{data.newToday}</p>
-          <p className="text-xs text-muted-foreground">Today</p>
+        <Card className="p-3 text-center border-yellow-500/20" data-testid="card-leads-followup">
+          <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{data.needsFollowUp}</p>
+          <p className="text-xs text-muted-foreground">Needs Follow-up</p>
         </Card>
-        <Card className="p-3 text-center" data-testid="card-leads-highintent">
-          <p className="text-lg font-bold text-green-600 dark:text-green-400">{data.highIntent}</p>
-          <p className="text-xs text-muted-foreground">High-Intent</p>
+        <Card className="p-3 text-center" data-testid="card-leads-abandoned-today">
+          <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{data.abandonedToday}</p>
+          <p className="text-xs text-muted-foreground">Abandoned Today</p>
         </Card>
-        <Card className="p-3 text-center" data-testid="card-leads-abandoned">
-          <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{data.abandonedCount}</p>
-          <p className="text-xs text-muted-foreground">Abandoned</p>
+        <Card className="p-3 text-center border-green-500/20" data-testid="card-leads-pipeline">
+          <p className="text-sm font-bold text-green-600 dark:text-green-400">
+            ${((data.estimatedPipelineValue || 0) / 100).toLocaleString()}
+          </p>
+          <p className="text-xs text-muted-foreground">Est. Pipeline</p>
         </Card>
       </div>
 
-      {/* Recent leads list */}
-      {data.recentLeads.length > 0 && (
-        <div className="space-y-2" data-testid="list-program-leads">
-          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-            <Users className="h-3.5 w-3.5" /> Recent applications
-          </p>
-          {data.recentLeads.map((lead, i) => (
-            <Card key={lead.id} className="p-3" data-testid={`card-program-lead-${i}`}>
-              <div className="flex items-start gap-3">
+      {/* Best source this week */}
+      {data.bestSourceThisWeek && (
+        <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
+          <TrendingUp className="h-3.5 w-3.5 text-green-500" />
+          <span>Best source this week: <span className="text-foreground font-medium">{data.bestSourceThisWeek.source}</span> — {data.bestSourceThisWeek.count} leads</span>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-3 overflow-x-auto pb-1">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === t.key
+                ? "bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/30"
+                : "bg-muted/50 text-muted-foreground hover:bg-muted"
+            }`}
+            data-testid={`tab-leads-${t.key}`}
+          >
+            {t.label} {t.count > 0 && <span className="ml-1 opacity-70">{t.count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Abandoned tab */}
+      {activeTab === "abandoned" && (
+        <div className="space-y-2" data-testid="list-abandoned-leads">
+          {data.abandonedLeads.length === 0 ? (
+            <Card className="p-4 text-center text-sm text-muted-foreground">No abandoned applications</Card>
+          ) : data.abandonedLeads.map((ab, i) => (
+            <Card key={ab.id} className="p-3 border-blue-500/20" data-testid={`card-abandoned-${i}`}>
+              <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold">{lead.athleteName}</p>
-                    {scoreBadge(lead.aiQualificationScore)}
-                    {lead.aiQualificationScore && lead.aiQualificationScore >= 80 && (
-                      <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">🔥 Hot</Badge>
+                  <p className="text-sm font-semibold">{ab.athleteName}</p>
+                  <p className="text-xs text-muted-foreground">{ab.email}</p>
+                  {ab.utmSource && <p className="text-xs text-blue-500 mt-0.5">via {ab.utmSource}</p>}
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {ab.createdAt ? new Date(ab.createdAt).toLocaleDateString() : ""}
+                    {ab.followupCount ? ` · ${ab.followupCount} recovery sent` : ""}
+                  </p>
+                </div>
+                <div className="shrink-0 flex gap-1">
+                  {ab.phone && (
+                    <a href={`tel:${ab.phone}`}><Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Call"><span className="text-xs">📞</span></Button></a>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => recoverAbandoned.mutate(ab.id)}
+                    disabled={recoverAbandoned.isPending}
+                    data-testid={`button-recover-${i}`}
+                  >
+                    <Send className="h-3 w-3 mr-1" />
+                    Recover
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Submissions tabs (all / hot / followup) */}
+      {activeTab !== "abandoned" && (
+        <div className="space-y-2" data-testid="list-program-leads">
+          {filteredLeads.length === 0 ? (
+            <Card className="p-4 text-center text-sm text-muted-foreground">No leads in this view</Card>
+          ) : filteredLeads.map((lead, i) => (
+            <Card
+              key={lead.id}
+              className={`p-3 transition-colors ${lead.isHot && !lead.isContacted ? "border-orange-500/30 bg-orange-500/3" : lead.needsAction ? "border-yellow-500/20" : ""}`}
+              data-testid={`card-program-lead-${i}`}
+            >
+              <div className="space-y-2">
+                {/* Top row */}
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold">{lead.athleteName}</p>
+                      {scoreBadge(lead.aiQualificationScore)}
+                      {lead.isHot && !lead.isContacted && (
+                        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs">🔥 Hot</Badge>
+                      )}
+                      {lead.isContacted && (
+                        <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">✓ Contacted</Badge>
+                      )}
+                      {lead.needsAction && !lead.isContacted && (
+                        <Badge className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">⏰ Follow-up</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {[lead.sport, lead.school].filter(Boolean).join(" · ")}
+                      {lead.utmSource && <span className="ml-2 text-blue-500">via {lead.utmSource}</span>}
+                    </p>
+                    {lead.commitmentLevel && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Commitment: <span className="text-foreground">{lead.commitmentLevel}</span>
+                      </p>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {[lead.sport, lead.school].filter(Boolean).join(" · ")}
-                    {lead.utmSource && <span className="ml-2 text-blue-500">via {lead.utmSource}</span>}
+                  <p className="text-xs text-muted-foreground shrink-0">
+                    {lead.ageHours < 24 ? `${Math.round(lead.ageHours)}h ago` : `${Math.round(lead.ageHours / 24)}d ago`}
                   </p>
-                  {lead.commitmentLevel && (
-                    <p className="text-xs text-muted-foreground mt-0.5">Commitment: <span className="text-foreground">{lead.commitmentLevel}</span></p>
-                  )}
                 </div>
-                <div className="shrink-0 flex flex-col gap-1 items-end">
-                  <div className="flex gap-1">
-                    {lead.phone && (
-                      <a href={`tel:${lead.phone}`} data-testid={`button-call-lead-${i}`}>
-                        <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Call">
-                          <span className="text-xs">📞</span>
-                        </Button>
-                      </a>
-                    )}
-                    {lead.phone && (
-                      <a href={`sms:${lead.phone}`} data-testid={`button-sms-lead-${i}`}>
-                        <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Text">
-                          <MessageSquare className="h-3 w-3" />
-                        </Button>
-                      </a>
-                    )}
-                    <a href={`mailto:${lead.email}`} data-testid={`button-email-lead-${i}`}>
-                      <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Email">
-                        <Send className="h-3 w-3" />
+
+                {/* AI Next Action */}
+                {lead.aiNextAction && (
+                  <div className="flex items-start gap-1.5 bg-amber-500/8 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
+                    <Sparkles className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">{lead.aiNextAction}</p>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex gap-1 flex-wrap">
+                  {lead.phone && (
+                    <a href={`tel:${lead.phone}`} data-testid={`button-call-lead-${i}`}>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs">📞 Call</Button>
+                    </a>
+                  )}
+                  {lead.phone && (
+                    <a href={`sms:${lead.phone}`} data-testid={`button-sms-lead-${i}`}>
+                      <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Text">
+                        <MessageSquare className="h-3 w-3" />
                       </Button>
                     </a>
+                  )}
+                  <a href={`mailto:${lead.email}`} data-testid={`button-email-lead-${i}`}>
+                    <Button size="sm" variant="outline" className="h-7 px-2 text-xs">
+                      <Send className="h-3 w-3 mr-1" />Email
+                    </Button>
+                  </a>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => sendFollowUp.mutate({ id: lead.id, step: "followup_24hr" })}
+                    disabled={sendFollowUp.isPending}
+                    data-testid={`button-followup-lead-${i}`}
+                  >
+                    <Zap className="h-3 w-3 mr-1" />Follow-up
+                  </Button>
+                  {lead.sequenceStatus === "pending" || !lead.sequenceStatus ? (
                     <Button
                       size="sm"
                       variant="outline"
                       className="h-7 px-2 text-xs"
-                      onClick={() => moveToDealMutation.mutate(lead.id)}
-                      disabled={moveToDealMutation.isPending}
-                      title="Move to Deal Pipeline"
-                      data-testid={`button-move-deal-${i}`}
+                      onClick={() => startSequence.mutate(lead.id)}
+                      disabled={startSequence.isPending}
+                      data-testid={`button-sequence-lead-${i}`}
                     >
-                      <ArrowRight className="h-3 w-3 mr-1" />
-                      Deal
+                      <Play className="h-3 w-3 mr-1" />Sequence
                     </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : ""}
-                  </p>
+                  ) : null}
+                  {!lead.isContacted && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs text-green-600"
+                      onClick={() => markContacted.mutate(lead.id)}
+                      disabled={markContacted.isPending}
+                      data-testid={`button-contacted-lead-${i}`}
+                    >
+                      <CheckCircle className="h-3 w-3 mr-1" />Contacted
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-7 px-2 text-xs bg-orange-500 hover:bg-orange-600 text-white"
+                    onClick={() => moveToDeal.mutate(lead.id)}
+                    disabled={moveToDeal.isPending}
+                    data-testid={`button-move-deal-${i}`}
+                  >
+                    <ArrowRight className="h-3 w-3 mr-1" />Deal
+                  </Button>
                 </div>
               </div>
             </Card>
