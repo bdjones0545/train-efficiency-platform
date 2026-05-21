@@ -216,36 +216,41 @@ export function registerOrgScheduleRoutes(app: Express) {
       // Lead capture funnels visible in the org menu
       const lcPrograms = programs.filter((p) => p.type === "lead_capture");
       let leadCaptureFunnels: any[] = [];
-      if (lcPrograms.length > 0) {
-        const lcConfigs = await db
-          .select({
-            programId: leadCapturePrograms.programId,
-            funnelType: leadCapturePrograms.funnelType,
-            subheadline: leadCapturePrograms.subheadline,
-            showInOrgMenu: leadCapturePrograms.showInOrgMenu,
-            navLabel: leadCapturePrograms.navLabel,
-            navOrder: leadCapturePrograms.navOrder,
-          })
-          .from(leadCapturePrograms)
-          .where(eq(leadCapturePrograms.organizationId, orgId));
+      try {
+        if (lcPrograms.length > 0) {
+          const lcConfigs = await db
+            .select({
+              programId: leadCapturePrograms.programId,
+              funnelType: leadCapturePrograms.funnelType,
+              subheadline: leadCapturePrograms.subheadline,
+              showInOrgMenu: leadCapturePrograms.showInOrgMenu,
+              navLabel: leadCapturePrograms.navLabel,
+              navOrder: leadCapturePrograms.navOrder,
+            })
+            .from(leadCapturePrograms)
+            .where(eq(leadCapturePrograms.organizationId, orgId));
 
-        const configMap = new Map(lcConfigs.map((c) => [c.programId, c]));
-        leadCaptureFunnels = lcPrograms
-          .map((p) => {
-            const cfg = configMap.get(p.id);
-            return {
-              id: p.id,
-              name: p.name,
-              slug: p.slug,
-              funnelType: cfg?.funnelType ?? "athlete_application",
-              subheadline: cfg?.subheadline ?? null,
-              showInOrgMenu: cfg?.showInOrgMenu ?? true,
-              navLabel: cfg?.navLabel ?? null,
-              navOrder: cfg?.navOrder ?? 0,
-            };
-          })
-          .filter((f) => f.showInOrgMenu)
-          .sort((a, b) => a.navOrder - b.navOrder || a.name.localeCompare(b.name));
+          const configMap = new Map(lcConfigs.map((c) => [c.programId, c]));
+          leadCaptureFunnels = lcPrograms
+            .map((p) => {
+              const cfg = configMap.get(p.id);
+              return {
+                id: p.id,
+                name: p.name,
+                slug: p.slug,
+                funnelType: cfg?.funnelType ?? "athlete_application",
+                subheadline: cfg?.subheadline ?? null,
+                showInOrgMenu: cfg?.showInOrgMenu ?? true,
+                navLabel: cfg?.navLabel ?? null,
+                navOrder: cfg?.navOrder ?? 0,
+              };
+            })
+            .filter((f) => f.showInOrgMenu)
+            .sort((a, b) => a.navOrder - b.navOrder || a.name.localeCompare(b.name));
+        }
+      } catch (_) {
+        // Column schema not yet migrated in this environment — return empty array
+        leadCaptureFunnels = [];
       }
 
       // Bookings

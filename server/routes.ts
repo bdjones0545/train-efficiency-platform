@@ -14223,11 +14223,19 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
           estimatedAthleteValueCents: estimatedAthleteValueCents !== undefined ? estimatedAthleteValueCents : existing.estimatedAthleteValueCents,
           extendedConfig: extendedConfig !== undefined ? extendedConfig : (existing.extendedConfig ?? {}),
           funnelType: funnelType ?? existing.funnelType ?? "athlete_application",
-          showInOrgMenu: req.body.showInOrgMenu !== undefined ? req.body.showInOrgMenu : existing.showInOrgMenu,
-          navLabel: req.body.navLabel !== undefined ? (req.body.navLabel || null) : existing.navLabel,
-          navOrder: req.body.navOrder !== undefined ? req.body.navOrder : existing.navOrder,
           updatedAt: new Date(),
         }).where(eq(leadCapturePrograms.programId, req.params.programId)).returning();
+        // Update new org-menu columns separately so a missing column in older prod schema
+        // doesn't break the entire save operation
+        try {
+          const orgMenuPatch: Record<string, any> = {};
+          if (req.body.showInOrgMenu !== undefined) orgMenuPatch.showInOrgMenu = req.body.showInOrgMenu;
+          if (req.body.navLabel !== undefined) orgMenuPatch.navLabel = req.body.navLabel || null;
+          if (req.body.navOrder !== undefined) orgMenuPatch.navOrder = req.body.navOrder;
+          if (Object.keys(orgMenuPatch).length > 0) {
+            await db.update(leadCapturePrograms).set(orgMenuPatch).where(eq(leadCapturePrograms.programId, req.params.programId));
+          }
+        } catch (_) {}
         return res.json(updated);
       } else {
         const [created] = await db.insert(leadCapturePrograms).values({
