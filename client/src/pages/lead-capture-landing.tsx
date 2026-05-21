@@ -385,8 +385,8 @@ export default function LeadCaptureLanding() {
   const funnelType = config?.funnelType || "athlete_application";
   const urgencyBadge = ext.urgencyBadge || "";
   const heroAlignment = ext.heroAlignment || "center";
-  const laserEnabled = ext.laserEffectsEnabled ?? false;
-  const laserIntensity = ext.laserIntensity || "subtle";
+  const laserEnabled = ext.laserEffectsEnabled ?? true;
+  const laserIntensity = ext.laserIntensity || "standard";
   const laserPreset = ext.laserPreset || getDefaultLaserPreset(funnelType);
   const heroImageFit = ext.heroImageFit || "cover";
   const heroImagePosition = ext.heroImagePosition || "center center";

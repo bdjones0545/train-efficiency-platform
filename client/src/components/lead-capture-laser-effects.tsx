@@ -11,9 +11,9 @@ const PRESET_COLORS: Record<LaserPreset, string> = {
 };
 
 const INTENSITY_OPACITY: Record<LaserIntensity, { beam: number; streak: number; scan: number; glow: number }> = {
-  subtle:   { beam: 0.07, streak: 0.06, scan: 0.12, glow: 0.18 },
-  standard: { beam: 0.14, streak: 0.10, scan: 0.20, glow: 0.30 },
-  high:     { beam: 0.22, streak: 0.16, scan: 0.32, glow: 0.45 },
+  subtle:   { beam: 0.20, streak: 0.16, scan: 0.30, glow: 0.42 },
+  standard: { beam: 0.34, streak: 0.26, scan: 0.48, glow: 0.62 },
+  high:     { beam: 0.52, streak: 0.40, scan: 0.68, glow: 0.82 },
 };
 
 interface LaserEffectsProps {
@@ -143,9 +143,48 @@ export function LeadCaptureLaserEffects({
     <div
       className={`absolute inset-0 pointer-events-none overflow-hidden ${className}`}
       aria-hidden="true"
-      style={{ zIndex: 1 }}
+      style={{ zIndex: 2 }}
     >
-      {/* Diagonal laser beam 1 — top-left to bottom-right */}
+      {/* Corner radial glow — top-left */}
+      <div
+        style={{
+          position: "absolute",
+          top: "-10%",
+          left: "-10%",
+          width: "55%",
+          height: "55%",
+          background: `radial-gradient(ellipse at 0% 0%, ${color}${toHex2(op.beam * 0.7)} 0%, transparent 70%)`,
+          filter: "blur(8px)",
+        }}
+      />
+      {/* Corner radial glow — bottom-right */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: "-10%",
+          right: "-10%",
+          width: "50%",
+          height: "50%",
+          background: `radial-gradient(ellipse at 100% 100%, ${color}${toHex2(op.beam * 0.5)} 0%, transparent 70%)`,
+          filter: "blur(12px)",
+        }}
+      />
+
+      {/* Diagonal laser beam 1 — top-left to bottom-right (wide core + soft halo) */}
+      <div
+        style={{
+          position: "absolute",
+          top: "-10%",
+          left: "-5%",
+          width: "6px",
+          height: "140%",
+          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam * 0.6)} 15%, ${color}${toHex2(op.beam)} 40%, ${color}${toHex2(op.beam)} 60%, ${color}${toHex2(op.beam * 0.6)} 85%, transparent 100%)`,
+          transform: "rotate(25deg) translateX(120px)",
+          filter: "blur(3px)",
+          boxShadow: `0 0 12px 4px ${color}${toHex2(op.beam * 0.35)}`,
+        }}
+      />
+      {/* Beam 1 tight core */}
       <div
         style={{
           position: "absolute",
@@ -153,48 +192,38 @@ export function LeadCaptureLaserEffects({
           left: "-5%",
           width: "2px",
           height: "140%",
-          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam)} 20%, ${color}${toHex2(op.beam * 1.4)} 50%, ${color}${toHex2(op.beam)} 80%, transparent 100%)`,
-          transform: "rotate(25deg) translateX(120px)",
-          filter: `blur(1px)`,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          top: "-10%",
-          left: "-5%",
-          width: "1px",
-          height: "140%",
-          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam * 0.5)} 20%, ${color}${toHex2(op.beam)} 50%, ${color}${toHex2(op.beam * 0.5)} 80%, transparent 100%)`,
-          transform: "rotate(25deg) translateX(130px)",
+          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam * 0.8)} 20%, ${color} 50%, ${color}${toHex2(op.beam * 0.8)} 80%, transparent 100%)`,
+          transform: "rotate(25deg) translateX(123px)",
+          opacity: 0.9,
         }}
       />
 
-      {/* Diagonal laser beam 2 */}
+      {/* Diagonal laser beam 2 — right side */}
       <div
         style={{
           position: "absolute",
           top: "-10%",
           right: "15%",
-          width: "2px",
+          width: "5px",
           height: "140%",
-          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam * 0.7)} 15%, ${color}${toHex2(op.beam)} 50%, ${color}${toHex2(op.beam * 0.7)} 85%, transparent 100%)`,
+          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam * 0.5)} 10%, ${color}${toHex2(op.beam * 0.85)} 50%, ${color}${toHex2(op.beam * 0.5)} 90%, transparent 100%)`,
           transform: "rotate(-18deg)",
-          filter: `blur(1px)`,
+          filter: "blur(3px)",
+          boxShadow: `0 0 10px 3px ${color}${toHex2(op.beam * 0.25)}`,
         }}
       />
 
-      {/* Diagonal laser beam 3 — faint wide glow */}
+      {/* Diagonal laser beam 3 — center accent */}
       <div
         style={{
           position: "absolute",
           top: "-10%",
-          left: "40%",
-          width: "1px",
+          left: "38%",
+          width: "3px",
           height: "140%",
-          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam * 0.5)} 25%, ${color}${toHex2(op.beam * 0.8)} 60%, transparent 100%)`,
+          background: `linear-gradient(180deg, transparent 0%, ${color}${toHex2(op.beam * 0.4)} 20%, ${color}${toHex2(op.beam * 0.7)} 55%, transparent 100%)`,
           transform: "rotate(8deg)",
-          filter: `blur(0.5px)`,
+          filter: "blur(2px)",
         }}
       />
 
@@ -206,8 +235,8 @@ export function LeadCaptureLaserEffects({
           left: "-20%",
           width: "80%",
           height: "60%",
-          background: `conic-gradient(from 270deg at 30% 100%, ${color}${toHex2(op.beam * 0.4)} 0deg, transparent 40deg)`,
-          filter: "blur(40px)",
+          background: `conic-gradient(from 270deg at 30% 100%, ${color}${toHex2(op.beam * 0.55)} 0deg, transparent 45deg)`,
+          filter: "blur(35px)",
         }}
       />
 

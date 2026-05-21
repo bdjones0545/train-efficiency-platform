@@ -24,6 +24,7 @@ import {
   Upload, Video, Film, ImagePlus, ChevronDown as ChevronDownIcon, Library, UserCircle2
 } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
+import { LeadCaptureLaserEffects, getDefaultLaserPreset } from "@/components/lead-capture-laser-effects";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -826,8 +827,8 @@ export default function LeadCaptureProgramEditorPage() {
   const [buttonStyle, setButtonStyle] = useState<"solid" | "outline" | "gradient">("solid");
   const [darkIntensity, setDarkIntensity] = useState<"light" | "medium" | "dark" | "ultra">("dark");
   const [typographyPreset, setTypographyPreset] = useState<"athletic" | "modern" | "bold" | "clean">("athletic");
-  const [laserEffectsEnabled, setLaserEffectsEnabled] = useState(false);
-  const [laserIntensity, setLaserIntensity] = useState<"subtle" | "standard" | "high">("subtle");
+  const [laserEffectsEnabled, setLaserEffectsEnabled] = useState(true);
+  const [laserIntensity, setLaserIntensity] = useState<"subtle" | "standard" | "high">("standard");
   const [laserPreset, setLaserPreset] = useState<"performance-orange" | "team-cyan" | "career-purple" | "elite-green">("performance-orange");
   const [heroImageFit, setHeroImageFit] = useState<"cover" | "contain" | "fill">("cover");
   const [heroImagePosition, setHeroImagePosition] = useState("center center");
@@ -904,8 +905,8 @@ export default function LeadCaptureProgramEditorPage() {
     setTypographyPreset(ext.typographyPreset || "athletic");
     setBookingButtonText(ext.bookingButtonText || (resolvedType === "team_training" ? "Book a Discovery Call" : resolvedType === "employment_opportunity" ? "Schedule Your Interview" : "Book Your Evaluation"));
     setBookingRedirectOnSubmit(ext.bookingRedirectOnSubmit ?? false);
-    setLaserEffectsEnabled(ext.laserEffectsEnabled ?? false);
-    setLaserIntensity(ext.laserIntensity || "subtle");
+    setLaserEffectsEnabled(ext.laserEffectsEnabled ?? true);
+    setLaserIntensity(ext.laserIntensity || "standard");
     setLaserPreset(ext.laserPreset || (resolvedType === "team_training" ? "team-cyan" : resolvedType === "employment_opportunity" ? "career-purple" : "performance-orange"));
     setHeroImageFit(ext.heroImageFit || "cover");
     setHeroImagePosition(ext.heroImagePosition || "center center");
@@ -1483,6 +1484,13 @@ export default function LeadCaptureProgramEditorPage() {
                         />
                       )}
                       <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
+                      {/* Laser effects live preview */}
+                      <LeadCaptureLaserEffects
+                        enabled={laserEffectsEnabled}
+                        intensity={laserIntensity}
+                        preset={laserPreset}
+                        variant="hero"
+                      />
                       <div className={`relative z-10 w-full ${heroAlignment === "left" ? "text-left" : heroAlignment === "right" ? "text-right" : "text-center"}`}>
                         {urgencyBadge && (
                           <span className={`inline-block px-2 py-0.5 text-white text-[9px] rounded-full mb-2 font-semibold ${funnelType === "team_training" ? "bg-cyan-600/90" : funnelType === "employment_opportunity" ? "bg-purple-600/90" : "bg-orange-500/90"}`}>{urgencyBadge}</span>
