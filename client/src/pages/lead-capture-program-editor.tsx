@@ -12,14 +12,18 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ArrowLeft, Save, Eye, Copy, ExternalLink, BarChart2, Settings2, Image, Star,
   Users, Zap, Layout, BookOpen, Calendar, Palette, Loader2, Plus, Trash2,
   GripVertical, ChevronUp, ChevronDown, Check, AlertTriangle, Globe, Link2,
   TrendingUp, Target, Lightbulb, Smartphone, Monitor, RefreshCw,
   X, Award, Shield, Flame, Dumbbell, BriefcaseBusiness, GitBranch,
-  Workflow, Bell, Bot, FileCheck, DollarSign, ClipboardList
+  Workflow, Bell, Bot, FileCheck, DollarSign, ClipboardList,
+  Upload, Video, Film, ImagePlus, ChevronDown as ChevronDownIcon, Library
 } from "lucide-react";
+import { getAuthHeaders } from "@/lib/authToken";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -345,6 +349,423 @@ function SectionHeader({ icon, title, subtitle, accent }: { icon: React.ReactNod
         <h3 className="font-semibold text-foreground">{title}</h3>
         {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
       </div>
+    </div>
+  );
+}
+
+// ─── OrgMedia type (local) ───────────────────────────────────────────────────
+
+interface OrgMediaItem {
+  id: string;
+  mediaType: "image" | "video";
+  section: string;
+  url: string;
+  thumbnailUrl: string | null;
+  caption: string | null;
+}
+
+// ─── MediaUploadZone ──────────────────────────────────────────────────────────
+
+interface MediaUploadZoneProps {
+  label: string;
+  accept: "image" | "video";
+  value: string;
+  onChange: (url: string) => void;
+  accentColor: string;
+  accentBg: string;
+  accentBorder: string;
+  maxSizeMB?: number;
+}
+
+function MediaUploadZone({
+  label,
+  accept,
+  value,
+  onChange,
+  accentColor,
+  accentBg,
+  accentBorder,
+  maxSizeMB,
+}: MediaUploadZoneProps) {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [showManualUrl, setShowManualUrl] = useState(false);
+  const [manualUrl, setManualUrl] = useState("");
+  const [showPicker, setShowPicker] = useState(false);
+
+  const isImage = accept === "image";
+  const defaultMaxMB = isImage ? 10 : 200;
+  const maxMB = maxSizeMB ?? defaultMaxMB;
+
+  const { data: mediaData } = useQuery<{ media: OrgMediaItem[]; grouped: Record<string, OrgMediaItem[]> }>({
+    queryKey: ["/api/org/media"],
+    enabled: showPicker,
+  });
+
+  const pickerItems = (mediaData?.media || []).filter(m =>
+    isImage ? m.mediaType === "image" : m.mediaType === "video"
+  );
+
+  const handleFile = useCallback(async (file: File) => {
+    const isFileImage = file.type.startsWith("image/");
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const videoExts = ["mp4", "mov", "webm", "m4v", "mpeg", "mpg", "avi"];
+    const isFileVideo = file.type.startsWith("video/") || videoExts.includes(ext);
+
+    if (isImage && !isFileImage) {
+      toast({ title: "Images only", description: "Please select an image file.", variant: "destructive" });
+      return;
+    }
+    if (!isImage && !isFileVideo) {
+      toast({ title: "Videos only", description: "Please select a video file (mp4, mov, webm).", variant: "destructive" });
+      return;
+    }
+    if (file.size > maxMB * 1024 * 1024) {
+      toast({ title: "File too large", description: `Max size is ${maxMB}MB.`, variant: "destructive" });
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(10);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("section", "hero");
+
+    try {
+      setUploadProgress(40);
+      const res = await fetch("/api/org/media", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      setUploadProgress(80);
+
+      if (!res.ok) {
+        const contentType = res.headers.get("content-type") || "";
+        let errMsg = "Upload failed";
+        if (contentType.includes("application/json")) {
+          const err = await res.json().catch(() => null);
+          errMsg = err?.message || errMsg;
+        } else if (res.status === 413) {
+          errMsg = `File too large. Max is ${maxMB}MB.`;
+        }
+        toast({ title: "Upload failed", description: errMsg, variant: "destructive" });
+        return;
+      }
+
+      const data = await res.json();
+      const url = data?.media?.url || data?.url || "";
+      if (url) {
+        onChange(url);
+        queryClient.invalidateQueries({ queryKey: ["/api/org/media"] });
+        toast({ title: "Uploaded!", description: `${label} set successfully.` });
+      } else {
+        toast({ title: "Upload error", description: "Could not read URL from response.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Network error", description: "Upload failed. Check your connection.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [isImage, maxMB, label, onChange, toast]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  };
+
+  const handleApplyManualUrl = () => {
+    if (manualUrl.trim()) {
+      onChange(manualUrl.trim());
+      setManualUrl("");
+      setShowManualUrl(false);
+      toast({ title: `${label} updated`, description: "URL applied." });
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs font-semibold text-white/80">{label}</Label>
+        {value && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[10px] text-white/50 hover:text-red-400 hover:bg-red-500/10"
+            onClick={() => onChange("")}
+            data-testid={`button-remove-${label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <X className="h-3 w-3 mr-1" /> Remove
+          </Button>
+        )}
+      </div>
+
+      {/* Current media preview */}
+      {value && (
+        <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/30">
+          {isImage ? (
+            <div className="aspect-video">
+              <img
+                src={value}
+                alt={label}
+                className="w-full h-full object-cover"
+                data-testid={`preview-${label.toLowerCase().replace(/\s+/g, "-")}`}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+              <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                <Badge className="bg-black/70 text-white/80 border-white/20 text-[10px]">
+                  <Image className="h-2.5 w-2.5 mr-1" /> Hero Image Set
+                </Badge>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] bg-black/50 text-white/80 hover:bg-black/70 border border-white/20"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="button-replace-hero-image"
+                >
+                  Replace
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-3">
+              <div className="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+                <Film className="h-5 w-5 text-orange-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white truncate">Video background set</p>
+                <p className="text-[10px] text-white/50 truncate">{value}</p>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[10px] bg-white/10 text-white/80 hover:bg-white/20 shrink-0"
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="button-replace-hero-video"
+              >
+                Replace
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Upload progress */}
+      {uploading && (
+        <div className="space-y-1.5 px-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-white/60 flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Uploading…
+            </span>
+            <span className="text-[10px] text-white/60">{uploadProgress}%</span>
+          </div>
+          <Progress value={uploadProgress} className="h-1.5 bg-white/10" />
+        </div>
+      )}
+
+      {/* Drop zone (shown when no value or uploading) */}
+      {!value && !uploading && (
+        <div
+          className={`relative rounded-xl border-2 border-dashed transition-all cursor-pointer
+            ${dragOver
+              ? `${accentBorder} bg-orange-500/10`
+              : "border-white/15 bg-white/5 hover:bg-white/8 hover:border-white/25"
+            }`}
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          data-testid={`dropzone-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        >
+          <div className="flex flex-col items-center justify-center py-7 px-4 text-center gap-2">
+            <div className={`p-3 rounded-full ${accentBg} border ${accentBorder}`}>
+              {isImage ? (
+                <ImagePlus className={`h-5 w-5 ${accentColor}`} />
+              ) : (
+                <Video className={`h-5 w-5 ${accentColor}`} />
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white/80">
+                {dragOver ? "Drop to upload" : `Upload ${label}`}
+              </p>
+              <p className="text-[11px] text-white/40 mt-0.5">
+                {isImage
+                  ? `Drag & drop or click — JPG, PNG, WebP up to ${maxMB}MB`
+                  : `Drag & drop or click — MP4, MOV, WebM up to ${maxMB}MB`
+                }
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className={`mt-1 border ${accentBorder} ${accentColor} bg-transparent hover:${accentBg} text-xs`}
+              onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+              data-testid={`button-upload-${label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <Upload className="h-3.5 w-3.5 mr-1.5" />
+              {isImage ? "Upload Image" : "Upload Video"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={isImage ? "image/*" : "video/*"}
+        className="hidden"
+        onChange={handleInputChange}
+        data-testid={`file-input-${label.toLowerCase().replace(/\s+/g, "-")}`}
+      />
+
+      {/* Action row — Choose from library + replace when value exists */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2.5 text-[11px] text-white/60 hover:text-white/90 hover:bg-white/10 gap-1.5"
+          onClick={() => setShowPicker(true)}
+          data-testid={`button-pick-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        >
+          <Library className="h-3.5 w-3.5" />
+          Choose from media library
+        </Button>
+        {value && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2.5 text-[11px] text-white/60 hover:text-white/90 hover:bg-white/10 gap-1.5"
+            onClick={() => fileInputRef.current?.click()}
+            data-testid={`button-upload-replace-${label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Upload new
+          </Button>
+        )}
+      </div>
+
+      {/* Video performance tip */}
+      {!isImage && (
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-[11px] text-amber-300/90 leading-relaxed">
+            Short, compressed looping videos (10–30s, under 20MB) perform best for hero backgrounds.
+          </p>
+        </div>
+      )}
+
+      {/* Advanced: paste URL */}
+      <div className="border-t border-white/8 pt-2">
+        <button
+          className="flex items-center gap-1.5 text-[11px] text-white/35 hover:text-white/60 transition-colors"
+          onClick={() => setShowManualUrl(v => !v)}
+          data-testid={`button-toggle-manual-url-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        >
+          <ChevronDownIcon className={`h-3 w-3 transition-transform ${showManualUrl ? "rotate-180" : ""}`} />
+          Advanced: paste URL manually
+        </button>
+        {showManualUrl && (
+          <div className="mt-2 flex gap-2">
+            <Input
+              value={manualUrl}
+              onChange={e => setManualUrl(e.target.value)}
+              placeholder="https://..."
+              className="h-8 text-xs bg-white/5 border-white/15 text-white placeholder:text-white/30 flex-1"
+              onKeyDown={e => e.key === "Enter" && handleApplyManualUrl()}
+              data-testid={`input-manual-url-${label.toLowerCase().replace(/\s+/g, "-")}`}
+            />
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleApplyManualUrl}
+              disabled={!manualUrl.trim()}
+              data-testid={`button-apply-manual-url-${label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              Apply
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Media library picker dialog */}
+      <Dialog open={showPicker} onOpenChange={setShowPicker}>
+        <DialogContent className="bg-gray-900/95 border-white/15 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Library className="h-4 w-4 text-orange-400" />
+              Choose {isImage ? "Image" : "Video"} from Media Library
+            </DialogTitle>
+          </DialogHeader>
+          {pickerItems.length === 0 ? (
+            <div className="text-center py-12 space-y-2">
+              <div className="flex justify-center">
+                {isImage ? <Image className="h-10 w-10 text-white/20" /> : <Film className="h-10 w-10 text-white/20" />}
+              </div>
+              <p className="text-sm text-white/50">No {isImage ? "images" : "videos"} uploaded yet.</p>
+              <p className="text-xs text-white/30">Upload media in the Media Library to use them here.</p>
+            </div>
+          ) : (
+            <div className={isImage ? "grid grid-cols-3 gap-3" : "space-y-2"}>
+              {pickerItems.map(item => (
+                <button
+                  key={item.id}
+                  className={`group relative rounded-lg overflow-hidden border transition-all hover:border-orange-500/60
+                    ${value === item.url ? "border-orange-500 ring-2 ring-orange-500/40" : "border-white/10"}`}
+                  onClick={() => { onChange(item.url); setShowPicker(false); toast({ title: `${label} selected` }); }}
+                  data-testid={`picker-item-${item.id}`}
+                >
+                  {isImage ? (
+                    <div className="aspect-video bg-black/50">
+                      <img src={item.url} alt={item.caption || ""} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                      {value === item.url && (
+                        <div className="absolute inset-0 bg-orange-500/20 flex items-center justify-center">
+                          <Check className="h-6 w-6 text-orange-400" />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10">
+                      <div className="w-10 h-10 rounded bg-white/10 flex items-center justify-center shrink-0">
+                        <Film className="h-4 w-4 text-orange-400" />
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-xs font-medium text-white truncate">{item.caption || "Video"}</p>
+                        <p className="text-[10px] text-white/40 truncate">{item.url}</p>
+                      </div>
+                      {value === item.url && <Check className="h-4 w-4 text-orange-400 shrink-0" />}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="pt-2 border-t border-white/10 flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/20 text-white/70 hover:bg-white/10"
+              onClick={() => setShowPicker(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -848,22 +1269,62 @@ export default function LeadCaptureProgramEditorPage() {
                   </div>
                 </Card>
 
-                <Card className="p-6 space-y-4">
-                  <SectionHeader icon={<Image className="h-4 w-4" />} title="Hero Media" subtitle="Background image or video for your hero section." accent={accentIconBg} />
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Hero Image URL</Label>
-                    <Input value={heroImageUrl} onChange={e => { setHeroImageUrl(e.target.value); markUnsaved(); }} placeholder="https://..." data-testid="input-hero-image-url" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Video Background URL (optional)</Label>
-                    <Input value={videoBackgroundUrl} onChange={e => { setVideoBackgroundUrl(e.target.value); markUnsaved(); }} placeholder="https://..." data-testid="input-video-bg-url" />
-                  </div>
-                  {heroImageUrl && (
-                    <div className="relative rounded-lg overflow-hidden border border-border/50 aspect-video">
-                      <img src={heroImageUrl} alt="Hero preview" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
+                <Card className="p-6 space-y-5 bg-gray-950/60 border-white/10 backdrop-blur-sm">
+                  <SectionHeader
+                    icon={<Image className="h-4 w-4" />}
+                    title="Hero Media"
+                    subtitle="Upload a background image or video for your hero section."
+                    accent={accentIconBg}
+                  />
+
+                  {/* Hero Image Upload */}
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/8 space-y-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ImagePlus className={`h-4 w-4 ${ft.accent}`} />
+                      <span className="text-sm font-semibold text-white/90">Hero Image</span>
+                      <Badge className={`ml-auto text-[10px] ${ft.accentBg} ${ft.accent} border ${ft.accentBorder}`}>
+                        Recommended
+                      </Badge>
                     </div>
-                  )}
+                    <MediaUploadZone
+                      label="Hero Image"
+                      accept="image"
+                      value={heroImageUrl}
+                      onChange={url => { setHeroImageUrl(url); markUnsaved(); }}
+                      accentColor={ft.accent}
+                      accentBg={ft.accentBg}
+                      accentBorder={ft.accentBorder}
+                      maxSizeMB={10}
+                    />
+                  </div>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-white/8" />
+                    <span className="text-[10px] text-white/25 uppercase tracking-widest">or add video</span>
+                    <div className="flex-1 h-px bg-white/8" />
+                  </div>
+
+                  {/* Video Background Upload */}
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/8 space-y-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Video className={`h-4 w-4 ${ft.accent}`} />
+                      <span className="text-sm font-semibold text-white/90">Video Background</span>
+                      <Badge className="ml-auto text-[10px] bg-white/5 text-white/40 border-white/10">
+                        Optional
+                      </Badge>
+                    </div>
+                    <MediaUploadZone
+                      label="Video Background"
+                      accept="video"
+                      value={videoBackgroundUrl}
+                      onChange={url => { setVideoBackgroundUrl(url); markUnsaved(); }}
+                      accentColor={ft.accent}
+                      accentBg={ft.accentBg}
+                      accentBorder={ft.accentBorder}
+                      maxSizeMB={200}
+                    />
+                  </div>
                 </Card>
               </div>
 
