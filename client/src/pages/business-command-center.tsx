@@ -2290,6 +2290,8 @@ type ProgramLead = {
   ageHours: number;
   slaUrgency: "green" | "yellow" | "orange" | "red" | null;
   timeSinceContactHrs: number | null;
+  adminEmailStatus: string | null;
+  adminEmailError: string | null;
 };
 
 type AbandonedLead = {
@@ -2419,6 +2421,12 @@ function ProgramLeadsPanel() {
     mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/abandoned/${id}/recover`, { step: "recovery_30min" }).then((r) => r.json()),
     onSuccess: () => { toast({ title: "Recovery email sent" }); invalidate(); },
     onError: () => toast({ title: "Failed to send", variant: "destructive" }),
+  });
+
+  const resendAdminEmail = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/resend-admin-email`, {}).then((r) => r.json()),
+    onSuccess: (data) => { toast({ title: `Admin notification resent to ${data.sentTo || "admin"}` }); invalidate(); },
+    onError: (err: any) => toast({ title: err?.message || "Failed to resend", variant: "destructive" }),
   });
 
   if (isLoading) return null;
@@ -2862,6 +2870,20 @@ function ProgramLeadsPanel() {
                     >
                       <ArrowRight className="h-3 w-3 mr-1" />Deal
                     </Button>
+                    {lead.adminEmailStatus !== "sent" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs text-orange-600 border-orange-500/30 hover:bg-orange-500/10"
+                        onClick={() => resendAdminEmail.mutate(lead.id)}
+                        disabled={resendAdminEmail.isPending && resendAdminEmail.variables === lead.id}
+                        data-testid={`button-resend-admin-email-${i}`}
+                        title={lead.adminEmailStatus === "failed" ? `Last attempt failed: ${lead.adminEmailError || "unknown error"}` : "Send admin notification email"}
+                      >
+                        <Send className="h-3 w-3 mr-1" />
+                        {resendAdminEmail.isPending && resendAdminEmail.variables === lead.id ? "Sending…" : "Notify Admin"}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </Card>

@@ -13476,43 +13476,138 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       }
 
       const sgKey = process.env.SENDGRID_API_KEY;
-      const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@trainefficiency.com";
+      const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.FROM_EMAIL || "noreply@trainefficiency.com";
+
+      if (!sgKey) {
+        console.warn(`[LeadCapture] SENDGRID_API_KEY is not set — admin notification email will not be sent for org ${org.slug}`);
+      }
+      if (!process.env.SENDGRID_FROM_EMAIL && !process.env.FROM_EMAIL) {
+        console.warn(`[LeadCapture] No SENDGRID_FROM_EMAIL or FROM_EMAIL env var — using fallback noreply address`);
+      }
+
+      // 1. Resolve admin recipient with multi-fallback chain
+      let adminEmail: string | null = org.ownerEmail || org.schedulingInquiryEmail || null;
+
+      if (!adminEmail && org.ownerUserId) {
+        try {
+          const ownerUser = await storage.getUser(org.ownerUserId);
+          if (ownerUser?.email) adminEmail = ownerUser.email;
+        } catch (_) {}
+      }
+
+      if (!adminEmail) {
+        try {
+          const { orgMemberships, users: usersTable } = await import("@shared/schema");
+          const { and } = await import("drizzle-orm");
+          const adminRows = await db
+            .select({ email: usersTable.email })
+            .from(orgMemberships)
+            .innerJoin(usersTable, eq(usersTable.id, orgMemberships.userId))
+            .where(and(eq(orgMemberships.orgId, org.id), eq(orgMemberships.role, "ADMIN")))
+            .limit(1);
+          if (adminRows[0]?.email) adminEmail = adminRows[0].email;
+        } catch (_) {}
+      }
+
+      if (!adminEmail) {
+        try {
+          const { coachProfiles } = await import("@shared/schema");
+          const coachRows = await db
+            .select({ email: coachProfiles.email })
+            .from(coachProfiles)
+            .where(eq(coachProfiles.organizationId, org.id))
+            .limit(1);
+          if (coachRows[0]?.email) adminEmail = coachRows[0].email;
+        } catch (_) {}
+      }
+
+      if (!adminEmail) {
+        console.warn(`[LeadCapture] No admin recipient found for org ${org.id} (${org.slug}) — checked ownerEmail, schedulingInquiryEmail, ownerUserId, orgMemberships, coachProfiles`);
+      } else {
+        console.log(`[LeadCapture] Admin recipient resolved to: ${adminEmail} for org ${org.slug}`);
+      }
+
+      const submittedAt = new Date();
+      const submissionTimestamp = submittedAt.toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" });
+      const commandCenterUrl = `${process.env.APP_URL || "https://trainefficiency.com"}/command-center`;
+
+      const adminEmailHtml = `
+        <div style="font-family:sans-serif;max-width:620px;margin:0 auto">
+          <div style="background:linear-gradient(135deg,#f97316,#f59e0b);padding:24px;border-radius:12px 12px 0 0">
+            <h2 style="color:white;margin:0;font-size:20px">🏆 New Athlete Application</h2>
+            <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:14px">${program.name}</p>
+            <p style="color:rgba(255,255,255,0.7);margin:2px 0 0;font-size:12px">${submissionTimestamp}</p>
+          </div>
+          <div style="background:#18181b;padding:24px;border-radius:0 0 12px 12px;color:#e4e4e7">
+            <table style="width:100%;border-collapse:collapse">
+              <tr><td colspan="2" style="padding:4px 0;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Athlete Info</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa;width:35%">Athlete</td><td style="padding:6px 0;font-size:13px;font-weight:600">${athleteName}</td></tr>
+              ${parentName ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Parent</td><td style="padding:6px 0;font-size:13px">${parentName}</td></tr>` : ""}
+              ${age ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Age</td><td style="padding:6px 0;font-size:13px">${age}</td></tr>` : ""}
+              ${grade ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Grade</td><td style="padding:6px 0;font-size:13px">${grade}</td></tr>` : ""}
+              ${sport ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Sport</td><td style="padding:6px 0;font-size:13px">${sport}${position ? ` / ${position}` : ""}</td></tr>` : ""}
+              ${school ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">School</td><td style="padding:6px 0;font-size:13px">${school}</td></tr>` : ""}
+              <tr><td colspan="2" style="padding:12px 0 4px;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Contact</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Email</td><td style="padding:6px 0;font-size:13px"><a href="mailto:${email}" style="color:#60a5fa">${email}</a></td></tr>
+              ${phone ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Phone</td><td style="padding:6px 0;font-size:13px"><a href="tel:${phone}" style="color:#60a5fa">${phone}</a></td></tr>` : ""}
+              <tr><td colspan="2" style="padding:12px 0 4px;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Application Details</td></tr>
+              ${goals?.length ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Goals</td><td style="padding:6px 0;font-size:13px">${Array.isArray(goals) ? goals.join(", ") : goals}</td></tr>` : ""}
+              ${commitmentLevel ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Commitment</td><td style="padding:6px 0;font-size:13px;color:#4ade80;font-weight:600">${commitmentLevel}</td></tr>` : ""}
+              ${experienceLevel ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Experience</td><td style="padding:6px 0;font-size:13px">${experienceLevel}</td></tr>` : ""}
+              ${currentTrainingStatus ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Training Status</td><td style="padding:6px 0;font-size:13px">${currentTrainingStatus}</td></tr>` : ""}
+              ${notes ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Notes</td><td style="padding:6px 0;font-size:13px">${notes}</td></tr>` : ""}
+              <tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">AI Score</td><td style="padding:6px 0;font-size:13px;color:#f59e0b">Pending (scoring async)</td></tr>
+              ${(utmSource || utmCampaign) ? `<tr><td colspan="2" style="padding:12px 0 4px;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Attribution</td></tr><tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Source</td><td style="padding:6px 0;font-size:13px">${[utmSource, utmMedium, utmCampaign].filter(Boolean).join(" / ")}</td></tr>` : ""}
+            </table>
+            <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
+              <a href="mailto:${email}" style="display:inline-block;background:#3b82f6;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">✉ Email Athlete</a>
+              ${phone ? `<a href="tel:${phone}" style="display:inline-block;background:#10b981;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">📞 Call ${phone}</a>` : ""}
+              <a href="${commandCenterUrl}" style="display:inline-block;background:#f97316;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">🎯 Open Command Center</a>
+            </div>
+          </div>
+        </div>
+      `;
 
       // 1. Email org admin
-      const adminEmail = org.ownerEmail || org.schedulingInquiryEmail;
+      let adminEmailStatus = "not_attempted";
+      let adminEmailError: string | null = null;
+      let adminEmailSentAt: Date | null = null;
+
       if (adminEmail && sgKey) {
         try {
           const sgMail = await import("@sendgrid/mail");
           sgMail.default.setApiKey(sgKey);
-          await sgMail.default.send({
+          console.log(`[LeadCapture] Sending admin notification → ${adminEmail} (org: ${org.slug})`);
+          const [sgResponse] = await sgMail.default.send({
             to: adminEmail,
             from: fromEmail,
             subject: `🏆 New Lead: ${athleteName} applied to ${program.name}`,
-            html: `
-              <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-                <div style="background:linear-gradient(135deg,#f97316,#f59e0b);padding:24px;border-radius:12px 12px 0 0">
-                  <h2 style="color:white;margin:0;font-size:20px">New Athlete Application</h2>
-                  <p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:14px">${program.name}</p>
-                </div>
-                <div style="background:#18181b;padding:24px;border-radius:0 0 12px 12px;color:#fff">
-                  <p><strong style="color:#fb923c">Athlete:</strong> ${athleteName}</p>
-                  ${parentName ? `<p><strong style="color:#fb923c">Parent:</strong> ${parentName}</p>` : ""}
-                  <p><strong style="color:#fb923c">Email:</strong> <a href="mailto:${email}" style="color:#60a5fa">${email}</a></p>
-                  ${phone ? `<p><strong style="color:#fb923c">Phone:</strong> <a href="tel:${phone}" style="color:#60a5fa">${phone}</a></p>` : ""}
-                  ${sport ? `<p><strong style="color:#fb923c">Sport:</strong> ${sport}${position ? ` / ${position}` : ""}</p>` : ""}
-                  ${school ? `<p><strong style="color:#fb923c">School:</strong> ${school}${grade ? ` | Grade ${grade}` : ""}</p>` : ""}
-                  ${age ? `<p><strong style="color:#fb923c">Age:</strong> ${age}</p>` : ""}
-                  ${goals?.length ? `<p><strong style="color:#fb923c">Goals:</strong> ${Array.isArray(goals) ? goals.join(", ") : goals}</p>` : ""}
-                  ${experienceLevel ? `<p><strong style="color:#fb923c">Experience:</strong> ${experienceLevel}</p>` : ""}
-                  ${commitmentLevel ? `<p><strong style="color:#fb923c">Commitment:</strong> <span style="color:#4ade80">${commitmentLevel}</span></p>` : ""}
-                  ${utmSource ? `<p style="font-size:12px;color:#71717a"><strong>Source:</strong> ${utmSource}${utmCampaign ? ` / ${utmCampaign}` : ""}</p>` : ""}
-                  ${notes ? `<p><strong style="color:#fb923c">Notes:</strong> ${notes}</p>` : ""}
-                </div>
-              </div>
-            `,
+            html: adminEmailHtml,
           });
-        } catch (_) {}
+          console.log(`[LeadCapture] Admin email accepted — SendGrid status ${sgResponse?.statusCode}, recipient: ${adminEmail}`);
+          adminEmailStatus = "sent";
+          adminEmailSentAt = new Date();
+        } catch (emailErr: any) {
+          adminEmailStatus = "failed";
+          adminEmailError = emailErr?.response?.body
+            ? JSON.stringify(emailErr.response.body)
+            : (emailErr.message || "Unknown SendGrid error");
+          console.error(`[LeadCapture] Admin email FAILED for org ${org.slug} → ${adminEmail}:`, adminEmailError);
+        }
+      } else if (!adminEmail) {
+        adminEmailStatus = "no_recipient";
+      } else {
+        adminEmailStatus = "no_api_key";
       }
+
+      // Update submission with email audit fields (non-blocking)
+      try {
+        await db.update(leadCaptureSubmissions).set({
+          adminEmailSentAt,
+          adminEmailStatus,
+          adminEmailError,
+        }).where(eq(leadCaptureSubmissions.id, submission.id));
+      } catch (_) {}
 
       // 2. Confirmation email to athlete/parent
       const confirmEmail = email;
@@ -13616,6 +13711,136 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
     } catch (error) {
       console.error("Lead capture submit error:", error);
       res.status(500).json({ message: "Failed to submit application" });
+    }
+  });
+
+  // Admin: resend admin notification email for a submission
+  app.post("/api/lead-capture/submissions/:id/resend-admin-email", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions, athleticPrograms, organizations, orgMemberships, users: usersTable, coachProfiles } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [submission] = await db.select().from(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)))
+        .limit(1);
+      if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, profile.organizationId)).limit(1);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const [program] = await db.select().from(athleticPrograms).where(eq(athleticPrograms.id, submission.programId)).limit(1);
+
+      const sgKey = process.env.SENDGRID_API_KEY;
+      const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.FROM_EMAIL || "noreply@trainefficiency.com";
+
+      if (!sgKey) {
+        return res.status(500).json({ message: "SENDGRID_API_KEY is not configured" });
+      }
+
+      // Resolve admin recipient with fallback chain
+      let adminEmail: string | null = org.ownerEmail || org.schedulingInquiryEmail || null;
+      if (!adminEmail && org.ownerUserId) {
+        try {
+          const ownerUser = await storage.getUser(org.ownerUserId);
+          if (ownerUser?.email) adminEmail = ownerUser.email;
+        } catch (_) {}
+      }
+      if (!adminEmail) {
+        try {
+          const adminRows = await db.select({ email: usersTable.email })
+            .from(orgMemberships)
+            .innerJoin(usersTable, eq(usersTable.id, orgMemberships.userId))
+            .where(and(eq(orgMemberships.orgId, org.id), eq(orgMemberships.role, "ADMIN")))
+            .limit(1);
+          if (adminRows[0]?.email) adminEmail = adminRows[0].email;
+        } catch (_) {}
+      }
+      if (!adminEmail) {
+        try {
+          const coachRows = await db.select({ email: coachProfiles.email })
+            .from(coachProfiles)
+            .where(eq(coachProfiles.organizationId, org.id))
+            .limit(1);
+          if (coachRows[0]?.email) adminEmail = coachRows[0].email;
+        } catch (_) {}
+      }
+      if (!adminEmail) return res.status(400).json({ message: "No admin email recipient found for this organization" });
+
+      const { athleteName, parentName, email, phone, age, grade, sport, position, school, goals, commitmentLevel, experienceLevel, currentTrainingStatus, notes, utmSource, utmMedium, utmCampaign, aiQualificationScore, createdAt } = submission;
+      const submissionTimestamp = createdAt ? new Date(createdAt).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "Unknown";
+      const commandCenterUrl = `${process.env.APP_URL || "https://trainefficiency.com"}/command-center`;
+      const programName = program?.name || "Lead Capture Program";
+
+      const html = `
+        <div style="font-family:sans-serif;max-width:620px;margin:0 auto">
+          <div style="background:linear-gradient(135deg,#f97316,#f59e0b);padding:24px;border-radius:12px 12px 0 0">
+            <h2 style="color:white;margin:0;font-size:20px">🏆 Athlete Application (Resent)</h2>
+            <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:14px">${programName}</p>
+            <p style="color:rgba(255,255,255,0.7);margin:2px 0 0;font-size:12px">Originally submitted: ${submissionTimestamp}</p>
+          </div>
+          <div style="background:#18181b;padding:24px;border-radius:0 0 12px 12px;color:#e4e4e7">
+            <table style="width:100%;border-collapse:collapse">
+              <tr><td colspan="2" style="padding:4px 0;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Athlete Info</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa;width:35%">Athlete</td><td style="padding:6px 0;font-size:13px;font-weight:600">${athleteName}</td></tr>
+              ${parentName ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Parent</td><td style="padding:6px 0;font-size:13px">${parentName}</td></tr>` : ""}
+              ${age ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Age</td><td style="padding:6px 0;font-size:13px">${age}</td></tr>` : ""}
+              ${grade ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Grade</td><td style="padding:6px 0;font-size:13px">${grade}</td></tr>` : ""}
+              ${sport ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Sport</td><td style="padding:6px 0;font-size:13px">${sport}${position ? ` / ${position}` : ""}</td></tr>` : ""}
+              ${school ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">School</td><td style="padding:6px 0;font-size:13px">${school}</td></tr>` : ""}
+              <tr><td colspan="2" style="padding:12px 0 4px;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Contact</td></tr>
+              <tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Email</td><td style="padding:6px 0;font-size:13px"><a href="mailto:${email}" style="color:#60a5fa">${email}</a></td></tr>
+              ${phone ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Phone</td><td style="padding:6px 0;font-size:13px"><a href="tel:${phone}" style="color:#60a5fa">${phone}</a></td></tr>` : ""}
+              <tr><td colspan="2" style="padding:12px 0 4px;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Application Details</td></tr>
+              ${goals?.length ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Goals</td><td style="padding:6px 0;font-size:13px">${Array.isArray(goals) ? goals.join(", ") : goals}</td></tr>` : ""}
+              ${commitmentLevel ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Commitment</td><td style="padding:6px 0;font-size:13px;color:#4ade80;font-weight:600">${commitmentLevel}</td></tr>` : ""}
+              ${experienceLevel ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Experience</td><td style="padding:6px 0;font-size:13px">${experienceLevel}</td></tr>` : ""}
+              ${currentTrainingStatus ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Training Status</td><td style="padding:6px 0;font-size:13px">${currentTrainingStatus}</td></tr>` : ""}
+              ${notes ? `<tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Notes</td><td style="padding:6px 0;font-size:13px">${notes}</td></tr>` : ""}
+              <tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">AI Score</td><td style="padding:6px 0;font-size:13px;color:#f59e0b">${aiQualificationScore != null ? `${aiQualificationScore}/100` : "Pending"}</td></tr>
+              ${(utmSource || utmCampaign) ? `<tr><td colspan="2" style="padding:12px 0 4px;border-bottom:1px solid #3f3f46;font-size:13px;font-weight:bold;color:#fb923c;text-transform:uppercase;letter-spacing:.05em">Attribution</td></tr><tr><td style="padding:6px 0;font-size:13px;color:#a1a1aa">Source</td><td style="padding:6px 0;font-size:13px">${[utmSource, utmMedium, utmCampaign].filter(Boolean).join(" / ")}</td></tr>` : ""}
+            </table>
+            <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
+              <a href="mailto:${email}" style="display:inline-block;background:#3b82f6;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">✉ Email Athlete</a>
+              ${phone ? `<a href="tel:${phone}" style="display:inline-block;background:#10b981;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">📞 Call ${phone}</a>` : ""}
+              <a href="${commandCenterUrl}" style="display:inline-block;background:#f97316;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">🎯 Open Command Center</a>
+            </div>
+          </div>
+        </div>
+      `;
+
+      console.log(`[LeadCapture] Resending admin email → ${adminEmail} for submission ${submission.id}`);
+      const sgMail = await import("@sendgrid/mail");
+      sgMail.default.setApiKey(sgKey);
+      const [sgResponse] = await sgMail.default.send({
+        to: adminEmail,
+        from: fromEmail,
+        subject: `[Resent] 🏆 ${athleteName} applied to ${programName}`,
+        html,
+      });
+      console.log(`[LeadCapture] Resend admin email accepted — status ${sgResponse?.statusCode}`);
+
+      await db.update(leadCaptureSubmissions).set({
+        adminEmailSentAt: new Date(),
+        adminEmailStatus: "sent",
+        adminEmailError: null,
+      }).where(eq(leadCaptureSubmissions.id, submission.id));
+
+      res.json({ success: true, sentTo: adminEmail });
+    } catch (error: any) {
+      const errMsg = error?.response?.body ? JSON.stringify(error.response.body) : (error.message || "Unknown error");
+      console.error("[LeadCapture] Resend admin email failed:", errMsg);
+      try {
+        const { db } = await import("./db");
+        const { leadCaptureSubmissions } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(leadCaptureSubmissions).set({ adminEmailStatus: "failed", adminEmailError: errMsg }).where(eq(leadCaptureSubmissions.id, req.params.id));
+      } catch (_) {}
+      res.status(500).json({ message: "Failed to resend admin email", error: errMsg });
     }
   });
 

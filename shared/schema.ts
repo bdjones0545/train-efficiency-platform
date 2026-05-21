@@ -2778,6 +2778,10 @@ export const leadCaptureSubmissions = pgTable("lead_capture_submissions", {
   lostAt: timestamp("lost_at"),
   estimatedValueCents: integer("estimated_value_cents").default(0),
   aiSalesAnalysis: jsonb("ai_sales_analysis"),
+  // Admin email audit
+  adminEmailSentAt: timestamp("admin_email_sent_at"),
+  adminEmailStatus: varchar("admin_email_status"),
+  adminEmailError: text("admin_email_error"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

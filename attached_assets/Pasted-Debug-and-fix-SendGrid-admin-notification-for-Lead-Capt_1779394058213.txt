@@ -1,0 +1,81 @@
+Debug and fix SendGrid admin notification for Lead Capture submissions.
+
+Issue:
+A public Lead Capture submission succeeds and shows the success screen, but the organization admin never receives the submission email.
+
+Audit the POST route:
+POST /api/public/lead-capture/:orgSlug/:programSlug/submit
+
+Check and fix:
+
+1. SendGrid environment
+- Confirm SENDGRID_API_KEY exists
+- Confirm FROM_EMAIL / SENDGRID_FROM_EMAIL exists
+- Log a clear warning if missing
+- Do not silently fail
+
+2. Admin recipient lookup
+- Verify the route finds the correct org admin email
+- Check org owner/admin user relationship
+- Check whether the org table has adminEmail, ownerEmail, contactEmail, or createdBy user email
+- Add fallback recipient resolution:
+  a. org.adminEmail
+  b. org.contactEmail
+  c. org.ownerEmail
+  d. owner user email
+  e. first org admin user email
+
+3. Email send logic
+- Ensure admin notification is awaited or properly logged
+- Wrap SendGrid call in try/catch
+- Log SendGrid status code/body on failure
+- Do not block user success if email fails, but record the failure
+
+4. Submission email content
+Admin email must include:
+- Program name
+- Athlete name
+- Parent name
+- Email
+- Phone
+- Age
+- Grade
+- Sport
+- Position
+- School
+- Goals
+- Commitment level
+- Notes
+- AI score if available, or “Pending”
+- UTM source/campaign if available
+- Submission timestamp
+- Quick actions:
+  - mailto link
+  - tel link
+  - Command Center link
+
+5. Add database audit field if needed
+Add or reuse fields on lead_capture_submissions:
+- adminEmailSentAt
+- adminEmailStatus
+- adminEmailError
+
+6. Add a manual resend endpoint
+POST /api/lead-capture/submissions/:id/resend-admin-email
+
+7. Add admin UI button
+On each lead card, add:
+- “Resend Admin Email”
+Only show if adminEmailStatus !== "sent" or behind a small overflow/action menu.
+
+8. Test with a real submission
+Expected:
+- submission saves
+- confirmation email can still go to athlete
+- admin email sends through SendGrid
+- server logs show recipient and SendGrid accepted status
+- submission row records adminEmailStatus = "sent"
+
+Important:
+Do not rebuild the Lead Capture funnel.
+This is a SendGrid recipient resolution + email delivery bug.
