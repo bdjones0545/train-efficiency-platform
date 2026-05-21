@@ -13360,5 +13360,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerGuardianRoutes } = await import("./guardian-routes");
   registerGuardianRoutes(app);
 
+  // ── Athlete Readiness Score + Risk Engine ──────────────────────────────────
+  const { registerAthleteReadinessRoutes } = await import("./athlete-readiness-routes");
+  registerAthleteReadinessRoutes(app);
+
   return httpServer;
 }

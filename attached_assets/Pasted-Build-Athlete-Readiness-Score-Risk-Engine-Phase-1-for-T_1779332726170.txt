@@ -1,0 +1,362 @@
+Build Athlete Readiness Score + Risk Engine Phase 1 for TrainEfficiency.
+
+GOAL:
+Create a centralized athlete status and intervention engine that continuously evaluates athlete readiness, consistency, fatigue, education compliance, and workout behavior.
+
+This becomes the intelligence layer connecting:
+- Workout Builder
+- Readiness Check-ins
+- PR Tracker
+- Education
+- Notifications
+- Timeline
+- AI Recommendations
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+Every athlete receives a continuously updated:
+
+Athlete Status Score
+0–100
+
+And a:
+
+Risk Level
+- Green
+- Yellow
+- Red
+
+The system should synthesize:
+- readiness
+- fatigue
+- soreness
+- missed workouts
+- workout adherence
+- PR stagnation
+- education compliance
+- hydration/recovery education completion
+- quiz failures
+- inactivity streaks
+
+====================================================
+2. DATABASE TABLES
+====================================================
+
+Create:
+
+athlete_status_snapshots
+- id
+- orgId
+- athleteUserId
+- statusScore
+- riskLevel
+- readinessScore
+- adherenceScore
+- recoveryScore
+- educationScore
+- engagementScore
+- generatedAt
+- metadata jsonb
+- createdAt
+
+athlete_risk_flags
+- id
+- orgId
+- athleteUserId
+- flagType
+  (fatigue, low_readiness, missed_workouts,
+   soreness, low_engagement, pr_stagnation,
+   education_noncompliance, hydration_risk,
+   recovery_risk)
+- severity
+  (info, moderate, important, critical)
+- title
+- summary
+- recommendation
+- sourceData jsonb
+- status
+  (active, dismissed, resolved)
+- createdAt
+- resolvedAt nullable
+
+athlete_intervention_recommendations
+- id
+- orgId
+- athleteUserId
+- recommendationType
+  (education, recovery, workout_adjustment,
+   coach_review, hydration, deload)
+- generatedBy
+  (rules, ai)
+- title
+- summary
+- suggestedAction
+- relatedPathwayId nullable
+- relatedWorkoutId nullable
+- severity
+- status
+  (pending, accepted, dismissed, completed)
+- coachNotes nullable
+- createdAt
+
+====================================================
+3. STATUS SCORE ENGINE
+====================================================
+
+Generate composite scores:
+
+A. Readiness Score
+Based on:
+- readiness check-ins
+- fatigue
+- soreness
+- sleep
+- stress
+- motivation
+
+B. Adherence Score
+Based on:
+- workout completion %
+- missed sessions
+- consistency streaks
+- late completions
+
+C. Recovery Score
+Based on:
+- soreness trends
+- fatigue trends
+- hydration education completion
+- recovery education completion
+
+D. Education Score
+Based on:
+- pathway completion
+- quiz scores
+- overdue modules
+- failed quizzes
+
+E. Engagement Score
+Based on:
+- portal usage
+- recent activity
+- streaks
+- education participation
+
+Final:
+0–100 weighted composite.
+
+====================================================
+4. RISK CLASSIFICATION
+====================================================
+
+Green
+- healthy
+- compliant
+- engaged
+
+Yellow
+- moderate concern
+- declining readiness
+- missed sessions
+- incomplete recovery education
+
+Red
+- high fatigue
+- repeated low readiness
+- multiple missed workouts
+- low engagement
+- severe soreness trend
+
+====================================================
+5. RULE ENGINE
+====================================================
+
+Generate flags automatically.
+
+Examples:
+
+IF:
+readiness <= 4 three times in 7 days
+THEN:
+create low_readiness flag
+
+IF:
+2+ missed workouts in 14 days
+THEN:
+missed_workouts flag
+
+IF:
+soreness >= 8 repeatedly
+THEN:
+recovery_risk flag
+
+IF:
+hydration education incomplete
+AND fatigue high
+THEN:
+hydration_risk flag
+
+IF:
+PR stagnant > 45 days
+AND adherence high
+THEN:
+coach_review recommendation
+
+====================================================
+6. AI RECOMMENDATION ENGINE
+====================================================
+
+Create AI recommendation endpoint:
+
+POST /api/org/athlete-intelligence/recommend
+
+AI receives:
+- readiness history
+- soreness trends
+- workout adherence
+- PR history
+- education completion
+- coach notes
+- recent activity
+
+AI suggests:
+- recovery education
+- hydration pathway
+- reduced workload
+- coach review
+- deload recommendation
+- motivation intervention
+
+IMPORTANT:
+AI NEVER auto-applies changes.
+Coach approval required.
+
+====================================================
+7. COACH DASHBOARD
+====================================================
+
+Create:
+ /org/:slug/coach/athlete-status
+
+Dashboard includes:
+
+A. Athlete Status Grid
+- score
+- risk color
+- readiness trend
+- adherence %
+- education %
+- fatigue trend
+
+B. Alerts Feed
+- active flags
+- severity
+- recommendations
+
+C. Filters
+- team
+- risk level
+- sport
+- status
+
+D. Intervention Queue
+- pending recommendations
+- accept/dismiss buttons
+
+E. Team Heatmap
+Visual:
+green/yellow/red athletes
+
+====================================================
+8. ATHLETE EXPERIENCE
+====================================================
+
+Athlete portal should show:
+
+- personal status score
+- readiness trend
+- streaks
+- positive coaching language
+- recommended education
+- recovery reminders
+
+DO NOT show:
+- “high injury risk”
+- alarming medical terminology
+- negative labels
+
+Tone:
+supportive and performance-focused.
+
+====================================================
+9. NOTIFICATIONS
+====================================================
+
+Trigger:
+- low readiness warning
+- hydration reminder
+- missed workout concern
+- education recommendation
+- fatigue intervention
+- streak celebration
+
+====================================================
+10. TIMELINE INTEGRATION
+====================================================
+
+Log:
+- status changes
+- risk flags
+- interventions
+- recommendations accepted
+- recovery improvements
+
+====================================================
+11. API ENDPOINTS
+====================================================
+
+Create:
+
+GET /api/org/athlete-status
+GET /api/org/athlete-status/:userId
+
+GET /api/org/athlete-risk-flags
+PATCH /api/org/athlete-risk-flags/:id
+
+GET /api/org/interventions
+PATCH /api/org/interventions/:id
+
+POST /api/org/athlete-intelligence/recommend
+
+====================================================
+12. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- modern intelligence dashboard
+- color-coded athlete status
+- mobile-friendly
+- fast scanning for coaches
+
+====================================================
+13. IMPORTANT
+====================================================
+
+This is NOT medical diagnosis software.
+
+Avoid:
+- injury prediction claims
+- medical diagnosis
+- clinical terminology
+
+This is:
+- readiness monitoring
+- coaching intelligence
+- athlete engagement insight
+- intervention recommendation
+
+Goal:
+TrainEfficiency becomes an adaptive athlete intelligence platform.

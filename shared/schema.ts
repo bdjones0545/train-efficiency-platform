@@ -2403,6 +2403,60 @@ export type InsertOrgAiIntegration = z.infer<typeof insertOrgAiIntegrationSchema
 
 // ─── Org Notification Preferences ────────────────────────────────────────────
 
+// ─── Athlete Readiness Score + Risk Engine ────────────────────────────────────
+
+export const athleteStatusSnapshots = pgTable("athlete_status_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  statusScore: integer("status_score").notNull().default(0),
+  riskLevel: varchar("risk_level").notNull().default("green"),
+  readinessScore: integer("readiness_score").default(0),
+  adherenceScore: integer("adherence_score").default(0),
+  recoveryScore: integer("recovery_score").default(0),
+  educationScore: integer("education_score").default(0),
+  engagementScore: integer("engagement_score").default(0),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const athleteRiskFlags = pgTable("athlete_risk_flags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  flagType: varchar("flag_type").notNull(),
+  severity: varchar("severity").notNull().default("info"),
+  title: varchar("title").notNull(),
+  summary: text("summary").notNull(),
+  recommendation: text("recommendation"),
+  sourceData: jsonb("source_data"),
+  status: varchar("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+export const athleteInterventionRecommendations = pgTable("athlete_intervention_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  recommendationType: varchar("recommendation_type").notNull(),
+  generatedBy: varchar("generated_by").notNull().default("rules"),
+  title: varchar("title").notNull(),
+  summary: text("summary").notNull(),
+  suggestedAction: text("suggested_action"),
+  relatedPathwayId: varchar("related_pathway_id"),
+  relatedWorkoutId: varchar("related_workout_id"),
+  severity: varchar("severity").notNull().default("info"),
+  status: varchar("status").notNull().default("pending"),
+  coachNotes: text("coach_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type AthleteStatusSnapshot = typeof athleteStatusSnapshots.$inferSelect;
+export type AthleteRiskFlag = typeof athleteRiskFlags.$inferSelect;
+export type AthleteInterventionRecommendation = typeof athleteInterventionRecommendations.$inferSelect;
+
 export const orgNotificationPreferences = pgTable("org_notification_preferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),
