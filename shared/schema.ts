@@ -2457,6 +2457,62 @@ export type AthleteStatusSnapshot = typeof athleteStatusSnapshots.$inferSelect;
 export type AthleteRiskFlag = typeof athleteRiskFlags.$inferSelect;
 export type AthleteInterventionRecommendation = typeof athleteInterventionRecommendations.$inferSelect;
 
+// ─── Adaptive Workflow Engine ─────────────────────────────────────────────────
+
+export const adaptiveWorkflows = pgTable("adaptive_workflows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description"),
+  triggerType: varchar("trigger_type", { length: 100 }).notNull(),
+  triggerConfig: jsonb("trigger_config").default({}),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  isTemplate: boolean("is_template").notNull().default(false),
+  templateKey: varchar("template_key", { length: 100 }),
+  createdByUserId: varchar("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const adaptiveWorkflowSteps = pgTable("adaptive_workflow_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workflowId: varchar("workflow_id").notNull(),
+  stepOrder: integer("step_order").notNull().default(1),
+  actionType: varchar("action_type", { length: 100 }).notNull(),
+  config: jsonb("config").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const adaptiveWorkflowRuns = pgTable("adaptive_workflow_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workflowId: varchar("workflow_id").notNull(),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  triggerEvent: varchar("trigger_event", { length: 200 }),
+  status: varchar("status", { length: 20 }).notNull().default("running"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  metadata: jsonb("metadata").default({}),
+});
+
+export const adaptiveFollowups = pgTable("adaptive_followups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  interventionId: varchar("intervention_id"),
+  workflowRunId: varchar("workflow_run_id"),
+  followupDate: timestamp("followup_date").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  notes: text("notes"),
+  coachUserId: varchar("coach_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type AdaptiveWorkflow = typeof adaptiveWorkflows.$inferSelect;
+export type AdaptiveWorkflowStep = typeof adaptiveWorkflowSteps.$inferSelect;
+export type AdaptiveWorkflowRun = typeof adaptiveWorkflowRuns.$inferSelect;
+export type AdaptiveFollowup = typeof adaptiveFollowups.$inferSelect;
+
 export const orgNotificationPreferences = pgTable("org_notification_preferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),

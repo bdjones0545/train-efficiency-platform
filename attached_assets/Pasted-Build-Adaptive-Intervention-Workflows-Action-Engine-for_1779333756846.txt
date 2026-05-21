@@ -1,0 +1,288 @@
+Build Adaptive Intervention Workflows + Action Engine for TrainEfficiency.
+
+GOAL:
+Transform athlete intelligence into automated coaching workflows.
+
+The system should:
+- detect athlete issues
+- generate interventions
+- coordinate actions
+- track outcomes
+- adapt over time
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+Current:
+The system identifies:
+- low readiness
+- missed workouts
+- fatigue
+- education noncompliance
+- PR plateaus
+
+Next:
+The system should orchestrate adaptive responses.
+
+Examples:
+
+Low readiness
+→ notify coach
+→ suggest Recovery pathway
+→ create hydration reminder
+→ recommend lower workload
+→ monitor for improvement
+
+Missed workouts
+→ send athlete reminder
+→ notify coach after threshold
+→ assign Training Habits module
+
+PR plateau
+→ recommend coach review
+→ suggest program adjustment
+→ suggest recovery intervention
+
+====================================================
+2. DATABASE TABLES
+====================================================
+
+Create:
+
+adaptive_workflows
+- id
+- orgId
+- title
+- triggerType
+- description
+- status
+  (active, paused, archived)
+- createdByUserId
+- createdAt
+
+adaptive_workflow_steps
+- id
+- workflowId
+- stepOrder
+- actionType
+  (notify, assign_education,
+   create_intervention,
+   ai_recommendation,
+   coach_review,
+   schedule_followup,
+   assign_badge,
+   modify_status)
+- config jsonb
+- createdAt
+
+adaptive_workflow_runs
+- id
+- workflowId
+- athleteUserId
+- triggerEvent
+- status
+  (running, completed, failed)
+- startedAt
+- completedAt
+- metadata jsonb
+
+adaptive_followups
+- id
+- orgId
+- athleteUserId
+- interventionId
+- followupDate
+- status
+  (pending, completed, skipped)
+- notes
+- createdAt
+
+====================================================
+3. WORKFLOW ENGINE
+====================================================
+
+Allow rules-based workflows.
+
+Example:
+
+Workflow:
+Low Readiness Recovery Workflow
+
+Trigger:
+3 low readiness scores in 7 days
+
+Actions:
+1. Create risk flag
+2. Notify coach
+3. Recommend Recovery pathway
+4. Add hydration reminder
+5. Create follow-up in 5 days
+6. Monitor readiness trend
+
+====================================================
+4. BUILT-IN WORKFLOW TEMPLATES
+====================================================
+
+Seed default templates:
+
+1. Low Readiness Recovery
+2. Missed Workout Intervention
+3. Hydration Concern
+4. Education Noncompliance
+5. PR Plateau Review
+6. Athlete Disengagement
+7. High Fatigue Deload Recommendation
+
+====================================================
+5. AI INTERVENTION ENGINE
+====================================================
+
+POST /api/org/adaptive-workflows/ai-recommend
+
+AI receives:
+- athlete scores
+- readiness trends
+- workout adherence
+- education completion
+- PR history
+- coach notes
+- active flags
+
+AI returns:
+- suggested intervention plan
+- recommended education
+- coaching suggestions
+- monitoring recommendations
+- follow-up timing
+
+IMPORTANT:
+AI never auto-applies program modifications.
+
+====================================================
+6. COACH WORKFLOW BUILDER
+====================================================
+
+Create:
+ /org/:slug/coach/workflows
+
+Features:
+- workflow list
+- activate/pause
+- create custom workflow
+- workflow templates
+- trigger builder
+- action builder
+- run history
+- athlete follow-up queue
+
+====================================================
+7. INTERVENTION QUEUE
+====================================================
+
+Upgrade existing intervention queue:
+
+Show:
+- active interventions
+- follow-up status
+- athlete improvement
+- workflow source
+- coach notes
+- AI suggestions
+
+Actions:
+- accept
+- dismiss
+- complete
+- escalate
+
+====================================================
+8. FOLLOW-UP SYSTEM
+====================================================
+
+Follow-ups should:
+- remind coach
+- check athlete improvement
+- auto-resolve if metrics improve
+- escalate if worsening
+
+====================================================
+9. ATHLETE EXPERIENCE
+====================================================
+
+Athlete sees:
+- supportive recommendations
+- reminders
+- assigned education
+- streak encouragement
+- recovery prompts
+
+Avoid:
+- alarming language
+- “high risk athlete”
+- injury prediction wording
+
+====================================================
+10. TIMELINE INTEGRATION
+====================================================
+
+Log:
+- workflow triggered
+- intervention created
+- education assigned
+- follow-up completed
+- status improved
+- intervention resolved
+
+====================================================
+11. NOTIFICATIONS
+====================================================
+
+Notify:
+Coach:
+- intervention created
+- athlete worsening
+- follow-up due
+
+Athlete:
+- recovery reminder
+- hydration reminder
+- assigned module
+- streak encouragement
+
+====================================================
+12. DASHBOARD ENHANCEMENTS
+====================================================
+
+Coach dashboard additions:
+- active workflow count
+- intervention resolution rate
+- athletes improving
+- unresolved high-risk athletes
+- workflow success analytics
+
+====================================================
+13. UI REQUIREMENTS
+====================================================
+
+Design:
+- TrainEfficiency dark premium style
+- intelligent workflow feel
+- clean automation builder
+- timeline visualization
+- mobile-friendly
+
+====================================================
+14. IMPORTANT
+====================================================
+
+This is NOT medical diagnosis software.
+
+The system should:
+- support coaches
+- improve accountability
+- automate follow-up
+- connect platform systems together
+
+Goal:
+TrainEfficiency becomes an adaptive athlete operations platform.

@@ -13364,5 +13364,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerAthleteReadinessRoutes } = await import("./athlete-readiness-routes");
   registerAthleteReadinessRoutes(app);
 
+  // ── Adaptive Intervention Workflows + Action Engine ─────────────────────────
+  const { registerAdaptiveWorkflowRoutes } = await import("./adaptive-workflow-routes");
+  registerAdaptiveWorkflowRoutes(app);
+
   return httpServer;
 }

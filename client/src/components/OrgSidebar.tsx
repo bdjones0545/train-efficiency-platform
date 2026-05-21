@@ -23,6 +23,8 @@ import {
   Lock,
   GraduationCap,
   PenSquare,
+  Activity,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -244,6 +246,16 @@ function buildNavSections(
       items: [
         { title: "Education Builder", url: `/org/${orgSlug}/coach/education-builder`, icon: PenSquare, testId: "org-nav-education-builder" },
         { title: "Education Progress", url: `/org/${orgSlug}/coach/education-progress`, icon: BarChart2, testId: "org-nav-education-progress" },
+      ],
+    });
+
+    sections.push({
+      id: "org-intelligence",
+      label: "Athlete Intelligence",
+      icon: Activity,
+      items: [
+        { title: "Athlete Status", url: `/org/${orgSlug}/coach/athlete-status`, icon: Activity, testId: "org-nav-athlete-status" },
+        { title: "Workflows", url: `/org/${orgSlug}/coach/workflows`, icon: Zap, testId: "org-nav-workflows" },
       ],
     });
 
