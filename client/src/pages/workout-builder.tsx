@@ -1533,6 +1533,7 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
   const isAthlete = canCreatePersonalWorkout || bootstrap?.effectiveRole === "athlete";
   const programs: any[] = bootstrap?.programs ?? [];
   const trainChatConnected: boolean = bootstrap?.trainChatConnected ?? false;
+  const connectionMode: "org" | "platform" | "none" = bootstrap?.connectionMode ?? "none";
   const needsReviewCount: number = monitorData?.summary?.needsReview ?? 0;
 
   if (isLoading) {
@@ -1567,7 +1568,8 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
           </div>
           {trainChatConnected ? (
             <Badge className="text-xs gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
-              <Wifi className="h-3 w-3" /> TrainChat Active
+              <Wifi className="h-3 w-3" />
+              {connectionMode === "platform" ? "TrainChat Active — Platform Key" : "TrainChat Active"}
             </Badge>
           ) : (
             <Badge variant="outline" className="text-xs gap-1 text-muted-foreground">
@@ -1654,7 +1656,8 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
         <div className="flex items-center gap-2 flex-wrap">
           {trainChatConnected ? (
             <Badge className="text-xs gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/30" data-testid="badge-trainchat-status">
-              <Wifi className="h-3 w-3" /> TrainChat Connected
+              <Wifi className="h-3 w-3" />
+              {connectionMode === "platform" ? "TrainChat Connected — Platform Key" : "TrainChat Connected"}
             </Badge>
           ) : (
             <Badge variant="outline" className="text-xs gap-1 text-muted-foreground" data-testid="badge-trainchat-status-off">

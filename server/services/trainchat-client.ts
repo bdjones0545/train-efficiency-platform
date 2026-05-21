@@ -47,11 +47,56 @@ async function getIntegration(orgId: string, provider: string) {
 
 async function getDecryptedClient(orgId: string): Promise<{ baseUrl: string; apiKey: string }> {
   const integration = await getIntegration(orgId, "trainchat");
-  if (!integration || !integration.isActive) throw new Error("TrainChat integration is not connected for this organization");
-  if (!integration.apiKeyEncrypted) throw new Error("No API key stored for TrainChat");
-  if (!integration.apiBaseUrl) throw new Error("No base URL stored for TrainChat");
-  const apiKey = decryptApiKey(integration.apiKeyEncrypted);
-  return { baseUrl: integration.apiBaseUrl.replace(/\/$/, ""), apiKey };
+  if (integration?.isActive && integration.apiKeyEncrypted && integration.apiBaseUrl) {
+    const apiKey = decryptApiKey(integration.apiKeyEncrypted);
+    return { baseUrl: integration.apiBaseUrl.replace(/\/$/, ""), apiKey };
+  }
+  const envKey = process.env.TRAINCHAT_API_KEY;
+  const envBase = process.env.TRAINCHAT_API_BASE_URL;
+  if (envKey && envBase) {
+    return { baseUrl: envBase.replace(/\/$/, ""), apiKey: envKey };
+  }
+  throw new Error("TrainChat is not connected. Configure an org-level integration or set TRAINCHAT_API_KEY + TRAINCHAT_API_BASE_URL.");
+}
+
+export type TrainChatConnectionStatus = {
+  trainChatConnected: boolean;
+  connectionMode: "org" | "platform" | "none";
+  maskedKeyPreview?: string;
+  baseUrl?: string;
+  lastError?: string;
+};
+
+export async function getConnectionStatus(orgId: string): Promise<TrainChatConnectionStatus> {
+  try {
+    const integration = await getIntegration(orgId, "trainchat");
+    if (integration?.isActive && integration.apiKeyEncrypted && integration.apiBaseUrl) {
+      const apiKey = decryptApiKey(integration.apiKeyEncrypted);
+      return {
+        trainChatConnected: true,
+        connectionMode: "org",
+        maskedKeyPreview: maskApiKey(apiKey),
+        baseUrl: integration.apiBaseUrl.replace(/\/$/, ""),
+      };
+    }
+  } catch (err: any) {
+    // org lookup failed — fall through to platform check
+  }
+  const envKey = process.env.TRAINCHAT_API_KEY;
+  const envBase = process.env.TRAINCHAT_API_BASE_URL;
+  if (envKey && envBase) {
+    return {
+      trainChatConnected: true,
+      connectionMode: "platform",
+      maskedKeyPreview: maskApiKey(envKey),
+      baseUrl: envBase.replace(/\/$/, ""),
+    };
+  }
+  return {
+    trainChatConnected: false,
+    connectionMode: "none",
+    lastError: "No org-level integration found and TRAINCHAT_API_KEY is not set.",
+  };
 }
 
 async function tcFetch(orgId: string, path: string, method = "GET", body?: unknown): Promise<{ data: unknown; latencyMs: number }> {

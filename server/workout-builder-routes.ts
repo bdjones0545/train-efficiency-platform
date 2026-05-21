@@ -22,7 +22,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, asc, inArray, gt, sql } from "drizzle-orm";
 import { z } from "zod";
-import { trainChatClient } from "./services/trainchat-client";
+import { trainChatClient, getConnectionStatus } from "./services/trainchat-client";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
 
@@ -237,7 +237,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       // Fetch org, teams, athletes (via orgUsers — athletes sign up through OrgAuthModal),
       // and TrainChat integration status in parallel.
       // NOTE: orgUsers has `name`; the main-app `users` table uses firstName/lastName only.
-      const [[org], teams, athletes, tcIntegration] = await Promise.all([
+      const [[org], teams, athletes, tcStatus] = await Promise.all([
         db.select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
           .from(organizations).where(eq(organizations.id, orgId)).limit(1)
           .catch(() => [] as any[]),
@@ -253,11 +253,11 @@ export function registerWorkoutBuilderRoutes(app: Express) {
           .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "athlete")))
           .orderBy(asc(orgUsers.name))
           .catch(() => [] as any[]),
-        db.select({ isActive: orgAiIntegrations.isActive, lastSuccessAt: orgAiIntegrations.lastSuccessAt })
-          .from(orgAiIntegrations)
-          .where(and(eq(orgAiIntegrations.orgId, orgId), eq(orgAiIntegrations.provider, "trainchat")))
-          .limit(1)
-          .catch(() => [] as any[]),
+        getConnectionStatus(orgId).catch(() => ({
+          trainChatConnected: false,
+          connectionMode: "none" as const,
+          lastError: "Connection status check failed",
+        })),
       ]);
 
       // Coaches see all programs; athletes/guardians only see their own
@@ -267,8 +267,6 @@ export function registerWorkoutBuilderRoutes(app: Express) {
             .orderBy(desc(workoutPrograms.createdAt))
             .catch(() => [] as any[])
         : [];
-
-      const trainChatConnected = tcIntegration?.[0]?.isActive ?? false;
 
       return res.json({
         org: org ?? null,
@@ -283,8 +281,11 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         teams: teams ?? [],
         athletes: athletes ?? [],
         programs: programs ?? [],
-        trainChatConnected,
-        trainChatLastSync: tcIntegration?.[0]?.lastSuccessAt ?? null,
+        trainChatConnected: tcStatus.trainChatConnected,
+        connectionMode: tcStatus.connectionMode,
+        maskedKeyPreview: tcStatus.maskedKeyPreview ?? null,
+        trainChatBaseUrl: tcStatus.baseUrl ?? null,
+        trainChatLastError: tcStatus.lastError ?? null,
       });
     } catch (err: any) {
       console.error("[workout-builder] bootstrap error:", err);
