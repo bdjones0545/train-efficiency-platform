@@ -4,8 +4,10 @@ import {
   parentGuardians, athleteGuardianLinks, guardianNotifications,
   userProfiles, orgUsers, bookings, athleticBookings,
   educationProgress, educationModules, educationPathways,
+  athleteStreaks, workoutCompletionLogs, prLiftEntries, prLiftTypes,
+  orgMessages,
 } from "@shared/schema";
-import { eq, and, desc, asc, inArray, sql as drizzleSql } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, gte, sql as drizzleSql } from "drizzle-orm";
 import crypto from "crypto";
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -51,16 +53,41 @@ function requireGuardianOrCoach(req: any, res: any, next: any) {
   })().catch(() => res.status(500).json({ message: "Auth error" }));
 }
 
+// ─── Supportive language mapper ───────────────────────────────────────────────
+
+function toSupportiveStatus(riskLevel: string | null | undefined): {
+  label: string;
+  color: "green" | "amber" | "blue" | "purple";
+  message: string;
+} {
+  switch ((riskLevel ?? "").toLowerCase()) {
+    case "red":
+    case "high":
+      return { label: "Needs Recovery Focus", color: "amber", message: "A little extra support and rest could help right now." };
+    case "orange":
+    case "medium":
+      return { label: "Consistency Opportunity", color: "blue", message: "Building momentum — every session counts." };
+    case "green":
+    case "low":
+      return { label: "Strong Momentum", color: "green", message: "Doing great! Keep up the excellent habits." };
+    default:
+      return { label: "On Track", color: "blue", message: "Making steady progress toward their goals." };
+  }
+}
+
 // ─── Build guardian data for one athlete ─────────────────────────────────────
 
 async function buildAthleteSnapshot(orgId: string, athleteUserId: string) {
-  // Basic profile
+  const now = new Date();
+  const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+  // ── Profile ─────────────────────────────────────────────────────────────────
   const [profile] = await db.select().from(userProfiles)
     .where(eq(userProfiles.userId, athleteUserId)).limit(1);
 
-  // Upcoming bookings (next 30 days)
-  const now = new Date();
-  const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  // ── Upcoming bookings (next 30 days) ────────────────────────────────────────
   const upcomingBookings = await db.select().from(bookings)
     .where(and(
       eq(bookings.userId, athleteUserId),
@@ -68,62 +95,145 @@ async function buildAthleteSnapshot(orgId: string, athleteUserId: string) {
       drizzleSql`${bookings.startTime} <= ${in30}`,
     ))
     .orderBy(asc(bookings.startTime))
-    .limit(5);
+    .limit(7);
 
-  // Recent athletic bookings
+  // ── Recent athletic bookings ─────────────────────────────────────────────────
   const recentAthletic = await db.select().from(athleticBookings)
     .where(eq(athleticBookings.userId, athleteUserId))
     .orderBy(desc(athleticBookings.createdAt))
     .limit(5);
 
-  // Education progress
+  // ── Streak data ──────────────────────────────────────────────────────────────
+  const [streakData] = await db.select().from(athleteStreaks)
+    .where(and(eq(athleteStreaks.orgId, orgId), eq(athleteStreaks.athleteUserId, athleteUserId)))
+    .limit(1);
+
+  // ── Workout completion / attendance (last 30 days) ───────────────────────────
+  const completionLogs = await db.select().from(workoutCompletionLogs)
+    .where(and(
+      eq(workoutCompletionLogs.orgId, orgId),
+      eq(workoutCompletionLogs.athleteUserId, athleteUserId),
+      gte(workoutCompletionLogs.completedAt, thirtyDaysAgo),
+    ))
+    .orderBy(desc(workoutCompletionLogs.completedAt))
+    .limit(50);
+
+  // Build last-14-day attendance dots
+  const completedDates = new Set(
+    completionLogs
+      .filter((l: any) => l.completedAt)
+      .map((l: any) => new Date(l.completedAt).toDateString())
+  );
+  const attendanceDots: { date: string; completed: boolean }[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    attendanceDots.push({ date: d.toDateString(), completed: completedDates.has(d.toDateString()) });
+  }
+  const last14Completed = attendanceDots.filter((d) => d.completed).length;
+  const consistencyPct = Math.round((last14Completed / 14) * 100);
+
+  // ── Recent PRs (last 60 days) ────────────────────────────────────────────────
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+  let recentPRs: any[] = [];
+  try {
+    const prEntries = await db.select().from(prLiftEntries)
+      .where(and(eq(prLiftEntries.orgId, orgId), eq(prLiftEntries.userId, athleteUserId)))
+      .orderBy(desc(prLiftEntries.createdAt))
+      .limit(10);
+
+    if (prEntries.length > 0) {
+      const liftTypeIds = [...new Set(prEntries.map((e: any) => e.liftTypeId))];
+      const liftTypes = await db.select().from(prLiftTypes)
+        .where(inArray(prLiftTypes.id, liftTypeIds as string[]));
+      const liftTypeMap = Object.fromEntries(liftTypes.map((lt: any) => [lt.id, lt]));
+
+      recentPRs = prEntries.map((e: any) => ({
+        id: e.id,
+        liftName: liftTypeMap[e.liftTypeId]?.name ?? "Lift",
+        value: e.value,
+        unit: e.unit,
+        entryDate: e.entryDate,
+        verified: !!e.verifiedByCoachId,
+      }));
+    }
+  } catch (_) {
+    // PRs not available
+  }
+
+  // ── Education progress ───────────────────────────────────────────────────────
   const eduProgress = await db.select().from(educationProgress)
     .where(and(
       eq(educationProgress.orgId, orgId),
       eq(educationProgress.athleteUserId, athleteUserId),
     ));
 
-  // Count published modules across published pathways
-  const publishedPathways = await db.select({ id: educationPathways.id })
+  const publishedPathways = await db.select({ id: educationPathways.id, title: educationPathways.title })
     .from(educationPathways)
     .where(drizzleSql`(${educationPathways.orgId} = ${orgId} OR ${educationPathways.isDefault} = true) AND ${educationPathways.status} = 'published'`);
 
   let totalModules = 0;
   let completedModules = 0;
+  let overdueModules: any[] = [];
+
   if (publishedPathways.length > 0) {
     const pathwayIds = publishedPathways.map((p: any) => p.id);
-    const allMods = await db.select({ id: educationModules.id })
-      .from(educationModules)
-      .where(and(
-        inArray(educationModules.pathwayId, pathwayIds),
-        eq(educationModules.status, "published"),
-      ));
+    const allMods = await db.select().from(educationModules)
+      .where(and(inArray(educationModules.pathwayId, pathwayIds), eq(educationModules.status, "published")));
     totalModules = allMods.length;
     completedModules = eduProgress.filter((p: any) => p.status === "completed").length;
+
+    const completedModIds = new Set(
+      eduProgress.filter((p: any) => p.status === "completed").map((p: any) => p.moduleId)
+    );
+    overdueModules = allMods
+      .filter((m: any) => !completedModIds.has(m.id))
+      .slice(0, 3)
+      .map((m: any) => ({ id: m.id, title: m.title, pathwayId: m.pathwayId }));
   }
 
-  const eduScores = eduProgress
-    .filter((p: any) => p.quizScore !== null)
-    .map((p: any) => p.quizScore as number);
+  const eduScores = eduProgress.filter((p: any) => p.quizScore !== null).map((p: any) => p.quizScore as number);
   const avgScore = eduScores.length > 0
     ? Math.round(eduScores.reduce((a, b) => a + b, 0) / eduScores.length)
     : null;
 
+  const recentCompletions = eduProgress
+    .filter((p: any) => p.status === "completed" && p.completedAt)
+    .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
+    .slice(0, 3);
+
+  // ── Guardian messages (coach announcements) ───────────────────────────────────
+  const athleteName = profile
+    ? `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() || profile.username || "Athlete"
+    : "Athlete";
+
+  // ── Assemble ─────────────────────────────────────────────────────────────────
   return {
     profile,
     athleteUserId,
-    upcomingBookings,
-    recentAthletic,
+    athleteName,
+    streak: {
+      currentStreak: streakData?.currentStreak ?? 0,
+      longestStreak: streakData?.longestStreak ?? 0,
+      totalSessionsCompleted: streakData?.totalSessionsCompleted ?? 0,
+      lastCompletedDate: streakData?.lastCompletedDate ?? null,
+    },
+    attendance: {
+      completedLast30Days: completionLogs.length,
+      consistencyPct,
+      attendanceDots,
+      last14Completed,
+    },
     education: {
       totalModules,
       completedModules,
       percentComplete: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0,
       avgScore,
-      recentCompletions: eduProgress
-        .filter((p: any) => p.status === "completed" && p.completedAt)
-        .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
-        .slice(0, 3),
+      recentCompletions,
+      overdueModules,
     },
+    upcomingBookings,
+    recentAthletic,
+    recentPRs,
   };
 }
 
@@ -132,7 +242,6 @@ async function buildAthleteSnapshot(orgId: string, athleteUserId: string) {
 export function registerGuardianRoutes(app: Express) {
 
   // ── POST /api/org/guardians/invite ──────────────────────────────────────────
-  // Coach or athlete invites a guardian by email
   app.post("/api/org/guardians/invite", requireAuth, async (req: any, res) => {
     try {
       const profile = req._profile;
@@ -141,11 +250,8 @@ export function registerGuardianRoutes(app: Express) {
 
       const orgId = profile.organizationId;
       const invitedBy = getUserId(req)!;
-
-      // The athlete to link — either specified (coach) or self (athlete inviting guardian)
       const targetAthleteId = athleteUserId ?? invitedBy;
 
-      // Check if invite already exists
       const existing = await db.select().from(athleteGuardianLinks)
         .where(and(
           eq(athleteGuardianLinks.orgId, orgId),
@@ -159,7 +265,6 @@ export function registerGuardianRoutes(app: Express) {
 
       const inviteToken = crypto.randomBytes(24).toString("hex");
 
-      // Check if there's a user account for this email already
       let guardianUserId = "";
       const existingUser = await db.select().from(userProfiles)
         .where(drizzleSql`lower(${userProfiles.email}) = lower(${inviteEmail})`)
@@ -167,12 +272,9 @@ export function registerGuardianRoutes(app: Express) {
 
       if (existingUser.length > 0) {
         guardianUserId = existingUser[0].userId;
-
-        // Ensure guardian profile record exists
         const existingGuardianProfile = await db.select().from(parentGuardians)
           .where(and(eq(parentGuardians.orgId, orgId), eq(parentGuardians.orgUserId, guardianUserId)))
           .limit(1);
-
         if (existingGuardianProfile.length === 0) {
           await db.insert(parentGuardians).values({
             orgId,
@@ -183,12 +285,10 @@ export function registerGuardianRoutes(app: Express) {
       }
 
       if (existing.length > 0) {
-        // Update existing pending invite
         await db.update(athleteGuardianLinks)
           .set({ inviteToken, status: "pending", activatedAt: null })
           .where(eq(athleteGuardianLinks.id, existing[0].id));
       } else {
-        // Create new invite link
         await db.insert(athleteGuardianLinks).values({
           orgId,
           athleteUserId: targetAthleteId,
@@ -204,13 +304,11 @@ export function registerGuardianRoutes(app: Express) {
             prMilestones: true,
             workoutCompletion: true,
             announcements: true,
+            streaks: true,
           },
           activatedAt: guardianUserId ? new Date() : null,
         });
       }
-
-      // TODO: Send invite email via SendGrid
-      // sendGuardianInviteEmail({ email: inviteEmail, token: inviteToken, orgId });
 
       res.json({
         ok: true,
@@ -225,7 +323,6 @@ export function registerGuardianRoutes(app: Express) {
   });
 
   // ── POST /api/org/guardians/accept-invite ───────────────────────────────────
-  // Guardian accepts invite via token
   app.post("/api/org/guardians/accept-invite", requireAuth, async (req: any, res) => {
     try {
       const { token } = req.body;
@@ -242,7 +339,6 @@ export function registerGuardianRoutes(app: Express) {
       if (link.status === "active") return res.json({ ok: true, message: "Already active" });
       if (link.status === "revoked") return res.status(403).json({ message: "Invite revoked" });
 
-      // Create guardian profile if needed
       const existing = await db.select().from(parentGuardians)
         .where(and(eq(parentGuardians.orgId, link.orgId), eq(parentGuardians.orgUserId, userId)))
         .limit(1);
@@ -254,12 +350,10 @@ export function registerGuardianRoutes(app: Express) {
         });
       }
 
-      // Activate link
       await db.update(athleteGuardianLinks)
         .set({ guardianUserId: userId, status: "active", activatedAt: new Date() })
         .where(eq(athleteGuardianLinks.id, link.id));
 
-      // Update role to GUARDIAN if not coach/admin
       if (!["ADMIN", "COACH"].includes(profile.role ?? "")) {
         await db.update(userProfiles)
           .set({ role: "GUARDIAN" })
@@ -273,7 +367,6 @@ export function registerGuardianRoutes(app: Express) {
   });
 
   // ── GET /api/org/guardians ──────────────────────────────────────────────────
-  // Coach: list all guardian links for the org
   app.get("/api/org/guardians", requireCoach, async (req: any, res) => {
     try {
       const profile = req._profile;
@@ -281,7 +374,6 @@ export function registerGuardianRoutes(app: Express) {
         .where(eq(athleteGuardianLinks.orgId, profile.organizationId))
         .orderBy(desc(athleteGuardianLinks.createdAt));
 
-      // Enrich with guardian profile info
       const guardianUserIds = links.map((l: any) => l.guardianUserId).filter((id: string) => !id.startsWith("pending-"));
       const athleteUserIds = [...new Set(links.map((l: any) => l.athleteUserId))];
 
@@ -308,7 +400,6 @@ export function registerGuardianRoutes(app: Express) {
   });
 
   // ── PATCH /api/org/guardians/link/:id ───────────────────────────────────────
-  // Coach: update link status or permissions
   app.patch("/api/org/guardians/link/:id", requireCoach, async (req: any, res) => {
     try {
       const profile = req._profile;
@@ -346,14 +437,12 @@ export function registerGuardianRoutes(app: Express) {
   });
 
   // ── GET /api/org/guardian/portal ───────────────────────────────────────────
-  // Guardian: get all linked athletes + summaries
   app.get("/api/org/guardian/portal", requireGuardianOrCoach, async (req: any, res) => {
     try {
       const profile = req._profile;
       const userId = getUserId(req)!;
       const orgId = profile.organizationId;
 
-      // Get all active links for this guardian
       const links = await db.select().from(athleteGuardianLinks)
         .where(and(
           eq(athleteGuardianLinks.orgId, orgId),
@@ -365,10 +454,10 @@ export function registerGuardianRoutes(app: Express) {
         links.map((link: any) => buildAthleteSnapshot(orgId, link.athleteUserId).then((snap) => ({
           ...snap,
           link,
+          supportiveStatus: toSupportiveStatus(null),
         })))
       );
 
-      // Unread guardian notifications
       const unreadCount = await db.select({ count: drizzleSql<number>`count(*)::int` })
         .from(guardianNotifications)
         .where(and(
@@ -387,8 +476,52 @@ export function registerGuardianRoutes(app: Express) {
     }
   });
 
+  // ── GET /api/org/guardian/dashboard ─────────────────────────────────────────
+  // Unified dashboard endpoint — same as portal but with extra announcements
+  app.get("/api/org/guardian/dashboard", requireGuardianOrCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const userId = getUserId(req)!;
+      const orgId = profile.organizationId;
+
+      const links = await db.select().from(athleteGuardianLinks)
+        .where(and(
+          eq(athleteGuardianLinks.orgId, orgId),
+          eq(athleteGuardianLinks.guardianUserId, userId),
+          eq(athleteGuardianLinks.status, "active"),
+        ));
+
+      const athletes = await Promise.all(
+        links.map((link: any) => buildAthleteSnapshot(orgId, link.athleteUserId).then((snap) => ({
+          ...snap,
+          link,
+          supportiveStatus: toSupportiveStatus(null),
+        })))
+      );
+
+      // Recent guardian notifications (last 20)
+      const recentNotifications = await db.select().from(guardianNotifications)
+        .where(and(
+          eq(guardianNotifications.orgId, orgId),
+          eq(guardianNotifications.guardianUserId, userId),
+        ))
+        .orderBy(desc(guardianNotifications.createdAt))
+        .limit(20);
+
+      const unreadCount = recentNotifications.filter((n: any) => !n.isRead).length;
+
+      res.json({
+        athletes,
+        links,
+        recentNotifications,
+        unreadCount,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── GET /api/org/guardian/athlete/:userId ──────────────────────────────────
-  // Guardian: detailed view of one linked athlete
   app.get("/api/org/guardian/athlete/:userId", requireGuardianOrCoach, async (req: any, res) => {
     try {
       const profile = req._profile;
@@ -396,7 +529,6 @@ export function registerGuardianRoutes(app: Express) {
       const { userId } = req.params;
       const orgId = profile.organizationId;
 
-      // Verify guardian is linked to this athlete
       const isCoach = ["ADMIN", "COACH"].includes(profile.role ?? "");
       if (!isCoach) {
         const [link] = await db.select().from(athleteGuardianLinks)
@@ -410,7 +542,7 @@ export function registerGuardianRoutes(app: Express) {
       }
 
       const snapshot = await buildAthleteSnapshot(orgId, userId);
-      res.json(snapshot);
+      res.json({ ...snapshot, supportiveStatus: toSupportiveStatus(null) });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -467,7 +599,6 @@ export function registerGuardianRoutes(app: Express) {
   });
 
   // ── POST /api/org/guardian/notifications/send ──────────────────────────────
-  // Internal: send a notification to all guardians of an athlete
   app.post("/api/org/guardian/notifications/send", requireCoach, async (req: any, res) => {
     try {
       const profile = req._profile;
@@ -498,8 +629,61 @@ export function registerGuardianRoutes(app: Express) {
     }
   });
 
+  // ── PATCH /api/org/guardian/preferences ─────────────────────────────────────
+  // Guardian updates their own notification opt-ins for a specific athlete link
+  app.patch("/api/org/guardian/preferences", requireGuardianOrCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const userId = getUserId(req)!;
+      const { athleteUserId, preferences } = req.body;
+
+      if (!athleteUserId || !preferences) {
+        return res.status(400).json({ message: "athleteUserId and preferences required" });
+      }
+
+      const [link] = await db.select().from(athleteGuardianLinks)
+        .where(and(
+          eq(athleteGuardianLinks.orgId, profile.organizationId),
+          eq(athleteGuardianLinks.guardianUserId, userId),
+          eq(athleteGuardianLinks.athleteUserId, athleteUserId),
+          eq(athleteGuardianLinks.status, "active"),
+        )).limit(1);
+
+      if (!link) return res.status(404).json({ message: "Link not found" });
+
+      const currentPerms = (link.permissions as any) ?? {};
+      const [updated] = await db.update(athleteGuardianLinks)
+        .set({ permissions: { ...currentPerms, ...preferences } })
+        .where(eq(athleteGuardianLinks.id, link.id))
+        .returning();
+
+      res.json({ ok: true, preferences: updated.permissions });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/org/guardian/messages ──────────────────────────────────────────
+  app.get("/api/org/guardian/messages", requireGuardianOrCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const userId = getUserId(req)!;
+
+      const notifs = await db.select().from(guardianNotifications)
+        .where(and(
+          eq(guardianNotifications.orgId, profile.organizationId),
+          eq(guardianNotifications.guardianUserId, userId),
+        ))
+        .orderBy(desc(guardianNotifications.createdAt))
+        .limit(30);
+
+      res.json({ messages: notifs });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── GET /api/org/guardian/accept ─────────────────────────────────────────
-  // Public token-based invite acceptance landing (used before auth)
   app.get("/api/org/guardian/accept", async (req: any, res) => {
     try {
       const { token } = req.query;
@@ -516,8 +700,7 @@ export function registerGuardianRoutes(app: Express) {
     }
   });
 
-  // ── GET /api/org/guardian/athlete/:userId/guardians (coach-only) ────────────
-  // Coach: see guardians linked to a specific athlete
+  // ── GET /api/org/coach/athlete/:userId/guardians ─────────────────────────────
   app.get("/api/org/coach/athlete/:userId/guardians", requireCoach, async (req: any, res) => {
     try {
       const profile = req._profile;

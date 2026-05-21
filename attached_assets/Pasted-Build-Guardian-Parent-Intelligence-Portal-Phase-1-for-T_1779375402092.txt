@@ -1,0 +1,193 @@
+Build Guardian / Parent Intelligence Portal Phase 1 for TrainEfficiency.
+
+GOAL:
+Create a guardian-facing athlete support portal connected to:
+- workouts
+- education
+- attendance
+- communication
+- readiness
+- achievements
+- coach updates
+
+This should improve:
+- accountability
+- communication
+- athlete support
+- parent engagement
+
+====================================================
+1. CORE CONCEPT
+====================================================
+
+Guardians should be able to:
+- monitor athlete progress
+- view schedules/workouts
+- see education completion
+- receive coach communications
+- celebrate achievements
+- support consistency
+
+WITHOUT:
+- seeing sensitive coach-only intelligence
+- accessing admin tools
+- editing programs
+
+====================================================
+2. GUARDIAN DASHBOARD
+====================================================
+
+Create:
+ /org/:slug/guardian
+
+Dashboard sections:
+
+A. Athlete Snapshot
+- athlete name/photo
+- team
+- current streak
+- completion %
+- status trend (supportive wording only)
+
+B. Upcoming Schedule
+- sessions
+- practices
+- education due
+- reminders
+
+C. Progress Highlights
+- PRs
+- streaks
+- badges
+- completed pathways
+
+D. Education Progress
+- assigned pathways
+- completion %
+- overdue modules
+
+E. Attendance / Workout Completion
+- completed sessions
+- missed sessions
+- consistency trend
+
+F. Coach Messages
+- announcements
+- reminders
+- encouragement
+
+====================================================
+3. GUARDIAN LINKING SYSTEM
+====================================================
+
+Create:
+guardian_links
+- guardianUserId
+- athleteUserId
+- relationship
+- status
+- createdAt
+
+Allow:
+- invite guardian by email
+- guardian accepts link
+- multi-athlete support
+
+====================================================
+4. GUARDIAN COMMUNICATIONS
+====================================================
+
+Guardians can receive:
+- missed workout notices
+- streak celebrations
+- education completion
+- upcoming reminders
+- coach announcements
+
+Opt-in controlled.
+
+====================================================
+5. PRIVACY / SECURITY
+====================================================
+
+Guardians CANNOT see:
+- private coach notes
+- AI risk flags
+- intervention severity
+- coach-only AI summaries
+- internal workflow data
+
+Guardians CAN see:
+- positive/supportive progress data
+- schedules
+- education progress
+- completion consistency
+
+====================================================
+6. SUPPORTIVE STATUS LANGUAGE
+====================================================
+
+Avoid:
+- “high risk”
+- “declining athlete”
+- medical language
+
+Use:
+- “Needs Recovery Focus”
+- “Consistency Opportunity”
+- “Strong Momentum”
+- “On Track”
+
+====================================================
+7. GUARDIAN NOTIFICATIONS
+====================================================
+
+Examples:
+- “Jordan completed today’s workout.”
+- “Hydration pathway completed.”
+- “3-day consistency streak!”
+- “New coach announcement.”
+
+====================================================
+8. COACH CONTROLS
+====================================================
+
+Coaches can:
+- enable/disable guardian visibility
+- control notification categories
+- send guardian announcements
+- review guardian engagement
+
+====================================================
+9. API ENDPOINTS
+====================================================
+
+Create:
+GET /api/org/guardian/dashboard
+POST /api/org/guardian/invite
+POST /api/org/guardian/link
+GET /api/org/guardian/messages
+PATCH /api/org/guardian/preferences
+
+====================================================
+10. UI REQUIREMENTS
+====================================================
+
+Design:
+- clean family-friendly dashboard
+- mobile-first
+- simple and readable
+- encouraging tone
+
+Think:
+“connected athlete support system”
+
+====================================================
+11. IMPORTANT
+====================================================
+
+This is a support portal,
+NOT a coach/admin portal.
+
+Goal:
+Increase athlete accountability and guardian engagement without exposing sensitive coaching intelligence.
