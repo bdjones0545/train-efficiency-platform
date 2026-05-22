@@ -15,6 +15,7 @@ import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import CoachesPage from "@/pages/coaches";
 import CoachSchedulePage from "@/pages/coach-schedule";
+import BookFastPage from "@/pages/book-fast";
 import MyBookingsPage from "@/pages/my-bookings";
 import CoachDashboardPage from "@/pages/coach-dashboard";
 import AvailabilityManagerPage from "@/pages/availability-manager";
@@ -328,8 +329,9 @@ function AuthenticatedLayout() {
             <div className={isFullscreenPage ? "h-full" : "max-w-5xl mx-auto"}>
               <SubscriptionGate>
                 <Switch>
-                  <Route path="/" component={CoachesPage} />
-                  <Route path="/coaches" component={CoachesPage} />
+                  <Route path="/" component={BookFastPage} />
+                  <Route path="/coaches" component={BookFastPage} />
+                  <Route path="/coaches/browse" component={CoachesPage} />
                   <Route path="/coaches/:id" component={CoachSchedulePage} />
                   <Route path="/sessions" component={OpenSessionsPage} />
                   <Route path="/org/:slug" component={OrgLandingPage} />

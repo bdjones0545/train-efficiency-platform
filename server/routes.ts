@@ -1703,6 +1703,93 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/availability", async (req: any, res) => {
+    try {
+      const serviceId = req.query.serviceId as string;
+      const startDateStr = req.query.startDate as string;
+      const daysParam = Math.min(parseInt((req.query.days as string) || "14", 10), 30);
+      const orgId = req.query.organizationId as string | undefined;
+
+      if (!serviceId) return res.status(400).json({ message: "serviceId required" });
+
+      const service = await storage.getService(serviceId);
+      if (!service) return res.status(404).json({ message: "Service not found" });
+
+      const startDate = startDateStr ? parseISO(startDateStr) : new Date();
+      const endDate = addDays(startDate, daysParam - 1);
+
+      let coaches: any[];
+      if (orgId) {
+        coaches = await storage.getCoachProfilesByOrganization(orgId);
+      } else {
+        coaches = await storage.getCoachProfiles();
+      }
+
+      const now = new Date();
+      const allSlots: {
+        date: string;
+        start: string;
+        end: string;
+        location: string;
+        coachId: string;
+        coachName: string;
+        coachAvatar: string | null;
+      }[] = [];
+
+      for (const coach of coaches) {
+        const coachTimezone = coach.timezone || "America/New_York";
+        const blocks = await storage.getAvailabilityBlocks(coach.id);
+        const existingBookings = await storage.getOverlappingBookings(
+          coach.id,
+          startDate,
+          addDays(endDate, 1)
+        );
+
+        const daySlots = generateTimeSlots(
+          blocks,
+          existingBookings,
+          startDate,
+          endDate,
+          service.durationMin,
+          coachTimezone
+        );
+
+        const coachName = [coach.user?.firstName, coach.user?.lastName].filter(Boolean).join(" ") || "Coach";
+        const coachAvatar = coach.photoUrl || coach.user?.profileImageUrl || null;
+
+        for (const day of daySlots) {
+          for (const slot of day.slots) {
+            if (slot.available && new Date(slot.start) > now) {
+              allSlots.push({
+                date: day.date,
+                start: slot.start,
+                end: slot.end,
+                location: slot.location || "",
+                coachId: coach.id,
+                coachName,
+                coachAvatar,
+              });
+            }
+          }
+        }
+      }
+
+      allSlots.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+      const grouped: Record<string, typeof allSlots> = {};
+      for (const slot of allSlots) {
+        if (!grouped[slot.date]) grouped[slot.date] = [];
+        grouped[slot.date].push(slot);
+      }
+
+      const result = Object.entries(grouped).map(([date, slots]) => ({ date, slots }));
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching availability:", error);
+      res.status(500).json({ message: "Failed to fetch availability" });
+    }
+  });
+
   app.get("/api/services", async (req: any, res) => {
     try {
       const orgId = req.query.organizationId as string | undefined;
