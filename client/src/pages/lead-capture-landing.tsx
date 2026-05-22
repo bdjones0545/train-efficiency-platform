@@ -516,9 +516,9 @@ export default function LeadCaptureLanding() {
     <div className="min-h-screen bg-zinc-950 text-white">
       {/* ── HERO ── */}
       <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
-        {/* Background: video > image > gradient */}
+        {/* Background layer — z:1, always below laser (z:3) */}
         {videoBackgroundUrl ? (
-          <>
+          <div className="absolute inset-0" style={{ zIndex: 1 }}>
             <video
               src={videoBackgroundUrl}
               autoPlay
@@ -529,9 +529,9 @@ export default function LeadCaptureLanding() {
               data-testid="video-hero-bg"
             />
             <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
-          </>
+          </div>
         ) : config?.heroImageUrl ? (
-          <div className="absolute inset-0">
+          <div className="absolute inset-0" style={{ zIndex: 1 }}>
             {/* Mobile focal point override via injected CSS */}
             {mobileHeroImagePosition && mobileHeroImagePosition !== heroImagePosition && (
               <style>{`@media (max-width: 768px) { .hero-bg-img { object-position: ${mobileHeroImagePosition} !important; } }`}</style>
@@ -550,14 +550,14 @@ export default function LeadCaptureLanding() {
             <div className="absolute inset-0 bg-black" style={{ opacity: overlayStrength / 100 }} />
           </div>
         ) : (
-          <div className="absolute inset-0 overflow-hidden" style={{ background: heroBg }}>
+          <div className="absolute inset-0 overflow-hidden" style={{ background: heroBg, zIndex: 1 }}>
             <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full blur-[120px] translate-x-1/3 -translate-y-1/3" style={{ backgroundColor: `${accentColor}18` }} />
             <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full blur-[100px] -translate-x-1/3 translate-y-1/3" style={{ backgroundColor: `${accentColor}12` }} />
             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:60px_60px]" />
           </div>
         )}
 
-        {/* Laser Effects — rendered above background, behind content */}
+        {/* Laser Effects — z:3, above background (z:1), below content (z:10) */}
         <LeadCaptureLaserEffects
           enabled={laserEnabled}
           intensity={laserIntensity}
