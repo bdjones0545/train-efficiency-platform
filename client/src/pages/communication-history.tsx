@@ -1548,7 +1548,7 @@ function ProspectsTab() {
   const [emailFilter, setEmailFilter] = useState("all");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editProspect, setEditProspect] = useState<TeamTrainingProspect | null>(null);
-  const [researchSport, setResearchSport] = useState("");
+  const [researchSport, setResearchSport] = useState("any");
 
   const { data: prospects, isLoading, refetch } = useQuery<TeamTrainingProspect[]>({
     queryKey: ["/api/admin/team-training/prospects"],
@@ -1618,7 +1618,7 @@ function ProspectsTab() {
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <div className="flex flex-wrap gap-2">
           <Button
-            onClick={() => researchMutation.mutate(researchSport || undefined)}
+            onClick={() => researchMutation.mutate(researchSport === "any" ? undefined : researchSport)}
             disabled={researchMutation.isPending}
             data-testid="button-find-prospects"
           >
@@ -1630,7 +1630,7 @@ function ProspectsTab() {
               <SelectValue placeholder="Any sport" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Any sport</SelectItem>
+              <SelectItem value="any">Any sport</SelectItem>
               {SPORTS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
