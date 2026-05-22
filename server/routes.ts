@@ -1966,6 +1966,39 @@ export async function registerRoutes(
         } catch (e) { console.error("Booking email error:", e); }
       })();
 
+      // Track booking created / intro used event in attention inbox (fire-and-forget)
+      (async () => {
+        try {
+          const { trackBookingEvent, buildBookingEventContext } = await import("./booking-events");
+          const orgId = coach.organizationId ?? "";
+          if (!orgId) return;
+          const eventCtx = await buildBookingEventContext(
+            booking.id, orgId, userId, coachId, serviceId, service.name,
+            start, end, (service as any).priceCents ?? 0,
+            {
+              paymentMethod: req.body.paymentMethod ?? null,
+              sessionType: (service as any).sessionType ?? null,
+              maxParticipants: booking.maxParticipants,
+            },
+          );
+          await trackBookingEvent(
+            isFreeIntro ? "booking_intro_used" : "booking_created",
+            eventCtx,
+          );
+          if (isSemiPrivate && booking.maxParticipants) {
+            const names: string[] = req.body.participantNames ?? [];
+            const filled = names.filter((n: string) => n.trim()).length;
+            if (filled >= booking.maxParticipants) {
+              await trackBookingEvent("group_session_full", {
+                ...eventCtx,
+                participantCount: filled,
+                maxParticipants: booking.maxParticipants,
+              });
+            }
+          }
+        } catch {}
+      })();
+
       res.json(booking);
     } catch (error) {
       console.error("Error creating booking:", error);
@@ -2028,6 +2061,31 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateBookingStatus(bookingId, status);
+
+      // Track cancellation / no-show event in attention inbox (fire-and-forget)
+      if (status === "CANCELLED" || status === "NO_SHOW") {
+        (async () => {
+          try {
+            const { trackBookingEvent, buildBookingEventContext } = await import("./booking-events");
+            const coachProf = await storage.getCoachProfile(booking.coachId);
+            const orgId = coachProf?.organizationId ?? "";
+            const svc = await storage.getService(booking.serviceId);
+            if (!orgId || !svc) return;
+            const eventCtx = await buildBookingEventContext(
+              bookingId, orgId, booking.clientId, booking.coachId,
+              booking.serviceId, svc.name,
+              new Date(booking.startAt), new Date(booking.endAt),
+              (svc as any).priceCents ?? 0,
+              {
+                paymentMethod: (booking as any).paymentMethod ?? null,
+                sessionType: (svc as any).sessionType ?? null,
+              },
+            );
+            if (status === "CANCELLED") await trackBookingEvent("booking_cancelled", eventCtx);
+            else await trackBookingEvent("booking_no_show", eventCtx);
+          } catch {}
+        })();
+      }
 
       // Send cancellation emails non-blocking when a booking is cancelled via this route
       if (status === "CANCELLED") {
@@ -2626,6 +2684,30 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateBooking(bookingId, updateData);
+
+      // Track reschedule event in attention inbox when time changes (fire-and-forget)
+      if (updateData.startAt) {
+        (async () => {
+          try {
+            const { trackBookingEvent, buildBookingEventContext } = await import("./booking-events");
+            const svc = await storage.getService(finalServiceId);
+            if (!editCoachOrgId || !svc) return;
+            const eventCtx = await buildBookingEventContext(
+              bookingId, editCoachOrgId, existing.clientId, bookingCoachId,
+              finalServiceId, svc.name,
+              new Date(updateData.startAt),
+              new Date(updateData.endAt || existing.endAt),
+              (svc as any).priceCents ?? 0,
+              {
+                paymentMethod: (existing as any).paymentMethod ?? null,
+                sessionType: (svc as any).sessionType ?? null,
+                previousStartAt: new Date(existing.startAt),
+              },
+            );
+            await trackBookingEvent("booking_rescheduled", eventCtx);
+          } catch {}
+        })();
+      }
 
       // Send reschedule emails non-blocking when start time changes via this route
       if (updateData.startAt) {
