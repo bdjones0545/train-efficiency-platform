@@ -1,0 +1,207 @@
+Rebuild the TrainEfficiency booking flow into a fast, mobile-first “Book Fast” experience optimized for the fewest possible decisions before showing availability.
+
+Current problem:
+The booking flow is:
+1. Select coach
+2. Open coach profile
+3. Select service
+4. View availability
+
+This creates unnecessary friction and slows scheduling.
+
+Goal:
+Move to an availability-first booking architecture.
+
+Core principle:
+Users care most about:
+- what they want to book
+- when they can train
+- who is available
+
+The system should prioritize immediate booking momentum.
+
+NEW BOOKING ARCHITECTURE
+
+MODE A — BOOK FAST (default)
+
+This becomes the default scheduling experience.
+
+New flow:
+
+STEP 1 — Choose Session Type
+Immediately show service cards instead of coach cards.
+
+Replace dropdowns with tappable cards.
+
+Examples:
+- 1:1 Strength & Conditioning
+- Speed Development
+- Semi-Private Session
+- Team Training
+- Recovery Session
+- Intro Session
+
+Each card should show:
+- title
+- duration
+- price
+- optional short descriptor
+
+Example:
+[ 1:1 S&C ]
+60 min • $70
+
+[ Intro Session ]
+Free • First session
+
+UI requirements:
+- mobile-first
+- 2-column responsive grid if possible
+- large touch targets
+- no dropdowns
+- no coach profiles yet
+
+STEP 2 — Show Availability Immediately
+After selecting a session type, immediately show the next available time slots across all coaches who offer that service.
+
+Do NOT require selecting a coach first.
+
+Example:
+Available Today
+
+3:00 PM — Bryan Jones
+4:00 PM — Hunter Thaxton
+5:30 PM — Bryan Jones
+
+Each availability row should show:
+- time
+- coach
+- session duration
+- optional coach avatar
+- optional “next available” badge
+
+Make the rows highly tappable.
+
+Sort by:
+1. earliest availability
+2. today first
+3. tomorrow second
+4. then future dates
+
+Add:
+- horizontal date selector
+- “Today / Tomorrow / This Week”
+
+STEP 3 — Confirm Booking
+Once a slot is tapped:
+
+Show a compact confirmation screen:
+- coach
+- service
+- duration
+- price
+- date/time
+- location if applicable
+
+Primary CTA:
+[ Confirm Booking ]
+
+Optional:
+- notes
+- payment if required
+
+NO unnecessary extra steps.
+
+COACH PROFILES
+Coach selection becomes OPTIONAL.
+
+Add a small secondary action near the top:
+“Prefer a specific coach?”
+
+Only then open:
+- coach cards
+- bios
+- specialties
+- detailed profile view
+
+This becomes an advanced path, not the default path.
+
+COACH CARD REDESIGN
+Compress current coach cards heavily.
+
+Current cards are too tall and profile-heavy.
+
+New compact format:
+
+Bryan Jones
+Strength • Speed • Bluffton
+Next available: Today 3:00 PM
+
+[ View Availability ]
+
+Reduce:
+- excessive padding
+- giant bios
+- oversized tags
+- unnecessary visual height
+
+SERVICE LOGIC
+Important behavior:
+If only one coach offers a service:
+- auto-select that coach
+- immediately show availability
+- skip coach selection entirely
+
+BOOKING PERFORMANCE RULES
+Optimize for:
+- minimum taps
+- minimum scrolling
+- immediate availability visibility
+- mobile speed
+- reduced cognitive load
+
+Avoid:
+- giant dropdowns
+- nested flows
+- profile-first architecture
+- unnecessary modals
+
+UI/UX STYLE
+Maintain:
+- dark glass TrainEfficiency style
+- green accents
+- modern AI-native feel
+
+But make it feel:
+- faster
+- cleaner
+- more operational
+- more like Calendly / modern booking UX
+
+NOT:
+- profile browsing
+- directory navigation
+
+IMPORTANT TECHNICAL REQUIREMENTS
+- Preserve existing scheduling logic and booking APIs
+- Preserve coach/service relationships
+- Preserve pricing and duration logic
+- Preserve timezone handling
+- Preserve intro/free-session logic
+
+Only reorganize the UX flow and hierarchy.
+
+MOBILE SUCCESS CRITERIA
+The user should:
+1. open booking
+2. select a session type
+3. see available times immediately
+4. confirm booking
+
+within ~15 seconds.
+
+FINAL RESULT SHOULD FEEL LIKE:
+“Grab the next best available session.”
+
+NOT:
+“Browse coaches and configure a booking.”
