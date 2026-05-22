@@ -1,0 +1,152 @@
+Fix the mobile auto-scroll / layout jump issue across TrainEfficiency.
+
+Current issue:
+On iPhone/mobile Safari, when navigating tabs or pressing sections/pages:
+- the page unexpectedly scrolls upward
+- headers clip offscreen
+- tab rows partially disappear
+- content shifts vertically
+- sticky headers fight the viewport
+- sections remount and reposition the scroll unexpectedly
+
+This happens in multiple places:
+- Options tabs
+- Coaches page
+- Booking/settings pages
+- Tabbed admin pages
+- Command Center sections
+
+Root cause is likely a combination of:
+- nested scroll containers
+- multiple overflow-y-auto layers
+- h-screen / 100vh misuse
+- sticky headers inside scroll containers
+- Framer Motion layout animations
+- iOS Safari viewport resizing
+- auto focus restoration
+- remounting tab content
+
+GOAL:
+Create a stable mobile scrolling architecture with one authoritative scroll container.
+
+FIXES TO APPLY
+
+1. REMOVE NESTED SCROLL CONTAINERS
+Audit all major layouts for:
+- overflow-y-auto
+- overflow-scroll
+- h-screen
+- max-h-screen
+- fixed-height wrappers
+
+Do NOT allow nested vertical scrolling unless absolutely required.
+
+Use:
+- one root page scroll
+- internal sections should expand naturally
+
+2. REPLACE h-screen WITH dvh/svh SAFE UNITS
+On mobile Safari:
+replace:
+- h-screen
+- 100vh
+
+with:
+- min-h-[100dvh]
+- min-h-dvh
+- h-dvh where appropriate
+
+Avoid viewport jumps when Safari chrome changes size.
+
+3. STABILIZE STICKY HEADERS
+Audit all sticky elements:
+- tab bars
+- top nav
+- settings headers
+- command center bars
+
+Avoid:
+sticky inside overflow containers.
+
+Use:
+- one top-level sticky region only.
+
+4. PREVENT TAB REMOUNT SCROLL JUMPS
+Tabbed pages should:
+- preserve scroll position
+- not remount entire page trees unnecessarily
+
+Prefer:
+- conditional visibility
+instead of:
+- full component unmount/remount
+
+For Tabs:
+- avoid forcing key changes
+- avoid animate-presence remounting
+
+5. DISABLE AUTO-SCROLL ON FOCUS
+Inputs/buttons should not auto-scroll the viewport unexpectedly.
+
+Audit:
+- autofocus
+- scrollIntoView
+- focus management
+- dialog opening logic
+
+Especially on:
+- tab switches
+- settings pages
+- modals
+- booking flow
+
+6. FRAMER MOTION AUDIT
+If layout animations are enabled:
+- disable layout animations on mobile tab containers
+- remove layoutId usage from scrolling sections
+- avoid animating height of large containers
+
+Animations should not reposition the viewport.
+
+7. ROOT MOBILE LAYOUT
+Create one consistent mobile shell:
+- header
+- content
+- bottom spacing
+- FAB spacing
+
+All pages should inherit from the same stable mobile layout component.
+
+8. SAFE AREA FIXES
+Add proper:
+- pb-safe
+- pt-safe
+- env(safe-area-inset-*)
+
+for iOS devices.
+
+9. VERIFY THESE PAGES
+Specifically test:
+- Options tabs
+- Coaches
+- Booking flow
+- Command Center
+- Attention Inbox
+- Scheduling pages
+- Settings pages
+- Modal opening/closing
+- Tab switching
+- Mobile Safari
+
+10. SUCCESS CRITERIA
+- Switching tabs does not shift the viewport upward
+- Sticky headers remain fully visible
+- No clipped tab bars
+- Scroll position remains stable
+- Pages feel anchored and solid
+- No “jumping” on navigation
+- Mobile UX feels native-app quality
+
+IMPORTANT:
+This is a layout architecture stabilization task, not a visual redesign.
+Focus on scroll ownership, viewport stability, and iOS behavior consistency.
