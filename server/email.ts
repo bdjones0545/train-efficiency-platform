@@ -4,6 +4,9 @@ import { toZonedTime } from 'date-fns-tz';
 import { storage } from './storage';
 
 let connectionSettings: any;
+let _credentialCache: { apiKey: string; email: string } | null = null;
+let _credentialCacheTs = 0;
+const CREDENTIAL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface OrgBranding {
   name: string;
@@ -96,14 +99,26 @@ function para(text: string) {
 }
 
 async function getCredentials() {
+  // 1. Direct env var override — highest priority
   if (process.env.SENDGRID_API_KEY) {
     return {
       apiKey: process.env.SENDGRID_API_KEY,
-      email: 'bryan.jones@efficiencystrengthtraining.com',
+      email: process.env.SENDGRID_FROM_EMAIL || 'bryan.jones@efficiencystrengthtraining.com',
     };
   }
 
+  // 2. Return cached connector credentials if fresh
+  const now = Date.now();
+  if (_credentialCache && (now - _credentialCacheTs) < CREDENTIAL_CACHE_TTL_MS) {
+    return _credentialCache;
+  }
+
+  // 3. Fetch from Replit connector
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+  if (!hostname) {
+    throw new Error('Email provider not configured — SENDGRID_API_KEY is not set and Replit Connectors hostname is unavailable');
+  }
+
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY
     : process.env.WEB_REPL_RENEWAL
@@ -111,23 +126,60 @@ async function getCredentials() {
     : null;
 
   if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+    throw new Error('Email provider not configured — authentication token unavailable (REPL_IDENTITY/WEB_REPL_RENEWAL missing)');
   }
 
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=sendgrid',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
+  let fetchedSettings: any;
+  try {
+    fetchedSettings = await fetch(
+      'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=sendgrid',
+      {
+        headers: {
+          'Accept': 'application/json',
+          'X_REPLIT_TOKEN': xReplitToken
+        }
       }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  if (!connectionSettings || (!connectionSettings.settings.api_key || !connectionSettings.settings.from_email)) {
-    throw new Error('SendGrid not connected');
+    ).then(res => res.json()).then(data => data.items?.[0]);
+  } catch (fetchErr: any) {
+    throw new Error(`Email provider unreachable — could not contact Replit connector service: ${fetchErr.message}`);
   }
-  return { apiKey: connectionSettings.settings.api_key, email: connectionSettings.settings.from_email };
+
+  connectionSettings = fetchedSettings;
+
+  if (!connectionSettings?.settings?.api_key) {
+    throw new Error('Email provider not configured — SendGrid connector is missing api_key. Connect it in the Replit Secrets panel.');
+  }
+  if (!connectionSettings?.settings?.from_email) {
+    throw new Error('Email provider not configured — SendGrid connector is missing from_email.');
+  }
+
+  const creds = { apiKey: connectionSettings.settings.api_key, email: connectionSettings.settings.from_email };
+  _credentialCache = creds;
+  _credentialCacheTs = now;
+  return creds;
+}
+
+/**
+ * Returns true if SendGrid appears to be configured (env var or connector present).
+ * Does NOT validate the key — use for fast pre-checks only.
+ */
+export function isEmailProviderConfigured(): boolean {
+  if (process.env.SENDGRID_API_KEY) return true;
+  if (process.env.REPLIT_CONNECTORS_HOSTNAME) return true;
+  return false;
+}
+
+/**
+ * Validates that credentials are actually retrievable. Throws with a clear error if not.
+ * Call at startup to surface misconfiguration early.
+ */
+export async function validateEmailProvider(): Promise<{ ok: boolean; fromEmail?: string; error?: string }> {
+  try {
+    const { email } = await getCredentials();
+    return { ok: true, fromEmail: email };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
 }
 
 export async function getUncachableSendGridClient() {

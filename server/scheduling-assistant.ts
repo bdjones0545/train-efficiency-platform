@@ -3311,6 +3311,15 @@ Return a JSON object with exactly these keys:
         const clientFirstName = clientUser.firstName || agentAction.clientName || "there";
         const orgBranding = await getOrgBranding(agentAction.organizationId);
 
+        // Pre-check: is the email provider configured at all?
+        const { isEmailProviderConfigured } = await import("./email");
+        if (!isEmailProviderConfigured()) {
+          await storage.updateAgentAction(agentActionId_outreach, { status: "failed" });
+          return JSON.stringify({
+            error: "Email provider is not configured. SENDGRID_API_KEY is missing and no Replit SendGrid connector is available. Contact your administrator.",
+          });
+        }
+
         try {
           await sendAgentOutreachEmail(
             clientUser.email,
@@ -3336,8 +3345,15 @@ Return a JSON object with exactly these keys:
           });
         } catch (err: any) {
           await storage.updateAgentAction(agentActionId_outreach, { status: "failed" });
-          console.error(`[send_drafted_outreach_email] Failed for action ${agentActionId_outreach}:`, err?.message);
-          return JSON.stringify({ error: "Failed to send email. The action has been marked as failed." });
+          // Extract the actual SendGrid error body if present
+          const sgBody = err?.response?.body;
+          const providerError = sgBody
+            ? (Array.isArray(sgBody.errors) ? sgBody.errors.map((e: any) => e.message).join("; ") : JSON.stringify(sgBody))
+            : (err?.message || "Unknown error");
+          console.error(`[send_drafted_outreach_email] Failed for action ${agentActionId_outreach}: ${providerError}`);
+          return JSON.stringify({
+            error: `Failed to send email: ${providerError}`,
+          });
         }
       }
 

@@ -54,7 +54,15 @@ export async function impl_send_email(orgId: string, input: Record<string, any>)
     }
   }
 
-  const { sendEmail: _sendEmail } = await import("../email");
+  const { sendEmail: _sendEmail, isEmailProviderConfigured } = await import("../email");
+
+  if (!isEmailProviderConfigured()) {
+    return {
+      success: false,
+      message: "Email provider is not configured. SENDGRID_API_KEY is missing and no Replit SendGrid connector is available.",
+    };
+  }
+
   try {
     await (_sendEmail as any)(
       input.to,
@@ -71,7 +79,11 @@ export async function impl_send_email(orgId: string, input: Record<string, any>)
     );
     return { success: true, message: `Email sent to ${input.to}` };
   } catch (e: any) {
-    return { success: false, message: e.message };
+    const sgBody = (e as any)?.response?.body;
+    const providerError = sgBody
+      ? (Array.isArray(sgBody.errors) ? sgBody.errors.map((err: any) => err.message).join("; ") : JSON.stringify(sgBody))
+      : (e.message || "Unknown error");
+    return { success: false, message: `Email send failed: ${providerError}` };
   }
 }
 

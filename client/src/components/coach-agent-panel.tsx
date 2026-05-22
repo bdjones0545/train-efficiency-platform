@@ -427,7 +427,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
       const parsed = JSON.parse(text.trim());
       if (parsed.requiresConfirmation) {
         const summary = parsed.summary ? `\n\n${parsed.summary}` : "";
-        text = `I need your confirmation before I can complete this.${summary}\n\nReply **yes** to confirm or **no** to cancel.`;
+        text = `I need your confirmation before I can proceed.${summary}\n\nUse the **Confirm** button below to execute, or **Cancel** to abort.`;
       }
     } catch {
       // not JSON — fall through to normal markdown rendering
@@ -1552,15 +1552,18 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                                 });
                                 const data = await resp.json();
                                 if (!resp.ok) {
-                                  const errMsg = data.error || "Action failed.";
-                                  setMessages(prev => [...prev, { role: "assistant" as const, content: `Could not execute: ${errMsg}` }]);
+                                  const errMsg = data.error || data.result?.error || "Action failed.";
+                                  setMessages(prev => [...prev, { role: "assistant" as const, content: `Could not complete: ${errMsg}` }]);
                                   toast({ title: "Action failed", description: errMsg, variant: "destructive" });
                                 } else {
                                   const r = data.result ?? {};
-                                  const successText = r.message || r.sentTo
-                                    ? (r.message || `Sent to ${r.sentTo}.`)
+                                  const successText = r.message
+                                    ? r.message
+                                    : r.sentTo
+                                    ? `Sent to ${r.sentTo}.`
                                     : "Done! Action completed successfully.";
                                   setMessages(prev => [...prev, { role: "assistant" as const, content: successText }]);
+                                  toast({ title: "Done", description: successText });
                                   qc.invalidateQueries({ queryKey: ["/api/bookings"] });
                                   qc.invalidateQueries({ queryKey: ["/api/sessions/open"] });
                                   qc.invalidateQueries({ queryKey: ["/api/coaches"] });
@@ -1576,7 +1579,10 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                           >
                             {isConfirming ? (
                               <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Sending…</>
-                            ) : pendingConfirmation.actionType === "send_drafted_outreach_sms" ? "Send SMS" : "Confirm"}
+                            ) : pendingConfirmation.actionType === "send_drafted_outreach_sms" ? "Send SMS"
+                              : pendingConfirmation.actionType === "send_drafted_outreach_email" ? "Send Email"
+                              : pendingConfirmation.actionType === "send_team_outreach_email" ? "Send Email"
+                              : "Confirm"}
                           </Button>
                           <Button
                             size="sm"

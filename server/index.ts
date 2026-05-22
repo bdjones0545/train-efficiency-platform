@@ -6,6 +6,7 @@ import { runMigrations } from 'stripe-replit-sync';
 import { getStripeSync } from './stripeClient';
 import { WebhookHandlers } from './webhookHandlers';
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { validateEmailProvider } from "./email";
 
 const app = express();
 const httpServer = createServer(app);
@@ -45,6 +46,16 @@ async function initStripe() {
 }
 
 (async () => { await initStripe(); })();
+
+// Validate email provider at startup — surface misconfiguration in logs immediately
+(async () => {
+  const result = await validateEmailProvider();
+  if (result.ok) {
+    console.log(`[Email] SendGrid configured — from: ${result.fromEmail}`);
+  } else {
+    console.warn(`[Email] SendGrid NOT configured: ${result.error}`);
+  }
+})();
 
 app.post(
   '/api/stripe/webhook',
