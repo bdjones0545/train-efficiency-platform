@@ -1,0 +1,158 @@
+Reorganize the TrainEfficiency Command Center mobile layout into a more operational AI command center.
+
+Current issue:
+The page has strong data and actions, but everything is stacked vertically with equal priority. It feels like a long dashboard instead of an intelligent command center.
+
+Goal:
+Rebuild the layout hierarchy around:
+1. NOW — immediate action
+2. MONEY — revenue recovery
+3. PIPELINE — growth/leads
+4. AGENTS — automation/actions
+
+Do not remove existing functionality. Reorganize, compress, and improve hierarchy.
+
+New mobile order:
+
+1. Header / Executive Strip
+- Keep “Today’s Command Center”
+- Add compact summary line:
+  - MTD revenue
+  - open slots
+  - hot/program leads
+  - pending drafts if available
+- Keep refresh icon
+- Reduce vertical spacing.
+
+2. Best Action Today
+Move this near the top, directly after the header.
+This card becomes the hero.
+Example:
+“Draft backfill outreach to waitlist or inactive clients”
+“17 open slots available today/tomorrow”
+“Est. $1,190 opportunity”
+Buttons:
+- Primary: Take Action
+- Secondary: Ask Agent Why
+
+3. Agent Quick Actions
+Move these higher, directly under Best Action Today.
+Use a compact 2-column grid:
+- What should I do today?
+- Fill open slots
+- Draft team outreach
+- Review team drafts
+- Follow up with replies
+- Show revenue gap
+
+4. Revenue Snapshot
+Keep this section but compress it.
+Show:
+- Booked Today
+- Open Slot Value Today
+- Month to Date
+- Monthly goal CTA if no goal exists
+Use smaller cards and tighter spacing.
+
+5. Revenue Recovery Queue
+Merge Schedule Gaps and Client Opportunities into one unified section.
+Name it:
+“Revenue Recovery Opportunities”
+
+Include mixed rows:
+- open schedule slots
+- churn risk clients
+- should-book clients
+- unpaid/payment recovery if available
+
+Each row should have:
+- icon
+- title
+- context
+- estimated value
+- action label
+
+Examples:
+- “1:00 PM – 2:00 PM tomorrow” / “Open slot” / “$48” / “Fill”
+- “Steve Smith” / “No session in 55 days” / “$48” / “Retain”
+
+Show only the top 5 initially with a “View all” option.
+
+6. Team Training Pipeline
+Compress the current metric card layout.
+Instead of large metric blocks, use one summary card:
+- 48 total leads
+- 33 high confidence
+- 2 drafts pending
+- $35,250 estimated pipeline
+
+Below it:
+- “Drafts awaiting approval” list
+- Show top 2 drafts
+- Add “Review all” if more exist
+
+7. Program Leads — Sales Intelligence
+Keep this section, but make it feel like a CRM inbox.
+Reduce button clutter on each lead card.
+
+Each lead card should show:
+- name
+- sport/location
+- lead score
+- lead status
+- time since submission
+- one primary recommended action
+
+Only show 1 primary CTA on-card.
+Move secondary actions into a “More” menu or expandable action tray:
+- Call
+- Text
+- Email
+- Follow-up
+- Sequence
+- Mark contacted
+- Mark booked
+- Lost
+- AI Analyze
+- Deal
+- Notify Admin
+
+8. Agent Layer / Activity Feed
+Near the bottom, add or preserve an agent activity area:
+- latest Business Brain analysis
+- Revenue Agent note
+- Retention Agent note
+- Outreach Agent note
+- last automation run
+
+Keep the floating AI button and bottom “Ask Agent” bar, but make sure they do not cover important row actions on mobile.
+
+Design rules:
+- Reduce vertical card height by 25–30%.
+- Tighten padding and section spacing.
+- Keep dark glass style and green accent.
+- Use section labels consistently.
+- Use “View all” patterns instead of rendering every item immediately.
+- Prioritize action over analytics.
+- Avoid huge empty-state cards unless no data exists.
+- If no analysis has run, show a compact prompt, not a giant card.
+
+Important:
+This should feel like:
+- Linear
+- Stripe Dashboard
+- Raycast
+- AI operations center
+
+Not like:
+- generic admin dashboard
+- marketing landing page
+- oversized cards
+
+Verify on mobile:
+- First viewport shows header, best action, and at least part of quick actions.
+- User does not need to scroll past giant empty states.
+- Best Action Today is visible immediately.
+- Schedule gaps and churn risks are grouped logically.
+- Lead cards are less cluttered.
+- All existing buttons still work.
