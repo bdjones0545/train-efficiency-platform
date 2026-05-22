@@ -111,9 +111,11 @@ async function purgeExpiredPending(): Promise<void> {
 async function createPendingAction(
   userId: string | null,
   actionType: GatedActionType,
-  normalizedArgs: Record<string, unknown>
+  normalizedArgs: Record<string, unknown>,
+  opts?: { orgId?: string | null; displayMeta?: Record<string, unknown> }
 ): Promise<AgentPendingAction> {
   const now = new Date();
+  // Idempotency key is computed from base args only (without _display metadata)
   const idemKey = computeIdempotencyKey(userId, actionType, normalizedArgs);
 
   // Cache hit: return existing non-expired pending action
@@ -122,10 +124,13 @@ async function createPendingAction(
       a.userId === userId &&
       a.actionType === actionType &&
       a.status === "pending" &&
-      a.expiresAt > now &&
-      computeIdempotencyKey(a.userId, a.actionType, a.normalizedArgs as Record<string, unknown>) === idemKey
+      a.expiresAt > now
     ) {
-      return a;
+      // Strip _display from stored args before computing key for comparison
+      const { _display: _d, ...storedBase } = a.normalizedArgs as Record<string, unknown>;
+      if (computeIdempotencyKey(a.userId, a.actionType, storedBase) === idemKey) {
+        return a;
+      }
     }
   }
 
@@ -144,11 +149,16 @@ async function createPendingAction(
     pendingActionsCache.delete(toCancel.id);
   }
 
+  // Merge display metadata into normalizedArgs under _display key for rehydration
+  const argsWithMeta: Record<string, unknown> = opts?.displayMeta
+    ? { ...normalizedArgs, _display: opts.displayMeta }
+    : normalizedArgs;
+
   const action = await storage.createAgentPendingAction({
     userId,
-    orgId: null,
+    orgId: opts?.orgId ?? null,
     actionType,
-    normalizedArgs,
+    normalizedArgs: argsWithMeta,
     status: "pending",
     expiresAt: new Date(now.getTime() + PENDING_TTL_MS),
     idempotencyKey: idemKey,
@@ -1302,11 +1312,15 @@ async function executeTool(
           const previewStart = new Date(args.startAt);
           const previewEnd = new Date(args.endAt);
 
+          const _bookSummary = `Book ${previewService?.name || args.serviceId} with ${previewCoach?.user ? `${previewCoach.user.firstName} ${previewCoach.user.lastName}` : args.coachId} on ${format(previewStart, "MMM d 'at' h:mm a")}`;
           const pending = await createPendingAction(userId, "book_session", {
             coachId: args.coachId,
             serviceId: args.serviceId,
             startAt: args.startAt,
             endAt: args.endAt,
+          }, {
+            orgId: organizationId,
+            displayMeta: { summary: _bookSummary },
           });
           return JSON.stringify({
             requiresConfirmation: true,
@@ -1322,7 +1336,7 @@ async function executeTool(
               duration: previewService?.durationMin ? `${previewService.durationMin} min` : undefined,
               availabilityNote: "✓ Time slot is available",
             },
-            summary: `Book ${previewService?.name || args.serviceId} with ${previewCoach?.user ? `${previewCoach.user.firstName} ${previewCoach.user.lastName}` : args.coachId} on ${format(previewStart, "MMM d 'at' h:mm a")}`,
+            summary: _bookSummary,
             expiresAt: pending.expiresAt.toISOString(),
             message: "Restate the session details clearly to the user and ask them to confirm. Once they confirm, call book_session again with confirmed: true and the exact pendingActionId from this response.",
           });
@@ -1495,7 +1509,10 @@ async function executeTool(
 
       case "cancel_booking": {
         if (args.confirmed !== true) {
-          const pending = await createPendingAction(userId, "cancel_booking", { bookingId: args.bookingId });
+          const pending = await createPendingAction(userId, "cancel_booking", { bookingId: args.bookingId }, {
+            orgId: organizationId,
+            displayMeta: { summary: `Cancel booking ID: ${args.bookingId}` },
+          });
           return JSON.stringify({
             requiresConfirmation: true,
             pendingActionId: pending.id,
@@ -1680,6 +1697,7 @@ async function executeTool(
           const previewEnd = addMinutes(previewStart, previewService?.durationMin || 60);
           const clientDisplay = args.clientId || `${args.clientFirstName || ""} ${args.clientLastName || ""}`.trim();
 
+          const _createSummary = `Create session: ${clientDisplay}, ${previewService?.name || args.serviceId}, ${previewCoach?.user ? `${previewCoach.user.firstName} ${previewCoach.user.lastName}` : args.coachId}, ${format(previewStart, "MMM d 'at' h:mm a")}`;
           const pending = await createPendingAction(userId, "coach_create_session", {
             coachId: args.coachId,
             serviceId: args.serviceId,
@@ -1687,6 +1705,9 @@ async function executeTool(
             clientId: args.clientId,
             clientFirstName: args.clientFirstName,
             clientLastName: args.clientLastName,
+          }, {
+            orgId: organizationId,
+            displayMeta: { summary: _createSummary },
           });
           return JSON.stringify({
             requiresConfirmation: true,
@@ -1703,7 +1724,7 @@ async function executeTool(
               duration: previewService?.durationMin ? `${previewService.durationMin} min` : undefined,
               availabilityNote: "✓ Time slot is available",
             },
-            summary: `Create session: ${clientDisplay}, ${previewService?.name || args.serviceId}, ${previewCoach?.user ? `${previewCoach.user.firstName} ${previewCoach.user.lastName}` : args.coachId}, ${format(previewStart, "MMM d 'at' h:mm a")}`,
+            summary: _createSummary,
             expiresAt: pending.expiresAt.toISOString(),
             message: "Restate the client, coach, service, date, and time clearly and ask them to confirm. Once confirmed, call coach_create_session again with confirmed: true and the exact pendingActionId from this response.",
           });
@@ -2078,6 +2099,9 @@ async function executeTool(
             bookingId: args.bookingId,
             newStartAt: args.newStartAt,
             newEndAt: args.newEndAt,
+          }, {
+            orgId: organizationId,
+            displayMeta: { summary: `Reschedule booking ${args.bookingId} to ${args.newStartAt}` },
           });
           return JSON.stringify({
             requiresConfirmation: true,
@@ -2585,12 +2609,16 @@ async function executeTool(
 
       case "send_scheduling_inquiry": {
         if (args.confirmed !== true) {
-          const pending = await createPendingAction(userId, "send_scheduling_inquiry", { message: args.message });
+          const _inquirySummary = `Send scheduling inquiry: "${String(args.message).slice(0, 80)}${String(args.message).length > 80 ? "…" : ""}"`;
+          const pending = await createPendingAction(userId, "send_scheduling_inquiry", { message: args.message }, {
+            orgId: organizationId,
+            displayMeta: { summary: _inquirySummary },
+          });
           return JSON.stringify({
             requiresConfirmation: true,
             pendingActionId: pending.id,
             actionType: "send_scheduling_inquiry",
-            summary: `Send scheduling inquiry: "${String(args.message).slice(0, 80)}${String(args.message).length > 80 ? "…" : ""}"`,
+            summary: _inquirySummary,
             expiresAt: pending.expiresAt.toISOString(),
             message: "Restate the recipient and message content to the user and ask them to confirm. Once confirmed, call send_scheduling_inquiry again with confirmed: true and the exact pendingActionId from this response.",
           });
@@ -2926,17 +2954,23 @@ async function executeTool(
       case "create_confirmed_recurring_sessions": {
         if (args.confirmed !== true) {
           const slots = Array.isArray(args.confirmedSlots) ? args.confirmedSlots : [];
+          const _recurringSummary = `Create ${slots.length} recurring session(s) for client ${args.clientId}, service ${args.serviceId}`;
           const pending = await createPendingAction(userId, "create_confirmed_recurring_sessions", {
             clientId: args.clientId,
             coachId: args.coachId,
             serviceId: args.serviceId,
+            confirmedSlots: args.confirmedSlots,
+            location: args.location,
             slotCount: slots.length,
+          }, {
+            orgId: organizationId,
+            displayMeta: { summary: _recurringSummary },
           });
           return JSON.stringify({
             requiresConfirmation: true,
             pendingActionId: pending.id,
             actionType: "create_confirmed_recurring_sessions",
-            summary: `Create ${slots.length} recurring session(s) for client ${args.clientId}, service ${args.serviceId}`,
+            summary: _recurringSummary,
             expiresAt: pending.expiresAt.toISOString(),
             message: "Show the coach the full list of slots to be created and ask them to confirm. Once confirmed, call create_confirmed_recurring_sessions again with confirmed: true and the exact pendingActionId from this response.",
           });
@@ -3218,15 +3252,25 @@ Return a JSON object with exactly these keys:
             return JSON.stringify({ error: "This draft belongs to a different organization." });
           }
           const mc = agentAction.messageContent as any;
-          const pending = await createPendingAction(userId, "send_drafted_outreach_email", { agentActionId: agentActionId_outreach });
+          const _outreachEmailSubject = mc?.emailSubject ?? "(no subject)";
+          const _outreachEmailBody = mc?.emailBody ?? "(no body)";
+          const pending = await createPendingAction(userId, "send_drafted_outreach_email", { agentActionId: agentActionId_outreach }, {
+            orgId: organizationId,
+            displayMeta: {
+              summary: `Send outreach email to ${agentAction.clientName}`,
+              recipient: agentAction.clientName,
+              emailSubject: _outreachEmailSubject,
+              emailBody: _outreachEmailBody,
+            },
+          });
           return JSON.stringify({
             requiresConfirmation: true,
             pendingActionId: pending.id,
             actionType: "send_drafted_outreach_email",
             summary: `Send outreach email to ${agentAction.clientName}`,
             recipient: agentAction.clientName,
-            emailSubject: mc?.emailSubject ?? "(no subject)",
-            emailBody: mc?.emailBody ?? "(no body)",
+            emailSubject: _outreachEmailSubject,
+            emailBody: _outreachEmailBody,
             expiresAt: pending.expiresAt.toISOString(),
             message: "Show the recipient name, subject, and email body to the user and ask them to confirm sending. Once confirmed, call send_drafted_outreach_email again with confirmed: true and the exact pendingActionId from this response.",
           });
@@ -3351,6 +3395,14 @@ Return a JSON object with exactly these keys:
           const pending = await createPendingAction(userId, "send_drafted_outreach_sms", {
             agentActionId: agentActionId_sms,
             messagePurpose,
+          }, {
+            orgId: organizationId,
+            displayMeta: {
+              summary: `Send SMS to ${agentAction.clientName} at ${clientUser.phone}`,
+              recipient: agentAction.clientName,
+              phone: clientUser.phone,
+              smsBody: formattedSmsBody,
+            },
           });
           return JSON.stringify({
             requiresConfirmation: true,
@@ -3972,12 +4024,24 @@ Return a JSON object with exactly these keys:
         }
 
         if (!confirmed) {
-          const pending = await createPendingAction(userId, "send_team_outreach_email", { draftId });
+          const _teamEmailSummary = `Send team outreach email to ${prospect.prospectName} (${prospect.contactEmail})`;
+          const pending = await createPendingAction(userId, "send_team_outreach_email", { draftId }, {
+            orgId: organizationId,
+            displayMeta: {
+              summary: _teamEmailSummary,
+              recipient: prospect.prospectName,
+              emailSubject: draft.subject,
+              emailBody: draft.body.slice(0, 300),
+            },
+          });
           return JSON.stringify({
             requiresConfirmation: true,
             pendingActionId: pending.id,
             actionType: "send_team_outreach_email",
-            summary: `Send team outreach email to ${prospect.prospectName} (${prospect.contactEmail})\n\nSubject: ${draft.subject}\n\nPreview: ${draft.body.slice(0, 150)}${draft.body.length > 150 ? "..." : ""}`,
+            summary: `${_teamEmailSummary}\n\nSubject: ${draft.subject}\n\nPreview: ${draft.body.slice(0, 150)}${draft.body.length > 150 ? "..." : ""}`,
+            recipient: prospect.prospectName,
+            emailSubject: draft.subject,
+            emailBody: draft.body.slice(0, 300),
             prospect: {
               name: prospect.prospectName,
               sport: prospect.sport,
@@ -4787,7 +4851,7 @@ export function handleAssistantMessage(
   async function* generate(): AsyncGenerator<string> {
     let currentMessages = [...chatMessages];
     let maxIterations = 5;
-    let pendingConfirmPayload: { pendingActionId: string; actionType: string; summary: string; expiresAt: string; phone?: string; smsBody?: string; recipient?: string } | null = null;
+    let pendingConfirmPayload: { pendingActionId: string; actionType: string; summary: string; expiresAt: string; phone?: string; smsBody?: string; recipient?: string; emailSubject?: string; emailBody?: string } | null = null;
 
     while (maxIterations > 0) {
       maxIterations--;
@@ -4866,10 +4930,13 @@ export function handleAssistantMessage(
               actionType: parsed.actionType || tc.name,
               summary: parsed.summary || "",
               expiresAt: parsed.expiresAt || "",
-              // SMS-specific fields — included when actionType is send_drafted_outreach_sms
+              // SMS-specific fields
               phone: parsed.phone,
               smsBody: parsed.smsBody,
               recipient: parsed.recipient,
+              // Email-specific fields
+              emailSubject: parsed.emailSubject,
+              emailBody: parsed.emailBody,
             };
           }
         } catch {}
@@ -4885,4 +4952,54 @@ export function handleAssistantMessage(
   }
 
   return generate();
+}
+
+// ─── Direct execution of a confirmed pending action ──────────────────────────
+// Called by POST /api/agent/pending-actions/:id/confirm so the button bypasses
+// the LLM entirely and executes the stored action deterministically.
+export async function executeConfirmedPendingAction(
+  pendingId: string,
+  userId: string,
+  userRole: string,
+  organizationId: string | null
+): Promise<{ success: boolean; result: Record<string, unknown> }> {
+  const pending = await storage.getAgentPendingAction(pendingId);
+  if (!pending) {
+    return { success: false, result: { error: "Pending action not found or already used." } };
+  }
+  if (pending.userId !== userId) {
+    return { success: false, result: { error: "Access denied." } };
+  }
+  if (pending.status !== "pending") {
+    return { success: false, result: { error: `Action is already ${pending.status}.` } };
+  }
+  if (pending.expiresAt < new Date()) {
+    return { success: false, result: { error: "This confirmation window has expired. Please draft a new action." } };
+  }
+
+  // Strip _display metadata from args — only pass execution-relevant args
+  const { _display: _stripped, ...cleanArgs } = (pending.normalizedArgs as Record<string, unknown>);
+  const args = { ...cleanArgs, confirmed: true, pendingActionId: pendingId };
+
+  const rawResult = await executeTool(pending.actionType as GatedActionType, args, userId, userRole, organizationId);
+  let result: Record<string, unknown> = {};
+  try {
+    result = JSON.parse(rawResult);
+  } catch {
+    result = { message: rawResult };
+  }
+  const success = !result.error;
+  return { success, result };
+}
+
+// Exported for use by the active pending actions endpoint
+export async function getActivePendingActionsForUser(
+  userId: string
+): Promise<Array<AgentPendingAction & { displayMeta: Record<string, unknown> | null }>> {
+  const rows = await storage.listOldestActiveAgentPendingActions(userId, 10);
+  return rows.map(r => {
+    const args = r.normalizedArgs as Record<string, unknown>;
+    const displayMeta = (args._display as Record<string, unknown>) ?? null;
+    return { ...r, displayMeta };
+  });
 }

@@ -30,7 +30,7 @@ import { users } from "@shared/models/auth";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
 import { startSessionReminderJob } from "./session-reminders";
-import { handleAssistantMessage } from "./scheduling-assistant";
+import { handleAssistantMessage, executeConfirmedPendingAction, getActivePendingActionsForUser } from "./scheduling-assistant";
 import { onPaymentReceived, onRedemption, onCashoutPaid } from "./revenue-recognition";
 import { computeCommandCenter, setMonthlyGoal, buildCommandCenterContextString } from "./business-command-center";
 
@@ -8913,6 +8913,66 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     } catch (error: any) {
       console.error("Scheduling agent error:", error);
       if (!res.headersSent) res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── Agent pending-action endpoints (button-driven, deterministic execution) ──
+
+  // GET active pending actions for the current user (for rehydration on load)
+  app.get("/api/agent/pending-actions/active", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const actions = await getActivePendingActionsForUser(userId);
+      return res.json({ actions });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST confirm — execute a pending action directly without going through the LLM
+  app.post("/api/agent/pending-actions/:id/confirm", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const pendingId = req.params.id as string;
+      if (!pendingId) return res.status(400).json({ error: "Missing pending action ID." });
+
+      const profile = await storage.getUserProfile(userId);
+      const userRole = profile?.role || "CLIENT";
+      const orgId = profile?.organizationId ?? null;
+
+      const { success, result } = await executeConfirmedPendingAction(pendingId, userId, userRole, orgId);
+      if (!success) {
+        const status = result.error === "Access denied." ? 403
+          : (result.error as string)?.includes("expired") ? 410
+          : (result.error as string)?.includes("not found") ? 404
+          : 400;
+        return res.status(status).json({ error: result.error, result });
+      }
+      return res.json({ success: true, result });
+    } catch (error: any) {
+      console.error("[confirm pending action]", error);
+      return res.status(500).json({ error: error.message || "Execution failed." });
+    }
+  });
+
+  // POST cancel — mark a pending action as cancelled
+  app.post("/api/agent/pending-actions/:id/cancel", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const pendingId = req.params.id as string;
+      if (!pendingId) return res.status(400).json({ error: "Missing pending action ID." });
+
+      // Verify ownership before cancelling
+      const pending = await storage.getAgentPendingAction(pendingId);
+      if (!pending) return res.status(404).json({ error: "Pending action not found." });
+      if (pending.userId !== userId) return res.status(403).json({ error: "Access denied." });
+      if (pending.status !== "pending") return res.status(409).json({ error: `Action is already ${pending.status}.` });
+
+      const cancelled = await storage.cancelAgentPendingAction(pendingId);
+      return res.json({ success: true, cancelled });
+    } catch (error: any) {
+      console.error("[cancel pending action]", error);
+      return res.status(500).json({ error: error.message || "Cancel failed." });
     }
   });
 

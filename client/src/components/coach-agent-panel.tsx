@@ -595,6 +595,8 @@ interface PendingConfirmation {
   phone?: string;
   smsBody?: string;
   recipient?: string;
+  emailSubject?: string;
+  emailBody?: string;
 }
 
 const ACTION_SUCCESS_PATTERNS = [
@@ -621,6 +623,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const [automationLevel, setAutomationLevel] = useState<number>(1);
   const [savingLevel, setSavingLevel] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
   const [alertDropdownOpen, setAlertDropdownOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -771,6 +774,33 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [alertDropdownOpen]);
+
+  // Rehydrate active pending actions when the panel mounts (survives page refresh)
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) return;
+    fetch("/api/agent/pending-actions/active", { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.actions?.length) return;
+        // Show the most recent active pending action
+        const latest = data.actions[data.actions.length - 1];
+        const meta = latest.displayMeta ?? {};
+        if (latest.status === "pending" && new Date(latest.expiresAt) > new Date()) {
+          setPendingConfirmation({
+            pendingActionId: latest.id,
+            actionType: latest.actionType,
+            summary: (meta.summary as string) || `Pending: ${latest.actionType}`,
+            expiresAt: latest.expiresAt,
+            recipient: meta.recipient as string | undefined,
+            phone: meta.phone as string | undefined,
+            smsBody: meta.smsBody as string | undefined,
+            emailSubject: meta.emailSubject as string | undefined,
+            emailBody: meta.emailBody as string | undefined,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [isAuthenticated, authLoading]);
 
   const submitBusinessAgentMessage = useCallback(async ({
     message,
@@ -1474,6 +1504,30 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                               </div>
                             )}
 
+                            {/* Email-specific preview block */}
+                            {(pendingConfirmation.actionType === "send_drafted_outreach_email" || pendingConfirmation.actionType === "send_team_outreach_email") && (
+                              <div className="mt-2 space-y-1.5">
+                                {pendingConfirmation.recipient && (
+                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <MessageSquare className="h-3 w-3 shrink-0" />
+                                    <span>To: <span className="font-medium text-foreground">{pendingConfirmation.recipient}</span></span>
+                                  </div>
+                                )}
+                                {pendingConfirmation.emailSubject && (
+                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <span className="font-medium">Subject:</span>
+                                    <span className="text-foreground">{pendingConfirmation.emailSubject}</span>
+                                  </div>
+                                )}
+                                {pendingConfirmation.emailBody && (
+                                  <div className="mt-1.5 bg-white dark:bg-black/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
+                                    <p className="text-xs text-muted-foreground mb-0.5 font-medium">Email preview</p>
+                                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-line line-clamp-4">{pendingConfirmation.emailBody}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {pendingConfirmation.expiresAt && (
                               <p className="text-xs text-muted-foreground mt-1.5">
                                 Expires at {new Date(pendingConfirmation.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -1486,13 +1540,43 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                             size="sm"
                             className="h-7 text-xs"
                             data-testid="button-confirm-action"
-                            onClick={() => {
+                            disabled={isConfirming}
+                            onClick={async () => {
                               const id = pendingConfirmation.pendingActionId;
                               setPendingConfirmation(null);
-                              sendMessage(`Yes, confirmed. pendingActionId: ${id}`);
+                              setIsConfirming(true);
+                              try {
+                                const resp = await fetch(`/api/agent/pending-actions/${id}/confirm`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+                                });
+                                const data = await resp.json();
+                                if (!resp.ok) {
+                                  const errMsg = data.error || "Action failed.";
+                                  setMessages(prev => [...prev, { role: "assistant" as const, content: `Could not execute: ${errMsg}` }]);
+                                  toast({ title: "Action failed", description: errMsg, variant: "destructive" });
+                                } else {
+                                  const r = data.result ?? {};
+                                  const successText = r.message || r.sentTo
+                                    ? (r.message || `Sent to ${r.sentTo}.`)
+                                    : "Done! Action completed successfully.";
+                                  setMessages(prev => [...prev, { role: "assistant" as const, content: successText }]);
+                                  qc.invalidateQueries({ queryKey: ["/api/bookings"] });
+                                  qc.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+                                  qc.invalidateQueries({ queryKey: ["/api/coaches"] });
+                                }
+                              } catch (err: any) {
+                                const msg = err?.message || "Network error.";
+                                setMessages(prev => [...prev, { role: "assistant" as const, content: `Error: ${msg}` }]);
+                                toast({ title: "Error", description: msg, variant: "destructive" });
+                              } finally {
+                                setIsConfirming(false);
+                              }
                             }}
                           >
-                            {pendingConfirmation.actionType === "send_drafted_outreach_sms" ? "Send SMS" : "Confirm"}
+                            {isConfirming ? (
+                              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Sending…</>
+                            ) : pendingConfirmation.actionType === "send_drafted_outreach_sms" ? "Send SMS" : "Confirm"}
                           </Button>
                           <Button
                             size="sm"
@@ -1514,9 +1598,17 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                             variant="outline"
                             className="h-7 text-xs"
                             data-testid="button-cancel-action"
-                            onClick={() => {
+                            disabled={isConfirming}
+                            onClick={async () => {
+                              const id = pendingConfirmation.pendingActionId;
                               setPendingConfirmation(null);
-                              sendMessage("Cancel this request");
+                              try {
+                                await fetch(`/api/agent/pending-actions/${id}/cancel`, {
+                                  method: "POST",
+                                  headers: getAuthHeaders(),
+                                });
+                              } catch {}
+                              setMessages(prev => [...prev, { role: "assistant" as const, content: "Action cancelled." }]);
                             }}
                           >
                             Cancel
