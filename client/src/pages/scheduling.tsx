@@ -4,6 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, isSameDay, isToday, addDays } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -558,10 +559,8 @@ export default function SchedulingPage() {
                     onCancel={setCancelBooking}
                     onReschedule={b2 => {
                       setRescheduleBooking(b2);
-                      setRescheduleData({
-                        startAt: format(new Date(b2.startAt), "yyyy-MM-dd'T'HH:mm"),
-                        endAt: format(new Date(b2.endAt), "yyyy-MM-dd'T'HH:mm"),
-                      });
+                      setRescheduleDate(new Date(b2.startAt));
+                      setRescheduleStartTime(format(new Date(b2.startAt), "HH:mm"));
                     }}
                     onComplete={b2 => updateStatusMutation.mutate({ id: b2.id, status: "COMPLETED" })}
                     onNoShow={b2 => updateStatusMutation.mutate({ id: b2.id, status: "NO_SHOW" })}
@@ -587,10 +586,8 @@ export default function SchedulingPage() {
                     onCancel={setCancelBooking}
                     onReschedule={b2 => {
                       setRescheduleBooking(b2);
-                      setRescheduleData({
-                        startAt: format(new Date(b2.startAt), "yyyy-MM-dd'T'HH:mm"),
-                        endAt: format(new Date(b2.endAt), "yyyy-MM-dd'T'HH:mm"),
-                      });
+                      setRescheduleDate(new Date(b2.startAt));
+                      setRescheduleStartTime(format(new Date(b2.startAt), "HH:mm"));
                     }}
                     onComplete={b2 => updateStatusMutation.mutate({ id: b2.id, status: "COMPLETED" })}
                     onNoShow={b2 => updateStatusMutation.mutate({ id: b2.id, status: "NO_SHOW" })}
