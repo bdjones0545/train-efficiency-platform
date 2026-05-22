@@ -1,0 +1,103 @@
+Audit the TrainEfficiency Agent architecture for over-restriction versus safe execution.
+
+Goal:
+The agent should feel capable, proactive, and useful — not blocked — while still preventing unsafe or accidental sends/bookings/payments.
+
+Core principle:
+Reasoning should be flexible.
+Execution should be controlled.
+
+Audit these layers:
+
+1. Conversation Layer
+- Can the agent understand messy user language?
+- Can it infer reasonable intent?
+- Can it ask fewer unnecessary clarifying questions?
+- Can it draft, summarize, recommend, and plan without over-blocking?
+
+2. Action Planning Layer
+- Can the agent create proposed actions freely?
+- Can it generate emails, SMS, booking suggestions, follow-ups, tasks, and revenue actions?
+- Can it explain what it is about to do?
+
+3. Permission Gate Layer
+Only block or require confirmation for real-world side effects:
+- sending emails/SMS
+- booking/rescheduling/canceling sessions
+- charging/refunding payments
+- modifying client records
+- deleting data
+- changing automation settings
+
+4. Deterministic Execution Layer
+Confirmed actions should execute through backend tools only.
+The LLM should not fake execution.
+Pending actions should persist in DB.
+Buttons should confirm actions when possible.
+
+5. Recovery Layer
+If an action cannot execute, the agent should not dead-end.
+It should offer the next best path:
+- recreate the draft
+- open the right page
+- ask for one missing field
+- save as pending
+- route to review queue
+
+6. Reduce unnecessary refusals
+Search for agent responses like:
+- “I can’t”
+- “I don’t have access”
+- “I’m unable”
+- “I don’t have a pending action”
+- “I need more information”
+
+Replace with more useful fallbacks:
+- “I can draft that now.”
+- “I can prepare this for approval.”
+- “I found the client; here’s the action card.”
+- “I need one detail before I can send.”
+- “I can recreate the pending action.”
+
+7. Classify tool risk levels
+
+No confirmation needed:
+- summarize
+- search
+- analyze
+- recommend
+- draft
+- calculate
+- preview
+
+Confirmation required:
+- send message
+- book session
+- reschedule
+- cancel
+- edit client
+- mark paid
+- create invoice
+
+Admin confirmation required:
+- delete data
+- change payout
+- update billing
+- change org settings
+- enable automation
+
+8. Desired final behavior:
+The agent should feel like:
+- an intelligent operator
+- a revenue assistant
+- a scheduling assistant
+- a workflow coordinator
+
+Not:
+- a chatbot with too many restrictions
+- a fake action system
+- a tool that apologizes instead of helping
+
+Final rule:
+Let the agent think and prepare broadly.
+Gate only irreversible or external actions.
