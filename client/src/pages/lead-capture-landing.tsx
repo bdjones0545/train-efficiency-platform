@@ -1199,15 +1199,30 @@ export default function LeadCaptureLanding() {
                     </div>
 
                     {/* Primary CTA */}
-                    <a
-                      href={`/api/auth/login?returnTo=/org/${submitResult?.orgSlug || org.slug}`}
-                      className="group w-full flex items-center justify-center gap-3 bg-gradient-to-r from-green-500 to-emerald-400 hover:from-green-400 hover:to-emerald-300 text-white font-bold py-4 px-6 rounded-2xl text-base transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-green-500/25"
-                      data-testid="button-create-account"
-                    >
-                      <CheckCircle2 className="h-5 w-5" />
-                      Create Account & Schedule
-                      <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                    </a>
+                    {(() => {
+                      const sl = submitResult?.orgSlug || org.slug;
+                      const signupParams = new URLSearchParams({
+                        orgSlug: sl,
+                        ...(submitResult?.submissionId ? { submissionId: submitResult.submissionId } : {}),
+                        ...(submitResult?.programId ? { programId: submitResult.programId } : {}),
+                        ...(programSlug ? { programSlug } : {}),
+                        ...(submitResult?.athleteName ? { athleteName: submitResult.athleteName } : {}),
+                        ...(submitResult?.email ? { email: submitResult.email } : {}),
+                        redirect: "schedule",
+                      });
+                      const signupHref = `/signup?${signupParams.toString()}`;
+                      return (
+                        <a
+                          href={signupHref}
+                          className="group w-full flex items-center justify-center gap-3 bg-gradient-to-r from-green-500 to-emerald-400 hover:from-green-400 hover:to-emerald-300 text-white font-bold py-4 px-6 rounded-2xl text-base transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-green-500/25"
+                          data-testid="button-create-account"
+                        >
+                          <CheckCircle2 className="h-5 w-5" />
+                          Create Account & Schedule
+                          <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                        </a>
+                      );
+                    })()}
 
                     {/* Direct booking shortcut (if available) */}
                     {(submitResult?.bookingUrl || (data as any)?.config?.bookingUrl) && (
@@ -1320,9 +1335,19 @@ export default function LeadCaptureLanding() {
         const showSuccess  = submitted;
         const visible      = showPreForm || showSuccess;
 
+        const stickyOrgSlug = submitResult?.orgSlug || orgSlug;
+        const stickySignupParams = new URLSearchParams({
+          orgSlug: stickyOrgSlug,
+          ...(submitResult?.submissionId ? { submissionId: submitResult.submissionId } : {}),
+          ...(submitResult?.programId ? { programId: submitResult.programId } : {}),
+          ...(programSlug ? { programSlug } : {}),
+          ...(submitResult?.athleteName ? { athleteName: submitResult.athleteName } : {}),
+          ...(submitResult?.email ? { email: submitResult.email } : {}),
+          redirect: "schedule",
+        });
         const successHref = submitResult?.bookingUrl
           ? submitResult.bookingUrl
-          : `/api/auth/login?returnTo=/org/${submitResult?.orgSlug || orgSlug}`;
+          : `/signup?${stickySignupParams.toString()}`;
         const successLabel = submitResult?.bookingUrl
           ? (funnelType === "team_training" ? "Book Consultation" : "Book Your Evaluation")
           : "Create Account & Schedule";

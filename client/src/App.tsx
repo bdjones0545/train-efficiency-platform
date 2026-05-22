@@ -106,6 +106,7 @@ import CoachCommandCenterPage from "@/pages/coach-command-center";
 import CoachCommunicationsCenterPage from "@/pages/coach-communications-center";
 import LeadCaptureLandingPage from "@/pages/lead-capture-landing";
 import LeadCaptureProgramEditorPage from "@/pages/lead-capture-program-editor";
+import AthleteSignupPage from "@/pages/athlete-signup";
 
 interface SubscriptionStatus {
   status: string;
@@ -417,6 +418,7 @@ function PublicLayout() {
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/subscribe/:planId" component={SubscribePage} />
       <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
+      <Route path="/signup" component={AthleteSignupPage} />
       <Route path="/create-password" component={CreatePasswordPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
