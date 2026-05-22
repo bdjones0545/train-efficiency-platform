@@ -1,0 +1,59 @@
+Fix the Revenue Recognition Ledger failing on the Transactions admin page.
+
+Current behavior:
+- Transactions load correctly.
+- Top stats load correctly.
+- The Revenue Recognition Ledger card shows: “Failed to load revenue summary.”
+- This means the frontend ledger query is failing independently from the transactions query.
+
+Audit and fix:
+1. Find the component rendering “Revenue Recognition Ledger”.
+2. Identify the API endpoint it calls for the revenue summary.
+3. Check the browser/network expected route, response shape, and error handling.
+4. Find the backend route for that endpoint.
+5. Make sure the route:
+   - is registered in the server
+   - is protected by the correct admin/org auth middleware
+   - returns JSON even when there are no rows
+   - does not throw on null aggregates
+   - supports the selected range, especially “All-Time”
+6. Fix any mismatch between frontend expected fields and backend returned fields.
+
+Required backend behavior:
+- If no ledger rows exist, return safe zero values instead of 500.
+- Use COALESCE on SQL sums/counts.
+- Parse date range safely.
+- For all-time, do not require startDate/endDate.
+- Return a stable object like:
+
+{
+  recognizedRevenue: 0,
+  deferredRevenue: 0,
+  pendingRevenue: 0,
+  totalPayments: 0,
+  totalDeposits: 0,
+  netRevenue: 0,
+  transactionCount: 0
+}
+
+Frontend behavior:
+- Do not show “Failed to load revenue summary” for an empty ledger.
+- Show zeros if the endpoint succeeds with empty data.
+- Only show the failure message if the actual request fails.
+- Add console logging for the failed status/body during development.
+
+Also check for common issues:
+- route path mismatch
+- using `/api/admin/revenue-summary` on frontend but `/api/admin/revenue/summary` on backend
+- missing credentials/include auth
+- orgId not being passed or resolved
+- SQL aggregate returning null
+- decimal fields coming back as strings and breaking formatting
+- “all-time” being passed where backend expects `all_time` or no range
+
+After fixing, verify:
+- Revenue Recognition Ledger loads on mobile and desktop.
+- All-Time works.
+- Transactions tab still loads.
+- User Balances tab still loads.
+- Manual cash payments are reflected in the summary if they should be recognized.
