@@ -1,0 +1,104 @@
+Remove the TrainChat Integration section from standard organization settings and reposition TrainChat as a native platform intelligence layer instead of an optional external integration.
+
+Current problem:
+The Settings → Advanced → Integrations UI currently shows:
+- “TrainChat Integration”
+- API Base URL
+- API Key
+- “Not connected”
+
+This creates conceptual confusion because:
+- TrainEfficiency already uses TrainChat internally
+- the AI system is already active
+- the platform already runs through the shared architecture
+- users may incorrectly assume the AI is disabled or broken
+
+Goal:
+TrainChat should feel native and built-in — not like a disconnected third-party service.
+
+NEW ARCHITECTURE
+
+1. REMOVE FROM STANDARD SETTINGS
+Remove the following from normal organization settings:
+- TrainChat API Base URL
+- TrainChat API Key
+- “Not connected” badge
+- integration connection form
+
+These should NOT appear in:
+Settings → Advanced → Integrations
+
+2. REPLACE WITH A NATIVE AI SECTION
+Replace the current integration card with a compact informational card:
+
+Title:
+AI Intelligence Layer
+
+Subtitle:
+Powered by TrainChat
+
+Description:
+TrainEfficiency uses TrainChat’s AI infrastructure to power:
+- scheduling intelligence
+- revenue optimization
+- automated outreach
+- retention analysis
+- workflow automation
+- business recommendations
+
+Optional compact status indicator:
+🟢 AI Active
+
+NO connection setup required.
+
+3. MOVE API CONFIGURATION TO A DEVELOPER AREA
+If API keys/endpoints are still needed for:
+- white-label partners
+- enterprise customers
+- external applications
+- developers
+- API consumers
+
+Move them into a separate area:
+
+Advanced
+→ Developer API
+→ Webhooks
+→ External Integrations
+→ TrainChat API
+
+This section should be:
+- hidden from normal users
+- admin/developer-only
+- clearly infrastructure-focused
+
+4. FUTURE AI CONTROLS
+The standard AI section can later contain:
+- automation preferences
+- agent permissions
+- AI behavior settings
+- workflow toggles
+- notification intelligence
+- recommendation controls
+
+But NOT infrastructure configuration.
+
+5. UX GOAL
+The platform should feel like:
+“AI-native coaching infrastructure.”
+
+NOT:
+“An app that optionally connects to AI.”
+
+6. IMPORTANT
+Do NOT break:
+- existing backend integration logic
+- API authentication
+- internal TrainChat connectivity
+- Replit environment configuration
+- hidden developer tooling
+
+This is primarily a UX and architecture-perception cleanup.
+
+FINAL RESULT SHOULD FEEL LIKE:
+TrainChat is the intelligence layer powering TrainEfficiency internally — not a separate disconnected integration users need to configure.
