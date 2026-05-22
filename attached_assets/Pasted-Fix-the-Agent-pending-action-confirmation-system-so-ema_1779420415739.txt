@@ -1,0 +1,110 @@
+Fix the Agent pending-action confirmation system so emails/actions execute deterministically instead of relying on conversational text.
+
+Current issue:
+The Agent can draft an email and reference a pendingActionId, but when the user confirms, the system says it cannot find a pending email send tied to that ID.
+
+This means the chat message retained the ID text, but the execution layer lost or never persisted the actual pending action object.
+
+Goal:
+AI can draft/propose actions, but execution must be backend-driven, button-driven, and validated.
+
+Required architecture:
+
+1. Pending action creation
+When the agent proposes a sendable email/SMS/action:
+- create a real row in agent_pending_actions
+- store normalized args
+- store recipient, subject, body, channel, orgId, userId, conversationId
+- status = pending
+- expiresAt = reasonable TTL, like 30 minutes
+- return the real pendingActionId from the database
+
+Do not let the LLM invent pendingActionIds.
+
+2. Confirmation UI
+Instead of asking the user to type:
+“Yes, confirmed. pendingActionId: ...”
+
+Render a deterministic confirmation card with buttons:
+- Send
+- Edit
+- Cancel
+
+The Send button should call a backend endpoint directly with:
+- pendingActionId
+- actionType
+
+3. Backend execution endpoint
+Create or fix endpoint:
+
+POST /api/agent/pending-actions/:id/confirm
+
+It should:
+- authenticate user
+- verify org ownership
+- load pending action from DB
+- verify status = pending
+- verify not expired
+- execute the stored action
+- mark completed
+- write communication log
+- create attention/activity item
+- return success JSON
+
+4. Cancel endpoint
+Add or fix:
+
+POST /api/agent/pending-actions/:id/cancel
+
+Set status = cancelled.
+
+5. No LLM execution path
+The LLM should not execute actions from freeform text.
+
+If user types “yes send it,” the agent may detect intent, but must still call the deterministic confirmation handler using the latest valid pendingActionId from DB.
+
+If no pending action exists, it should say:
+“I don’t have an active pending action. I can draft a new one.”
+
+6. Recovery behavior
+When conversation loads:
+- fetch active pending actions for that conversation/user/org
+- rehydrate confirmation cards
+- do not rely only on chat text
+
+7. Idempotency
+Prevent duplicate sends:
+- idempotency key based on userId/orgId/actionType/recipient/body hash
+- if already completed, return previous result
+- if pending duplicate exists, reuse it
+
+8. Fix email draft flow
+For email actions specifically:
+- draft must be saved as pending action before presenting confirmation
+- pendingActionId must come from DB
+- confirmation button must send the saved body exactly
+- after send, action status becomes completed
+
+9. Error handling
+If pending action is missing:
+- do not hallucinate
+- do not pretend it can send
+- offer to recreate the draft
+
+10. Verify
+Test:
+- draft email to a client
+- refresh page before confirming
+- confirm send
+- cancel draft
+- expired pending action
+- wrong user/org cannot confirm
+- duplicate confirm does not double-send
+- communication log is created
+- attention/activity item is created
+
+Final behavior:
+The agent proposes and drafts.
+The backend stores and executes.
+The user confirms with buttons.
+No transactional action depends on freeform chat text.
