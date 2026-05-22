@@ -18,6 +18,7 @@ import {
   users,
   organizations,
   athleticPrograms,
+  leadCapturePrograms,
 } from "@shared/schema";
 import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
 import { triggerNotificationEvent } from "./services/notification-automation";
@@ -295,6 +296,34 @@ export function registerPrTrackerRoutes(app: Express) {
         )
       );
 
+      // 2b. Fetch lead_capture programs for this org (joined with athleticPrograms for slug/name)
+      const leadCaptureRows = await db.select({
+        id: leadCapturePrograms.id,
+        name: athleticPrograms.name,
+        slug: athleticPrograms.slug,
+        programSlug: athleticPrograms.slug,
+        funnelType: leadCapturePrograms.funnelType,
+        navLabel: leadCapturePrograms.navLabel,
+        showInOrgMenu: leadCapturePrograms.showInOrgMenu,
+        navOrder: leadCapturePrograms.navOrder,
+      })
+      .from(leadCapturePrograms)
+      .innerJoin(athleticPrograms, eq(leadCapturePrograms.programId, athleticPrograms.id))
+      .where(
+        and(
+          eq(leadCapturePrograms.organizationId, org.id),
+          eq(athleticPrograms.active, true),
+        )
+      )
+      .orderBy(leadCapturePrograms.navOrder);
+
+      // Attach publicUrl and default showInOrgMenu=true where null
+      const leadCapturePrograms_ = leadCaptureRows.map((r) => ({
+        ...r,
+        showInOrgMenu: r.showInOrgMenu ?? true,
+        publicUrl: `/apply/${org.slug}/${r.programSlug}`,
+      }));
+
       // 3. Resolve auth context (try all three paths; first match wins)
       let effectiveRole: string | null = null;
       let userName: string | null = null;
@@ -381,6 +410,7 @@ export function registerPrTrackerRoutes(app: Express) {
         orgLogoUrl: org.logoUrl ?? null,
         primaryColor: org.primaryColor ?? null,
         tools,
+        leadCapturePrograms: leadCapturePrograms_,
         effectiveRole,
         userName,
         userEmail,

@@ -29,6 +29,8 @@ import {
   Film,
   Command,
   MessageSquare,
+  Users,
+  Briefcase,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -39,6 +41,18 @@ import { getAuthHeaders } from "@/lib/authToken";
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface LeadCaptureProgramNav {
+  id: string;
+  name: string;
+  slug: string;
+  programSlug: string;
+  funnelType: string | null;
+  navLabel: string | null;
+  showInOrgMenu: boolean;
+  navOrder: number;
+  publicUrl: string;
+}
+
 interface NavContextResponse {
   orgId: string;
   orgName: string;
@@ -46,6 +60,7 @@ interface NavContextResponse {
   orgLogoUrl: string | null;
   primaryColor: string | null;
   tools: Array<{ id: string; name: string; slug: string; type: string }>;
+  leadCapturePrograms?: LeadCaptureProgramNav[];
   effectiveRole: string | null;
   userName: string | null;
   userEmail: string | null;
@@ -201,10 +216,55 @@ function toolIcon(type: string): React.ElementType {
 // Build nav sections by role
 // ─────────────────────────────────────────────────────────────────────────────
 
+function leadCaptureIcon(funnelType: string | null): React.ElementType {
+  if (funnelType === "team_training") return Users;
+  if (funnelType === "employment_opportunity") return Briefcase;
+  return Zap;
+}
+
+function leadCaptureSectionLabel(funnelType: string | null): string {
+  if (funnelType === "team_training") return "Team Training";
+  if (funnelType === "employment_opportunity") return "Careers";
+  return "Athlete Programs";
+}
+
+function buildLeadCaptureSections(
+  orgSlug: string,
+  programs: LeadCaptureProgramNav[]
+): NavSection[] {
+  const visible = programs.filter((p) => p.showInOrgMenu !== false);
+  if (visible.length === 0) return [];
+
+  const grouped: Record<string, LeadCaptureProgramNav[]> = {};
+  for (const p of visible) {
+    const key = p.funnelType ?? "athlete_application";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(p);
+  }
+
+  const ORDER = ["athlete_application", "team_training", "employment_opportunity"];
+  const keys = Object.keys(grouped).sort(
+    (a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)
+  );
+
+  return keys.map((funnelType) => ({
+    id: `lc-${funnelType}`,
+    label: leadCaptureSectionLabel(funnelType),
+    icon: leadCaptureIcon(funnelType),
+    items: grouped[funnelType].map((p) => ({
+      title: p.navLabel ?? p.name,
+      url: `/apply/${orgSlug}/${p.programSlug}`,
+      icon: leadCaptureIcon(funnelType),
+      testId: `org-nav-lc-${p.programSlug}`,
+    })),
+  }));
+}
+
 function buildNavSections(
   orgSlug: string,
   effectiveRole: string | null,
-  tools: NavContextResponse["tools"]
+  tools: NavContextResponse["tools"],
+  leadCapturePrograms: LeadCaptureProgramNav[] = []
 ): NavSection[] {
   const prTool = tools.find((t) => t.type === "pr_tracker");
   const wbTool = tools.find((t) => t.type === "workout_builder");
@@ -441,7 +501,7 @@ function buildNavSections(
   }
 
   // Unauthenticated — show public-facing items only
-  return [
+  const publicSections: NavSection[] = [
     {
       id: "org-public",
       label: "Explore",
@@ -451,7 +511,9 @@ function buildNavSections(
         { title: "Portal", url: `/org/${orgSlug}/portal`, icon: Home, testId: "org-nav-portal" },
       ],
     },
+    ...buildLeadCaptureSections(orgSlug, leadCapturePrograms),
   ];
+  return publicSections;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -506,7 +568,7 @@ export function OrgSidebar({ orgSlug }: OrgSidebarProps) {
   // Auto-expand section for active route
   useEffect(() => {
     if (!ctx) return;
-    const sections = buildNavSections(orgSlug, ctx.effectiveRole, ctx.tools ?? []);
+    const sections = buildNavSections(orgSlug, ctx.effectiveRole, ctx.tools ?? [], ctx.leadCapturePrograms ?? []);
     const activeSection = sections.find((s) => sectionIsActive(location, s.items));
     if (activeSection) {
       setOpenSections((prev) => {
@@ -537,7 +599,7 @@ export function OrgSidebar({ orgSlug }: OrgSidebarProps) {
   };
 
   const sections = ctx
-    ? buildNavSections(orgSlug, ctx.effectiveRole, ctx.tools ?? [])
+    ? buildNavSections(orgSlug, ctx.effectiveRole, ctx.tools ?? [], ctx.leadCapturePrograms ?? [])
     : [];
 
   const isLoading = pubLoading && !ctx;
