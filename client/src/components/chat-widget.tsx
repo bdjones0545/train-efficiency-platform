@@ -1,11 +1,53 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { MessageCircle, X, Send, Loader2, Bot, User } from "lucide-react";
+import { MessageCircle, X, Send, Bot, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getAuthHeaders } from "@/lib/authToken";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  isStreaming?: boolean;
+  chunks?: string[];
+}
+
+function StreamingBubble({ content, isStreaming, showThinking }: {
+  content: string;
+  isStreaming: boolean;
+  showThinking: boolean;
+}) {
+  const prevLenRef = useRef(0);
+  const chunksRef = useRef<{ text: string; key: number }[]>([]);
+  const keyRef = useRef(0);
+
+  if (content.length > prevLenRef.current) {
+    const newText = content.slice(prevLenRef.current);
+    chunksRef.current = [...chunksRef.current, { text: newText, key: keyRef.current++ }];
+    prevLenRef.current = content.length;
+  }
+
+  if (!content && !showThinking && isStreaming) {
+    return <span className="chat-cursor" aria-hidden="true" />;
+  }
+
+  if (!content && showThinking) {
+    return (
+      <span className="text-muted-foreground/70 text-xs italic">
+        Thinking…
+        {isStreaming && <span className="chat-cursor ml-1" aria-hidden="true" />}
+      </span>
+    );
+  }
+
+  return (
+    <>
+      {chunksRef.current.map((chunk) => (
+        <span key={chunk.key} className="chat-token">
+          {chunk.text}
+        </span>
+      ))}
+      {isStreaming && <span className="chat-cursor" aria-hidden="true" />}
+    </>
+  );
 }
 
 export function ChatWidget() {
@@ -13,8 +55,11 @@ export function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingIndex, setStreamingIndex] = useState<number | null>(null);
+  const [showThinking, setShowThinking] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const thinkingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -30,6 +75,12 @@ export function ChatWidget() {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    return () => {
+      if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+    };
+  }, []);
+
   const sendMessage = async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
@@ -39,9 +90,16 @@ export function ChatWidget() {
     setMessages(updatedMessages);
     setInput("");
     setIsLoading(true);
+    setShowThinking(false);
 
-    const assistantMessage: Message = { role: "assistant", content: "" };
+    const assistantIndex = updatedMessages.length;
+    const assistantMessage: Message = { role: "assistant", content: "", isStreaming: true };
     setMessages(prev => [...prev, assistantMessage]);
+    setStreamingIndex(assistantIndex);
+
+    thinkingTimerRef.current = setTimeout(() => {
+      setShowThinking(true);
+    }, 700);
 
     try {
       const response = await fetch("/api/chat", {
@@ -70,6 +128,7 @@ export function ChatWidget() {
       const decoder = new TextDecoder();
       let accumulated = "";
       let buffer = "";
+      let hasStarted = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -80,19 +139,28 @@ export function ChatWidget() {
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith("data: ")) {
-            const data = trimmed.slice(6);
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith("data: ")) {
+            const data = trimmedLine.slice(6);
             if (data === "[DONE]") continue;
             try {
               const parsed = JSON.parse(data);
               if (parsed.content) {
+                if (!hasStarted) {
+                  hasStarted = true;
+                  if (thinkingTimerRef.current) {
+                    clearTimeout(thinkingTimerRef.current);
+                    thinkingTimerRef.current = null;
+                  }
+                  setShowThinking(false);
+                }
                 accumulated += parsed.content;
                 setMessages(prev => {
                   const updated = [...prev];
-                  updated[updated.length - 1] = {
+                  updated[assistantIndex] = {
                     role: "assistant",
                     content: accumulated,
+                    isStreaming: true,
                   };
                   return updated;
                 });
@@ -101,9 +169,10 @@ export function ChatWidget() {
                 accumulated += `\n\nError: ${parsed.error}`;
                 setMessages(prev => {
                   const updated = [...prev];
-                  updated[updated.length - 1] = {
+                  updated[assistantIndex] = {
                     role: "assistant",
                     content: accumulated,
+                    isStreaming: true,
                   };
                   return updated;
                 });
@@ -116,24 +185,42 @@ export function ChatWidget() {
       if (!accumulated) {
         setMessages(prev => {
           const updated = [...prev];
-          updated[updated.length - 1] = {
+          updated[assistantIndex] = {
             role: "assistant",
             content: "I'm sorry, I couldn't process that request. Please try again.",
+            isStreaming: false,
+          };
+          return updated;
+        });
+      } else {
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[assistantIndex] = {
+            role: "assistant",
+            content: accumulated,
+            isStreaming: false,
           };
           return updated;
         });
       }
     } catch (error: any) {
+      if (thinkingTimerRef.current) {
+        clearTimeout(thinkingTimerRef.current);
+        thinkingTimerRef.current = null;
+      }
       setMessages(prev => {
         const updated = [...prev];
-        updated[updated.length - 1] = {
+        updated[assistantIndex] = {
           role: "assistant",
           content: `Sorry, something went wrong: ${error.message}. Please try again.`,
+          isStreaming: false,
         };
         return updated;
       });
     } finally {
       setIsLoading(false);
+      setStreamingIndex(null);
+      setShowThinking(false);
     }
   };
 
@@ -183,35 +270,50 @@ export function ChatWidget() {
               </div>
             )}
 
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                data-testid={`chat-message-${msg.role}-${i}`}
-              >
-                {msg.role === "assistant" && (
-                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-primary-foreground" />
-                  </div>
-                )}
+            {messages.map((msg, i) => {
+              const isActiveStream = msg.isStreaming && streamingIndex === i;
+              return (
                 <div
-                  className={`max-w-[75%] rounded-md px-3 py-2 text-sm whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
-                  }`}
+                  key={i}
+                  className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  data-testid={`chat-message-${msg.role}-${i}`}
                 >
-                  {msg.content || (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  {msg.role === "assistant" && (
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center mt-0.5">
+                      <Bot className="h-4 w-4 text-primary-foreground" />
+                    </div>
+                  )}
+                  <div
+                    className={`max-w-[75%] rounded-md px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed transition-shadow duration-300 ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : isActiveStream
+                          ? "bg-muted text-foreground chat-bubble-streaming"
+                          : "bg-muted text-foreground"
+                    }`}
+                  >
+                    {msg.role === "assistant" ? (
+                      isActiveStream ? (
+                        <StreamingBubble
+                          content={msg.content}
+                          isStreaming={true}
+                          showThinking={showThinking}
+                        />
+                      ) : (
+                        msg.content || <span className="text-muted-foreground/60 text-xs italic">—</span>
+                      )
+                    ) : (
+                      msg.content
+                    )}
+                  </div>
+                  {msg.role === "user" && (
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center mt-0.5">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                    </div>
                   )}
                 </div>
-                {msg.role === "user" && (
-                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center">
-                    <User className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
 
@@ -234,13 +336,14 @@ export function ChatWidget() {
                 disabled={!input.trim() || isLoading}
                 data-testid="button-send-chat"
               >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
+                <Send className="h-4 w-4" />
               </Button>
             </div>
+            {isLoading && (
+              <p className="text-[10px] text-muted-foreground/60 mt-1.5 pl-0.5 tracking-wide">
+                Generating…
+              </p>
+            )}
           </div>
         </div>
       )}
