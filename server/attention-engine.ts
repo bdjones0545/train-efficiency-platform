@@ -17,10 +17,16 @@ import {
   agentRecommendations,
   revenueAgentActions,
   teamTrainingDeals,
+  bookings,
+  userProfiles,
+  coachProfiles,
+  outreachDrafts,
+  financialEventFailures,
+  userSubscriptions,
   type AttentionItem,
   type InsertAttentionItem,
 } from "@shared/schema";
-import { eq, and, or, lt, gt, sql, inArray, isNotNull, ne, gte } from "drizzle-orm";
+import { eq, and, or, lt, gt, sql, inArray, isNotNull, ne, gte, lte } from "drizzle-orm";
 import { computeTriggerAlerts } from "./email-agent/trigger-alerts";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -237,7 +243,8 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
       .limit(10);
 
     for (const action of revActions) {
-      const level = action.priority >= 80 ? "important" : "suggested";
+      const priority = action.priority ?? 60;
+      const level = priority >= 80 ? "important" : "suggested";
       const d = defaults(level);
       add({
         orgId,
@@ -251,11 +258,11 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         actionLabel: "View Deal Pipeline",
         status: "active",
         ...d,
-        urgency: action.priority,
+        urgency: priority,
         businessImpact: action.estimatedValue
           ? Math.min(100, Math.round(action.estimatedValue / 1000 * 5) + 50)
           : d.businessImpact,
-        confidence: action.confidence / 100,
+        confidence: (action.confidence ?? 80) / 100,
       });
     }
   } catch {}
@@ -325,6 +332,320 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         ...d,
         urgency: level === "critical" ? 85 : 60,
       });
+    }
+  } catch {}
+
+  // ── 8. Pending Outreach Drafts (AI-generated, awaiting approval) ─────────
+  try {
+    const pendingDrafts = await db
+      .select({ id: outreachDrafts.id })
+      .from(outreachDrafts)
+      .where(
+        and(
+          eq(outreachDrafts.orgId, orgId),
+          eq(outreachDrafts.status, "draft"),
+          eq(outreachDrafts.aiGenerated, true)
+        )
+      )
+      .limit(100);
+
+    if (pendingDrafts.length > 0) {
+      const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+      const level = pendingDrafts.length >= 5 ? "important" : "suggested";
+      const d = defaults(level);
+      add({
+        orgId,
+        level,
+        category: "approval",
+        title: `${pendingDrafts.length} outreach draft${pendingDrafts.length !== 1 ? "s" : ""} awaiting your approval`,
+        body: "AI-generated outreach messages are ready for review and approval before sending.",
+        source: "outreach",
+        sourceId: `pending-outreach-drafts-w${weekKey}`,
+        actionUrl: "/admin/outreach-queue",
+        actionLabel: "Review Drafts",
+        status: "active",
+        ...d,
+        urgency: 70,
+      });
+    }
+  } catch {}
+
+  // ── 9. Financial Event Failures ───────────────────────────────────────────
+  try {
+    const failures = await db
+      .select()
+      .from(financialEventFailures)
+      .where(
+        and(
+          eq(financialEventFailures.orgId, orgId),
+          eq(financialEventFailures.status, "pending")
+        )
+      )
+      .limit(10);
+
+    for (const failure of failures) {
+      const d = defaults("critical");
+      add({
+        orgId,
+        level: "critical",
+        category: "payment",
+        title: `Payment failure: ${failure.eventType.replace(/_/g, " ")}`,
+        body: failure.failureMessage || `A ${failure.sourceType} financial event failed and requires investigation.`,
+        source: "financial",
+        sourceId: `fin-fail-${failure.id}`,
+        actionUrl: "/admin/financial-reconciliation",
+        actionLabel: "View Failures",
+        status: "active",
+        ...d,
+        urgency: 90,
+      });
+    }
+  } catch {}
+
+  // ── 10. Expiring / Cancelled Subscriptions ────────────────────────────────
+  try {
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const expiringSubs = await db
+      .select({ id: userSubscriptions.id, userId: userSubscriptions.userId })
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.organizationId, orgId),
+          eq(userSubscriptions.cancelAtPeriodEnd, true),
+          lte(userSubscriptions.currentPeriodEnd, sevenDaysFromNow)
+        )
+      )
+      .limit(20);
+
+    if (expiringSubs.length > 0) {
+      const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+      const d = defaults("important");
+      add({
+        orgId,
+        level: "important",
+        category: "churn",
+        title: `${expiringSubs.length} subscription${expiringSubs.length !== 1 ? "s" : ""} expiring within 7 days`,
+        body: "These clients have cancelled and will lose access soon. Re-engagement now could prevent churn.",
+        source: "subscriptions",
+        sourceId: `expiring-subs-w${weekKey}`,
+        actionUrl: "/admin/subscriptions",
+        actionLabel: "View Subscriptions",
+        status: "active",
+        ...d,
+        urgency: 80,
+        businessImpact: Math.min(100, 50 + expiringSubs.length * 5),
+      });
+    }
+  } catch {}
+
+  // ── 11. Inactive Clients (30+ days no booking) ────────────────────────────
+  try {
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+
+    const clientProfileRows = await db
+      .select({ userId: userProfiles.userId })
+      .from(userProfiles)
+      .where(
+        and(
+          eq(userProfiles.organizationId, orgId),
+          eq(userProfiles.role, "CLIENT")
+        )
+      )
+      .limit(300);
+
+    if (clientProfileRows.length > 0) {
+      const clientIds = clientProfileRows.map((c) => c.userId);
+
+      const recentlyActive = await db
+        .selectDistinct({ clientId: bookings.clientId })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.organizationId, orgId),
+            inArray(bookings.clientId, clientIds),
+            gte(bookings.startAt, thirtyDaysAgo),
+            inArray(bookings.status, ["CONFIRMED", "COMPLETED"])
+          )
+        );
+
+      const activeClientIds = new Set(recentlyActive.map((b) => b.clientId));
+      const inactiveCount = clientIds.filter((id) => !activeClientIds.has(id)).length;
+
+      if (inactiveCount >= 2) {
+        const level = inactiveCount >= 5 ? "important" : "suggested";
+        const d = defaults(level);
+        add({
+          orgId,
+          level,
+          category: "churn",
+          title: `${inactiveCount} client${inactiveCount !== 1 ? "s" : ""} inactive for 30+ days`,
+          body: "These clients have had no sessions in over a month. Proactive re-engagement outreach could recover revenue.",
+          source: "scheduling",
+          sourceId: `inactive-clients-30d-w${weekKey}`,
+          actionUrl: "/admin/clients",
+          actionLabel: "View Clients",
+          status: "active",
+          ...d,
+          urgency: inactiveCount >= 5 ? 72 : 50,
+          businessImpact: Math.min(100, 40 + inactiveCount * 5),
+        });
+      }
+    }
+  } catch {}
+
+  // ── 12. Never-Booked Clients ──────────────────────────────────────────────
+  try {
+    const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+
+    const clientProfileRows = await db
+      .select({ userId: userProfiles.userId })
+      .from(userProfiles)
+      .where(
+        and(
+          eq(userProfiles.organizationId, orgId),
+          eq(userProfiles.role, "CLIENT")
+        )
+      )
+      .limit(300);
+
+    if (clientProfileRows.length > 0) {
+      const clientIds = clientProfileRows.map((c) => c.userId);
+
+      const everBooked = await db
+        .selectDistinct({ clientId: bookings.clientId })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.organizationId, orgId),
+            inArray(bookings.clientId, clientIds)
+          )
+        );
+
+      const bookedIds = new Set(everBooked.map((b) => b.clientId));
+      const neverBookedCount = clientIds.filter((id) => !bookedIds.has(id)).length;
+
+      if (neverBookedCount >= 1) {
+        const level = neverBookedCount >= 3 ? "important" : "suggested";
+        const d = defaults(level);
+        add({
+          orgId,
+          level,
+          category: "growth",
+          title: `${neverBookedCount} registered client${neverBookedCount !== 1 ? "s" : ""} with no bookings yet`,
+          body: "These clients created accounts but haven't scheduled their first session. A personal touch could convert them.",
+          source: "scheduling",
+          sourceId: `never-booked-w${weekKey}`,
+          actionUrl: "/admin/clients",
+          actionLabel: "View Clients",
+          status: "active",
+          ...d,
+          urgency: 55,
+          businessImpact: Math.min(100, 40 + neverBookedCount * 8),
+        });
+      }
+    }
+  } catch {}
+
+  // ── 13. Coach Schedule Overload (7+ sessions in next 7 days) ─────────────
+  try {
+    const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const dayKey = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
+
+    const upcomingBookings = await db
+      .select({ coachId: bookings.coachId })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.organizationId, orgId),
+          eq(bookings.status, "CONFIRMED"),
+          gte(bookings.startAt, now),
+          lt(bookings.startAt, weekEnd)
+        )
+      )
+      .limit(500);
+
+    const coachCounts: Record<string, number> = {};
+    for (const b of upcomingBookings) {
+      coachCounts[b.coachId] = (coachCounts[b.coachId] ?? 0) + 1;
+    }
+
+    for (const [coachId, sessionCount] of Object.entries(coachCounts)) {
+      if (sessionCount >= 7) {
+        const level = sessionCount >= 12 ? "important" : "suggested";
+        const d = defaults(level);
+        add({
+          orgId,
+          level,
+          category: "ops",
+          title: `Coach overload: ${sessionCount} sessions scheduled in the next 7 days`,
+          body: "A coach is nearing or exceeding healthy session capacity. Consider redistributing load or adding staff.",
+          source: "scheduling",
+          sourceId: `coach-overload-${coachId}-d${dayKey}`,
+          actionUrl: "/schedule",
+          actionLabel: "View Schedule",
+          status: "active",
+          ...d,
+          urgency: sessionCount >= 12 ? 70 : 50,
+          businessImpact: 60,
+        });
+      }
+    }
+  } catch {}
+
+  // ── 14. Low Coach Utilization (0 confirmed sessions next 7 days) ──────────
+  try {
+    const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+
+    const activeCoaches = await db
+      .select({ id: coachProfiles.id })
+      .from(coachProfiles)
+      .where(
+        and(
+          eq(coachProfiles.organizationId, orgId),
+          eq(coachProfiles.isActive, true)
+        )
+      )
+      .limit(50);
+
+    if (activeCoaches.length > 0) {
+      const coachIds = activeCoaches.map((c) => c.id);
+
+      const coachesWithBookings = await db
+        .selectDistinct({ coachId: bookings.coachId })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.organizationId, orgId),
+            inArray(bookings.coachId, coachIds),
+            eq(bookings.status, "CONFIRMED"),
+            gte(bookings.startAt, now),
+            lt(bookings.startAt, weekEnd)
+          )
+        );
+
+      const scheduledCoachIds = new Set(coachesWithBookings.map((b) => b.coachId));
+      const idleCoachCount = coachIds.filter((id) => !scheduledCoachIds.has(id)).length;
+
+      if (idleCoachCount >= 1 && activeCoaches.length >= 2) {
+        const d = defaults("suggested");
+        add({
+          orgId,
+          level: "suggested",
+          category: "ops",
+          title: `${idleCoachCount} active coach${idleCoachCount !== 1 ? "es" : ""} with no sessions next 7 days`,
+          body: "Idle coach capacity represents unrealized revenue. Consider promoting availability or reallocating bookings.",
+          source: "scheduling",
+          sourceId: `low-util-coaches-w${weekKey}`,
+          actionUrl: "/schedule",
+          actionLabel: "View Schedule",
+          status: "active",
+          ...d,
+          urgency: 45,
+          businessImpact: Math.min(100, 40 + idleCoachCount * 10),
+        });
+      }
     }
   } catch {}
 

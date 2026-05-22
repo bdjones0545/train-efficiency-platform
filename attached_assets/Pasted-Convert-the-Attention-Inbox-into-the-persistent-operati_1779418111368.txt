@@ -1,0 +1,171 @@
+Convert the Attention Inbox into the persistent operational event system for TrainEfficiency.
+
+Current issue:
+The app generates:
+- high-priority alerts
+- revenue warnings
+- churn risks
+- schedule capacity issues
+- inactive client warnings
+- automation alerts
+- outreach follow-up opportunities
+
+But the Attention Inbox remains empty because these alerts are only rendered as temporary UI state and are never persisted into a unified inbox/event system.
+
+Goal:
+The Attention Inbox should become the central operational queue for all agent-generated attention items across the platform.
+
+ARCHITECTURE GOAL
+
+Current behavior:
+Agent generates alert → shown in component → disappears
+
+New behavior:
+Agent generates alert → persisted as inbox item → appears everywhere consistently until resolved/dismissed.
+
+BUILD A UNIFIED ATTENTION EVENT SYSTEM
+
+1. CREATE A DURABLE ATTENTION ITEM MODEL
+
+Add a persistent attention_items table (or equivalent storage layer).
+
+Suggested schema:
+- id
+- orgId
+- type
+- category
+- title
+- description
+- severity (low/medium/high/urgent)
+- sourceAgent
+- actionLabel
+- actionRoute
+- metadata jsonb
+- status (active/dismissed/resolved/snoozed)
+- createdAt
+- updatedAt
+- resolvedAt
+- dismissedAt
+- snoozedUntil
+
+Optional:
+- relatedClientId
+- relatedCoachId
+- relatedLeadId
+- estimatedRevenueImpact
+- confidenceScore
+
+2. PIPE ALL EXISTING ALERTS INTO THIS SYSTEM
+
+The following MUST create inbox items:
+- coach overload warnings
+- open slot opportunities
+- inactive client alerts
+- churn risks
+- unbooked client warnings
+- revenue gap warnings
+- pending outreach approvals
+- failed automations
+- payment failures
+- low utilization warnings
+- missed follow-ups
+- high-value lead inactivity
+- schedule gaps
+- pipeline stagnation
+- AI recommendations
+
+3. ATTENTION INBOX UI
+
+The Attention Inbox dropdown should:
+- query persistent active inbox items
+- show newest/highest severity first
+- group by urgency
+- show counts correctly
+- persist across reloads
+
+No more “All clear” while alerts exist elsewhere.
+
+4. INTERACTIONS
+
+Each item should support:
+- View
+- Resolve
+- Dismiss
+- Snooze
+- Mark completed
+
+Example:
+“Bryan Jones overloaded this week”
+[ Review Schedule ]
+[ Dismiss ]
+[ Snooze ]
+
+5. SYNCHRONIZE HIGH-PRIORITY ALERTS
+
+The modal currently shown in Agent Settings should:
+- read from the same inbox system
+- not use separate local state
+- not duplicate alerts
+
+The same alert should exist:
+- in the modal
+- in the inbox
+- in command center priorities
+- in mobile notifications (future)
+
+One source of truth.
+
+6. ADD REAL OPERATIONAL BEHAVIOR
+
+Inbox items should:
+- persist until resolved
+- not disappear on refresh
+- support timestamps
+- show “5m ago”
+- update badge counts live
+
+7. PRIORITY ENGINE
+
+Sort logic:
+1. urgent severity
+2. estimated revenue impact
+3. unresolved duration
+4. AI confidence
+5. newest
+
+8. VISUAL SYSTEM
+
+Use:
+- red = urgent/risk
+- yellow = warning/opportunity
+- green = optimization
+- blue = informational
+
+Add:
+- pulsing unread dot
+- “new” indicators
+- AI agent source labels
+
+9. COMMAND CENTER INTEGRATION
+
+The following sections should all pull from the same attention layer:
+- Today’s Priorities
+- Best Action Today
+- Revenue Recovery Queue
+- High-Priority Alerts
+- Attention Inbox
+- Agent recommendations
+
+10. IMPORTANT
+
+Do NOT duplicate alert logic.
+
+Create a single event-generation layer and reuse it everywhere.
+
+FINAL RESULT
+
+TrainEfficiency should feel like:
+an always-running operational AI system with a persistent intelligence queue.
+
+NOT:
+temporary dashboard widgets that reset on refresh.
