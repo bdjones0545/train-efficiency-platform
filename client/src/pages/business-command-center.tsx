@@ -2362,6 +2362,7 @@ function ProgramLeadsPanel() {
   const [activeTab, setActiveTab] = useState<"hot" | "followup" | "booked" | "abandoned" | "all">("all");
   const [expandedAnalysis, setExpandedAnalysis] = useState<string | null>(null);
   const [expandedDraft, setExpandedDraft] = useState<string | null>(null);
+  const [expandedMoreActions, setExpandedMoreActions] = useState<string | null>(null);
 
   const { data, isLoading, refetch } = useQuery<ProgramLeadsSummary>({
     queryKey: ["/api/lead-capture/command-center-summary"],
@@ -2754,145 +2755,246 @@ function ProgramLeadsPanel() {
                     </div>
                   )}
 
-                  {/* Primary action row */}
-                  <div className="flex gap-1 flex-wrap">
-                    {lead.phone && (
-                      <a href={`tel:${lead.phone}`} data-testid={`button-call-lead-${i}`}>
-                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs">📞 Call</Button>
-                      </a>
-                    )}
-                    {lead.phone && (
-                      <a href={`sms:${lead.phone}`} data-testid={`button-sms-lead-${i}`}>
-                        <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Text"><MessageSquare className="h-3 w-3" /></Button>
-                      </a>
-                    )}
-                    <a href={`mailto:${lead.email}`} data-testid={`button-email-lead-${i}`}>
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs"><Send className="h-3 w-3 mr-1" />Email</Button>
-                    </a>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => sendFollowUp.mutate({ id: lead.id, step: "followup_24hr" })}
-                      disabled={sendFollowUp.isPending}
-                      data-testid={`button-followup-lead-${i}`}
-                    >
-                      <Zap className="h-3 w-3 mr-1" />Follow-up
-                    </Button>
-                    {(!lead.sequenceStatus || lead.sequenceStatus === "pending") && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => startSequence.mutate(lead.id)}
-                        disabled={startSequence.isPending}
-                        data-testid={`button-sequence-lead-${i}`}
-                      >
-                        <Play className="h-3 w-3 mr-1" />Sequence
-                      </Button>
-                    )}
-                    {!lead.isContacted && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs text-green-600"
-                        onClick={() => markContacted.mutate(lead.id)}
-                        disabled={markContacted.isPending}
-                        data-testid={`button-contacted-lead-${i}`}
-                      >
-                        <CheckCircle className="h-3 w-3 mr-1" />Contacted
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Booking status + AI analysis row */}
-                  <div className="flex gap-1 flex-wrap">
-                    {(!lead.bookingStatus || lead.bookingStatus === "not_booked") && (
-                      <Button
-                        size="sm"
-                        className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white"
-                        onClick={() => updateBooking.mutate({ id: lead.id, status: "booked" })}
-                        disabled={updateBooking.isPending}
-                        data-testid={`button-book-lead-${i}`}
-                      >
-                        <CalendarCheck className="h-3 w-3 mr-1" />Mark Booked
-                      </Button>
-                    )}
-                    {lead.bookingStatus === "booked" && (
-                      <Button
-                        size="sm"
-                        className="h-7 px-2 text-xs bg-purple-600 hover:bg-purple-700 text-white"
-                        onClick={() => updateBooking.mutate({ id: lead.id, status: "completed" })}
-                        disabled={updateBooking.isPending}
-                        data-testid={`button-attended-lead-${i}`}
-                      >
-                        <CheckCircle className="h-3 w-3 mr-1" />Attended
-                      </Button>
-                    )}
-                    {(lead.bookingStatus === "completed" || lead.bookingStatus === "booked") && (
-                      <Button
-                        size="sm"
-                        className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700 text-white"
-                        onClick={() => updateBooking.mutate({ id: lead.id, status: "converted" })}
-                        disabled={updateBooking.isPending}
-                        data-testid={`button-convert-lead-${i}`}
-                      >
-                        <TrendingUp className="h-3 w-3 mr-1" />Convert
-                      </Button>
-                    )}
-                    {lead.bookingStatus !== "lost" && lead.bookingStatus !== "converted" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs text-red-500 hover:text-red-600"
-                        onClick={() => updateBooking.mutate({ id: lead.id, status: "lost" })}
-                        disabled={updateBooking.isPending}
-                        data-testid={`button-lost-lead-${i}`}
-                      >
-                        ✗ Lost
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className={`h-7 px-2 text-xs ${lead.aiSalesAnalysis ? "text-purple-600 border-purple-500/30" : ""}`}
-                      onClick={() => {
-                        if (lead.aiSalesAnalysis) {
-                          setExpandedAnalysis(isExpanded ? null : lead.id);
-                        } else {
-                          generateAiAnalysis.mutate(lead.id);
-                        }
-                      }}
-                      disabled={generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id}
-                      data-testid={`button-ai-analysis-lead-${i}`}
-                    >
-                      <Brain className="h-3 w-3 mr-1" />
-                      {lead.aiSalesAnalysis ? (isExpanded ? "Hide AI" : "AI Intel") : generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id ? "Analyzing…" : "AI Analyze"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="h-7 px-2 text-xs bg-orange-500 hover:bg-orange-600 text-white"
-                      onClick={() => moveToDeal.mutate(lead.id)}
-                      disabled={moveToDeal.isPending}
-                      data-testid={`button-move-deal-${i}`}
-                    >
-                      <ArrowRight className="h-3 w-3 mr-1" />Deal
-                    </Button>
-                    {lead.adminEmailStatus !== "sent" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs text-orange-600 border-orange-500/30 hover:bg-orange-500/10"
-                        onClick={() => resendAdminEmail.mutate(lead.id)}
-                        disabled={resendAdminEmail.isPending && resendAdminEmail.variables === lead.id}
-                        data-testid={`button-resend-admin-email-${i}`}
-                        title={lead.adminEmailStatus === "failed" ? `Last attempt failed: ${lead.adminEmailError || "unknown error"}` : "Send admin notification email"}
-                      >
-                        <Send className="h-3 w-3 mr-1" />
-                        {resendAdminEmail.isPending && resendAdminEmail.variables === lead.id ? "Sending…" : "Notify Admin"}
-                      </Button>
-                    )}
-                  </div>
+                  {/* Primary CTA + More tray */}
+                  {(() => {
+                    const isMoreOpen = expandedMoreActions === lead.id;
+                    // Determine primary recommended action
+                    let primaryCta: React.ReactNode;
+                    if (lead.isHot && !lead.isContacted && lead.phone) {
+                      primaryCta = (
+                        <a href={`tel:${lead.phone}`} data-testid={`button-primary-lead-${i}`} className="flex-1">
+                          <Button size="sm" className="h-8 w-full text-xs bg-primary hover:bg-primary/90 text-white">
+                            📞 Call Now
+                          </Button>
+                        </a>
+                      );
+                    } else if (lead.isHot && !lead.isContacted) {
+                      primaryCta = (
+                        <a href={`mailto:${lead.email}`} data-testid={`button-primary-lead-${i}`} className="flex-1">
+                          <Button size="sm" className="h-8 w-full text-xs bg-primary hover:bg-primary/90 text-white">
+                            <Send className="h-3 w-3 mr-1" />Email Now
+                          </Button>
+                        </a>
+                      );
+                    } else if (lead.bookingStatus === "booked") {
+                      primaryCta = (
+                        <Button
+                          size="sm"
+                          className="h-8 flex-1 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                          onClick={() => updateBooking.mutate({ id: lead.id, status: "completed" })}
+                          disabled={updateBooking.isPending}
+                          data-testid={`button-primary-lead-${i}`}
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" />Mark Attended
+                        </Button>
+                      );
+                    } else if (lead.bookingStatus === "completed") {
+                      primaryCta = (
+                        <Button
+                          size="sm"
+                          className="h-8 flex-1 text-xs bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => updateBooking.mutate({ id: lead.id, status: "converted" })}
+                          disabled={updateBooking.isPending}
+                          data-testid={`button-primary-lead-${i}`}
+                        >
+                          <TrendingUp className="h-3 w-3 mr-1" />Convert
+                        </Button>
+                      );
+                    } else if (lead.needsAction) {
+                      primaryCta = (
+                        <Button
+                          size="sm"
+                          className="h-8 flex-1 text-xs"
+                          variant="outline"
+                          onClick={() => sendFollowUp.mutate({ id: lead.id, step: "followup_24hr" })}
+                          disabled={sendFollowUp.isPending}
+                          data-testid={`button-primary-lead-${i}`}
+                        >
+                          <Zap className="h-3 w-3 mr-1" />Follow-up
+                        </Button>
+                      );
+                    } else if (lead.aiSalesAnalysis) {
+                      primaryCta = (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 flex-1 text-xs text-purple-600 border-purple-500/30"
+                          onClick={() => setExpandedAnalysis(isExpanded ? null : lead.id)}
+                          data-testid={`button-primary-lead-${i}`}
+                        >
+                          <Brain className="h-3 w-3 mr-1" />{isExpanded ? "Hide AI" : "AI Intel"}
+                        </Button>
+                      );
+                    } else {
+                      primaryCta = (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 flex-1 text-xs"
+                          onClick={() => generateAiAnalysis.mutate(lead.id)}
+                          disabled={generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id}
+                          data-testid={`button-primary-lead-${i}`}
+                        >
+                          <Brain className="h-3 w-3 mr-1" />
+                          {generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id ? "Analyzing…" : "AI Analyze"}
+                        </Button>
+                      );
+                    }
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex gap-1.5 items-center">
+                          {primaryCta}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 px-2.5 text-xs text-muted-foreground shrink-0"
+                            onClick={() => setExpandedMoreActions(isMoreOpen ? null : lead.id)}
+                            data-testid={`button-more-actions-lead-${i}`}
+                          >
+                            {isMoreOpen ? "Less ↑" : "More ↓"}
+                          </Button>
+                        </div>
+                        {isMoreOpen && (
+                          <div className="rounded-lg border border-border/60 bg-muted/30 p-2 space-y-1.5" data-testid={`tray-more-actions-${i}`}>
+                            <div className="flex gap-1 flex-wrap">
+                              {lead.phone && (
+                                <a href={`tel:${lead.phone}`} data-testid={`button-call-lead-${i}`}>
+                                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs">📞 Call</Button>
+                                </a>
+                              )}
+                              {lead.phone && (
+                                <a href={`sms:${lead.phone}`} data-testid={`button-sms-lead-${i}`}>
+                                  <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Text"><MessageSquare className="h-3 w-3" /></Button>
+                                </a>
+                              )}
+                              <a href={`mailto:${lead.email}`} data-testid={`button-email-lead-${i}`}>
+                                <Button size="sm" variant="outline" className="h-7 px-2 text-xs"><Send className="h-3 w-3 mr-1" />Email</Button>
+                              </a>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => sendFollowUp.mutate({ id: lead.id, step: "followup_24hr" })}
+                                disabled={sendFollowUp.isPending}
+                                data-testid={`button-followup-lead-${i}`}
+                              >
+                                <Zap className="h-3 w-3 mr-1" />Follow-up
+                              </Button>
+                              {(!lead.sequenceStatus || lead.sequenceStatus === "pending") && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => startSequence.mutate(lead.id)}
+                                  disabled={startSequence.isPending}
+                                  data-testid={`button-sequence-lead-${i}`}
+                                >
+                                  <Play className="h-3 w-3 mr-1" />Sequence
+                                </Button>
+                              )}
+                              {!lead.isContacted && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs text-green-600"
+                                  onClick={() => markContacted.mutate(lead.id)}
+                                  disabled={markContacted.isPending}
+                                  data-testid={`button-contacted-lead-${i}`}
+                                >
+                                  <CheckCircle className="h-3 w-3 mr-1" />Contacted
+                                </Button>
+                              )}
+                              {(!lead.bookingStatus || lead.bookingStatus === "not_booked") && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                                  onClick={() => updateBooking.mutate({ id: lead.id, status: "booked" })}
+                                  disabled={updateBooking.isPending}
+                                  data-testid={`button-book-lead-${i}`}
+                                >
+                                  <CalendarCheck className="h-3 w-3 mr-1" />Mark Booked
+                                </Button>
+                              )}
+                              {lead.bookingStatus === "booked" && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 px-2 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                                  onClick={() => updateBooking.mutate({ id: lead.id, status: "completed" })}
+                                  disabled={updateBooking.isPending}
+                                  data-testid={`button-attended-lead-${i}`}
+                                >
+                                  <CheckCircle className="h-3 w-3 mr-1" />Attended
+                                </Button>
+                              )}
+                              {(lead.bookingStatus === "completed" || lead.bookingStatus === "booked") && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700 text-white"
+                                  onClick={() => updateBooking.mutate({ id: lead.id, status: "converted" })}
+                                  disabled={updateBooking.isPending}
+                                  data-testid={`button-convert-lead-${i}`}
+                                >
+                                  <TrendingUp className="h-3 w-3 mr-1" />Convert
+                                </Button>
+                              )}
+                              {lead.bookingStatus !== "lost" && lead.bookingStatus !== "converted" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs text-red-500 hover:text-red-600"
+                                  onClick={() => updateBooking.mutate({ id: lead.id, status: "lost" })}
+                                  disabled={updateBooking.isPending}
+                                  data-testid={`button-lost-lead-${i}`}
+                                >
+                                  ✗ Lost
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`h-7 px-2 text-xs ${lead.aiSalesAnalysis ? "text-purple-600 border-purple-500/30" : ""}`}
+                                onClick={() => {
+                                  if (lead.aiSalesAnalysis) {
+                                    setExpandedAnalysis(isExpanded ? null : lead.id);
+                                  } else {
+                                    generateAiAnalysis.mutate(lead.id);
+                                  }
+                                }}
+                                disabled={generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id}
+                                data-testid={`button-ai-analysis-lead-${i}`}
+                              >
+                                <Brain className="h-3 w-3 mr-1" />
+                                {lead.aiSalesAnalysis ? (isExpanded ? "Hide AI" : "AI Intel") : generateAiAnalysis.isPending && generateAiAnalysis.variables === lead.id ? "Analyzing…" : "AI Analyze"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 text-xs bg-orange-500 hover:bg-orange-600 text-white"
+                                onClick={() => moveToDeal.mutate(lead.id)}
+                                disabled={moveToDeal.isPending}
+                                data-testid={`button-move-deal-${i}`}
+                              >
+                                <ArrowRight className="h-3 w-3 mr-1" />Deal
+                              </Button>
+                              {lead.adminEmailStatus !== "sent" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs text-orange-600 border-orange-500/30 hover:bg-orange-500/10"
+                                  onClick={() => resendAdminEmail.mutate(lead.id)}
+                                  disabled={resendAdminEmail.isPending && resendAdminEmail.variables === lead.id}
+                                  data-testid={`button-resend-admin-email-${i}`}
+                                  title={lead.adminEmailStatus === "failed" ? `Last attempt failed: ${lead.adminEmailError || "unknown error"}` : "Send admin notification email"}
+                                >
+                                  <Send className="h-3 w-3 mr-1" />
+                                  {resendAdminEmail.isPending && resendAdminEmail.variables === lead.id ? "Sending…" : "Notify Admin"}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Applicant confirmation email status row */}
                   <div className="flex items-center gap-2 pt-1 border-t border-border/30">
@@ -2973,6 +3075,7 @@ export default function BusinessCommandCenterPage() {
   const [, setLocation] = useLocation();
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
   const [goalInput, setGoalInput] = useState("");
+  const [showAllRecovery, setShowAllRecovery] = useState(false);
 
   useAutoExecution();
   useAiRevenueToasts((opts) =>
@@ -3066,149 +3169,89 @@ export default function BusinessCommandCenterPage() {
   const allOpenSlots = [...data.openSlotsToday, ...data.openSlotsTomorrow];
 
   return (
-    <div className="space-y-5 pb-24 sm:pb-6">
-      {/* Header */}
+    <div className="space-y-4 pb-24 sm:pb-6">
+      {/* ─── Header / Executive Strip ─────────────────────────────────────── */}
       <DashPageHeader>
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-command-center-title">Today's Command Center</h1>
-            <p className="text-sm text-muted-foreground">
-              {format(new Date(), "EEEE, MMMM d")} · {data.daysRemainingInMonth} days left this month
-            </p>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold tracking-tight leading-tight" data-testid="text-command-center-title">Today's Command Center</h1>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className="text-xs text-muted-foreground">{format(new Date(), "EEE, MMM d")}</span>
+              <span className="text-xs text-muted-foreground">·</span>
+              <span className="text-xs font-semibold text-foreground">{fmt$(data.monthRevenueCents)} MTD</span>
+              {allOpenSlots.length > 0 && (
+                <>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">{allOpenSlots.length} open slot{allOpenSlots.length !== 1 ? "s" : ""}</span>
+                </>
+              )}
+              {data.teamPipeline.draftsAwaitingApproval > 0 && (
+                <>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <span className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">{data.teamPipeline.draftsAwaitingApproval} draft{data.teamPipeline.draftsAwaitingApproval !== 1 ? "s" : ""} pending</span>
+                </>
+              )}
+              <span className="text-xs text-muted-foreground">· {data.daysRemainingInMonth}d left</span>
+            </div>
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={() => refetch()}
             disabled={isRefetching}
-            className="shrink-0"
+            className="shrink-0 h-8 w-8 p-0"
             data-testid="button-refresh-command-center"
           >
-            <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </DashPageHeader>
 
-      {/* ─── Top Attention Items (Unified Attention System) ──────────────── */}
+      {/* ─── Top Attention Items ──────────────────────────────────────────── */}
       <TopAttentionStrip />
 
-      {/* ─── Active Workflow Status Strip ────────────────────────────────── */}
+      {/* ─── Active Workflow Status Strip ─────────────────────────────────── */}
       <WorkflowStatusStrip />
 
-      {/* ─── Daily Operator Mode (Start My Day + Checklist) ──────────────── */}
-      <DashSectionReveal>
-        <DailyOperatorMode openAgentWith={openAgentWith} />
-      </DashSectionReveal>
-
-      {/* ─── Business Brain Intelligence Strip ───────────────────────────── */}
-      <DashSectionReveal delay={0.01}>
-        <BrainBriefStrip onRunBrain={handleRunBrain} />
-      </DashSectionReveal>
-
-      {/* ─── Unified Action Inbox (Today's Business Priorities) ──────────── */}
-      <DashSectionReveal delay={0.02}>
-        <UnifiedActionInbox onRunBrain={handleRunBrain} openAgentWith={openAgentWith} />
-      </DashSectionReveal>
-
-      {/* ─── AI Revenue Outcome Engine ────────────────────────────────────── */}
-      <DashSectionReveal delay={0.04}>
-        <AiRevenuePanel />
-      </DashSectionReveal>
-
-      {/* ─── Revenue Snapshot ─────────────────────────────────────────────── */}
-      <section>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Revenue Snapshot</h2>
-        <DashStaggerList className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <DashStatCard scanLine>
-            <Card className="p-4 space-y-1" data-testid="card-revenue-today">
-              <p className="text-xs text-muted-foreground">Booked Today</p>
-              <p className="text-xl font-bold text-foreground">{fmt$(data.todayRevenueCents)}</p>
-            </Card>
-          </DashStatCard>
-          <DashStatCard scanLine>
-            <Card className="p-4 space-y-1" data-testid="card-open-slot-value">
-              <p className="text-xs text-muted-foreground">Open Slot Value Today</p>
-              <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{fmt$(data.openSlotValueTodayCents)}</p>
-            </Card>
-          </DashStatCard>
-          <DashStatCard className="col-span-2 sm:col-span-1" scanLine>
-            <Card className="p-4 space-y-1" data-testid="card-month-revenue">
-              <p className="text-xs text-muted-foreground">Month to Date</p>
-              <p className="text-xl font-bold">{fmt$(data.monthRevenueCents)}</p>
-            </Card>
-          </DashStatCard>
-        </DashStaggerList>
-
-        {hasGoal ? (
-          <Card className="p-4 mt-3 space-y-3" data-testid="card-revenue-goal">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Monthly Goal: {fmt$(data.monthGoalCents!)}</p>
-                <p className="text-xs text-muted-foreground">
-                  Projected: {fmt$(data.projectedMonthRevenueCents)} · Gap: {fmt$(data.revenueGapCents || 0)} · {data.sessionsNeededToClose ?? 0} sessions needed
-                </p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setGoalDialogOpen(true)} data-testid="button-edit-goal">
-                Edit
-              </Button>
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Current: {goalProgress}%</span>
-                <span>Projected: {projectedProgress}%</span>
-              </div>
-              <Progress value={goalProgress ?? 0} className="h-2" data-testid="progress-monthly-goal" />
-              <Progress value={projectedProgress ?? 0} className="h-1.5 opacity-50" />
-            </div>
-          </Card>
-        ) : (
-          <Card className="p-4 mt-3 flex items-center justify-between gap-3" data-testid="card-no-goal">
-            <p className="text-sm text-muted-foreground">Set a monthly goal to unlock revenue recommendations.</p>
-            <Button size="sm" onClick={() => setGoalDialogOpen(true)} data-testid="button-set-goal">
-              <Target className="h-4 w-4 mr-1" /> Set Goal
-            </Button>
-          </Card>
-        )}
-      </section>
-
-      {/* ─── Best Action Today ────────────────────────────────────────────── */}
+      {/* ─── Best Action Today (HERO) ─────────────────────────────────────── */}
       {data.bestAction ? (
         <section>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Best Action Today</h2>
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Best Action Today</h2>
           <DashPriorityCard>
-          <Card className="p-4 border-primary/40 bg-primary/5 dark:bg-primary/10" data-testid="card-best-action">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-full bg-primary/20 p-2 shrink-0">
-                <Star className="h-4 w-4 text-primary" />
+          <Card className="p-3.5 border-primary/40 bg-primary/5 dark:bg-primary/10" data-testid="card-best-action">
+            <div className="flex items-start gap-2.5">
+              <div className="mt-0.5 rounded-full bg-primary/20 p-1.5 shrink-0">
+                <Star className="h-3.5 w-3.5 text-primary" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm text-foreground leading-tight" data-testid="text-best-action-headline">
                   {data.bestAction.headline}
                 </p>
-                <p className="text-sm text-muted-foreground mt-1" data-testid="text-best-action-detail">
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2" data-testid="text-best-action-detail">
                   {data.bestAction.detail}
                 </p>
-                <p className="text-xs text-primary font-medium mt-1">
+                <p className="text-xs text-primary font-semibold mt-1">
                   Est. {fmt$(data.bestAction.estimatedValueCents)} opportunity
                 </p>
               </div>
             </div>
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-2 mt-3">
               <Button
                 size="sm"
-                className="flex-1 sm:flex-none"
+                className="flex-1 h-8 text-xs"
                 onClick={() => openAgentWith(`Help me take action on: ${data.bestAction!.headline}`)}
                 data-testid="button-take-action"
               >
-                <Zap className="h-4 w-4 mr-1" /> Take Action
+                <Zap className="h-3.5 w-3.5 mr-1" /> Take Action
               </Button>
               <Button
                 size="sm"
                 variant="outline"
+                className="h-8 text-xs"
                 onClick={() => openAgentWith(`Why is "${data.bestAction!.headline}" your top recommendation today?`)}
                 data-testid="button-ask-why"
               >
-                Ask Agent Why
+                Ask Why
               </Button>
             </div>
           </Card>
@@ -3216,210 +3259,10 @@ export default function BusinessCommandCenterPage() {
         </section>
       ) : null}
 
-      {/* ─── Schedule Gaps ────────────────────────────────────────────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Schedule Gaps</h2>
-          <span className="text-xs text-muted-foreground">{allOpenSlots.length} open slot{allOpenSlots.length !== 1 ? "s" : ""}</span>
-        </div>
-        {allOpenSlots.length === 0 ? (
-          <Card className="p-4 text-center" data-testid="card-no-gaps">
-            <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
-            <p className="text-sm font-medium">Schedule is full today and tomorrow!</p>
-            <p className="text-xs text-muted-foreground mt-1">No open slots to fill.</p>
-          </Card>
-        ) : (
-          <div className="space-y-2" data-testid="list-schedule-gaps">
-            {allOpenSlots.slice(0, 8).map((slot, i) => (
-              <DashActionRow key={`${slot.startISO}-${i}`}>
-              <Card className="p-3 flex items-center gap-3" data-testid={`card-slot-${i}`}>
-                <div className="rounded-lg bg-orange-500/10 p-2 shrink-0">
-                  <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{slot.startTime} – {slot.endTimeStr}</p>
-                  <p className="text-xs text-muted-foreground">{slot.date}</p>
-                  {slot.suggestedClientName && (
-                    <p className="text-xs text-primary mt-0.5">Suggested: {slot.suggestedClientName}</p>
-                  )}
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{fmt$(slot.estimatedValueCents)}</p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-xs mt-1"
-                    onClick={() => openAgentWith(`Help me fill the ${slot.startTime} slot on ${slot.date}`)}
-                    data-testid={`button-fill-slot-${i}`}
-                  >
-                    Fill <ArrowRight className="h-3 w-3 ml-1" />
-                  </Button>
-                </div>
-              </Card>
-              </DashActionRow>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ─── Client Revenue Opportunities ─────────────────────────────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Client Opportunities</h2>
-          <span className="text-xs text-muted-foreground">{data.clientOpportunities.length}</span>
-        </div>
-        {data.clientOpportunities.length === 0 ? (
-          <Card className="p-4 text-center text-sm text-muted-foreground" data-testid="card-no-client-opportunities">
-            No client opportunities identified yet.
-          </Card>
-        ) : (
-          <div className="space-y-2" data-testid="list-client-opportunities">
-            {data.clientOpportunities.slice(0, 8).map((opp, i) => (
-              <DashActionRow key={`${opp.clientId}-${opp.type}-${i}`}>
-              <Card className="p-3 flex items-start gap-3" data-testid={`card-opportunity-${i}`}>
-                <div className={`mt-0.5 shrink-0 ${urgencyColor(opp.urgency)}`}>
-                  <AlertTriangle className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium">{opp.clientName}</p>
-                    {opportunityBadge(opp.type)}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{opp.detail}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmt$(opp.estimatedValueCents)}</p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-xs mt-1"
-                    onClick={() => openAgentWith(opp.suggestedAction)}
-                    data-testid={`button-act-opportunity-${i}`}
-                  >
-                    Act <ArrowRight className="h-3 w-3 ml-1" />
-                  </Button>
-                </div>
-              </Card>
-              </DashActionRow>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ─── Team Training Pipeline ───────────────────────────────────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Team Training Pipeline</h2>
-          <Badge variant="outline" className="text-xs text-muted-foreground">Potential — not booked</Badge>
-        </div>
-        <DashStaggerList className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-          <DashStatCard>
-            <Card className="p-3 text-center" data-testid="card-pipeline-total">
-              <p className="text-lg font-bold">{data.teamPipeline.totalProspects}</p>
-              <p className="text-xs text-muted-foreground">Total Leads</p>
-            </Card>
-          </DashStatCard>
-          <DashStatCard>
-            <Card className="p-3 text-center" data-testid="card-pipeline-highconf">
-              <p className="text-lg font-bold text-primary">{data.teamPipeline.highConfidenceLeads}</p>
-              <p className="text-xs text-muted-foreground">High Confidence</p>
-            </Card>
-          </DashStatCard>
-          <DashStatCard>
-            <Card className="p-3 text-center" data-testid="card-pipeline-drafts">
-              <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{data.teamPipeline.draftsAwaitingApproval}</p>
-              <p className="text-xs text-muted-foreground">Drafts Pending</p>
-            </Card>
-          </DashStatCard>
-          <DashStatCard>
-            <Card className="p-3 text-center" data-testid="card-pipeline-replies">
-              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{data.teamPipeline.repliesNeedingFollowUp}</p>
-              <p className="text-xs text-muted-foreground">Replies</p>
-            </Card>
-          </DashStatCard>
-        </DashStaggerList>
-
-        {data.teamPipeline.estimatedPipelineValueCents > 0 && (
-          <Card className="p-3 mb-3 flex items-center gap-2" data-testid="card-pipeline-value">
-            <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
-            <p className="text-sm text-muted-foreground">
-              Estimated pipeline: <span className="font-semibold text-foreground">{fmt$(data.teamPipeline.estimatedPipelineValueCents)}</span>
-              <span className="text-xs"> — potential, not booked revenue</span>
-            </p>
-          </Card>
-        )}
-
-        {data.teamPipeline.pendingDrafts.length > 0 && (
-          <div className="space-y-2 mb-3" data-testid="list-pending-drafts">
-            <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
-              <MessageSquare className="h-3.5 w-3.5" /> Drafts awaiting your approval
-            </p>
-            {data.teamPipeline.pendingDrafts.map((draft, i) => (
-              <Card key={draft.draftId} className="p-3" data-testid={`card-draft-${i}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{draft.prospectName}</p>
-                    <p className="text-xs text-muted-foreground truncate">{draft.subject}</p>
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{draft.bodyPreview}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 text-xs"
-                    onClick={() => openAgentWith(`Review and approve the team outreach draft for ${draft.prospectName} (draft ID: ${draft.draftId})`)}
-                    data-testid={`button-review-draft-${i}`}
-                  >
-                    Review
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {data.teamPipeline.activeLeads.length > 0 && (
-          <div className="space-y-2" data-testid="list-active-leads">
-            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <Building2 className="h-3.5 w-3.5" /> Active leads
-            </p>
-            {data.teamPipeline.activeLeads.map((lead, i) => (
-              <Card key={lead.id} className="p-3 flex items-center gap-3" data-testid={`card-lead-${i}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium">{lead.prospectName}</p>
-                    {statusBadge(lead.outreachStatus)}
-                  </div>
-                  <p className="text-xs text-muted-foreground">{lead.sport} · {lead.city}, {lead.state}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-xs text-muted-foreground">Conf: {lead.confidenceScore}%</p>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {data.teamPipeline.totalProspects === 0 && (
-          <Card className="p-4 text-center text-sm text-muted-foreground" data-testid="card-no-team-pipeline">
-            No team training prospects yet.{" "}
-            <button
-              className="text-primary underline"
-              onClick={() => openAgentWith("Find me some team training leads")}
-              data-testid="button-find-leads"
-            >
-              Find leads with Agent
-            </button>
-          </Card>
-        )}
-      </section>
-
-      {/* ─── Program Leads ───────────────────────────────────────────────── */}
-      <ProgramLeadsPanel />
-
       {/* ─── Agent Quick Actions ──────────────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Agent Quick Actions</h2>
-        <DashQuickActionGrid className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Agent Quick Actions</h2>
+        <DashQuickActionGrid className="grid grid-cols-2 gap-2">
           {[
             { label: "What should I do today?", icon: Flame, msg: "What should I do today to grow my revenue and fill my schedule?" },
             { label: "Fill open slots", icon: Calendar, msg: "Help me fill my open schedule slots for today and tomorrow." },
@@ -3431,17 +3274,283 @@ export default function BusinessCommandCenterPage() {
             <DashQuickActionItem key={action.label}>
               <Button
                 variant="outline"
-                className="w-full h-auto py-3 flex flex-col items-center gap-1.5 text-center"
+                className="w-full h-auto py-2.5 flex flex-col items-center gap-1 text-center"
                 onClick={() => openAgentWith(action.msg)}
                 data-testid={`button-quick-action-${i}`}
               >
-                <action.icon className="h-4 w-4 text-muted-foreground" />
+                <action.icon className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs leading-tight">{action.label}</span>
               </Button>
             </DashQuickActionItem>
           ))}
         </DashQuickActionGrid>
       </section>
+
+      {/* ─── Revenue Snapshot ─────────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Revenue Snapshot</h2>
+        <DashStaggerList className="grid grid-cols-3 gap-2">
+          <DashStatCard scanLine>
+            <Card className="p-3 space-y-0.5" data-testid="card-revenue-today">
+              <p className="text-[10px] text-muted-foreground">Booked Today</p>
+              <p className="text-base font-bold text-foreground">{fmt$(data.todayRevenueCents)}</p>
+            </Card>
+          </DashStatCard>
+          <DashStatCard scanLine>
+            <Card className="p-3 space-y-0.5" data-testid="card-open-slot-value">
+              <p className="text-[10px] text-muted-foreground">Open Value</p>
+              <p className="text-base font-bold text-orange-600 dark:text-orange-400">{fmt$(data.openSlotValueTodayCents)}</p>
+            </Card>
+          </DashStatCard>
+          <DashStatCard scanLine>
+            <Card className="p-3 space-y-0.5" data-testid="card-month-revenue">
+              <p className="text-[10px] text-muted-foreground">MTD</p>
+              <p className="text-base font-bold">{fmt$(data.monthRevenueCents)}</p>
+            </Card>
+          </DashStatCard>
+        </DashStaggerList>
+
+        {hasGoal ? (
+          <Card className="p-3 mt-2 space-y-2" data-testid="card-revenue-goal">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium">Goal: {fmt$(data.monthGoalCents!)} · Gap: {fmt$(data.revenueGapCents || 0)}</p>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setGoalDialogOpen(true)} data-testid="button-edit-goal">
+                Edit
+              </Button>
+            </div>
+            <div className="space-y-1">
+              <Progress value={goalProgress ?? 0} className="h-1.5" data-testid="progress-monthly-goal" />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>Current {goalProgress}%</span>
+                <span>Projected {projectedProgress}%</span>
+              </div>
+            </div>
+          </Card>
+        ) : (
+          <Card className="p-3 mt-2 flex items-center justify-between gap-3" data-testid="card-no-goal">
+            <p className="text-xs text-muted-foreground">Set a monthly goal to unlock revenue recommendations.</p>
+            <Button size="sm" className="h-7 px-2 text-xs shrink-0" onClick={() => setGoalDialogOpen(true)} data-testid="button-set-goal">
+              <Target className="h-3 w-3 mr-1" /> Set Goal
+            </Button>
+          </Card>
+        )}
+      </section>
+
+      {/* ─── Revenue Recovery Queue (merged slots + client opportunities) ─── */}
+      {(() => {
+        type RecoveryRow = {
+          id: string;
+          icon: React.ReactNode;
+          title: string;
+          context: string;
+          value: number;
+          actionLabel: string;
+          onAction: () => void;
+          urgency: string;
+        };
+        const rows: RecoveryRow[] = [
+          ...allOpenSlots.map((slot, idx) => ({
+            id: `slot-${slot.startISO}-${idx}`,
+            icon: <Clock className="h-4 w-4 text-orange-500" />,
+            title: `${slot.startTime} – ${slot.endTimeStr}`,
+            context: `Open slot · ${slot.date}${slot.suggestedClientName ? ` · ${slot.suggestedClientName}` : ""}`,
+            value: slot.estimatedValueCents,
+            actionLabel: "Fill",
+            onAction: () => openAgentWith(`Help me fill the ${slot.startTime} slot on ${slot.date}`),
+            urgency: "medium",
+          })),
+          ...data.clientOpportunities.map((opp, idx) => ({
+            id: `opp-${opp.clientId}-${opp.type}-${idx}`,
+            icon: opp.type === "churn_risk"
+              ? <AlertTriangle className="h-4 w-4 text-red-500" />
+              : opp.type === "renewal_due"
+              ? <RefreshCw className="h-4 w-4 text-yellow-500" />
+              : <Users className="h-4 w-4 text-blue-500" />,
+            title: opp.clientName,
+            context: opp.detail,
+            value: opp.estimatedValueCents,
+            actionLabel: opp.type === "churn_risk" ? "Retain" : "Act",
+            onAction: () => openAgentWith(opp.suggestedAction),
+            urgency: opp.urgency,
+          })),
+        ].sort((a, b) => b.value - a.value);
+
+        const RECOVERY_LIMIT = 5;
+        const visibleRows = showAllRecovery ? rows : rows.slice(0, RECOVERY_LIMIT);
+        const hasMore = rows.length > RECOVERY_LIMIT;
+
+        if (rows.length === 0) {
+          return (
+            <section>
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Revenue Recovery</h2>
+              <Card className="p-3 flex items-center gap-2.5" data-testid="card-no-recovery">
+                <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                <p className="text-sm font-medium">Schedule full · No churn risks</p>
+              </Card>
+            </section>
+          );
+        }
+
+        return (
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Revenue Recovery</h2>
+              <span className="text-xs text-muted-foreground">{rows.length} item{rows.length !== 1 ? "s" : ""}</span>
+            </div>
+            <div className="space-y-1.5" data-testid="list-revenue-recovery">
+              {visibleRows.map((row) => (
+                <DashActionRow key={row.id}>
+                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border/60 bg-card hover:border-border transition-colors" data-testid={`row-recovery-${row.id}`}>
+                    <div className="shrink-0">{row.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-tight truncate">{row.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{row.context}</p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmt$(row.value)}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={row.onAction}
+                        data-testid={`button-recovery-act-${row.id}`}
+                      >
+                        {row.actionLabel} <ArrowRight className="h-3 w-3 ml-0.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </DashActionRow>
+              ))}
+            </div>
+            {hasMore && (
+              <button
+                className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground py-1.5 border border-dashed border-border rounded-lg transition-colors"
+                onClick={() => setShowAllRecovery(!showAllRecovery)}
+                data-testid="button-view-all-recovery"
+              >
+                {showAllRecovery ? `Show less ↑` : `View all ${rows.length} items ↓`}
+              </button>
+            )}
+          </section>
+        );
+      })()}
+
+      {/* ─── Team Training Pipeline (compressed) ─────────────────────────── */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Team Training Pipeline</h2>
+          <Badge variant="outline" className="text-[10px] text-muted-foreground">Est. pipeline</Badge>
+        </div>
+
+        {data.teamPipeline.totalProspects === 0 ? (
+          <Card className="p-3 text-center text-sm text-muted-foreground" data-testid="card-no-team-pipeline">
+            No prospects yet.{" "}
+            <button className="text-primary underline" onClick={() => openAgentWith("Find me some team training leads")} data-testid="button-find-leads">
+              Find leads
+            </button>
+          </Card>
+        ) : (
+          <>
+            {/* Single summary card */}
+            <Card className="p-3 mb-2" data-testid="card-pipeline-summary">
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div data-testid="card-pipeline-total">
+                  <p className="text-base font-bold">{data.teamPipeline.totalProspects}</p>
+                  <p className="text-[10px] text-muted-foreground">Total</p>
+                </div>
+                <div data-testid="card-pipeline-highconf">
+                  <p className="text-base font-bold text-primary">{data.teamPipeline.highConfidenceLeads}</p>
+                  <p className="text-[10px] text-muted-foreground">High Conf</p>
+                </div>
+                <div data-testid="card-pipeline-drafts">
+                  <p className="text-base font-bold text-yellow-600 dark:text-yellow-400">{data.teamPipeline.draftsAwaitingApproval}</p>
+                  <p className="text-[10px] text-muted-foreground">Drafts</p>
+                </div>
+                <div data-testid="card-pipeline-replies">
+                  <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">{data.teamPipeline.repliesNeedingFollowUp}</p>
+                  <p className="text-[10px] text-muted-foreground">Replies</p>
+                </div>
+              </div>
+              {data.teamPipeline.estimatedPipelineValueCents > 0 && (
+                <p className="text-xs text-muted-foreground mt-2 border-t border-border/40 pt-2">
+                  <TrendingUp className="h-3 w-3 inline mr-1 text-muted-foreground" />
+                  Pipeline: <span className="font-semibold text-foreground">{fmt$(data.teamPipeline.estimatedPipelineValueCents)}</span>
+                  <span className="text-[10px]"> potential</span>
+                </p>
+              )}
+            </Card>
+
+            {/* Top 2 pending drafts */}
+            {data.teamPipeline.pendingDrafts.length > 0 && (
+              <div className="space-y-1.5" data-testid="list-pending-drafts">
+                <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
+                  <MessageSquare className="h-3 w-3" /> Drafts awaiting approval
+                </p>
+                {data.teamPipeline.pendingDrafts.slice(0, 2).map((draft, i) => (
+                  <Card key={draft.draftId} className="p-2.5" data-testid={`card-draft-${i}`}>
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium">{draft.prospectName}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{draft.subject}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 h-7 px-2 text-xs"
+                        onClick={() => openAgentWith(`Review and approve the team outreach draft for ${draft.prospectName} (draft ID: ${draft.draftId})`)}
+                        data-testid={`button-review-draft-${i}`}
+                      >
+                        Review
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+                {data.teamPipeline.pendingDrafts.length > 2 && (
+                  <button
+                    className="w-full text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
+                    onClick={() => openAgentWith("Show me all team outreach drafts waiting for my approval.")}
+                    data-testid="button-review-all-drafts"
+                  >
+                    Review all {data.teamPipeline.pendingDrafts.length} drafts →
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* ─── Program Leads ───────────────────────────────────────────────── */}
+      <ProgramLeadsPanel />
+
+      {/* ─── Agent Layer / Activity Feed ──────────────────────────────────── */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="h-px flex-1 bg-border/50" />
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2">Agent Layer</span>
+          <div className="h-px flex-1 bg-border/50" />
+        </div>
+
+        {/* Daily Operator Mode */}
+        <DashSectionReveal>
+          <DailyOperatorMode openAgentWith={openAgentWith} />
+        </DashSectionReveal>
+
+        {/* Business Brain Intelligence Strip */}
+        <DashSectionReveal delay={0.01}>
+          <BrainBriefStrip onRunBrain={handleRunBrain} />
+        </DashSectionReveal>
+
+        {/* Unified Action Inbox */}
+        <DashSectionReveal delay={0.02}>
+          <UnifiedActionInbox onRunBrain={handleRunBrain} openAgentWith={openAgentWith} />
+        </DashSectionReveal>
+
+        {/* AI Revenue Outcome Engine */}
+        <DashSectionReveal delay={0.04}>
+          <AiRevenuePanel />
+        </DashSectionReveal>
+      </div>
 
       {/* ─── Sticky bottom agent button (mobile) ─────────────────────────── */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/90 backdrop-blur-sm border-t sm:hidden z-40">
