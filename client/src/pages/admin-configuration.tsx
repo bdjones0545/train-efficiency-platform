@@ -1179,7 +1179,8 @@ export default function AdminConfigurationPage() {
                 key={tab.id}
                 onClick={() => {
                   setActiveTab(tab.id);
-                  contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  const mainEl = document.querySelector("main.main-scroll");
+                  if (mainEl) mainEl.scrollTop = 0;
                 }}
                 data-testid={`tab-${tab.id}`}
                 className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0 ${

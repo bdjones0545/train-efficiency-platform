@@ -3553,9 +3553,9 @@ export default function BusinessCommandCenterPage() {
       </div>
 
       {/* ─── Sticky bottom agent button (mobile) ─────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/90 backdrop-blur-sm border-t sm:hidden z-40">
+      <div className="fixed bottom-0 left-0 right-0 bg-background/90 backdrop-blur-sm border-t sm:hidden z-40 px-4 pt-3 pb-safe" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <Button
-          className="w-full"
+          className="w-full mb-3"
           size="lg"
           onClick={() => openAgentWith("What should I do today to grow my revenue and fill my schedule?")}
           data-testid="button-sticky-agent"

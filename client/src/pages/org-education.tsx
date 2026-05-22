@@ -414,9 +414,9 @@ export default function OrgEducationPage() {
         </div>
 
         {/* Bottom CTA */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t border-border/50">
+        <div className="fixed bottom-0 left-0 right-0 px-4 pt-3 bg-background/95 backdrop-blur border-t border-border/50" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
           {hasQuiz ? (
-            <Button className="w-full h-11 text-sm gap-2" onClick={startQuiz} data-testid="button-start-quiz">
+            <Button className="w-full h-11 text-sm gap-2 mb-1" onClick={startQuiz} data-testid="button-start-quiz">
               Take the Quiz <ChevronRight className="h-4 w-4" />
             </Button>
           ) : (
@@ -477,8 +477,8 @@ export default function OrgEducationPage() {
           ))}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t border-border/50">
-          <Button className="w-full h-11 text-sm gap-2" onClick={submitQuiz}
+        <div className="fixed bottom-0 left-0 right-0 px-4 pt-3 bg-background/95 backdrop-blur border-t border-border/50" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+          <Button className="w-full h-11 text-sm gap-2 mb-1" onClick={submitQuiz}
             disabled={submitQuizMut.isPending || Object.keys(quizAnswers).length < questions.length}
             data-testid="button-submit-quiz">
             {submitQuizMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Quiz"}

@@ -236,7 +236,7 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
             <div className="flex-1" />
             <ThemeToggle />
           </header>
-          <main className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+          <main className="main-scroll flex-1 min-h-0 overflow-y-auto p-4 md:p-6 pb-safe">
             <div className="max-w-5xl mx-auto">
               <Switch>
                 <Route path="/org/:slug/portal" component={OrgPortalPage} />
@@ -325,7 +325,7 @@ function AuthenticatedLayout() {
             <AttentionBell />
             <ThemeToggle />
           </header>
-          <main className={`flex-1 min-h-0 ${isFullscreenPage ? "overflow-hidden" : "overflow-y-auto p-6"}`}>
+          <main className={`flex-1 min-h-0 ${isFullscreenPage ? "overflow-hidden" : "main-scroll overflow-y-auto p-4 md:p-6 pb-safe"}`}>
             <div className={isFullscreenPage ? "h-full" : "max-w-5xl mx-auto"}>
               <SubscriptionGate>
                 <Switch>

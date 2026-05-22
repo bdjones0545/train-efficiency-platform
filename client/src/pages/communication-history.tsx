@@ -3149,7 +3149,7 @@ export default function CommunicationHistoryPage() {
       </Tabs>
 
       {/* Mobile sticky bottom button */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 border-t backdrop-blur-md md:hidden z-40" data-testid="mobile-agent-bar">
+      <div className="fixed bottom-0 left-0 right-0 px-4 pt-3 bg-background/95 border-t backdrop-blur-md md:hidden z-40" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }} data-testid="mobile-agent-bar">
         <Button className="w-full" size="sm" onClick={() => setActiveTab("overview")} data-testid="button-ask-outreach-center">
           <Bot className="h-4 w-4 mr-2" />
           Open Outreach Center

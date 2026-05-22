@@ -824,3 +824,57 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   iOS / Mobile Safari — Scroll Architecture Stability
+   ────────────────────────────────────────────────────────────
+   Prevent the document body from rubber-banding or scrolling
+   independently of our one authoritative scroll container.
+   ──────────────────────────────────────────────────────────── */
+html,
+body {
+  overscroll-behavior: none;
+  /* Prevent iOS from bouncing the outer document */
+  -webkit-overflow-scrolling: auto;
+}
+
+/* The one authoritative scroll container used by App.tsx.
+   Applied via the class "main-scroll" on the <main> element. */
+.main-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* Force GPU-composited layer so Safari doesn't repaint on scroll */
+  will-change: scroll-position;
+}
+
+/* Safe-area utilities for iOS notch / home-indicator spacing */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Bottom-safe margin for FABs / floating buttons */
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Horizontal-scroll containers (tab trays, chip rows) */
+.tab-tray-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tab-tray-scroll::-webkit-scrollbar {
+  display: none;
+}

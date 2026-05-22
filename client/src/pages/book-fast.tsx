@@ -260,9 +260,13 @@ export default function BookFastPage() {
 
   useEffect(() => {
     if (selectedDate && dateTrayRef.current) {
-      const activeBtn = dateTrayRef.current.querySelector(`[data-date="${selectedDate}"]`) as HTMLElement;
+      const tray = dateTrayRef.current;
+      const activeBtn = tray.querySelector(`[data-date="${selectedDate}"]`) as HTMLElement;
       if (activeBtn) {
-        activeBtn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+        const trayLeft = tray.getBoundingClientRect().left;
+        const btnLeft = activeBtn.getBoundingClientRect().left;
+        const offset = btnLeft - trayLeft - (tray.clientWidth - activeBtn.offsetWidth) / 2;
+        tray.scrollBy({ left: offset, behavior: "smooth" });
       }
     }
   }, [selectedDate]);
