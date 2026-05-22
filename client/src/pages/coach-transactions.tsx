@@ -133,11 +133,15 @@ export default function CoachTransactionsPage() {
   const { data: revenueSummaryV2, isLoading: revSummaryLoading } = useQuery<RevenueSummaryV2>({
     queryKey: ["/api/admin/revenue-summary-v2", orgId],
     queryFn: async () => {
-      const res = await fetch("/api/admin/revenue-summary-v2");
-      if (!res.ok) throw new Error("Failed to fetch revenue summary");
+      const res = await fetch("/api/admin/revenue-summary-v2", { credentials: "include" });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        console.error("[revenue-summary-v2] request failed", res.status, body);
+        throw new Error(`Failed to fetch revenue summary (${res.status})`);
+      }
       return res.json();
     },
-    enabled: true,
+    enabled: !!orgId,
   });
 
   const manualPaymentMutation = useMutation({
