@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
-import { LeadCaptureLaserEffects, LaserUrgencyGlow, getDefaultLaserPreset } from "@/components/lead-capture-laser-effects";
+import { LeadCaptureLaserEffects, LaserBorderSweep, LaserUrgencyGlow, getDefaultLaserPreset } from "@/components/lead-capture-laser-effects";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -155,7 +155,7 @@ function ProgressBar({ step, total }: { step: number; total: number }) {
 
 function StepCard({ children, className = "", style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
-    <div className={`bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 md:p-8 shadow-2xl ${className}`} style={style}>
+    <div className={`relative overflow-hidden group bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 md:p-8 shadow-2xl ${className}`} style={style}>
       {children}
     </div>
   );
@@ -388,6 +388,8 @@ export default function LeadCaptureLanding() {
   const laserEnabled = ext.laserEffectsEnabled ?? true;
   const laserIntensity = ext.laserIntensity || "standard";
   const laserPreset = ext.laserPreset || getDefaultLaserPreset(funnelType);
+  const laserCardsEnabled = ext.laserCardsEnabled ?? true;
+  const laserCardsActive = laserEnabled && laserCardsEnabled;
   const heroImageFit = ext.heroImageFit || "cover";
   const heroImagePosition = ext.heroImagePosition || "center center";
   const mobileHeroImagePosition = ext.mobileHeroImagePosition || "";
@@ -671,12 +673,13 @@ export default function LeadCaptureLanding() {
             {socialProof.map((sp, i) => (
               <div
                 key={i}
-                className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 space-y-4 transition-colors"
+                className="relative overflow-hidden group bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 space-y-4 transition-colors"
                 style={{ ["--hover-border" as any]: `${accentColor}4d` }}
                 onMouseEnter={e => (e.currentTarget.style.borderColor = `${accentColor}4d`)}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
                 data-testid={`card-social-proof-${i}`}
               >
+                <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} cornerPosition="top-right" sweepDuration={11} sweepDelay={i * 1.5} />
                 <div className="flex gap-0.5">
                   {[...Array(5)].map((_, j) => (
                     <Star key={j} className="h-4 w-4 fill-amber-400 text-amber-400" />
@@ -716,11 +719,12 @@ export default function LeadCaptureLanding() {
             {benefits.map((b, i) => (
               <div
                 key={i}
-                className="group flex items-start gap-4 bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 hover:bg-white/8 transition-all duration-300"
+                className="relative overflow-hidden group flex items-start gap-4 bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-6 hover:bg-white/8 transition-all duration-300"
                 onMouseEnter={e => (e.currentTarget.style.borderColor = `${accentColor}4d`)}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
                 data-testid={`card-benefit-${i}`}
               >
+                <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} cornerPosition="top-left" sweepDuration={9} sweepDelay={i * 1.2} />
                 <div className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-colors" style={{ ...accentBgAlphaStyle, color: accentColor }}>
                   {defaultBenefitIcons[i % defaultBenefitIcons.length]}
                 </div>
@@ -744,7 +748,8 @@ export default function LeadCaptureLanding() {
             {whoCards.length > 0 && (
               <div className="grid sm:grid-cols-3 gap-4 text-left mt-4">
                 {whoCards.map((card) => (
-                  <div key={card.id} className="rounded-xl border p-4 bg-white/5" style={{ borderColor: `${accentColor}30` }}>
+                  <div key={card.id} className="relative overflow-hidden group rounded-xl border p-4 bg-white/5" style={{ borderColor: `${accentColor}30` }}>
+                    <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} cornerPosition="top-left" sweepDuration={12} sweepDelay={0} />
                     <p className="font-bold text-white text-sm mb-1">{card.title}</p>
                     <p className="text-white/55 text-xs leading-relaxed">{card.description}</p>
                   </div>
@@ -796,8 +801,11 @@ export default function LeadCaptureLanding() {
       )}
 
       {/* ── MULTI-STEP FORM ── */}
-      <section id="apply-form" className="py-20 px-6 bg-zinc-900/70" style={{ paddingBottom: "max(80px, calc(80px + env(safe-area-inset-bottom)))" }}>
-        <div className="max-w-2xl mx-auto">
+      <section id="apply-form" className="relative py-20 px-6 bg-zinc-900/70" style={{ paddingBottom: "max(80px, calc(80px + env(safe-area-inset-bottom)))" }}>
+        {laserCardsActive && (
+          <div className="absolute inset-0 pointer-events-none" aria-hidden="true" style={{ background: `radial-gradient(ellipse at 50% 0%, ${accentColor}0c 0%, transparent 55%)`, zIndex: 0 }} />
+        )}
+        <div className="relative max-w-2xl mx-auto">
           <div className="text-center mb-10">
             <Badge className="mb-4 text-xs tracking-widest uppercase border" style={{ ...accentBgAlphaStyle, color: accentColor, borderColor: `${accentColor}4d` }}>
               {funnelType === "team_training" ? "Consultation Request" : funnelType === "employment_opportunity" ? "Coach Application" : "Application"}
@@ -823,6 +831,7 @@ export default function LeadCaptureLanding() {
             {/* STEP 1 */}
             {step === 1 && (
               <StepCard>
+                <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} sweepDuration={8} sweepDelay={0} />
                 <div className="space-y-2 mb-6">
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <Users className="h-5 w-5 text-orange-400" />
@@ -880,6 +889,7 @@ export default function LeadCaptureLanding() {
             {/* STEP 2 */}
             {step === 2 && (
               <StepCard>
+                <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} sweepDuration={9} sweepDelay={0.5} />
                 <div className="space-y-2 mb-6">
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <Trophy className="h-5 w-5 text-orange-400" />
@@ -953,6 +963,7 @@ export default function LeadCaptureLanding() {
             {/* STEP 3 */}
             {step === 3 && (
               <StepCard>
+                <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} sweepDuration={10} sweepDelay={1} />
                 <div className="space-y-2 mb-6">
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <Target className="h-5 w-5 text-orange-400" />
@@ -1024,6 +1035,7 @@ export default function LeadCaptureLanding() {
             {/* STEP 4 */}
             {step === 4 && (
               <StepCard>
+                <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} sweepDuration={11} sweepDelay={1.5} />
                 <div className="space-y-2 mb-6">
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <Flame className="h-5 w-5 text-orange-400" />
@@ -1127,7 +1139,8 @@ export default function LeadCaptureLanding() {
                 </StepCard>
 
                 {/* Onboarding conversion CTA */}
-                <div className="relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-950/60 via-zinc-900/80 to-zinc-950/90 backdrop-blur-xl p-6 md:p-8">
+                <div className="relative overflow-hidden group rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-950/60 via-zinc-900/80 to-zinc-950/90 backdrop-blur-xl p-6 md:p-8">
+                  <LaserBorderSweep enabled={laserCardsActive} intensity={laserIntensity} preset={laserPreset} accentColor={accentColor} cornerPosition="top-right" sweepDuration={12} sweepDelay={2} />
                   {/* Glow */}
                   <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-green-500/8 blur-3xl pointer-events-none" />
                   <div className="relative space-y-5">

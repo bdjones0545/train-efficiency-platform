@@ -83,6 +83,7 @@ interface ExtendedConfig {
   laserEffectsEnabled?: boolean;
   laserIntensity?: "subtle" | "standard" | "high";
   laserPreset?: "performance-orange" | "team-cyan" | "career-purple" | "elite-green";
+  laserCardsEnabled?: boolean;
   heroImageFit?: "cover" | "contain" | "fill";
   heroImagePosition?: string;
   mobileHeroImagePosition?: string;
@@ -830,6 +831,7 @@ export default function LeadCaptureProgramEditorPage() {
   const [laserEffectsEnabled, setLaserEffectsEnabled] = useState(true);
   const [laserIntensity, setLaserIntensity] = useState<"subtle" | "standard" | "high">("standard");
   const [laserPreset, setLaserPreset] = useState<"performance-orange" | "team-cyan" | "career-purple" | "elite-green">("performance-orange");
+  const [laserCardsEnabled, setLaserCardsEnabled] = useState(true);
   const [heroImageFit, setHeroImageFit] = useState<"cover" | "contain" | "fill">("cover");
   const [heroImagePosition, setHeroImagePosition] = useState("center center");
   const [mobileHeroImagePosition, setMobileHeroImagePosition] = useState("");
@@ -908,6 +910,7 @@ export default function LeadCaptureProgramEditorPage() {
     setLaserEffectsEnabled(ext.laserEffectsEnabled ?? true);
     setLaserIntensity(ext.laserIntensity || "standard");
     setLaserPreset(ext.laserPreset || (resolvedType === "team_training" ? "team-cyan" : resolvedType === "employment_opportunity" ? "career-purple" : "performance-orange"));
+    setLaserCardsEnabled(ext.laserCardsEnabled ?? true);
     setHeroImageFit(ext.heroImageFit || "cover");
     setHeroImagePosition(ext.heroImagePosition || "center center");
     setMobileHeroImagePosition(ext.mobileHeroImagePosition || "");
@@ -948,7 +951,7 @@ export default function LeadCaptureProgramEditorPage() {
           urgencyBadge, heroAlignment, overlayStrength, videoBackgroundUrl,
           accentColor, gradientPreset, buttonStyle, darkIntensity, typographyPreset,
           bookingButtonText, bookingRedirectOnSubmit, whoCards, formFields,
-          laserEffectsEnabled, laserIntensity, laserPreset,
+          laserEffectsEnabled, laserIntensity, laserPreset, laserCardsEnabled,
           heroImageFit, heroImagePosition,
           mobileHeroImagePosition: mobileHeroImagePosition || undefined,
         },
@@ -1888,6 +1891,17 @@ export default function LeadCaptureProgramEditorPage() {
               </div>
               {laserEffectsEnabled && (
                 <div className="space-y-5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Apply to Cards</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Subtle glow and border sweep on section cards.</p>
+                    </div>
+                    <Switch
+                      checked={laserCardsEnabled}
+                      onCheckedChange={v => { setLaserCardsEnabled(v); markUnsaved(); }}
+                      data-testid="switch-laser-cards-enabled"
+                    />
+                  </div>
                   <div className="space-y-2">
                     <Label className="text-xs">Intensity</Label>
                     <div className="flex gap-2">
