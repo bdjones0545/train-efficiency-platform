@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
-import { ProgramAdaptationDraftsPanel } from "@/components/program-adaptation-drafts-panel";
+import { InterventionPriorityQueue } from "@/components/intervention-priority-queue";
+import { InterventionEffectivenessDashboard } from "@/components/intervention-effectiveness-dashboard";
 import {
   Brain,
   RefreshCw,
@@ -429,6 +430,12 @@ export default function CoachCommandCenterPage() {
           <StatPill label="Attention" value={cc.riskOverview.red} color="text-rose-400" />
           <StatPill label="PRs This Week" value={cc.weekPRs} color="text-blue-400" />
           <StatPill label="Edu Compliance" value={`${cc.educationComplianceRate}%`} color={cc.educationComplianceRate >= 70 ? "text-emerald-400" : "text-amber-400"} />
+          {cc.prioritySummary?.critical > 0 && (
+            <StatPill label="Critical" value={cc.prioritySummary.critical} color="text-red-400" />
+          )}
+          {cc.prioritySummary?.high > 0 && (
+            <StatPill label="High Priority" value={cc.prioritySummary.high} color="text-orange-400" />
+          )}
         </div>
       ) : null}
 
@@ -585,10 +592,10 @@ export default function CoachCommandCenterPage() {
         </Card>
       </div>
 
-      {/* ── Program Adaptation Drafts ─────────────────────────────────── */}
+      {/* ── Intervention Priority Queue ───────────────────────────────── */}
       {orgId && (
-        <Card className="p-4" data-testid="section-adaptation-drafts">
-          <ProgramAdaptationDraftsPanel orgId={orgId} headers={headers} />
+        <Card className="p-4" data-testid="section-priority-queue">
+          <InterventionPriorityQueue orgId={orgId} headers={headers} />
         </Card>
       )}
 
@@ -726,6 +733,13 @@ export default function CoachCommandCenterPage() {
             )}
           </div>
         </Card>
+
+        {/* Intervention Effectiveness Dashboard */}
+        {orgId && (
+          <Card className="p-4" data-testid="section-effectiveness-dashboard">
+            <InterventionEffectivenessDashboard orgId={orgId} headers={headers} compact />
+          </Card>
+        )}
 
         {/* Coach Tasks */}
         <Card className="p-4" data-testid="section-coach-tasks">

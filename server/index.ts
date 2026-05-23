@@ -424,6 +424,30 @@ app.use((req, res, next) => {
   setInterval(runAthleteContextRefreshCron, 24 * 60 * 60 * 1000); // every 24 hours
   setTimeout(runAthleteContextRefreshCron, 5 * 60 * 1000); // 5 minutes after startup
 
+  // ─── Intervention Outcome Evaluation Cron ────────────────────────────────
+  // Auto-evaluates approved interventions that have passed their 7-day window.
+  // Runs every 6 hours to keep outcome data fresh across all orgs.
+  const runOutcomeEvalCron = async () => {
+    try {
+      const { db: dbInst } = await import("./db");
+      const { orgMemberships } = await import("@shared/schema");
+      const { eq: eqFn, sql: sqlFn } = await import("drizzle-orm");
+      const { runOutcomeEvaluationCron } = await import("./services/intervention-learning-engine");
+      // Get distinct orgs with active members
+      const orgs = await dbInst.selectDistinct({ orgId: orgMemberships.orgId })
+        .from(orgMemberships).limit(50).catch(() => []);
+      let total = 0;
+      for (const { orgId } of orgs) {
+        const result = await runOutcomeEvaluationCron(orgId).catch(() => ({ evaluated: 0, errors: 0 }));
+        total += result.evaluated;
+      }
+      if (total > 0) console.log(`[OutcomeEvalCron] Evaluated ${total} outcomes across ${orgs.length} orgs`);
+    } catch (err: any) {
+      console.error("[OutcomeEvalCron] Error:", err?.message ?? err);
+    }
+  };
+  setInterval(runOutcomeEvalCron, 6 * 60 * 60 * 1000); // every 6 hours
+
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
 

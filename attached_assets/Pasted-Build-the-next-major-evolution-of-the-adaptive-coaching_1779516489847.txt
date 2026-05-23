@@ -1,0 +1,255 @@
+Build the next major evolution of the adaptive coaching system:
+Intervention Prioritization Intelligence + Outcome Learning Layer.
+
+Current state:
+TrainEfficiency now:
+
+* detects athlete state changes
+* builds Athlete Context Objects
+* generates adaptation drafts
+* compares old vs new context
+* creates coach-reviewable interventions
+* surfaces drafts in Command Center
+
+GOAL:
+Move from:
+“AI creates adaptation drafts”
+
+to:
+“AI understands which interventions matter most, why they matter, and whether they actually work over time.”
+
+This phase should introduce:
+
+1. intervention prioritization intelligence
+2. intervention outcome tracking
+3. intervention effectiveness learning
+4. adaptive confidence scoring
+5. organization-level learning patterns
+
+PHASE 3 REQUIREMENTS
+
+1. INTERVENTION PRIORITY ENGINE
+
+Create:
+server/services/intervention-priority-engine.ts
+
+The engine should score all pending adaptation drafts and interventions based on:
+
+Signals:
+
+* readiness decline severity
+* compliance deterioration
+* pain/injury severity
+* missed sessions
+* RPE escalation
+* intervention history
+* athlete importance/tier
+* competition proximity
+* duration of issue
+* multi-signal overlap
+
+Output:
+priorityScore (0–100)
+priorityLevel:
+
+* low
+* medium
+* high
+* critical
+
+Also generate:
+
+* urgencyReason
+* recommendedAction
+* confidenceScore
+* estimatedRisk
+
+2. MULTI-SIGNAL RISK CORRELATION
+
+Single signals should NOT be treated equally.
+
+Examples:
+
+* isolated low readiness for 1 day = low concern
+* low readiness + missed sessions + high RPE + pain reports = critical
+
+The engine should increase priority exponentially when multiple correlated signals appear together.
+
+3. INTERVENTION OUTCOME TRACKING
+
+Create table:
+intervention_outcomes
+
+Track:
+
+* interventionId
+* athleteId
+* interventionType
+* createdAt
+* approvedAt
+* completedAt
+* outcomeEvaluationDate
+
+Measure:
+
+* readiness improvement
+* compliance improvement
+* RPE improvement
+* pain reduction
+* attendance recovery
+* performance changes
+* athlete engagement change
+
+Store:
+
+* before snapshot
+* after snapshot
+* delta calculations
+* coach feedback
+* AI effectiveness rating
+
+4. EFFECTIVENESS LEARNING LAYER
+
+Create:
+server/services/intervention-learning-engine.ts
+
+The system should learn:
+
+* which interventions work best
+* which athletes respond well
+* which intervention timing is most effective
+* which adaptation types fail most often
+
+Examples:
+
+* education interventions improved compliance 72% of the time
+* deload adaptations reduced high-RPE states in 5 days on average
+* hydration education improved readiness scores by X%
+
+5. COMMAND CENTER PRIORITIZATION
+
+Upgrade the Command Center.
+
+Instead of:
+“here are pending drafts”
+
+Show:
+
+* highest-risk athletes first
+* estimated urgency
+* intervention confidence
+* predicted outcome impact
+* recommended next action
+
+Add:
+“Why this matters now”
+
+Example:
+“Athlete has declining readiness for 9 days, rising RPE, and missed 3 sessions before playoffs.”
+
+6. ATHLETE TRAJECTORY MODELING
+
+Create a lightweight prediction layer.
+
+Estimate:
+
+* likely recovery trajectory
+* intervention urgency
+* projected risk escalation
+
+Examples:
+
+* “likely temporary fatigue”
+* “high risk of disengagement”
+* “possible overreaching pattern”
+* “high probability compliance decline”
+
+Do NOT use black-box ML yet.
+Use explainable heuristic modeling first.
+
+7. INTERVENTION RECOMMENDATION TYPES
+
+Expand recommendation types beyond programming:
+
+* deload
+* simplification
+* recovery emphasis
+* coach conversation
+* hydration education
+* sleep education
+* reduced frequency
+* movement modification
+* recovery session
+* motivational outreach
+* schedule adjustment
+
+The engine should recommend the most appropriate intervention category based on signals.
+
+8. ORGANIZATION LEARNING LAYER
+
+Track org-level effectiveness patterns:
+
+Examples:
+
+* which coaches resolve risk fastest
+* which interventions work best for specific age groups
+* which program phases generate most fatigue
+* which education pathways improve compliance
+
+Surface this inside Business Brain and Command Center.
+
+9. ADAPTIVE CONFIDENCE SCORING
+
+Every recommendation should include:
+
+* confidence score
+* explanation
+* evidence used
+
+Examples:
+Confidence: 84%
+Reason:
+“Based on similar readiness/compliance patterns across this athlete’s last 90 days.”
+
+10. SAFETY + HUMAN CONTROL
+
+Maintain:
+
+* draft-first architecture
+* no autonomous publishing
+* coach approval required
+* explainability for all recommendations
+
+AI should recommend and prioritize —
+NOT silently modify athlete programs.
+
+11. UI UPGRADES
+
+Add:
+
+* Intervention Priority Queue
+* Critical Athlete section
+* Intervention Effectiveness Dashboard
+* Outcome trend charts
+* Confidence indicators
+* Risk escalation timeline
+
+12. FINAL GOAL
+
+TrainEfficiency should evolve from:
+“adaptive program recommendations”
+
+into:
+“an adaptive athlete operations intelligence system that learns which interventions improve athlete outcomes over time.”
+
+Important:
+Do NOT introduce opaque black-box AI.
+Keep all reasoning explainable, auditable, and coach-reviewable.
+Extend the existing:
+
+* Athlete Context Object
+* adaptation draft system
+* Command Center
+* WorkflowOrchestrator
+* Business Brain
+* TrainChat integration

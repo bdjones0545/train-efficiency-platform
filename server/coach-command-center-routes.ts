@@ -20,6 +20,8 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, gte, sql as drizzleSql, lt, count } from "drizzle-orm";
 import OpenAI from "openai";
+import { buildPrioritizedInterventionQueue } from "./services/intervention-priority-engine";
+import { buildOrgLearningInsights } from "./services/intervention-learning-engine";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -233,6 +235,12 @@ async function aggregateCommandCenterData(orgId: string) {
   const lowReadinessCheckins = recentCheckins.filter((c) => c.readinessScore < 50);
   const lowReadinessAthletes = [...new Set(lowReadinessCheckins.map((c) => c.athleteUserId))];
 
+  // ── Priority queue + org learning (run in parallel, non-blocking) ─────────
+  const [priorityData, learningInsights] = await Promise.all([
+    buildPrioritizedInterventionQueue(orgId).catch(() => ({ prioritizedQueue: [], criticalAthletes: [], summary: { critical: 0, high: 0, medium: 0, low: 0 } })),
+    buildOrgLearningInsights(orgId).catch(() => null),
+  ]);
+
   return {
     totalAthletes,
     riskOverview: { green: greenCount, yellow: yellowCount, red: redCount },
@@ -253,6 +261,11 @@ async function aggregateCommandCenterData(orgId: string) {
     recentPREntries: weekPRs.slice(0, 5),
     activeRiskFlagCount: riskFlags.length,
     pendingInterventionCount: interventions.length,
+    // Phase 3: Intelligence layer
+    priorityQueue: priorityData.prioritizedQueue,
+    criticalAthletes: priorityData.criticalAthletes,
+    prioritySummary: priorityData.summary,
+    learningInsights,
   };
 }
 

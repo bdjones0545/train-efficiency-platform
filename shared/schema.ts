@@ -2983,3 +2983,58 @@ export const programAdaptationDrafts = pgTable("program_adaptation_drafts", {
 export const insertProgramAdaptationDraftSchema = createInsertSchema(programAdaptationDrafts).omit({ id: true, createdAt: true, updatedAt: true });
 export type ProgramAdaptationDraft = typeof programAdaptationDrafts.$inferSelect;
 export type InsertProgramAdaptationDraft = z.infer<typeof insertProgramAdaptationDraftSchema>;
+
+// ─── Intervention Outcomes ────────────────────────────────────────────────────
+// Tracks the before/after impact of every intervention that was approved and
+// acted on. The learning engine reads these to improve future recommendations.
+
+export const interventionOutcomes = pgTable("intervention_outcomes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+
+  // Source: either an adaptation draft or an intervention recommendation
+  adaptationDraftId: varchar("adaptation_draft_id"),
+  interventionRecommendationId: varchar("intervention_recommendation_id"),
+  interventionType: varchar("intervention_type").notNull(),
+
+  // Timeline
+  approvedAt: timestamp("approved_at"),
+  evaluationDate: timestamp("evaluation_date"),
+  evaluatedAt: timestamp("evaluated_at"),
+
+  // Before / after metric snapshots
+  readinessBefore: integer("readiness_before"),
+  readinessAfter: integer("readiness_after"),
+  readinessDelta: integer("readiness_delta"),
+
+  complianceBefore: integer("compliance_before"),
+  complianceAfter: integer("compliance_after"),
+  complianceDelta: integer("compliance_delta"),
+
+  rpeBefore: integer("rpe_before"),
+  rpeAfter: integer("rpe_after"),
+  rpeDelta: integer("rpe_delta"),
+
+  missedSessionsBefore: integer("missed_sessions_before"),
+  missedSessionsAfter: integer("missed_sessions_after"),
+
+  riskLevelBefore: varchar("risk_level_before"),
+  riskLevelAfter: varchar("risk_level_after"),
+
+  // Full snapshots for audit
+  beforeSnapshot: jsonb("before_snapshot"),
+  afterSnapshot: jsonb("after_snapshot"),
+
+  // Qualitative assessment
+  coachFeedback: text("coach_feedback"),
+  aiEffectivenessRating: integer("ai_effectiveness_rating"),
+  outcomeStatus: varchar("outcome_status").notNull().default("pending_evaluation"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertInterventionOutcomeSchema = createInsertSchema(interventionOutcomes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InterventionOutcome = typeof interventionOutcomes.$inferSelect;
+export type InsertInterventionOutcome = z.infer<typeof insertInterventionOutcomeSchema>;
