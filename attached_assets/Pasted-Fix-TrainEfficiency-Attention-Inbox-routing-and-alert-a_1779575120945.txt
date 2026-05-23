@@ -1,0 +1,60 @@
+Fix TrainEfficiency Attention Inbox routing and alert accuracy.
+
+Current bugs:
+1. The Attention Inbox shows questionable/stale items like:
+   - "50 clients inactive for 30+ days"
+   - "50 registered clients with no booking"
+   These may be duplicated, stale, or not scoped correctly to the current org.
+2. When tapping a notification CTA like "View Clients", the app routes to a 404 Page Not Found.
+3. The badge count shows 2, but the dropdown says "View all 3 items", so counts are inconsistent.
+
+Expected behavior:
+- Attention Inbox should only show active, current, org-scoped attention items.
+- Badge count, dropdown count, and full Attention Inbox count must match.
+- Every CTA must route to a valid registered route.
+- No notification action should ever send the user to a 404.
+
+Fix requirements:
+1. Audit the Attention Inbox data source.
+   - Ensure alerts are filtered by current orgId.
+   - Exclude dismissed/resolved/expired alerts.
+   - Remove duplicate alert generation.
+   - Make sure inactive-client alerts use real client/session data, not old seed/demo data.
+
+2. Fix count logic.
+   - Header badge should count the same filtered alerts rendered in the dropdown.
+   - Dropdown footer should say exactly:
+     `View all ${visibleAlertCount} items in Attention Inbox`
+   - If only 2 active alerts are shown, do not display 3.
+
+3. Fix CTA routing.
+   - Find where alert actions are mapped, likely something like:
+     `actionUrl`, `ctaUrl`, `route`, or `navigateTo`.
+   - Replace invalid routes with registered app routes.
+   - Examples:
+     - View Clients → `/clients`
+     - View Schedule → `/schedule`
+     - View Workflows → `/workflows`
+     - View Attention Inbox → `/attention-inbox` only if this route exists.
+   - If `/attention-inbox` does not exist, either:
+     A) create and register it in App.tsx, or
+     B) route to an existing dashboard section/page.
+
+4. Add a safe navigation guard.
+   - Before navigating from an alert CTA, validate the route exists or map it through a centralized route registry.
+   - If an alert has no valid action route, hide the CTA instead of linking to a bad page.
+
+5. Mobile-specific check:
+   - Confirm notification dropdown CTAs work on mobile Safari.
+   - Confirm clicking the CTA closes the dropdown and navigates correctly.
+   - Confirm no white 404 screen appears.
+
+Acceptance tests:
+- Open dashboard as org admin/coach.
+- Click notification bell.
+- Badge count matches rendered alert count.
+- Footer count matches rendered alert count.
+- Click "View Clients".
+- App navigates to a valid clients page, not 404.
+- Refresh page after navigation and confirm route is still valid.
+- Dismiss one alert and confirm badge/dropdown count updates immediately.
