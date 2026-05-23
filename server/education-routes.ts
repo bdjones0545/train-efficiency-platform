@@ -47,21 +47,92 @@ function requireCoach(req: any, res: any, next: any) {
   })().catch(() => res.status(500).json({ message: "Auth error" }));
 }
 
-// ─── AI Safety System Prompt ──────────────────────────────────────────────────
+// ─── Education AI System Prompt Builder ───────────────────────────────────────
 
-const AI_SAFETY_SYSTEM = `You are a sports education content creator for strength and conditioning coaches.
+interface EducationPromptOptions {
+  ageGroup?: string;
+  sport?: string;
+  coachPhilosophy?: string;
+  teachingStyle?: string;
+  bannedTerms?: string;
+  emphasisAreas?: string;
+}
 
-STRICT RULES — NEVER violate these:
-- Do NOT give medical advice, diagnoses, or treatment recommendations
-- Do NOT prescribe specific calorie or macronutrient amounts for individuals
-- Do NOT recommend specific supplements or doses
-- Do NOT use eating disorder language or body-shaming
-- Do NOT make extreme dieting or weight-loss claims
-- For nutrition content: focus on performance fueling, hydration, recovery — education only
-- Always suggest athletes consult qualified sports dietitians for individual plans
-- Keep language athlete-friendly, practical, and evidence-based
+function readingLevelGuidance(ageGroup: string): string {
+  const ag = ageGroup.toLowerCase();
+  if (ag.includes("middle") || ag.includes("12") || ag.includes("13") || ag.includes("14")) {
+    return `READING LEVEL — MIDDLE SCHOOL:
+- Short sentences (max 15 words each)
+- Zero jargon. Define any technical term immediately after using it
+- One idea per section max
+- Use simple, familiar words over advanced vocabulary
+- Examples must reference familiar youth sports situations
+- Quiz questions: straightforward scenarios, no complex multi-step reasoning`;
+  }
+  if (ag.includes("college") || ag.includes("pro") || ag.includes("professional") || ag.includes("adult")) {
+    return `READING LEVEL — COLLEGE/PROFESSIONAL:
+- Can handle scientific terminology with brief explanation
+- Include deeper physiology where relevant (cellular energy systems, hormonal responses, etc.)
+- Advanced recovery and periodization concepts are appropriate
+- Examples may reference elite performance demands, sport science research
+- Quiz questions: complex multi-factor scenarios requiring systems-level thinking`;
+  }
+  // Default: high school
+  return `READING LEVEL — HIGH SCHOOL:
+- Moderate complexity. Short to medium sentences. Clear paragraph structure
+- Define jargon on first use, but can use it thereafter
+- Examples must tie directly to practice, game day, and sport performance
+- Connect concepts to things athletes encounter daily (soreness, energy, focus)
+- Quiz questions: realistic game/practice scenarios that test practical judgment`;
+}
 
-OUTPUT FORMAT: Always respond with valid JSON only. No markdown, no extra text.`;
+function buildEducationSystemPrompt(options: EducationPromptOptions = {}): string {
+  const { ageGroup = "high school athletes", sport = "athletes", coachPhilosophy, teachingStyle, bannedTerms, emphasisAreas } = options;
+
+  const coachProfile = coachPhilosophy || teachingStyle
+    ? `\nCOACH PHILOSOPHY & PREFERENCES:
+${coachPhilosophy ? `- Philosophy: ${coachPhilosophy}` : ""}
+${teachingStyle ? `- Teaching style: ${teachingStyle}` : ""}
+${bannedTerms ? `- NEVER use these terms: ${bannedTerms}` : ""}
+${emphasisAreas ? `- Emphasize: ${emphasisAreas}` : ""}
+Apply these preferences throughout all generated content.`
+    : "";
+
+  return `You are an elite strength and conditioning coach writing education programs for ${sport}.
+
+YOUR VOICE — teach like a high-level performance coach, not a textbook:
+- Direct, confident, and actionable. No academic hedging
+- Connect every concept immediately to on-field/court performance
+- Use real sport examples: "After a two-hour practice in the heat...", "In the third quarter when your legs feel heavy..."
+- Short, punchy sentences. Athletes stop reading long paragraphs
+- Practical over theoretical. Teach the WHY, then tell them exactly WHAT TO DO
+- Encouraging but professional. No empty hype or cheesy motivation
+
+ANTI-SLOP RULES — never violate these:
+- BANNED opener phrases: "In today's world...", "It's important to understand...", "The importance of...", "As an athlete...", "Did you know..."
+- No filler sentences that restate what was just said
+- No textbook definitions without immediate application
+- No generic wellness language ("overall health and wellness", "holistic approach")
+- No paragraphs longer than 4 sentences
+- Each section must teach ONE concept with ONE practical application
+
+${readingLevelGuidance(ageGroup)}
+${coachProfile}
+
+CONTENT SAFETY — NEVER violate:
+- No medical diagnoses or treatment recommendations
+- No specific calorie or macronutrient targets for individuals
+- No supplement doses or specific product recommendations
+- No body-shaming, weight-loss framing, or eating disorder adjacent language
+- No extreme or unsafe recommendations
+- Youth athletes (under 18): no supplement recommendations beyond hydration/food timing
+- Always note when individual consultation with a sports dietitian is appropriate
+
+OUTPUT FORMAT: Valid JSON only. No markdown fences, no extra text, no explanation outside the JSON.`;
+}
+
+// Legacy constant for any remaining endpoints that haven't been upgraded
+const AI_SAFETY_SYSTEM = buildEducationSystemPrompt();
 
 // ─── Slugify helper ───────────────────────────────────────────────────────────
 
@@ -394,7 +465,7 @@ export function registerEducationRoutes(app: Express) {
   app.patch("/api/org/education/modules/:id", requireCoach, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { title, description, content, keyTakeaways, estimatedMinutes, status, videoUrl, videoSearchQuery } = req.body;
+      const { title, description, content, keyTakeaways, estimatedMinutes, status, videoUrl, videoSearchQuery, performanceConnection, coachReinforcementNotes } = req.body;
       const updates: any = { updatedAt: new Date() };
       if (title !== undefined) updates.title = title;
       if (description !== undefined) updates.description = description;
@@ -404,6 +475,8 @@ export function registerEducationRoutes(app: Express) {
       if (status !== undefined) updates.status = status;
       if (videoUrl !== undefined) updates.videoUrl = videoUrl || null;
       if (videoSearchQuery !== undefined) updates.videoSearchQuery = videoSearchQuery || null;
+      if (performanceConnection !== undefined) updates.performanceConnection = performanceConnection || null;
+      if (coachReinforcementNotes !== undefined) updates.coachReinforcementNotes = coachReinforcementNotes;
 
       const [updated] = await db.update(educationModules)
         .set(updates)
@@ -636,69 +709,85 @@ export function registerEducationRoutes(app: Express) {
     try {
       const profile = req._profile;
       const userId = getUserId(req)!;
-      const { prompt, ageGroup, sport, numModules, difficulty } = req.body;
+      const { prompt, ageGroup, sport, numModules, difficulty, coachPhilosophy, teachingStyle, bannedTerms, emphasisAreas } = req.body;
       if (!prompt) return res.status(400).json({ message: "prompt required" });
 
-      const systemPrompt = `${AI_SAFETY_SYSTEM}
+      const resolvedAge = ageGroup ?? "high school athletes";
+      const resolvedSport = sport ?? "athletes";
+      const resolvedModules = numModules ?? 4;
+      const resolvedDifficulty = difficulty ?? "beginner to intermediate";
 
-You are generating a complete, ready-to-publish athlete education program. Generate rich, practical content that coaches can use immediately.`;
+      const systemPrompt = buildEducationSystemPrompt({ ageGroup: resolvedAge, sport: resolvedSport, coachPhilosophy, teachingStyle, bannedTerms, emphasisAreas });
 
-      const userPrompt = `Create a COMPLETE athlete education program based on this request:
+      const userPrompt = `Create a COMPLETE, publish-ready athlete education program.
 
-"${prompt}"
+COACH REQUEST: "${prompt}"
 
-Additional context:
-- Age Group: ${ageGroup ?? "high school / college athletes"}
-- Sport / Team: ${sport ?? "general athletes"}
-- Number of Modules: ${numModules ?? 4}
-- Difficulty: ${difficulty ?? "beginner to intermediate"}
+PROGRAM PARAMETERS:
+- Age Group: ${resolvedAge}
+- Sport / Team: ${resolvedSport}
+- Modules: ${resolvedModules}
+- Difficulty: ${resolvedDifficulty}
 
-Return a JSON object with this EXACT structure (all fields required):
+Return a JSON object with this EXACT structure. Every field is required:
 {
   "pathway": {
-    "title": "Concise pathway title",
-    "description": "2-3 sentence description of what athletes will learn",
+    "title": "Short, direct program title (max 6 words)",
+    "description": "2 sentences. Sentence 1: what athletes will learn. Sentence 2: how it connects to performance.",
     "category": "one of: nutrition, recovery, hydration, sleep, mindset, team_standards, injury_prevention, custom"
   },
   "modules": [
     {
       "moduleNumber": 1,
-      "title": "Module title",
-      "description": "1-2 sentence description",
+      "title": "Direct, action-oriented module title",
+      "description": "1-2 sentences. Name the concept and its direct performance impact.",
       "estimatedMinutes": 12,
-      "videoSearchQuery": "specific YouTube search query to find the best video for this topic (e.g. 'athlete hydration science explained')",
+      "videoSearchQuery": "Specific YouTube search string (e.g. 'pre-game meal timing athlete performance Dr Andy Galpin')",
+      "performanceConnection": "2-3 sentences explaining EXACTLY how this concept affects game/practice performance, recovery, or readiness. Be specific. Use sport-relevant examples.",
       "sections": [
         {
-          "title": "Section heading",
-          "body": "3-5 sentences of clear, practical educational content. Use simple language. Include real examples relevant to athletes."
+          "title": "Direct section heading (not 'Introduction' — name the concept)",
+          "body": "3-4 punchy sentences. Teach one idea. Include one sport-specific example. End with a practical action or implication."
         }
       ],
-      "keyTakeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"],
+      "keyTakeaways": [
+        "Concise, actionable statement an athlete can remember and act on",
+        "Another specific takeaway connected to performance",
+        "A third takeaway that reinforces behavior change"
+      ],
+      "coachReinforcementNotes": [
+        "Discussion prompt or question to ask athletes at practice",
+        "Observable behavior coaches should look for",
+        "Reinforcement idea to connect this module to training"
+      ],
       "quiz": [
         {
-          "question": "Question text?",
-          "options": ["Option A", "Option B", "Option C", "Option D"],
-          "correctAnswer": 1,
-          "explanation": "Clear explanation of why this answer is correct."
+          "question": "Scenario-based question: 'An athlete [realistic situation]. What should they do?' — not a definition question",
+          "options": ["Specific, realistic option A", "Specific, realistic option B", "Specific, realistic option C", "Specific, realistic option D"],
+          "correctAnswer": 0,
+          "explanation": "2-3 sentences: why this answer is correct, what would happen with the wrong choices, and the underlying principle."
         }
       ]
     }
   ],
   "finalTest": [
     {
-      "question": "Comprehensive question testing knowledge from across the program?",
+      "question": "Scenario-based question testing application of knowledge from across multiple modules",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctAnswer": 0,
-      "explanation": "Explanation linking to the module this concept came from."
+      "explanation": "Explanation that connects back to a specific concept taught in the program."
     }
   ]
 }
 
-Rules:
-- Each module must have 3-5 sections, 3 keyTakeaways, and 3-4 quiz questions
-- The finalTest must have ${Math.max(6, (numModules ?? 4) * 2)} questions drawn from across all modules
-- Keep all content athlete-friendly, practical, and evidence-based
-- videoSearchQuery should be specific enough to find high-quality educational YouTube videos`;
+GENERATION RULES:
+- Each module: 3-5 sections, 3 keyTakeaways, 3 coachReinforcementNotes, 3-4 quiz questions
+- Final test: ${Math.max(8, resolvedModules * 2)} scenario-based questions covering all modules proportionally
+- Quiz questions must be scenario-based (athlete in a real situation), NEVER simple factual recall
+- Every section body must include at least one sport-specific example
+- performanceConnection must be specific — name specific performance outcomes (speed, focus, recovery rate, injury risk, etc.)
+- coachReinforcementNotes are coach-facing only — practical coaching tools, not more content
+- videoSearchQuery: use specific terms that would find a high-quality educational video (include relevant expert names, sport science terms when appropriate)`;
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -766,6 +855,8 @@ Rules:
           keyTakeaways: mod.keyTakeaways ?? [],
           estimatedMinutes: mod.estimatedMinutes ?? 10,
           videoSearchQuery: mod.videoSearchQuery ?? null,
+          performanceConnection: mod.performanceConnection ?? null,
+          coachReinforcementNotes: mod.coachReinforcementNotes ?? [],
           status: "draft",
         }).returning();
 
@@ -956,40 +1047,51 @@ Return a JSON object with this exact structure:
     try {
       const profile = req._profile;
       const userId = getUserId(req)!;
-      const { topic, moduleTitle, pathwayContext, ageGroup, tone, pathwayId, moduleId } = req.body;
+      const { topic, moduleTitle, pathwayContext, ageGroup, sport, tone, pathwayId, moduleId, coachPhilosophy, teachingStyle, bannedTerms, emphasisAreas } = req.body;
 
-      const prompt = `Create detailed lesson content for a module in an athlete education program.
+      const resolvedAge = ageGroup ?? "high school athletes";
+      const systemPrompt = buildEducationSystemPrompt({ ageGroup: resolvedAge, sport: sport ?? "athletes", coachPhilosophy, teachingStyle, bannedTerms, emphasisAreas });
+
+      const prompt = `Create complete, publish-ready lesson content for this module.
 
 Module Title: ${moduleTitle}
 Topic: ${topic ?? moduleTitle}
-Pathway Context: ${pathwayContext ?? "general athletic performance"}
-Age Group: ${ageGroup ?? "high school / college athletes"}
-Tone: ${tone ?? "athlete-friendly, practical, conversational"}
+Program Context: ${pathwayContext ?? "general athletic performance"}
+Age Group: ${resolvedAge}
 
-Return a JSON object:
+Return a JSON object with EXACTLY this structure:
 {
-  "description": "1-2 sentence module description",
+  "description": "1-2 sentences: name the concept and its direct performance impact",
   "estimatedMinutes": 12,
+  "performanceConnection": "2-3 sentences: specific performance impacts — name outcomes like speed, fatigue, focus, recovery, injury risk. Include a sport-specific example.",
   "sections": [
     {
-      "heading": "Section Heading",
-      "body": "2-4 sentences of clear, educational content. Use simple language. Include practical examples."
+      "title": "Direct section heading — name the concept, not 'Introduction'",
+      "body": "3-4 punchy sentences. One idea. One sport example. Practical implication."
     }
   ],
-  "keyTakeaways": ["takeaway 1", "takeaway 2", "takeaway 3"],
-  "summary": "1-2 sentence summary of the module"
+  "keyTakeaways": [
+    "Actionable statement athletes can remember and act on",
+    "Specific takeaway connected to a performance outcome",
+    "Behavior-change statement reinforcing the concept"
+  ],
+  "coachReinforcementNotes": [
+    "Discussion question to use at practice",
+    "Observable behavior or sign to watch for in training",
+    "Drill or reinforcement idea connecting this concept to physical work"
+  ]
 }
 
-Aim for 3-5 sections. Keep each section focused and practical.`;
+Generate 3-5 sections. Every section body must include at least one specific sport example.`;
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
-          { role: "system", content: AI_SAFETY_SYSTEM },
+          { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
         ],
         response_format: { type: "json_object" },
-        temperature: 0.7,
+        temperature: 0.65,
       });
 
       const result = JSON.parse(completion.choices[0].message.content ?? "{}");
@@ -1016,32 +1118,42 @@ Aim for 3-5 sections. Keep each section focused and practical.`;
     try {
       const profile = req._profile;
       const userId = getUserId(req)!;
-      const { moduleTitle, moduleContent, numQuestions, pathwayId, moduleId } = req.body;
+      const { moduleTitle, moduleContent, numQuestions, pathwayId, moduleId, ageGroup, sport } = req.body;
 
-      const prompt = `Create quiz questions for an athlete education module.
+      const resolvedAge = ageGroup ?? "high school athletes";
+      const systemPrompt = buildEducationSystemPrompt({ ageGroup: resolvedAge, sport: sport ?? "athletes" });
 
-Module Title: ${moduleTitle}
-Module Summary: ${moduleContent ?? "See module title for context"}
+      const prompt = `Create scenario-based quiz questions for this athlete education module.
+
+Module: ${moduleTitle}
+Content Summary: ${moduleContent ?? "Use module title as context"}
 Number of Questions: ${numQuestions ?? 4}
+Age Group: ${resolvedAge}
 
 Return a JSON object:
 {
   "questions": [
     {
-      "question": "Question text?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correctAnswer": 1,
-      "explanation": "Clear explanation of why this answer is correct and what the athlete should understand."
+      "question": "SCENARIO: Describe a realistic situation an athlete might face (e.g. 'An athlete wakes up on game day feeling sluggish after only 5 hours of sleep and skips breakfast. During warm-up, what is most likely to happen?'). The question must describe a real situation, not ask for a definition.",
+      "options": [
+        "Specific, realistic outcome or action A",
+        "Specific, realistic outcome or action B",
+        "Specific, realistic outcome or action C",
+        "Specific, realistic outcome or action D"
+      ],
+      "correctAnswer": 0,
+      "explanation": "2-3 sentences: why this answer is correct, what the performance science says, and what the athlete should do instead or remember."
     }
   ]
 }
 
-Rules for questions:
-- Test practical understanding, not just memorization
-- 4 options per question (0-indexed correct answer)
-- Clear, unambiguous correct answer
-- Helpful explanation that reinforces learning
-- Avoid trick questions`;
+QUIZ GENERATION RULES:
+- Every question MUST be scenario-based — place the athlete in a real situation
+- NEVER ask bare-facts questions like "What does glycogen do?" or "How much water should athletes drink?"
+- Frame all questions as: athlete behavior + context + outcome (or decision required)
+- Wrong answer options must be plausible — not obviously wrong
+- Explanations must teach, not just state the correct answer
+- Questions must test decision-making and application, not recall`;
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",

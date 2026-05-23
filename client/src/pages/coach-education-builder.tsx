@@ -55,7 +55,7 @@ export default function CoachEducationBuilderPage() {
   const [selectedPathway, setSelectedPathway] = useState<any>(null);
   const [selectedModule, setSelectedModule] = useState<any>(null);
   const [editingModule, setEditingModule] = useState(false);
-  const [moduleForm, setModuleForm] = useState<any>({ title: "", description: "", estimatedMinutes: 10, content: { sections: [] }, keyTakeaways: [], videoUrl: "", videoSearchQuery: "" });
+  const [moduleForm, setModuleForm] = useState<any>({ title: "", description: "", estimatedMinutes: 10, content: { sections: [] }, keyTakeaways: [], videoUrl: "", videoSearchQuery: "", performanceConnection: "", coachReinforcementNotes: [] });
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [aiDraft, setAiDraft] = useState<any>(null);
@@ -63,7 +63,8 @@ export default function CoachEducationBuilderPage() {
   const [newPathway, setNewPathway] = useState({ title: "", category: "custom", description: "" });
   const [aiGenForm, setAiGenForm] = useState({ topic: "", ageGroup: "", sport: "", tone: "", numModules: 6, difficulty: "intermediate", goal: "" });
   const [fullProgramMode, setFullProgramMode] = useState(false);
-  const [fullProgramForm, setFullProgramForm] = useState({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner" });
+  const [fullProgramForm, setFullProgramForm] = useState({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner", coachPhilosophy: "", teachingStyle: "", bannedTerms: "", emphasisAreas: "" });
+  const [showPhilosophySettings, setShowPhilosophySettings] = useState(false);
   const [fullProgramDraft, setFullProgramDraft] = useState<any>(null);
   const [fullProgramLoading, setFullProgramLoading] = useState(false);
 
@@ -171,7 +172,8 @@ export default function CoachEducationBuilderPage() {
       refetchPathways();
       setFullProgramDraft(null);
       setFullProgramMode(false);
-      setFullProgramForm({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner" });
+      setFullProgramForm({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner", coachPhilosophy: "", teachingStyle: "", bannedTerms: "", emphasisAreas: "" });
+      setShowPhilosophySettings(false);
       toast({ title: "Program created!", description: `${data.modulesCount} modules ready. Add YouTube links then publish.` });
       const pathway = data.pathway;
       if (pathway) { setSelectedPathway(pathway); setActiveTab("builder"); }
@@ -274,11 +276,13 @@ export default function CoachEducationBuilderPage() {
         keyTakeaways: mod.keyTakeaways ?? [],
         videoUrl: mod.videoUrl ?? "",
         videoSearchQuery: mod.videoSearchQuery ?? "",
+        performanceConnection: mod.performanceConnection ?? "",
+        coachReinforcementNotes: mod.coachReinforcementNotes ?? [],
       });
       setQuizQuestions(quizData?.questions ?? []);
     } else {
       setSelectedModule(null);
-      setModuleForm({ title: "", description: "", estimatedMinutes: 10, content: { sections: [] }, keyTakeaways: [] });
+      setModuleForm({ title: "", description: "", estimatedMinutes: 10, content: { sections: [] }, keyTakeaways: [], videoUrl: "", videoSearchQuery: "", performanceConnection: "", coachReinforcementNotes: [] });
       setQuizQuestions([]);
     }
     setEditingModule(true);
@@ -294,6 +298,8 @@ export default function CoachEducationBuilderPage() {
       keyTakeaways: moduleForm.keyTakeaways,
       videoUrl: moduleForm.videoUrl || null,
       videoSearchQuery: moduleForm.videoSearchQuery || null,
+      performanceConnection: moduleForm.performanceConnection || null,
+      coachReinforcementNotes: moduleForm.coachReinforcementNotes ?? [],
       status: "draft",
     };
     if (selectedModule) {
@@ -483,12 +489,12 @@ export default function CoachEducationBuilderPage() {
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="Age group (e.g. HS athletes)" value={fullProgramForm.ageGroup}
+                <Input placeholder="Age group (e.g. high school athletes)" value={fullProgramForm.ageGroup}
                   onChange={(e) => setFullProgramForm((p) => ({ ...p, ageGroup: e.target.value }))}
-                  className="h-8 text-xs" />
+                  className="h-8 text-xs" data-testid="input-age-group" />
                 <Input placeholder="Sport / team (e.g. football)" value={fullProgramForm.sport}
                   onChange={(e) => setFullProgramForm((p) => ({ ...p, sport: e.target.value }))}
-                  className="h-8 text-xs" />
+                  className="h-8 text-xs" data-testid="input-sport" />
                 <div className="flex items-center gap-2 col-span-2">
                   <Input placeholder="# of modules" type="number" min={2} max={8} value={fullProgramForm.numModules}
                     onChange={(e) => setFullProgramForm((p) => ({ ...p, numModules: parseInt(e.target.value) || 4 }))}
@@ -503,6 +509,59 @@ export default function CoachEducationBuilderPage() {
                   </Select>
                 </div>
               </div>
+
+              {/* Coach Philosophy Settings */}
+              <div>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
+                  onClick={() => setShowPhilosophySettings((v) => !v)}
+                  data-testid="button-toggle-philosophy">
+                  <ChevronRight className={`h-3 w-3 transition-transform ${showPhilosophySettings ? "rotate-90" : ""}`} />
+                  Coach Philosophy Settings <span className="text-muted-foreground/50 ml-1">(optional — shapes AI voice &amp; content)</span>
+                </button>
+                {showPhilosophySettings && (
+                  <div className="mt-3 space-y-2 pl-2 border-l border-border/40">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Coaching philosophy</p>
+                      <Input
+                        placeholder='e.g. "Emphasize recovery and long-term athletic development"'
+                        value={fullProgramForm.coachPhilosophy}
+                        onChange={(e) => setFullProgramForm((p) => ({ ...p, coachPhilosophy: e.target.value }))}
+                        className="h-8 text-xs"
+                        data-testid="input-coach-philosophy" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Teaching style</p>
+                      <Input
+                        placeholder='e.g. "Direct, practical — skip theory, focus on what athletes do"'
+                        value={fullProgramForm.teachingStyle}
+                        onChange={(e) => setFullProgramForm((p) => ({ ...p, teachingStyle: e.target.value }))}
+                        className="h-8 text-xs"
+                        data-testid="input-teaching-style" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Emphasis areas</p>
+                      <Input
+                        placeholder='e.g. "Movement quality, readiness, injury prevention"'
+                        value={fullProgramForm.emphasisAreas}
+                        onChange={(e) => setFullProgramForm((p) => ({ ...p, emphasisAreas: e.target.value }))}
+                        className="h-8 text-xs"
+                        data-testid="input-emphasis-areas" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Banned terminology</p>
+                      <Input
+                        placeholder='e.g. "bodybuilding, bulking, cutting, diet"'
+                        value={fullProgramForm.bannedTerms}
+                        onChange={(e) => setFullProgramForm((p) => ({ ...p, bannedTerms: e.target.value }))}
+                        className="h-8 text-xs"
+                        data-testid="input-banned-terms" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <Button className="w-full h-10 text-sm gap-2 bg-amber-500 hover:bg-amber-600 text-black font-semibold"
                 onClick={aiGenerateFullProgram}
                 disabled={fullProgramLoading || !fullProgramForm.prompt.trim()}
@@ -898,6 +957,50 @@ export default function CoachEducationBuilderPage() {
                     </Button>
                   </div>
                 ))}
+              </div>
+
+              {/* Performance Connection */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Why This Matters for Performance</p>
+                <Textarea
+                  placeholder="2-3 sentences connecting this module to specific performance outcomes (e.g. speed, recovery, focus, injury risk). Athletes see this."
+                  value={moduleForm.performanceConnection ?? ""}
+                  onChange={(e) => setModuleForm((p: any) => ({ ...p, performanceConnection: e.target.value }))}
+                  className="text-xs min-h-[70px]"
+                  data-testid="input-performance-connection"
+                />
+              </div>
+
+              {/* Coach Reinforcement Notes */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Coach Reinforcement Notes</p>
+                    <p className="text-xs text-muted-foreground/60 mt-0.5">Coach-facing only — not visible to athletes</p>
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1"
+                    onClick={() => setModuleForm((p: any) => ({ ...p, coachReinforcementNotes: [...(p.coachReinforcementNotes ?? []), ""] }))}>
+                    <Plus className="h-3 w-3" />Add
+                  </Button>
+                </div>
+                {(moduleForm.coachReinforcementNotes ?? []).map((note: string, i: number) => (
+                  <div key={i} className="flex gap-2">
+                    <Input value={note} placeholder={i === 0 ? "Discussion question to ask athletes..." : i === 1 ? "Observable behavior to watch for..." : "Reinforcement drill or idea..."}
+                      onChange={(e) => {
+                        const notes = [...(moduleForm.coachReinforcementNotes ?? [])];
+                        notes[i] = e.target.value;
+                        setModuleForm((p: any) => ({ ...p, coachReinforcementNotes: notes }));
+                      }}
+                      className="h-8 text-xs" />
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive/60 flex-shrink-0"
+                      onClick={() => setModuleForm((p: any) => ({ ...p, coachReinforcementNotes: (p.coachReinforcementNotes ?? []).filter((_: any, j: number) => j !== i) }))}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+                {(moduleForm.coachReinforcementNotes ?? []).length === 0 && (
+                  <p className="text-xs text-muted-foreground/50 italic pl-1">No notes yet — AI will generate these automatically when you use the Full Program Generator</p>
+                )}
               </div>
 
               {/* Quiz Builder */}

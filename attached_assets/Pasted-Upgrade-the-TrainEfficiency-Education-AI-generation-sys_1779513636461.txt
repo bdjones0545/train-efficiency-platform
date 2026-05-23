@@ -1,0 +1,200 @@
+Upgrade the TrainEfficiency Education AI generation system to maximize educational quality, coaching realism, scientific grounding, and athlete engagement.
+
+Current system already supports:
+
+* One-shot full pathway generation
+* Modules
+* Per-module quizzes
+* Final pathway assessment
+* Video embedding
+* Sequential progression
+* Badge awards
+
+GOAL:
+Transform the Education Builder from “AI-generated content” into an elite adaptive athlete learning engine that feels authored by a real high-level performance coach.
+
+Implement the following upgrades:
+
+1. CONTENT QUALITY SYSTEM PROMPT LAYER
+
+Create a centralized education-generation system prompt used for ALL pathway/module/quiz generation.
+
+The AI should:
+
+* Teach like an elite sports performance coach
+* Use concise athlete-friendly language
+* Avoid generic AI phrasing and fluff
+* Avoid repetitive sentence structures
+* Avoid textbook-style explanations
+* Prioritize actionable coaching
+* Connect concepts directly to performance outcomes
+* Use real-world sports examples
+* Reinforce practical application
+* Maintain evidence-based recommendations
+* Adapt explanations to athlete age level
+* Use encouraging but professional tone
+
+The AI should NEVER:
+
+* Overuse motivational filler
+* Use vague wellness language
+* Recommend unsafe practices
+* Promote pseudoscience
+* Recommend supplements inappropriately for youth athletes
+* Generate excessively long paragraphs
+
+2. COACH PHILOSOPHY PROFILES
+
+Add organization-level or coach-level generation preferences.
+
+Examples:
+
+* teaching style
+* coaching philosophy
+* terminology preferences
+* preferred tone
+* banned terminology
+* emphasis areas
+
+Example settings:
+
+* “Use athlete-friendly language”
+* “Emphasize recovery and long-term development”
+* “Avoid bodybuilding terminology”
+* “Focus on movement quality and readiness”
+
+These preferences should automatically influence all AI-generated education.
+
+3. READING LEVEL ADAPTATION
+
+Add age-aware content adaptation.
+
+Middle school:
+
+* shorter sections
+* simpler wording
+* more examples
+
+High school:
+
+* moderate detail
+* practical sports examples
+
+College/pro:
+
+* deeper physiology explanations
+* advanced recovery/performance concepts
+
+The AI should automatically adapt:
+
+* reading complexity
+* lesson length
+* terminology
+* examples
+* quiz difficulty
+
+4. KEY TAKEAWAYS SYSTEM
+
+Every module should auto-generate:
+
+* 3–5 key takeaways
+* quick recap cards
+* “What athletes should remember” section
+
+These should appear:
+
+* at the end of lessons
+* before quizzes
+* in athlete review screens
+
+5. SCENARIO-BASED QUIZ GENERATION
+
+Upgrade quizzes from simple factual recall to applied understanding.
+
+BAD:
+“How much water should athletes drink?”
+
+GOOD:
+“An athlete is cramping late in practice after drinking very little water all day. What is the most likely cause?”
+
+The AI should prioritize:
+
+* real-world athlete situations
+* decision-making
+* behavior understanding
+* performance application
+
+6. PERFORMANCE CONNECTION LAYER
+
+Every module should explicitly connect concepts to:
+
+* performance
+* recovery
+* readiness
+* fatigue
+* injury prevention
+* consistency
+
+Add a dedicated section:
+“Why This Matters for Performance”
+
+7. COACH REINFORCEMENT NOTES
+
+Add optional AI-generated:
+“Coach Reinforcement Suggestions”
+
+Examples:
+
+* discussion prompts
+* practice reinforcement ideas
+* questions coaches should ask athletes
+* behavioral observations to monitor
+
+These are coach-facing only.
+
+8. ANTI-AI-SLOP GENERATION FILTERS
+
+Add generation constraints to reduce generic AI output:
+
+* limit repetitive phrasing
+* reduce filler
+* reduce generic introductions
+* avoid overexplaining obvious concepts
+* avoid “the importance of…” phrasing
+* prioritize concise teaching
+
+9. CONTENT SAFETY & EVIDENCE FILTERING
+
+Add validation layers for:
+
+* unsafe recommendations
+* age-inappropriate advice
+* unsupported supplement claims
+* extreme dieting recommendations
+* hydration misinformation
+
+Flag questionable content before generation is accepted.
+
+10. FUTURE-READY STRUCTURE
+
+Architect the content system so future adaptive learning can support:
+
+* remediation modules
+* dynamic difficulty adjustment
+* AI-generated re-explanations
+* concept mastery tracking
+* readiness-triggered education assignment
+* behavioral intervention workflows
+
+Important:
+Do NOT rebuild the current system architecture.
+Extend the existing:
+
+* pathways
+* modules
+* quizzes
+* final tests
+* badges
+* AI generation flow
+
+Maintain compatibility with the current Education Builder system.

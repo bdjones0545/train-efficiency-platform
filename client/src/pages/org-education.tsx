@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, ChevronRight, BookOpen, CheckCircle, Circle,
   Lock, Trophy, Loader2, Sparkles, AlertTriangle, GraduationCap,
-  Clock, Leaf, Medal, Youtube, Star,
+  Clock, Leaf, Medal, Youtube, Star, Zap,
 } from "lucide-react";
 
 function extractYouTubeId(url: string): string | null {
@@ -465,10 +465,21 @@ export default function OrgEducationPage() {
             </div>
           ))}
 
+          {/* Why This Matters for Performance */}
+          {selectedModule.performanceConnection && (
+            <Card className="p-4 border-blue-500/20 bg-blue-500/5">
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="h-4 w-4 text-blue-400 flex-shrink-0" />
+                <p className="text-xs font-semibold uppercase tracking-widest text-blue-400">Why This Matters for Performance</p>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{selectedModule.performanceConnection}</p>
+            </Card>
+          )}
+
           {/* Key Takeaways */}
           {takeaways.length > 0 && (
             <Card className="p-4 border-amber-500/20 bg-amber-500/5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-amber-400 mb-3">Key Takeaways</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-amber-400 mb-3">What to Remember</p>
               <div className="space-y-2">
                 {takeaways.map((t: string, i: number) => (
                   <div key={i} className="flex items-start gap-2">

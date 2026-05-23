@@ -2183,6 +2183,8 @@ export const educationModules = pgTable("education_modules", {
   estimatedMinutes: integer("estimated_minutes").default(10),
   videoUrl: varchar("video_url"),
   videoSearchQuery: varchar("video_search_query"),
+  performanceConnection: text("performance_connection"),
+  coachReinforcementNotes: jsonb("coach_reinforcement_notes").default([]),
   status: varchar("status").notNull().default("draft"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
