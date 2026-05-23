@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Users,
   Briefcase,
+  LayoutDashboard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -199,6 +200,42 @@ function AccordionSection({
         </div>
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MainAppLink — escape hatch back to the TrainEfficiency dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+function MainAppLink({
+  location,
+  onClick,
+}: {
+  location: string;
+  onClick: () => void;
+}) {
+  const active = location.startsWith("/coach") || location.startsWith("/admin");
+
+  return (
+    <Link
+      href="/coach"
+      onClick={onClick}
+      data-testid="link-main-app-dashboard"
+      className={cn(
+        "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors border",
+        active
+          ? "bg-primary/10 text-primary border-primary/20"
+          : "text-foreground/80 hover:text-foreground hover:bg-muted/60 border-border/50 hover:border-border"
+      )}
+    >
+      <LayoutDashboard
+        className={cn("h-4 w-4 flex-shrink-0", active ? "text-primary" : "text-muted-foreground")}
+      />
+      <span className="truncate">Main App</span>
+      {active && (
+        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />
+      )}
+    </Link>
   );
 }
 
@@ -650,6 +687,12 @@ export function OrgSidebar({ orgSlug }: OrgSidebarProps) {
             <p className="text-xs text-muted-foreground leading-tight">
               Log in to access your training tools.
             </p>
+          </div>
+        )}
+
+        {!isLoading && ["coach", "admin", "owner", "team_coach"].includes(ctx?.effectiveRole ?? "") && (
+          <div className="mb-2">
+            <MainAppLink location={location} onClick={handleNavClick} />
           </div>
         )}
 
