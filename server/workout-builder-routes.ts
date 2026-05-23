@@ -6,6 +6,8 @@ import {
   workoutProgramAssignments,
   workoutSessions,
   workoutCompletionLogs,
+  workoutGenerationMetadata,
+  athleteContextObjects,
   orgAiIntegrations,
   athleticPrograms,
   organizations,
@@ -25,6 +27,12 @@ import { z } from "zod";
 import { trainChatClient, getConnectionStatus } from "./services/trainchat-client";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
+import {
+  getAthleteContextForAI,
+  refreshAthleteContextObject,
+  summarizeAthleteContextForPrompt,
+  computeTrainChatModifiers,
+} from "./services/athlete-context-broker";
 
 // ── Shared helper: resolve org identity for a known main-app userId ───────────
 // Mirrors resolveMainAppUser from PR Tracker for consistent auth bridging.
@@ -345,10 +353,26 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         .where(and(eq(orgAiIntegrations.orgId, orgId), eq(orgAiIntegrations.provider, "trainchat"), eq(orgAiIntegrations.isActive, true))).limit(1);
       if (!tcIntegration) return res.status(400).json({ message: "TrainChat integration is not connected. Set it up in Options → Advanced → Integrations." });
 
-      // Gather athlete context
+      // Gather athlete context (legacy PR summary + new context objects)
       const athleteContext = await getAthleteContextSummary(orgId, athleteUserIds);
 
-      // Package context for TrainChat
+      // ── Athlete Context Object injection ────────────────────────────────────
+      // For single-athlete programs, fetch the full living context object
+      let contextObject: any = null;
+      let contextSummary = "";
+      let modifiers: any = { readinessAdjustmentApplied: false, complianceAdjustmentApplied: false, rpeAdjustmentApplied: false, modifiersApplied: [], contextualInstructions: "" };
+
+      if (athleteUserIds.length === 1) {
+        try {
+          contextObject = await getAthleteContextForAI(athleteUserIds[0], orgId);
+          contextSummary = summarizeAthleteContextForPrompt(contextObject);
+          modifiers = computeTrainChatModifiers(contextObject);
+        } catch (err: any) {
+          console.warn("[workout-builder] Context object fetch failed (non-blocking):", err.message);
+        }
+      }
+
+      // Package context for TrainChat — now includes living athlete intelligence
       const tcParams = {
         targetType,
         athleteUserIds,
@@ -361,6 +385,12 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         constraints,
         coachNotes,
         athleteContext,
+        // Living context injection
+        athleteIntelligence: contextSummary || undefined,
+        contextualInstructions: modifiers.contextualInstructions || undefined,
+        programPhase: contextObject?.currentProgramPhase ?? undefined,
+        readinessTrend: contextObject?.readinessTrend ?? undefined,
+        complianceRate: contextObject?.complianceRate ?? undefined,
       };
 
       let rawResponse: any = null;
@@ -400,6 +430,25 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         generatedSummary,
       }).returning();
 
+      // Store generation metadata (context snapshot at time of generation)
+      if (athleteUserIds.length === 1) {
+        db.insert(workoutGenerationMetadata).values({
+          orgId,
+          workoutProgramId: program.id,
+          athleteUserId: athleteUserIds[0],
+          contextObjectId: contextObject?.id ?? null,
+          readinessAdjustmentApplied: modifiers.readinessAdjustmentApplied,
+          complianceAdjustmentApplied: modifiers.complianceAdjustmentApplied,
+          rpeAdjustmentApplied: modifiers.rpeAdjustmentApplied,
+          readinessTrendAtGeneration: contextObject?.readinessTrend ?? null,
+          complianceRateAtGeneration: contextObject?.complianceRate ?? null,
+          aiRationale: modifiers.contextualInstructions || null,
+          modifiersApplied: modifiers.modifiersApplied,
+        }).catch((err: any) => {
+          console.warn("[workout-builder] Generation metadata save failed (non-blocking):", err.message);
+        });
+      }
+
       // Parse and store sessions from raw response
       if (rawResponse && !generationError) {
         await parseAndStoreSessions(orgId, program.id, rawResponse).catch((err) => {
@@ -411,7 +460,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         .where(eq(workoutSessions.workoutProgramId, program.id))
         .orderBy(asc(workoutSessions.weekNumber), asc(workoutSessions.dayNumber));
 
-      return res.json({ program, sessions, generationError });
+      return res.json({ program, sessions, generationError, contextApplied: !!contextObject, modifiersApplied: modifiers.modifiersApplied });
     } catch (err: any) {
       console.error("[workout-builder] generate error:", err);
       return res.status(500).json({ message: "Internal server error" });
@@ -658,9 +707,60 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         rating: parsed.data.rating ?? null,
       }).returning();
 
+      // Trigger async context refresh after session completion
+      refreshAthleteContextObject(profile.userId, orgId, "session_completion").catch(() => {});
+
       return res.json({ log });
     } catch (err: any) {
       console.error("[workout-builder] complete session error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // ─── Athlete Context Broker Routes ───────────────────────────────────────────
+
+  // GET /api/org/workout-builder/athletes/:athleteUserId/context
+  app.get("/api/org/workout-builder/athletes/:athleteUserId/context", acceptOrgOrMainAuth, requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const { athleteUserId } = req.params;
+
+      const [context] = await db.select()
+        .from(athleteContextObjects)
+        .where(and(
+          eq(athleteContextObjects.athleteUserId, athleteUserId),
+          eq(athleteContextObjects.orgId, orgId),
+        ))
+        .limit(1);
+
+      if (!context) {
+        return res.json({ context: null, message: "No context object yet. Use refresh to build one." });
+      }
+
+      return res.json({ context });
+    } catch (err: any) {
+      console.error("[workout-builder] get context error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/athletes/:athleteUserId/context/refresh
+  app.post("/api/org/workout-builder/athletes/:athleteUserId/context/refresh", acceptOrgOrMainAuth, requireCoachOrAdmin, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const { athleteUserId } = req.params;
+
+      const context = await refreshAthleteContextObject(athleteUserId, orgId, "manual_coach_refresh");
+
+      return res.json({ context, refreshed: true });
+    } catch (err: any) {
+      console.error("[workout-builder] context refresh error:", err);
       return res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -757,6 +857,18 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       // Gather athlete's own PR context for personalization
       const athleteContext = await getAthleteContextSummary(orgId, [userId]);
 
+      // ── Athlete Context Object injection (athlete self-service) ─────────────
+      let contextObject: any = null;
+      let contextSummary = "";
+      let modifiers: any = { readinessAdjustmentApplied: false, complianceAdjustmentApplied: false, rpeAdjustmentApplied: false, modifiersApplied: [], contextualInstructions: "" };
+      try {
+        contextObject = await getAthleteContextForAI(userId, orgId);
+        contextSummary = summarizeAthleteContextForPrompt(contextObject);
+        modifiers = computeTrainChatModifiers(contextObject);
+      } catch (err: any) {
+        console.warn("[workout-builder] Athlete self-gen context fetch failed (non-blocking):", err.message);
+      }
+
       const tcParams = {
         targetType: "athlete",
         athleteUserIds: [userId],
@@ -767,6 +879,10 @@ export function registerWorkoutBuilderRoutes(app: Express) {
         equipment,
         constraints: limitations,
         athleteContext,
+        athleteIntelligence: contextSummary || undefined,
+        contextualInstructions: modifiers.contextualInstructions || undefined,
+        readinessTrend: contextObject?.readinessTrend ?? undefined,
+        complianceRate: contextObject?.complianceRate ?? undefined,
       };
 
       let rawResponse: any = null;

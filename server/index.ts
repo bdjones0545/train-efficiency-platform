@@ -409,6 +409,21 @@ app.use((req, res, next) => {
     }
   };
   setInterval(runFinancialEventRetryCron, 15 * 60 * 1000);
+
+  // ─── Athlete Context Object Daily Refresh Cron ────────────────────────────
+  // Rebuilds living athlete context objects for all athletes with active programs.
+  // Runs once daily. Also runs 5 minutes after startup to catch any missed refresh.
+  const runAthleteContextRefreshCron = async () => {
+    try {
+      const { runDailyAthleteContextRefreshCron } = await import("./services/athlete-context-broker");
+      await runDailyAthleteContextRefreshCron();
+    } catch (err: any) {
+      console.error("[AthleteContextCron] Error:", err?.message ?? err);
+    }
+  };
+  setInterval(runAthleteContextRefreshCron, 24 * 60 * 60 * 1000); // every 24 hours
+  setTimeout(runAthleteContextRefreshCron, 5 * 60 * 1000); // 5 minutes after startup
+
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
 

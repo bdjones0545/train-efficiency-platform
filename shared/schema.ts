@@ -2874,3 +2874,70 @@ export const coachDailyBriefings = pgTable("coach_daily_briefings", {
 export const insertCoachDailyBriefingSchema = createInsertSchema(coachDailyBriefings).omit({ id: true, createdAt: true });
 export type CoachDailyBriefing = typeof coachDailyBriefings.$inferSelect;
 export type InsertCoachDailyBriefing = z.infer<typeof insertCoachDailyBriefingSchema>;
+
+// ─── Athlete Context Objects ──────────────────────────────────────────────────
+// Persistent, living intelligence summaries per athlete.
+// Refreshed on session completion, readiness check-in, intervention, and daily cron.
+
+export const athleteContextObjects = pgTable("athlete_context_objects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  orgId: varchar("org_id").notNull(),
+
+  // Current program state
+  currentProgramId: varchar("current_program_id"),
+  currentProgramWeek: integer("current_program_week"),
+  currentProgramPhase: varchar("current_program_phase"),
+
+  // Indexed trend fields (queried frequently)
+  complianceRate: integer("compliance_rate"),
+  readinessTrend: varchar("readiness_trend").default("unknown"),
+  riskLevel: varchar("risk_level").default("green"),
+
+  // Rich JSONB context blobs
+  last30DayReadinessTrend: jsonb("last_30_day_readiness_trend").default(sql`'[]'::jsonb`),
+  recentSessionFeedback: jsonb("recent_session_feedback").default(sql`'[]'::jsonb`),
+  recentRPETrend: jsonb("recent_rpe_trend").default(sql`'[]'::jsonb`),
+  recentPRs: jsonb("recent_prs").default(sql`'[]'::jsonb`),
+  missedSessions: jsonb("missed_sessions").default(sql`'[]'::jsonb`),
+  injuryNotes: jsonb("injury_notes").default(sql`'[]'::jsonb`),
+  coachNotes: jsonb("coach_notes").default(sql`'[]'::jsonb`),
+  interventionHistory: jsonb("intervention_history").default(sql`'[]'::jsonb`),
+  educationHistory: jsonb("education_history").default(sql`'[]'::jsonb`),
+  riskFlags: jsonb("risk_flags").default(sql`'[]'::jsonb`),
+
+  // AI-generated summary of the athlete's current state
+  aiSummary: text("ai_summary"),
+
+  // Metadata
+  lastRefreshTrigger: varchar("last_refresh_trigger").default("manual"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAthleteContextObjectSchema = createInsertSchema(athleteContextObjects).omit({ id: true, createdAt: true });
+export type AthleteContextObject = typeof athleteContextObjects.$inferSelect;
+export type InsertAthleteContextObject = z.infer<typeof insertAthleteContextObjectSchema>;
+
+// ─── Workout Program Generation Metadata ─────────────────────────────────────
+// Stores intelligence metadata for each TrainChat generation call.
+
+export const workoutGenerationMetadata = pgTable("workout_generation_metadata", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  workoutProgramId: varchar("workout_program_id").notNull(),
+  athleteUserId: varchar("athlete_user_id"),
+  contextObjectId: varchar("context_object_id"),
+  readinessAdjustmentApplied: boolean("readiness_adjustment_applied").default(false),
+  complianceAdjustmentApplied: boolean("compliance_adjustment_applied").default(false),
+  rpeAdjustmentApplied: boolean("rpe_adjustment_applied").default(false),
+  readinessTrendAtGeneration: varchar("readiness_trend_at_generation"),
+  complianceRateAtGeneration: integer("compliance_rate_at_generation"),
+  aiRationale: text("ai_rationale"),
+  modifiersApplied: jsonb("modifiers_applied").default(sql`'[]'::jsonb`),
+  generatedAt: timestamp("generated_at").defaultNow(),
+});
+
+export const insertWorkoutGenerationMetadataSchema = createInsertSchema(workoutGenerationMetadata).omit({ id: true });
+export type WorkoutGenerationMetadata = typeof workoutGenerationMetadata.$inferSelect;
+export type InsertWorkoutGenerationMetadata = z.infer<typeof insertWorkoutGenerationMetadataSchema>;

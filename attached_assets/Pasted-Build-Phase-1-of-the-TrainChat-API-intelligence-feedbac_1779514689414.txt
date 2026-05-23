@@ -1,0 +1,119 @@
+Build Phase 1 of the TrainChat API intelligence feedback loop inside TrainEfficiency.
+
+Goal:
+Create the Athlete Context Object system and inject it into TrainChat API calls so programming decisions are influenced by readiness, compliance, current program phase, coach notes, and athlete history.
+
+Requirements:
+
+1. Create a persistent Athlete Context Object per athlete.
+
+Store:
+- athleteId
+- orgId
+- currentProgramId
+- currentProgramWeek
+- currentProgramPhase
+- last30DayReadinessTrend
+- last30DayComplianceRate
+- missedSessions
+- recentSessionFeedback
+- recentRPETrend
+- recentPRs
+- injuryNotes
+- coachNotes
+- interventionHistory
+- educationHistory
+- riskFlags
+- aiSummary
+- updatedAt
+
+2. Add database table:
+athlete_context_objects
+
+Use JSONB where appropriate, but keep common query fields indexed:
+- athleteId
+- orgId
+- riskLevel
+- complianceRate
+- readinessTrend
+- updatedAt
+
+3. Create a Context Broker service:
+server/services/athlete-context-broker.ts
+
+Responsibilities:
+- buildAthleteContextObject(athleteId, orgId)
+- refreshAthleteContextObject(athleteId, orgId)
+- getAthleteContextForAI(athleteId, orgId)
+- summarizeAthleteContextForPrompt(context)
+
+4. Refresh logic:
+- refresh when a program is generated
+- refresh after session completion
+- refresh after readiness check-in
+- refresh after intervention completion
+- add daily cron refresh for active athletes
+
+5. Inject Athlete Context into TrainChat API payloads.
+
+Update TrainChat calls for:
+- full program generation
+- program refinement
+- individual session generation
+- exercise swaps
+- program rationale explanation
+
+The payload should include:
+- athlete profile
+- PRs
+- equipment
+- goals
+- coach notes
+- Athlete Context Object summary
+
+6. Add readiness-aware programming modifiers.
+
+If readiness trend is low:
+- request reduced volume/intensity
+- flag recovery emphasis
+- avoid aggressive progression
+
+If compliance is low:
+- request simpler sessions
+- reduce complexity
+- prioritize adherence
+
+If recent RPE is high:
+- request deload or lower-load variant
+
+7. Add response metadata.
+
+When TrainChat generates or modifies a program, store:
+- contextObjectId used
+- readinessAdjustmentApplied
+- complianceAdjustmentApplied
+- aiRationale
+- generatedAt
+
+8. Add safety guardrails:
+- do not auto-change a live program without coach approval
+- program adaptations should create a draft first
+- coach must approve before publishing changes
+
+9. Add basic UI visibility:
+On the athlete profile or program builder, show:
+- Athlete Intelligence Summary
+- readiness trend
+- compliance trend
+- current risk flags
+- last updated time
+- “Refresh Context” button
+
+10. Do not rebuild the existing TrainChat client.
+Extend:
+- server/services/trainchat-client.ts
+- workout-builder-routes.ts
+- existing program/session generation flows
+
+Final outcome:
+TrainEfficiency should no longer call TrainChat with only static athlete data. Every TrainChat request should include a living Athlete Context Object so programming becomes adaptive, longitudinal, and tied to real athlete behavior.

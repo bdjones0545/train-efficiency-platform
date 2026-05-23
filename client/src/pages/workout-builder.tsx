@@ -22,6 +22,7 @@ import {
   TrendingDown, ShieldAlert, Eye, ChevronDown, ChevronUp, RefreshCw,
   Flame, Gauge, BedDouble, Siren, Sparkles, Wand2, Lock,
 } from "lucide-react";
+import { AthleteIntelligenceSummary } from "@/components/athlete-intelligence-summary";
 
 // ─── Auth header helper ────────────────────────────────────────────────────────
 // Merges all three possible auth signals so every Workout Builder request
@@ -612,7 +613,21 @@ function GenerateWizard({ programToolId, bootstrap, onGenerated, onClose }: { pr
                 {constraints && <p className="flex items-center gap-2"><AlertTriangle className="h-3.5 w-3.5 text-amber-400" /><span><strong>Constraints:</strong> {constraints}</span></p>}
                 {selectedAthletes.length > 0 && <p className="flex items-center gap-2"><User className="h-3.5 w-3.5 text-primary" /><span><strong>Athletes:</strong> {selectedAthletes.map((a) => a.name ?? a.email).join(", ")}</span></p>}
               </Card>
-              <p className="text-xs text-muted-foreground italic">This context will be sent to TrainChat for AI program generation.</p>
+
+              {/* Athlete Intelligence Preview — shown for single-athlete programs */}
+              {targetType === "athlete" && selectedAthleteIds.length === 1 && bootstrap?.org?.id && (
+                <AthleteIntelligenceSummary
+                  athleteUserId={selectedAthleteIds[0]}
+                  orgId={bootstrap.org.id}
+                  athleteName={selectedAthletes[0]?.name ?? selectedAthletes[0]?.email}
+                />
+              )}
+
+              <p className="text-xs text-muted-foreground italic">
+                {targetType === "athlete" && selectedAthleteIds.length === 1
+                  ? "Athlete intelligence (readiness, compliance, RPE) will be injected into the TrainChat request."
+                  : "This context will be sent to TrainChat for AI program generation."}
+              </p>
               {!bootstrap?.trainChatConnected && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-destructive text-xs">
                   <AlertTriangle className="h-4 w-4 flex-shrink-0" />
