@@ -9,8 +9,23 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, ChevronRight, BookOpen, CheckCircle, Circle,
   Lock, Trophy, Loader2, Sparkles, AlertTriangle, GraduationCap,
-  Clock, Leaf, Medal,
+  Clock, Leaf, Medal, Youtube, Star,
 } from "lucide-react";
+
+function extractYouTubeId(url: string): string | null {
+  if (!url) return null;
+  const patterns = [
+    /youtu\.be\/([^?&]+)/,
+    /youtube\.com\/watch\?v=([^&]+)/,
+    /youtube\.com\/embed\/([^?&]+)/,
+    /youtube\.com\/shorts\/([^?&]+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
 
 const STORAGE_KEY = (slug: string) => `orgToken_${slug}`;
 
@@ -57,7 +72,7 @@ function BadgesPanel({ slug: _slug, headers }: { slug: string; headers: Record<s
   );
 }
 
-type ViewMode = "pathways" | "modules" | "lesson" | "quiz" | "result";
+type ViewMode = "pathways" | "modules" | "lesson" | "quiz" | "result" | "final_test" | "final_result";
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   nutrition: <Leaf className="h-4 w-4 text-emerald-400" />,
@@ -87,6 +102,8 @@ export default function OrgEducationPage() {
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
   const [quizResult, setQuizResult] = useState<any>(null);
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set());
+  const [finalTestAnswers, setFinalTestAnswers] = useState<Record<string, number>>({});
+  const [finalTestResult, setFinalTestResult] = useState<any>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: pathwaysData, isLoading: loadingPathways } = useQuery<any>({
@@ -121,6 +138,24 @@ export default function OrgEducationPage() {
     enabled: !!selectedModule && view === "quiz",
   });
   const questions: any[] = questionsData?.questions ?? [];
+
+  const { data: finalTestData, isLoading: loadingFinalTest } = useQuery<any>({
+    queryKey: ["/api/org/education/pathways/final-test", selectedPathway?.id ?? pathway?.id],
+    queryFn: () => fetch(`/api/org/education/pathways/${selectedPathway?.id ?? pathway?.id}/final-test`, { headers }).then((r) => r.json()),
+    enabled: !!(selectedPathway?.id ?? pathway?.id) && view === "final_test",
+  });
+  const finalTestQuestions: any[] = finalTestData?.questions ?? [];
+
+  const submitFinalTestMut = useMutation({
+    mutationFn: ({ pathwayId, answers }: any) =>
+      apiRequest("POST", `/api/org/education/pathways/${pathwayId}/final-test/submit`, { answers }, headers),
+    onSuccess: (data: any) => {
+      setFinalTestResult(data);
+      setView("final_result");
+      queryClient.invalidateQueries({ queryKey: ["/api/org/education/pathways", slug] });
+    },
+    onError: () => toast({ title: "Error submitting final test", variant: "destructive" }),
+  });
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const startModuleMut = useMutation({
@@ -180,7 +215,9 @@ export default function OrgEducationPage() {
   }
 
   function goBack() {
-    if (view === "result") { setView("modules"); setQuizResult(null); setSelectedModule(null); }
+    if (view === "final_result") { setView("modules"); setFinalTestResult(null); setFinalTestAnswers({}); }
+    else if (view === "final_test") { setView("modules"); setFinalTestAnswers({}); }
+    else if (view === "result") { setView("modules"); setQuizResult(null); setSelectedModule(null); }
     else if (view === "quiz") setView("lesson");
     else if (view === "lesson") { setView("modules"); setSelectedModule(null); }
     else if (view === "modules") {
@@ -286,14 +323,21 @@ export default function OrgEducationPage() {
             </div>
           )}
 
-          {/* Completion Badge */}
+          {/* Completion or Final Test CTA */}
           {stats?.percentComplete === 100 && (
-            <Card className="p-3 border-emerald-500/20 bg-emerald-500/5 flex items-center gap-3">
-              <Trophy className="h-5 w-5 text-emerald-400 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-emerald-400">Pathway Complete!</p>
-                <p className="text-xs text-muted-foreground">You've finished all modules in this pathway</p>
+            <Card className="p-4 border-primary/30 bg-primary/5 space-y-3">
+              <div className="flex items-center gap-3">
+                <Star className="h-5 w-5 text-primary flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-primary">All Modules Complete!</p>
+                  <p className="text-xs text-muted-foreground">Take the final test to earn your badge</p>
+                </div>
               </div>
+              <Button className="w-full h-10 text-sm gap-2 font-semibold"
+                onClick={() => { setFinalTestAnswers({}); setView("final_test"); }}
+                data-testid="button-take-final-test">
+                <Trophy className="h-4 w-4" />Take the Final Test
+              </Button>
             </Card>
           )}
 
@@ -375,6 +419,30 @@ export default function OrgEducationPage() {
             <p className="text-sm text-muted-foreground">{selectedModule.description}</p>
           )}
 
+          {/* YouTube Video Embed */}
+          {selectedModule.videoUrl && (() => {
+            const videoId = extractYouTubeId(selectedModule.videoUrl);
+            if (!videoId) return null;
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Youtube className="h-4 w-4 text-rose-400" />
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Watch</p>
+                </div>
+                <div className="relative w-full rounded-xl overflow-hidden border border-border/40" style={{ paddingBottom: "56.25%" }}>
+                  <iframe
+                    src={`https://www.youtube.com/embed/${videoId}?rel=0`}
+                    title="Module video"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="absolute inset-0 w-full h-full"
+                    data-testid="iframe-module-video"
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Sections */}
           {sections.map((s: any, i: number) => (
             <div key={i}>
@@ -433,6 +501,148 @@ export default function OrgEducationPage() {
               </Button>
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── FINAL TEST VIEW ────────────────────────────────────────────────────────
+  if (view === "final_test") {
+    const pathwayId = selectedPathway?.id ?? pathway?.id;
+    return (
+      <div className="min-h-screen bg-background pb-24">
+        <div className="border-b border-border/50 bg-card/30 px-4 py-3 flex items-center gap-3">
+          <button onClick={goBack} className="text-muted-foreground hover:text-foreground">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-muted-foreground">{pathway?.title}</p>
+            <h1 className="font-semibold text-sm">Final Test</h1>
+          </div>
+          <p className="text-xs text-muted-foreground flex-shrink-0">{Object.keys(finalTestAnswers).length}/{finalTestQuestions.length} answered</p>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <Card className="p-3 border-primary/20 bg-primary/5 flex items-center gap-3">
+            <Trophy className="h-4 w-4 text-primary flex-shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-primary">Pathway Final Test</p>
+              <p className="text-xs text-muted-foreground">Passing score: 80% · Tests knowledge from all modules · Pass to earn your badge</p>
+            </div>
+          </Card>
+
+          {loadingFinalTest && <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}
+
+          {!loadingFinalTest && finalTestQuestions.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <AlertTriangle className="h-8 w-8 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No final test available for this pathway</p>
+            </div>
+          )}
+
+          {finalTestQuestions.map((q: any, qi: number) => (
+            <Card key={q.id} className="p-4 space-y-3" data-testid={`card-final-question-${qi}`}>
+              <p className="text-sm font-medium">{qi + 1}. {q.question}</p>
+              <div className="space-y-2">
+                {(q.options ?? []).map((opt: string, oi: number) => (
+                  <button key={oi} onClick={() => setFinalTestAnswers((prev) => ({ ...prev, [q.id]: oi }))}
+                    data-testid={`final-option-${qi}-${oi}`}
+                    className={`w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors ${
+                      finalTestAnswers[q.id] === oi
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border hover:border-primary/30 text-muted-foreground"}`}>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        {finalTestQuestions.length > 0 && (
+          <div className="fixed bottom-0 left-0 right-0 px-4 pt-3 bg-background/95 backdrop-blur border-t border-border/50" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+            <Button className="w-full h-11 text-sm gap-2 mb-1 font-semibold"
+              onClick={() => {
+                if (Object.keys(finalTestAnswers).length < finalTestQuestions.length) {
+                  toast({ title: "Answer all questions before submitting", variant: "destructive" });
+                  return;
+                }
+                submitFinalTestMut.mutate({ pathwayId, answers: finalTestAnswers });
+              }}
+              disabled={submitFinalTestMut.isPending}
+              data-testid="button-submit-final-test">
+              {submitFinalTestMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Trophy className="h-4 w-4" />Submit Final Test</>}
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── FINAL RESULT VIEW ──────────────────────────────────────────────────────
+  if (view === "final_result" && finalTestResult) {
+    const passed = finalTestResult.passed;
+    return (
+      <div className="min-h-screen bg-background pb-8">
+        <div className="border-b border-border/50 bg-card/30 px-4 py-3 flex items-center gap-3">
+          <button onClick={goBack} className="text-muted-foreground hover:text-foreground">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <h1 className="font-semibold text-sm">Final Test Result</h1>
+        </div>
+
+        <div className="p-4 space-y-5">
+          <Card className={`p-6 text-center border-2 ${passed ? "border-primary/40 bg-primary/5" : "border-rose-500/30 bg-rose-500/5"}`}>
+            {passed
+              ? <Trophy className="h-12 w-12 text-primary mx-auto mb-3" />
+              : <AlertTriangle className="h-12 w-12 text-rose-400 mx-auto mb-3" />}
+            <p className={`text-5xl font-bold mb-2 ${passed ? "text-primary" : "text-rose-400"}`}>{finalTestResult.score}%</p>
+            <p className={`text-base font-semibold mb-1 ${passed ? "text-primary" : "text-rose-400"}`}>
+              {passed ? "You passed! Badge earned." : "Not quite — retake to earn your badge"}
+            </p>
+            <p className="text-xs text-muted-foreground">{finalTestResult.correct}/{finalTestResult.totalQuestions} correct · 80% to pass</p>
+          </Card>
+
+          {passed && (
+            <Card className="p-4 border-amber-500/20 bg-amber-500/5 flex items-center gap-3">
+              <span className="text-3xl">🏅</span>
+              <div>
+                <p className="text-sm font-semibold text-amber-400">Badge Awarded!</p>
+                <p className="text-xs text-muted-foreground">Your achievement has been recorded. Check My Badges on the education home screen.</p>
+              </div>
+            </Card>
+          )}
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Question Breakdown</p>
+            {(finalTestResult.results ?? []).map((r: any, i: number) => (
+              <Card key={i} className={`p-4 border-l-2 ${r.isCorrect ? "border-l-emerald-400" : "border-l-rose-400"}`}>
+                <div className="flex items-start gap-2 mb-2">
+                  {r.isCorrect ? <CheckCircle className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 text-rose-400 flex-shrink-0 mt-0.5" />}
+                  <p className="text-xs font-medium">{r.question}</p>
+                </div>
+                {!r.isCorrect && (
+                  <p className="text-xs text-muted-foreground ml-6 mt-0.5">
+                    Correct: <span className="text-emerald-400">{(r.options ?? [])[r.correctIndex]}</span>
+                  </p>
+                )}
+                {r.explanation && <p className="text-xs text-muted-foreground ml-6 mt-2 italic">{r.explanation}</p>}
+              </Card>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            {!passed && (
+              <Button variant="outline" className="flex-1 h-10 text-sm gap-1.5"
+                onClick={() => { setFinalTestAnswers({}); setFinalTestResult(null); setView("final_test"); }}
+                data-testid="button-retake-final">
+                Retake Test
+              </Button>
+            )}
+            <Button className="flex-1 h-10 text-sm gap-1.5" onClick={goBack} data-testid="button-finish">
+              {passed ? <><CheckCircle className="h-4 w-4" />Finish</> : "Back"}
+            </Button>
+          </div>
         </div>
       </div>
     );

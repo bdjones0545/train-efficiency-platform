@@ -369,6 +369,7 @@ export function registerEducationRoutes(app: Express) {
         .limit(1);
       const nextNum = (existing[0]?.n ?? 0) + 1;
 
+      const { videoUrl, videoSearchQuery } = req.body;
       const [created] = await db.insert(educationModules).values({
         orgId: profile.organizationId,
         pathwayId,
@@ -378,6 +379,8 @@ export function registerEducationRoutes(app: Express) {
         content: content ?? { sections: [] },
         keyTakeaways: keyTakeaways ?? [],
         estimatedMinutes: estimatedMinutes ?? 10,
+        videoUrl: videoUrl ?? null,
+        videoSearchQuery: videoSearchQuery ?? null,
         status: status ?? "draft",
       }).returning();
 
@@ -391,8 +394,7 @@ export function registerEducationRoutes(app: Express) {
   app.patch("/api/org/education/modules/:id", requireCoach, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { title, description, content, keyTakeaways, estimatedMinutes, status } = req.body;
-
+      const { title, description, content, keyTakeaways, estimatedMinutes, status, videoUrl, videoSearchQuery } = req.body;
       const updates: any = { updatedAt: new Date() };
       if (title !== undefined) updates.title = title;
       if (description !== undefined) updates.description = description;
@@ -400,6 +402,8 @@ export function registerEducationRoutes(app: Express) {
       if (keyTakeaways !== undefined) updates.keyTakeaways = keyTakeaways;
       if (estimatedMinutes !== undefined) updates.estimatedMinutes = estimatedMinutes;
       if (status !== undefined) updates.status = status;
+      if (videoUrl !== undefined) updates.videoUrl = videoUrl || null;
+      if (videoSearchQuery !== undefined) updates.videoSearchQuery = videoSearchQuery || null;
 
       const [updated] = await db.update(educationModules)
         .set(updates)
@@ -621,6 +625,264 @@ export function registerEducationRoutes(app: Express) {
       ).returning();
 
       res.json({ questions: inserted });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/org/education/ai/generate-full-pathway ────────────────────────
+  // One-shot: generates complete pathway with module content, quizzes, video search queries
+  app.post("/api/org/education/ai/generate-full-pathway", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const userId = getUserId(req)!;
+      const { prompt, ageGroup, sport, numModules, difficulty } = req.body;
+      if (!prompt) return res.status(400).json({ message: "prompt required" });
+
+      const systemPrompt = `${AI_SAFETY_SYSTEM}
+
+You are generating a complete, ready-to-publish athlete education program. Generate rich, practical content that coaches can use immediately.`;
+
+      const userPrompt = `Create a COMPLETE athlete education program based on this request:
+
+"${prompt}"
+
+Additional context:
+- Age Group: ${ageGroup ?? "high school / college athletes"}
+- Sport / Team: ${sport ?? "general athletes"}
+- Number of Modules: ${numModules ?? 4}
+- Difficulty: ${difficulty ?? "beginner to intermediate"}
+
+Return a JSON object with this EXACT structure (all fields required):
+{
+  "pathway": {
+    "title": "Concise pathway title",
+    "description": "2-3 sentence description of what athletes will learn",
+    "category": "one of: nutrition, recovery, hydration, sleep, mindset, team_standards, injury_prevention, custom"
+  },
+  "modules": [
+    {
+      "moduleNumber": 1,
+      "title": "Module title",
+      "description": "1-2 sentence description",
+      "estimatedMinutes": 12,
+      "videoSearchQuery": "specific YouTube search query to find the best video for this topic (e.g. 'athlete hydration science explained')",
+      "sections": [
+        {
+          "title": "Section heading",
+          "body": "3-5 sentences of clear, practical educational content. Use simple language. Include real examples relevant to athletes."
+        }
+      ],
+      "keyTakeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"],
+      "quiz": [
+        {
+          "question": "Question text?",
+          "options": ["Option A", "Option B", "Option C", "Option D"],
+          "correctAnswer": 1,
+          "explanation": "Clear explanation of why this answer is correct."
+        }
+      ]
+    }
+  ],
+  "finalTest": [
+    {
+      "question": "Comprehensive question testing knowledge from across the program?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswer": 0,
+      "explanation": "Explanation linking to the module this concept came from."
+    }
+  ]
+}
+
+Rules:
+- Each module must have 3-5 sections, 3 keyTakeaways, and 3-4 quiz questions
+- The finalTest must have ${Math.max(6, (numModules ?? 4) * 2)} questions drawn from across all modules
+- Keep all content athlete-friendly, practical, and evidence-based
+- videoSearchQuery should be specific enough to find high-quality educational YouTube videos`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.65,
+      });
+
+      const result = JSON.parse(completion.choices[0].message.content ?? "{}");
+
+      const [gen] = await db.insert(educationAiGenerations).values({
+        orgId: profile.organizationId,
+        coachUserId: userId,
+        generationType: "full_pathway",
+        prompt,
+        result,
+        status: "draft",
+      }).returning();
+
+      res.json({ generation: gen, result });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/org/education/ai/accept-full-pathway ───────────────────────────
+  // Accepts a full AI-generated pathway draft, creates pathway + modules + quizzes in DB
+  app.post("/api/org/education/ai/accept-full-pathway", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const userId = getUserId(req)!;
+      const { draft } = req.body;
+      if (!draft?.pathway) return res.status(400).json({ message: "draft required" });
+
+      const orgId = profile.organizationId;
+      const baseSlug = slugify(draft.pathway.title);
+      const existingSlugs = await db.select({ slug: educationPathways.slug })
+        .from(educationPathways)
+        .where(drizzleSql`${educationPathways.slug} LIKE ${baseSlug + "%"}`);
+      const slug = existingSlugs.length === 0 ? baseSlug : `${baseSlug}-${Date.now()}`;
+
+      const [pathway] = await db.insert(educationPathways).values({
+        orgId,
+        createdByUserId: userId,
+        title: draft.pathway.title,
+        slug,
+        category: draft.pathway.category ?? "custom",
+        description: draft.pathway.description ?? "",
+        status: "draft",
+        isDefault: false,
+      }).returning();
+
+      const createdModules: any[] = [];
+      for (const mod of (draft.modules ?? [])) {
+        const [createdMod] = await db.insert(educationModules).values({
+          orgId,
+          pathwayId: pathway.id,
+          moduleNumber: mod.moduleNumber,
+          title: mod.title,
+          description: mod.description ?? "",
+          content: { sections: mod.sections ?? [] },
+          keyTakeaways: mod.keyTakeaways ?? [],
+          estimatedMinutes: mod.estimatedMinutes ?? 10,
+          videoSearchQuery: mod.videoSearchQuery ?? null,
+          status: "draft",
+        }).returning();
+
+        if (mod.quiz?.length > 0) {
+          await db.insert(educationQuizQuestions).values(
+            mod.quiz.map((q: any) => ({
+              orgId,
+              pathwayId: pathway.id,
+              moduleId: createdMod.id,
+              question: q.question,
+              options: q.options,
+              correctAnswer: q.correctAnswer,
+              explanation: q.explanation ?? "",
+              questionType: "module",
+            }))
+          );
+        }
+        createdModules.push(createdMod);
+      }
+
+      if (draft.finalTest?.length > 0) {
+        const finalModuleId = createdModules[createdModules.length - 1]?.id ?? "final";
+        await db.insert(educationQuizQuestions).values(
+          draft.finalTest.map((q: any) => ({
+            orgId,
+            pathwayId: pathway.id,
+            moduleId: finalModuleId,
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            explanation: q.explanation ?? "",
+            questionType: "pathway_final",
+          }))
+        );
+      }
+
+      res.json({ pathway, modulesCount: createdModules.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/org/education/pathways/:id/final-test ───────────────────────────
+  app.get("/api/org/education/pathways/:id/final-test", requireAuth, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const questions = await db.select().from(educationQuizQuestions)
+        .where(and(
+          eq(educationQuizQuestions.pathwayId, id),
+          eq(educationQuizQuestions.questionType, "pathway_final"),
+        ));
+      res.json({ questions });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/org/education/pathways/:id/final-test/submit ───────────────────
+  app.post("/api/org/education/pathways/:id/final-test/submit", requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const userId = getUserId(req)!;
+      const { id } = req.params;
+      const { answers } = req.body;
+
+      const questions = await db.select().from(educationQuizQuestions)
+        .where(and(
+          eq(educationQuizQuestions.pathwayId, id),
+          eq(educationQuizQuestions.questionType, "pathway_final"),
+        ));
+
+      if (!questions.length) return res.status(404).json({ message: "No final test found" });
+
+      let correct = 0;
+      const results = questions.map((q: any) => {
+        const submitted = answers[q.id] ?? -1;
+        const isCorrect = submitted === q.correctAnswer;
+        if (isCorrect) correct++;
+        return {
+          question: q.question,
+          options: q.options,
+          submittedIndex: submitted,
+          correctIndex: q.correctAnswer,
+          isCorrect,
+          explanation: q.explanation,
+        };
+      });
+
+      const score = Math.round((correct / questions.length) * 100);
+      const passed = score >= 80;
+
+      if (passed) {
+        const [pathway] = await db.select().from(educationPathways).where(eq(educationPathways.id, id)).limit(1);
+        if (pathway) {
+          const existingBadge = await db.select().from(educationBadges)
+            .where(and(eq(educationBadges.pathwayId, id), eq(educationBadges.criteria, "pathway_completed")))
+            .limit(1);
+          if (existingBadge.length > 0) {
+            const alreadyEarned = await db.select().from(educationAthleteBadges)
+              .where(and(
+                eq(educationAthleteBadges.athleteUserId, userId),
+                eq(educationAthleteBadges.badgeId, existingBadge[0].id),
+              )).limit(1);
+            if (!alreadyEarned.length) {
+              await db.insert(educationAthleteBadges).values({
+                orgId: profile.organizationId,
+                athleteUserId: userId,
+                badgeId: existingBadge[0].id,
+                pathwayId: id,
+                metadata: { source: "final_test", score },
+              });
+            }
+          }
+        }
+      }
+
+      res.json({ score, passed, correct, totalQuestions: questions.length, results });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

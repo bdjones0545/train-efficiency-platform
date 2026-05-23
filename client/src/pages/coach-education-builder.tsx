@@ -15,6 +15,7 @@ import {
   CheckCircle, Circle, BarChart2, Users, Trophy, AlertTriangle,
   Loader2, Save, Trash2, Send, RefreshCw, GraduationCap,
   ClipboardList, Settings, Archive, Globe, Copy, Zap, CalendarDays,
+  Youtube, Search, FileText,
 } from "lucide-react";
 
 const STORAGE_KEY = (slug: string) => `orgToken_${slug}`;
@@ -54,13 +55,17 @@ export default function CoachEducationBuilderPage() {
   const [selectedPathway, setSelectedPathway] = useState<any>(null);
   const [selectedModule, setSelectedModule] = useState<any>(null);
   const [editingModule, setEditingModule] = useState(false);
-  const [moduleForm, setModuleForm] = useState<any>({ title: "", description: "", estimatedMinutes: 10, content: { sections: [] }, keyTakeaways: [] });
+  const [moduleForm, setModuleForm] = useState<any>({ title: "", description: "", estimatedMinutes: 10, content: { sections: [] }, keyTakeaways: [], videoUrl: "", videoSearchQuery: "" });
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [aiDraft, setAiDraft] = useState<any>(null);
   const [showCreatePathway, setShowCreatePathway] = useState(false);
   const [newPathway, setNewPathway] = useState({ title: "", category: "custom", description: "" });
   const [aiGenForm, setAiGenForm] = useState({ topic: "", ageGroup: "", sport: "", tone: "", numModules: 6, difficulty: "intermediate", goal: "" });
+  const [fullProgramMode, setFullProgramMode] = useState(false);
+  const [fullProgramForm, setFullProgramForm] = useState({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner" });
+  const [fullProgramDraft, setFullProgramDraft] = useState<any>(null);
+  const [fullProgramLoading, setFullProgramLoading] = useState(false);
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: pathwaysData, refetch: refetchPathways } = useQuery<any>({
@@ -143,6 +148,37 @@ export default function CoachEducationBuilderPage() {
   });
 
   // ── AI Helpers ─────────────────────────────────────────────────────────────
+  async function aiGenerateFullProgram() {
+    if (!fullProgramForm.prompt.trim()) return;
+    setFullProgramLoading(true);
+    setFullProgramDraft(null);
+    try {
+      const r = await fetch("/api/org/education/ai/generate-full-pathway", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(fullProgramForm),
+      });
+      const data = await r.json();
+      if (data.result) setFullProgramDraft(data.result);
+      else toast({ title: "AI Error", description: data.message ?? "Generation failed", variant: "destructive" });
+    } catch { toast({ title: "AI Error", variant: "destructive" }); }
+    setFullProgramLoading(false);
+  }
+
+  const acceptFullProgramMut = useMutation({
+    mutationFn: (draft: any) => apiRequest("POST", "/api/org/education/ai/accept-full-pathway", { draft }, headers),
+    onSuccess: (data: any) => {
+      refetchPathways();
+      setFullProgramDraft(null);
+      setFullProgramMode(false);
+      setFullProgramForm({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner" });
+      toast({ title: "Program created!", description: `${data.modulesCount} modules ready. Add YouTube links then publish.` });
+      const pathway = data.pathway;
+      if (pathway) { setSelectedPathway(pathway); setActiveTab("builder"); }
+    },
+    onError: () => toast({ title: "Error creating program", variant: "destructive" }),
+  });
+
   async function aiGeneratePathway() {
     setAiLoading("pathway");
     try {
@@ -236,6 +272,8 @@ export default function CoachEducationBuilderPage() {
         estimatedMinutes: mod.estimatedMinutes ?? 10,
         content: mod.content ?? { sections: [] },
         keyTakeaways: mod.keyTakeaways ?? [],
+        videoUrl: mod.videoUrl ?? "",
+        videoSearchQuery: mod.videoSearchQuery ?? "",
       });
       setQuizQuestions(quizData?.questions ?? []);
     } else {
@@ -254,6 +292,8 @@ export default function CoachEducationBuilderPage() {
       estimatedMinutes: moduleForm.estimatedMinutes,
       content: moduleForm.content,
       keyTakeaways: moduleForm.keyTakeaways,
+      videoUrl: moduleForm.videoUrl || null,
+      videoSearchQuery: moduleForm.videoSearchQuery || null,
       status: "draft",
     };
     if (selectedModule) {
@@ -330,7 +370,7 @@ export default function CoachEducationBuilderPage() {
             <p className="text-xs text-muted-foreground">{pathways.length} pathway{pathways.length !== 1 ? "s" : ""}</p>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
-                onClick={() => { setShowCreatePathway(false); setAiDraft(null); setActiveTab("builder"); setAiGenForm({ topic: "", ageGroup: "", sport: "", tone: "", numModules: 6, difficulty: "intermediate", goal: "" }); }}>
+                onClick={() => { setFullProgramMode(true); setFullProgramDraft(null); setActiveTab("builder"); }}>
                 <Sparkles className="h-3.5 w-3.5 text-amber-400" />AI Generate
               </Button>
               <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setShowCreatePathway(true)}>
@@ -421,12 +461,148 @@ export default function CoachEducationBuilderPage() {
 
         {/* ── BUILDER TAB ───────────────────────────────────────────────────── */}
         <TabsContent value="builder" className="flex-1 overflow-auto p-4 space-y-4 mt-0">
-          {/* AI Generate Pathway */}
-          {!selectedPathway && (
+
+          {/* ── FULL PROGRAM AI GENERATOR ───────────────────────────────────── */}
+          {fullProgramMode && !fullProgramDraft && (
+            <Card className="p-4 border-amber-500/20 bg-amber-500/5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-400" />
+                  <p className="text-sm font-semibold text-amber-400">Full Program Generator</p>
+                </div>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={() => setFullProgramMode(false)}>Cancel</Button>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Describe what you want to create. AI will generate all modules, content, quizzes, and a final test in one shot.</p>
+                <Textarea
+                  placeholder='e.g. "Create a beginner nutrition program for high school football athletes focused on pre-game fueling"'
+                  value={fullProgramForm.prompt}
+                  onChange={(e) => setFullProgramForm((p) => ({ ...p, prompt: e.target.value }))}
+                  className="text-sm min-h-[80px]"
+                  data-testid="input-full-program-prompt"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input placeholder="Age group (e.g. HS athletes)" value={fullProgramForm.ageGroup}
+                  onChange={(e) => setFullProgramForm((p) => ({ ...p, ageGroup: e.target.value }))}
+                  className="h-8 text-xs" />
+                <Input placeholder="Sport / team (e.g. football)" value={fullProgramForm.sport}
+                  onChange={(e) => setFullProgramForm((p) => ({ ...p, sport: e.target.value }))}
+                  className="h-8 text-xs" />
+                <div className="flex items-center gap-2 col-span-2">
+                  <Input placeholder="# of modules" type="number" min={2} max={8} value={fullProgramForm.numModules}
+                    onChange={(e) => setFullProgramForm((p) => ({ ...p, numModules: parseInt(e.target.value) || 4 }))}
+                    className="h-8 text-xs w-28" />
+                  <Select value={fullProgramForm.difficulty} onValueChange={(v) => setFullProgramForm((p) => ({ ...p, difficulty: v }))}>
+                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="beginner">Beginner</SelectItem>
+                      <SelectItem value="intermediate">Intermediate</SelectItem>
+                      <SelectItem value="advanced">Advanced</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Button className="w-full h-10 text-sm gap-2 bg-amber-500 hover:bg-amber-600 text-black font-semibold"
+                onClick={aiGenerateFullProgram}
+                disabled={fullProgramLoading || !fullProgramForm.prompt.trim()}
+                data-testid="button-generate-full-program">
+                {fullProgramLoading ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Generating full program — ~30 seconds</>
+                ) : (
+                  <><Sparkles className="h-4 w-4" />Generate Complete Program</>
+                )}
+              </Button>
+              {fullProgramLoading && (
+                <p className="text-xs text-center text-muted-foreground">Writing all modules, lessons, quizzes, and final test...</p>
+              )}
+            </Card>
+          )}
+
+          {/* ── FULL PROGRAM DRAFT PREVIEW ──────────────────────────────────── */}
+          {fullProgramDraft && (
+            <div className="space-y-3">
+              <Card className="p-4 border-emerald-500/20 bg-emerald-500/5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-emerald-400" />
+                  <p className="text-sm font-semibold text-emerald-400">Program Draft Ready</p>
+                </div>
+                <div>
+                  <p className="text-sm font-bold">{fullProgramDraft.pathway?.title}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{fullProgramDraft.pathway?.description}</p>
+                  <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                    <span>{fullProgramDraft.modules?.length ?? 0} modules</span>
+                    <span>{fullProgramDraft.modules?.reduce((n: number, m: any) => n + (m.quiz?.length ?? 0), 0)} module quiz questions</span>
+                    <span>{fullProgramDraft.finalTest?.length ?? 0} final test questions</span>
+                  </div>
+                </div>
+              </Card>
+
+              {(fullProgramDraft.modules ?? []).map((m: any, i: number) => (
+                <Card key={i} className="p-3 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-5">{m.moduleNumber}.</span>
+                    <p className="text-sm font-medium flex-1">{m.title}</p>
+                    <span className="text-xs text-muted-foreground">{m.estimatedMinutes} min</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground ml-7">{m.description}</p>
+                  <div className="ml-7 flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <FileText className="h-3 w-3" />
+                      <span>{m.sections?.length ?? 0} sections</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <CheckCircle className="h-3 w-3" />
+                      <span>{m.quiz?.length ?? 0} quiz questions</span>
+                    </div>
+                    {m.videoSearchQuery && (
+                      <div className="flex items-center gap-1 text-amber-400/70">
+                        <Youtube className="h-3 w-3" />
+                        <span className="truncate max-w-[120px]">{m.videoSearchQuery}</span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              ))}
+
+              {(fullProgramDraft.finalTest?.length ?? 0) > 0 && (
+                <Card className="p-3 border-primary/20 bg-primary/5">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium">Final Test</p>
+                    <span className="text-xs text-muted-foreground ml-auto">{fullProgramDraft.finalTest.length} questions</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Comprehensive assessment covering all modules. Athletes must pass to earn their badge.</p>
+                </Card>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <Button className="flex-1 h-10 text-sm gap-1.5"
+                  onClick={() => acceptFullProgramMut.mutate(fullProgramDraft)}
+                  disabled={acceptFullProgramMut.isPending}
+                  data-testid="button-accept-full-program">
+                  {acceptFullProgramMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  Create Program
+                </Button>
+                <Button variant="outline" className="h-10 text-sm gap-1.5"
+                  onClick={() => { setFullProgramDraft(null); }}
+                  disabled={acceptFullProgramMut.isPending}>
+                  <RefreshCw className="h-4 w-4" />Regenerate
+                </Button>
+                <Button variant="ghost" className="h-10 text-sm text-muted-foreground"
+                  onClick={() => { setFullProgramDraft(null); setFullProgramMode(false); }}>
+                  Discard
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* AI Generate Pathway (outline only mode) */}
+          {!selectedPathway && !fullProgramMode && !fullProgramDraft && (
             <Card className="p-4 border-amber-500/20 bg-amber-500/5 space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-amber-400" />
-                <p className="text-sm font-medium">AI Generate Pathway</p>
+                <p className="text-sm font-medium">AI Generate Outline Only</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <Input placeholder="Topic (e.g. Recovery)" value={aiGenForm.topic}
@@ -454,7 +630,7 @@ export default function CoachEducationBuilderPage() {
           )}
 
           {/* AI Draft Result */}
-          {aiDraft && (
+          {aiDraft && !fullProgramMode && (
             <Card className="p-4 border-amber-500/20 bg-amber-500/5 space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-amber-400" />
@@ -605,6 +781,42 @@ export default function CoachEducationBuilderPage() {
                   {aiLoading === "module" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   AI Generate Module Content
                 </Button>
+              </Card>
+
+              {/* Video Section */}
+              <Card className="p-4 space-y-3 border-rose-500/10">
+                <div className="flex items-center gap-2">
+                  <Youtube className="h-4 w-4 text-rose-400" />
+                  <p className="text-sm font-medium">YouTube Video</p>
+                  <span className="text-xs text-muted-foreground">(optional)</span>
+                </div>
+                {moduleForm.videoSearchQuery && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                    <Search className="h-3 w-3 text-amber-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-amber-400 font-medium">AI-suggested search</p>
+                      <p className="text-xs text-muted-foreground truncate">{moduleForm.videoSearchQuery}</p>
+                    </div>
+                    <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(moduleForm.videoSearchQuery)}`}
+                      target="_blank" rel="noopener noreferrer">
+                      <Button size="sm" variant="ghost" className="h-7 text-xs text-amber-400 hover:bg-amber-500/10 flex-shrink-0">
+                        Search
+                      </Button>
+                    </a>
+                  </div>
+                )}
+                <Input
+                  placeholder="Paste YouTube URL (e.g. https://youtube.com/watch?v=...)"
+                  value={moduleForm.videoUrl}
+                  onChange={(e) => setModuleForm((p: any) => ({ ...p, videoUrl: e.target.value }))}
+                  className="h-9 text-sm"
+                  data-testid="input-module-video-url"
+                />
+                {moduleForm.videoUrl && (
+                  <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle className="h-3 w-3" />Video link saved — athletes will see an embedded player
+                  </p>
+                )}
               </Card>
 
               {/* Sections Editor */}

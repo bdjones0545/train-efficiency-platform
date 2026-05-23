@@ -2181,6 +2181,8 @@ export const educationModules = pgTable("education_modules", {
   content: jsonb("content").notNull().default({}),
   keyTakeaways: jsonb("key_takeaways").notNull().default([]),
   estimatedMinutes: integer("estimated_minutes").default(10),
+  videoUrl: varchar("video_url"),
+  videoSearchQuery: varchar("video_search_query"),
   status: varchar("status").notNull().default("draft"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -2195,6 +2197,7 @@ export const educationQuizQuestions = pgTable("education_quiz_questions", {
   options: jsonb("options").notNull().default([]),
   correctAnswer: integer("correct_answer").notNull(),
   explanation: text("explanation"),
+  questionType: varchar("question_type").notNull().default("module"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
