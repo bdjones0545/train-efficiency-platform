@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
 import { getAuthHeaders } from "@/lib/authToken";
-import { logoutAllSessions } from "@/lib/logout";
+import { logoutAllSessions, getLogoutRedirectPath } from "@/lib/logout";
 
 async function fetchUser(): Promise<User | null> {
   const response = await fetch("/api/auth/user", {
@@ -32,7 +32,13 @@ export function useAuth() {
     user,
     isLoading,
     isAuthenticated: !!user,
-    logout: () => logoutAllSessions("/"),
+    /**
+     * Log out the current user. If `redirectUrl` is provided it is used
+     * directly; otherwise the best available org slug from localStorage is
+     * used to redirect to `/org/:slug`, falling back to `/`.
+     */
+    logout: (redirectUrl?: string) =>
+      logoutAllSessions(redirectUrl ?? getLogoutRedirectPath()),
     isLoggingOut: false,
   };
 }

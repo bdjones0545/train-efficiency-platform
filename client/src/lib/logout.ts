@@ -1,6 +1,25 @@
 import { clearAuthToken, getAuthHeaders } from "./authToken";
 import { queryClient } from "./queryClient";
 
+const LAST_ORG_SLUG_KEY = "lastOrgSlug";
+
+/**
+ * Persist the current org slug so it can be used as a redirect fallback
+ * even after auth tokens are cleared. Call this when the org context is known.
+ */
+export function setLastOrgSlug(slug: string): void {
+  if (slug) localStorage.setItem(LAST_ORG_SLUG_KEY, slug);
+}
+
+/**
+ * Returns the best logout redirect path given an optional org slug.
+ * Falls back to the value stored in localStorage, then to "/".
+ */
+export function getLogoutRedirectPath({ orgSlug }: { orgSlug?: string | null } = {}): string {
+  const slug = orgSlug || localStorage.getItem(LAST_ORG_SLUG_KEY);
+  return slug ? `/org/${slug}` : "/";
+}
+
 function getAllOrgTokenKeys(): string[] {
   return Object.keys(localStorage).filter(
     (k) =>
@@ -8,7 +27,8 @@ function getAllOrgTokenKeys(): string[] {
       k === "selectedOrgId" ||
       k === "orgMembership" ||
       k === "orgSession" ||
-      k === "workspaceMode"
+      k === "workspaceMode" ||
+      k === LAST_ORG_SLUG_KEY
   );
 }
 

@@ -70,6 +70,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { clearAuthToken } from "@/lib/authToken";
+import { setLastOrgSlug } from "@/lib/logout";
 import logoImg from "@assets/IMG_7961_1771105509253.jpeg";
 import type { UserProfile } from "@shared/schema";
 import { cn } from "@/lib/utils";
@@ -643,6 +644,11 @@ export function AppSidebar() {
       }))
     : [];
 
+  // Persist org slug to localStorage so logout can redirect back to the org page
+  useEffect(() => {
+    if (orgSlug) setLastOrgSlug(orgSlug);
+  }, [orgSlug]);
+
   // ── Attention count chip handled inline via AttentionCountChip component ─────
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1048,7 +1054,7 @@ export function AppSidebar() {
                   variant="ghost"
                   className="h-7 w-7 flex-shrink-0"
                   data-testid="button-logout"
-                  onClick={() => logout()}
+                  onClick={() => logout(orgSlug ? `/org/${orgSlug}` : undefined)}
                 >
                   <LogOut className="h-3.5 w-3.5" />
                 </Button>
