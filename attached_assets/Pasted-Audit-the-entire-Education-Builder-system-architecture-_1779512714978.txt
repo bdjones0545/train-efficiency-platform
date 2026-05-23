@@ -1,0 +1,170 @@
+Audit the entire Education Builder system architecture, UX flow, AI capabilities, scalability, and athlete learning experience for TrainEfficiency.
+
+Current system includes:
+
+* Pathways
+* Builder
+* Assignments
+* Analytics
+* Rules
+* Plans
+* Progress
+* AI Generate button
+
+GOAL:
+Determine whether the current Education Builder is functioning like a basic content management system (CMS) instead of an adaptive athlete education engine, and identify how to evolve it into a differentiated AI-powered learning system for sports performance organizations.
+
+Perform a deep audit across the following areas:
+
+1. PRODUCT POSITIONING
+
+* Does the current UX feel like:
+    a) a static LMS/course builder
+    b) an adaptive athlete learning system
+* Evaluate naming conventions:
+    * Pathways
+    * Builder
+    * Assignments
+    * Rules
+    * Plans
+* Recommend stronger terminology if needed.
+
+2. COACH WORKFLOW AUDIT
+    Evaluate the ideal workflow for a coach/admin creating education content.
+
+Current hypothesis:
+A coach should be able to type:
+“Create a beginner nutrition program for high school football athletes”
+
+Then the AI should generate:
+
+* pathway title
+* learning objectives
+* modules
+* lessons
+* YouTube videos
+* AI-generated summaries
+* quizzes/tests
+* completion rules
+* progression logic
+* remediation logic
+* athlete checkpoints
+
+Audit whether this workflow is superior to manual lesson creation.
+
+3. AI GENERATION SYSTEM
+    Audit how the AI Generate system should work.
+
+Recommend:
+
+* structured generation pipeline
+* prompt architecture
+* editable draft system
+* deterministic output formatting
+* video sourcing strategy
+* quiz generation logic
+* athlete age adaptation
+* reading level adaptation
+* evidence-based filtering
+* hallucination prevention
+
+4. EDUCATION PERIODIZATION
+    Audit whether the Plans system should function like:
+
+* educational periodization
+* progressive curriculum sequencing
+* adaptive athlete development
+
+Examples:
+Week 1 = hydration
+Week 2 = recovery
+Week 3 = fueling
+Week 4 = supplements
+
+Determine how education sequencing should integrate with training programs and readiness systems.
+
+5. RULES ENGINE
+    Audit the Rules architecture.
+
+Recommend systems such as:
+
+* minimum passing score
+* prerequisite modules
+* adaptive remediation
+* auto reassignment
+* coach intervention triggers
+* unlock conditions
+* streak logic
+* compliance scoring
+
+6. ATHLETE EXPERIENCE
+    Audit the athlete-side experience.
+
+Should include:
+
+* bite-sized learning
+* progress tracking
+* quizzes/tests
+* gamification
+* badges
+* completion rewards
+* AI explanations
+* recap summaries
+* mobile-first learning flow
+
+Determine how to maximize engagement and retention for athletes.
+
+7. ANALYTICS & INTELLIGENCE
+    Audit the analytics opportunities.
+
+Potential metrics:
+
+* completion rate
+* quiz accuracy
+* retention decay
+* weak concepts
+* engagement time
+* coach intervention frequency
+* pathway effectiveness
+* readiness correlation
+
+Recommend the highest-value analytics systems.
+
+8. DIFFERENTIATION
+    Compare the vision against:
+
+* Teambuildr
+* Trainerize
+* BridgeAthletic
+* CoachMePlus
+* Kajabi/LMS systems
+
+Determine what would make TrainEfficiency’s education engine unique.
+
+9. LONG-TERM AGENTIC VISION
+    Audit how education should connect with:
+
+* readiness
+* recovery
+* compliance
+* behavior modification
+* adaptive workflows
+* intervention systems
+* AI recommendations
+
+Examples:
+“If hydration readiness trends are poor, automatically assign hydration pathway.”
+
+10. FINAL OUTPUT
+    Provide:
+
+* current weaknesses
+* biggest opportunities
+* recommended architecture
+* ideal coach workflow
+* ideal athlete workflow
+* MVP version
+* advanced AI version
+* highest-leverage features to build first
+
+The final recommendation should position TrainEfficiency as an AI-powered adaptive athlete learning and behavior system — not just a static education content builder.
