@@ -1,0 +1,86 @@
+Fix TrainEfficiency org role authorization drift.
+
+Current bug:
+The sidebar correctly shows the user as:
+- Bryan Jones
+- Role: Admin
+- Org: Efficiency Strength Training
+
+But when navigating to org pages like:
+- Teams
+- Communications
+- My Profile
+
+The page content shows unauthenticated/unauthorized states:
+- “Coach login required to manage teams”
+- “Coach authentication required”
+- “Log in to manage your profile”
+
+Expected behavior:
+If the authenticated user is an org admin or org coach, they should have access to org-protected pages.
+
+Fix requirements:
+1. Audit all protected org pages/components that show login-required states:
+   - Teams
+   - Communications
+   - My Profile
+   - Notifications
+   - Athlete Status
+   - Workflows
+   - Program Tools
+   - Scheduling
+   - Users/Clients
+   - Dashboard
+
+2. Replace page-level auth checks that only look for `coach`, `coachId`, or `isCoach` with a shared org auth check:
+   - authenticated user exists
+   - active org exists
+   - user has active membership in that org
+   - role is `admin`, `owner`, or `coach`
+
+3. Create one shared helper/hook if needed:
+   `useOrgAccess()`
+
+It should return:
+   - user
+   - org
+   - orgId
+   - orgSlug
+   - role
+   - isOrgAdmin
+   - isOrgCoach
+   - canManageOrg
+   - isAuthenticated
+   - isLoading
+
+4. Authorization rules:
+   - owner/admin: full access to every org management page
+   - coach: access to all coach/org tools unless explicitly owner-only
+   - athlete/client: no access to admin/coach org dashboard pages
+   - unauthenticated: show login prompt
+
+5. Fix route guards and layout guards.
+   The sidebar should not show admin/coach navigation unless the same auth context allows access to those pages.
+   The page guard and sidebar guard must use the same source of truth.
+
+6. Fix API calls if needed.
+   If these pages call endpoints that expect `coachId`, update the backend to resolve access by authenticated user + org membership instead of requiring a coach-only record.
+
+7. Preserve org context.
+   Pages should resolve the active org from:
+   - route params
+   - current org context
+   - user membership
+   - stored activeOrgSlug fallback
+
+8. Do not create separate special cases for Bryan.
+   This must work for any admin or coach in any organization.
+
+Acceptance tests:
+- Log in as org admin.
+- Open Teams → page loads, no login-required screen.
+- Open Communications → page loads, no coach authentication error.
+- Open My Profile → page loads, no login-required screen.
+- Refresh each page directly on mobile Safari → still authorized.
+- Log out → protected pages show login prompt.
+- Log in as athlete/client → protected admin/coach pages remain blocked.
