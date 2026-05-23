@@ -15046,6 +15046,10 @@ Respond with this exact JSON structure:
   const { registerAthleteProfileRoutes } = await import("./athlete-profile-routes");
   registerAthleteProfileRoutes(app);
 
+  // ── Phase 4: Organization Intelligence Orchestration ─────────────────────────
+  const { registerOrchestrationRoutes } = await import("./orchestration/orchestration-routes");
+  registerOrchestrationRoutes(app);
+
   // ── Coach Command Center + Daily AI Briefing ──────────────────────────────────
   const { registerCoachCommandCenterRoutes } = await import("./coach-command-center-routes");
   registerCoachCommandCenterRoutes(app);

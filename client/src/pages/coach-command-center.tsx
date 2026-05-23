@@ -11,6 +11,9 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
 import { InterventionPriorityQueue } from "@/components/intervention-priority-queue";
 import { InterventionEffectivenessDashboard } from "@/components/intervention-effectiveness-dashboard";
+import { OrgHealthOverview } from "@/components/org-health-overview";
+import { DailyOperationsPanel } from "@/components/daily-operations-panel";
+import { EventStreamPanel } from "@/components/event-stream-panel";
 import {
   Brain,
   RefreshCw,
@@ -599,6 +602,18 @@ export default function CoachCommandCenterPage() {
         </Card>
       )}
 
+      {/* ── Phase 4: Daily Ops + Org Health ──────────────────────────── */}
+      {orgId && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="p-4" data-testid="section-daily-ops">
+            <DailyOperationsPanel orgId={orgId} headers={headers} />
+          </Card>
+          <Card className="p-4" data-testid="section-org-health">
+            <OrgHealthOverview orgId={orgId} headers={headers} />
+          </Card>
+        </div>
+      )}
+
       {/* ── Second row ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Performance Highlights */}
@@ -802,6 +817,13 @@ export default function CoachCommandCenterPage() {
           </div>
         </Card>
       </div>
+
+      {/* ── Phase 4: Event Stream ──────────────────────────────────────── */}
+      {orgId && (
+        <Card className="p-4" data-testid="section-event-stream">
+          <EventStreamPanel orgId={orgId} headers={headers} />
+        </Card>
+      )}
     </div>
   );
 }

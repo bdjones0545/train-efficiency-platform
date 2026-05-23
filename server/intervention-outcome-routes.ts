@@ -190,6 +190,26 @@ export function registerInterventionOutcomeRoutes(app: Express) {
         outcomeStatus: "pending_evaluation",
       }).returning();
 
+      // Phase 4: Publish intervention approved event (non-blocking)
+      setImmediate(async () => {
+        try {
+          const { publishEvent } = await import("./events/event-bus");
+          publishEvent("athlete.intervention.approved", {
+            athleteUserId,
+            athleteName: (ctx as any)?.athleteName ?? athleteUserId,
+            interventionType,
+            draftId: adaptationDraftId ?? outcome.id,
+            approvedBy: auth.userId,
+            outcomeTrackingId: outcome.id,
+          }, {
+            orgId: auth.orgId,
+            sourceSystem: "intervention-outcome-routes",
+            athleteUserId,
+            idempotencyKey: `approved:${outcome.id}`,
+          });
+        } catch {}
+      });
+
       return res.status(201).json({ outcome });
     } catch (err: any) {
       console.error("[Outcomes] create error:", err);

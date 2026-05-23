@@ -380,6 +380,73 @@ export async function buildAthleteContextObject(
     });
   }
 
+  // ── Phase 4: Publish intelligence events based on context signals ──────────
+  // Non-blocking, failure-safe. Events feed the organization intelligence orchestrator.
+  setImmediate(async () => {
+    try {
+      const { publishEvent } = await import("../events/event-bus");
+      const athleteName = (athleteProfile[0] as any)?.fullName ??
+        (athleteProfile[0] as any)?.username ?? athleteUserId;
+      const eventContext = { orgId, sourceSystem: "athlete-context-broker", athleteUserId };
+
+      // Readiness event — only publish if declining or critically low
+      if (readinessTrendLabel === "low") {
+        const prevReadiness = (previousContext?.contextData as any)?.readinessTrend;
+        publishEvent("athlete.readiness.updated", {
+          athleteUserId, athleteName,
+          readinessScore: rpeAvg ?? 4,
+          trend: prevReadiness === "low" ? "declining" : "declining",
+          daysLow: 3,
+          contextSnapshotId: result.id,
+        }, { ...eventContext, idempotencyKey: `readiness:${orgId}:${athleteUserId}:${new Date().toISOString().slice(0, 13)}` });
+      }
+
+      // Compliance event — publish when below threshold
+      if (complianceRate < 65) {
+        const prevRate = (previousContext?.contextData as any)?.complianceRate;
+        publishEvent("athlete.compliance.declined", {
+          athleteUserId, athleteName,
+          complianceRate,
+          previousRate: prevRate ?? undefined,
+          contextSnapshotId: result.id,
+        }, { ...eventContext, idempotencyKey: `compliance:${orgId}:${athleteUserId}:${new Date().toISOString().slice(0, 13)}` });
+      }
+
+      // Risk escalation event — publish when risk level changes to red/yellow
+      const prevRisk = (previousContext?.contextData as any)?.riskLevel ?? "green";
+      if ((riskLevel === "red" || riskLevel === "yellow") && riskLevel !== prevRisk) {
+        publishEvent("athlete.risk.escalated", {
+          athleteUserId, athleteName,
+          riskLevel: riskLevel as "red" | "yellow",
+          previousRiskLevel: prevRisk,
+          triggerSignals: [
+            ...(readinessTrendLabel === "low" ? ["readiness_low"] : []),
+            ...(complianceRate < 50 ? ["compliance_critical"] : []),
+            ...(rpeAvg != null && rpeAvg >= 8 ? ["high_rpe"] : []),
+            ...(injuryNotes.length > 0 ? ["pain_reported"] : []),
+          ],
+          contextSnapshotId: result.id,
+        }, { ...eventContext, idempotencyKey: `risk:${orgId}:${athleteUserId}:${riskLevel}:${new Date().toISOString().slice(0, 10)}` });
+      }
+
+      // Pain event — if new pain noted since last context build
+      if (injuryNotes.length > 0) {
+        const latestPain = injuryNotes[0];
+        const prevInjuryCount = ((previousContext?.contextData as any)?.injuryNotes?.length ?? 0);
+        if (injuryNotes.length > prevInjuryCount) {
+          const areas = (latestPain.areas as string[] | null)?.join(", ") ?? "unknown";
+          publishEvent("athlete.pain.reported", {
+            athleteUserId, athleteName,
+            painLocation: areas,
+            reportedAt: new Date().toISOString(),
+          }, { ...eventContext, idempotencyKey: `pain:${orgId}:${athleteUserId}:${new Date().toISOString().slice(0, 10)}` });
+        }
+      }
+    } catch {
+      // Never throw — events are best-effort
+    }
+  });
+
   return result;
 }
 

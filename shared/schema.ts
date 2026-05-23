@@ -3038,3 +3038,51 @@ export const interventionOutcomes = pgTable("intervention_outcomes", {
 export const insertInterventionOutcomeSchema = createInsertSchema(interventionOutcomes).omit({ id: true, createdAt: true, updatedAt: true });
 export type InterventionOutcome = typeof interventionOutcomes.$inferSelect;
 export type InsertInterventionOutcome = z.infer<typeof insertInterventionOutcomeSchema>;
+
+// ─── Phase 4: Event-Driven Organizational Intelligence ───────────────────────
+
+export const organizationEventLog = pgTable("organization_event_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  eventId: text("event_id").notNull().unique(),
+  eventType: text("event_type").notNull(),
+  sourceSystem: text("source_system").notNull(),
+  athleteUserId: text("athlete_user_id"),
+  coachUserId: text("coach_user_id"),
+  payload: jsonb("payload"),
+  triggeredWorkflows: jsonb("triggered_workflows"),
+  resultingActions: jsonb("resulting_actions"),
+  resolutionState: text("resolution_state").notNull().default("open"),
+  resolvedAt: timestamp("resolved_at"),
+  escalationLevel: integer("escalation_level").default(0),
+  correlationId: text("correlation_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOrganizationEventLogSchema = createInsertSchema(organizationEventLog).omit({ id: true, createdAt: true });
+export type OrganizationEventLog = typeof organizationEventLog.$inferSelect;
+export type InsertOrganizationEventLog = z.infer<typeof insertOrganizationEventLogSchema>;
+
+export const organizationIntelligenceState = pgTable("organization_intelligence_state", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull().unique(),
+  overallHealthScore: integer("overall_health_score").default(100),
+  interventionLoad: integer("intervention_load").default(0),
+  criticalAthleteCount: integer("critical_athlete_count").default(0),
+  unresolvedCriticalAthletes: jsonb("unresolved_critical_athletes"),
+  coachWorkloadScore: integer("coach_workload_score").default(0),
+  complianceHealthScore: integer("compliance_health_score").default(100),
+  engagementTrendDirection: text("engagement_trend_direction").default("stable"),
+  fatigueRiskLevel: text("fatigue_risk_level").default("low"),
+  recoveryTrendDirection: text("recovery_trend_direction").default("stable"),
+  readinessDistribution: jsonb("readiness_distribution"),
+  predictedChurnRisks: integer("predicted_churn_risks").default(0),
+  unresolvedInterventions: integer("unresolved_interventions").default(0),
+  lastDailyOpsAt: timestamp("last_daily_ops_at"),
+  lastUpdatedAt: timestamp("last_updated_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrganizationIntelligenceStateSchema = createInsertSchema(organizationIntelligenceState).omit({ id: true, updatedAt: true });
+export type OrganizationIntelligenceState = typeof organizationIntelligenceState.$inferSelect;
+export type InsertOrganizationIntelligenceState = z.infer<typeof insertOrganizationIntelligenceStateSchema>;

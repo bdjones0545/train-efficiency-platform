@@ -448,6 +448,26 @@ app.use((req, res, next) => {
   };
   setInterval(runOutcomeEvalCron, 6 * 60 * 60 * 1000); // every 6 hours
 
+  // ─── Phase 4: Event-Driven Organization Intelligence ─────────────────────
+  // Initialize the orchestrator (registers all event bus subscriptions).
+  const { initializeOrchestrator } = await import("./orchestration/organization-intelligence-orchestrator");
+  initializeOrchestrator();
+
+  // ─── Phase 4: Daily Operations Engine Cron ───────────────────────────────
+  // Generates a proactive daily brief each morning and on a 6-hour cycle.
+  const runDailyOpsCron = async () => {
+    try {
+      const { runDailyOperationsCron } = await import("./services/daily-operations-engine");
+      const result = await runDailyOperationsCron();
+      if (result.orgs > 0) console.log(`[DailyOps] Brief generated for ${result.orgs} orgs (${result.errors} errors)`);
+    } catch (err: any) {
+      console.error("[DailyOps] Cron error:", err?.message ?? err);
+    }
+  };
+  setInterval(runDailyOpsCron, 6 * 60 * 60 * 1000); // every 6 hours
+  // Run at 6 AM each day via a smart scheduler (first run: 8 minutes after startup)
+  setTimeout(runDailyOpsCron, 8 * 60 * 1000);
+
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
 

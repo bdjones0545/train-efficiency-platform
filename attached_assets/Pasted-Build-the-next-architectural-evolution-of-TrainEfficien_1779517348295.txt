@@ -1,0 +1,306 @@
+Build the next architectural evolution of TrainEfficiency:
+Event-Driven Organizational Intelligence + Cross-Agent Orchestration Layer.
+
+Current state:
+TrainEfficiency now has:
+
+* Athlete Context Objects
+* adaptation draft generation
+* intervention prioritization
+* intervention outcome tracking
+* effectiveness learning
+* Command Center intelligence
+* WorkflowOrchestrator
+* GlobalPriorityEngine
+* TrainChat integration
+* AI outreach/scheduling/business agents
+
+However:
+Most systems still operate in isolated request/response flows.
+
+GOAL:
+Transform TrainEfficiency from:
+“multiple intelligent systems”
+
+into:
+“a coordinated event-driven intelligence network.”
+
+This phase introduces:
+
+1. event-driven architecture
+2. cross-agent communication
+3. organization-wide intelligence orchestration
+4. asynchronous state propagation
+5. coordinated intervention workflows
+
+PHASE 4 REQUIREMENTS
+
+1. EVENT BUS FOUNDATION
+
+Create:
+server/events/event-bus.ts
+
+Requirements:
+
+* lightweight internal event bus
+* publish/subscribe architecture
+* async non-blocking event dispatch
+* retry-safe handling
+* structured event payloads
+* event metadata + timestamps
+
+Core API:
+
+* publishEvent(type, payload)
+* subscribeToEvent(type, handler)
+* unsubscribe(handlerId)
+
+2. SYSTEM-WIDE EVENT TYPES
+
+Create standardized events for all major athlete/org actions.
+
+Examples:
+
+Athlete events:
+
+* athlete.readiness.updated
+* athlete.compliance.declined
+* athlete.risk.escalated
+* athlete.session.completed
+* athlete.session.missed
+* athlete.pain.reported
+* athlete.intervention.created
+* athlete.intervention.approved
+* athlete.intervention.failed
+* athlete.education.completed
+
+Business events:
+
+* org.revenue.drop.detected
+* org.schedule.gap.detected
+* org.lead.high_value.detected
+* org.retention.risk.detected
+
+Coach events:
+
+* coach.overloaded
+* coach.intervention.pending
+* coach.followup.required
+
+3. CROSS-AGENT ORCHESTRATION LAYER
+
+Create:
+server/orchestration/organization-intelligence-orchestrator.ts
+
+Responsibilities:
+
+* listen for events
+* determine downstream effects
+* trigger appropriate agents/workflows
+* coordinate actions across systems
+* avoid duplicate/conflicting interventions
+
+Examples:
+
+* readiness drop → adaptation draft + education recommendation
+* compliance decline → outreach draft + retention workflow
+* injury report → recovery recommendation + coach alert
+* schedule gap → revenue/re-engagement workflow
+
+4. AGENT COMMUNICATION MODEL
+
+Agents should no longer operate independently.
+
+Agents should:
+
+* subscribe to relevant events
+* react to org state changes
+* emit their own events
+* coordinate through the event bus
+
+Examples:
+Compliance Agent emits:
+
+* athlete.compliance.declined
+
+Retention Agent reacts:
+
+* drafts re-engagement outreach
+
+Education Agent reacts:
+
+* recommends adherence module
+
+Command Center reacts:
+
+* elevates athlete priority
+
+5. INTERVENTION ESCALATION CHAINS
+
+Create escalation logic.
+
+Example:
+Day 1:
+
+* low readiness detected
+    → monitor only
+
+Day 3:
+
+* readiness still low
+    → adaptation draft
+
+Day 5:
+
+* missed sessions begin
+    → outreach draft + coach notification
+
+Day 7:
+
+* unresolved
+    → high-priority intervention queue
+
+The system should understand:
+
+* duration
+* worsening trends
+* unresolved interventions
+
+6. COORDINATED MULTI-ACTION WORKFLOWS
+
+Build composite intervention workflows.
+
+Example:
+Athlete fatigue escalation:
+
+1. Generate deload draft
+2. Assign recovery education
+3. Notify coach
+4. Suggest recovery session scheduling
+5. Monitor for 5 days
+6. Re-evaluate automatically
+
+All tied together as one orchestration object.
+
+7. EVENT HISTORY + AUDIT TIMELINE
+
+Create:
+organization_event_log table
+
+Store:
+
+* event type
+* source system
+* payload
+* triggered workflows
+* resulting actions
+* timestamps
+* resolution state
+
+Build:
+Athlete Intelligence Timeline UI
+
+Show:
+
+* readiness changes
+* interventions
+* adaptations
+* outreach
+* education assignments
+* coach actions
+* outcomes
+
+Chronologically.
+
+8. ORGANIZATIONAL INTELLIGENCE STATE
+
+Create:
+organization_intelligence_state table
+
+Track:
+
+* org-wide fatigue risk
+* intervention load
+* unresolved critical athletes
+* coach workload
+* compliance health
+* engagement trends
+* recovery trend
+* readiness distribution
+
+Used by:
+
+* Business Brain
+* Command Center
+* Executive summaries
+
+9. PROACTIVE DAILY OPERATIONS ENGINE
+
+Every morning:
+Generate:
+
+* critical athlete list
+* unresolved intervention queue
+* predicted churn risks
+* coach action priorities
+* recommended org actions
+* recovery bottlenecks
+* staffing concerns
+
+Push proactively into:
+
+* Command Center
+* coach briefing
+* optional email digest
+
+10. SAFETY + STABILITY
+
+Requirements:
+
+* idempotent event handling
+* no duplicate workflows
+* workflow conflict prevention
+* escalation cooldowns
+* retry-safe event delivery
+* failure isolation
+* event timeout handling
+
+11. UI UPGRADES
+
+Add:
+
+* Athlete Intelligence Timeline
+* Organization Health Overview
+* Escalation Tracking
+* Active Workflow Monitor
+* Event Stream panel
+* Cross-agent activity feed
+
+12. FINAL GOAL
+
+TrainEfficiency should evolve from:
+“AI-enhanced coaching software”
+
+into:
+“a coordinated organizational intelligence system where all athlete, coach, scheduling, outreach, readiness, education, and intervention systems communicate and adapt together over time.”
+
+Important:
+Do NOT introduce black-box autonomy.
+Maintain:
+
+* explainability
+* human review
+* draft-first safety
+* auditability
+* deterministic orchestration rules where possible
+
+Extend existing:
+
+* WorkflowOrchestrator
+* GlobalPriorityEngine
+* Athlete Context Objects
+* adaptation drafts
+* intervention learning
+* Business Brain
+* Command Center
+* TrainChat integration
