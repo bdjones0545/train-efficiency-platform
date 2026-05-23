@@ -1,0 +1,70 @@
+Audit and rebuild TrainEfficiency authorization + workspace architecture.
+
+Current issue:
+Org admins/coaches do not consistently retain access across the platform. Certain routes (ex: Command Center) incorrectly show "Coach authentication required" even while authenticated as org admin.
+
+The sidebar/navigation also changes shape drastically between contexts, making the app feel fragmented instead of like a unified operating system.
+
+GOAL:
+Create a unified workspace architecture with centralized permissions and progressive disclosure.
+
+Requirements:
+
+1. Create a centralized permission system:
+- usePermissions()
+- getUserWorkspaceRole()
+- canAccess(permission)
+
+Permissions should derive from:
+- authenticated user
+- org membership
+- org role
+- coach status
+- ownership status
+
+2. Create explicit roles:
+- athlete
+- coach
+- admin
+- owner
+
+3. Add normalized permission flags:
+canAccessCommandCenter
+canManageAthletes
+canManageScheduling
+canViewRevenue
+canManageWorkflows
+canManageAI
+canManageOrganization
+canViewAnalytics
+canManageBilling
+
+4. Remove scattered checks like:
+- if (!coachProfile)
+- if (!orgId)
+- if (!isCoach)
+
+Replace all route gating with centralized permission helpers.
+
+5. Org admins and owners should automatically inherit all coach permissions.
+
+6. Convert the sidebar into a unified navigation system:
+- same structure across contexts
+- sections collapse/expand
+- inaccessible tools show locked or hidden state
+- avoid completely different sidebars between portal/admin modes
+
+7. Fix Command Center auth bug:
+Currently org admins are blocked because route checks rely on coachProfile existence instead of organization role permissions.
+
+8. Add hydration-safe auth loading:
+Prevent permission flicker during React Query/user hydration.
+
+9. Ensure mobile sidebar preserves:
+- active section state
+- organization context
+- workspace mode
+- notification badges
+
+10. Final UX target:
+TrainEfficiency should feel like one unified AI operating system that adapts to the user role — not multiple disconnected dashboards.
