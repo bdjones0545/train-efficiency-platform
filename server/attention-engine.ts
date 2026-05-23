@@ -67,6 +67,25 @@ function severityToLevel(severity: string): string {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export async function syncAttentionItems(orgId: string): Promise<void> {
+  const now = new Date();
+
+  // Dismiss stale recurring alerts (scheduling + subscription source, older than 7 days)
+  // so that fresh counts replace them rather than stacking up week-over-week.
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  try {
+    await db
+      .update(attentionItems)
+      .set({ status: "dismissed", updatedAt: now })
+      .where(
+        and(
+          eq(attentionItems.orgId, orgId),
+          inArray(attentionItems.status, ["active"]),
+          inArray(attentionItems.source, ["scheduling", "subscriptions"]),
+          lt(attentionItems.createdAt, sevenDaysAgo)
+        )
+      );
+  } catch {}
+
   // Load existing sourceIds for this org (skip dismissed/completed so they can't re-appear)
   const existing = await db
     .select({ sourceId: attentionItems.sourceId })
@@ -85,8 +104,6 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
     if (item.sourceId && existingIds.has(item.sourceId)) return;
     toInsert.push(item);
   };
-
-  const now = new Date();
 
   // ── 1. Pending Approvals (agentToolCalls) ─────────────────────────────────
   try {
@@ -428,7 +445,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         body: "These clients have cancelled and will lose access soon. Re-engagement now could prevent churn.",
         source: "subscriptions",
         sourceId: `expiring-subs-w${weekKey}`,
-        actionUrl: "/admin/subscriptions",
+        actionUrl: "/admin/subscription",
         actionLabel: "View Subscriptions",
         status: "active",
         ...d,
@@ -483,7 +500,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           body: "These clients have had no sessions in over a month. Proactive re-engagement outreach could recover revenue.",
           source: "scheduling",
           sourceId: `inactive-clients-30d-w${weekKey}`,
-          actionUrl: "/admin/clients",
+          actionUrl: "/coach/users",
           actionLabel: "View Clients",
           status: "active",
           ...d,
@@ -536,7 +553,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           body: "These clients created accounts but haven't scheduled their first session. A personal touch could convert them.",
           source: "scheduling",
           sourceId: `never-booked-w${weekKey}`,
-          actionUrl: "/admin/clients",
+          actionUrl: "/coach/users",
           actionLabel: "View Clients",
           status: "active",
           ...d,
@@ -582,7 +599,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           body: "A coach is nearing or exceeding healthy session capacity. Consider redistributing load or adding staff.",
           source: "scheduling",
           sourceId: `coach-overload-${coachId}-d${dayKey}`,
-          actionUrl: "/schedule",
+          actionUrl: "/scheduling",
           actionLabel: "View Schedule",
           status: "active",
           ...d,
@@ -638,7 +655,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           body: "Idle coach capacity represents unrealized revenue. Consider promoting availability or reallocating bookings.",
           source: "scheduling",
           sourceId: `low-util-coaches-w${weekKey}`,
-          actionUrl: "/schedule",
+          actionUrl: "/scheduling",
           actionLabel: "View Schedule",
           status: "active",
           ...d,

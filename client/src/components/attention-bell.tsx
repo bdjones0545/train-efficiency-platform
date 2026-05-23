@@ -80,6 +80,61 @@ type AttentionItem = {
   createdAt: string;
 };
 
+// ── Route safety ──────────────────────────────────────────────────────────────
+
+const VALID_ROUTES = new Set([
+  "/admin",
+  "/admin/attention",
+  "/admin/agent-tools",
+  "/admin/workflows",
+  "/admin/business-brain",
+  "/admin/team-training-deals",
+  "/admin/team-training-leads",
+  "/admin/outreach-queue",
+  "/admin/trigger-audit",
+  "/admin/financial-reconciliation",
+  "/admin/financial-failures",
+  "/admin/financial-brain",
+  "/admin/operator-actions",
+  "/admin/retention-workflows",
+  "/admin/workflow-orchestrator",
+  "/admin/agent-ops",
+  "/admin/branding",
+  "/admin/configuration",
+  "/admin/subscription",
+  "/admin/stripe",
+  "/admin/media",
+  "/command-center",
+  "/coach",
+  "/coach/users",
+  "/coach/availability",
+  "/coach/transactions",
+  "/coach/business-plan",
+  "/coach/communications",
+  "/scheduling",
+  "/scheduling/agent",
+  "/bookings",
+  "/settings",
+  "/sessions",
+  "/portal",
+  "/wallet",
+]);
+
+const ROUTE_MAP: Record<string, string> = {
+  "/admin/clients": "/coach/users",
+  "/admin/subscriptions": "/admin/subscription",
+  "/schedule": "/scheduling",
+  "/attention-inbox": "/admin/attention",
+  "/admin/schedule": "/scheduling",
+};
+
+function resolveActionRoute(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (VALID_ROUTES.has(url)) return url;
+  if (ROUTE_MAP[url]) return ROUTE_MAP[url];
+  return null;
+}
+
 // ── Bell Component ────────────────────────────────────────────────────────────
 
 export function AttentionBell() {
@@ -117,8 +172,7 @@ export function AttentionBell() {
 
   const activeItems = items.filter((i) => i.status === "active" || i.status === "escalated");
   const criticalCount = activeItems.filter((i) => i.level === "critical" || i.status === "escalated").length;
-  const importantCount = activeItems.filter((i) => i.level === "important").length;
-  const badgeCount = criticalCount + importantCount;
+  const badgeCount = activeItems.length;
   const topItems = activeItems.slice(0, 5);
 
   const hasCritical = criticalCount > 0;
@@ -203,10 +257,10 @@ export function AttentionBell() {
                       <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{item.body}</p>
                     )}
                     <div className="flex items-center gap-2 mt-1.5">
-                      {item.actionUrl && (
+                      {resolveActionRoute(item.actionUrl) && (
                         <button
                           className={cn("text-[10px] font-medium flex items-center gap-0.5", cfg.color)}
-                          onClick={() => { setOpen(false); navigate(item.actionUrl!); }}
+                          onClick={() => { setOpen(false); navigate(resolveActionRoute(item.actionUrl)!); }}
                         >
                           {item.actionLabel || "View"} <ArrowRight className="h-2.5 w-2.5" />
                         </button>
