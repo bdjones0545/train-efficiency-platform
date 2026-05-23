@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { logoutAllSessions } from "@/lib/logout";
 import PlayerCard from "@/components/pr-tracker/PlayerCard";
 import type { PlayerCardProfile } from "@/components/pr-tracker/PlayerCard";
 import { useParams } from "wouter";
@@ -287,9 +288,7 @@ export default function CoachTeamDetailPage() {
   }
 
   function handleLogout() {
-    if (orgId) localStorage.removeItem(`orgToken_${orgId}`);
-    setOrgToken(null);
-    window.location.href = `/org/${slug}/portal`;
+    logoutAllSessions(`/org/${slug}/portal`);
   }
 
   function handleAuthenticated(token: string) {

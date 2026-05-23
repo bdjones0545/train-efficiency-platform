@@ -568,6 +568,10 @@ export async function registerRoutes(
     }
     req.logout(() => {
       req.session?.destroy(() => {
+        res.clearCookie("connect.sid", { path: "/" });
+        res.clearCookie("session", { path: "/" });
+        res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+        res.set("Pragma", "no-cache");
         res.json({ success: true });
       });
     });

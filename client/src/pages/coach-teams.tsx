@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
+import { logoutAllSessions } from "@/lib/logout";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -81,9 +82,7 @@ export default function CoachTeamsPage() {
   });
 
   function handleLogout() {
-    if (orgId) localStorage.removeItem(`orgToken_${orgId}`);
-    setOrgToken(null);
-    window.location.href = `/org/${slug}/portal`;
+    logoutAllSessions(`/org/${slug}/portal`);
   }
 
   function handleAuthenticated(token: string) {

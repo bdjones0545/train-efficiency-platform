@@ -5,6 +5,7 @@ import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { CoachPrDashboard } from "@/components/pr-tracker/CoachPrDashboard";
 import { AthletePrDashboard } from "@/components/pr-tracker/AthletePrDashboard";
 import { getAuthHeaders, setAuthToken } from "@/lib/authToken";
+import { logoutAllSessions } from "@/lib/logout";
 import { Button } from "@/components/ui/button";
 
 interface PrTrackerProps {
@@ -121,19 +122,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   }
 
   function handleLogout() {
-    const currentToken = orgTokenRef.current;
-    if (currentToken) {
-      fetch("/api/org-auth/logout", {
-        method: "POST",
-        headers: { "X-Org-Auth-Token": currentToken, ...getAuthHeaders() },
-      }).catch(() => {});
-    }
-    localStorage.removeItem(tokenKey);
-    setOrgToken(null);
-    setBootstrap(null);
-    setBootstrapAttempted(false);
-    setError(null);
-    setLocation(`/org/${orgSlug}/portal`);
+    logoutAllSessions(`/org/${orgSlug}/portal`);
   }
 
   function handleRefresh() {

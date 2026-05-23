@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/authToken";
+import { logoutAllSessions } from "@/lib/logout";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -628,11 +629,7 @@ export function OrgSidebar({ orgSlug }: OrgSidebarProps) {
   };
 
   const handleLogout = () => {
-    if (ctx?.orgId) {
-      localStorage.removeItem(`orgToken_${ctx.orgId}`);
-    }
-    setOrgToken(null);
-    window.location.href = `/org/${orgSlug}`;
+    logoutAllSessions(`/org/${orgSlug}`);
   };
 
   const sections = ctx

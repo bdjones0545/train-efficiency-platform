@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
+import { logoutAllSessions } from "@/lib/logout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -331,9 +332,7 @@ export default function OrgProfilePage() {
   }
 
   function handleLogout() {
-    if (orgId) localStorage.removeItem(`orgToken_${orgId}`);
-    setOrgToken(null);
-    window.location.href = `/org/${slug}/portal`;
+    logoutAllSessions(`/org/${slug}/portal`);
   }
 
   function handleAuthenticated(token: string) {

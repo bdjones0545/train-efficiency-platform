@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
+import { logoutAllSessions } from "@/lib/logout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -327,10 +328,7 @@ export default function AthleticSchedulingPage() {
   }
 
   function handleLogout() {
-    if (orgId) localStorage.removeItem(`orgToken_${orgId}`);
-    setOrgToken(null);
-    setOrgUser(null);
-    setOrgMembership(null);
+    logoutAllSessions(`/org/${slug}/portal`);
   }
 
   async function handleToggleSetting(key: "allowGuestBooking" | "requireLoginToBook", value: boolean) {

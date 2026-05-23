@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
+import { logoutAllSessions } from "@/lib/logout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -1247,9 +1248,7 @@ export default function OrgPortalPage() {
   }
 
   function handleLogout() {
-    if (orgId) localStorage.removeItem(`orgToken_${orgId}`);
-    setOrgToken(null);
-    setOrgUser(null);
+    logoutAllSessions(`/org/${slug}/portal`);
   }
 
   if (orgLoading) {
