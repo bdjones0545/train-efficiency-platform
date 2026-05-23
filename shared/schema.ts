@@ -2941,3 +2941,45 @@ export const workoutGenerationMetadata = pgTable("workout_generation_metadata", 
 export const insertWorkoutGenerationMetadataSchema = createInsertSchema(workoutGenerationMetadata).omit({ id: true });
 export type WorkoutGenerationMetadata = typeof workoutGenerationMetadata.$inferSelect;
 export type InsertWorkoutGenerationMetadata = z.infer<typeof insertWorkoutGenerationMetadataSchema>;
+
+// ─── Program Adaptation Drafts ────────────────────────────────────────────────
+// Coach-reviewable program adjustment proposals generated when context signals
+// cross risk thresholds. Never auto-applied — always require coach approval.
+
+export const programAdaptationDrafts = pgTable("program_adaptation_drafts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  workoutProgramId: varchar("workout_program_id"),
+  contextObjectId: varchar("context_object_id").notNull(),
+
+  // What triggered this draft
+  triggerSignals: jsonb("trigger_signals").default(sql`'[]'::jsonb`),
+  adaptationType: varchar("adaptation_type").notNull(),
+
+  // Context snapshots for audit trail
+  previousContextSnapshot: jsonb("previous_context_snapshot"),
+  newContextSnapshot: jsonb("new_context_snapshot"),
+
+  // The AI-generated draft content
+  trainChatProgramId: varchar("trainchat_program_id"),
+  trainChatRawResponse: jsonb("trainchat_raw_response"),
+  draftSessions: jsonb("draft_sessions").default(sql`'[]'::jsonb`),
+  adaptationRationale: text("adaptation_rationale"),
+
+  // Review state
+  status: varchar("status").notNull().default("pending_review"),
+  reviewedByUserId: varchar("reviewed_by_user_id"),
+  reviewedAt: timestamp("reviewed_at"),
+  coachNotes: text("coach_notes"),
+  educationPathwayId: varchar("education_pathway_id"),
+
+  // Generation metadata
+  generationError: text("generation_error"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertProgramAdaptationDraftSchema = createInsertSchema(programAdaptationDrafts).omit({ id: true, createdAt: true, updatedAt: true });
+export type ProgramAdaptationDraft = typeof programAdaptationDrafts.$inferSelect;
+export type InsertProgramAdaptationDraft = z.infer<typeof insertProgramAdaptationDraftSchema>;

@@ -8,6 +8,7 @@ import {
   workoutCompletionLogs,
   workoutGenerationMetadata,
   athleteContextObjects,
+  programAdaptationDrafts,
   orgAiIntegrations,
   athleticPrograms,
   organizations,
@@ -933,6 +934,228 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       return res.json({ program, sessions, generationError });
     } catch (err: any) {
       console.error("[workout-builder] athlete generate error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // ── Adaptation Drafts ────────────────────────────────────────────────────────
+
+  // GET /api/org/workout-builder/adaptation-drafts
+  // All pending adaptation drafts for the org (for command center)
+  app.get("/api/org/workout-builder/adaptation-drafts", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const statusFilter = (req.query.status as string) ?? "pending_review";
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+
+      const drafts = await db.select({
+        id: programAdaptationDrafts.id,
+        orgId: programAdaptationDrafts.orgId,
+        athleteUserId: programAdaptationDrafts.athleteUserId,
+        workoutProgramId: programAdaptationDrafts.workoutProgramId,
+        contextObjectId: programAdaptationDrafts.contextObjectId,
+        adaptationType: programAdaptationDrafts.adaptationType,
+        triggerSignals: programAdaptationDrafts.triggerSignals,
+        adaptationRationale: programAdaptationDrafts.adaptationRationale,
+        draftSessions: programAdaptationDrafts.draftSessions,
+        newContextSnapshot: programAdaptationDrafts.newContextSnapshot,
+        previousContextSnapshot: programAdaptationDrafts.previousContextSnapshot,
+        status: programAdaptationDrafts.status,
+        generationError: programAdaptationDrafts.generationError,
+        createdAt: programAdaptationDrafts.createdAt,
+        athleteName: orgUsers.name,
+      })
+        .from(programAdaptationDrafts)
+        .leftJoin(orgUsers, eq(programAdaptationDrafts.athleteUserId, orgUsers.id))
+        .where(and(
+          eq(programAdaptationDrafts.orgId, orgId),
+          eq(programAdaptationDrafts.status, statusFilter),
+        ))
+        .orderBy(desc(programAdaptationDrafts.createdAt))
+        .limit(limit);
+
+      return res.json({ drafts });
+    } catch (err: any) {
+      console.error("[workout-builder] adaptation-drafts list error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // GET /api/org/workout-builder/athletes/:athleteUserId/adaptation-drafts
+  // Drafts for a specific athlete
+  app.get("/api/org/workout-builder/athletes/:athleteUserId/adaptation-drafts", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const { athleteUserId } = req.params;
+      const statusFilter = (req.query.status as string) ?? "pending_review";
+
+      const drafts = await db.select()
+        .from(programAdaptationDrafts)
+        .where(and(
+          eq(programAdaptationDrafts.orgId, orgId),
+          eq(programAdaptationDrafts.athleteUserId, athleteUserId),
+          eq(programAdaptationDrafts.status, statusFilter),
+        ))
+        .orderBy(desc(programAdaptationDrafts.createdAt))
+        .limit(10);
+
+      return res.json({ drafts });
+    } catch (err: any) {
+      console.error("[workout-builder] athlete adaptation-drafts error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // GET /api/org/workout-builder/adaptation-drafts/count
+  // Returns count of pending drafts (for badges/alerts)
+  app.get("/api/org/workout-builder/adaptation-drafts/count", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const [row] = await db.select({ count: sql<number>`count(*)::int` })
+        .from(programAdaptationDrafts)
+        .where(and(
+          eq(programAdaptationDrafts.orgId, orgId),
+          eq(programAdaptationDrafts.status, "pending_review"),
+        ));
+
+      return res.json({ count: row?.count ?? 0 });
+    } catch (err: any) {
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/adaptation-drafts/:draftId/approve
+  app.post("/api/org/workout-builder/adaptation-drafts/:draftId/approve", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const userId = profile.id;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const { draftId } = req.params;
+      const { coachNotes } = req.body ?? {};
+
+      const [draft] = await db.select()
+        .from(programAdaptationDrafts)
+        .where(and(
+          eq(programAdaptationDrafts.id, draftId),
+          eq(programAdaptationDrafts.orgId, orgId),
+        ))
+        .limit(1);
+
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+      if (draft.status !== "pending_review") return res.status(400).json({ message: "Draft is no longer pending review" });
+
+      const [updated] = await db.update(programAdaptationDrafts)
+        .set({
+          status: "approved",
+          reviewedByUserId: userId,
+          reviewedAt: new Date(),
+          coachNotes: coachNotes ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(programAdaptationDrafts.id, draftId))
+        .returning();
+
+      // If draft has generated sessions, optionally create a workout program
+      // For now we mark as approved — coach can manually trigger assignment
+      console.log(`[AdaptationDraft] Approved id=${draftId} by coach=${userId}`);
+
+      return res.json({ draft: updated, message: "Adaptation draft approved." });
+    } catch (err: any) {
+      console.error("[workout-builder] approve adaptation draft error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/adaptation-drafts/:draftId/dismiss
+  app.post("/api/org/workout-builder/adaptation-drafts/:draftId/dismiss", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const userId = profile.id;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const { draftId } = req.params;
+      const { coachNotes } = req.body ?? {};
+
+      const [draft] = await db.select()
+        .from(programAdaptationDrafts)
+        .where(and(
+          eq(programAdaptationDrafts.id, draftId),
+          eq(programAdaptationDrafts.orgId, orgId),
+        ))
+        .limit(1);
+
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const [updated] = await db.update(programAdaptationDrafts)
+        .set({
+          status: "dismissed",
+          reviewedByUserId: userId,
+          reviewedAt: new Date(),
+          coachNotes: coachNotes ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(programAdaptationDrafts.id, draftId))
+        .returning();
+
+      console.log(`[AdaptationDraft] Dismissed id=${draftId} by coach=${userId}`);
+
+      return res.json({ draft: updated, message: "Adaptation draft dismissed." });
+    } catch (err: any) {
+      console.error("[workout-builder] dismiss adaptation draft error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // POST /api/org/workout-builder/adaptation-drafts/:draftId/assign-education
+  app.post("/api/org/workout-builder/adaptation-drafts/:draftId/assign-education", acceptOrgOrMainAuth, requireAuth, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const userId = profile.id;
+      if (!orgId) return res.status(400).json({ message: "No organization" });
+
+      const { draftId } = req.params;
+      const { educationPathwayId, coachNotes } = req.body ?? {};
+
+      const [draft] = await db.select()
+        .from(programAdaptationDrafts)
+        .where(and(
+          eq(programAdaptationDrafts.id, draftId),
+          eq(programAdaptationDrafts.orgId, orgId),
+        ))
+        .limit(1);
+
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      const [updated] = await db.update(programAdaptationDrafts)
+        .set({
+          status: "education_assigned",
+          reviewedByUserId: userId,
+          reviewedAt: new Date(),
+          educationPathwayId: educationPathwayId ?? null,
+          coachNotes: coachNotes ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(programAdaptationDrafts.id, draftId))
+        .returning();
+
+      console.log(`[AdaptationDraft] Education assigned for draft id=${draftId} by coach=${userId}`);
+
+      return res.json({ draft: updated, message: "Education pathway assigned instead of program adaptation." });
+    } catch (err: any) {
+      console.error("[workout-builder] assign-education draft error:", err);
       return res.status(500).json({ message: "Internal server error" });
     }
   });

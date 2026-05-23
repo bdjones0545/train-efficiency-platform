@@ -15,6 +15,7 @@ import {
   type AthleteContextObject,
 } from "@shared/schema";
 import { eq, and, desc, gte, inArray, sql } from "drizzle-orm";
+import { checkAndGenerateAdaptationDraft } from "./program-adaptation-engine";
 
 const STALE_THRESHOLD_HOURS = 12;
 
@@ -338,13 +339,16 @@ export async function buildAthleteContextObject(
     updatedAt: new Date(),
   };
 
-  const [existing] = await db.select({ id: athleteContextObjects.id })
+  const [existing] = await db.select()
     .from(athleteContextObjects)
     .where(and(
       eq(athleteContextObjects.athleteUserId, athleteUserId),
       eq(athleteContextObjects.orgId, orgId),
     ))
     .limit(1);
+
+  // Capture previous context for change detection BEFORE overwriting
+  const previousContext: AthleteContextObject | null = existing ?? null;
 
   let result: AthleteContextObject;
 
@@ -359,6 +363,21 @@ export async function buildAthleteContextObject(
       .values(contextPayload)
       .returning();
     result = inserted;
+  }
+
+  // Fire adaptation draft check asynchronously — never block the context rebuild
+  // Only run on explicit triggers (not every stale auto-refresh to avoid spam)
+  if (trigger !== "auto_stale_refresh") {
+    setImmediate(async () => {
+      try {
+        const draft = await checkAndGenerateAdaptationDraft(previousContext, result);
+        if (draft) {
+          console.log(`[ContextBroker] Adaptation draft generated: id=${draft.id} type=${draft.adaptationType} athlete=${athleteUserId}`);
+        }
+      } catch (err: any) {
+        console.error(`[ContextBroker] Adaptation draft check failed for athlete=${athleteUserId}:`, err.message);
+      }
+    });
   }
 
   return result;

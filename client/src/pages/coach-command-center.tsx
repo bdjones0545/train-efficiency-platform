@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
+import { ProgramAdaptationDraftsPanel } from "@/components/program-adaptation-drafts-panel";
 import {
   Brain,
   RefreshCw,
@@ -583,6 +584,13 @@ export default function CoachCommandCenterPage() {
           </div>
         </Card>
       </div>
+
+      {/* ── Program Adaptation Drafts ─────────────────────────────────── */}
+      {orgId && (
+        <Card className="p-4" data-testid="section-adaptation-drafts">
+          <ProgramAdaptationDraftsPanel orgId={orgId} headers={headers} />
+        </Card>
+      )}
 
       {/* ── Second row ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

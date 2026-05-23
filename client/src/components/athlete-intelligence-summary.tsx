@@ -9,8 +9,9 @@ import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Brain, TrendingUp, TrendingDown, Minus, RefreshCw, AlertTriangle,
-  CheckCircle2, ShieldAlert, Activity, Target, Clock, Zap, ChevronDown, ChevronUp,
+  CheckCircle2, ShieldAlert, Activity, Target, Clock, Zap, ChevronDown, ChevronUp, Wand2,
 } from "lucide-react";
+import { ProgramAdaptationDraftsPanel } from "@/components/program-adaptation-drafts-panel";
 
 interface AthleteContext {
   id: string;
@@ -263,6 +264,14 @@ export function AthleteIntelligenceSummary({ athleteUserId, orgId, athleteName }
                 {context.aiSummary}
               </div>
             )}
+
+            {/* ── Pending adaptation drafts (compact) ─── */}
+            <ProgramAdaptationDraftsPanel
+              orgId={orgId}
+              athleteUserId={athleteUserId}
+              headers={headers}
+              compact
+            />
 
             {/* ── Expandable detail ─── */}
             <button
