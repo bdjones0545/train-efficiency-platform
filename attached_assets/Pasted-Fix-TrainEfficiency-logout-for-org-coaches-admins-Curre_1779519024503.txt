@@ -1,0 +1,80 @@
+Fix TrainEfficiency logout for org coaches/admins.
+
+Current issue:
+When an org coach/admin presses logout from the sidebar, they are not fully logged out of the organization context. The app appears to clear some auth state, but org access remains active or cached.
+
+Root cause likely:
+Logout only clears platform auth, but does not clear org-specific auth/session state.
+
+Audit and fix the logout flow across:
+- main platform auth
+- OIDC session
+- Bearer/local auth token
+- org auth token
+- org membership state
+- localStorage
+- sessionStorage
+- React Query cache
+- org portal state
+- sidebar user state
+
+Requirements:
+
+1. Create one centralized logout function:
+logoutAllSessions()
+
+It should clear:
+- main auth token
+- org auth token
+- any X-Org-Auth-Token storage
+- selected org id
+- cached org membership
+- cached org session
+- persisted workspace mode if auth-scoped
+- any user/org-specific localStorage keys
+- sessionStorage auth keys
+
+2. Invalidate and clear React Query cache:
+- user queries
+- org session queries
+- org membership queries
+- permissions queries
+- command center queries
+- workout builder queries
+- education queries
+- scheduling queries
+
+Use queryClient.clear() if safe, or remove all auth/org-related queries.
+
+3. Ensure backend logout endpoint clears:
+- OIDC/passport session
+- auth cookies
+- org session cookies if any
+- refresh tokens if used
+
+4. Sidebar logout button must call logoutAllSessions(), not only platform logout.
+
+5. After logout:
+- redirect to public landing or login page
+- prevent auto-hydration from restoring org admin/coach state
+- close mobile sidebar drawer
+- reset in-memory auth stores
+
+6. Add defensive check:
+If no valid platform auth and no valid org token exist, org routes should not hydrate cached admin/coach UI.
+
+7. Add logging in development:
+- before logout: keys being cleared
+- after logout: confirm no auth/org keys remain
+
+8. Test cases:
+- org admin logs out from sidebar
+- coach logs out from org portal
+- athlete logs out from portal
+- platform user with org membership logs out
+- user refreshes after logout
+- user presses browser back after logout
+- mobile Safari logout
+
+Expected result:
+Logout fully removes both platform and org authentication. No admin/coach/org portal access should remain after logout unless the user logs in again.
