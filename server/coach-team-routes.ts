@@ -27,43 +27,26 @@ const coachAthleteNotes = pgTable("coach_athlete_notes", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+import { resolveOrgSession as _resolveOrgSession } from "./org-auth";
+
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
-  const token = req.headers["x-org-auth-token"] as string;
-  if (!token) return res.status(401).json({ message: "Not authenticated" });
-
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const now = new Date();
-
-  const sessions = await db
-    .select()
-    .from(orgSessions)
-    .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
-    .limit(1);
-
-  if (!sessions.length) return res.status(401).json({ message: "Session expired or invalid" });
-
-  const session = sessions[0];
-  await db.update(orgSessions).set({ lastUsedAt: now }).where(eq(orgSessions.id, session.id));
-
-  const foundUsers = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
-  if (!foundUsers.length) return res.status(401).json({ message: "User not found" });
-
-  const memberships = await db
-    .select()
-    .from(orgMemberships)
-    .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
-    .limit(1);
-
-  if (!memberships.length) return res.status(401).json({ message: "Not a member of this organization" });
-
-  req.orgAuth = { user: foundUsers[0], membership: memberships[0] };
-  req.orgSession = session;
-  next();
+  try {
+    const auth = await _resolveOrgSession(req);
+    if (!auth) return res.status(401).json({ message: "Not authenticated" });
+    req.orgAuth = {
+      user: { id: auth.userId, userId: auth.userId },
+      membership: { role: auth.role, userId: auth.userId, orgId: auth.orgId },
+    };
+    req.orgSession = { orgId: auth.orgId, userId: auth.userId };
+    next();
+  } catch {
+    res.status(500).json({ message: "Auth error" });
+  }
 }
 
 function requireCoachRole(req: any, res: Response, next: NextFunction) {
   const { membership } = req.orgAuth;
-  if (membership.role !== "coach" && membership.role !== "owner") {
+  if (!["admin", "coach", "staff", "owner"].includes(membership.role)) {
     return res.status(403).json({ message: "Coach access required" });
   }
   next();

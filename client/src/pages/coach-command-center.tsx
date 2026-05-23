@@ -7,6 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import {
   Brain,
   RefreshCw,
@@ -41,8 +43,8 @@ function getOrgToken(orgId: string): string | null {
   return localStorage.getItem(`orgToken_${orgId}`);
 }
 
-function getHeaders(orgToken: string | null): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
+function getHeaders(orgToken: string | null, authHeaders: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json", ...authHeaders };
   if (orgToken) h["X-Org-Auth-Token"] = orgToken;
   return h;
 }
@@ -283,11 +285,17 @@ export default function CoachCommandCenterPage() {
   const [orgToken, setOrgToken] = useState<string | null>(null);
   const [taskStatuses, setTaskStatuses] = useState<Record<string, "pending" | "done" | "snoozed">>({});
 
-  // Resolve orgId from nav-context
-  const { data: navCtx } = useQuery<{ orgId: string }>({
+  // Centralized permissions — resolves role via OIDC session, Bearer token, or org token
+  const permissions = usePermissions(slug);
+
+  // Resolve orgId and optional org-specific token from nav-context
+  const { data: navCtx } = useQuery<{ orgId: string; effectiveRole: string | null }>({
     queryKey: [`/api/org/by-slug/${slug}/nav-context`],
     queryFn: () =>
-      fetch(`/api/org/by-slug/${slug}/nav-context`, { credentials: "include" }).then((r) => r.json()),
+      fetch(`/api/org/by-slug/${slug}/nav-context`, {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      }).then((r) => r.json()),
   });
 
   useEffect(() => {
@@ -298,7 +306,12 @@ export default function CoachCommandCenterPage() {
     }
   }, [navCtx?.orgId]);
 
-  const headers = getHeaders(orgToken);
+  // Build request headers: always include platform auth, optionally org token
+  const headers = getHeaders(orgToken, getAuthHeaders());
+
+  // Enable query as soon as we have orgId and the user has permission
+  // (orgToken not required — backend now accepts OIDC/Bearer auth too)
+  const hasAccess = !permissions.isLoading && permissions.canAccessCommandCenter;
 
   // Fetch command center data
   const {
@@ -312,7 +325,7 @@ export default function CoachCommandCenterPage() {
         if (!r.ok) throw new Error(await r.text());
         return r.json();
       }),
-    enabled: !!orgToken && !!orgId,
+    enabled: !!orgId && hasAccess,
     refetchInterval: 60_000,
   });
 
@@ -350,12 +363,25 @@ export default function CoachCommandCenterPage() {
     setTaskStatuses((prev) => ({ ...prev, [taskKey]: "snoozed" }));
   };
 
-  if (!orgToken) {
+  // Show loading state during auth hydration to prevent permission flicker
+  if (permissions.isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Only block if permissions are fully loaded and access is denied
+  if (!hasAccess) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
         <Card className="p-8 text-center max-w-sm">
           <Shield className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Coach authentication required to view Command Center.</p>
+          <p className="text-sm font-medium mb-1">Access Required</p>
+          <p className="text-sm text-muted-foreground">
+            You need coach, staff, or admin access to view the Command Center.
+          </p>
         </Card>
       </div>
     );

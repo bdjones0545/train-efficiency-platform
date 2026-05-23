@@ -15,6 +15,8 @@ import {
   orgSessions,
   athleteStreaks,
   coachDailyBriefings,
+  userProfiles,
+  coachProfiles,
 } from "@shared/schema";
 import { eq, and, desc, gte, sql as drizzleSql, lt, count } from "drizzle-orm";
 import OpenAI from "openai";
@@ -24,23 +26,79 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 async function resolveOrgSession(req: any) {
-  const token = req.headers["x-org-auth-token"] as string | undefined;
-  if (!token) return null;
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const now = new Date();
-  const [session] = await db
-    .select()
-    .from(orgSessions)
-    .where(and(eq(orgSessions.tokenHash, tokenHash), drizzleSql`${orgSessions.expiresAt} > ${now}`))
-    .limit(1);
-  if (!session) return null;
-  const [membership] = await db
-    .select()
-    .from(orgMemberships)
-    .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
-    .limit(1);
-  if (!membership) return null;
-  return { userId: session.userId, orgId: session.orgId, role: membership.role };
+  // Path A: X-Org-Auth-Token (org-specific localStorage token)
+  const orgAuthToken = req.headers["x-org-auth-token"] as string | undefined;
+  if (orgAuthToken) {
+    const tokenHash = crypto.createHash("sha256").update(orgAuthToken).digest("hex");
+    const now = new Date();
+    const [session] = await db
+      .select()
+      .from(orgSessions)
+      .where(and(eq(orgSessions.tokenHash, tokenHash), drizzleSql`${orgSessions.expiresAt} > ${now}`))
+      .limit(1);
+    if (session) {
+      const [membership] = await db
+        .select()
+        .from(orgMemberships)
+        .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
+        .limit(1);
+      if (membership) return { userId: session.userId, orgId: session.orgId, role: membership.role };
+    }
+  }
+
+  // Path B: OIDC session (passport req.user)
+  if (req.user) {
+    try {
+      const mainUserId: string = req.user?.claims?.sub ?? req.user?.id;
+      const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
+      const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+      const userOrgId = profileRow?.organizationId ?? coachRow?.organizationId;
+      if (userOrgId) {
+        const [membership] = await db.select().from(orgMemberships)
+          .where(and(eq(orgMemberships.userId, mainUserId), eq(orgMemberships.orgId, userOrgId)))
+          .limit(1);
+        if (membership && ["admin", "coach", "staff", "owner"].includes(membership.role)) {
+          return { userId: mainUserId, orgId: userOrgId, role: membership.role };
+        }
+        // Derive from platform role even if no explicit membership row
+        const profileRole = profileRow?.role ?? null;
+        if (profileRole === "ADMIN") return { userId: mainUserId, orgId: userOrgId, role: "admin" };
+        if (profileRole === "COACH") return { userId: mainUserId, orgId: userOrgId, role: "coach" };
+        if (profileRole === "STAFF") return { userId: mainUserId, orgId: userOrgId, role: "staff" };
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Path C: Bearer token (email/password main app login)
+  const authHeader = req.headers.authorization as string | undefined;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const bearerToken = authHeader.slice(7);
+      const tokenResult = await db.execute(
+        drizzleSql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+      );
+      if ((tokenResult as any).rows?.length) {
+        const mainUserId = ((tokenResult as any).rows[0] as any).user_id as string;
+        const [profileRow] = await db.select().from(userProfiles).where(eq(userProfiles.userId, mainUserId)).limit(1);
+        const [coachRow] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, mainUserId)).limit(1);
+        const userOrgId = profileRow?.organizationId ?? coachRow?.organizationId;
+        if (userOrgId) {
+          const [membership] = await db.select().from(orgMemberships)
+            .where(and(eq(orgMemberships.userId, mainUserId), eq(orgMemberships.orgId, userOrgId)))
+            .limit(1);
+          if (membership && ["admin", "coach", "staff", "owner"].includes(membership.role)) {
+            return { userId: mainUserId, orgId: userOrgId, role: membership.role };
+          }
+          const profileRole = profileRow?.role ?? null;
+          if (profileRole === "ADMIN") return { userId: mainUserId, orgId: userOrgId, role: "admin" };
+          if (profileRole === "COACH") return { userId: mainUserId, orgId: userOrgId, role: "coach" };
+          if (profileRole === "STAFF") return { userId: mainUserId, orgId: userOrgId, role: "staff" };
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  return null;
 }
 
 function requireCoach(req: any, res: any, next: any) {

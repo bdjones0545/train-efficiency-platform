@@ -17,35 +17,23 @@ import {
 import { eq, and, desc, gt, lt, lte, isNull, or, sql as drizzleSql, count, gte, ne } from "drizzle-orm";
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
+import { resolveOrgSession as _resolveOrgSession } from "./org-auth";
 
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
-  const token = req.headers["x-org-auth-token"] as string;
-  if (!token) return res.status(401).json({ message: "Not authenticated" });
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const now = new Date();
-  const sessions = await db
-    .select()
-    .from(orgSessions)
-    .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
-    .limit(1);
-  if (!sessions.length) return res.status(401).json({ message: "Session expired" });
-  const session = sessions[0];
-  await db.update(orgSessions).set({ lastUsedAt: now }).where(eq(orgSessions.id, session.id));
-  const foundUsers = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
-  if (!foundUsers.length) return res.status(401).json({ message: "User not found" });
-  const memberships = await db
-    .select()
-    .from(orgMemberships)
-    .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
-    .limit(1);
-  req.orgUser = foundUsers[0];
-  req.orgSession = session;
-  req.orgMembership = memberships[0] || null;
-  next();
+  try {
+    const auth = await _resolveOrgSession(req);
+    if (!auth) return res.status(401).json({ message: "Not authenticated" });
+    req.orgUser = { id: auth.userId };
+    req.orgSession = { orgId: auth.orgId, userId: auth.userId };
+    req.orgMembership = { role: auth.role, userId: auth.userId, orgId: auth.orgId };
+    next();
+  } catch {
+    res.status(500).json({ message: "Auth error" });
+  }
 }
 
 function requireCoach(req: any, res: Response, next: NextFunction) {
-  if (!req.orgMembership || req.orgMembership.role !== "coach") {
+  if (!req.orgMembership || !["admin", "coach", "staff", "owner"].includes(req.orgMembership.role)) {
     return res.status(403).json({ message: "Coach access required" });
   }
   next();

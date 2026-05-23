@@ -13,30 +13,8 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// ─── Auth (same session pattern as other org routes) ──────────────────────────
-async function resolveOrgSession(req: any) {
-  const token = req.headers["x-org-auth-token"] as string | undefined;
-  if (!token) return null;
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const now = new Date();
-  const [session] = await db.select().from(orgSessions)
-    .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now))).limit(1);
-  if (!session) return null;
-  const [membership] = await db.select().from(orgMemberships)
-    .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId))).limit(1);
-  if (!membership) return null;
-  return { userId: session.userId, orgId: session.orgId, role: membership.role };
-}
-
-function requireCoach(req: any, res: any, next: any) {
-  resolveOrgSession(req).then((auth) => {
-    if (!auth) return res.status(401).json({ message: "Not authenticated" });
-    if (!["admin", "coach", "staff"].includes(auth.role))
-      return res.status(403).json({ message: "Coach access required" });
-    req._orgAuth = auth;
-    next();
-  }).catch(() => res.status(500).json({ message: "Auth error" }));
-}
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+import { requireCoach } from "./org-auth";
 
 // ─── Built-in Workflow Templates ──────────────────────────────────────────────
 const WORKFLOW_TEMPLATES = [

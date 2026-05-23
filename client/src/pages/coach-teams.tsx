@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Users, Trophy, ChevronRight, Plus, Code, Calendar, LogOut } from "lucide-react";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import { format } from "date-fns";
 
 function CoachTeamsSkeleton() {
@@ -52,6 +54,7 @@ export default function CoachTeamsPage() {
 
   const [orgToken, setOrgToken] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
+  const { hasAccess, isHydrating } = usePermissions(slug);
 
   useEffect(() => {
     if (!orgId) return;
@@ -66,15 +69,15 @@ export default function CoachTeamsPage() {
   }, [orgId]);
 
   const { data: teamsData, isLoading: teamsLoading } = useQuery<any>({
-    queryKey: ["/api/org/coach/teams", orgId, orgToken],
+    queryKey: ["/api/org/coach/teams", orgId, orgToken, hasAccess],
     queryFn: async () => {
-      const res = await fetch("/api/org/coach/teams", {
-        headers: { "X-Org-Auth-Token": orgToken! },
-      });
+      const headers: Record<string, string> = { ...getAuthHeaders() };
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const res = await fetch("/api/org/coach/teams", { headers, credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
-    enabled: !!orgToken && !!orgId,
+    enabled: !!orgId && (!!orgToken || hasAccess),
   });
 
   function handleLogout() {
@@ -97,7 +100,7 @@ export default function CoachTeamsPage() {
     );
   }
 
-  if (!orgToken) {
+  if (!orgToken && !hasAccess && !isHydrating) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-16 text-center space-y-6">
         {org?.logoUrl && <img src={org.logoUrl} alt={org.name} className="h-14 w-auto rounded-xl" />}

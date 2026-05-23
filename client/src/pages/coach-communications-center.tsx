@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
@@ -48,7 +50,10 @@ function getOrgToken(orgId: string): string | null {
 }
 
 function orgFetch(path: string, orgToken: string | null, options?: RequestInit) {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getAuthHeaders(),
+  };
   if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
   return fetch(path, { headers, credentials: "include", ...options });
 }
@@ -538,6 +543,7 @@ export default function CoachCommunicationsCenterPage() {
   const { toast } = useToast();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgToken, setOrgToken] = useState<string | null>(null);
+  const { hasAccess, isHydrating } = usePermissions(slug);
   const [showCompose, setShowCompose] = useState(false);
   const [activeTab, setActiveTab] = useState("inbox");
   const [filterType, setFilterType] = useState("all");
@@ -560,7 +566,7 @@ export default function CoachCommunicationsCenterPage() {
     queryFn: () =>
       orgFetch(`/api/org/communications${filterType !== "all" ? `?messageType=${filterType}` : ""}`, orgToken)
         .then(async (r) => { if (!r.ok) throw new Error(await r.text()); return r.json(); }),
-    enabled: !!orgToken && !!orgId,
+    enabled: !!orgId && (!!orgToken || hasAccess),
     refetchInterval: 30_000,
   });
 
@@ -570,7 +576,7 @@ export default function CoachCommunicationsCenterPage() {
     queryFn: () =>
       orgFetch("/api/org/communications/templates", orgToken)
         .then(async (r) => { if (!r.ok) throw new Error(await r.text()); return r.json(); }),
-    enabled: !!orgToken && !!orgId,
+    enabled: !!orgId && (!!orgToken || hasAccess),
   });
 
   // Fetch campaigns
@@ -579,7 +585,7 @@ export default function CoachCommunicationsCenterPage() {
     queryFn: () =>
       orgFetch("/api/org/communications/campaigns", orgToken)
         .then(async (r) => { if (!r.ok) throw new Error(await r.text()); return r.json(); }),
-    enabled: !!orgToken && !!orgId,
+    enabled: !!orgId && (!!orgToken || hasAccess),
   });
 
   // Fetch preferences
@@ -588,18 +594,20 @@ export default function CoachCommunicationsCenterPage() {
     queryFn: () =>
       orgFetch("/api/org/communications/preferences", orgToken)
         .then(async (r) => { if (!r.ok) throw new Error(await r.text()); return r.json(); }),
-    enabled: !!orgToken && !!orgId,
+    enabled: !!orgId && (!!orgToken || hasAccess),
   });
 
   // Fetch athletes for compose / AI generate
   const { data: athleteData } = useQuery<any[]>({
     queryKey: [`/api/org/by-slug/${slug}/nav-context`, orgId, "athletes"],
     queryFn: async () => {
-      const r = await fetch(`/api/org/by-slug/${slug}/nav-context`, { credentials: "include", headers: orgToken ? { "X-Org-Auth-Token": orgToken } : {} });
+      const headers: Record<string, string> = { ...getAuthHeaders() };
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const r = await fetch(`/api/org/by-slug/${slug}/nav-context`, { credentials: "include", headers });
       const ctx = await r.json();
       return ctx.athletes ?? [];
     },
-    enabled: !!orgToken && !!orgId,
+    enabled: !!orgId && (!!orgToken || hasAccess),
   });
 
   const updatePrefsMutation = useMutation({
@@ -622,7 +630,7 @@ export default function CoachCommunicationsCenterPage() {
 
   const filteredMessages = filterType === "all" ? messages : messages.filter((m) => m.messageType === filterType);
 
-  if (!orgToken) {
+  if (!orgToken && !hasAccess && !isHydrating) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
         <Card className="p-8 text-center max-w-sm">

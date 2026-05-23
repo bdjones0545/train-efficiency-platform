@@ -22,73 +22,7 @@ import OpenAI from "openai";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
-
-async function resolveOrgSession(req: any) {
-  const token = req.headers["x-org-auth-token"] as string | undefined;
-  if (!token) return null;
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const now = new Date();
-  const [session] = await db
-    .select()
-    .from(orgSessions)
-    .where(
-      and(
-        eq(orgSessions.tokenHash, tokenHash),
-        db.$count ? undefined : undefined,
-      ) as any
-    )
-    .limit(1);
-  if (!session || session.expiresAt < now) return null;
-  const [membership] = await db
-    .select()
-    .from(orgMemberships)
-    .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
-    .limit(1);
-  if (!membership) return null;
-  return { userId: session.userId, orgId: session.orgId, role: membership.role };
-}
-
-// Separate auth helper that directly queries token hash
-async function resolveSession(req: any) {
-  const token = req.headers["x-org-auth-token"] as string | undefined;
-  if (!token) return null;
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const { sql: drizzleSql } = await import("drizzle-orm");
-  const now = new Date();
-  const result = await db.execute(
-    drizzleSql`SELECT s.user_id, s.org_id, m.role
-               FROM org_sessions s
-               JOIN org_memberships m ON m.user_id = s.user_id AND m.org_id = s.org_id
-               WHERE s.token_hash = ${tokenHash} AND s.expires_at > ${now}
-               LIMIT 1`
-  );
-  if (!result.rows.length) return null;
-  const row = result.rows[0] as any;
-  return { userId: row.user_id, orgId: row.org_id, role: row.role };
-}
-
-function requireCoach(req: any, res: any, next: any) {
-  resolveSession(req)
-    .then((auth) => {
-      if (!auth) return res.status(401).json({ message: "Not authenticated" });
-      if (!["admin", "coach", "staff", "owner"].includes(auth.role)) {
-        return res.status(403).json({ message: "Coach access required" });
-      }
-      req._orgAuth = auth;
-      next();
-    })
-    .catch(() => res.status(500).json({ message: "Auth error" }));
-}
-
-function requireOrgUser(req: any, res: any, next: any) {
-  resolveSession(req)
-    .then((auth) => {
-      if (!auth) return res.status(401).json({ message: "Not authenticated" });
-      req._orgAuth = auth;
-      next();
-    })
-    .catch(() => res.status(500).json({ message: "Auth error" }));
-}
+import { requireCoach, requireOrgUser } from "./org-auth";
 
 // ─── Default Templates Seed ───────────────────────────────────────────────────
 
