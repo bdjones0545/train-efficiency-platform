@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -174,17 +176,23 @@ function NotifCard({ n, slug, onRead }: { n: any; slug: string; onRead: (id: str
 
 // ─── Message Inbox ─────────────────────────────────────────────────────────────
 
-function MessageInbox({ orgToken, slug }: { orgToken: string; slug: string }) {
+function MessageInbox({ orgToken, slug }: { orgToken: string | null; slug: string }) {
+  function buildH(): Record<string, string> {
+    const h: Record<string, string> = { ...getAuthHeaders() };
+    if (orgToken) h["X-Org-Auth-Token"] = orgToken;
+    return h;
+  }
+
   const { data: messages = [], isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/org/messages"],
     queryFn: () =>
-      fetch("/api/org/messages", { headers: { "X-Org-Auth-Token": orgToken } })
+      fetch("/api/org/messages", { headers: buildH(), credentials: "include" })
         .then((r) => r.json()),
   });
 
   const readMutation = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/org/messages/${id}/read`, { method: "PATCH", headers: { "X-Org-Auth-Token": orgToken } }),
+      fetch(`/api/org/messages/${id}/read`, { method: "PATCH", headers: buildH(), credentials: "include" }),
     onSuccess: () => { refetch(); queryClient.invalidateQueries({ queryKey: ["/api/org/messages"] }); },
   });
 
@@ -287,33 +295,43 @@ export default function OrgNotificationsPage() {
   const [activeFilter, setActiveFilter] = useState("all");
   const [activeTab, setActiveTab] = useState<"notifications" | "messages">("notifications");
 
+  const { hasAccess } = usePermissions(slug ?? "");
+
   const orgToken = (() => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key?.startsWith("orgToken_")) return localStorage.getItem(key) ?? "";
+      if (key?.startsWith("orgToken_")) return localStorage.getItem(key) ?? null;
     }
-    return "";
+    return null;
   })();
+
+  function buildHeaders(): Record<string, string> {
+    const h: Record<string, string> = { ...getAuthHeaders() };
+    if (orgToken) h["X-Org-Auth-Token"] = orgToken;
+    return h;
+  }
+
+  const canLoad = !!orgToken || hasAccess;
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/notifications", activeFilter],
     queryFn: () => {
       const params = activeFilter !== "all" ? `?type=${activeFilter}` : "";
-      return fetch(`/api/org/notifications${params}`, { headers: { "X-Org-Auth-Token": orgToken } }).then((r) => r.json());
+      return fetch(`/api/org/notifications${params}`, { headers: buildHeaders(), credentials: "include" }).then((r) => r.json());
     },
-    enabled: !!orgToken,
+    enabled: canLoad,
     refetchInterval: 30000,
   });
 
   const readMutation = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/org/notifications/${id}/read`, { method: "PATCH", headers: { "X-Org-Auth-Token": orgToken } }).then((r) => r.json()),
+      fetch(`/api/org/notifications/${id}/read`, { method: "PATCH", headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
     onSuccess: () => { refetch(); queryClient.invalidateQueries({ queryKey: ["/api/org/notifications"] }); },
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: () =>
-      fetch("/api/org/notifications/mark-all-read", { method: "POST", headers: { "X-Org-Auth-Token": orgToken } }).then((r) => r.json()),
+      fetch("/api/org/notifications/mark-all-read", { method: "POST", headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
     onSuccess: () => {
       toast({ title: "All notifications marked as read" });
       refetch();

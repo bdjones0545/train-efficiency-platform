@@ -15,40 +15,80 @@ import {
   athleticBookings,
   orgNotificationPreferences,
 } from "@shared/schema";
+import { users } from "@shared/models/auth";
 import { eq, and, gt, ne, desc } from "drizzle-orm";
+import { resolveOrgSession } from "./org-auth";
 
+/**
+ * Resolves org auth from all three paths (org token, OIDC session, Bearer token).
+ * For org-specific users (Path A) the user record comes from orgUsers.
+ * For platform users (Paths B & C) the record is built from the users table.
+ */
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
-  const token = req.headers["x-org-auth-token"] as string;
-  if (!token) return res.status(401).json({ message: "Not authenticated" });
+  try {
+    const auth = await resolveOrgSession(req);
+    if (!auth) return res.status(401).json({ message: "Not authenticated" });
 
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const now = new Date();
+    // Attempt to find the user in the orgUsers table (org-portal logins, Path A).
+    const orgUserRows = await db.select().from(orgUsers).where(eq(orgUsers.id, auth.userId)).limit(1);
 
-  const sessions = await db
-    .select()
-    .from(orgSessions)
-    .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
-    .limit(1);
+    let resolvedUser: any;
+    let resolvedSession: any = { orgId: auth.orgId, userId: auth.userId };
 
-  if (!sessions.length) return res.status(401).json({ message: "Session expired or invalid" });
+    if (orgUserRows.length) {
+      // Org-portal user — use the existing orgUsers record and session row.
+      resolvedUser = orgUserRows[0];
+      // Also update lastUsedAt on the org session if there is one.
+      const orgTokenHeader = req.headers["x-org-auth-token"] as string | undefined;
+      if (orgTokenHeader) {
+        const tokenHash = crypto.createHash("sha256").update(orgTokenHeader).digest("hex");
+        const now = new Date();
+        const sessionRows = await db
+          .select()
+          .from(orgSessions)
+          .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, now)))
+          .limit(1);
+        if (sessionRows.length) {
+          resolvedSession = sessionRows[0];
+          await db.update(orgSessions).set({ lastUsedAt: now }).where(eq(orgSessions.id, sessionRows[0].id));
+        }
+      }
+    } else {
+      // Platform user (OIDC or Bearer) — build a compatible user object from the users table.
+      const [platformUser] = await db.select().from(users).where(eq(users.id, auth.userId)).limit(1);
+      if (!platformUser) return res.status(401).json({ message: "User not found" });
 
-  const session = sessions[0];
-  await db.update(orgSessions).set({ lastUsedAt: now }).where(eq(orgSessions.id, session.id));
+      resolvedUser = {
+        id: auth.userId,
+        name: [platformUser.firstName, platformUser.lastName].filter(Boolean).join(" ") || platformUser.email || "Admin",
+        email: platformUser.email ?? "",
+        createdAt: (platformUser as any).createdAt ?? new Date(),
+        isPlatformUser: true,
+      };
+    }
 
-  const foundUsers = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
-  if (!foundUsers.length) return res.status(401).json({ message: "User not found" });
+    // Resolve org membership — prefer an explicit orgMemberships row; fall back to derived role.
+    const membershipRows = await db
+      .select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, auth.userId), eq(orgMemberships.orgId, auth.orgId)))
+      .limit(1);
 
-  const memberships = await db
-    .select()
-    .from(orgMemberships)
-    .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
-    .limit(1);
+    const resolvedMembership = membershipRows[0] ?? {
+      id: "platform-derived",
+      userId: auth.userId,
+      orgId: auth.orgId,
+      role: auth.role,
+      status: "active",
+      createdAt: new Date(),
+    };
 
-  if (!memberships.length) return res.status(401).json({ message: "Not a member of this organization" });
-
-  req.orgAuth = { user: foundUsers[0], membership: memberships[0] };
-  req.orgSession = session;
-  next();
+    req.orgAuth = { user: resolvedUser, membership: resolvedMembership };
+    req.orgSession = resolvedSession;
+    next();
+  } catch (err: any) {
+    res.status(500).json({ message: "Auth error" });
+  }
 }
 
 const updateProfileSchema = z.object({

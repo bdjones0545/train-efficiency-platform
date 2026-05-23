@@ -11,7 +11,12 @@ export type WorkspaceRole = "owner" | "admin" | "coach" | "staff" | "athlete" | 
 
 export interface WorkspacePermissions {
   isLoading: boolean;
+  /** True while permissions are still resolving — prevents flash of access-denied screens. */
+  isHydrating: boolean;
   role: WorkspaceRole;
+
+  /** True when the user has at least coach/staff-level org access. Use this to gate org management pages. */
+  hasAccess: boolean;
 
   canAccessCommandCenter: boolean;
   canManageAthletes: boolean;
@@ -59,7 +64,12 @@ function buildPermissions(role: WorkspaceRole, isLoading: boolean): WorkspacePer
 
   return {
     isLoading,
+    // isHydrating mirrors isLoading so pages can guard against flash of access-denied screens
+    isHydrating: isLoading,
     role,
+
+    // hasAccess = any coach/staff/admin/owner level — the primary gate for org management pages
+    hasAccess: isStaff,
 
     // Owners/admins/coaches/staff can access the command center
     canAccessCommandCenter: isStaff,

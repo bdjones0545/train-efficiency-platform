@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import {
   Brain,
   Bell,
@@ -291,6 +293,8 @@ export default function OrgIntelligencePage() {
   const [showAuth, setShowAuth] = useState(false);
   const [activeTab, setActiveTab] = useState<TabFilter>("all");
 
+  const { hasAccess, isHydrating } = usePermissions(slug);
+
   const { data: org } = useQuery<any>({
     queryKey: ["/api/organizations", slug],
     queryFn: async () => {
@@ -312,6 +316,14 @@ export default function OrgIntelligencePage() {
       .catch(() => { localStorage.removeItem(`orgToken_${orgId}`); });
   }, [orgId]);
 
+  const canLoad = !!orgToken || hasAccess;
+
+  function buildHeaders(): Record<string, string> {
+    const h: Record<string, string> = { ...getAuthHeaders() };
+    if (orgToken) h["X-Org-Auth-Token"] = orgToken;
+    return h;
+  }
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/org/coach/intelligence/alerts-page"] });
     queryClient.invalidateQueries({ queryKey: ["/api/org/coach/intelligence/watchlists-page"] });
@@ -321,11 +333,11 @@ export default function OrgIntelligencePage() {
   const summaryQ = useQuery<Summary>({
     queryKey: ["/api/org/coach/intelligence/summary-page", orgToken],
     queryFn: async () => {
-      const r = await fetch("/api/org/coach/intelligence/summary", { headers: { "X-Org-Auth-Token": orgToken! } });
+      const r = await fetch("/api/org/coach/intelligence/summary", { headers: buildHeaders(), credentials: "include" });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
-    enabled: !!orgToken,
+    enabled: canLoad,
     refetchInterval: 30_000,
   });
 
@@ -339,29 +351,29 @@ export default function OrgIntelligencePage() {
       if (activeTab === "media") params.set("alertType", "new_media");
       if (activeTab === "info") params.set("alertType", "research_due");
       const r = await fetch(`/api/org/coach/intelligence/alerts?${params}`, {
-        headers: { "X-Org-Auth-Token": orgToken! },
+        headers: buildHeaders(), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
-    enabled: !!orgToken,
+    enabled: canLoad,
   });
 
   const watchlistQ = useQuery<{ watchlists: Watchlist[] }>({
     queryKey: ["/api/org/coach/intelligence/watchlists-page", orgToken],
     queryFn: async () => {
-      const r = await fetch("/api/org/coach/intelligence/watchlists", { headers: { "X-Org-Auth-Token": orgToken! } });
+      const r = await fetch("/api/org/coach/intelligence/watchlists", { headers: buildHeaders(), credentials: "include" });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
-    enabled: !!orgToken,
+    enabled: canLoad,
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/org/coach/intelligence/alerts/read-all", {
         method: "PATCH",
-        headers: { "X-Org-Auth-Token": orgToken! },
+        headers: buildHeaders(), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -371,7 +383,7 @@ export default function OrgIntelligencePage() {
   });
 
   // Auth guard
-  if (!orgToken) {
+  if (!orgToken && !hasAccess && !isHydrating) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="h-12 w-12 rounded-2xl bg-violet-500/10 flex items-center justify-center">

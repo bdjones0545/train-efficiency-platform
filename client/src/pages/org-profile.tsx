@@ -15,6 +15,8 @@ import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import {
   User,
   LogOut,
@@ -76,10 +78,16 @@ function timeAgo(date: string | Date) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function orgFetch(method: string, path: string, token: string, body?: any) {
+function orgFetch(method: string, path: string, token: string | null, body?: any) {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getAuthHeaders(),
+  };
+  if (token) headers["X-Org-Auth-Token"] = token;
   return fetch(path, {
     method,
-    headers: { "Content-Type": "application/json", "X-Org-Auth-Token": token },
+    headers,
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -175,7 +183,10 @@ export default function OrgProfilePage() {
 
   const orgId = org?.id;
 
-  // Token
+  // Permissions — resolves via OIDC session, Bearer token, or org-specific token
+  const { hasAccess, isHydrating } = usePermissions(slug);
+
+  // Token (org-portal login path — not required when user is already authenticated via platform)
   const [orgToken, setOrgToken] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
 
@@ -191,37 +202,46 @@ export default function OrgProfilePage() {
       });
   }, [orgId]);
 
+  // Whether the current user can access org management pages
+  const canLoad = !!orgId && (!!orgToken || hasAccess);
+
   // Profile data
   const { data: profileData, isLoading: profileLoading } = useQuery<any>({
     queryKey: ["/api/org/profile", orgId, orgToken],
     queryFn: async () => {
-      const res = await fetch("/api/org/profile", { headers: { "X-Org-Auth-Token": orgToken! } });
+      const headers: Record<string, string> = { ...getAuthHeaders() };
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const res = await fetch("/api/org/profile", { headers, credentials: "include" });
       if (!res.ok) throw new Error("Failed to load profile");
       return res.json();
     },
-    enabled: !!orgToken && !!orgId,
+    enabled: canLoad,
   });
 
   // Sessions
   const { data: sessionsData, refetch: refetchSessions } = useQuery<any>({
     queryKey: ["/api/org/profile/sessions", orgId, orgToken],
     queryFn: async () => {
-      const res = await fetch("/api/org/profile/sessions", { headers: { "X-Org-Auth-Token": orgToken! } });
+      const headers: Record<string, string> = { ...getAuthHeaders() };
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const res = await fetch("/api/org/profile/sessions", { headers, credentials: "include" });
       if (!res.ok) throw new Error("Failed to load sessions");
       return res.json();
     },
-    enabled: !!orgToken && !!orgId,
+    enabled: canLoad,
   });
 
   // Notifications
   const { data: notifData, isLoading: notifLoading } = useQuery<any>({
     queryKey: ["/api/org/profile/notifications", orgId, orgToken],
     queryFn: async () => {
-      const res = await fetch("/api/org/profile/notifications", { headers: { "X-Org-Auth-Token": orgToken! } });
+      const headers: Record<string, string> = { ...getAuthHeaders() };
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const res = await fetch("/api/org/profile/notifications", { headers, credentials: "include" });
       if (!res.ok) throw new Error("Failed to load notifications");
       return res.json();
     },
-    enabled: !!orgToken && !!orgId,
+    enabled: canLoad,
   });
 
   // Edit profile form
@@ -350,7 +370,7 @@ export default function OrgProfilePage() {
     );
   }
 
-  if (!orgToken) {
+  if (!orgToken && !hasAccess && !isHydrating) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-16 text-center space-y-6">
         {org?.logoUrl && <img src={org.logoUrl} alt={org.name} className="h-14 w-auto rounded-xl" />}
