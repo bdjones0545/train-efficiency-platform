@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import {
 import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
   UserPlus, Trophy, Menu, X, Globe, Mail, ChevronLeft, ChevronRight, Play, Quote, ExternalLink,
-  BarChart2, ClipboardList, CalendarCheck,
+  BarChart2, ClipboardList, CalendarCheck, Loader2, FileText,
 } from "lucide-react";
 import { SiInstagram, SiFacebook, SiYoutube, SiTiktok } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
@@ -242,6 +242,7 @@ function ensureUrl(url: string | null | undefined): string {
 export default function OrgLandingPage() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
+  const [, setLocation] = useLocation();
 
   const { data: org, isLoading: orgLoading, error: orgError } = useQuery<Organization>({
     queryKey: ["/api/organizations", slug],
@@ -275,6 +276,16 @@ export default function OrgLandingPage() {
   const activeAthleticPrograms = athleticPrograms?.filter((p: any) => p.active && (p.type === "scheduling" || !p.type)) || [];
   const activeProgramTools = athleticPrograms?.filter((p: any) => p.active && (p.type === "pr_tracker" || p.type === "workout_builder")) || [];
 
+  const { data: publicLandingPages } = useQuery<any[]>({
+    queryKey: ["/api/public/orgs", slug, "landing-pages"],
+    queryFn: async () => {
+      const res = await fetch(`/api/public/orgs/${slug}/landing-pages`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!slug && !!org,
+  });
+
   const { data: mediaData } = useQuery<{ media: OrgMedia[]; grouped: Record<string, OrgMedia[]> }>({
     queryKey: ["/api/public/org", slug, "media"],
     queryFn: async () => {
@@ -306,6 +317,7 @@ export default function OrgLandingPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [navigatingCardId, setNavigatingCardId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const resetClientForm = () => {
@@ -418,22 +430,22 @@ export default function OrgLandingPage() {
               <Button variant="ghost" size="sm" data-testid="link-org-features">Features</Button>
             </a>
             {org.athleticEnabled && activeAthleticPrograms.map((p: any) => (
-              <a key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`}>
+              <Link key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`}>
                 <Button variant="ghost" size="sm" data-testid={`link-athletic-${p.id}`}>
                   <CalendarCheck className="h-4 w-4 mr-1" />
                   {p.name}
                 </Button>
-              </a>
+              </Link>
             ))}
             {org.athleticEnabled && activeProgramTools.map((p: any) => (
-              <a key={p.id} href={`/org/${org.slug}/programs/${p.slug}`}>
+              <Link key={p.id} href={`/org/${org.slug}/programs/${p.slug}`}>
                 <Button variant="ghost" size="sm" data-testid={`link-program-tool-${p.id}`}>
                   {p.type === "pr_tracker"
                     ? <BarChart2 className="h-4 w-4 mr-1" />
                     : <ClipboardList className="h-4 w-4 mr-1" />}
                   {p.name}
                 </Button>
-              </a>
+              </Link>
             ))}
             <Button
               variant="outline"
@@ -479,12 +491,12 @@ export default function OrgLandingPage() {
               <>
                 <p className="px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Scheduling</p>
                 {activeAthleticPrograms.map((p: any) => (
-                  <a key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`} onClick={() => setMobileMenuOpen(false)}>
+                  <Link key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`} onClick={() => setMobileMenuOpen(false)}>
                     <Button variant="ghost" size="sm" className="w-full justify-start" data-testid={`link-athletic-mobile-${p.id}`}>
                       <CalendarCheck className="h-4 w-4 mr-2 text-muted-foreground" />
                       {p.name}
                     </Button>
-                  </a>
+                  </Link>
                 ))}
               </>
             )}
@@ -492,14 +504,14 @@ export default function OrgLandingPage() {
               <>
                 <p className="px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Program Tools</p>
                 {activeProgramTools.map((p: any) => (
-                  <a key={p.id} href={`/org/${org.slug}/programs/${p.slug}`} onClick={() => setMobileMenuOpen(false)}>
+                  <Link key={p.id} href={`/org/${org.slug}/programs/${p.slug}`} onClick={() => setMobileMenuOpen(false)}>
                     <Button variant="ghost" size="sm" className="w-full justify-start" data-testid={`link-tool-mobile-${p.id}`}>
                       {p.type === "pr_tracker"
                         ? <BarChart2 className="h-4 w-4 mr-2 text-muted-foreground" />
                         : <ClipboardList className="h-4 w-4 mr-2 text-muted-foreground" />}
                       {p.name}
                     </Button>
-                  </a>
+                  </Link>
                 ))}
               </>
             )}
@@ -810,21 +822,34 @@ export default function OrgLandingPage() {
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground text-center">Scheduling Programs</p>
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-3xl mx-auto">
-                    {activeAthleticPrograms.map((p: any) => (
-                      <a key={p.id} href={`/org/${org.slug}/athletic/${p.slug}`} data-testid={`link-feature-scheduling-${p.id}`}>
-                        <Card className="p-5 flex items-start gap-4 hover:border-primary/50 transition-colors cursor-pointer group">
-                          <div className="rounded-lg bg-primary/10 p-2.5 flex-shrink-0 group-hover:bg-primary/20 transition-colors">
-                            <CalendarCheck className="h-5 w-5 text-primary" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-semibold text-sm leading-snug">{p.name}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {p.trainingTypes?.length > 0 ? p.trainingTypes.join(", ") : "Team scheduling"}
-                            </p>
-                          </div>
-                        </Card>
-                      </a>
-                    ))}
+                    {activeAthleticPrograms.map((p: any) => {
+                      const isNav = navigatingCardId === p.id;
+                      return (
+                        <div
+                          key={p.id}
+                          role="button"
+                          tabIndex={0}
+                          data-testid={`link-feature-scheduling-${p.id}`}
+                          className="cursor-pointer outline-none"
+                          onClick={() => { setNavigatingCardId(p.id); setLocation(`/org/${org.slug}/athletic/${p.slug}`); }}
+                          onKeyDown={(e) => e.key === "Enter" && setLocation(`/org/${org.slug}/athletic/${p.slug}`)}
+                        >
+                          <Card className={`p-5 flex items-start gap-4 hover:border-primary/50 transition-all cursor-pointer group ${isNav ? "opacity-70 scale-[0.98]" : ""}`}>
+                            <div className="rounded-lg bg-primary/10 p-2.5 flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                              {isNav
+                                ? <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                                : <CalendarCheck className="h-5 w-5 text-primary" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm leading-snug">{p.name}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {p.trainingTypes?.length > 0 ? p.trainingTypes.join(", ") : "Team scheduling"}
+                              </p>
+                            </div>
+                          </Card>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -835,13 +860,24 @@ export default function OrgLandingPage() {
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-3xl mx-auto">
                     {activeProgramTools.map((p: any) => {
                       const isPr = p.type === "pr_tracker";
+                      const isNav = navigatingCardId === p.id;
                       return (
-                        <a key={p.id} href={`/org/${org.slug}/programs/${p.slug}`} data-testid={`link-feature-tool-${p.id}`}>
-                          <Card className="p-5 flex items-start gap-4 hover:border-primary/50 transition-colors cursor-pointer group">
+                        <div
+                          key={p.id}
+                          role="button"
+                          tabIndex={0}
+                          data-testid={`link-feature-tool-${p.id}`}
+                          className="cursor-pointer outline-none"
+                          onClick={() => { setNavigatingCardId(p.id); setLocation(`/org/${org.slug}/programs/${p.slug}`); }}
+                          onKeyDown={(e) => e.key === "Enter" && setLocation(`/org/${org.slug}/programs/${p.slug}`)}
+                        >
+                          <Card className={`p-5 flex items-start gap-4 hover:border-primary/50 transition-all cursor-pointer group ${isNav ? "opacity-70 scale-[0.98]" : ""}`}>
                             <div className={`rounded-lg p-2.5 flex-shrink-0 transition-colors ${isPr ? "bg-amber-500/10 group-hover:bg-amber-500/20" : "bg-primary/10 group-hover:bg-primary/20"}`}>
-                              {isPr
-                                ? <BarChart2 className="h-5 w-5 text-amber-500" />
-                                : <ClipboardList className="h-5 w-5 text-primary" />}
+                              {isNav
+                                ? <Loader2 className={`h-5 w-5 animate-spin ${isPr ? "text-amber-500" : "text-primary"}`} />
+                                : isPr
+                                  ? <BarChart2 className="h-5 w-5 text-amber-500" />
+                                  : <ClipboardList className="h-5 w-5 text-primary" />}
                             </div>
                             <div className="min-w-0">
                               <p className="font-semibold text-sm leading-snug">{p.name}</p>
@@ -850,12 +886,54 @@ export default function OrgLandingPage() {
                               </p>
                             </div>
                           </Card>
-                        </a>
+                        </div>
                       );
                     })}
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Org-Created Landing Pages / Offers */}
+          {publicLandingPages && publicLandingPages.length > 0 && (
+            <div className="mt-16 space-y-8">
+              <FadeUp className="text-center space-y-2">
+                <h3 className="text-xl font-bold">Available Offers & Programs</h3>
+                <p className="text-muted-foreground text-sm max-w-sm mx-auto">Apply or learn more about current programs offered by {org.name}.</p>
+              </FadeUp>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-3xl mx-auto">
+                {publicLandingPages.map((page: any) => {
+                  const dest = `/apply/${org.slug}/${page.slug}`;
+                  const isNav = navigatingCardId === `lp-${page.id}`;
+                  return (
+                    <div
+                      key={page.id}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`link-landing-page-${page.id}`}
+                      className="cursor-pointer outline-none"
+                      onClick={() => { setNavigatingCardId(`lp-${page.id}`); setLocation(dest); }}
+                      onKeyDown={(e) => e.key === "Enter" && setLocation(dest)}
+                    >
+                      <Card className={`p-5 flex items-start gap-4 hover:border-primary/50 transition-all cursor-pointer group h-full ${isNav ? "opacity-70 scale-[0.98]" : ""}`}>
+                        <div className="rounded-lg bg-primary/10 p-2.5 flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                          {isNav
+                            ? <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                            : <FileText className="h-5 w-5 text-primary" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm leading-snug">{page.navLabel || page.name}</p>
+                          {page.subheadline && (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{page.subheadline}</p>
+                          )}
+                          <p className="text-xs text-primary font-medium mt-2">{page.ctaText || "View Offer"} →</p>
+                        </div>
+                      </Card>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

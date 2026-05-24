@@ -13627,6 +13627,43 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // Public: list active org-created landing pages (lead_capture programs with showInOrgMenu = true)
+  app.get("/api/public/orgs/:slug/landing-pages", async (req, res) => {
+    try {
+      const org = await storage.getOrganizationBySlug(req.params.slug);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      const { db } = await import("./db");
+      const { leadCapturePrograms, athleticPrograms } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const pages = await db
+        .select({
+          id: athleticPrograms.id,
+          name: athleticPrograms.name,
+          slug: athleticPrograms.slug,
+          headline: leadCapturePrograms.headline,
+          subheadline: leadCapturePrograms.subheadline,
+          ctaText: leadCapturePrograms.ctaText,
+          funnelType: leadCapturePrograms.funnelType,
+          navLabel: leadCapturePrograms.navLabel,
+          navOrder: leadCapturePrograms.navOrder,
+          heroImageUrl: leadCapturePrograms.heroImageUrl,
+        })
+        .from(athleticPrograms)
+        .innerJoin(leadCapturePrograms, eq(leadCapturePrograms.programId, athleticPrograms.id))
+        .where(
+          and(
+            eq(athleticPrograms.organizationId, org.id),
+            eq(athleticPrograms.active, true),
+            eq(leadCapturePrograms.showInOrgMenu, true)
+          )
+        )
+        .orderBy(leadCapturePrograms.navOrder);
+      res.json(pages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch landing pages" });
+    }
+  });
+
   // Public: partial capture after Step 1
   app.post("/api/public/lead-capture/:orgSlug/:programSlug/partial", async (req, res) => {
     try {
