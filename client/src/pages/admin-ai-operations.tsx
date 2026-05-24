@@ -14,6 +14,7 @@ import {
   Inbox, Brain, ShieldAlert, Activity, GitBranch, Plug, Zap,
   AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw,
   TrendingUp, BarChart3, AlertCircle, CircleDot, Timer, Cpu, Archive,
+  Layers, SkipForward, Ban, Repeat,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -69,6 +70,15 @@ type DashboardData = {
   recentActions: ActionEntry[];
   actionSummary: ActionSummary;
   openAttentionCount: number;
+};
+
+type JobQueueStats = {
+  queued: number;
+  running: number;
+  retrying: number;
+  dead_letter: number;
+  stuck: number;
+  runner?: { isRunning: boolean; lastCycleAt: string | null; cyclesCompleted: number };
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -169,6 +179,11 @@ export default function AdminAiOperationsPage() {
     refetchInterval: 60000,
   });
 
+  const { data: jobStats, isLoading: jobStatsLoading } = useQuery<JobQueueStats>({
+    queryKey: ["/api/job-queue/stats"],
+    refetchInterval: 30000,
+  });
+
   const summary = data?.actionSummary;
 
   return (
@@ -231,6 +246,33 @@ export default function AdminAiOperationsPage() {
             />
           </>
         )}
+      </div>
+
+      {/* Job Queue stats row */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+          <Layers className="h-3.5 w-3.5" />
+          Job Queue Health
+          {jobStats?.runner && (
+            <span className={`ml-2 inline-flex items-center gap-1 text-xs font-normal ${jobStats.runner.isRunning ? "text-green-600" : "text-amber-600"}`}>
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${jobStats.runner.isRunning ? "bg-green-500" : "bg-amber-500"}`} />
+              {jobStats.runner.isRunning ? "Runner active" : "Runner idle"}
+            </span>
+          )}
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {jobStatsLoading ? (
+            [...Array(5)].map((_, i) => <Skeleton key={i} className="h-20" />)
+          ) : (
+            <>
+              <StatCard label="Queued" value={jobStats?.queued ?? 0} icon={Layers} color="text-blue-600" href="/admin/agent-ops" />
+              <StatCard label="Running" value={jobStats?.running ?? 0} icon={CircleDot} color="text-cyan-600" href="/admin/agent-ops" />
+              <StatCard label="Retrying" value={jobStats?.retrying ?? 0} icon={Repeat} color={jobStats?.retrying ? "text-amber-600" : "text-green-600"} href="/admin/agent-ops" />
+              <StatCard label="Dead Letter" value={jobStats?.dead_letter ?? 0} icon={Archive} color={jobStats?.dead_letter ? "text-red-600" : "text-green-600"} href="/admin/agent-ops" />
+              <StatCard label="Stuck Jobs" value={jobStats?.stuck ?? 0} icon={SkipForward} color={jobStats?.stuck ? "text-orange-600" : "text-green-600"} href="/admin/agent-ops" />
+            </>
+          )}
+        </div>
       </div>
 
       {/* Action summary strip */}

@@ -475,6 +475,9 @@ app.use((req, res, next) => {
   const { startWorkflowRunner } = await import("./workflow-runner");
   startWorkflowRunner();
 
+  const { startWorkflowJobRunner } = await import("./workflow-job-runner");
+  startWorkflowJobRunner();
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

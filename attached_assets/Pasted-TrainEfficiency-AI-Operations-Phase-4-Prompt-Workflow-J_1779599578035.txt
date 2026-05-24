@@ -1,0 +1,539 @@
+TrainEfficiency AI Operations — Phase 4 Prompt
+
+Workflow Job Queue + Production Reliability Layer
+
+Build Phase 4 of the AI Operations architecture.
+
+Goal:
+Turn AI Operations from a governed agent system into production-grade operational infrastructure capable of reliably executing workflows, tool calls, scheduled jobs, retries, and agent actions at scale.
+
+Phase 4 should make workflows:
+
+* durable
+* resumable
+* retry-safe
+* rate-limited
+* idempotent
+* observable
+* recoverable
+* concurrency-safe
+* production-ready
+
+IMPORTANT:
+Do NOT add new external APIs yet.
+
+This phase is about execution reliability, not new capabilities.
+
+The system already has:
+
+* unified_agent_action_log
+* workflow_context
+* workflow_outcomes
+* agent_capability_policies
+* org_ai_governance_settings
+* capability enforcement engine
+* AI Governance UI
+
+Now build the reliability layer underneath it.
+
+⸻
+
+PART 1 — workflow_jobs table
+
+Create:
+workflow_jobs
+
+Fields:
+
+* id
+* orgId
+* workflowRunId
+* workflowStepId
+* jobType
+    * workflow_step
+    * tool_execution
+    * scheduled_trigger
+    * retry
+    * approval_timeout
+    * memory_lifecycle
+    * business_brain_run
+    * notification
+* status
+    * queued
+    * running
+    * completed
+    * failed
+    * retrying
+    * cancelled
+    * dead_letter
+    * paused
+* priority
+    * low
+    * normal
+    * high
+    * critical
+* scheduledFor
+* startedAt
+* completedAt
+* failedAt
+* attempts
+* maxAttempts
+* nextRetryAt
+* retryBackoffMs
+* lastError
+* errorType
+    * transient
+    * blocked
+    * fatal
+    * governance
+    * timeout
+    * rate_limited
+* payload jsonb
+* result jsonb
+* idempotencyKey
+* lockedBy
+* lockedAt
+* createdAt
+* updatedAt
+
+Indexes:
+
+* orgId
+* status
+* scheduledFor
+* workflowRunId
+* idempotencyKey
+* priority
+
+⸻
+
+PART 2 — agent_execution_locks table
+
+Create:
+agent_execution_locks
+
+Purpose:
+Prevent race conditions and duplicate execution.
+
+Fields:
+
+* id
+* orgId
+* lockKey
+* entityType
+* entityId
+* workflowRunId
+* lockedBy
+* expiresAt
+* createdAt
+
+Use cases:
+
+* prevent two workflows from emailing same lead at same time
+* prevent duplicate booking updates
+* prevent duplicate retry execution
+* prevent same workflow step from running twice
+
+⸻
+
+PART 3 — Workflow Job Queue Engine
+
+Create:
+server/workflow-job-queue.ts
+
+Responsibilities:
+
+* enqueue jobs
+* claim jobs safely
+* execute jobs
+* retry transient failures
+* classify failures
+* move failed jobs to dead letter
+* release locks
+* pause/resume jobs
+* enforce org-level rate limits
+* enforce governance before execution
+* log every lifecycle event to unified_agent_action_log
+
+Functions:
+
+* enqueueWorkflowJob()
+* claimNextJob()
+* executeWorkflowJob()
+* completeWorkflowJob()
+* failWorkflowJob()
+* retryWorkflowJob()
+* moveToDeadLetter()
+* cancelWorkflowJob()
+* pauseOrgJobs()
+* resumeOrgJobs()
+* classifyJobFailure()
+* acquireExecutionLock()
+* releaseExecutionLock()
+
+Every job execution must:
+
+1. verify org scope
+2. check emergency pause
+3. check governance/capability enforcement
+4. acquire execution lock if needed
+5. execute action
+6. write unified_agent_action_log
+7. release lock safely
+
+⸻
+
+PART 4 — Idempotency protection
+
+Implement idempotency keys for every mutating job.
+
+Examples:
+
+* send_email:{orgId}:{workflowRunId}:{stepId}:{recipient}
+* send_sms:{orgId}:{workflowRunId}:{stepId}:{phone}
+* book_session:{orgId}:{athleteId}:{slotId}
+* workflow_step:{orgId}:{workflowRunId}:{stepId}
+* memory_lifecycle:{orgId}:{date}
+
+Rules:
+
+* If a completed job exists with the same idempotencyKey, do not execute again.
+* Return the previous result.
+* Log duplicate prevention to unified_agent_action_log.
+* Never double-send communications.
+* Never double-book sessions.
+* Never double-charge billing actions.
+
+⸻
+
+PART 5 — Retry + failure classification
+
+Create structured failure handling.
+
+Failure types:
+
+1. Transient
+    Examples:
+
+* network timeout
+* provider temporarily unavailable
+* database timeout
+
+Behavior:
+
+* retry with exponential backoff
+* max attempts configurable by job type
+
+2. Rate limited
+    Examples:
+
+* SendGrid rate limit
+* Twilio rate limit
+* internal org quota hit
+
+Behavior:
+
+* retry at provider reset time or calculated backoff
+
+3. Governance
+    Examples:
+
+* emergency pause enabled
+* agent permission revoked
+* confidence below threshold
+
+Behavior:
+
+* pause job
+* send to approval/attention queue
+* do not retry automatically until governance changes
+
+4. Blocked
+    Examples:
+
+* missing email
+* missing phone
+* disconnected integration
+* incomplete account setup
+
+Behavior:
+
+* create attention item
+* mark paused/blocked
+* allow manual resume
+
+5. Fatal
+    Examples:
+
+* invalid workflow definition
+* deleted entity
+* impossible state
+
+Behavior:
+
+* move to dead letter
+* create critical attention item
+
+⸻
+
+PART 6 — Dead letter queue
+
+Add dead-letter handling for jobs that cannot complete.
+
+Dead letter jobs should show:
+
+* original job
+* failure reason
+* attempts
+* last payload
+* last error
+* related workflow
+* related entity
+* recommended resolution
+* actions:
+    * retry
+    * edit payload and retry
+    * cancel
+    * mark resolved
+    * escalate
+
+Add UI panel:
+AI Operations → System Health → Dead Letter Queue
+
+⸻
+
+PART 7 — Scheduled job runner
+
+Create production-safe scheduled runner.
+
+Responsibilities:
+
+* poll queued jobs where scheduledFor <= now
+* claim jobs with row-level lock or safe atomic update
+* execute within concurrency limits
+* prevent duplicate workers from claiming same job
+* support priority ordering
+* support paused orgs
+* support graceful shutdown
+
+Add:
+server/workflow-job-runner.ts
+
+Runner should be disabled in test environments unless explicitly enabled.
+
+⸻
+
+PART 8 — Org-level rate limits
+
+Create:
+org_execution_rate_limits table
+
+Fields:
+
+* id
+* orgId
+* category
+    * communication
+    * scheduling
+    * finance
+    * research
+    * workflow
+    * ai_reasoning
+* limitWindow
+    * minute
+    * hour
+    * day
+* maxExecutions
+* currentCount
+* resetAt
+* createdAt
+* updatedAt
+
+Enforce limits before execution.
+
+Examples:
+
+* max 50 emails/hour
+* max 25 SMS/hour
+* max 100 AI generations/day
+* max 10 research jobs/hour
+
+When exceeded:
+
+* mark job rate_limited
+* set nextRetryAt
+* log to unified_agent_action_log
+
+⸻
+
+PART 9 — Stuck job detection
+
+Implement stuck job monitor.
+
+Rules:
+
+* running job older than expected duration becomes stuck
+* stale locks expire automatically
+* stuck jobs are either retried or escalated depending on type
+* repeated stuck jobs trigger critical attention item
+
+Add dashboard metrics:
+
+* stuck jobs
+* average execution time
+* retry rate
+* dead letter count
+* job throughput
+* failure rate by job type
+
+⸻
+
+PART 10 — Workflow execution migration
+
+Upgrade existing workflow execution so:
+
+Current:
+workflow runs execute directly/synchronously.
+
+New:
+workflow runs enqueue jobs.
+
+Behavior:
+
+* starting a workflow creates initial workflow_step job
+* each completed step enqueues the next step
+* approval gates pause job execution until approval
+* rejected jobs stop or reroute
+* regenerated jobs enqueue new draft generation
+* completed workflows record workflow_outcomes
+* all transitions write to unified_agent_action_log
+
+Keep old execution behavior as fallback behind a feature flag:
+USE_WORKFLOW_JOB_QUEUE=true
+
+⸻
+
+PART 11 — Approval timeout jobs
+
+Create scheduled approval timeout behavior.
+
+If approval is required and no one acts within configured window:
+
+* create reminder attention item
+* optionally escalate
+* optionally cancel workflow after longer timeout
+* log approval_timeout job
+
+Per workflow config:
+
+* approvalReminderAfterHours
+* approvalEscalateAfterHours
+* approvalExpireAfterHours
+
+⸻
+
+PART 12 — UI upgrades
+
+Upgrade AI Operations Command Center:
+
+Add cards:
+
+* queued jobs
+* running jobs
+* retrying jobs
+* dead letter jobs
+* stuck jobs
+* average job duration
+* failure rate
+
+Upgrade Agent Ops Monitor / System Health:
+
+Add:
+
+* Job Queue Health
+* Dead Letter Queue
+* Rate Limit Status
+* Stuck Job Monitor
+* Worker Status
+* Recent Job Failures
+
+Workflow detail page:
+
+Add:
+
+* job timeline
+* step execution status
+* retry history
+* failure classification
+* idempotency key
+* locks acquired/released
+* manual retry button
+* cancel job button
+
+⸻
+
+PART 13 — Unified logging integration
+
+Every job lifecycle event writes to:
+unified_agent_action_log
+
+New action types:
+
+* job_enqueued
+* job_claimed
+* job_started
+* job_completed
+* job_failed
+* job_retry_scheduled
+* job_moved_to_dead_letter
+* job_cancelled
+* job_paused
+* job_resumed
+* duplicate_job_prevented
+* execution_lock_acquired
+* execution_lock_released
+* rate_limit_hit
+* stuck_job_detected
+
+⸻
+
+PART 14 — Reliability safeguards
+
+Critical safeguards:
+
+* No duplicate sends
+* No duplicate bookings
+* No duplicate workflow steps
+* No double billing
+* All mutating operations require idempotency keys
+* All jobs are org-scoped
+* All locks expire
+* All retries are bounded
+* All failures are classified
+* Emergency pause stops future job execution safely
+* Already-running jobs finish safely unless critical stop is required
+* Manual retry must re-check governance before execution
+
+⸻
+
+PART 15 — Architecture goal
+
+The goal of Phase 4 is to make TrainEfficiency’s AI Operations layer production-reliable.
+
+After this phase, the system should feel like:
+“AI operations are not just smart — they are durable, observable, retry-safe, and trustworthy.”
+
+Build this carefully and incrementally.
+
+Prioritize:
+
+1. workflow_jobs table
+2. queue engine
+3. idempotency
+4. failure classification
+5. dead letter queue
+6. scheduled runner
+7. UI visibility
+8. migration from synchronous workflows to queued workflows
+
+Do not add new external APIs in this phase.

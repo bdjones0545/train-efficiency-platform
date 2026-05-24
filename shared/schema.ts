@@ -3315,3 +3315,95 @@ export const orgAiGovernanceSettings = pgTable("org_ai_governance_settings", {
 export const insertOrgAiGovernanceSettingsSchema = createInsertSchema(orgAiGovernanceSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type OrgAiGovernanceSettings = typeof orgAiGovernanceSettings.$inferSelect;
 export type InsertOrgAiGovernanceSettings = z.infer<typeof insertOrgAiGovernanceSettingsSchema>;
+
+// ─── Workflow Jobs ────────────────────────────────────────────────────────────
+// Durable job queue for every agent action, workflow step, tool call, and
+// scheduled trigger. Every mutating operation goes through here.
+// jobType: workflow_step | tool_execution | scheduled_trigger | retry |
+//          approval_timeout | memory_lifecycle | business_brain_run | notification
+// status: queued | running | completed | failed | retrying | cancelled | dead_letter | paused
+// priority: low | normal | high | critical
+// errorType: transient | blocked | fatal | governance | timeout | rate_limited
+
+export const workflowJobs = pgTable("workflow_jobs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+
+  workflowRunId: text("workflow_run_id"),
+  workflowStepId: text("workflow_step_id"),
+
+  jobType: text("job_type").notNull().default("workflow_step"),
+  status: text("status").notNull().default("queued"),
+  priority: text("priority").notNull().default("normal"),
+
+  // Scheduling
+  scheduledFor: timestamp("scheduled_for").defaultNow(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  failedAt: timestamp("failed_at"),
+
+  // Retry tracking
+  attempts: integer("attempts").default(0),
+  maxAttempts: integer("max_attempts").default(3),
+  nextRetryAt: timestamp("next_retry_at"),
+  retryBackoffMs: integer("retry_backoff_ms").default(5000),
+
+  // Failure details
+  lastError: text("last_error"),
+  errorType: text("error_type"), // transient | blocked | fatal | governance | timeout | rate_limited
+
+  // Data
+  payload: jsonb("payload"),
+  result: jsonb("result"),
+
+  // Idempotency + locking
+  idempotencyKey: text("idempotency_key"),
+  lockedBy: text("locked_by"),
+  lockedAt: timestamp("locked_at"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWorkflowJobsSchema = createInsertSchema(workflowJobs).omit({ id: true, createdAt: true, updatedAt: true });
+export type WorkflowJob = typeof workflowJobs.$inferSelect;
+export type InsertWorkflowJob = z.infer<typeof insertWorkflowJobsSchema>;
+
+// ─── Agent Execution Locks ────────────────────────────────────────────────────
+// Prevent race conditions: two workflows cannot act on the same entity at once.
+// Locks expire automatically (expiresAt) to prevent deadlocks.
+
+export const agentExecutionLocks = pgTable("agent_execution_locks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  lockKey: text("lock_key").notNull().unique(),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  workflowRunId: text("workflow_run_id"),
+  lockedBy: text("locked_by").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type AgentExecutionLock = typeof agentExecutionLocks.$inferSelect;
+
+// ─── Org Execution Rate Limits ────────────────────────────────────────────────
+// Per-org, per-category rate limit tracking.
+// category: communication | scheduling | finance | research | workflow | ai_reasoning
+// limitWindow: minute | hour | day
+
+export const orgExecutionRateLimits = pgTable("org_execution_rate_limits", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  category: text("category").notNull(),
+  limitWindow: text("limit_window").notNull().default("hour"),
+  maxExecutions: integer("max_executions").notNull().default(50),
+  currentCount: integer("current_count").default(0),
+  resetAt: timestamp("reset_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrgExecutionRateLimitsSchema = createInsertSchema(orgExecutionRateLimits).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrgExecutionRateLimit = typeof orgExecutionRateLimits.$inferSelect;
+export type InsertOrgExecutionRateLimit = z.infer<typeof insertOrgExecutionRateLimitsSchema>;

@@ -21,6 +21,7 @@ import {
   Database, Mail, MessageSquare, Activity, Zap, ShieldAlert,
   GitBranch, RotateCcw, CheckSquare, ExternalLink, AlertCircle,
   Info, Timer, Lock, CircleDot, Play, Link2, Link2Off, CreditCard, Calendar, Inbox, ArrowRight,
+  Archive, Repeat, Ban,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
@@ -633,7 +634,7 @@ export default function AdminAgentOpsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-5 w-full">
+        <TabsList className="grid grid-cols-6 w-full">
           <TabsTrigger value="overview" data-testid="tab-overview">
             Overview
             {pendingCount > 0 && (
@@ -651,6 +652,9 @@ export default function AdminAgentOpsPage() {
             {stuckCount > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-orange-500 text-white text-[10px] h-4 min-w-4 px-1">{stuckCount}</span>
             )}
+          </TabsTrigger>
+          <TabsTrigger value="dead-letter" data-testid="tab-dead-letter">
+            Dead Letter
           </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit-trail">Audit Trail</TabsTrigger>
           <TabsTrigger value="connectors" data-testid="tab-connectors">Connectors</TabsTrigger>
@@ -787,6 +791,11 @@ export default function AdminAgentOpsPage() {
           />
         </TabsContent>
 
+        {/* ── Dead Letter Queue ── */}
+        <TabsContent value="dead-letter" className="space-y-4 mt-4">
+          <DeadLetterPanel />
+        </TabsContent>
+
         {/* ── Connectors ── */}
         <TabsContent value="connectors" className="space-y-4 mt-4">
           <ConnectorsPanel />
@@ -804,6 +813,155 @@ export default function AdminAgentOpsPage() {
       />
 
       <RecentActivityPanel />
+    </div>
+  );
+}
+
+// ─── Dead Letter Panel ────────────────────────────────────────────────────────
+
+type DeadLetterJob = {
+  id: string;
+  jobType: string;
+  status: string;
+  agentType: string | null;
+  priority: number;
+  attemptCount: number;
+  maxAttempts: number;
+  lastError: string | null;
+  failedAt: string | null;
+  payload: Record<string, any>;
+  deadLetteredAt: string | null;
+  deadLetterReason: string | null;
+  workflowRunId: string | null;
+};
+
+function DeadLetterPanel() {
+  const { toast } = useToast();
+  const { data: jobs, isLoading, refetch } = useQuery<DeadLetterJob[]>({
+    queryKey: ["/api/job-queue/dead-letter"],
+    refetchInterval: 60000,
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/job-queue/dead-letter/${id}/retry`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Job re-queued", description: "The job has been moved back to the queue." });
+      queryClient.invalidateQueries({ queryKey: ["/api/job-queue/dead-letter"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/job-queue/stats"] });
+    },
+    onError: () => toast({ title: "Retry failed", variant: "destructive" }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/job-queue/${id}/cancel`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Job cancelled" });
+      queryClient.invalidateQueries({ queryKey: ["/api/job-queue/dead-letter"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/job-queue/stats"] });
+    },
+    onError: () => toast({ title: "Cancel failed", variant: "destructive" }),
+  });
+
+  return (
+    <div className="space-y-4" data-testid="panel-dead-letter">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Archive className="h-4 w-4 text-red-500" />
+            Dead Letter Queue
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Jobs that exhausted all retry attempts. You can re-queue or discard them.
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => refetch()} data-testid="button-refresh-dead-letter">
+          <RefreshCw className="h-4 w-4 mr-1.5" />
+          Refresh
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
+        </div>
+      ) : !jobs?.length ? (
+        <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed rounded-lg text-center" data-testid="text-no-dead-letter">
+          <CheckCircle className="h-8 w-8 text-green-500 mb-2" />
+          <p className="text-sm font-medium">Dead letter queue is empty</p>
+          <p className="text-xs text-muted-foreground mt-1">All jobs completed or are still in-flight.</p>
+        </div>
+      ) : (
+        <div className="space-y-3" data-testid="list-dead-letter-jobs">
+          {jobs.map(job => (
+            <div
+              key={job.id}
+              className="border rounded-lg p-4 bg-red-50/40 dark:bg-red-950/20 border-red-200 dark:border-red-900/50"
+              data-testid={`row-dead-letter-${job.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold font-mono">{job.jobType}</span>
+                    {job.agentType && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
+                        {job.agentType}
+                      </span>
+                    )}
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                      dead_letter
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                    <span>{job.attemptCount}/{job.maxAttempts} attempts</span>
+                    {job.deadLetteredAt && <span>{ts(job.deadLetteredAt)}</span>}
+                    {job.workflowRunId && (
+                      <span className="font-mono text-[10px]">run: {job.workflowRunId.slice(0, 8)}…</span>
+                    )}
+                  </div>
+                  {job.deadLetterReason && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                      Reason: {job.deadLetterReason}
+                    </p>
+                  )}
+                  {job.lastError && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1 line-clamp-2 font-mono">{job.lastError}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1 border-green-300 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400"
+                    onClick={() => retryMutation.mutate(job.id)}
+                    disabled={retryMutation.isPending}
+                    data-testid={`button-retry-${job.id}`}
+                  >
+                    <Repeat className="h-3 w-3" />
+                    Retry
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
+                    onClick={() => cancelMutation.mutate(job.id)}
+                    disabled={cancelMutation.isPending}
+                    data-testid={`button-cancel-${job.id}`}
+                  >
+                    <Ban className="h-3 w-3" />
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -128,6 +128,13 @@ import {
   orgAiGovernanceSettings,
   type OrgAiGovernanceSettings,
   type InsertOrgAiGovernanceSettings,
+  workflowJobs,
+  type WorkflowJob,
+  type InsertWorkflowJob,
+  agentExecutionLocks,
+  type AgentExecutionLock,
+  orgExecutionRateLimits,
+  type OrgExecutionRateLimit,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -3745,6 +3752,41 @@ export class DatabaseStorage implements IStorage {
       }).returning();
       return row;
     }
+  }
+
+  // ─── Workflow Jobs ────────────────────────────────────────────────────────
+
+  async getWorkflowJobs(orgId: string, status?: string, limit = 50): Promise<WorkflowJob[]> {
+    const conditions = [eq(workflowJobs.orgId, orgId)];
+    if (status) conditions.push(eq(workflowJobs.status, status));
+    return db.select().from(workflowJobs)
+      .where(and(...conditions))
+      .orderBy(desc(workflowJobs.createdAt))
+      .limit(limit);
+  }
+
+  async getWorkflowJob(id: string, orgId: string): Promise<WorkflowJob | null> {
+    const [row] = await db.select().from(workflowJobs)
+      .where(and(eq(workflowJobs.id, id), eq(workflowJobs.orgId, orgId)));
+    return row ?? null;
+  }
+
+  async getJobsForRun(orgId: string, workflowRunId: string): Promise<WorkflowJob[]> {
+    return db.select().from(workflowJobs)
+      .where(and(eq(workflowJobs.orgId, orgId), eq(workflowJobs.workflowRunId, workflowRunId)))
+      .orderBy(workflowJobs.createdAt);
+  }
+
+  async getDeadLetterJobs(orgId: string, limit = 50): Promise<WorkflowJob[]> {
+    return db.select().from(workflowJobs)
+      .where(and(eq(workflowJobs.orgId, orgId), eq(workflowJobs.status, "dead_letter")))
+      .orderBy(desc(workflowJobs.failedAt))
+      .limit(limit);
+  }
+
+  async getRateLimits(orgId: string): Promise<OrgExecutionRateLimit[]> {
+    return db.select().from(orgExecutionRateLimits)
+      .where(eq(orgExecutionRateLimits.orgId, orgId));
   }
 
   async seedDefaultPolicies(orgId: string): Promise<void> {

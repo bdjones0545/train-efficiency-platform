@@ -15631,5 +15631,122 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // JOB QUEUE ROUTES — Phase 4
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /api/job-queue/stats — job queue health metrics
+  app.get("/api/job-queue/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { getJobQueueStats } = await import("./workflow-job-queue");
+      const stats = await getJobQueueStats(req.user.orgId);
+      const { getRunnerStatus } = await import("./workflow-job-runner");
+      res.json({ ...stats, runner: getRunnerStatus() });
+    } catch (e: any) {
+      console.error("[job-queue/stats] error:", e);
+      res.status(500).json({ message: "Failed to fetch job queue stats" });
+    }
+  });
+
+  // GET /api/job-queue/jobs — list jobs by status
+  app.get("/api/job-queue/jobs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const status = req.query.status as string | undefined;
+      const limit = parseInt(req.query.limit as string ?? "50");
+      const jobs = await storage.getWorkflowJobs(orgId, status, limit);
+      res.json(jobs);
+    } catch (e: any) {
+      console.error("[job-queue/jobs] error:", e);
+      res.status(500).json({ message: "Failed to fetch jobs" });
+    }
+  });
+
+  // GET /api/job-queue/dead-letter — list dead letter jobs
+  app.get("/api/job-queue/dead-letter", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const jobs = await storage.getDeadLetterJobs(req.user.orgId);
+      res.json(jobs);
+    } catch (e: any) {
+      console.error("[job-queue/dead-letter] error:", e);
+      res.status(500).json({ message: "Failed to fetch dead letter jobs" });
+    }
+  });
+
+  // POST /api/job-queue/dead-letter/:id/retry — manually retry a dead letter job
+  app.post("/api/job-queue/dead-letter/:id/retry", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { retryDeadLetterJob } = await import("./workflow-job-queue");
+      const result = await retryDeadLetterJob(
+        req.params.id,
+        req.user.orgId,
+        req.user.name ?? req.user.email ?? "admin",
+      );
+      if (!result.ok) return res.status(400).json({ message: result.error });
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("[job-queue/dead-letter/retry] error:", e);
+      res.status(500).json({ message: "Failed to retry job" });
+    }
+  });
+
+  // POST /api/job-queue/:id/cancel — cancel a queued/retrying job
+  app.post("/api/job-queue/:id/cancel", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { cancelWorkflowJob } = await import("./workflow-job-queue");
+      await cancelWorkflowJob(req.params.id, req.user.orgId, req.user.name ?? req.user.email ?? "admin");
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("[job-queue/cancel] error:", e);
+      res.status(500).json({ message: "Failed to cancel job" });
+    }
+  });
+
+  // GET /api/job-queue/run/:runId — jobs for a specific workflow run
+  app.get("/api/job-queue/run/:runId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const jobs = await storage.getJobsForRun(req.user.orgId, req.params.runId);
+      res.json(jobs);
+    } catch (e: any) {
+      console.error("[job-queue/run] error:", e);
+      res.status(500).json({ message: "Failed to fetch run jobs" });
+    }
+  });
+
+  // GET /api/job-queue/rate-limits — org rate limit status
+  app.get("/api/job-queue/rate-limits", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const limits = await storage.getRateLimits(req.user.orgId);
+      res.json(limits);
+    } catch (e: any) {
+      console.error("[job-queue/rate-limits] error:", e);
+      res.status(500).json({ message: "Failed to fetch rate limits" });
+    }
+  });
+
+  // POST /api/job-queue/enqueue — manually enqueue a job (admin only)
+  app.post("/api/job-queue/enqueue", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { enqueueWorkflowJob } = await import("./workflow-job-queue");
+      const result = await enqueueWorkflowJob({ orgId: req.user.orgId, ...req.body });
+      res.json(result);
+    } catch (e: any) {
+      console.error("[job-queue/enqueue] error:", e);
+      res.status(500).json({ message: "Failed to enqueue job" });
+    }
+  });
+
+  // POST /api/job-queue/detect-stuck — manually trigger stuck job detection
+  app.post("/api/job-queue/detect-stuck", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { detectAndHandleStuckJobs } = await import("./workflow-job-queue");
+      const result = await detectAndHandleStuckJobs();
+      res.json(result);
+    } catch (e: any) {
+      console.error("[job-queue/detect-stuck] error:", e);
+      res.status(500).json({ message: "Failed to detect stuck jobs" });
+    }
+  });
+
   return httpServer;
 }
