@@ -1,0 +1,96 @@
+Audit the full TrainEfficiency coach/admin experience and how every system connects.
+
+Goal:
+Make TrainEfficiency feel like one unified operating system for coaches, not separate tools stitched together.
+
+Audit these sections:
+- Portal/Home
+- Calendar
+- PR Tracker
+- Workout Builder
+- Program Builder
+- Exercise Media
+- Education Builder
+- Education Progress
+- Command Center
+- Communications
+- Athlete Status
+- Workflows
+- Teams
+- Account/Profile/Notifications
+
+For each section, map:
+1. Who can access it:
+   - owner
+   - admin
+   - coach
+   - athlete/client
+
+2. What data it depends on:
+   - org
+   - team
+   - athlete
+   - schedule
+   - workouts
+   - PR records
+   - education content
+   - messages
+   - workflows
+
+3. What it should connect to:
+   - teams should connect to athletes, PRs, workouts, schedules, communications
+   - workout builder should connect to teams and athletes
+   - PR tracker should connect to teams and athlete profiles
+   - education should connect to athlete assignments and progress
+   - communications should connect to teams, athletes, and workflows
+   - command center should summarize all systems
+
+4. Identify disconnected flows:
+   - pages that require separate login
+   - pages that use different auth checks
+   - pages that do not inherit org/team context
+   - buttons/routes that feel like separate apps
+   - tools that do not update dashboard/command center data
+
+5. Create a coach journey map:
+   - coach logs in
+   - sees dashboard/home
+   - views today’s schedule
+   - opens team
+   - reviews athletes
+   - checks PRs
+   - assigns workout
+   - sends communication
+   - tracks education/progress
+   - sees command center updates
+
+6. Fix navigation consistency:
+   - all coach/admin tools should use shared org auth
+   - all pages should use the same sidebar/app shell
+   - no duplicate logout buttons
+   - no isolated portal auth states
+   - no disconnected “login required” screens for authenticated coaches/admins
+
+7. Fix data consistency:
+   - team changes should update Teams, PR Tracker, Workout Builder, Communications, and Command Center
+   - athlete changes should update athlete lists, PRs, schedule, education, and workflows
+   - workout assignments should appear in team/athlete dashboards
+   - education assignments should appear in progress tracking
+   - communications should log against athletes/teams
+
+8. Deliverables:
+   - System connection map
+   - Auth/permission matrix
+   - Route map
+   - Data dependency map
+   - Coach journey audit
+   - List of broken/disconnected flows
+   - Priority fix plan: P0, P1, P2
+
+Acceptance criteria:
+- Coach/admin experience feels like one connected system
+- Every sidebar item has a clear purpose
+- Every tool shares org/team/athlete context
+- No page feels like a separate mini-app
+- Command Center reflects activity across the platform
+- Coaches can complete a full workflow without hitting auth, routing, or context dead ends
