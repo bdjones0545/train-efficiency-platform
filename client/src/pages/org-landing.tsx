@@ -940,59 +940,193 @@ export default function OrgLandingPage() {
       </section>
 
       {coaches && coaches.length > 0 && (
-        <section className="py-20 px-6">
-          <div className="max-w-6xl mx-auto">
-            <FadeUp className="text-center mb-12 space-y-3">
-              <h2 className="text-3xl font-bold" data-testid="text-org-coaches-heading">Meet Our Coaches</h2>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                Train with experienced strength & conditioning professionals dedicated to your athletic development.
+        <section className="py-20 px-6 relative overflow-hidden" data-testid="section-coaches">
+          {/* Subtle background contrast */}
+          <div className="absolute inset-0 bg-gradient-to-b from-card/20 via-card/40 to-card/20 pointer-events-none" aria-hidden="true" />
+          {/* Optional horizontal divider glow */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent pointer-events-none" aria-hidden="true" />
+
+          <div className="max-w-6xl mx-auto relative">
+            {/* Section header */}
+            <FadeUp className="text-center mb-10 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary/70" data-testid="text-coaches-eyebrow">Coaching Staff</p>
+              <h2 className="text-3xl font-bold tracking-tight" data-testid="text-org-coaches-heading">Elite Coaching Team</h2>
+              <p className="text-muted-foreground max-w-md mx-auto text-sm">
+                Experienced professionals dedicated to athletic performance development.
               </p>
             </FadeUp>
-            <StaggerGrid className="grid sm:grid-cols-2 gap-8 max-w-3xl mx-auto">
-              {coaches.map((coach: any) => (
-                <LiftCard key={coach.id} className="h-full">
-                  <Card className="p-6 space-y-4 h-full org-card-hover" data-testid={`card-org-coach-${coach.id}`}>
-                    <div className="flex items-center gap-4">
-                      <Avatar className="h-16 w-16">
-                        <AvatarImage src={coach.photoUrl || coach.user?.profileImageUrl || undefined} />
-                        <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
-                          {(coach.user?.firstName?.[0] || "C").toUpperCase()}
-                          {(coach.user?.lastName?.[0] || "").toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h3 className="text-lg font-semibold">
-                          {coach.user?.firstName} {coach.user?.lastName}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">Strength & Conditioning Coach</p>
+
+            {/* Mobile: horizontal swipeable carousel / Desktop: responsive grid */}
+            <div
+              className="
+                flex gap-4 overflow-x-auto pb-4
+                snap-x snap-mandatory
+                md:grid md:grid-cols-2 md:overflow-visible md:pb-0
+                lg:grid-cols-3
+                scrollbar-none
+                -mx-6 px-6
+                md:mx-0 md:px-0
+              "
+              style={{ WebkitOverflowScrolling: "touch" }}
+              data-testid="coaches-carousel"
+            >
+              {coaches.map((coach: any, idx: number) => {
+                const firstName = coach.user?.firstName || "C";
+                const lastName = coach.user?.lastName || "";
+                const initials = `${firstName[0] || ""}${lastName[0] || ""}`.toUpperCase();
+                const photoSrc = coach.photoUrl || coach.user?.profileImageUrl || undefined;
+                const role = coach.title || coach.role || "Strength & Conditioning Coach";
+                const specialty = coach.specialties?.[0] || "";
+
+                return (
+                  <div
+                    key={coach.id}
+                    className="
+                      min-w-[82vw] sm:min-w-[60vw]
+                      md:min-w-0
+                      snap-start
+                      flex-shrink-0
+                      md:flex-shrink
+                    "
+                    style={{
+                      animationDelay: `${idx * 80}ms`,
+                      animation: "coaches-fade-in 0.45s ease both",
+                    }}
+                    data-testid={`card-org-coach-${coach.id}`}
+                  >
+                    {/* Glass card */}
+                    <div
+                      className="
+                        relative rounded-2xl border border-white/8
+                        bg-card/60 backdrop-blur-sm
+                        p-4 h-full
+                        shadow-sm
+                        transition-all duration-200
+                        hover:scale-[1.015] hover:shadow-md
+                        active:scale-[0.99]
+                        group
+                        overflow-hidden
+                      "
+                      style={{
+                        boxShadow: "0 0 0 1px rgba(var(--primary-rgb, 74 222 128), 0.08), 0 4px 16px rgba(0,0,0,0.10)",
+                      }}
+                    >
+                      {/* Subtle green edge glow on hover */}
+                      <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                        style={{ boxShadow: "inset 0 0 0 1px rgba(var(--primary-rgb, 74 222 128), 0.18)" }}
+                        aria-hidden="true"
+                      />
+
+                      {/* Horizontal layout: avatar + info */}
+                      <div className="flex items-center gap-3.5">
+                        {/* Premium avatar */}
+                        <div className="relative flex-shrink-0">
+                          {/* Soft glow ring */}
+                          <div className="absolute -inset-0.5 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 blur-[2px]" aria-hidden="true" />
+                          <div className="relative w-14 h-14 rounded-full overflow-hidden ring-1 ring-primary/20">
+                            {photoSrc ? (
+                              <img
+                                src={photoSrc}
+                                alt={`${firstName} ${lastName}`}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              /* EST/neural-inspired gradient fallback */
+                              <div
+                                className="w-full h-full flex items-center justify-center relative"
+                                style={{
+                                  background: "linear-gradient(135deg, hsl(var(--primary)/0.25) 0%, hsl(var(--primary)/0.08) 50%, hsl(240 20% 12%) 100%)",
+                                }}
+                              >
+                                {/* Subtle grid texture */}
+                                <div
+                                  className="absolute inset-0 opacity-20"
+                                  style={{
+                                    backgroundImage: "linear-gradient(hsl(var(--primary)/0.3) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)/0.3) 1px, transparent 1px)",
+                                    backgroundSize: "8px 8px",
+                                  }}
+                                  aria-hidden="true"
+                                />
+                                <span className="relative text-base font-bold text-primary/90 tracking-wide select-none">
+                                  {initials || "?"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Name + role + primary specialty */}
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-semibold text-[15px] leading-tight tracking-tight truncate">
+                            {firstName} {lastName}
+                          </h3>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{role}</p>
+                          {specialty && (
+                            <p className="text-xs text-primary/70 font-medium mt-0.5 truncate">{specialty}</p>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Specialty pills */}
+                      {coach.specialties && coach.specialties.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-3">
+                          {coach.specialties.slice(0, 4).map((spec: string) => (
+                            <span
+                              key={spec}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/8 text-primary/80 border border-primary/12"
+                            >
+                              {spec}
+                            </span>
+                          ))}
+                          {coach.specialties.length > 4 && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground">
+                              +{coach.specialties.length - 4}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {coach.bio && (
-                      <p className="text-sm text-muted-foreground leading-relaxed">{coach.bio}</p>
-                    )}
-                    {coach.specialties && coach.specialties.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {coach.specialties.map((spec: string) => (
-                          <Badge key={spec} variant="secondary" className="text-xs">{spec}</Badge>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                </LiftCard>
-              ))}
-            </StaggerGrid>
-            <FadeUp className="text-center mt-10">
-              <Button
-                size="lg"
-                onClick={() => openClientModal(true)}
-                data-testid="button-org-coaches-cta"
-                className="org-cta-glow"
-              >
-                <Calendar className="h-4 w-4 mr-2" />
-                Sign Up to Book a Session
-              </Button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* CTA — connected to section */}
+            <FadeUp className="mt-14 text-center relative">
+              {/* Subtle glow behind CTA */}
+              <div className="absolute inset-0 pointer-events-none" aria-hidden="true"
+                style={{ background: "radial-gradient(ellipse 60% 80% at 50% 50%, hsl(var(--primary)/0.06) 0%, transparent 70%)" }}
+              />
+              <div className="relative space-y-3">
+                <h3 className="text-xl font-bold tracking-tight">Ready to Start Training?</h3>
+                <p className="text-sm text-muted-foreground">
+                  Book your first session with the EST coaching staff.
+                </p>
+                <div className="pt-2">
+                  <Button
+                    size="lg"
+                    onClick={() => openClientModal(true)}
+                    data-testid="button-org-coaches-cta"
+                    className="org-cta-glow"
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Sign Up to Book a Session
+                  </Button>
+                </div>
+              </div>
             </FadeUp>
           </div>
+
+          {/* Animation keyframes */}
+          <style>{`
+            @keyframes coaches-fade-in {
+              from { opacity: 0; transform: translateY(12px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+            .scrollbar-none { scrollbar-width: none; }
+            .scrollbar-none::-webkit-scrollbar { display: none; }
+          `}</style>
         </section>
       )}
 
