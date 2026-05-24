@@ -135,6 +135,11 @@ import {
   type AgentExecutionLock,
   orgExecutionRateLimits,
   type OrgExecutionRateLimit,
+  externalIntegrations,
+  type ExternalIntegration,
+  type InsertExternalIntegration,
+  integrationExecutionLog,
+  type IntegrationExecutionLog,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -3787,6 +3792,44 @@ export class DatabaseStorage implements IStorage {
   async getRateLimits(orgId: string): Promise<OrgExecutionRateLimit[]> {
     return db.select().from(orgExecutionRateLimits)
       .where(eq(orgExecutionRateLimits.orgId, orgId));
+  }
+
+  // ─── External Integrations ────────────────────────────────────────────────
+
+  async getExternalIntegrations(orgId: string): Promise<ExternalIntegration[]> {
+    return db.select().from(externalIntegrations)
+      .where(eq(externalIntegrations.orgId, orgId))
+      .orderBy(externalIntegrations.integrationType);
+  }
+
+  async getExternalIntegration(orgId: string, integrationType: string): Promise<ExternalIntegration | null> {
+    const [row] = await db.select().from(externalIntegrations)
+      .where(and(eq(externalIntegrations.orgId, orgId), eq(externalIntegrations.integrationType, integrationType)));
+    return row ?? null;
+  }
+
+  async upsertExternalIntegration(orgId: string, integrationType: string, data: Partial<InsertExternalIntegration>): Promise<ExternalIntegration> {
+    const existing = await this.getExternalIntegration(orgId, integrationType);
+    if (existing) {
+      const [updated] = await db.update(externalIntegrations)
+        .set({ ...data, updatedAt: new Date() } as any)
+        .where(eq(externalIntegrations.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(externalIntegrations)
+      .values({ orgId, integrationType, ...data } as any)
+      .returning();
+    return created;
+  }
+
+  async getIntegrationExecutionLogs(orgId: string, opts?: { integrationType?: string; limit?: number }): Promise<IntegrationExecutionLog[]> {
+    const conditions = [eq(integrationExecutionLog.orgId, orgId)];
+    if (opts?.integrationType) conditions.push(eq(integrationExecutionLog.integrationType, opts.integrationType));
+    return db.select().from(integrationExecutionLog)
+      .where(and(...conditions))
+      .orderBy(desc(integrationExecutionLog.createdAt))
+      .limit(opts?.limit ?? 50);
   }
 
   async seedDefaultPolicies(orgId: string): Promise<void> {

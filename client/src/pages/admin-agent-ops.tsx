@@ -21,8 +21,9 @@ import {
   Database, Mail, MessageSquare, Activity, Zap, ShieldAlert,
   GitBranch, RotateCcw, CheckSquare, ExternalLink, AlertCircle,
   Info, Timer, Lock, CircleDot, Play, Link2, Link2Off, CreditCard, Calendar, Inbox, ArrowRight,
-  Archive, Repeat, Ban,
+  Archive, Repeat, Ban, Plug, Pause, Hash, Search, Cpu, Globe, BarChart3,
 } from "lucide-react";
+import { Link } from "wouter";
 import { format, formatDistanceToNow } from "date-fns";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 
@@ -634,7 +635,7 @@ export default function AdminAgentOpsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-6 w-full">
+        <TabsList className="grid grid-cols-7 w-full">
           <TabsTrigger value="overview" data-testid="tab-overview">
             Overview
             {pendingCount > 0 && (
@@ -658,6 +659,7 @@ export default function AdminAgentOpsPage() {
           </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-audit-trail">Audit Trail</TabsTrigger>
           <TabsTrigger value="connectors" data-testid="tab-connectors">Connectors</TabsTrigger>
+          <TabsTrigger value="integration-health" data-testid="tab-integration-health">Integrations</TabsTrigger>
         </TabsList>
 
         {/* ── Overview ── */}
@@ -799,6 +801,11 @@ export default function AdminAgentOpsPage() {
         {/* ── Connectors ── */}
         <TabsContent value="connectors" className="space-y-4 mt-4">
           <ConnectorsPanel />
+        </TabsContent>
+
+        {/* ── Integration Health ── */}
+        <TabsContent value="integration-health" className="space-y-4 mt-4">
+          <IntegrationHealthPanel />
         </TabsContent>
       </Tabs>
 
@@ -1196,6 +1203,169 @@ function AuditTrail({ onSelect }: { onSelect: (c: FailedToolCall) => void }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Integration Health Panel ─────────────────────────────────────────────────
+
+const INT_LABELS: Record<string, string> = {
+  gmail: "Gmail", google_calendar: "Google Calendar", slack: "Slack",
+  openrouter: "OpenRouter", research_agent: "Research Agent",
+  meta_ads: "Meta Ads", hubspot: "HubSpot", stripe: "Stripe", twilio: "Twilio",
+};
+const INT_ICONS: Record<string, any> = {
+  gmail: Mail, google_calendar: Calendar, slack: Hash, openrouter: Cpu,
+  research_agent: Search, meta_ads: Globe, hubspot: BarChart3, stripe: Zap,
+  twilio: Activity, discord: Hash, custom_webhook: Plug,
+};
+const STATUS_DOT_COLORS: Record<string, string> = {
+  connected: "bg-green-500", disconnected: "bg-gray-300",
+  degraded: "bg-amber-400", paused: "bg-blue-400", error: "bg-red-500",
+};
+const ALL_INT_TYPES = ["gmail","google_calendar","slack","openrouter","research_agent","meta_ads","hubspot","stripe","twilio"];
+
+function IntegrationHealthPanel() {
+  const { toast } = useToast();
+
+  const { data: integrations, isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/integrations"],
+    refetchInterval: 30000,
+  });
+  const { data: stats } = useQuery<any>({
+    queryKey: ["/api/integrations/stats"],
+    refetchInterval: 30000,
+  });
+  const { data: logs, isLoading: logsLoading } = useQuery<any[]>({
+    queryKey: ["/api/integrations/logs/all"],
+    refetchInterval: 30000,
+  });
+
+  const pauseMut = useMutation({
+    mutationFn: async (type: string) => (await apiRequest("POST", `/api/integrations/${type}/pause`, { reason: "Paused from Agent Ops" })).json(),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/integrations"] }); toast({ title: "Integration paused" }); },
+  });
+  const resumeMut = useMutation({
+    mutationFn: async (type: string) => (await apiRequest("POST", `/api/integrations/${type}/resume`)).json(),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/integrations"] }); toast({ title: "Integration resumed" }); },
+  });
+  const healthMut = useMutation({
+    mutationFn: async (type: string) => (await apiRequest("POST", `/api/integrations/${type}/health-check`)).json(),
+    onSuccess: (d: any, type) => { toast({ title: `Health: ${d.status}`, description: d.warnings?.[0] ?? "All clear" }); queryClient.invalidateQueries({ queryKey: ["/api/integrations"] }); },
+  });
+
+  const intMap = new Map((integrations ?? []).map((i: any) => [i.integrationType, i]));
+
+  return (
+    <div className="space-y-4" data-testid="panel-integration-health">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Integration Health</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">All external integrations managed via the governance runtime.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-integrations">
+            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
+          </Button>
+          <Link href="/admin/ai-workforce">
+            <Button variant="outline" size="sm" data-testid="button-open-workforce">
+              <ExternalLink className="h-3.5 w-3.5 mr-1" /> Full View
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="p-3 text-center"><p className="text-xl font-bold text-green-600">{stats.connected}</p><p className="text-xs text-muted-foreground">Connected</p></Card>
+          <Card className="p-3 text-center"><p className="text-xl font-bold text-amber-500">{stats.degraded + stats.error}</p><p className="text-xs text-muted-foreground">Issues</p></Card>
+          <Card className="p-3 text-center"><p className="text-xl font-bold text-primary">{stats.recentActions}</p><p className="text-xs text-muted-foreground">Recent Actions</p></Card>
+          <Card className="p-3 text-center"><p className={`text-xl font-bold ${(stats.successRate ?? 100) >= 80 ? "text-green-600" : "text-amber-600"}`}>{stats.successRate ?? 100}%</p><p className="text-xs text-muted-foreground">Success Rate</p></Card>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {ALL_INT_TYPES.map(type => {
+            const integration = intMap.get(type);
+            const status = integration?.status ?? "disconnected";
+            const Icon = INT_ICONS[type] ?? Plug;
+            const dotCls = STATUS_DOT_COLORS[status] ?? STATUS_DOT_COLORS.disconnected;
+            return (
+              <Card key={type} className="p-3" data-testid={`card-int-health-${type}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="h-7 w-7 rounded-md bg-muted flex items-center justify-center shrink-0">
+                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold truncate">{INT_LABELS[type] ?? type}</span>
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${dotCls}`} />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground capitalize">{status}</p>
+                  </div>
+                </div>
+                {integration?.lastFailureReason && status !== "connected" && (
+                  <p className="text-[10px] text-red-500 line-clamp-1 mb-1">{integration.lastFailureReason}</p>
+                )}
+                {integration && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5" onClick={() => healthMut.mutate(type)} disabled={healthMut.isPending}>
+                      <Activity className="h-2.5 w-2.5 mr-0.5" />Check
+                    </Button>
+                    {status === "paused" ? (
+                      <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 text-green-600" onClick={() => resumeMut.mutate(type)} disabled={resumeMut.isPending}>
+                        <Play className="h-2.5 w-2.5 mr-0.5" />Resume
+                      </Button>
+                    ) : status === "connected" ? (
+                      <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5 text-amber-600" onClick={() => pauseMut.mutate(type)} disabled={pauseMut.isPending}>
+                        <Pause className="h-2.5 w-2.5 mr-0.5" />Pause
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+                {!integration && (
+                  <p className="text-[10px] text-muted-foreground italic">Not configured</p>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <div>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Recent Execution Log</h4>
+        {logsLoading ? (
+          <div className="space-y-1.5">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 rounded" />)}</div>
+        ) : !logs?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-4 border rounded-lg" data-testid="text-no-int-logs">No integration actions logged yet.</p>
+        ) : (
+          <div className="border rounded-lg divide-y divide-border/50">
+            {logs.slice(0, 10).map((log: any) => (
+              <div key={log.id} className="flex items-center gap-3 px-3 py-2" data-testid={`row-int-log-${log.id}`}>
+                <div className="shrink-0">
+                  {log.status === "success" ? <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                    : log.status === "blocked" ? <ShieldAlert className="h-3.5 w-3.5 text-orange-500" />
+                    : log.status === "failed" ? <XCircle className="h-3.5 w-3.5 text-red-500" />
+                    : <CircleDot className="h-3.5 w-3.5 text-muted-foreground" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium truncate">{INT_LABELS[log.integrationType] ?? log.integrationType} · {log.actionType?.replace(/_/g," ")}</p>
+                  {log.inputSummary && <p className="text-[10px] text-muted-foreground truncate">{log.inputSummary}</p>}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className={`text-xs font-medium ${log.status === "success" ? "text-green-500" : log.status === "failed" ? "text-red-500" : "text-orange-500"}`}>{log.status}</p>
+                  {log.latencyMs && <p className="text-[10px] text-muted-foreground">{log.latencyMs}ms</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -789,6 +789,13 @@ export function AppSidebar() {
                 testId: "nav-workflows",
               },
               {
+                title: "AI Workforce",
+                simplifiedTitle: "Workforce",
+                url: "/admin/ai-workforce",
+                icon: Users,
+                testId: "nav-ai-workforce",
+              },
+              {
                 title: "AI Governance",
                 simplifiedTitle: "Governance",
                 url: "/admin/ai-governance",

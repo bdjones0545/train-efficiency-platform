@@ -59,6 +59,7 @@ import BusinessCommandCenterPage from "@/pages/business-command-center";
 import BusinessBrainPage from "@/pages/business-brain";
 import AdminAiOperationsPage from "@/pages/admin-ai-operations";
 import AdminAiGovernancePage from "@/pages/admin-ai-governance";
+import AdminAiWorkforcePage from "@/pages/admin-ai-workforce";
 import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import AdminAgentToolsPage from "@/pages/admin-agent-tools";
 import AdminWorkflowsPage from "@/pages/admin-workflows";
@@ -384,6 +385,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/workflow-orchestrator" component={AdminWorkflowOrchestratorPage} />
                   <Route path="/admin/attention" component={AttentionInboxPage} />
                   <Route path="/admin/ai-governance" component={AdminAiGovernancePage} />
+                  <Route path="/admin/ai-workforce" component={AdminAiWorkforcePage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />

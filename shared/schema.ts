@@ -3407,3 +3407,67 @@ export const orgExecutionRateLimits = pgTable("org_execution_rate_limits", {
 export const insertOrgExecutionRateLimitsSchema = createInsertSchema(orgExecutionRateLimits).omit({ id: true, createdAt: true, updatedAt: true });
 export type OrgExecutionRateLimit = typeof orgExecutionRateLimits.$inferSelect;
 export type InsertOrgExecutionRateLimit = z.infer<typeof insertOrgExecutionRateLimitsSchema>;
+
+// ─── External Integrations ────────────────────────────────────────────────────
+// Central registry of all external system connections per org.
+// ALL external execution flows through integration-runtime.ts — never directly.
+
+export const externalIntegrations = pgTable("external_integrations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  integrationType: text("integration_type").notNull(), // gmail | google_calendar | slack | openrouter | claude | meta_ads | hubspot | twilio | discord | custom_webhook
+  status: text("status").notNull().default("disconnected"), // connected | disconnected | degraded | paused | error
+  displayName: text("display_name"),
+  authType: text("auth_type").notNull().default("api_key"), // oauth | api_key | webhook
+  encryptedCredentials: jsonb("encrypted_credentials").default({}),
+  scopes: jsonb("scopes").default([]),
+  lastHealthCheckAt: timestamp("last_health_check_at"),
+  lastSuccessfulActionAt: timestamp("last_successful_action_at"),
+  lastFailureAt: timestamp("last_failure_at"),
+  lastFailureReason: text("last_failure_reason"),
+  rateLimitState: jsonb("rate_limit_state").default({}),
+  usageStats: jsonb("usage_stats").default({}),
+  governanceRestrictions: jsonb("governance_restrictions").default({}),
+  enabledAgents: jsonb("enabled_agents").default([]),
+  enabledTools: jsonb("enabled_tools").default([]),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertExternalIntegrationSchema = createInsertSchema(externalIntegrations).omit({ id: true, createdAt: true, updatedAt: true });
+export type ExternalIntegration = typeof externalIntegrations.$inferSelect;
+export type InsertExternalIntegration = z.infer<typeof insertExternalIntegrationSchema>;
+
+// ─── Integration Execution Log ────────────────────────────────────────────────
+// Immutable audit trail for every action executed through the integration runtime.
+
+export const integrationExecutionLog = pgTable("integration_execution_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  integrationId: text("integration_id"),
+  integrationType: text("integration_type").notNull(),
+  actionType: text("action_type").notNull(),
+  agentType: text("agent_type"),
+  workflowJobId: text("workflow_job_id"),
+  workflowRunId: text("workflow_run_id"),
+  idempotencyKey: text("idempotency_key"),
+  status: text("status").notNull().default("pending"), // pending | success | failed | blocked | rate_limited
+  inputSummary: text("input_summary"),
+  resultSummary: text("result_summary"),
+  errorMessage: text("error_message"),
+  errorClass: text("error_class"), // transient | permanent | rate_limited | auth | governance
+  providerStatusCode: integer("provider_status_code"),
+  latencyMs: integer("latency_ms"),
+  tokensUsed: integer("tokens_used"),
+  costCents: integer("cost_cents"),
+  modelUsed: text("model_used"),
+  governanceChecked: boolean("governance_checked").default(false),
+  governanceDecision: text("governance_decision"), // allowed | blocked | approval_required
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertIntegrationExecutionLogSchema = createInsertSchema(integrationExecutionLog).omit({ id: true, createdAt: true });
+export type IntegrationExecutionLog = typeof integrationExecutionLog.$inferSelect;
+export type InsertIntegrationExecutionLog = z.infer<typeof insertIntegrationExecutionLogSchema>;

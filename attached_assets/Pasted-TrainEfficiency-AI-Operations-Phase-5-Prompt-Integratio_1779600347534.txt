@@ -1,0 +1,427 @@
+TrainEfficiency AI Operations — Phase 5 Prompt
+
+Integrations + AI Workforce Expansion Layer
+
+Build Phase 5 of the AI Operations architecture.
+
+Goal:
+Safely connect real-world external systems into the governed AI Operations infrastructure so agents can begin operating as true organizational employees across communication, scheduling, growth, research, and operational workflows.
+
+IMPORTANT:
+Do NOT build uncontrolled autonomous behavior.
+
+Phase 5 is about:
+
+* controlled integrations
+* governed external actions
+* agent workforce expansion
+* integration observability
+* safe tool orchestration
+* organizational interoperability
+
+This phase should leverage:
+
+* governance architecture
+* workflow memory
+* unified audit logs
+* reliability queue system
+* capability enforcement engine
+* autonomy modes
+* dead-letter/retry infrastructure
+
+Everything external must flow THROUGH the existing governance + reliability systems.
+
+⸻
+
+PART 1 — Integrations Framework
+
+Create:
+external_integrations table
+
+Fields:
+
+* id
+* orgId
+* integrationType
+    * gmail
+    * google_calendar
+    * meta_ads
+    * slack
+    * twilio
+    * stripe
+    * hubspot
+    * openrouter
+    * claude
+    * openclaw
+    * discord
+    * custom_webhook
+* status
+    * connected
+    * disconnected
+    * degraded
+    * paused
+    * error
+* displayName
+* authType
+    * oauth
+    * api_key
+    * webhook
+* encryptedCredentials jsonb
+* scopes jsonb
+* lastHealthCheckAt
+* lastSuccessfulActionAt
+* lastFailureAt
+* lastFailureReason
+* rateLimitState jsonb
+* usageStats jsonb
+* governanceRestrictions jsonb
+* enabledAgents jsonb
+* enabledTools jsonb
+* createdBy
+* createdAt
+* updatedAt
+
+All integrations must remain org-scoped.
+
+⸻
+
+PART 2 — Integration Runtime Layer
+
+Create:
+server/integration-runtime.ts
+
+Responsibilities:
+
+* central runtime for ALL external integrations
+* enforce governance before external execution
+* handle retries/failures/rate limits
+* standardize external API responses
+* normalize provider errors
+* attach audit logging
+* enforce integration health checks
+* route execution through workflow job queue
+
+Functions:
+
+* executeIntegrationAction()
+* validateIntegrationHealth()
+* refreshIntegrationState()
+* classifyProviderError()
+* normalizeProviderResponse()
+* checkIntegrationGovernance()
+* pauseIntegration()
+* resumeIntegration()
+
+NO external action should bypass this runtime.
+
+⸻
+
+PART 3 — Gmail Integration
+
+Build first-class Gmail integration.
+
+Capabilities:
+
+* send email
+* draft email
+* classify inbound replies
+* detect lead responses
+* summarize conversations
+* attach conversations to workflow context
+* escalate negative sentiment
+* detect booking intent
+
+Agent:
+Relay — Communication Agent
+
+Requirements:
+
+* all sends route through workflow queue
+* all sends use idempotency protection
+* all sends pass governance validation
+* approval gates respected
+* sentiment analysis logged
+* replies attached to workflow memory
+
+Add:
+
+* Gmail health monitoring
+* quota tracking
+* conversation threading support
+
+⸻
+
+PART 4 — Google Calendar Integration
+
+Build native Google Calendar integration.
+
+Capabilities:
+
+* read coach availability
+* create bookings
+* reschedule sessions
+* detect conflicts
+* sync cancellations
+* create workflow triggers from events
+
+Agent:
+Tempo — Scheduling Agent
+
+Requirements:
+
+* double-book prevention using execution locks
+* booking actions require idempotency keys
+* governance-aware scheduling permissions
+* conflict detection before execution
+
+⸻
+
+PART 5 — OpenRouter + Multi-model Routing
+
+Build:
+AI model routing layer.
+
+Capabilities:
+
+* route tasks to different models
+* optimize for cost vs quality
+* fallback between providers
+* support OpenAI / Claude / Gemini via OpenRouter
+* track model performance
+* track cost per workflow
+
+Examples:
+
+* low-risk summaries → cheap model
+* executive memos → Claude
+* multimodal analysis → Gemini
+* operational workflows → GPT-4.1
+
+Requirements:
+
+* every model invocation logged
+* confidence + cost metrics tracked
+* governance-aware model restrictions
+* provider outages auto-reroute
+
+⸻
+
+PART 6 — Slack Integration
+
+Build operational alerting integration.
+
+Capabilities:
+
+* critical workflow alerts
+* stuck-job alerts
+* approval request notifications
+* governance escalation alerts
+* emergency pause notifications
+* Business Brain executive summaries
+
+Requirements:
+
+* alert routing by severity
+* per-org notification preferences
+* deduplication protection
+* escalation chains
+
+⸻
+
+PART 7 — OpenClaw / Browser Agent Integration
+
+Build research-agent infrastructure.
+
+Agent:
+Vector — Research Agent
+
+Capabilities:
+
+* lead enrichment
+* website scraping
+* decision-maker discovery
+* competitor research
+* school/team data gathering
+* public info extraction
+
+Requirements:
+
+* governance restrictions mandatory
+* org must explicitly enable web access
+* execution quotas enforced
+* research jobs sandboxed
+* all extracted data auditable
+* blocked domains list
+* rate limiting mandatory
+
+Add:
+Research Activity feed in AI Operations.
+
+⸻
+
+PART 8 — Integration Governance
+
+Expand governance system.
+
+Per integration controls:
+
+* enabled/disabled
+* autonomy mode override
+* approval requirements
+* allowed agents
+* allowed workflows
+* spending limits
+* communication limits
+* execution quotas
+
+Examples:
+
+* Meta Ads can only be modified in supervised mode
+* Gmail autonomous sending disabled after 8pm
+* Research Agent blocked from external web access
+* Calendar writes require collaborative mode
+
+⸻
+
+PART 9 — Integration Health System
+
+Upgrade Agent Ops Monitor.
+
+Add:
+Integration Health Dashboard.
+
+Per integration show:
+
+* status
+* latency
+* last successful action
+* recent failures
+* quota usage
+* rate-limit state
+* auth expiration
+* degraded functionality warnings
+
+Add:
+
+* synthetic health checks
+* provider outage detection
+* automatic degraded-state transitions
+
+⸻
+
+PART 10 — Cross-system workflow triggers
+
+Enable workflows triggered by integrations.
+
+Examples:
+
+* Gmail reply received
+* Stripe payment failed
+* Calendar cancellation
+* Slack escalation
+* Meta lead received
+* Research result completed
+
+All triggers:
+
+* route through workflow queue
+* attach workflow memory
+* write unified logs
+* respect governance policies
+
+⸻
+
+PART 11 — Integration Observability
+
+Every integration action writes to:
+unified_agent_action_log
+
+New action types:
+
+* integration_connected
+* integration_disconnected
+* integration_health_failed
+* integration_action_executed
+* integration_action_blocked
+* provider_rate_limit_hit
+* provider_error_detected
+* model_routed
+* model_fallback_triggered
+* external_trigger_received
+* external_trigger_blocked
+
+⸻
+
+PART 12 — AI Workforce Expansion UI
+
+Create:
+AI Workforce page.
+
+Show:
+
+* all agents
+* department grouping
+* active integrations
+* tool access
+* current autonomy mode
+* execution statistics
+* success rate
+* confidence trends
+* recent activity
+* governance status
+
+Add:
+organizational relationship map:
+
+* which agents use which integrations
+* which workflows involve which agents
+* which tools each department controls
+
+⸻
+
+PART 13 — Reliability + Safety Requirements
+
+Critical:
+
+* all external actions use workflow queue
+* all mutating actions use idempotency keys
+* all integrations are org-scoped
+* all integrations respect governance
+* all integrations observable
+* all provider failures classified
+* no direct external execution bypass
+* no hidden autonomous behavior
+* emergency pause must stop external actions
+* degraded integrations should gracefully fallback
+
+⸻
+
+PART 14 — Architectural Goal
+
+The goal of Phase 5 is:
+turning TrainEfficiency into a real organizational AI operating system connected to the outside world.
+
+After this phase, organizations should feel like:
+
+* they have AI departments
+* those departments can safely interact with real systems
+* every action is governed
+* every action is observable
+* every action is recoverable
+* every action is explainable
+
+The system should now begin resembling:
+“an AI-native business infrastructure platform”
+rather than:
+“workflow automation software.”
+
+Prioritize implementation order:
+
+1. Integrations framework
+2. Integration runtime
+3. Gmail
+4. Google Calendar
+5. Slack
+6. OpenRouter routing
+7. OpenClaw research infrastructure
+8. Workforce visualization

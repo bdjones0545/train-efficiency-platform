@@ -15748,5 +15748,242 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // INTEGRATIONS ROUTES — Phase 5
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /api/integrations — list all integrations for org
+  app.get("/api/integrations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const integrations = await storage.getExternalIntegrations(req.user.orgId);
+      res.json(integrations);
+    } catch (e: any) {
+      console.error("[integrations] list error:", e);
+      res.status(500).json({ message: "Failed to fetch integrations" });
+    }
+  });
+
+  // GET /api/integrations/stats — health stats across all integrations
+  app.get("/api/integrations/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { getIntegrationStats } = await import("./integration-runtime");
+      const stats = await getIntegrationStats(req.user.orgId);
+      res.json(stats);
+    } catch (e: any) {
+      console.error("[integrations/stats] error:", e);
+      res.status(500).json({ message: "Failed to fetch integration stats" });
+    }
+  });
+
+  // GET /api/integrations/:type — get single integration
+  app.get("/api/integrations/:type", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const integration = await storage.getExternalIntegration(req.user.orgId, req.params.type);
+      if (!integration) return res.status(404).json({ message: "Integration not found" });
+      // Never return raw credentials
+      const safe = { ...integration, encryptedCredentials: undefined };
+      res.json(safe);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch integration" });
+    }
+  });
+
+  // PUT /api/integrations/:type — upsert integration config
+  app.put("/api/integrations/:type", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { encryptedCredentials, ...safeBody } = req.body;
+      const updated = await storage.upsertExternalIntegration(req.user.orgId, req.params.type, {
+        ...safeBody,
+        createdBy: req.user.id,
+      });
+      res.json({ ...updated, encryptedCredentials: undefined });
+    } catch (e: any) {
+      console.error("[integrations/upsert] error:", e);
+      res.status(500).json({ message: "Failed to update integration" });
+    }
+  });
+
+  // POST /api/integrations/:type/credentials — store encrypted credentials (separate endpoint for security)
+  app.post("/api/integrations/:type/credentials", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const integrationType = req.params.type;
+      const credentials = req.body.credentials;
+      if (!credentials || typeof credentials !== "object") {
+        return res.status(400).json({ message: "credentials object required" });
+      }
+      // Store credentials — in production these should be encrypted at rest
+      const updated = await storage.upsertExternalIntegration(req.user.orgId, integrationType, {
+        encryptedCredentials: credentials,
+        status: "connected",
+      } as any);
+      res.json({ ok: true, integrationId: updated.id });
+    } catch (e: any) {
+      console.error("[integrations/credentials] error:", e);
+      res.status(500).json({ message: "Failed to store credentials" });
+    }
+  });
+
+  // POST /api/integrations/:type/health-check — run health check
+  app.post("/api/integrations/:type/health-check", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { validateIntegrationHealth } = await import("./integration-runtime");
+      const report = await validateIntegrationHealth(req.user.orgId, req.params.type as any);
+      res.json(report);
+    } catch (e: any) {
+      res.status(500).json({ message: "Health check failed" });
+    }
+  });
+
+  // POST /api/integrations/:type/pause — pause an integration
+  app.post("/api/integrations/:type/pause", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { pauseIntegration } = await import("./integration-runtime");
+      await pauseIntegration(req.user.orgId, req.params.type, req.body.reason ?? "Manually paused");
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to pause integration" });
+    }
+  });
+
+  // POST /api/integrations/:type/resume — resume a paused integration
+  app.post("/api/integrations/:type/resume", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { resumeIntegration } = await import("./integration-runtime");
+      await resumeIntegration(req.user.orgId, req.params.type);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to resume integration" });
+    }
+  });
+
+  // GET /api/integrations/:type/logs — execution log for one integration
+  app.get("/api/integrations/:type/logs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string ?? "50");
+      const logs = await storage.getIntegrationExecutionLogs(req.user.orgId, {
+        integrationType: req.params.type,
+        limit,
+      });
+      res.json(logs);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch logs" });
+    }
+  });
+
+  // GET /api/integrations/logs/all — all integration execution logs
+  app.get("/api/integrations/logs/all", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string ?? "50");
+      const logs = await storage.getIntegrationExecutionLogs(req.user.orgId, { limit });
+      res.json(logs);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch logs" });
+    }
+  });
+
+  // GET /api/integrations/openrouter/model-stats — model performance metrics
+  app.get("/api/integrations/openrouter/model-stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { getModelPerformanceStats } = await import("./integrations/openrouter");
+      const stats = await getModelPerformanceStats(req.user.orgId);
+      res.json(stats);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch model stats" });
+    }
+  });
+
+  // GET /api/integrations/research/activity — research agent activity feed
+  app.get("/api/integrations/research/activity", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { getResearchActivityFeed } = await import("./integrations/research-agent");
+      const feed = await getResearchActivityFeed(req.user.orgId);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch research activity" });
+    }
+  });
+
+  // GET /api/workforce/agents — all agents with live stats
+  app.get("/api/workforce/agents", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const { listAgentIdentities } = await import("./agent-identities");
+      const identities = listAgentIdentities();
+
+      // Get policies
+      const policies = await storage.getCapabilityPolicies(orgId);
+      const policyMap = new Map(policies.map(p => [p.agentType, p]));
+
+      // Get recent action stats per agent
+      const { getIntegrationExecutionLogs } = await import("./integration-runtime");
+      const recentLogs = await getIntegrationExecutionLogs(orgId, { limit: 200 });
+      const actionCounts: Record<string, { total: number; success: number; blocked: number }> = {};
+      for (const log of recentLogs) {
+        const at = log.agentType ?? "unknown";
+        if (!actionCounts[at]) actionCounts[at] = { total: 0, success: 0, blocked: 0 };
+        actionCounts[at].total++;
+        if (log.status === "success") actionCounts[at].success++;
+        if (log.status === "blocked") actionCounts[at].blocked++;
+      }
+
+      const agents = identities.map(identity => {
+        const policy = policyMap.get(identity.agentType);
+        const stats = actionCounts[identity.agentType] ?? { total: 0, success: 0, blocked: 0 };
+        return {
+          ...identity,
+          autonomyMode: policy?.maxAutonomyLevel ?? identity.defaultAutonomyLevel,
+          requiresApproval: policy?.requiresApproval ?? false,
+          enabled: policy?.enabled ?? true,
+          recentActions: stats.total,
+          successRate: stats.total > 0 ? Math.round((stats.success / stats.total) * 100) : null,
+          blockedActions: stats.blocked,
+        };
+      });
+
+      res.json(agents);
+    } catch (e: any) {
+      console.error("[workforce/agents] error:", e);
+      res.status(500).json({ message: "Failed to fetch workforce data" });
+    }
+  });
+
+  // GET /api/workforce/relationship-map — which agents use which integrations
+  app.get("/api/workforce/relationship-map", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const integrations = await storage.getExternalIntegrations(orgId);
+      const { listAgentIdentities } = await import("./agent-identities");
+      const agents = listAgentIdentities();
+
+      // Define known agent-integration relationships
+      const AGENT_INTEGRATIONS: Record<string, string[]> = {
+        communication_agent: ["gmail", "slack", "twilio"],
+        scheduling_agent: ["google_calendar", "slack"],
+        research_agent: ["research_agent", "openrouter"],
+        executive_agent: ["slack", "openrouter"],
+        growth_agent: ["gmail", "slack", "meta_ads", "hubspot"],
+        finance_agent: ["stripe", "slack"],
+        retention_agent: ["gmail", "slack"],
+        workflow_agent: ["slack", "openrouter"],
+        system_agent: ["openrouter"],
+      };
+
+      const map = agents.map(agent => ({
+        agent: agent.agentType,
+        agentName: agent.name,
+        department: agent.department,
+        connectedIntegrations: (AGENT_INTEGRATIONS[agent.agentType] ?? [])
+          .map(type => {
+            const integration = integrations.find(i => i.integrationType === type);
+            return { type, status: integration?.status ?? "disconnected", displayName: integration?.displayName ?? type };
+          }),
+      }));
+
+      res.json(map);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to build relationship map" });
+    }
+  });
+
   return httpServer;
 }
