@@ -1,0 +1,74 @@
+Add team and athlete removal controls to TrainEfficiency.
+
+Goal:
+Org admins and authorized team coaches should be able to remove teams and remove athletes from teams safely.
+
+Permissions:
+- Org owner/admin: can delete/archive any team in the org and remove any athlete from any team.
+- Team coach/creator: can delete/archive teams they own/manage and remove athletes from their teams.
+- Staff without team ownership: view only unless explicitly assigned.
+- Athletes/clients: no delete access.
+
+Important:
+Prefer soft-delete/archive over hard delete.
+
+Team deletion:
+1. Add backend endpoint:
+   DELETE /api/org/coach/teams/:teamId
+
+Behavior:
+- Validate org session with resolveOrgSession()
+- Verify user is org admin/owner OR team coach/creator
+- Soft delete team:
+  - set archivedAt/deletedAt
+  - set status = "archived" or "deleted"
+- Do not destroy historical PR/workout/activity data.
+- Hide archived/deleted teams from active team lists.
+
+2. Add frontend delete/archive action:
+- On team detail page
+- Optional overflow menu on team card
+- Confirmation dialog requiring team name confirmation
+- Warning: athletes and historical records will remain, but the team will be removed from active views.
+
+Athlete removal:
+1. Add backend endpoint:
+   DELETE /api/org/coach/teams/:teamId/athletes/:userId
+
+Behavior:
+- Validate org session
+- Verify admin/owner OR team coach/creator
+- Remove athlete from pr_team_members or mark membership inactive
+- Do not delete the user account
+- Do not delete athlete PRs, workouts, education, or messages
+- Log activity event: athlete_removed_from_team
+
+2. Add frontend remove action:
+- On team roster row/card
+- Confirmation dialog
+- Update React Query caches immediately after success
+
+Optional org-level athlete archive:
+- Add separate action later for org admins only:
+  Archive athlete from org
+- This should be different from “remove from team.”
+
+Activity logging:
+Log events for:
+- team_archived
+- athlete_removed_from_team
+
+Invalidate:
+- teams list
+- team detail
+- athlete detail
+- org activity feed
+- command center
+
+Acceptance tests:
+- Org admin can archive any team.
+- Team coach can archive their own team.
+- Team coach cannot archive another coach’s team.
+- Athlete can never see delete controls.
+- Removing athlete from team hides them from roster but keeps their profile/history.
+- No hard deletion of historical records.

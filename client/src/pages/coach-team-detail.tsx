@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { ActivityFeed } from "@/components/activity-feed";
 import PlayerCard from "@/components/pr-tracker/PlayerCard";
 import type { PlayerCardProfile } from "@/components/pr-tracker/PlayerCard";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -31,6 +31,9 @@ import {
   X,
   Camera,
   CheckCircle2,
+  Archive,
+  AlertTriangle,
+  UserMinus,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -99,6 +102,7 @@ export default function CoachTeamDetailPage() {
   const teamId = params.teamId || "";
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data: org } = useQuery<any>({
     queryKey: ["/api/organizations", slug],
@@ -191,6 +195,55 @@ export default function CoachTeamDetailPage() {
       toast({ title: "Notes saved" });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  // Archive team dialog
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiveNameInput, setArchiveNameInput] = useState("");
+
+  // Remove athlete dialog
+  const [removeAthleteTarget, setRemoveAthleteTarget] = useState<TeamMember | null>(null);
+
+  const canManageTeam = teamData?.canManageTeam ?? false;
+
+  // Archive team mutation
+  const archiveTeamMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/org/coach/teams/${teamId}`, {
+        method: "DELETE",
+        headers: { ...buildAuthHeaders() },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Team archived", description: "The team has been removed from active views. All athlete records are preserved." });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/coach/teams"] });
+      queryClient.invalidateQueries({ queryKey: ["org-activity"] });
+      setLocation(`/org/${slug}/coach/teams`);
+    },
+    onError: (e: any) => toast({ title: "Failed to archive team", description: e.message, variant: "destructive" }),
+  });
+
+  // Remove athlete mutation
+  const removeAthleteMutation = useMutation({
+    mutationFn: async (athleteId: string) => {
+      const res = await fetch(`/api/org/coach/teams/${teamId}/athletes/${athleteId}`, {
+        method: "DELETE",
+        headers: { ...buildAuthHeaders() },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Athlete removed", description: "The athlete has been removed from this team. Their profile and history remain intact." });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/coach/teams", teamId, orgToken, hasAccess] });
+      queryClient.invalidateQueries({ queryKey: ["org-activity"] });
+      setRemoveAthleteTarget(null);
+    },
+    onError: (e: any) => toast({ title: "Failed to remove athlete", description: e.message, variant: "destructive" }),
   });
 
   // Search
@@ -374,6 +427,17 @@ export default function CoachTeamDetailPage() {
                   </span>
                 </div>
               </div>
+              {canManageTeam && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive flex-shrink-0"
+                  onClick={() => { setShowArchiveConfirm(true); setArchiveNameInput(""); }}
+                  data-testid="button-archive-team"
+                >
+                  <Archive className="h-3.5 w-3.5 mr-1.5" /> Archive
+                </Button>
+              )}
             </div>
           </Card>
         )}
@@ -456,6 +520,15 @@ export default function CoachTeamDetailPage() {
                       Full Profile <ChevronRight className="h-3 w-3" />
                     </a>
                   </div>
+                  {canManageTeam && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRemoveAthleteTarget(member); }}
+                      className="w-full mt-1.5 text-[10px] text-destructive/60 hover:text-destructive flex items-center justify-center gap-1 py-0.5 rounded hover:bg-destructive/5 transition-colors"
+                      data-testid={`button-remove-athlete-${member.userId}`}
+                    >
+                      <UserMinus className="h-3 w-3" /> Remove
+                    </button>
+                  )}
                 </Card>
               </button>
             ))}
@@ -680,6 +753,82 @@ export default function CoachTeamDetailPage() {
                 )}
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Archive Team Confirmation Dialog ────────────────────────────── */}
+      <Dialog open={showArchiveConfirm} onOpenChange={(open) => { if (!open) setShowArchiveConfirm(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-4 w-4" /> Archive Team
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-amber-700 dark:text-amber-400">This team will be removed from all active views.</p>
+                <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">Athletes, PRs, workouts, and all historical records will be fully preserved.</p>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm text-muted-foreground">Type <strong>{team?.name}</strong> to confirm:</p>
+              <Input
+                value={archiveNameInput}
+                onChange={(e) => setArchiveNameInput(e.target.value)}
+                placeholder={team?.name}
+                data-testid="input-archive-confirm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowArchiveConfirm(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={archiveNameInput !== team?.name || archiveTeamMutation.isPending}
+                onClick={() => archiveTeamMutation.mutate()}
+                data-testid="button-confirm-archive"
+              >
+                {archiveTeamMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Archive Team"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Remove Athlete Confirmation Dialog ───────────────────────────── */}
+      <Dialog open={!!removeAthleteTarget} onOpenChange={(open) => { if (!open) setRemoveAthleteTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserMinus className="h-4 w-4 text-destructive" /> Remove Athlete
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Remove <strong className="text-foreground">{removeAthleteTarget?.name}</strong> from <strong className="text-foreground">{team?.name}</strong>?
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Their PRs, workout history, education progress, and profile will remain completely intact. Only their membership in this team will be removed.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setRemoveAthleteTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={removeAthleteMutation.isPending}
+                onClick={() => removeAthleteTarget && removeAthleteMutation.mutate(removeAthleteTarget.userId)}
+                data-testid="button-confirm-remove-athlete"
+              >
+                {removeAthleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Remove from Team"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

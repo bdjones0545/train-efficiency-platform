@@ -13,7 +13,7 @@ import {
   prLiftEntries,
   athleticBookings,
 } from "@shared/schema";
-import { eq, and, gt, lte, desc, asc, inArray } from "drizzle-orm";
+import { eq, and, gt, lte, desc, asc, inArray, isNull } from "drizzle-orm";
 import { pgTable, varchar, text, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -28,6 +28,7 @@ const coachAthleteNotes = pgTable("coach_athlete_notes", {
 });
 
 import { resolveOrgSession as _resolveOrgSession } from "./org-auth";
+import { createActivityEvent } from "./services/activity-timeline";
 
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
   try {
@@ -65,8 +66,8 @@ export function registerCoachTeamRoutes(app: Express) {
         .from(prTeams)
         .where(
           isOrgAdmin
-            ? eq(prTeams.orgId, orgId)
-            : and(eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id))
+            ? and(eq(prTeams.orgId, orgId), isNull(prTeams.archivedAt))
+            : and(eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id), isNull(prTeams.archivedAt))
         )
         .orderBy(desc(prTeams.createdAt));
 
@@ -159,7 +160,12 @@ export function registerCoachTeamRoutes(app: Express) {
         bestPr: bestPrByUser[m.userId] || null,
       }));
 
-      res.json({ team, members: enrichedMembers });
+      res.json({
+        team,
+        members: enrichedMembers,
+        canManageTeam: isOrgAdmin || team.coachUserId === user.id,
+        currentUserId: user.id,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -445,6 +451,104 @@ export function registerCoachTeamRoutes(app: Express) {
       res.status(500).json({ message: err.message });
     }
   });
+
+  // ── DELETE /api/org/coach/teams/:teamId — archive (soft delete) ─────────
+  app.delete(
+    "/api/org/coach/teams/:teamId",
+    requireOrgAuth,
+    requireCoachRole,
+    async (req: any, res: Response) => {
+      try {
+        const { user, membership } = req.orgAuth;
+        const orgId = membership.orgId;
+        const { teamId } = req.params;
+
+        const isOrgAdmin = ["admin", "owner"].includes(membership.role);
+        const [team] = await db
+          .select()
+          .from(prTeams)
+          .where(and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId), isNull(prTeams.archivedAt)))
+          .limit(1);
+
+        if (!team) return res.status(404).json({ message: "Team not found" });
+
+        const canManage = isOrgAdmin || team.coachUserId === user.id;
+        if (!canManage) return res.status(403).json({ message: "You don't have permission to archive this team" });
+
+        await db.update(prTeams)
+          .set({ archivedAt: new Date(), updatedAt: new Date() })
+          .where(eq(prTeams.id, teamId));
+
+        createActivityEvent({
+          orgId,
+          sourceType: "team",
+          sourceId: teamId,
+          eventType: "team_archived",
+          title: `Team archived: ${team.name}`,
+          metadata: { teamId, teamName: team.name, archivedBy: user.id },
+          visibility: "coach",
+        }).catch(() => {});
+
+        res.json({ success: true, teamName: team.name });
+      } catch (err: any) {
+        res.status(500).json({ message: err.message });
+      }
+    }
+  );
+
+  // ── DELETE /api/org/coach/teams/:teamId/athletes/:userId — remove member ─
+  app.delete(
+    "/api/org/coach/teams/:teamId/athletes/:userId",
+    requireOrgAuth,
+    requireCoachRole,
+    async (req: any, res: Response) => {
+      try {
+        const { user, membership } = req.orgAuth;
+        const orgId = membership.orgId;
+        const { teamId, userId: athleteId } = req.params;
+
+        const isOrgAdmin = ["admin", "owner"].includes(membership.role);
+        const [team] = await db
+          .select()
+          .from(prTeams)
+          .where(and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId), isNull(prTeams.archivedAt)))
+          .limit(1);
+
+        if (!team) return res.status(404).json({ message: "Team not found" });
+
+        const canManage = isOrgAdmin || team.coachUserId === user.id;
+        if (!canManage) return res.status(403).json({ message: "You don't have permission to remove athletes from this team" });
+
+        const [member] = await db
+          .select({ name: orgUsers.name })
+          .from(prTeamMembers)
+          .innerJoin(orgUsers, eq(prTeamMembers.userId, orgUsers.id))
+          .where(and(eq(prTeamMembers.teamId, teamId), eq(prTeamMembers.userId, athleteId), eq(prTeamMembers.orgId, orgId)))
+          .limit(1);
+
+        if (!member) return res.status(404).json({ message: "Athlete not found in this team" });
+
+        await db.delete(prTeamMembers)
+          .where(and(eq(prTeamMembers.teamId, teamId), eq(prTeamMembers.userId, athleteId), eq(prTeamMembers.orgId, orgId)));
+
+        createActivityEvent({
+          orgId,
+          userId: athleteId,
+          teamId,
+          sourceType: "team",
+          sourceId: teamId,
+          eventType: "athlete_removed_from_team",
+          title: `Athlete removed from team: ${member.name}`,
+          metadata: { teamId, teamName: team.name, athleteId, athleteName: member.name, removedBy: user.id },
+          visibility: "coach",
+        }).catch(() => {});
+
+        res.json({ success: true, athleteName: member.name });
+      } catch (err: any) {
+        res.status(500).json({ message: err.message });
+      }
+    }
+  );
 
   // ── PATCH /api/org/coach/teams/:teamId/athletes/:userId/notes ──────────
   app.patch(

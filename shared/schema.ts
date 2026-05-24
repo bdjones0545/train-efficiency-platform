@@ -1764,6 +1764,7 @@ export const prTeams = pgTable("pr_teams", {
   joinCode: varchar("join_code").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  archivedAt: timestamp("archived_at"),
 });
 
 export const prTeamMembers = pgTable("pr_team_members", {
