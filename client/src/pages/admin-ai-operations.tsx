@@ -8,6 +8,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { OrgMemoryFeed, OutcomeAnalyticsPanel } from "@/components/workflow-memory-panel";
+import { SetupProgressWidget } from "@/components/setup-progress-widget";
+import { TrustSignalsWidget } from "@/components/trust-signals-widget";
+import { RecommendationPanel } from "@/components/recommendation-panel";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -442,8 +445,17 @@ export default function AdminAiOperationsPage() {
 
           {/* Failed-only activity */}
           <RecentAgentActivity limit={5} status="failed" title="Failed Actions" compact />
+
+          {/* Phase 7 — Setup Progress */}
+          <SetupProgressWidget />
+
+          {/* Phase 7 — Trust Signals */}
+          <TrustSignalsWidget />
         </div>
       </div>
+
+      {/* Phase 7 — Recommendations */}
+      <RecommendationPanel />
 
       {/* ── Memory + Outcome Analytics Row ────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

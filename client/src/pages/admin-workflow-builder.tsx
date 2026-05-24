@@ -35,9 +35,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Save, Play, Upload, Zap, GitBranch, User, CheckCircle, AlertTriangle,
   RefreshCw, Layers, PanelRight, X, Plus, Info, ShieldAlert, Clock,
-  ChevronRight, BookTemplate, Eye, Cpu, Search,
+  ChevronRight, BookTemplate, Eye, Cpu, Search, Sparkles,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { NLWorkflowGenerator } from "@/components/nl-workflow-generator";
 
 // ─── Node palette definition ──────────────────────────────────────────────────
 
@@ -550,6 +551,7 @@ export default function AdminWorkflowBuilderPage() {
   const [validationResult, setValidationResult] = useState<any | null>(null);
   const [currentGraphId, setCurrentGraphId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [showNLGenerator, setShowNLGenerator] = useState(false);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -728,6 +730,10 @@ export default function AdminWorkflowBuilderPage() {
             </div>
           )}
 
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20" onClick={() => setShowNLGenerator(true)} data-testid="button-describe-workflow">
+            <Sparkles className="h-3.5 w-3.5" />
+            Describe
+          </Button>
           <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5" onClick={() => setShowTemplates(true)} data-testid="button-templates">
             <BookTemplate className="h-3.5 w-3.5" />
             Templates
@@ -929,6 +935,18 @@ export default function AdminWorkflowBuilderPage() {
       {simulationResult && (
         <SimulationPanel result={simulationResult} onClose={() => setSimulationResult(null)} />
       )}
+
+      <NLWorkflowGenerator
+        open={showNLGenerator}
+        onClose={() => setShowNLGenerator(false)}
+        onLoadDraft={(graph, name) => {
+          setNodes(graph.nodes ?? []);
+          setEdges(graph.edges ?? []);
+          setGraphName(name);
+          setIsDirty(true);
+          toast({ title: "AI draft loaded", description: "Review the workflow before publishing. Nothing runs until you publish." });
+        }}
+      />
     </div>
   );
 }

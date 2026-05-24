@@ -824,6 +824,13 @@ export function AppSidebar() {
                 testId: "nav-ai-governance",
               },
               {
+                title: "Recommendations",
+                simplifiedTitle: "Suggestions",
+                url: "/admin/recommendations",
+                icon: Zap,
+                testId: "nav-recommendations",
+              },
+              {
                 title: "Trigger Audit",
                 simplifiedTitle: "Activity Log",
                 url: "/admin/trigger-audit",
@@ -1078,6 +1085,17 @@ export function AppSidebar() {
 
           {/* ── Footer ──────────────────────────────────────────────────────── */}
           <SidebarFooter className="p-3 border-t border-border/50">
+            {isAdmin && (
+              <Link href="/onboarding/ai-workforce" onClick={handleNavClick}>
+                <button
+                  className="w-full mb-2 flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors border border-violet-200 dark:border-violet-800/50"
+                  data-testid="button-setup-wizard"
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  AI Workforce Setup Wizard
+                </button>
+              </Link>
+            )}
             {user && (
               <div className="flex items-center gap-2">
                 <Avatar className="h-7 w-7 flex-shrink-0">

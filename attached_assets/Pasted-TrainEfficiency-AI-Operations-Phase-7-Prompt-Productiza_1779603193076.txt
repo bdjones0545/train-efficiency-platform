@@ -1,0 +1,480 @@
+TrainEfficiency AI Operations — Phase 7 Prompt
+
+Productization + Operator Experience Layer
+
+Build Phase 7 of the AI Operations architecture.
+
+Goal:
+Transform TrainEfficiency from an advanced AI infrastructure platform into a highly understandable, approachable, and operationally intuitive product for real organizations.
+
+This phase is about:
+
+* onboarding
+* usability
+* trust acceleration
+* operator comprehension
+* workflow adoption
+* AI workforce setup
+* first-value-time optimization
+* organizational activation
+* product polish
+* guided intelligence
+
+IMPORTANT:
+Do NOT significantly expand backend complexity in this phase.
+
+Phase 7 should primarily focus on:
+
+* UX
+* onboarding systems
+* setup orchestration
+* simplification
+* guided experiences
+* operator education
+* activation flows
+* organizational productization
+
+The infrastructure already exists.
+This phase should make it:
+
+* understandable
+* approachable
+* trustworthy
+* operationally elegant
+
+⸻
+
+PART 1 — AI Workforce Setup Wizard
+
+Create:
+AI Workforce Onboarding Wizard
+
+Goal:
+Allow new organizations to “hire and configure” their AI staff in a guided onboarding flow.
+
+Route:
+
+* /onboarding/ai-workforce
+
+Flow:
+
+1. Welcome screen
+
+* explain AI workforce concept
+* explain governance/safety
+* show visual AI org preview
+
+2. Choose organizational goals
+    Examples:
+
+* get more leads
+* improve retention
+* automate scheduling
+* reduce admin work
+* improve communication
+* streamline athlete onboarding
+
+3. Recommend AI departments
+    Examples:
+
+* Communications Department
+* Scheduling Department
+* Retention Department
+* Growth Department
+* Research Department
+
+4. Enable recommended agents
+    Examples:
+
+* Relay
+* Pulse
+* Tempo
+* Apex
+* Vector
+
+5. Configure governance comfort level
+    Modes:
+
+* Conservative
+* Balanced
+* Advanced
+
+Map internally to:
+
+* supervised
+* collaborative
+* autonomous
+
+6. Connect integrations
+    Guided:
+
+* Gmail
+* Google Calendar
+* Slack
+* OpenRouter
+
+7. Recommended workflows
+    Pre-selected starter workflows based on goals.
+8. Review + Launch
+    Generate:
+
+* AI workforce summary
+* enabled agents
+* governance profile
+* starter workflows
+* active integrations
+
+⸻
+
+PART 2 — Simplified vs Advanced Workspace Modes
+
+Expand workspace modes globally.
+
+Modes:
+
+1. Simplified
+
+* hides technical complexity
+* hides governance internals
+* uses natural language explanations
+* focuses on outcomes and recommendations
+
+2. Advanced
+
+* full operational visibility
+* workflow topology
+* governance analytics
+* execution graphs
+* queue health
+* audit systems
+
+Operators can switch at any time.
+
+Persist preference per user.
+
+⸻
+
+PART 3 — Natural Language Workflow Generation
+
+Create:
+“Describe Your Workflow” system.
+
+Examples:
+
+* “When a new lead signs up, send a welcome email and notify me in Slack.”
+* “If an athlete misses 2 sessions, trigger a retention workflow.”
+* “When a parent replies negatively, escalate to an admin.”
+
+The system should:
+
+* generate workflow graph draft
+* estimate risk
+* estimate governance requirements
+* suggest agents/tools
+* suggest approval gates
+* suggest integrations required
+
+Operators can:
+
+* edit before publishing
+* simulate before enabling
+
+IMPORTANT:
+Generated workflows are drafts only.
+Never auto-publish.
+
+⸻
+
+PART 4 — AI Operations Guided Tours
+
+Create:
+Interactive guided walkthroughs.
+
+Tours:
+
+* AI Operations overview
+* Workflow Builder tutorial
+* Governance tutorial
+* AI Workforce tutorial
+* Command Center tutorial
+* Workflow Replay tutorial
+
+Features:
+
+* contextual overlays
+* interactive highlights
+* progress tracking
+* “try it yourself” tasks
+* quick-start actions
+
+⸻
+
+PART 5 — AI Employee Profiles
+
+Upgrade AI Workforce page.
+
+Each AI employee should have:
+
+* profile page
+* role description
+* department
+* capabilities
+* integrations used
+* workflow participation
+* execution statistics
+* confidence trends
+* success rate
+* recent actions
+* governance status
+* approval history
+
+Add:
+“What this agent does for your organization” explanation section.
+
+Make agents feel:
+
+* understandable
+* specialized
+* trustworthy
+* operationally real
+
+⸻
+
+PART 6 — Recommended Actions Engine
+
+Create:
+Operator Recommendation Layer.
+
+Goal:
+Reduce cognitive overload.
+
+The system should proactively suggest:
+
+* workflows to enable
+* integrations to connect
+* governance adjustments
+* approval optimizations
+* stuck workflow resolutions
+* overloaded agents
+* underutilized automations
+
+Examples:
+
+* “You connected Gmail but have no lead follow-up workflow enabled.”
+* “Relay has a 98% approval rate — consider collaborative mode.”
+* “This workflow consistently succeeds without edits.”
+
+All recommendations:
+
+* explainable
+* dismissible
+* logged
+* non-autonomous
+
+⸻
+
+PART 7 — Organizational Presets
+
+Create:
+Industry/organization setup presets.
+
+Examples:
+
+* Small private trainer
+* Sports performance facility
+* High school strength program
+* College performance department
+* PT/rehab hybrid
+* Large multi-location facility
+
+Each preset configures:
+
+* recommended agents
+* governance defaults
+* workflow templates
+* integrations
+* autonomy settings
+* starter dashboards
+
+⸻
+
+PART 8 — First Value Optimization
+
+Optimize:
+Time-to-first-value.
+
+Goals:
+
+* first workflow created < 10 min
+* first integration connected < 5 min
+* first automation executed < 15 min
+* first AI recommendation surfaced < 5 min
+
+Add:
+
+* onboarding progress tracking
+* setup completion score
+* milestone celebrations
+* activation prompts
+* contextual empty states
+
+⸻
+
+PART 9 — Explainability UX Layer
+
+Improve:
+Human understanding of AI decisions.
+
+Add:
+
+* “Why this happened”
+* “Why this was recommended”
+* “What influenced this decision”
+* “What memory/context was used”
+* “Why approval was required”
+
+Convert technical explanations into:
+clear operator-friendly language.
+
+⸻
+
+PART 10 — Workflow Recommendation System
+
+Based on:
+
+* integrations connected
+* org type
+* active workflows
+* operational gaps
+* memory/outcome analytics
+
+Recommend:
+
+* missing workflows
+* duplicate workflows
+* high-performing templates
+* workflow optimizations
+* governance improvements
+
+⸻
+
+PART 11 — Operator Trust Layer
+
+Add:
+Trust-building operational signals.
+
+Examples:
+
+* approval success rates
+* prevented duplicate actions
+* blocked unsafe actions
+* workflows safely recovered
+* retries handled automatically
+* governance protections triggered
+
+Goal:
+Show operators:
+“the system is protecting you.”
+
+⸻
+
+PART 12 — Product Polish Layer
+
+Refine:
+
+* transitions
+* loading states
+* graph animations
+* execution indicators
+* onboarding flows
+* empty states
+* confirmation UX
+* microinteractions
+* operational feedback loops
+
+Direction:
+
+* premium
+* cinematic
+* calm intelligence
+* operational clarity
+* high-trust
+* sophisticated but approachable
+
+⸻
+
+PART 13 — Unified Logging Integration
+
+New action types:
+
+* onboarding_completed
+* workflow_generated_from_prompt
+* recommendation_accepted
+* recommendation_dismissed
+* workspace_mode_changed
+* guided_tour_started
+* guided_tour_completed
+* ai_employee_configured
+
+⸻
+
+PART 14 — Success Metrics
+
+Add analytics for:
+
+* onboarding completion rate
+* first workflow creation time
+* first automation success time
+* integration connection rate
+* workflow adoption
+* recommendation acceptance rate
+* approval fatigue rate
+* simplified vs advanced usage
+* operator trust indicators
+
+⸻
+
+PART 15 — Architectural Goal
+
+The goal of Phase 7 is:
+making TrainEfficiency operationally powerful WITHOUT feeling overwhelming.
+
+After this phase, the system should feel like:
+
+* a guided AI operating system
+* an understandable AI workforce
+* a trusted operational assistant
+* a collaborative organizational intelligence layer
+
+NOT:
+
+* an intimidating enterprise admin tool
+
+The product should begin balancing:
+
+* power
+* usability
+* trust
+* operational sophistication
+* emotional clarity
+
+Prioritize implementation order:
+
+1. onboarding wizard
+2. simplified/advanced modes
+3. natural language workflow generation
+4. recommendation engine
+5. AI employee profiles
+6. onboarding tours
+7. organizational presets
+8. trust layer
+9. polish layer
+
+Do NOT weaken:
+
+* governance
+* explainability
+* observability
+* reliability
+* org isolation
+* approval architecture

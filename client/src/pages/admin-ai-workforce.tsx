@@ -233,6 +233,17 @@ function AgentCard({ agent }: { agent: AgentEntry }) {
               </span>
             ))}
           </div>
+
+          {/* Profile link */}
+          {agent.agentType && (
+            <div className="mt-2 pt-2 border-t border-border/40">
+              <Link href={`/admin/ai-employee/${agent.agentType.replace("_agent", "")}`}>
+                <button className="text-[11px] font-medium text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors" data-testid={`link-agent-profile-${agent.agentType}`}>
+                  View full profile →
+                </button>
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </Card>
