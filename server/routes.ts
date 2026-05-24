@@ -6519,7 +6519,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
-  app.delete("/api/athletic/bookings/:id", async (req, res) => {
+  app.delete("/api/athletic/bookings/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       await storage.deleteAthleticBooking(req.params.id);
       res.json({ success: true });

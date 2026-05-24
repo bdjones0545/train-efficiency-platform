@@ -2820,6 +2820,7 @@ export const leadCaptureAbandoned = pgTable("lead_capture_abandoned", {
   utmTerm: varchar("utm_term"),
   completedAt: timestamp("completed_at"),
   submissionId: varchar("submission_id"),
+  recoverySequenceStatus: varchar("recovery_sequence_status").default("pending"),
   followupSentAt: timestamp("followup_sent_at"),
   followupCount: integer("followup_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),

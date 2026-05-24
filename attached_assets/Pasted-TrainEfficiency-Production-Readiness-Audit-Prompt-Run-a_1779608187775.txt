@@ -1,0 +1,193 @@
+TrainEfficiency Production Readiness Audit Prompt
+
+Run a complete production readiness audit of TrainEfficiency.
+
+Do not build new major features.
+
+Goal:
+Verify that the platform is stable, secure, understandable, and ready for real organizations using real leads, emails, SMS, workflows, scheduling, AI agents, and payments.
+
+Audit these areas:
+
+1. Known startup/runtime errors
+
+* Fix or document the workflow_template_key column error
+* Fix or document the LeadCapture Sequences cron error
+* Confirm no new errors after restart
+* Confirm all crons are intentional and safe
+
+2. Authentication and roles
+    Test:
+
+* admin login
+* coach login
+* athlete login
+* logout for all roles
+* org switching if applicable
+* protected route redirects
+* unauthorized access prevention
+* role-based sidebar visibility
+
+3. Signup and onboarding
+    Test:
+
+* athlete signup
+* team coach signup
+* join code signup
+* invalid org signup
+* duplicate email behavior
+* welcome emails
+* admin attention item creation
+* premium success screen
+* AI Workforce setup wizard
+
+4. AI Operations safety
+    Test:
+
+* emergency pause blocks email
+* emergency pause blocks SMS
+* emergency pause blocks Meta CAPI
+* emergency pause blocks workflow jobs
+* governance fail-closed behavior
+* blocked actions show clear explanations
+* unified logs capture all blocked events
+
+5. Workflow execution
+    Test:
+
+* workflow creation
+* workflow simulation
+* workflow publishing
+* workflow job queue disabled mode
+* workflow job queue enabled mode
+* approval gates
+* edit-then-execute
+* regenerate with feedback
+* retry
+* dead-letter handling
+* stuck job detection
+
+6. Integrations
+    Audit:
+
+* SendGrid
+* Twilio
+* Meta CAPI
+* Gmail
+* Google Calendar
+* Slack
+* OpenRouter
+* Stripe
+* Research Agent
+
+For each:
+
+* status card appears
+* health check works
+* logs appear
+* failures classify correctly
+* emergency pause respected
+* credentials missing state is clear
+* rate-limit/credential-expiry UI works
+
+7. Communication logs
+    Verify:
+
+* communication_log still works
+* integration_execution_log mirrors email/SMS
+* unified_agent_action_log captures communication events
+* no duplicate sends
+* failed sends are visible
+* blocked sends are visible
+
+8. Payments and billing
+    Audit:
+
+* Stripe webhook handling
+* duplicate webhook protection
+* invoice creation
+* wallet/session credit logic
+* failed payment handling
+* revenue attribution
+* financial actions require approval/governance
+
+9. Data isolation and security
+    Check:
+
+* every org query filters by orgId
+* no cross-org data leakage
+* no admin-only data visible to coaches/athletes
+* API routes use isAuthenticated/isAdmin where needed
+* sensitive credentials are not exposed to frontend
+* logs do not leak API keys or secrets
+
+10. UI/UX readiness
+    Audit:
+
+* AI Operations Command Center
+* AI Workforce
+* Workflow Builder
+* Workflow Library
+* Workflow Heatmap
+* Agent Ops Monitor
+* AI Governance
+* Recommendations
+* onboarding wizard
+* mobile views
+* loading states
+* empty states
+* error states
+
+Flag anything confusing for a non-technical operator.
+
+11. Performance
+    Check:
+
+* slow queries
+* large log tables
+* dashboard load time
+* workflow graph rendering
+* excessive polling
+* memory/context retrieval limits
+* AI call latency
+* queue runner safety
+
+12. Observability
+    Confirm:
+
+* unified_agent_action_log captures important actions
+* integration_execution_log captures external calls
+* workflow_context captures memory events
+* workflow_outcomes captures measurable results
+* dead-letter queue is visible
+* health status is visible
+* errors are actionable
+
+13. Real-world demo flow
+    Create and test a complete demo scenario:
+
+New lead submits form →
+admin receives attention item →
+AI scores/recommends follow-up →
+Relay drafts email →
+admin edits and approves →
+email sends →
+logs update →
+memory updates →
+workflow outcome records →
+Business Brain sees activity →
+Command Center reflects status.
+
+14. Final report
+    Return:
+
+* production-ready areas
+* critical blockers
+* medium-priority fixes
+* polish issues
+* security risks
+* remaining legacy paths
+* recommended launch checklist
+* what should NOT be built yet
+
+Keep the audit practical, strict, and launch-oriented.
