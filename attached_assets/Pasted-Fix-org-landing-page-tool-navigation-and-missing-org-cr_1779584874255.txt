@@ -1,0 +1,94 @@
+Fix org landing page tool navigation and missing org-created landing pages.
+
+Current issues:
+1. On the public org landing page, tapping available programs/tools causes an ugly flash before the target page loads.
+2. The page does not show landing pages created by the organization.
+
+Expected behavior:
+- Tapping a program/tool should feel like an in-app transition, not a page reload.
+- No white/blank flash.
+- Show a lightweight loading skeleton or smooth fade transition while target data loads.
+- Org-created landing pages should appear on the org public landing page if they are active/published.
+
+Part 1 — Smooth navigation fix:
+1. Audit click handlers for:
+   - scheduling programs
+   - PR Tracker
+   - Workout Builder
+   - any org tool cards
+
+2. Make sure navigation uses the app router navigation method, not:
+   - window.location.href
+   - window.location.assign
+   - raw anchor reloads
+   - full document navigation
+
+3. Use client-side navigation:
+   - Wouter `useLocation()` / `setLocation()`
+   - or existing app navigation helper
+
+4. Add a transition/loading state:
+   - On card tap, set `isNavigatingCardId`
+   - Keep current page visible
+   - Add subtle pressed state / spinner / opacity change
+   - Navigate after state is set
+   - Target page should render a dark skeleton instead of blank content while queries hydrate
+
+5. Prevent auth/session flash:
+   - Public org routes should not briefly render unauthenticated/404 states while org data is loading.
+   - Use:
+     `if (isLoadingOrg || isHydrating) return <OrgPageSkeleton />`
+   - Only show login-required or not-found states after loading is complete.
+
+Part 2 — Show org-created landing pages:
+1. Find the model/API for organization-created landing pages.
+   Search for:
+   - landing_pages
+   - org_landing_pages
+   - lead_capture_pages
+   - program_landing_pages
+   - landingPage
+   - publicLanding
+   - slug
+   - published
+
+2. Add/verify a public endpoint for active org landing pages:
+   `GET /api/public/orgs/:slug/landing-pages`
+
+It should return only pages that are:
+   - owned by the current org
+   - active/published
+   - not deleted/archived
+   - safe for public display
+
+3. On the public org landing page, render a new section:
+   `Available Offers & Landing Pages`
+
+Cards should show:
+   - page title
+   - short description/subtitle
+   - offer/program type if available
+   - CTA such as `View Offer`
+   - route to the public landing page URL
+
+4. The section should appear near the existing Available Programs & Tools area.
+
+5. If no landing pages exist, hide the section completely.
+
+6. Make sure the created landing page routes are registered in App.tsx and refresh-safe.
+
+Part 3 — route validation:
+- Add created landing page URLs to the same route registry/map used to avoid 404s.
+- Any card with a missing/invalid URL should not render as clickable.
+
+Acceptance tests:
+- Open `/org/:slug` on mobile Safari.
+- Tap BLHS Athletic → smooth transition, no white flash.
+- Tap PR Tracker → smooth transition, no white flash.
+- Tap Workout Builder → smooth transition, no white flash.
+- Refresh each destination route directly → no 404.
+- Create/publish an org landing page.
+- Return to `/org/:slug`.
+- Published landing page appears under Available Offers & Landing Pages.
+- Tapping it opens the correct public landing page.
+- Draft/archived landing pages do not appear publicly.

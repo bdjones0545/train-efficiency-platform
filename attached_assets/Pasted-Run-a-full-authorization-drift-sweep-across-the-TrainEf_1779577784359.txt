@@ -1,0 +1,127 @@
+Run a full authorization drift sweep across the TrainEfficiency frontend and backend.
+
+Goal:
+Eliminate all legacy auth checks that bypass the shared org permission system and could cause future “login required” or unauthorized states for valid org admins/coaches.
+
+We now have:
+- usePermissions(slug)
+- hasAccess
+- isHydrating
+- resolveOrgSession()
+- org membership-based auth
+
+Everything should use these as the single source of truth.
+
+Sweep requirements:
+
+1. Frontend audit — search entire client/ directory for legacy auth patterns:
+
+Search for:
+- if (!orgToken)
+- if (!coachId)
+- if (!isCoach)
+- !user?.coach
+- !permissions
+- X-Org-Auth-Token
+- localStorage.getItem("orgToken")
+- sessionStorage.getItem("orgToken")
+- requiresCoach
+- requiresAuth
+- coachAuth
+- orgAuth
+
+For every occurrence:
+- Replace token-only auth assumptions with usePermissions(slug)
+- Use:
+  - hasAccess
+  - isHydrating
+  - isAuthenticated
+  - canManageOrg
+- Avoid hard dependency on orgToken existing
+
+2. Backend audit — search server/ directory for auth drift:
+
+Search for:
+- req.headers["x-org-auth-token"]
+- req.headers.authorization
+- requireOrgAuth
+- requireCoach
+- requireCoachAuth
+- requireAdmin
+- orgToken
+- coachId
+- isCoach
+
+Ensure all org-protected routes use:
+- resolveOrgSession()
+or
+- shared org auth middleware
+
+No route should reject valid OIDC-authenticated org admins/coaches simply because no orgToken exists.
+
+3. Standardize request auth:
+
+Create or consolidate:
+- buildOrgHeaders()
+or
+- getAuthHeaders()
+
+Rules:
+- Always include credentials: "include"
+- Include auth headers only when present
+- Never require localStorage org token for authenticated OIDC sessions
+
+4. Standardize page guards:
+
+Every protected org page should use:
+
+if (isHydrating) return loading
+if (!hasAccess) return unauthorized/login
+otherwise render
+
+Never:
+if (!orgToken) ...
+
+5. Verify React Query enabled conditions:
+
+Replace:
+enabled: !!orgToken
+
+With:
+enabled: !!orgId && (hasAccess || !!orgToken)
+
+6. Add defensive diagnostics in development:
+
+If a user:
+- has valid org membership
+- has authenticated session
+- but access fails
+
+Log:
+[AUTH DRIFT DETECTED]
+with:
+- route
+- orgId
+- role
+- hasAccess
+- hasSession
+- orgTokenPresent
+
+Only in development mode.
+
+7. Final validation checklist:
+
+Test as:
+- org owner
+- org admin
+- org coach
+- athlete/client
+- logged out guest
+
+Verify:
+- direct URL refreshes work
+- mobile Safari works
+- no page incorrectly shows login-required state
+- sidebar visibility matches actual page access
+- no protected page depends solely on localStorage orgToken
+- no console auth errors except expected guest 401 on homepage
