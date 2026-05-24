@@ -7,6 +7,7 @@ import { AthletePrDashboard } from "@/components/pr-tracker/AthletePrDashboard";
 import { getAuthHeaders, setAuthToken } from "@/lib/authToken";
 import { logoutAllSessions } from "@/lib/logout";
 import { Button } from "@/components/ui/button";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface PrTrackerProps {
   program: {
@@ -31,6 +32,7 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
   const programSlug = program.slug;
   const tokenKey = getTokenKey(orgId);
   const [, setLocation] = useLocation();
+  const { hasAccess, isHydrating } = usePermissions(orgSlug);
 
   const [orgToken, setOrgToken] = useState<string | null>(() =>
     localStorage.getItem(tokenKey)
@@ -64,7 +66,19 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
       clearTimeout(timeoutId);
 
       if (r.status === 401) {
-        // Clear any stale org token so re-login starts fresh
+        // If the user has a valid platform session + org membership, skip the modal
+        if (hasAccess) {
+          console.warn("[AUTH DRIFT DETECTED]", {
+            page: "pr-tracker",
+            orgSlug,
+            hasAccess,
+            isHydrating,
+            orgTokenPresent: !!orgTokenRef.current,
+          });
+          setError({ message: "Session expired. Please refresh the page.", status: 401 });
+          return;
+        }
+        // No main session — clear any stale org token and show the login modal
         if (orgTokenRef.current) {
           localStorage.removeItem(tokenKey);
           setOrgToken(null);
@@ -101,10 +115,12 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
     }
   }, [orgId, programId, tokenKey]);
 
-  // Fire immediately on mount — server decides auth, no useAuth dependency
+  // Delay the initial fetch until permissions are resolved so hasAccess is accurate
   useEffect(() => {
-    fetchBootstrap();
-  }, []);
+    if (!isHydrating) {
+      fetchBootstrap();
+    }
+  }, [isHydrating]);
 
   function handleAuthenticated(token: string, _user: any, _membership: any, mainAppToken?: string) {
     // If the login also returned a main-app token, store it so the user is
@@ -133,8 +149,18 @@ export default function PrTrackerPage({ program, orgSlug }: PrTrackerProps) {
 
   // ── Render gates ─────────────────────────────────────────────────────────
 
-  // 1. Show org login gate when server says 401
-  if (showAuthModal) {
+  // 0. While permissions are resolving, show a neutral spinner
+  if (isHydrating) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  // 1. Show org login gate only when the server says 401 AND the user has no main session
+  if (showAuthModal && !hasAccess) {
     return (
       <OrgAuthModal
         orgId={orgId}

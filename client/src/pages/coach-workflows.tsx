@@ -3,8 +3,8 @@ import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { OrgSidebar } from "@/components/OrgSidebar";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,13 +93,6 @@ interface OrgMember {
   userId: string;
   name: string;
   email: string;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function getAuthHeadersForOrg(orgId?: string) {
-  if (!orgId) return {};
-  const token = localStorage.getItem(`orgToken_${orgId}`);
-  return token ? { "X-Org-Auth-Token": token } : {};
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
@@ -279,7 +272,7 @@ function WorkflowCard({
 }
 
 // ─── Create Workflow Modal ─────────────────────────────────────────────────────
-function CreateWorkflowModal({ orgId, onCreated }: { orgId: string; onCreated: () => void }) {
+function CreateWorkflowModal({ onCreated, buildHeaders }: { onCreated: () => void; buildHeaders: () => Record<string, string> }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -291,11 +284,10 @@ function CreateWorkflowModal({ orgId, onCreated }: { orgId: string; onCreated: (
 
   const createMut = useMutation({
     mutationFn: async () => {
-      const headers = getAuthHeadersForOrg(orgId);
       return apiRequest("POST", "/api/org/adaptive-workflows", {
         title, description, triggerType,
         steps: steps.map((s, i) => ({ stepOrder: i + 1, actionType: s.actionType, config: JSON.parse(s.configJson || "{}") })),
-      }, headers as any);
+      }, buildHeaders());
     },
     onSuccess: () => {
       toast({ title: "Workflow created", description: `"${title}" is now active.` });
@@ -408,67 +400,89 @@ export default function CoachWorkflowsPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("workflows");
 
-  // Get orgId from public context (for token lookup)
+  const orgToken = localStorage.getItem(`orgToken_${slug}`) ?? null;
+  const { hasAccess, isHydrating } = usePermissions(slug ?? "");
+
+  const buildHeaders = (): Record<string, string> => ({
+    ...getAuthHeaders(),
+    ...(orgToken ? { "X-Org-Auth-Token": orgToken } : {}),
+  });
+
+  if (!isHydrating && !orgToken && !hasAccess) {
+    console.warn("[AUTH DRIFT DETECTED]", {
+      page: "coach-workflows",
+      slug,
+      hasAccess,
+      isHydrating,
+      orgTokenPresent: !!orgToken,
+    });
+  }
+
+  // Get orgId for query keys
   const { data: pubCtx } = useQuery<{ orgId: string }>({
     queryKey: [`/api/org/by-slug/${slug}/nav-context`],
-    queryFn: () => fetch(`/api/org/by-slug/${slug}/nav-context`).then((r) => r.json()),
+    queryFn: () => fetch(`/api/org/by-slug/${slug}/nav-context`, {
+      headers: buildHeaders(),
+      credentials: "include",
+    }).then((r) => r.json()),
     staleTime: 60_000,
+    enabled: !!slug,
   });
   const orgId = pubCtx?.orgId ?? "";
-  const headers = getAuthHeadersForOrg(orgId);
+  const canLoad = !!orgId && !isHydrating && (!!orgToken || hasAccess);
 
   const { data: wfData, isLoading: wfLoading, refetch: refetchWf } = useQuery<{ workflows: Workflow[] }>({
     queryKey: ["/api/org/adaptive-workflows", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-workflows", { headers: headers as any }).then((r) => r.json()),
-    enabled: !!orgId,
+      fetch("/api/org/adaptive-workflows", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad,
     staleTime: 15_000,
   });
 
   const { data: statsData } = useQuery<Stats>({
     queryKey: ["/api/org/adaptive-workflows/stats", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-workflows/stats", { headers: headers as any }).then((r) => r.json()),
-    enabled: !!orgId,
+      fetch("/api/org/adaptive-workflows/stats", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad,
     staleTime: 30_000,
   });
 
   const { data: runsData, isLoading: runsLoading } = useQuery<{ runs: WorkflowRun[] }>({
     queryKey: ["/api/org/adaptive-workflows/runs/recent", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-workflows/runs/recent", { headers: headers as any }).then((r) => r.json()),
-    enabled: !!orgId && activeTab === "history",
+      fetch("/api/org/adaptive-workflows/runs/recent", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad && activeTab === "history",
     staleTime: 15_000,
   });
 
   const { data: followupsData, isLoading: followupsLoading } = useQuery<{ followups: Followup[] }>({
     queryKey: ["/api/org/adaptive-followups", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-followups", { headers: headers as any }).then((r) => r.json()),
-    enabled: !!orgId && activeTab === "followups",
+      fetch("/api/org/adaptive-followups", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad && activeTab === "followups",
     staleTime: 15_000,
   });
 
   const { data: interventionsData, isLoading: interventionsLoading } = useQuery<{ interventions: Intervention[] }>({
     queryKey: ["/api/org/interventions/full", orgId],
     queryFn: () =>
-      fetch("/api/org/interventions/full", { headers: headers as any }).then((r) => r.json()),
-    enabled: !!orgId && activeTab === "interventions",
+      fetch("/api/org/interventions/full", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad && activeTab === "interventions",
     staleTime: 15_000,
   });
 
   const { data: athletesData } = useQuery<{ members: OrgMember[] }>({
     queryKey: ["/api/org/members/athletes", orgId],
     queryFn: () =>
-      fetch("/api/org/members/athletes", { headers: headers as any }).then((r) => r.json()),
-    enabled: !!orgId,
+      fetch("/api/org/members/athletes", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad,
     staleTime: 60_000,
   });
   const athletes = athletesData?.members ?? [];
 
   const toggleMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("PATCH", `/api/org/adaptive-workflows/${id}`, { status }, headers as any),
+      apiRequest("PATCH", `/api/org/adaptive-workflows/${id}`, { status }, buildHeaders()),
     onSuccess: () => {
       toast({ title: "Workflow updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/org/adaptive-workflows", orgId] });
@@ -479,7 +493,7 @@ export default function CoachWorkflowsPage() {
 
   const triggerMut = useMutation({
     mutationFn: ({ id, athleteUserId }: { id: string; athleteUserId: string }) =>
-      apiRequest("POST", `/api/org/adaptive-workflows/${id}/trigger`, { athleteUserId }, headers as any),
+      apiRequest("POST", `/api/org/adaptive-workflows/${id}/trigger`, { athleteUserId }, buildHeaders()),
     onSuccess: (data: any) => {
       toast({ title: "Workflow triggered", description: `${data?.stepsExecuted ?? 0} steps executed.` });
       queryClient.invalidateQueries({ queryKey: ["/api/org/adaptive-workflows/runs/recent", orgId] });
@@ -490,7 +504,7 @@ export default function CoachWorkflowsPage() {
 
   const followupMut = useMutation({
     mutationFn: ({ id, status, notes }: { id: string; status: string; notes?: string }) =>
-      apiRequest("PATCH", `/api/org/adaptive-followups/${id}`, { status, notes }, headers as any),
+      apiRequest("PATCH", `/api/org/adaptive-followups/${id}`, { status, notes }, buildHeaders()),
     onSuccess: () => {
       toast({ title: "Follow-up updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/org/adaptive-followups", orgId] });
@@ -500,7 +514,7 @@ export default function CoachWorkflowsPage() {
 
   const interventionMut = useMutation({
     mutationFn: ({ id, status, coachNotes }: { id: string; status: string; coachNotes?: string }) =>
-      apiRequest("PATCH", `/api/org/interventions/full/${id}`, { status, coachNotes }, headers as any),
+      apiRequest("PATCH", `/api/org/interventions/full/${id}`, { status, coachNotes }, buildHeaders()),
     onSuccess: () => {
       toast({ title: "Intervention updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/org/interventions/full", orgId] });
@@ -511,12 +525,31 @@ export default function CoachWorkflowsPage() {
   const stats = statsData;
   const workflows = wfData?.workflows ?? [];
 
+  // ── Auth Guards ──────────────────────────────────────────────────────────
+  if (isHydrating) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-neutral-950">
+        <Loader2 className="h-6 w-6 animate-spin text-neutral-500" />
+      </div>
+    );
+  }
+
+  if (!orgToken && !hasAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-neutral-950 gap-4 px-4">
+        <Zap className="h-10 w-10 text-neutral-500 opacity-40" />
+        <div className="text-center">
+          <p className="font-semibold text-sm text-neutral-300">Coach Access Required</p>
+          <p className="text-xs text-neutral-500 mt-1">Sign in to manage workflows.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <SidebarProvider>
-      <div className="flex h-screen bg-neutral-950 text-white w-full overflow-hidden">
-        <OrgSidebar orgSlug={slug!} />
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <div className="flex h-screen bg-neutral-950 text-white w-full overflow-hidden">
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6 space-y-6">
 
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -538,7 +571,7 @@ export default function CoachWorkflowsPage() {
                   }} data-testid="btn-refresh-workflows">
                   <RefreshCw className="h-4 w-4 mr-2" /> Refresh
                 </Button>
-                <CreateWorkflowModal orgId={orgId} onCreated={() => {
+                <CreateWorkflowModal buildHeaders={buildHeaders} onCreated={() => {
                   queryClient.invalidateQueries({ queryKey: ["/api/org/adaptive-workflows", orgId] });
                 }} />
               </div>
@@ -776,9 +809,8 @@ export default function CoachWorkflowsPage() {
                 )}
               </TabsContent>
             </Tabs>
-          </div>
-        </main>
-      </div>
-    </SidebarProvider>
+        </div>
+      </main>
+    </div>
   );
 }

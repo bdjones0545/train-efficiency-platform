@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +15,6 @@ import {
   Shield, ShieldAlert, ShieldCheck, Clock, Filter, Sparkles,
   ChevronRight, BarChart2, Loader2, X, ThumbsUp, ThumbsDown,
 } from "lucide-react";
-
-const STORAGE_KEY = (slug: string) => `orgToken_${slug}`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function riskColor(level: string) {
@@ -138,7 +138,7 @@ function AthleteDetail({
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/athlete-status", userId],
-    queryFn: () => fetch(`/api/org/athlete-status/${userId}`, { headers }).then((r) => r.json()),
+    queryFn: () => fetch(`/api/org/athlete-status/${userId}`, { headers, credentials: "include" }).then((r) => r.json()),
   });
 
   const refreshMut = useMutation({
@@ -362,8 +362,25 @@ export default function CoachAthleteStatusPage() {
   const { slug } = useParams<{ slug: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const orgToken = localStorage.getItem(STORAGE_KEY(slug)) ?? "";
-  const headers = { "X-Org-Auth-Token": orgToken };
+  const orgToken = localStorage.getItem(`orgToken_${slug}`) ?? null;
+  const { hasAccess, isHydrating } = usePermissions(slug);
+
+  const buildHeaders = (): Record<string, string> => ({
+    ...getAuthHeaders(),
+    ...(orgToken ? { "X-Org-Auth-Token": orgToken } : {}),
+  });
+
+  const canLoad = !isHydrating && (!!orgToken || hasAccess);
+
+  if (!isHydrating && !orgToken && !hasAccess) {
+    console.warn("[AUTH DRIFT DETECTED]", {
+      page: "coach-athlete-status",
+      slug,
+      hasAccess,
+      isHydrating,
+      orgTokenPresent: !!orgToken,
+    });
+  }
 
   const [activeTab, setActiveTab] = useState("grid");
   const [riskFilter, setRiskFilter] = useState<string>("all");
@@ -371,23 +388,24 @@ export default function CoachAthleteStatusPage() {
 
   const { data: statusData, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/athlete-status", slug],
-    queryFn: () => fetch("/api/org/athlete-status", { headers }).then((r) => r.json()),
+    queryFn: () => fetch("/api/org/athlete-status", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad,
   });
 
   const { data: flagsData } = useQuery<any>({
     queryKey: ["/api/org/athlete-risk-flags", slug],
-    queryFn: () => fetch("/api/org/athlete-risk-flags", { headers }).then((r) => r.json()),
-    enabled: activeTab === "alerts",
+    queryFn: () => fetch("/api/org/athlete-risk-flags", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: activeTab === "alerts" && canLoad,
   });
 
   const { data: interventionsData } = useQuery<any>({
     queryKey: ["/api/org/interventions", slug],
-    queryFn: () => fetch("/api/org/interventions", { headers }).then((r) => r.json()),
-    enabled: activeTab === "interventions",
+    queryFn: () => fetch("/api/org/interventions", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: activeTab === "interventions" && canLoad,
   });
 
   const refreshAllMut = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/org/athlete-status/refresh-all", {}, headers),
+    mutationFn: () => apiRequest("POST", "/api/org/athlete-status/refresh-all", {}, buildHeaders()),
     onSuccess: (res) => {
       res.json().then((d: any) => {
         toast({ title: `Refreshed ${d.refreshed} athletes` });
@@ -398,13 +416,13 @@ export default function CoachAthleteStatusPage() {
 
   const flagMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("PATCH", `/api/org/athlete-risk-flags/${id}`, { status }, headers),
+      apiRequest("PATCH", `/api/org/athlete-risk-flags/${id}`, { status }, buildHeaders()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/org/athlete-risk-flags", slug] }),
   });
 
   const interventionMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("PATCH", `/api/org/interventions/${id}`, { status }, headers),
+      apiRequest("PATCH", `/api/org/interventions/${id}`, { status }, buildHeaders()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/org/interventions", slug] }),
   });
 
@@ -425,13 +443,37 @@ export default function CoachAthleteStatusPage() {
   const totalFlagCount = athletes.reduce((s, a) => s + (a.flagCount ?? 0), 0);
   const pendingInterventionCount = athletes.reduce((s, a) => s + (a.pendingInterventions?.length ?? 0), 0);
 
+  // ── Auth Guards ────────────────────────────────────────────────────────────
+  if (isHydrating) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!orgToken && !hasAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-4">
+        <Activity className="h-10 w-10 text-muted-foreground opacity-40" />
+        <div className="text-center">
+          <p className="font-semibold text-sm">Coach Access Required</p>
+          <p className="text-xs text-muted-foreground mt-1">Sign in to view athlete status.</p>
+        </div>
+        <Button size="sm" onClick={() => setLocation(`/org/${slug}/portal`)}>
+          Back to Portal
+        </Button>
+      </div>
+    );
+  }
+
   // Detail view
   if (selectedUserId) {
     return (
       <AthleteDetail
         userId={selectedUserId}
         orgId=""
-        headers={headers}
+        headers={buildHeaders()}
         onClose={() => setSelectedUserId(null)}
       />
     );

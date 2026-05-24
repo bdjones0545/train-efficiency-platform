@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +20,6 @@ import {
   Youtube, Search, FileText,
 } from "lucide-react";
 
-const STORAGE_KEY = (slug: string) => `orgToken_${slug}`;
 const CATEGORIES = [
   { value: "nutrition", label: "Nutrition", color: "emerald" },
   { value: "recovery", label: "Recovery", color: "blue" },
@@ -46,9 +47,25 @@ export default function CoachEducationBuilderPage() {
   const { slug } = useParams<{ slug: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const orgToken = localStorage.getItem(STORAGE_KEY(slug)) ?? "";
+  const orgToken = localStorage.getItem(`orgToken_${slug}`) ?? null;
+  const { hasAccess, isHydrating } = usePermissions(slug);
 
-  const headers = { "X-Org-Auth-Token": orgToken };
+  const buildHeaders = (): Record<string, string> => ({
+    ...getAuthHeaders(),
+    ...(orgToken ? { "X-Org-Auth-Token": orgToken } : {}),
+  });
+
+  const canLoad = !isHydrating && (!!orgToken || hasAccess);
+
+  if (!isHydrating && !orgToken && !hasAccess) {
+    console.warn("[AUTH DRIFT DETECTED]", {
+      page: "coach-education-builder",
+      slug,
+      hasAccess,
+      isHydrating,
+      orgTokenPresent: !!orgToken,
+    });
+  }
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState("pathways");
@@ -71,74 +88,75 @@ export default function CoachEducationBuilderPage() {
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: pathwaysData, refetch: refetchPathways } = useQuery<any>({
     queryKey: ["/api/org/education/pathways", slug],
-    queryFn: () => fetch("/api/org/education/pathways", { headers }).then((r) => r.json()),
+    queryFn: () => fetch("/api/org/education/pathways", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: canLoad,
   });
   const pathways: any[] = pathwaysData?.pathways ?? [];
 
   const { data: modulesData, refetch: refetchModules } = useQuery<any>({
     queryKey: ["/api/org/education/pathways/modules", selectedPathway?.slug],
-    queryFn: () => fetch(`/api/org/education/pathways/${selectedPathway?.slug}/modules`, { headers }).then((r) => r.json()),
-    enabled: !!selectedPathway,
+    queryFn: () => fetch(`/api/org/education/pathways/${selectedPathway?.slug}/modules`, { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: !!selectedPathway && canLoad,
   });
   const modules: any[] = modulesData?.modules ?? [];
 
   const { data: analyticsData } = useQuery<any>({
     queryKey: ["/api/org/education/analytics", slug],
-    queryFn: () => fetch("/api/org/education/analytics", { headers }).then((r) => r.json()),
-    enabled: activeTab === "analytics",
+    queryFn: () => fetch("/api/org/education/analytics", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: activeTab === "analytics" && canLoad,
   });
 
   const { data: assignmentsData } = useQuery<any>({
     queryKey: ["/api/org/education/assignments", slug],
-    queryFn: () => fetch("/api/org/education/assignments", { headers }).then((r) => r.json()),
-    enabled: activeTab === "assignments",
+    queryFn: () => fetch("/api/org/education/assignments", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: activeTab === "assignments" && canLoad,
   });
 
   const { data: quizData } = useQuery<any>({
     queryKey: ["/api/org/education/modules/questions", selectedModule?.id],
-    queryFn: () => fetch(`/api/org/education/modules/${selectedModule?.id}/questions`, { headers }).then((r) => r.json()),
-    enabled: !!selectedModule,
+    queryFn: () => fetch(`/api/org/education/modules/${selectedModule?.id}/questions`, { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    enabled: !!selectedModule && canLoad,
   });
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const createPathwayMut = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/pathways", data,  headers),
+    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/pathways", data, buildHeaders()),
     onSuccess: () => { refetchPathways(); setShowCreatePathway(false); setNewPathway({ title: "", category: "custom", description: "" }); toast({ title: "Pathway created" }); },
     onError: () => toast({ title: "Error", description: "Failed to create pathway", variant: "destructive" }),
   });
 
   const updatePathwayMut = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/pathways/${id}`, data,  headers),
+    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/pathways/${id}`, data, buildHeaders()),
     onSuccess: () => { refetchPathways(); toast({ title: "Saved" }); },
   });
 
   const publishPathwayMut = useMutation({
-    mutationFn: ({ id, action }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/publish`, { action },  headers),
+    mutationFn: ({ id, action }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/publish`, { action }, buildHeaders()),
     onSuccess: () => { refetchPathways(); toast({ title: "Status updated" }); },
   });
 
   const createModuleMut = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/modules", data,  headers),
+    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/modules", data, buildHeaders()),
     onSuccess: () => { refetchModules(); setEditingModule(false); toast({ title: "Module created" }); },
   });
 
   const updateModuleMut = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/modules/${id}`, data,  headers),
+    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/education/modules/${id}`, data, buildHeaders()),
     onSuccess: () => { refetchModules(); setEditingModule(false); toast({ title: "Module saved" }); },
   });
 
   const saveQuizMut = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/quiz-questions", data,  headers),
+    mutationFn: (data: any) => apiRequest("POST", "/api/org/education/quiz-questions", data, buildHeaders()),
     onSuccess: () => toast({ title: "Quiz saved" }),
   });
 
   const assignPathwayMut = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/assign`, data,  headers),
+    mutationFn: ({ id, ...data }: any) => apiRequest("POST", `/api/org/education/pathways/${id}/assign`, data, buildHeaders()),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/org/education/assignments", slug] }); toast({ title: "Assigned!" }); },
   });
 
   const copyPathwayMut = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {},  headers),
+    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {}, buildHeaders()),
     onSuccess: (data: any) => {
       refetchPathways();
       toast({ title: "Pathway copied to your library", description: "You can now customize it for your organization." });
@@ -156,7 +174,8 @@ export default function CoachEducationBuilderPage() {
     try {
       const r = await fetch("/api/org/education/ai/generate-full-pathway", {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildHeaders() },
+        credentials: "include",
         body: JSON.stringify(fullProgramForm),
       });
       const data = await r.json();
@@ -167,7 +186,7 @@ export default function CoachEducationBuilderPage() {
   }
 
   const acceptFullProgramMut = useMutation({
-    mutationFn: (draft: any) => apiRequest("POST", "/api/org/education/ai/accept-full-pathway", { draft }, headers),
+    mutationFn: (draft: any) => apiRequest("POST", "/api/org/education/ai/accept-full-pathway", { draft }, buildHeaders()),
     onSuccess: (data: any) => {
       refetchPathways();
       setFullProgramDraft(null);
@@ -186,7 +205,8 @@ export default function CoachEducationBuilderPage() {
     try {
       const r = await fetch("/api/org/education/ai/generate-pathway", {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildHeaders() },
+        credentials: "include",
         body: JSON.stringify(aiGenForm),
       });
       const data = await r.json();
@@ -201,7 +221,8 @@ export default function CoachEducationBuilderPage() {
     try {
       const r = await fetch("/api/org/education/ai/generate-module", {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildHeaders() },
+        credentials: "include",
         body: JSON.stringify({
           moduleTitle: moduleForm.title || selectedModule?.title,
           topic: moduleForm.title || selectedModule?.title,
@@ -234,7 +255,8 @@ export default function CoachEducationBuilderPage() {
     try {
       const r = await fetch("/api/org/education/ai/generate-quiz", {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildHeaders() },
+        credentials: "include",
         body: JSON.stringify({
           moduleTitle: selectedModule?.title ?? moduleForm.title,
           moduleContent: (selectedModule?.content?.sections ?? moduleForm.content?.sections ?? []).map((s: any) => s.body).join(" "),
@@ -255,7 +277,8 @@ export default function CoachEducationBuilderPage() {
     try {
       const r = await fetch("/api/org/education/ai/rewrite", {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildHeaders() },
+        credentials: "include",
         body: JSON.stringify({ content, rewriteType: type, pathwayId: selectedPathway?.id, moduleId: selectedModule?.id }),
       });
       const data = await r.json();
@@ -326,6 +349,30 @@ export default function CoachEducationBuilderPage() {
       description: aiDraft.description ?? "",
     });
     setAiDraft(null);
+  }
+
+  // ── Auth Guards ────────────────────────────────────────────────────────────
+  if (isHydrating) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!orgToken && !hasAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-4">
+        <GraduationCap className="h-10 w-10 text-muted-foreground opacity-40" />
+        <div className="text-center">
+          <p className="font-semibold text-sm">Coach Access Required</p>
+          <p className="text-xs text-muted-foreground mt-1">Sign in to manage your education library.</p>
+        </div>
+        <Button size="sm" onClick={() => setLocation(`/org/${slug}/portal`)}>
+          Back to Portal
+        </Button>
+      </div>
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────

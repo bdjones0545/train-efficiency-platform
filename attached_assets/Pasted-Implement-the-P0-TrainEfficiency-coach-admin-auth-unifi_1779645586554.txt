@@ -1,0 +1,115 @@
+Implement the P0 TrainEfficiency coach/admin auth unification fixes.
+
+Goal:
+Education Builder, Athlete Status, Workflows, and PR Tracker should all respect the same shared org auth model used by Teams, Communications, Command Center, and Profile.
+
+Current problem:
+Several coach tools still depend on localStorage orgToken or standalone PR Tracker bootstrap auth. This causes valid OIDC/platform-authenticated org admins/coaches to see silent 401s, login modals, or disconnected auth states.
+
+Fix these files:
+- client/src/pages/coach-education-builder.tsx
+- client/src/pages/coach-athlete-status.tsx
+- client/src/pages/coach-workflows.tsx
+- client/src/pages/pr-tracker.tsx
+- server/adaptive-workflow-routes.ts if needed
+
+Use the proven pattern:
+- usePermissions(slug)
+- hasAccess
+- isHydrating
+- orgId
+- getAuthHeaders()
+- credentials: "include"
+
+Frontend requirements:
+1. Import and use usePermissions(slug) on all three coach pages.
+2. Replace localStorage-only auth guards.
+
+Do NOT use:
+if (!orgToken) return loginRequired
+
+Use:
+if (isHydrating) return loading state
+if (!orgToken && !hasAccess) return loginRequired/accessDenied
+
+3. Replace query enabled conditions.
+
+Do NOT use:
+enabled: !!orgToken
+
+Use:
+enabled: !!orgId && (!!orgToken || hasAccess)
+
+or define:
+const canLoad = !!orgId && (!!orgToken || hasAccess)
+
+4. Replace fetch headers.
+
+Create a helper per file or shared helper:
+
+const buildHeaders = () => ({
+  "Content-Type": "application/json",
+  ...getAuthHeaders(),
+  ...(orgToken ? { "X-Org-Auth-Token": orgToken } : {}),
+});
+
+All fetches must include:
+credentials: "include"
+
+5. Prevent silent 401 failure states.
+If access fails, show a branded access state with:
+- org logo
+- clear message
+- Log In button
+- no blank page
+
+6. Add development diagnostics.
+If user is authenticated and has org membership but the page still blocks access, log:
+
+[AUTH DRIFT DETECTED]
+with:
+- page
+- route
+- orgId
+- slug
+- hasAccess
+- isHydrating
+- orgTokenPresent
+
+PR Tracker requirements:
+1. When usePermissions(slug) returns hasAccess, skip the standalone OrgAuthModal entirely.
+2. The PR Tracker should load using the main platform session + org membership.
+3. Only show OrgAuthModal if:
+   - no main session access exists
+   - no valid org token exists
+   - hydration is complete
+4. PR Tracker should feel embedded inside the org app, not like a separate app.
+
+Backend requirements:
+1. Audit server/adaptive-workflow-routes.ts.
+2. Ensure workflow routes do not require only X-Org-Auth-Token.
+3. Use resolveOrgSession() or shared org auth middleware.
+4. Valid OIDC-authenticated org admins/coaches should pass.
+5. Local org token auth should still work as fallback.
+
+Acceptance tests:
+As org admin with main platform session:
+- Education Builder loads
+- Athlete Status loads
+- Workflows loads
+- PR Tracker loads without auth modal
+
+As org coach with main platform session:
+- Same behavior, respecting coach-scoped permissions
+
+As athlete/client:
+- Coach-only tools remain blocked
+
+As logged out user:
+- Tools show branded login state
+
+Verify:
+- No silent 401s
+- No standalone PR Tracker auth modal for authenticated admins/coaches
+- No localStorage orgToken dependency
+- All pages survive direct refresh on mobile Safari
