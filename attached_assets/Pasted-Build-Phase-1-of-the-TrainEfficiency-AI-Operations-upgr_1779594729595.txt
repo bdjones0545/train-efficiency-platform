@@ -1,0 +1,82 @@
+Build Phase 1 of the TrainEfficiency AI Operations upgrade based on the completed audit.
+
+Do NOT add new external APIs yet.
+
+Focus on strengthening the core AI Operations foundation first:
+
+1. Create AI Operations Dashboard homepage
+- Route: /admin/ai-operations
+- Show:
+  - open attention items
+  - active workflow runs
+  - recent agent actions
+  - system health summary
+  - last Business Brain run
+  - failed/stuck workflows
+  - recent tool executions
+- This should become the central command center for AI Operations.
+
+2. Build unified_agent_action_log table
+Create one unified audit table for all AI/automation activity:
+- orgId
+- actorType: agent / system / admin / coach
+- actorName
+- actionType
+- entityType
+- entityId
+- workflowRunId
+- toolName
+- status: started / completed / failed / skipped / requires_approval
+- confidenceScore
+- riskLevel
+- inputSnapshot jsonb
+- outputSnapshot jsonb
+- reasoningSummary
+- errorMessage
+- rollbackAvailable boolean
+- createdAt
+
+Every workflow step, tool execution, trigger decision, approval gate, Business Brain recommendation, and attention item should write to this log.
+
+3. Upgrade Workflow approval gates
+Replace binary approve/reject with:
+- approve and execute
+- edit then execute
+- reject with feedback
+- regenerate with feedback
+
+For AI-generated emails/SMS/tasks, allow admins to edit the content before execution.
+
+4. Connect existing AI Operations pages to the unified log
+Update:
+- Attention Inbox
+- Business Brain
+- Agent Ops Monitor
+- Workflow Orchestrator
+- Workflows
+- Trigger Audit
+- Agent Tools
+
+Each section should begin writing important actions to unified_agent_action_log.
+
+5. Add recent activity widgets
+On each AI Operations section, show a “Recent Agent Activity” panel using the unified log.
+
+6. Preserve org isolation
+Every query must be scoped by orgId.
+No cross-org data leakage.
+
+7. Add structured backend logging
+Every AI operation should log:
+- orgId
+- actionType
+- workflowRunId if available
+- toolName if available
+- status
+- confidenceScore
+- errorMessage if failed
+
+Goal:
+Turn AI Operations from separate tools into one observable, auditable operational intelligence layer.
+
+Do this carefully without breaking existing workflows.
