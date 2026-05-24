@@ -1,4 +1,9 @@
-import { useState } from "react";
+import { useState, useCallback, useMemo } from "react";
+import {
+  ReactFlow, Background, Controls, MiniMap, type Node, type Edge,
+  type NodeTypes, BackgroundVariant, MarkerType, useNodesState, useEdgesState,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -384,9 +389,220 @@ function LogRow({ log }: { log: ExecLog }) {
 
 // ─── Relationship Map ─────────────────────────────────────────────────────────
 
+// ─── Interactive Relationship Graph Node ──────────────────────────────────────
+
+function OrgGraphNode({ data, selected }: { data: any; selected: boolean }) {
+  const typeColors: Record<string, { bg: string; border: string; text: string }> = {
+    department: { bg: "#1e40af", border: "#1d4ed8", text: "#fff" },
+    agent:      { bg: "#0f766e", border: "#0d9488", text: "#fff" },
+    integration:{ bg: "#7c3aed", border: "#8b5cf6", text: "#fff" },
+    workflow:   { bg: "#b45309", border: "#d97706", text: "#fff" },
+  };
+  const colors = typeColors[data.nodeType] ?? typeColors.agent;
+
+  return (
+    <div
+      className={`rounded-xl border-2 px-3 py-2 min-w-[120px] max-w-[160px] shadow-sm text-center cursor-pointer transition-transform ${selected ? "scale-110 shadow-lg" : "hover:scale-105"}`}
+      style={{ backgroundColor: colors.bg, borderColor: selected ? "#fff" : colors.border }}
+    >
+      <p className="text-[10px] font-bold uppercase tracking-wide text-white/70">{data.nodeType}</p>
+      <p className="text-xs font-semibold text-white truncate mt-0.5">{data.label}</p>
+      {data.status && (
+        <span className={`inline-block mt-1 h-1.5 w-1.5 rounded-full ${
+          data.status === "connected" ? "bg-green-400" :
+          data.status === "error" ? "bg-red-400" : "bg-amber-400"
+        }`} />
+      )}
+      {data.sub && <p className="text-[9px] text-white/60 mt-0.5 truncate">{data.sub}</p>}
+    </div>
+  );
+}
+
+const orgNodeTypes: NodeTypes = { orgNode: OrgGraphNode as any };
+
+// ─── Build graph from relationship data ───────────────────────────────────────
+
+function buildOrgGraph(data: RelationshipEntry[], integrations: IntegrationEntry[], workflows: any[]): { nodes: Node[]; edges: Edge[] } {
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
+  const deptSet = new Set<string>();
+  const intSet = new Set<string>();
+
+  // Department nodes (top row)
+  data.forEach(entry => {
+    if (!deptSet.has(entry.department)) {
+      deptSet.add(entry.department);
+      nodes.push({
+        id: `dept-${entry.department}`,
+        type: "orgNode",
+        position: { x: ([...deptSet].indexOf(entry.department)) * 220, y: 0 },
+        data: { label: entry.department, nodeType: "department" },
+      });
+    }
+  });
+
+  // Agent nodes (middle row)
+  data.forEach((entry, i) => {
+    const agentId = `agent-${entry.agent}`;
+    nodes.push({
+      id: agentId,
+      type: "orgNode",
+      position: { x: i * 195, y: 140 },
+      data: { label: entry.agentName, nodeType: "agent", sub: entry.department },
+    });
+    // Link to dept
+    edges.push({
+      id: `e-dept-${entry.agent}`,
+      source: `dept-${entry.department}`,
+      target: agentId,
+      style: { stroke: "#4b5563", strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed },
+    });
+
+    // Integration nodes
+    entry.connectedIntegrations.forEach((int, j) => {
+      const intNodeId = `int-${int.type}`;
+      if (!intSet.has(int.type)) {
+        intSet.add(int.type);
+        nodes.push({
+          id: intNodeId,
+          type: "orgNode",
+          position: { x: ([...intSet].indexOf(int.type)) * 185, y: 300 },
+          data: { label: INTEGRATION_LABELS[int.type] ?? int.type, nodeType: "integration", status: int.status },
+        });
+      }
+      edges.push({
+        id: `e-${entry.agent}-${int.type}-${j}`,
+        source: agentId,
+        target: intNodeId,
+        style: { stroke: "#7c3aed", strokeWidth: 1, strokeDasharray: "4 2" },
+        markerEnd: { type: MarkerType.ArrowClosed },
+        animated: int.status === "connected",
+      });
+    });
+  });
+
+  // Workflow nodes (bottom row)
+  workflows.slice(0, 6).forEach((wf, i) => {
+    const wfId = `wf-${wf.id}`;
+    nodes.push({
+      id: wfId,
+      type: "orgNode",
+      position: { x: i * 190, y: 460 },
+      data: {
+        label: wf.name,
+        nodeType: "workflow",
+        status: wf.published ? "connected" : undefined,
+        sub: `${wf.riskLevel} risk`,
+      },
+    });
+    // Connect to first agent in org
+    if (nodes.find(n => n.data.nodeType === "agent")) {
+      edges.push({
+        id: `e-wf-${wf.id}`,
+        source: `agent-${data[i % data.length]?.agent}`,
+        target: wfId,
+        style: { stroke: "#b45309", strokeWidth: 1 },
+        markerEnd: { type: MarkerType.ArrowClosed },
+      });
+    }
+  });
+
+  return { nodes, edges };
+}
+
+// ─── Visual Relationship Graph ────────────────────────────────────────────────
+
+function VisualRelationshipGraph({ data, integrations, workflows }: {
+  data: RelationshipEntry[];
+  integrations: IntegrationEntry[];
+  workflows: any[];
+}) {
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const { nodes: initNodes, edges: initEdges } = useMemo(
+    () => buildOrgGraph(data, integrations, workflows),
+    [data, integrations, workflows],
+  );
+  const [nodes, , onNodesChange] = useNodesState<Node>(initNodes);
+  const [edges, , onEdgesChange] = useEdgesState<Edge>(initEdges);
+
+  const onNodeClick = useCallback((_: any, node: Node) => {
+    setSelectedNode(prev => prev?.id === node.id ? null : node);
+  }, []);
+
+  return (
+    <div className="flex gap-4" style={{ height: 520 }} data-testid="section-relationship-map">
+      <div className="flex-1 rounded-xl border bg-slate-950 overflow-hidden">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          nodeTypes={orgNodeTypes}
+          fitView
+          nodesDraggable
+          nodesConnectable={false}
+          className="bg-slate-950"
+        >
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#334155" />
+          <Controls className="rounded-lg" />
+          <MiniMap
+            nodeColor={n => {
+              const t = (n.data as any)?.nodeType;
+              return t === "department" ? "#1e40af" : t === "agent" ? "#0f766e" : t === "integration" ? "#7c3aed" : "#b45309";
+            }}
+            className="rounded-lg bg-slate-900"
+          />
+        </ReactFlow>
+      </div>
+
+      {/* Detail panel */}
+      <div className="w-52 shrink-0 space-y-3">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Graph Legend</div>
+        {[
+          { color: "#1e40af", label: "Department" },
+          { color: "#0f766e", label: "Agent" },
+          { color: "#7c3aed", label: "Integration" },
+          { color: "#b45309", label: "Workflow" },
+        ].map(l => (
+          <div key={l.label} className="flex items-center gap-2 text-xs">
+            <span className="h-3 w-3 rounded shrink-0" style={{ backgroundColor: l.color }} />
+            {l.label}
+          </div>
+        ))}
+
+        {selectedNode && (
+          <div className="mt-4 p-3 rounded-lg border bg-muted/30 space-y-1.5">
+            <p className="text-xs font-bold">{(selectedNode.data as any).label}</p>
+            <p className="text-[10px] text-muted-foreground capitalize">{(selectedNode.data as any).nodeType}</p>
+            {(selectedNode.data as any).sub && (
+              <p className="text-[10px] text-muted-foreground">{(selectedNode.data as any).sub}</p>
+            )}
+            {(selectedNode.data as any).status && (
+              <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                (selectedNode.data as any).status === "connected" ? "bg-green-100 text-green-700" :
+                (selectedNode.data as any).status === "error" ? "bg-red-100 text-red-700" :
+                "bg-amber-100 text-amber-700"
+              }`}>
+                {(selectedNode.data as any).status}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="text-xs text-muted-foreground pt-2">
+          {nodes.length} nodes · {edges.length} connections
+        </div>
+        <p className="text-[10px] text-muted-foreground">Click nodes to inspect · Drag to rearrange</p>
+      </div>
+    </div>
+  );
+}
+
 function RelationshipMap({ data }: { data: RelationshipEntry[] }) {
   return (
-    <div className="space-y-3" data-testid="section-relationship-map">
+    <div className="space-y-3" data-testid="section-relationship-map-list">
       {data.map(entry => (
         <div key={entry.agent} className="border rounded-lg p-3">
           <div className="flex items-center gap-2 mb-2">
@@ -401,10 +617,7 @@ function RelationshipMap({ data }: { data: RelationshipEntry[] }) {
                 const Icon = INTEGRATION_ICONS[int.type] ?? Plug;
                 const dotCls = STATUS_DOT[int.status] ?? STATUS_DOT.disconnected;
                 return (
-                  <div
-                    key={int.type}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs bg-muted/40"
-                  >
+                  <div key={int.type} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs bg-muted/40">
                     <Icon className="h-3 w-3 text-muted-foreground" />
                     <span>{INTEGRATION_LABELS[int.type] ?? int.type}</span>
                     <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotCls}`} />
@@ -448,6 +661,11 @@ export default function AdminAiWorkforcePage() {
   const { data: execLogs, isLoading: logsLoading } = useQuery<ExecLog[]>({
     queryKey: ["/api/integrations/logs/all"],
     refetchInterval: 30000,
+  });
+
+  const { data: graphs } = useQuery<any[]>({
+    queryKey: ["/api/workflow-graphs"],
+    select: (d: any) => Array.isArray(d) ? d : [],
   });
 
   const pauseMutation = useMutation({
@@ -657,21 +875,25 @@ export default function AdminAiWorkforcePage() {
 
         {/* ── Org Map tab ── */}
         <TabsContent value="relationship-map" className="mt-4">
-          <div className="mb-3">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-primary" />
-              Agent → Integration Relationship Map
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Shows which agents are authorized to use which integrations.
-            </p>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <GitBranch className="h-4 w-4 text-primary" />
+                AI Organizational Graph
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Interactive map of agents, integrations, workflows, and governance relationships.
+              </p>
+            </div>
           </div>
           {mapLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
-            </div>
+            <Skeleton className="h-[520px] rounded-xl" />
           ) : (
-            <RelationshipMap data={relationshipMap ?? []} />
+            <VisualRelationshipGraph
+              data={relationshipMap ?? []}
+              integrations={integrations ?? []}
+              workflows={graphs ?? []}
+            />
           )}
         </TabsContent>
 

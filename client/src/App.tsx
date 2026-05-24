@@ -60,6 +60,10 @@ import BusinessBrainPage from "@/pages/business-brain";
 import AdminAiOperationsPage from "@/pages/admin-ai-operations";
 import AdminAiGovernancePage from "@/pages/admin-ai-governance";
 import AdminAiWorkforcePage from "@/pages/admin-ai-workforce";
+import AdminWorkflowBuilderPage from "@/pages/admin-workflow-builder";
+import AdminWorkflowLivePage from "@/pages/admin-workflow-live";
+import AdminWorkflowHeatmapPage from "@/pages/admin-workflow-heatmap";
+import AdminWorkflowsLibraryPage from "@/pages/admin-workflows-library";
 import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import AdminAgentToolsPage from "@/pages/admin-agent-tools";
 import AdminWorkflowsPage from "@/pages/admin-workflows";
@@ -386,6 +390,10 @@ function AuthenticatedLayout() {
                   <Route path="/admin/attention" component={AttentionInboxPage} />
                   <Route path="/admin/ai-governance" component={AdminAiGovernancePage} />
                   <Route path="/admin/ai-workforce" component={AdminAiWorkforcePage} />
+                  <Route path="/admin/workflow-builder" component={AdminWorkflowBuilderPage} />
+                  <Route path="/admin/workflows/:id/live" component={AdminWorkflowLivePage} />
+                  <Route path="/admin/workflow-heatmap" component={AdminWorkflowHeatmapPage} />
+                  <Route path="/admin/workflows-library" component={AdminWorkflowsLibraryPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />

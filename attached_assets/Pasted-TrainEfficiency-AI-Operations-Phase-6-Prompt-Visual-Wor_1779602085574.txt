@@ -1,0 +1,531 @@
+TrainEfficiency AI Operations — Phase 6 Prompt
+
+Visual Workflow Builder + Operational Graph Layer
+
+Build Phase 6 of the AI Operations architecture.
+
+Goal:
+Transform AI Operations from a backend-heavy operational system into a visually understandable AI-native orchestration platform.
+
+This phase should make:
+
+* workflows visible
+* agent collaboration understandable
+* operational flows explorable
+* automation topology intuitive
+* execution state observable in real time
+
+The system should begin feeling like:
+
+* a command center
+* an AI operating system
+* a live orchestration environment
+* an organizational nervous system
+
+IMPORTANT:
+Do NOT add uncontrolled autonomy.
+
+Phase 6 is about:
+
+* visualization
+* orchestration UX
+* workflow construction
+* operational comprehension
+* explainability through visuals
+* topology mapping
+* live execution visibility
+
+All execution must still route through:
+
+* governance
+* workflow queue
+* memory system
+* capability enforcement
+* unified audit logging
+
+⸻
+
+PART 1 — Visual Workflow Builder
+
+Create:
+Workflow Builder UI
+
+Route:
+
+* /admin/workflow-builder
+
+Goal:
+Allow operators to visually create, edit, inspect, and simulate workflows.
+
+Core UX:
+
+* drag-and-drop node editor
+* zoom/pan canvas
+* edge connections between nodes
+* visual branching logic
+* workflow validation
+* live execution state indicators
+
+Node categories:
+
+1. Triggers
+
+* schedule trigger
+* webhook trigger
+* Gmail reply
+* Meta lead
+* payment failed
+* booking cancelled
+* workflow completed
+* manual trigger
+
+2. Agent Actions
+
+* send email
+* generate recommendation
+* summarize thread
+* research lead
+* generate report
+* classify reply
+* create booking
+* post Slack alert
+
+3. Logic Nodes
+
+* IF/ELSE
+* confidence threshold
+* risk evaluation
+* approval required
+* wait/delay
+* rate-limit gate
+* retry policy
+* branch routing
+
+4. Human Nodes
+
+* approval gate
+* manual review
+* assign operator
+* escalate to admin
+
+5. Outcome Nodes
+
+* workflow completed
+* failed
+* escalated
+* retained
+* converted
+* booked
+
+⸻
+
+PART 2 — Workflow Graph Engine
+
+Create:
+server/workflow-graph-engine.ts
+
+Responsibilities:
+
+* serialize workflow graphs
+* validate graph integrity
+* prevent invalid routing
+* compile graphs into executable workflow jobs
+* calculate execution paths
+* simulate workflow execution
+* estimate execution cost/risk
+* detect infinite loops/cycles
+
+Functions:
+
+* validateWorkflowGraph()
+* compileWorkflowGraph()
+* simulateWorkflowExecution()
+* calculateWorkflowComplexity()
+* estimateExecutionRisk()
+* traceWorkflowPath()
+
+⸻
+
+PART 3 — workflow_graphs table
+
+Create:
+workflow_graphs
+
+Fields:
+
+* id
+* orgId
+* name
+* description
+* category
+* graphVersion
+* graphDefinition jsonb
+* compiledDefinition jsonb
+* riskLevel
+* estimatedComplexity
+* estimatedExecutionCost
+* requiresApproval
+* createdBy
+* published boolean
+* active boolean
+* createdAt
+* updatedAt
+
+⸻
+
+PART 4 — Live Execution Visualization
+
+Build:
+Live Workflow Execution View
+
+Route:
+
+* /admin/workflows/:id/live
+
+Goal:
+Show workflows executing in real time visually.
+
+Features:
+
+* active node highlighting
+* completed node states
+* failed node states
+* retry animation/state
+* approval wait states
+* blocked/governance states
+* dead-letter transitions
+* execution timing per node
+* agent avatar overlays
+* integration action indicators
+
+Live execution should visually show:
+
+* where the workflow currently is
+* which agent is acting
+* what tool is executing
+* why execution paused/failed
+* what governance rule applied
+
+⸻
+
+PART 5 — AI Workforce Relationship Graph
+
+Upgrade:
+AI Workforce page
+
+Add:
+interactive organizational graph.
+
+Visualize:
+
+* agents
+* integrations
+* workflows
+* tools
+* departments
+* governance relationships
+
+Connections:
+
+* which workflows use which agents
+* which agents use which integrations
+* which tools are restricted
+* which workflows require approvals
+* which departments own which workflows
+
+Graph interactions:
+
+* click node → inspect details
+* hover → relationship preview
+* filter by:
+    * department
+    * autonomy mode
+    * risk level
+    * integration type
+    * workflow activity
+
+⸻
+
+PART 6 — Operational Timeline Replay
+
+Create:
+Execution Replay System
+
+Goal:
+Replay historical workflow executions visually.
+
+Features:
+
+* timeline scrubber
+* step-by-step replay
+* governance decisions
+* retry events
+* approval pauses
+* memory attached
+* integrations called
+* failures/escalations
+* dead-letter transitions
+
+Purpose:
+
+* debugging
+* explainability
+* operator trust
+* operational training
+* compliance review
+
+⸻
+
+PART 7 — Workflow Simulation Mode
+
+Build:
+Workflow Sandbox / Simulation
+
+Operators can:
+
+* simulate workflow execution
+* test branches
+* simulate failures
+* simulate governance blocks
+* simulate approval delays
+* estimate execution cost
+* estimate runtime duration
+
+Outputs:
+
+* expected workflow path
+* estimated API/tool usage
+* expected approval count
+* projected execution complexity
+* governance warnings
+* potential deadlocks
+
+No real actions execute in simulation mode.
+
+⸻
+
+PART 8 — Operational Heatmaps
+
+Create:
+AI Operations Heatmaps
+
+Visualize:
+
+* workflow bottlenecks
+* most failed nodes
+* approval congestion
+* dead-letter hotspots
+* slow integrations
+* overloaded agents
+* high-risk workflow regions
+* most overridden AI outputs
+
+Views:
+
+* organization-wide
+* workflow-specific
+* agent-specific
+* integration-specific
+
+⸻
+
+PART 9 — Workflow Templates Marketplace
+
+Create:
+Workflow Template Library
+
+Include:
+
+* onboarding workflows
+* retention campaigns
+* lead qualification
+* PR tracking follow-up
+* scheduling automation
+* churn recovery
+* executive summaries
+* athlete engagement
+* research pipelines
+
+Features:
+
+* template duplication
+* template ratings
+* internal/private templates
+* org custom templates
+* workflow import/export
+
+⸻
+
+PART 10 — Governance-aware visual builder
+
+The visual builder must integrate governance directly.
+
+Visual indicators:
+
+* red = blocked risk
+* yellow = approval required
+* green = autonomous allowed
+* blue = supervised/human node
+
+Builder warnings:
+
+* “This node exceeds org confidence threshold.”
+* “Research Agent cannot access external web in current governance mode.”
+* “This workflow contains unrestricted communication actions.”
+
+Governance simulation:
+
+* preview which nodes require approval
+* preview which actions will auto-execute
+* preview escalation paths
+
+⸻
+
+PART 11 — Workflow Versioning
+
+Implement:
+Workflow graph versioning.
+
+Requirements:
+
+* published versions immutable
+* draft editing supported
+* active runs pinned to original version
+* rollback to previous version
+* diff viewer between versions
+
+Add:
+workflow_graph_versions table.
+
+⸻
+
+PART 12 — Explainability Layer
+
+Every visual execution step should expose:
+
+* which agent acted
+* which integration/tool executed
+* confidence score
+* governance policy applied
+* memory/context used
+* why a branch was chosen
+* retry reasoning
+* escalation reasoning
+
+Operators should be able to inspect any node and fully understand:
+
+* what happened
+* why it happened
+* what influenced the decision
+
+⸻
+
+PART 13 — Performance + scalability
+
+Requirements:
+
+* graph rendering virtualized for large workflows
+* real-time updates via SSE/websocket
+* lazy-load node details
+* workflow simulation isolated from production
+* graph execution compilation cached
+* timeline replay paginated
+
+Support:
+
+* hundreds of workflow nodes
+* thousands of execution events
+* multiple concurrent live workflow views
+
+⸻
+
+PART 14 — Unified logging integration
+
+All visual orchestration actions write to:
+unified_agent_action_log
+
+New action types:
+
+* workflow_graph_created
+* workflow_graph_published
+* workflow_graph_compiled
+* workflow_simulation_run
+* workflow_replay_started
+* visual_execution_inspected
+* workflow_version_rolled_back
+* workflow_template_imported
+* workflow_template_exported
+
+⸻
+
+PART 15 — UI/UX Direction
+
+Design direction:
+
+* cinematic operational interface
+* neural-system feel
+* flowing execution lines
+* animated node states
+* organizational topology maps
+* command-center atmosphere
+* professional but futuristic
+
+The UI should feel:
+
+* alive
+* operational
+* intelligent
+* dynamic
+* immersive
+
+But:
+
+* not cluttered
+* not gimmicky
+* not game-like
+
+The visual layer must improve:
+
+* comprehension
+* trust
+* operator confidence
+* workflow debugging
+* strategic visibility
+
+⸻
+
+PART 16 — Architectural Goal
+
+The goal of Phase 6 is:
+making AI Operations understandable, explorable, and operationally intuitive at scale.
+
+After this phase, TrainEfficiency should feel like:
+
+* an AI-native orchestration platform
+* a live operational command center
+* an organizational AI operating system
+
+NOT:
+
+* a collection of disconnected admin dashboards
+
+Prioritize implementation order:
+
+1. workflow_graphs table
+2. visual workflow builder
+3. graph engine
+4. live execution view
+5. relationship graph
+6. simulation mode
+7. replay system
+8. heatmaps
+9. versioning
+10. templates
+
+Do NOT weaken:
+
+* governance
+* auditability
+* explainability
+* org isolation
+* reliability guarantees

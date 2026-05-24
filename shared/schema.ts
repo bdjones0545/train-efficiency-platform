@@ -3471,3 +3471,60 @@ export const integrationExecutionLog = pgTable("integration_execution_log", {
 export const insertIntegrationExecutionLogSchema = createInsertSchema(integrationExecutionLog).omit({ id: true, createdAt: true });
 export type IntegrationExecutionLog = typeof integrationExecutionLog.$inferSelect;
 export type InsertIntegrationExecutionLog = z.infer<typeof insertIntegrationExecutionLogSchema>;
+
+// ─── Workflow Graphs ──────────────────────────────────────────────────────────
+// Visual workflow definitions built in the Workflow Builder.
+// These compile into executable WorkflowJobs via the graph engine.
+
+export const workflowGraphs = pgTable("workflow_graphs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull().default("custom"), // onboarding | retention | outreach | scheduling | research | executive | custom
+  graphVersion: integer("graph_version").notNull().default(1),
+  graphDefinition: jsonb("graph_definition").notNull().default({}), // { nodes: [], edges: [], viewport: {} }
+  compiledDefinition: jsonb("compiled_definition").default(null), // compiled execution plan
+  riskLevel: text("risk_level").notNull().default("low"), // low | medium | high | critical
+  estimatedComplexity: integer("estimated_complexity").default(0), // node count + edge complexity score
+  estimatedExecutionCostCents: integer("estimated_execution_cost_cents").default(0),
+  requiresApproval: boolean("requires_approval").notNull().default(false),
+  governanceWarnings: jsonb("governance_warnings").default([]),
+  tags: jsonb("tags").default([]),
+  published: boolean("published").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  isTemplate: boolean("is_template").notNull().default(false),
+  templateRating: integer("template_rating").default(null),
+  sourceTemplateId: text("source_template_id").default(null),
+  createdBy: text("created_by"),
+  lastCompiledAt: timestamp("last_compiled_at"),
+  lastSimulatedAt: timestamp("last_simulated_at"),
+  lastPublishedAt: timestamp("last_published_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWorkflowGraphSchema = createInsertSchema(workflowGraphs).omit({ id: true, createdAt: true, updatedAt: true });
+export type WorkflowGraph = typeof workflowGraphs.$inferSelect;
+export type InsertWorkflowGraph = z.infer<typeof insertWorkflowGraphSchema>;
+
+// ─── Workflow Graph Versions ──────────────────────────────────────────────────
+// Immutable snapshots of published workflow graphs — active runs pin to a version.
+
+export const workflowGraphVersions = pgTable("workflow_graph_versions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  graphId: text("graph_id").notNull(),
+  versionNumber: integer("version_number").notNull(),
+  snapshotDefinition: jsonb("snapshot_definition").notNull().default({}),
+  compiledDefinition: jsonb("compiled_definition").default(null),
+  riskLevel: text("risk_level").notNull().default("low"),
+  changeNotes: text("change_notes"),
+  publishedBy: text("published_by"),
+  publishedAt: timestamp("published_at").defaultNow(),
+  isActive: boolean("is_active").notNull().default(false),
+});
+
+export const insertWorkflowGraphVersionSchema = createInsertSchema(workflowGraphVersions).omit({ id: true, publishedAt: true });
+export type WorkflowGraphVersion = typeof workflowGraphVersions.$inferSelect;
+export type InsertWorkflowGraphVersion = z.infer<typeof insertWorkflowGraphVersionSchema>;

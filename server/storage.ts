@@ -140,6 +140,12 @@ import {
   type InsertExternalIntegration,
   integrationExecutionLog,
   type IntegrationExecutionLog,
+  workflowGraphs,
+  type WorkflowGraph,
+  type InsertWorkflowGraph,
+  workflowGraphVersions,
+  type WorkflowGraphVersion,
+  type InsertWorkflowGraphVersion,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -3830,6 +3836,107 @@ export class DatabaseStorage implements IStorage {
       .where(and(...conditions))
       .orderBy(desc(integrationExecutionLog.createdAt))
       .limit(opts?.limit ?? 50);
+  }
+
+  // ─── Workflow Graphs ───────────────────────────────────────────────────────
+
+  async getWorkflowGraphs(orgId: string, opts?: { isTemplate?: boolean; category?: string }): Promise<WorkflowGraph[]> {
+    const conditions: any[] = [eq(workflowGraphs.orgId, orgId), eq(workflowGraphs.active, true)];
+    if (opts?.isTemplate !== undefined) conditions.push(eq(workflowGraphs.isTemplate, opts.isTemplate));
+    if (opts?.category) conditions.push(eq(workflowGraphs.category, opts.category));
+    return db.select().from(workflowGraphs)
+      .where(and(...conditions))
+      .orderBy(desc(workflowGraphs.updatedAt));
+  }
+
+  async getWorkflowGraph(orgId: string, graphId: string): Promise<WorkflowGraph | null> {
+    const [row] = await db.select().from(workflowGraphs)
+      .where(and(eq(workflowGraphs.orgId, orgId), eq(workflowGraphs.id, graphId)));
+    return row ?? null;
+  }
+
+  async createWorkflowGraph(orgId: string, data: Partial<InsertWorkflowGraph> & { createdBy?: string }): Promise<WorkflowGraph> {
+    const [created] = await db.insert(workflowGraphs)
+      .values({ orgId, name: data.name ?? "Untitled Workflow", ...data } as any)
+      .returning();
+    return created;
+  }
+
+  async updateWorkflowGraph(orgId: string, graphId: string, data: Partial<InsertWorkflowGraph>): Promise<WorkflowGraph | null> {
+    const [updated] = await db.update(workflowGraphs)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(and(eq(workflowGraphs.orgId, orgId), eq(workflowGraphs.id, graphId)))
+      .returning();
+    return updated ?? null;
+  }
+
+  async deleteWorkflowGraph(orgId: string, graphId: string): Promise<void> {
+    await db.update(workflowGraphs)
+      .set({ active: false, updatedAt: new Date() })
+      .where(and(eq(workflowGraphs.orgId, orgId), eq(workflowGraphs.id, graphId)));
+  }
+
+  async duplicateWorkflowGraph(orgId: string, graphId: string, createdBy?: string): Promise<WorkflowGraph> {
+    const source = await this.getWorkflowGraph(orgId, graphId);
+    if (!source) throw new Error("Workflow not found");
+    const [copy] = await db.insert(workflowGraphs)
+      .values({
+        orgId,
+        name: `${source.name} (Copy)`,
+        description: source.description,
+        category: source.category,
+        graphDefinition: source.graphDefinition,
+        riskLevel: source.riskLevel,
+        estimatedComplexity: source.estimatedComplexity,
+        requiresApproval: source.requiresApproval,
+        governanceWarnings: source.governanceWarnings,
+        tags: source.tags,
+        isTemplate: false,
+        published: false,
+        sourceTemplateId: graphId,
+        createdBy: createdBy ?? source.createdBy,
+      } as any)
+      .returning();
+    return copy;
+  }
+
+  // ─── Workflow Graph Versions ───────────────────────────────────────────────
+
+  async getWorkflowGraphVersions(orgId: string, graphId: string): Promise<WorkflowGraphVersion[]> {
+    return db.select().from(workflowGraphVersions)
+      .where(and(eq(workflowGraphVersions.orgId, orgId), eq(workflowGraphVersions.graphId, graphId)))
+      .orderBy(desc(workflowGraphVersions.versionNumber));
+  }
+
+  async createWorkflowGraphVersion(data: InsertWorkflowGraphVersion): Promise<WorkflowGraphVersion> {
+    const [version] = await db.insert(workflowGraphVersions).values(data as any).returning();
+    return version;
+  }
+
+  async getActiveWorkflowGraphVersion(graphId: string): Promise<WorkflowGraphVersion | null> {
+    const [row] = await db.select().from(workflowGraphVersions)
+      .where(and(eq(workflowGraphVersions.graphId, graphId), eq(workflowGraphVersions.isActive, true)))
+      .orderBy(desc(workflowGraphVersions.versionNumber))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async rollbackWorkflowGraphVersion(orgId: string, graphId: string, versionId: string): Promise<WorkflowGraph | null> {
+    const version = await db.select().from(workflowGraphVersions)
+      .where(and(eq(workflowGraphVersions.id, versionId), eq(workflowGraphVersions.graphId, graphId)))
+      .then(rows => rows[0] ?? null);
+    if (!version) return null;
+
+    const [updated] = await db.update(workflowGraphs)
+      .set({
+        graphDefinition: version.snapshotDefinition,
+        compiledDefinition: version.compiledDefinition,
+        graphVersion: version.versionNumber,
+        updatedAt: new Date(),
+      } as any)
+      .where(and(eq(workflowGraphs.orgId, orgId), eq(workflowGraphs.id, graphId)))
+      .returning();
+    return updated ?? null;
   }
 
   async seedDefaultPolicies(orgId: string): Promise<void> {

@@ -775,6 +775,27 @@ export function AppSidebar() {
                 testId: "nav-agent-ops",
               },
               {
+                title: "Workflow Library",
+                simplifiedTitle: "Library",
+                url: "/admin/workflows-library",
+                icon: Layers,
+                testId: "nav-workflows-library",
+              },
+              {
+                title: "Workflow Builder",
+                simplifiedTitle: "Builder",
+                url: "/admin/workflow-builder",
+                icon: Zap,
+                testId: "nav-workflow-builder",
+              },
+              {
+                title: "Workflow Heatmap",
+                simplifiedTitle: "Heatmap",
+                url: "/admin/workflow-heatmap",
+                icon: BarChart2,
+                testId: "nav-workflow-heatmap",
+              },
+              {
                 title: "Workflow Orchestrator",
                 simplifiedTitle: "Orchestration",
                 url: "/admin/workflow-orchestrator",

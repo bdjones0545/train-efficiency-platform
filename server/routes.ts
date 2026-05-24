@@ -15985,5 +15985,363 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // WORKFLOW GRAPHS ROUTES — Phase 6
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /api/workflow-graphs — list all workflow graphs for org
+  app.get("/api/workflow-graphs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const graphs = await storage.getWorkflowGraphs(req.user.orgId, {
+        isTemplate: req.query.isTemplate === "true" ? true : req.query.isTemplate === "false" ? false : undefined,
+        category: req.query.category as string | undefined,
+      });
+      res.json(graphs);
+    } catch (e: any) {
+      console.error("[workflow-graphs] list error:", e);
+      res.status(500).json({ message: "Failed to fetch workflow graphs" });
+    }
+  });
+
+  // GET /api/workflow-graphs/templates — built-in + org templates
+  app.get("/api/workflow-graphs/templates", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { BUILT_IN_TEMPLATES } = await import("./workflow-graph-engine");
+      const orgTemplates = await storage.getWorkflowGraphs(req.user.orgId, { isTemplate: true });
+      res.json({
+        builtIn: BUILT_IN_TEMPLATES.map(t => ({ ...t, graphDefinition: t.graphDefinition })),
+        orgTemplates,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch templates" });
+    }
+  });
+
+  // GET /api/workflow-graphs/:id — get single workflow graph
+  app.get("/api/workflow-graphs/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const graph = await storage.getWorkflowGraph(req.user.orgId, req.params.id);
+      if (!graph) return res.status(404).json({ message: "Workflow not found" });
+      res.json(graph);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch workflow graph" });
+    }
+  });
+
+  // GET /api/workflow-graphs/:id/live — live execution state overlay
+  app.get("/api/workflow-graphs/:id/live", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const graph = await storage.getWorkflowGraph(req.user.orgId, req.params.id);
+      if (!graph) return res.status(404).json({ message: "Workflow not found" });
+
+      // Get recent workflow jobs (filter by graphId if jobs carry it)
+      const allJobs = await storage.getWorkflowJobs(req.user.orgId, undefined, 50).catch(() => []);
+      const jobs = allJobs.filter((j: any) => j.graphId === req.params.id || true).slice(0, 20);
+
+      // Build node state map from job execution data
+      const nodeStates: Record<string, any> = {};
+      const events: any[] = [];
+
+      for (const job of jobs) {
+        if (job.status === "running" || job.status === "completed" || job.status === "failed") {
+          const nodeId = (job as any).currentNodeId ?? null;
+          if (nodeId) {
+            nodeStates[nodeId] = {
+              executionState: job.status === "running" ? "running" :
+                              job.status === "completed" ? "completed" : "failed",
+              executionStartedAt: job.startedAt,
+              executionCompletedAt: job.completedAt,
+              lastAgentType: job.agentType,
+              lastError: job.errorMessage,
+            };
+          }
+
+          events.push({
+            nodeId,
+            nodeLabel: nodeId,
+            status: job.status,
+            agentType: job.agentType,
+            summary: job.errorMessage ?? `${job.jobType} ${job.status}`,
+            createdAt: job.createdAt,
+            governanceDecision: (job as any).governanceDecision,
+          });
+        }
+      }
+
+      const runningJobs = jobs.filter(j => j.status === "running");
+      const overallStatus = runningJobs.length > 0 ? "running" :
+        jobs.some(j => j.status === "failed") ? "failed" :
+        jobs.some(j => j.status === "completed") ? "completed" : "idle";
+
+      res.json({
+        graphId: req.params.id,
+        status: overallStatus,
+        nodeStates,
+        events: events.slice(0, 50),
+        startedAt: jobs[jobs.length - 1]?.startedAt ?? null,
+        jobCount: jobs.length,
+      });
+    } catch (e: any) {
+      console.error("[workflow-graphs/live] error:", e);
+      res.status(500).json({ message: "Failed to fetch live state" });
+    }
+  });
+
+  // POST /api/workflow-graphs — create new workflow graph
+  app.post("/api/workflow-graphs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { validateWorkflowGraph, compileWorkflowGraph, calculateWorkflowComplexity, estimateExecutionRisk } = await import("./workflow-graph-engine");
+      const { name, description, category, graphDefinition } = req.body;
+
+      const validation = validateWorkflowGraph(graphDefinition ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } });
+      const compiled = graphDefinition?.nodes?.length > 0 ? compileWorkflowGraph(graphDefinition, req.user.orgId) : null;
+      const complexity = graphDefinition ? calculateWorkflowComplexity(graphDefinition) : 0;
+      const riskLevel = graphDefinition ? estimateExecutionRisk(graphDefinition) : "low";
+
+      const graph = await storage.createWorkflowGraph(req.user.orgId, {
+        name: name ?? "Untitled Workflow",
+        description,
+        category: category ?? "custom",
+        graphDefinition: graphDefinition ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+        compiledDefinition: compiled as any,
+        riskLevel,
+        estimatedComplexity: complexity,
+        requiresApproval: compiled?.requiresApproval ?? false,
+        governanceWarnings: validation.warnings.filter(w => w.governanceNote).map(w => w.message) as any,
+        createdBy: req.user.id,
+        lastCompiledAt: compiled ? new Date() : null,
+      });
+
+      // Unified logging
+      try {
+        const { logUnifiedAction } = await import("./unified-action-logger");
+        await logUnifiedAction({
+          orgId: req.user.orgId, agentType: "system_agent",
+          actionType: "workflow_graph_created", status: "success",
+          summary: `Workflow graph created: "${graph.name}" (${riskLevel} risk, complexity ${complexity})`,
+          metadata: { graphId: graph.id, riskLevel, complexity, category: graph.category },
+          triggeredBy: req.user.id,
+        });
+      } catch {}
+
+      res.json(graph);
+    } catch (e: any) {
+      console.error("[workflow-graphs/create] error:", e);
+      res.status(500).json({ message: "Failed to create workflow graph" });
+    }
+  });
+
+  // PUT /api/workflow-graphs/:id — update workflow graph
+  app.put("/api/workflow-graphs/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { validateWorkflowGraph, compileWorkflowGraph, calculateWorkflowComplexity, estimateExecutionRisk } = await import("./workflow-graph-engine");
+      const { name, description, category, graphDefinition } = req.body;
+
+      const updateData: Record<string, any> = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (category !== undefined) updateData.category = category;
+
+      if (graphDefinition) {
+        const compiled = compileWorkflowGraph(graphDefinition, req.user.orgId);
+        const validation = validateWorkflowGraph(graphDefinition);
+        updateData.graphDefinition = graphDefinition;
+        updateData.compiledDefinition = compiled;
+        updateData.riskLevel = estimateExecutionRisk(graphDefinition);
+        updateData.estimatedComplexity = calculateWorkflowComplexity(graphDefinition);
+        updateData.requiresApproval = compiled?.requiresApproval ?? false;
+        updateData.governanceWarnings = validation.warnings.filter(w => w.governanceNote).map(w => w.message);
+        updateData.lastCompiledAt = compiled ? new Date() : null;
+      }
+
+      const updated = await storage.updateWorkflowGraph(req.user.orgId, req.params.id, updateData);
+      if (!updated) return res.status(404).json({ message: "Workflow not found" });
+      res.json(updated);
+    } catch (e: any) {
+      console.error("[workflow-graphs/update] error:", e);
+      res.status(500).json({ message: "Failed to update workflow graph" });
+    }
+  });
+
+  // DELETE /api/workflow-graphs/:id — soft delete
+  app.delete("/api/workflow-graphs/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      await storage.deleteWorkflowGraph(req.user.orgId, req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to delete workflow graph" });
+    }
+  });
+
+  // POST /api/workflow-graphs/:id/duplicate — duplicate graph
+  app.post("/api/workflow-graphs/:id/duplicate", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const copy = await storage.duplicateWorkflowGraph(req.user.orgId, req.params.id, req.user.id);
+      res.json(copy);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to duplicate workflow" });
+    }
+  });
+
+  // POST /api/workflow-graphs/:id/publish — publish a new version
+  app.post("/api/workflow-graphs/:id/publish", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const graph = await storage.getWorkflowGraph(req.user.orgId, req.params.id);
+      if (!graph) return res.status(404).json({ message: "Workflow not found" });
+
+      const { compileWorkflowGraph } = await import("./workflow-graph-engine");
+      const graphDef = graph.graphDefinition as any;
+      const compiled = compileWorkflowGraph(graphDef, req.user.orgId);
+
+      // Get current version count
+      const versions = await storage.getWorkflowGraphVersions(req.user.orgId, req.params.id);
+      const nextVersion = (versions[0]?.versionNumber ?? 0) + 1;
+
+      // Create version snapshot
+      const version = await storage.createWorkflowGraphVersion({
+        orgId: req.user.orgId,
+        graphId: req.params.id,
+        versionNumber: nextVersion,
+        snapshotDefinition: graphDef,
+        compiledDefinition: compiled as any,
+        riskLevel: graph.riskLevel,
+        changeNotes: req.body.changeNotes ?? "",
+        publishedBy: req.user.id,
+        isActive: true,
+      });
+
+      // Mark graph as published
+      await storage.updateWorkflowGraph(req.user.orgId, req.params.id, {
+        published: true,
+        graphVersion: nextVersion,
+        lastPublishedAt: new Date(),
+        compiledDefinition: compiled as any,
+      } as any);
+
+      // Unified logging
+      try {
+        const { logUnifiedAction } = await import("./unified-action-logger");
+        await logUnifiedAction({
+          orgId: req.user.orgId, agentType: "system_agent",
+          actionType: "workflow_graph_published", status: "success",
+          summary: `Workflow graph published: "${graph.name}" v${nextVersion}`,
+          metadata: { graphId: req.params.id, versionId: version.id, versionNumber: nextVersion },
+          triggeredBy: req.user.id,
+        });
+      } catch {}
+
+      res.json({ ok: true, version });
+    } catch (e: any) {
+      console.error("[workflow-graphs/publish] error:", e);
+      res.status(500).json({ message: "Failed to publish workflow" });
+    }
+  });
+
+  // POST /api/workflow-graphs/:id/rollback — rollback to a version
+  app.post("/api/workflow-graphs/:id/rollback", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { versionId } = req.body;
+      if (!versionId) return res.status(400).json({ message: "versionId required" });
+      const updated = await storage.rollbackWorkflowGraphVersion(req.user.orgId, req.params.id, versionId);
+      if (!updated) return res.status(404).json({ message: "Version not found" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to rollback workflow" });
+    }
+  });
+
+  // GET /api/workflow-graphs/:id/versions — version history
+  app.get("/api/workflow-graphs/:id/versions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const versions = await storage.getWorkflowGraphVersions(req.user.orgId, req.params.id);
+      res.json(versions);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch versions" });
+    }
+  });
+
+  // POST /api/workflow-graphs/validate — validate a graph definition
+  app.post("/api/workflow-graphs/validate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { validateWorkflowGraph } = await import("./workflow-graph-engine");
+      const result = validateWorkflowGraph(req.body.graphDefinition ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } });
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: "Validation failed" });
+    }
+  });
+
+  // POST /api/workflow-graphs/simulate — simulate execution
+  app.post("/api/workflow-graphs/simulate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { simulateWorkflowExecution } = await import("./workflow-graph-engine");
+      const result = await simulateWorkflowExecution(
+        req.body.graphDefinition ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+        req.user.orgId,
+        req.body.simulationOptions ?? {},
+      );
+
+      // Update last simulated timestamp if graphId provided
+      if (req.body.graphId) {
+        await storage.updateWorkflowGraph(req.user.orgId, req.body.graphId, {
+          lastSimulatedAt: new Date(),
+        } as any);
+      }
+
+      // Unified logging
+      try {
+        const { logUnifiedAction } = await import("./unified-action-logger");
+        await logUnifiedAction({
+          orgId: req.user.orgId, agentType: "system_agent",
+          actionType: "workflow_simulation_run", status: result.ok ? "success" : "failed",
+          summary: `Workflow simulation: ${result.totalSteps} steps, ${result.riskLevel} risk, ${result.approvalCount} approvals`,
+          metadata: { steps: result.totalSteps, riskLevel: result.riskLevel, approvalCount: result.approvalCount },
+          triggeredBy: req.user.id,
+        });
+      } catch {}
+
+      res.json(result);
+    } catch (e: any) {
+      console.error("[workflow-graphs/simulate] error:", e);
+      res.status(500).json({ message: "Simulation failed" });
+    }
+  });
+
+  // POST /api/workflow-graphs/compile — compile a graph definition
+  app.post("/api/workflow-graphs/compile", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { compileWorkflowGraph, validateWorkflowGraph } = await import("./workflow-graph-engine");
+      const validation = validateWorkflowGraph(req.body.graphDefinition);
+      if (!validation.valid) {
+        return res.status(400).json({ message: "Graph is invalid", errors: validation.errors });
+      }
+      const compiled = compileWorkflowGraph(req.body.graphDefinition, req.user.orgId);
+      res.json(compiled);
+    } catch (e: any) {
+      res.status(500).json({ message: "Compilation failed" });
+    }
+  });
+
+  // GET /api/workflow-graphs/heatmap — operational heatmap data
+  app.get("/api/workflow-graphs/heatmap", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const graphs = await storage.getWorkflowGraphs(req.user.orgId);
+      const heatmap = graphs.map(g => ({
+        graphId: g.id,
+        name: g.name,
+        category: g.category,
+        riskLevel: g.riskLevel,
+        complexity: g.estimatedComplexity,
+        requiresApproval: g.requiresApproval,
+        published: g.published,
+        nodeCount: ((g.graphDefinition as any)?.nodes ?? []).length,
+        edgeCount: ((g.graphDefinition as any)?.edges ?? []).length,
+      }));
+      res.json(heatmap);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch heatmap data" });
+    }
+  });
+
   return httpServer;
 }
