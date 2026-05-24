@@ -195,8 +195,7 @@ export async function generateWorkflowFromPrompt(
   governanceWarnings: string[];
   explanation: string;
 }> {
-  const OpenAI = (await import("openai")).default;
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const { runAICompletion } = await import("./ai-model-runtime");
 
   const systemPrompt = `You are an AI workflow architect for a strength & conditioning coaching platform.
 Convert the operator's plain-English description into a structured workflow graph definition.
@@ -234,17 +233,20 @@ Rules:
 - Mark send_email nodes as riskLevel: "high", requiresApproval: true
 - Position nodes vertically with 140px spacing`;
 
-  const response = await client.chat.completions.create({
+  const aiResult = await runAICompletion({
+    orgId,
     model: "gpt-4o",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: `Create a workflow for: "${prompt}"` },
     ],
-    response_format: { type: "json_object" },
-    max_tokens: 2000,
+    responseFormat: { type: "json_object" },
+    maxTokens: 2000,
+    purpose: "workflow_generation",
+    agentType: "nexus_agent",
   });
 
-  const raw = response.choices[0]?.message?.content ?? "{}";
+  const raw = aiResult.content;
   const parsed = JSON.parse(raw);
 
   return {

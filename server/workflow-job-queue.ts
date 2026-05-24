@@ -547,7 +547,27 @@ export async function checkAndIncrementRateLimit(
           resetAt,
         }).returning();
       } catch (_) {
-        return { allowed: true }; // Race condition — allow and continue
+        // Race condition on insert — fail CLOSED to prevent quota bypass
+        logUnifiedAction({
+          orgId,
+          actorType: "system",
+          actorName: "job-queue",
+          actionType: "rate_limit_check_failed",
+          status: "failed",
+          riskLevel: "medium",
+          reasoningSummary: `Rate limit record creation race for ${category} — blocked for safety.`,
+        }).catch(() => {});
+        return { allowed: false, reason: `Rate limit check failed — blocked for safety (${category})` };
+      }
+      // Re-read after insert to get the authoritative record
+      if (!record) {
+        const [reread] = await db.select().from(orgExecutionRateLimits).where(and(
+          eq(orgExecutionRateLimits.orgId, orgId),
+          eq(orgExecutionRateLimits.category, category),
+          eq(orgExecutionRateLimits.limitWindow, window),
+        ));
+        if (!reread) return { allowed: false, reason: `Rate limit record unavailable — blocked for safety (${category})` };
+        record = reread;
       }
     }
   }

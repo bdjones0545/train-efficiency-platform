@@ -66,8 +66,21 @@ export async function startWorkflow(input: StartWorkflowInput): Promise<{ runId:
       return { runId: "", started: false, error: enfDecision.reason };
     }
   } catch (govErr) {
-    // Governance check must never crash workflow startup — log and continue
-    console.warn("[executor] governance pre-check non-blocking error:", govErr);
+    // Governance validation failure must FAIL CLOSED — never silently allow
+    console.error("[executor] governance pre-check failed — blocking workflow for safety:", govErr);
+    try {
+      const { logUnifiedAction } = await import("../unified-action-logger");
+      await logUnifiedAction({
+        orgId: input.orgId,
+        actorType: "system",
+        actorName: "workflow_agent",
+        actionType: "governance_validation_failed",
+        status: "failed",
+        riskLevel: "high",
+        reasoningSummary: `Governance validation error during workflow startup for type "${input.workflowType}": ${govErr instanceof Error ? govErr.message : String(govErr)}. Workflow blocked for safety.`,
+      });
+    } catch {}
+    return { runId: "", started: false, error: "Governance validation failed unexpectedly — workflow blocked for safety. Resolve governance configuration and retry." };
   }
 
   // ── Duplicate prevention ───────────────────────────────────────────────────

@@ -1,5 +1,10 @@
 import { storage } from './storage';
 import type { InsertCommunicationLog } from '@shared/schema';
+import crypto from 'crypto';
+import { db } from './db';
+import { eq } from 'drizzle-orm';
+import { orgAiGovernanceSettings, integrationExecutionLog } from '@shared/schema';
+import { logUnifiedAction } from './unified-action-logger';
 
 let twilioClient: any = null;
 const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER ?? '';
@@ -73,6 +78,49 @@ interface SmsLogPayload {
   status: 'sent' | 'failed' | 'skipped';
   provider: string;
   errorMessage?: string;
+}
+
+// ── Governance helpers (Part 1 hardening patch) ────────────────────────────
+
+async function isSmsEmergencyPaused(orgId: string): Promise<boolean> {
+  try {
+    const [s] = await db
+      .select({ paused: orgAiGovernanceSettings.emergencyPauseEnabled })
+      .from(orgAiGovernanceSettings)
+      .where(eq(orgAiGovernanceSettings.orgId, orgId));
+    return s?.paused ?? false;
+  } catch { return false; }
+}
+
+async function writeSmsIntegrationLog(params: {
+  orgId: string;
+  status: string;
+  to: string;
+  body: string;
+  latencyMs?: number;
+  errorMessage?: string;
+  errorClass?: string;
+  governanceDecision?: string;
+  providerMessageId?: string;
+}): Promise<void> {
+  try {
+    await db.insert(integrationExecutionLog).values({
+      id: crypto.randomUUID(),
+      orgId: params.orgId,
+      integrationType: 'twilio',
+      actionType: 'send_sms',
+      status: params.status,
+      inputSummary: JSON.stringify({ to: params.to, bodyPreview: params.body.substring(0, 80) }),
+      resultSummary: params.status === 'success' ? (params.providerMessageId ? `sid:${params.providerMessageId}` : 'SMS delivered') : undefined,
+      errorMessage: params.errorMessage,
+      errorClass: params.errorClass,
+      latencyMs: params.latencyMs,
+      governanceChecked: true,
+      governanceDecision: params.governanceDecision ?? 'allowed',
+    } as any);
+  } catch (err) {
+    console.error('[SMS] Failed to write integration execution log:', err);
+  }
 }
 
 async function logSms(payload: SmsLogPayload): Promise<void> {
@@ -168,6 +216,19 @@ export async function sendSms(params: {
     }
   }
 
+  // ── Emergency pause guard ─────────────────────────────────────────────────
+  if (ctx.orgId) {
+    const paused = await isSmsEmergencyPaused(ctx.orgId);
+    if (paused) {
+      const PAUSE_MSG = 'Blocked: AI operations are paused for this organization. Emergency pause must be disabled before outbound communication can be sent.';
+      console.warn(`[SMS] Emergency pause active — blocking send (orgId=${ctx.orgId})`);
+      await writeSmsIntegrationLog({ orgId: ctx.orgId, status: 'blocked', to: normalizedPhone, body, errorMessage: PAUSE_MSG, errorClass: 'governance', governanceDecision: 'blocked' });
+      try { await logUnifiedAction({ orgId: ctx.orgId, actorType: 'system', actorName: 'relay_agent', actionType: 'governance_blocked', status: 'blocked', riskLevel: 'high', reasoningSummary: PAUSE_MSG }); } catch {}
+      await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'failed', provider: 'twilio', errorMessage: PAUSE_MSG });
+      return { sent: false, skipped: 'emergency_pause' };
+    }
+  }
+
   if (!isTwilioConfigured()) {
     console.log(`[SMS] Twilio not configured — skipping SMS to ${normalizedPhone}`);
     return { sent: false, skipped: 'twilio_not_configured' };
@@ -179,19 +240,31 @@ export async function sendSms(params: {
     return { sent: false, skipped: 'twilio_client_error' };
   }
 
+  const _smsSendStart = Date.now();
   try {
-    await client.messages.create({
+    const message = await client.messages.create({
       to: normalizedPhone,
       from: TWILIO_FROM,
       body,
     });
+    const _smsLatencyMs = Date.now() - _smsSendStart;
+    const providerMessageId = message?.sid;
     console.log(`[SMS] Sent to ${normalizedPhone}: ${body.substring(0, 60)}...`);
     await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'sent', provider: 'twilio' });
+    // Mirror into integration_execution_log
+    if (ctx.orgId) {
+      await writeSmsIntegrationLog({ orgId: ctx.orgId, status: 'success', to: normalizedPhone, body, latencyMs: _smsLatencyMs, providerMessageId, governanceDecision: 'allowed' });
+    }
     return { sent: true };
   } catch (err: any) {
+    const _smsLatencyMs = Date.now() - _smsSendStart;
     const errorMessage = err?.message || 'Unknown Twilio error';
     console.error(`[SMS] Failed to send to ${normalizedPhone}:`, errorMessage);
     await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'failed', provider: 'twilio', errorMessage });
+    // Mirror into integration_execution_log
+    if (ctx.orgId) {
+      await writeSmsIntegrationLog({ orgId: ctx.orgId, status: 'failed', to: normalizedPhone, body, latencyMs: _smsLatencyMs, errorMessage, errorClass: 'transient', governanceDecision: 'allowed' });
+    }
     return { sent: false, error: errorMessage };
   }
 }

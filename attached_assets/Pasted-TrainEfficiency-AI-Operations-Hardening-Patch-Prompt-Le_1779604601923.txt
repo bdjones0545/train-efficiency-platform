@@ -1,0 +1,308 @@
+TrainEfficiency AI Operations — Hardening Patch Prompt
+
+Legacy API Path Governance + Runtime Safety Fixes
+
+Apply a focused hardening patch based on the AI Agent/API audit.
+
+Do NOT add new major features.
+Do NOT create a Phase 8.
+Do NOT expand the system.
+
+Goal:
+Close the safety gaps where older/direct service paths bypass the governed AI Operations runtime.
+
+Primary objective:
+Every external action must respect:
+
+* emergency pause
+* org governance
+* idempotency where mutating
+* unified logging
+* integration logging
+* provider error classification
+
+⸻
+
+PART 1 — Emergency pause guard for legacy send paths
+
+Patch:
+
+* server/email.ts
+* server/sms.ts
+
+Before any real outbound send:
+
+* resolve orgId if available
+* check org_ai_governance_settings.emergencyPauseEnabled
+* if paused:
+    * block the send
+    * return a clear error
+    * write to unified_agent_action_log
+    * write/send failure to communication_log if applicable
+
+Message:
+“Blocked: AI operations are paused for this organization. Emergency pause must be disabled before outbound communication can be sent.”
+
+Requirements:
+
+* Do not crash if orgId is missing
+* If orgId is missing, log warning and continue only for system-level non-org emails
+* For org-scoped sends, emergency pause must be enforced
+* Keep current email/SMS behavior otherwise unchanged
+
+⸻
+
+PART 2 — Mirror SendGrid/Twilio actions into integration_execution_log
+
+Patch:
+
+* server/email.ts
+* server/sms.ts
+
+Every outbound send should write to:
+integration_execution_log
+
+Fields should include:
+
+* orgId
+* integrationType: sendgrid or twilio
+* actionType: send_email or send_sms
+* status: success / failed / blocked
+* requestSnapshot
+* responseSnapshot
+* errorMessage
+* providerMessageId if available
+* latencyMs
+* createdAt
+
+Keep existing communication_log writes.
+Do not remove communication_log.
+
+Goal:
+Unify observability without breaking existing communication history.
+
+⸻
+
+PART 3 — Meta CAPI hardening
+
+Patch:
+
+* server/meta-capi.ts
+
+Add:
+
+* orgId-aware governance check
+* emergency pause check
+* idempotency key for every conversion event
+* integration_execution_log write for every attempt
+* unified_agent_action_log write for every attempt
+* provider error classification
+* duplicate event prevention
+
+Idempotency key format:
+meta_capi:{orgId}:{eventName}:{eventId || leadId || submissionId || timestampBucket}
+
+If the same idempotency key already succeeded:
+
+* do not send again
+* return previous result
+* log duplicate prevention
+
+Meta CAPI must become visible in:
+
+* integration logs
+* Agent Ops integration health
+* AI Workforce integration status if applicable
+
+⸻
+
+PART 4 — Direct OpenAI call audit + routing plan
+
+Search for direct OpenAI usage:
+
+* new OpenAI()
+* openai.chat.completions
+* openai.responses
+* direct model strings
+
+Known files:
+
+* education-routes.ts
+* recommendation-engine.ts
+* scheduling-assistant.ts
+* athlete-readiness-routes.ts
+* adaptive-workflow-routes.ts
+
+Do not blindly rewrite everything.
+
+For each direct OpenAI call:
+
+* classify purpose
+* identify orgId availability
+* determine whether it should route through OpenRouter/integration-runtime
+* determine logging requirements
+* determine governance requirements
+* document risk
+
+Then implement a safe wrapper:
+server/ai-model-runtime.ts
+
+Responsibilities:
+
+* route AI calls through OpenRouter when available
+* fall back safely to existing OpenAI path if OpenRouter unavailable
+* log model usage
+* estimate cost if possible
+* write unified_agent_action_log
+* respect emergency pause for org-scoped AI operations where appropriate
+* preserve existing response schemas
+
+Then migrate the highest-risk direct calls first:
+
+1. recommendation-engine.ts
+2. adaptive-workflow-routes.ts
+3. scheduling-assistant.ts
+
+Do not break structured outputs.
+
+⸻
+
+PART 5 — Rate limit race condition fix
+
+Patch:
+
+* workflow-job-queue.ts
+* org_execution_rate_limits handling
+
+Fix race where concurrent creation of rate-limit records defaults to allowed.
+
+Requirement:
+
+* use atomic upsert or transaction-safe increment
+* never default to allowed on creation race
+* if uncertain, fail closed or retry the rate-limit check
+* log rate_limit_check_failed if needed
+
+⸻
+
+PART 6 — Governance failure must fail closed for workflow startup
+
+Patch:
+
+* executor.ts
+
+Current issue:
+If governance validation service fails during workflow startup, it logs a warning but may continue.
+
+Change behavior:
+
+* if governance validation errors unexpectedly:
+    * do not auto-execute
+    * require approval
+    * write governance_validation_failed to unified_agent_action_log
+    * surface a clear warning to the operator
+
+Rule:
+governance failure should never silently allow unguarded execution.
+
+⸻
+
+PART 7 — Integration UI visibility cleanup
+
+Patch AI Workforce / Agent Ops integration UI.
+
+Add:
+
+* rate-limit quota display
+* credential expiry warning
+* Meta CAPI status card
+* SendGrid/Twilio status should reflect integration_execution_log entries
+* recent blocked integration actions
+* recent duplicate-prevented actions
+
+Do not redesign the whole UI.
+Just surface the missing operational visibility.
+
+⸻
+
+PART 8 — Workflow Builder warnings for legacy/ungoverned tools
+
+Patch:
+
+* Workflow Builder node validation
+
+If a node references:
+
+* SendGrid direct send
+* Twilio direct send
+* Meta CAPI direct event
+* Stripe direct mutation
+* direct OpenAI call
+
+Show warning:
+“This action must route through the governed runtime before production use.”
+
+Once patched services are routed/logged, remove or downgrade warnings.
+
+⸻
+
+PART 9 — Verification checklist
+
+After patching, verify:
+
+1. Emergency pause enabled:
+
+* email send blocked
+* SMS send blocked
+* Meta CAPI blocked
+* governed runtime actions blocked
+* unified logs show blocked reason
+
+2. Emergency pause disabled:
+
+* email send works
+* SMS send works
+* logs appear in communication_log
+* logs mirror into integration_execution_log
+* unified logs appear
+
+3. Meta CAPI:
+
+* duplicate event does not send twice
+* duplicate prevention logs correctly
+* provider errors classify correctly
+
+4. OpenAI wrapper:
+
+* migrated routes still return expected schemas
+* model usage logs
+* fallback works if OpenRouter missing
+
+5. Rate limits:
+
+* concurrent requests cannot bypass limits
+* exceeded limits create correct logs
+
+6. Governance failure:
+
+* fails closed
+* requires approval
+* never silently proceeds
+
+⸻
+
+PART 10 — Final output
+
+Return a report showing:
+
+* files changed
+* safety gaps closed
+* remaining legacy paths
+* any routes intentionally left unmigrated
+* verification results
+* remaining risks
+
+Important:
+This is a safety hardening patch, not a feature expansion.
+
+Keep changes minimal, surgical, and reliable.

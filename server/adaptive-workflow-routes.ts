@@ -9,9 +9,6 @@ import {
   prLiftEntries, orgActivityEvents,
 } from "@shared/schema";
 import { eq, and, desc, gte, gt, lt, lte, sql as drizzleSql } from "drizzle-orm";
-import OpenAI from "openai";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 import { requireCoach } from "./org-auth";
@@ -540,13 +537,17 @@ RETURN JSON:
 }`;
 
     try {
-      const completion = await openai.chat.completions.create({
+      const { runAICompletion } = await import("./ai-model-runtime");
+      const aiOut = await runAICompletion({
+        orgId,
         model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
-        max_tokens: 900,
+        responseFormat: { type: "json_object" },
+        maxTokens: 900,
+        purpose: "athlete_intervention_analysis",
+        agentType: "pulse_agent",
       });
-      const result = JSON.parse(completion.choices[0].message.content ?? "{}");
+      const result = JSON.parse(aiOut.content ?? "{}");
 
       if (Array.isArray(result.recommendations) && result.recommendations.length > 0) {
         await db.insert(athleteInterventionRecommendations).values(

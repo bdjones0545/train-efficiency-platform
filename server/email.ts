@@ -2,6 +2,11 @@ import sgMail from '@sendgrid/mail';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { storage } from './storage';
+import crypto from 'crypto';
+import { db } from './db';
+import { eq } from 'drizzle-orm';
+import { orgAiGovernanceSettings, integrationExecutionLog } from '@shared/schema';
+import { logUnifiedAction } from './unified-action-logger';
 
 let connectionSettings: any;
 let _credentialCache: { apiKey: string; email: string } | null = null;
@@ -96,6 +101,50 @@ function bigLine(label: string, value: string) {
 
 function para(text: string) {
   return `<p style="font-size: 16px; line-height: 1.6;">${text}</p>`;
+}
+
+// ── Governance helpers (Part 1 hardening patch) ────────────────────────────
+
+async function isEmailEmergencyPaused(orgId: string): Promise<boolean> {
+  try {
+    const [s] = await db
+      .select({ paused: orgAiGovernanceSettings.emergencyPauseEnabled })
+      .from(orgAiGovernanceSettings)
+      .where(eq(orgAiGovernanceSettings.orgId, orgId));
+    return s?.paused ?? false;
+  } catch { return false; }
+}
+
+async function writeEmailIntegrationLog(params: {
+  orgId: string;
+  status: string;
+  to: string;
+  subject: string;
+  latencyMs?: number;
+  errorMessage?: string;
+  errorClass?: string;
+  providerStatusCode?: number;
+  governanceDecision?: string;
+}): Promise<void> {
+  try {
+    await db.insert(integrationExecutionLog).values({
+      id: crypto.randomUUID(),
+      orgId: params.orgId,
+      integrationType: 'sendgrid',
+      actionType: 'send_email',
+      status: params.status,
+      inputSummary: JSON.stringify({ to: params.to, subject: params.subject }),
+      resultSummary: params.status === 'success' ? 'Email delivered' : undefined,
+      errorMessage: params.errorMessage,
+      errorClass: params.errorClass,
+      providerStatusCode: params.providerStatusCode,
+      latencyMs: params.latencyMs,
+      governanceChecked: true,
+      governanceDecision: params.governanceDecision ?? 'allowed',
+    } as any);
+  } catch (err) {
+    console.error('[Email] Failed to write integration execution log:', err);
+  }
 }
 
 async function getCredentials() {
@@ -260,7 +309,23 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
     }
   }
 
+  // ── Emergency pause guard ─────────────────────────────────────────────────
+  if (logCtx?.orgId) {
+    const paused = await isEmailEmergencyPaused(logCtx.orgId);
+    if (paused) {
+      const PAUSE_MSG = 'Blocked: AI operations are paused for this organization. Emergency pause must be disabled before outbound communication can be sent.';
+      console.warn(`[Email] Emergency pause active — blocking send (orgId=${logCtx.orgId})`);
+      await writeEmailIntegrationLog({ orgId: logCtx.orgId, status: 'blocked', to, subject, errorMessage: PAUSE_MSG, errorClass: 'governance', governanceDecision: 'blocked' });
+      try { await logUnifiedAction({ orgId: logCtx.orgId, actorType: 'system', actorName: 'relay_agent', actionType: 'governance_blocked', status: 'blocked', riskLevel: 'high', reasoningSummary: PAUSE_MSG }); } catch {}
+      try { await storage.createCommunicationLog({ orgId: logCtx.orgId, userId: logCtx.userId, coachId: logCtx.coachId, bookingId: logCtx.bookingId, agentActionId: logCtx.agentActionId, type: logCtx.type, channel: 'email', recipientEmail: to, subject, status: 'failed', provider: 'sendgrid', errorMessage: PAUSE_MSG }); } catch {}
+      return;
+    }
+  }
+
+  // ── Send ──────────────────────────────────────────────────────────────────
+  const _emailSendStart = Date.now();
   let errorMsg: string | undefined;
+  let _providerStatus: number | undefined;
   try {
     const { client, fromEmail } = await getUncachableSendGridClient();
     await client.send({
@@ -273,8 +338,10 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
     console.log(`Email sent to ${to}: ${subject}`);
   } catch (error: any) {
     errorMsg = error?.response?.body ? JSON.stringify(error.response.body) : (error.message || 'Unknown error');
+    _providerStatus = error?.response?.status;
     console.error(`Failed to send email to ${to}:`, error?.response?.body || error.message);
   }
+  const _emailLatencyMs = Date.now() - _emailSendStart;
 
   if (logCtx?.orgId) {
     try {
@@ -295,6 +362,18 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
     } catch (logErr) {
       console.error('[CommLog] Failed to write communication log:', logErr);
     }
+    // Mirror into integration_execution_log for unified observability
+    await writeEmailIntegrationLog({
+      orgId: logCtx.orgId,
+      status: errorMsg ? 'failed' : 'success',
+      to,
+      subject,
+      latencyMs: _emailLatencyMs,
+      errorMessage: errorMsg,
+      errorClass: errorMsg ? 'permanent' : undefined,
+      providerStatusCode: _providerStatus,
+      governanceDecision: 'allowed',
+    });
   }
 }
 

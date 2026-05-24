@@ -116,8 +116,10 @@ const INTEGRATION_ICONS: Record<string, typeof Mail> = {
   openrouter: Cpu,
   research_agent: Search,
   meta_ads: Globe,
+  meta_capi: Globe,
   hubspot: BarChart3,
   stripe: Zap,
+  sendgrid: Mail,
   twilio: Activity,
   discord: Hash,
   custom_webhook: Link2,
@@ -130,8 +132,10 @@ const INTEGRATION_LABELS: Record<string, string> = {
   openrouter: "OpenRouter / Multi-Model",
   research_agent: "Research Agent (OpenClaw)",
   meta_ads: "Meta Ads",
+  meta_capi: "Meta CAPI (Conversion API)",
   hubspot: "HubSpot",
   stripe: "Stripe",
+  sendgrid: "SendGrid (Email)",
   twilio: "Twilio SMS",
   discord: "Discord",
   custom_webhook: "Custom Webhook",
@@ -163,7 +167,7 @@ const STATUS_DOT: Record<string, string> = {
 // ─── Known integrations to always show (even if not yet configured) ───────────
 const ALL_INTEGRATION_TYPES = [
   "gmail", "google_calendar", "slack", "openrouter", "research_agent",
-  "meta_ads", "hubspot", "stripe", "twilio",
+  "meta_ads", "meta_capi", "hubspot", "stripe", "sendgrid", "twilio",
 ];
 
 // ─── Agent Card ───────────────────────────────────────────────────────────────
@@ -296,6 +300,46 @@ function IntegrationCard({
           {integration?.lastFailureReason && status !== "connected" && (
             <p className="text-xs text-red-500 mt-0.5 line-clamp-1">{integration.lastFailureReason}</p>
           )}
+
+          {/* Rate limit quota display */}
+          {integration?.rateLimitState && (() => {
+            const rl = integration.rateLimitState as any;
+            const current = rl?.current ?? rl?.currentCount;
+            const max = rl?.max ?? rl?.maxExecutions ?? rl?.limit;
+            if (current !== undefined && max !== undefined) {
+              const pct = Math.min(100, Math.round((current / max) * 100));
+              const colorCls = pct >= 90 ? "text-red-500" : pct >= 70 ? "text-amber-500" : "text-green-600 dark:text-green-400";
+              return (
+                <div className="mt-1" data-testid={`rate-limit-${type}`}>
+                  <div className="flex items-center justify-between text-[10px] mb-0.5">
+                    <span className="text-muted-foreground">Rate limit</span>
+                    <span className={`font-medium ${colorCls}`}>{current}/{max} {rl?.window ? `per ${rl.window}` : ""}</span>
+                  </div>
+                  <div className="h-1 rounded-full bg-muted overflow-hidden">
+                    <div className={`h-1 rounded-full transition-all ${pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-amber-400" : "bg-green-500"}`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          {/* Credential expiry warning */}
+          {integration && (() => {
+            const creds = integration as any;
+            const expiry = creds?.authExpiration ?? creds?.tokenExpiresAt ?? creds?.credentialExpiresAt;
+            if (!expiry) return null;
+            const expiryDate = new Date(expiry);
+            const daysLeft = Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            if (daysLeft > 14) return null;
+            return (
+              <p className={`text-[10px] mt-1 font-medium flex items-center gap-1 ${daysLeft <= 3 ? "text-red-500" : "text-amber-500"}`} data-testid={`credential-expiry-${type}`}>
+                <AlertTriangle className="h-3 w-3" />
+                {daysLeft <= 0 ? "Credentials expired" : `Credentials expire in ${daysLeft}d`}
+              </p>
+            );
+          })()}
+
           {integration?.enabledAgents && (integration.enabledAgents as string[]).length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
               {(integration.enabledAgents as string[]).slice(0, 3).map(a => (

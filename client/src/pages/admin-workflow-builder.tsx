@@ -268,11 +268,17 @@ function NodeConfigPanel({ node, onClose, onUpdate }: {
   };
 
   const riskColors = RISK_COLORS[riskLevel];
+  const UNGOVERNED_WARNING = "⚠ This action currently bypasses the governed runtime. Emergency pause may not stop this action. Route through integration-runtime before production use.";
   const govWarnings = {
-    send_email: "This node sends email — ensure governance allows outbound communication.",
+    send_email: "This node sends email via SendGrid. Emergency pause is now enforced. Ensure governance allows outbound communication.",
+    send_sms: UNGOVERNED_WARNING,
+    post_slack_alert: "This node sends Slack alerts. Routes through integration-runtime — governance enforced.",
     research_lead: "Research Agent requires web access. Confirm governance allows external browsing.",
     create_booking: "This node creates calendar events — execution lock required.",
     approval_gate: "Execution pauses until a human approves. Configure timeout to avoid deadlocks.",
+    meta_capi_event: "Meta CAPI events are now governed and idempotent. Duplicate events are prevented automatically.",
+    stripe_charge: UNGOVERNED_WARNING,
+    direct_ai_call: UNGOVERNED_WARNING,
   }[node.data.nodeType as string];
 
   return (
