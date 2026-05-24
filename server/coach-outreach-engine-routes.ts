@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { db } from "./db";
 import crypto from "crypto";
+import { createActivityEvent } from "./services/activity-timeline";
 import {
   communicationCampaigns,
   communicationMessages,
@@ -189,6 +190,7 @@ export function registerCoachOutreachEngineRoutes(app: Express) {
         campaignId: z.string().optional(),
         aiGenerated: z.boolean().default(false),
         scheduledAt: z.string().optional(),
+        actionSource: z.string().optional(),
       });
 
       const body = schema.parse(req.body);
@@ -216,6 +218,23 @@ export function registerCoachOutreachEngineRoutes(app: Express) {
           `
         );
       }
+
+      createActivityEvent({
+        orgId,
+        userId: body.recipientUserId,
+        sourceType: "message",
+        sourceId: msg.id,
+        eventType: "message_sent",
+        title: body.subject ? `Message sent: ${body.subject}` : "Direct message sent",
+        description: body.body.slice(0, 200),
+        metadata: {
+          messageId: msg.id,
+          channel: body.channel,
+          messageType: body.messageType,
+          actionSource: body.actionSource,
+        },
+        visibility: "coach",
+      }).catch(() => {});
 
       res.json({ message: msg });
     } catch (err: any) {

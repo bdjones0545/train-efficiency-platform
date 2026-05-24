@@ -6014,6 +6014,16 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!templateKey || typeof templateKey !== "string") return res.status(400).json({ error: "templateKey is required" });
       const { orchestrator } = await import("./workflow-orchestrator");
       const run = await orchestrator.start({ orgId, templateKey, sourceType, sourceId, createdBy: userId, metadata: metadata || {} });
+      const { createActivityEvent } = await import("./services/activity-timeline");
+      createActivityEvent({
+        orgId,
+        sourceType: "workflow",
+        sourceId: run.id,
+        eventType: "workflow_triggered",
+        title: `Workflow started: ${templateKey}`,
+        metadata: { templateKey, sourceType, sourceId, runId: run.id },
+        visibility: "coach",
+      }).catch(() => {});
       res.status(201).json(run);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -12626,6 +12636,16 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       if (!workflowType) return res.status(400).json({ error: "workflowType required" });
       const { startWorkflow } = await import("./workflows/index");
       const result = await startWorkflow({ orgId, workflowType, triggerReason, triggerSource: triggerSource ?? "manual", entityType, entityId, entityName, sourceRecommendationId, sourceRevenueActionId, initialContext });
+      const { createActivityEvent: logActivity } = await import("./services/activity-timeline");
+      logActivity({
+        orgId,
+        sourceType: "workflow",
+        sourceId: result?.id,
+        eventType: "workflow_triggered",
+        title: `Workflow triggered: ${workflowType}`,
+        metadata: { workflowType, triggerReason, entityType, entityId, entityName, triggerSource },
+        visibility: "coach",
+      }).catch(() => {});
       res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

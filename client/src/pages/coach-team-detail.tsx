@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ActivityFeed } from "@/components/activity-feed";
 import PlayerCard from "@/components/pr-tracker/PlayerCard";
 import type { PlayerCardProfile } from "@/components/pr-tracker/PlayerCard";
 import { useParams } from "wouter";
@@ -682,6 +683,14 @@ export default function CoachTeamDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Team Activity Feed ───────────────────────────────────────────── */}
+      <div className="px-4 pb-4" data-testid="section-team-activity">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5" /> Recent Team Activity
+        </h2>
+        <ActivityFeed teamId={teamId} limit={15} />
+      </div>
 
       {/* ── Batch PDF Export Progress Overlay ──────────────────────────── */}
       {isGeneratingPdf && (

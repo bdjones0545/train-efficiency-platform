@@ -5,7 +5,8 @@ import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export type ActivitySourceType =
-  | "booking" | "workout" | "readiness" | "pr" | "alert" | "message" | "intelligence" | "system";
+  | "booking" | "workout" | "readiness" | "pr" | "alert" | "message" | "intelligence" | "system"
+  | "education" | "workflow" | "team";
 
 export type ActivityVisibility = "athlete" | "coach" | "owner";
 
@@ -33,6 +34,9 @@ export const SOURCE_CONFIG: Record<ActivitySourceType, { color: string; icon: st
   alert:        { color: "orange",  icon: "Zap",            label: "Alert" },
   message:      { color: "violet",  icon: "MessageSquare",  label: "Message" },
   intelligence: { color: "cyan",    icon: "TrendingUp",     label: "Intelligence" },
+  education:    { color: "indigo",  icon: "BookOpen",       label: "Education" },
+  workflow:     { color: "teal",    icon: "GitBranch",      label: "Workflow" },
+  team:         { color: "sky",     icon: "Users",          label: "Team" },
   system:       { color: "muted",   icon: "Bell",           label: "System" },
 };
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { usePermissions } from "@/hooks/use-permissions";
+import { ActivityFeed } from "@/components/activity-feed";
 import { getAuthHeaders } from "@/lib/authToken";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -687,26 +688,12 @@ export default function CoachAthleteDetailPage() {
             )}
           </section>
 
-          {/* ── 9. Future Placeholders ──────────────────────────────────── */}
-          <section data-testid="section-placeholders">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Coming Soon</h2>
-            <div className="space-y-2">
-              <ComingSoonCard
-                icon={<Dumbbell className="h-4 w-4 text-muted-foreground" />}
-                title="Workout History"
-                description="Full session logs, workout programs, and training volume trends will appear here."
-              />
-              <ComingSoonCard
-                icon={<Activity className="h-4 w-4 text-muted-foreground" />}
-                title="Readiness Trends"
-                description="Track athlete readiness scores, recovery, and sleep data over time."
-              />
-              <ComingSoonCard
-                icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
-                title="Attendance Trends"
-                description="Attendance patterns, session streaks, and consistency metrics."
-              />
-            </div>
+          {/* ── 9. Activity Feed ─────────────────────────────────────────── */}
+          <section data-testid="section-activity-feed">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+              <Activity className="h-3.5 w-3.5" /> Recent Activity
+            </h2>
+            <ActivityFeed athleteId={userId} limit={20} />
           </section>
         </div>
       )}

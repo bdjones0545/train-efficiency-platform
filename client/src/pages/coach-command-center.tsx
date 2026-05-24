@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
+import { ActivityFeed } from "@/components/activity-feed";
 import { InterventionPriorityQueue } from "@/components/intervention-priority-queue";
 import { InterventionEffectivenessDashboard } from "@/components/intervention-effectiveness-dashboard";
 import { OrgHealthOverview } from "@/components/org-health-overview";
@@ -848,6 +849,12 @@ export default function CoachCommandCenterPage() {
           </div>
         </Card>
       </div>
+
+      {/* ── Recent Activity ────────────────────────────────────────────── */}
+      <Card className="p-4" data-testid="section-recent-activity">
+        <SectionHeader icon={Activity} title="Recent Activity" />
+        <ActivityFeed compact limit={15} days={7} />
+      </Card>
 
       {/* ── Phase 4: Event Stream ──────────────────────────────────────── */}
       {orgId && (

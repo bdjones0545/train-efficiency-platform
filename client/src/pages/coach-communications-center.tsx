@@ -122,6 +122,7 @@ function ComposeDialog({
   initialAthleteId,
   initialMessageType,
   contextBanner,
+  actionSource,
 }: {
   open: boolean;
   onClose: () => void;
@@ -133,6 +134,7 @@ function ComposeDialog({
   initialAthleteId?: string;
   initialMessageType?: string;
   contextBanner?: string;
+  actionSource?: string;
 }) {
   const { toast } = useToast();
   const [recipientId, setRecipientId] = useState(initialAthleteId ?? "");
@@ -154,7 +156,7 @@ function ComposeDialog({
     mutationFn: () =>
       orgFetch("/api/org/communications/send", orgToken, {
         method: "POST",
-        body: JSON.stringify({ recipientUserId: recipientId || undefined, recipientType: "athlete", channel, messageType, subject, body }),
+        body: JSON.stringify({ recipientUserId: recipientId || undefined, recipientType: "athlete", channel, messageType, subject, body, actionSource: actionSource || undefined }),
       }).then(async (r) => {
         if (!r.ok) throw new Error(await r.text());
         return r.json();
@@ -910,9 +912,11 @@ export default function CoachCommunicationsCenterPage() {
         initialAthleteId={urlAthleteId || undefined}
         initialMessageType={urlMessageType || undefined}
         contextBanner={urlSource ? `Opened from ${urlSource.replace(/-/g, " ")}` : undefined}
+        actionSource={urlSource || undefined}
         onSent={() => {
           refetchMsgs();
           queryClient.invalidateQueries({ queryKey: ["/api/org/communications", orgId] });
+          queryClient.invalidateQueries({ queryKey: ["org-activity"] });
         }}
       />
     </div>
