@@ -1,0 +1,132 @@
+Audit how external APIs are connected to TrainEfficiency’s AI agents.
+
+Do not build new features yet.
+
+Audit the current architecture for:
+
+1. Integration registry
+
+* external_integrations table
+* integration status
+* org scoping
+* credentials handling
+* health checks
+* pause/resume behavior
+* enabled agents/tools
+
+2. Agent-to-API mapping
+    Audit how each AI employee uses APIs:
+
+* Relay → Gmail / Slack / Twilio
+* Tempo → Google Calendar
+* Apex → Meta Ads / CRM
+* Vector → OpenClaw / research tools
+* Atlas → Business Brain / OpenRouter
+* Ledger → Stripe
+* Nexus → Workflow Orchestrator
+* Core → System Health
+
+For each agent, explain:
+
+* what APIs it can access
+* what tools it can execute
+* what permissions govern it
+* what workflows it participates in
+* what actions require approval
+* what actions can auto-execute
+
+3. Integration Runtime
+    Audit whether every external API call flows through:
+
+* integration-runtime.ts
+* capability-enforcement-engine.ts
+* workflow-job-queue.ts
+* unified_agent_action_log
+* workflow_context when relevant
+* org governance settings
+
+No API action should bypass governance, logging, queueing, or idempotency.
+
+4. Tool execution safety
+    Check:
+
+* idempotency keys
+* execution locks
+* retry behavior
+* rate limits
+* dead-letter handling
+* provider error classification
+* emergency pause behavior
+* manual retry governance re-checks
+
+5. Workflow interaction
+    Audit how APIs interact inside workflows:
+
+Example:
+New lead → Apex scores lead → Relay drafts Gmail response → governance checks approval → job queue sends email → response logged → memory updated → Business Brain sees outcome.
+
+Document the full lifecycle from trigger to outcome.
+
+6. Governance audit
+    Confirm:
+
+* each API has org-level enable/disable
+* each agent has tool permissions
+* autonomy mode affects external actions
+* high-risk actions require approval
+* emergency pause blocks external execution
+* blocked actions explain why
+
+7. UI audit
+    Audit whether admins can clearly see:
+
+* which APIs are connected
+* which agents use each API
+* which workflows depend on each API
+* recent API actions
+* failed API actions
+* blocked API attempts
+* rate-limit status
+* health status
+* approval requirements
+
+8. Missing connections
+    Identify any places where APIs are technically built but not fully wired into:
+
+* AI Workforce page
+* Agent profiles
+* Workflow Builder
+* Workflow Library
+* Business Brain
+* Command Center
+* Agent Ops Monitor
+* Recommendations
+* Unified logs
+* Memory system
+
+9. Risk assessment
+    Find risks such as:
+
+* duplicate sends
+* double bookings
+* hidden direct API calls
+* missing orgId filters
+* missing approval gates
+* weak error handling
+* unclear UI mapping
+* agents having too much access
+* integrations connected but unused
+
+10. Final output
+    Provide:
+
+* what is working well
+* what is partially connected
+* what is not connected
+* what is risky
+* what needs cleanup
+* what should be built next only if necessary
+
+Do not recommend adding new APIs yet.
+
+The goal is to verify that TrainEfficiency’s existing agent/API system is safe, understandable, governed, observable, and production-ready.
