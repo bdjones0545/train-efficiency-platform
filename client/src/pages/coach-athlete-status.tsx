@@ -14,7 +14,9 @@ import {
   Users, Zap, Brain, TrendingUp, TrendingDown, Minus,
   Shield, ShieldAlert, ShieldCheck, Clock, Filter, Sparkles,
   ChevronRight, BarChart2, Loader2, X, ThumbsUp, ThumbsDown,
+  MessageSquare, Dumbbell,
 } from "lucide-react";
+import { navigateWithContext } from "@/lib/navigateWithContext";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function riskColor(level: string) {
@@ -132,8 +134,8 @@ function AthleteStatusCard({ row, onClick }: { row: any; onClick: () => void }) 
 
 // ─── Athlete Detail Drawer ────────────────────────────────────────────────────
 function AthleteDetail({
-  userId, orgId, headers, onClose
-}: { userId: string; orgId: string; headers: Record<string, string>; onClose: () => void }) {
+  userId, orgId, headers, onClose, slug, setLocation
+}: { userId: string; orgId: string; headers: Record<string, string>; onClose: () => void; slug: string; setLocation: (to: string) => void }) {
   const { toast } = useToast();
 
   const { data, isLoading, refetch } = useQuery<any>({
@@ -282,7 +284,7 @@ function AthleteDetail({
                       {f.recommendation && (
                         <p className="text-xs text-primary/80 mt-1">→ {f.recommendation}</p>
                       )}
-                      <div className="flex gap-1.5 mt-2">
+                      <div className="flex gap-1.5 mt-2 flex-wrap">
                         <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
                           onClick={() => flagMut.mutate({ id: f.id, status: "resolved" })}>
                           Resolve
@@ -290,6 +292,11 @@ function AthleteDetail({
                         <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-muted-foreground"
                           onClick={() => flagMut.mutate({ id: f.id, status: "dismissed" })}>
                           Dismiss
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-blue-400"
+                          data-testid={`button-message-flag-${f.id}`}
+                          onClick={() => navigateWithContext(setLocation, { route: "/coach/communications-center", orgSlug: slug, athleteId: userId, source: "athlete-status" })}>
+                          <MessageSquare className="h-2.5 w-2.5" />Message
                         </Button>
                       </div>
                     </div>
@@ -335,7 +342,7 @@ function AthleteDetail({
                       {iv.suggestedAction && (
                         <p className="text-xs text-primary/80 mt-1 italic">{iv.suggestedAction}</p>
                       )}
-                      <div className="flex gap-1.5 mt-2">
+                      <div className="flex gap-1.5 mt-2 flex-wrap">
                         <Button size="sm" className="h-6 text-[10px] px-2 gap-1"
                           onClick={() => interventionMut.mutate({ id: iv.id, status: "accepted" })}>
                           <ThumbsUp className="h-2.5 w-2.5" />Accept
@@ -343,6 +350,16 @@ function AthleteDetail({
                         <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1"
                           onClick={() => interventionMut.mutate({ id: iv.id, status: "dismissed" })}>
                           <ThumbsDown className="h-2.5 w-2.5" />Dismiss
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-blue-400"
+                          data-testid={`button-message-intervention-${iv.id}`}
+                          onClick={() => navigateWithContext(setLocation, { route: "/coach/communications-center", orgSlug: slug, athleteId: userId, source: "athlete-status", interventionId: iv.id })}>
+                          <MessageSquare className="h-2.5 w-2.5" />Message
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-emerald-400"
+                          data-testid={`button-workout-intervention-${iv.id}`}
+                          onClick={() => navigateWithContext(setLocation, { route: `/coach/athletes/${userId}`, orgSlug: slug, athleteId: userId, source: "athlete-status" })}>
+                          <Dumbbell className="h-2.5 w-2.5" />Workout
                         </Button>
                       </div>
                     </div>
@@ -473,6 +490,8 @@ export default function CoachAthleteStatusPage() {
       <AthleteDetail
         userId={selectedUserId}
         orgId=""
+        slug={slug}
+        setLocation={setLocation}
         headers={buildHeaders()}
         onClose={() => setSelectedUserId(null)}
       />
@@ -641,13 +660,18 @@ export default function CoachAthleteStatusPage() {
                     {f.recommendation && (
                       <p className="text-xs text-primary/80 mt-1">→ {f.recommendation}</p>
                     )}
-                    <div className="flex gap-1.5 mt-2">
+                    <div className="flex gap-1.5 mt-2 flex-wrap">
                       <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
                         onClick={() => flagMut.mutate({ id: f.id, status: "resolved" })}>Resolve</Button>
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-muted-foreground"
                         onClick={() => flagMut.mutate({ id: f.id, status: "dismissed" })}>Dismiss</Button>
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-primary"
                         onClick={() => setSelectedUserId(f.athleteUserId)}>View</Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-blue-400"
+                        data-testid={`button-message-alert-${f.id}`}
+                        onClick={() => navigateWithContext(setLocation, { route: "/coach/communications-center", orgSlug: slug, athleteId: f.athleteUserId, source: "athlete-status" })}>
+                        <MessageSquare className="h-2.5 w-2.5" />Message
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -684,7 +708,7 @@ export default function CoachAthleteStatusPage() {
                     {iv.suggestedAction && (
                       <p className="text-xs text-primary/80 mt-1 italic">{iv.suggestedAction}</p>
                     )}
-                    <div className="flex gap-1.5 mt-2">
+                    <div className="flex gap-1.5 mt-2 flex-wrap">
                       <Button size="sm" className="h-6 text-[10px] px-2 gap-1"
                         onClick={() => interventionMut.mutate({ id: iv.id, status: "accepted" })}>
                         <ThumbsUp className="h-2.5 w-2.5" />Accept
@@ -695,6 +719,16 @@ export default function CoachAthleteStatusPage() {
                       </Button>
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-primary"
                         onClick={() => setSelectedUserId(iv.athleteUserId)}>View</Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-blue-400"
+                        data-testid={`button-message-queue-${iv.id}`}
+                        onClick={() => navigateWithContext(setLocation, { route: "/coach/communications-center", orgSlug: slug, athleteId: iv.athleteUserId, source: "athlete-status", interventionId: iv.id })}>
+                        <MessageSquare className="h-2.5 w-2.5" />Message
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-emerald-400"
+                        data-testid={`button-workout-queue-${iv.id}`}
+                        onClick={() => navigateWithContext(setLocation, { route: `/coach/athletes/${iv.athleteUserId}`, orgSlug: slug, athleteId: iv.athleteUserId, source: "athlete-status" })}>
+                        <Dumbbell className="h-2.5 w-2.5" />Workout
+                      </Button>
                     </div>
                   </div>
                 </div>

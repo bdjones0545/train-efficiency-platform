@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Redirect, useLocation } from "wouter";
+import { useParams, Redirect, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,6 +12,10 @@ export default function ProgramToolPage() {
   const orgSlug = params.slug;
   const programSlug = params.programSlug;
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const searchParams = new URLSearchParams(search);
+  const contextAthleteId = searchParams.get("athleteId") ?? undefined;
+  const contextTeamId = searchParams.get("teamId") ?? undefined;
 
   const { user, isLoading: authLoading } = useAuth();
 
@@ -86,7 +90,12 @@ export default function ProgramToolPage() {
   if (program.type === "workout_builder") {
     return (
       <div className="p-4 sm:p-6">
-        <WorkoutBuilderPage program={program} orgSlug={orgSlug} />
+        <WorkoutBuilderPage
+          program={program}
+          orgSlug={orgSlug}
+          contextAthleteId={contextAthleteId}
+          contextTeamId={contextTeamId}
+        />
       </div>
     );
   }

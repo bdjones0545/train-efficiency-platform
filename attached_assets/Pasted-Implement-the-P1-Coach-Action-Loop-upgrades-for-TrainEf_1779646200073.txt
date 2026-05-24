@@ -1,0 +1,206 @@
+Implement the P1 Coach Action Loop upgrades for TrainEfficiency.
+
+Goal:
+Coaches/admins should be able to move directly from:
+INSIGHT → ACTION
+
+without manually switching tools, copying athlete names, or losing context.
+
+The platform should feel like:
+one connected coaching operating system.
+
+PART 1 — Athlete Status → Action shortcuts
+
+Current issue:
+Athlete Status surfaces intervention recommendations but gives coaches no direct action path.
+
+Add action buttons to every athlete intervention/recommendation card:
+
+1. Message Athlete
+2. Assign Workout
+3. Review Profile
+4. Assign Education (optional)
+
+Each action should preserve athlete context.
+
+Implementation:
+- athleteId
+- orgSlug
+- teamId (if available)
+- interventionId (optional)
+
+Pass via:
+- URL params
+- router navigation state
+- React Query cache hydration
+- lightweight context store if already used
+
+Examples:
+`/org/:slug/coach/communications-center?athleteId=123`
+`/org/:slug/programs/workout-builder?athleteId=123`
+
+PART 2 — Communications Center pre-selection
+
+Current issue:
+Opening Communications loses athlete/team context.
+
+Add support for:
+- ?athleteId=
+- ?teamId=
+- ?conversation=
+- ?template=
+
+Behavior:
+- auto-select athlete/team on load
+- pre-open compose state
+- optionally prefill AI draft context
+
+Example:
+“Low readiness detected — check in with athlete.”
+
+If athleteId is present:
+- highlight athlete
+- open compose panel automatically
+
+PART 3 — Workout Builder contextual assignment
+
+Current issue:
+Assigning workouts requires manually re-selecting athletes/teams.
+
+Add:
+- athleteId support
+- teamId support
+- workout recommendation handoff
+
+If launched from Athlete Status:
+- athlete/team should already be selected
+- recommendation context should appear:
+  “Suggested due to fatigue/readiness intervention.”
+
+PART 4 — Command Center quick actions
+
+Current issue:
+Command Center is read-only.
+
+Add inline quick actions for:
+- flagged athletes
+- alerts
+- workflow recommendations
+- readiness concerns
+- missed sessions
+- PR stagnation
+
+Actions:
+- Message
+- Assign Workout
+- Review Profile
+- Trigger Workflow
+- Assign Education
+
+These should use the same contextual navigation system.
+
+PART 5 — Shared contextual navigation helper
+
+Create:
+`navigateWithContext()`
+
+Purpose:
+Standardize cross-tool navigation.
+
+Example:
+navigateWithContext({
+  route: "/coach/communications-center",
+  athleteId,
+  teamId,
+  orgSlug,
+  source: "athlete-status",
+});
+
+This helper should:
+- preserve org context
+- preserve auth state
+- optionally preserve return path
+- avoid page flashes
+- support mobile Safari
+
+PART 6 — Cross-system activity logging
+
+When actions occur from another system:
+- log origin source
+
+Examples:
+- “Workout assigned from Athlete Status”
+- “Message initiated from Command Center”
+- “Education assigned from Workflow”
+
+Store:
+- sourceTool
+- sourceEntityId
+- sourceContext
+
+Use in:
+- audit logs
+- activity feeds
+- future analytics
+
+PART 7 — Unified activity feed
+
+Add a lightweight shared activity feed model.
+
+Events:
+- workout assigned
+- intervention triggered
+- message sent
+- education assigned
+- readiness warning
+- PR milestone
+- athlete joined
+- workflow executed
+
+Surface feed in:
+- Command Center
+- Athlete Detail
+- Team Dashboard
+
+Goal:
+The platform should feel alive and interconnected.
+
+PART 8 — UX polish
+
+Transitions between tools should:
+- preserve page shell/sidebar
+- avoid full loading flashes
+- animate smoothly
+- show contextual breadcrumbs
+
+Examples:
+Athlete Status → Message Athlete
+Should feel like:
+continuing a workflow
+not
+opening a different app.
+
+PART 9 — Acceptance tests
+
+From Athlete Status:
+- click Message Athlete
+- Communications opens with athlete selected
+
+From Athlete Status:
+- click Assign Workout
+- Workout Builder opens with athlete/team preselected
+
+From Command Center:
+- click Review Profile
+- Athlete profile opens directly
+
+From Command Center:
+- click Trigger Workflow
+- Workflow modal opens contextualized
+
+Verify:
+- no auth interruptions
+- no lost org context
+- no manual re-selection
+- smooth mobile transitions
+- actions feel system-connected

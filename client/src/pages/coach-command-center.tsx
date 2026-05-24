@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
+import { navigateWithContext } from "@/lib/navigateWithContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
@@ -40,6 +41,9 @@ import {
   Sparkles,
   ArrowRight,
   Circle,
+  MessageSquare,
+  Dumbbell,
+  UserCircle,
 } from "lucide-react";
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
@@ -285,6 +289,7 @@ function AIBriefingPanel({ briefing, isLoading, onRegenerate, isPending }: {
 
 export default function CoachCommandCenterPage() {
   const { slug } = useParams<{ slug: string }>();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgToken, setOrgToken] = useState<string | null>(null);
@@ -484,14 +489,26 @@ export default function CoachCommandCenterPage() {
                 <div
                   key={a.id ?? i}
                   data-testid={`row-risk-athlete-${a.athleteUserId}`}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${riskBg(a.riskLevel)}`}
+                  className={`flex items-start gap-3 px-3 py-2 rounded-lg border ${riskBg(a.riskLevel)}`}
                 >
                   <ScoreRing score={a.statusScore ?? 0} size={40} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold truncate">{a.athleteName}</p>
                     <p className={`text-[10px] capitalize ${riskColor(a.riskLevel)}`}>{a.riskLevel === "red" ? "Needs Attention" : "Monitor"}</p>
+                    <div className="flex gap-1 mt-1.5">
+                      <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5 gap-0.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                        data-testid={`button-message-risk-${a.athleteUserId}`}
+                        onClick={() => navigateWithContext(setLocation, { route: "/coach/communications-center", orgSlug: slug, athleteId: a.athleteUserId, source: "command-center" })}>
+                        <MessageSquare className="h-2.5 w-2.5" />Message
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5 gap-0.5 text-muted-foreground hover:text-foreground"
+                        data-testid={`button-profile-risk-${a.athleteUserId}`}
+                        onClick={() => setLocation(`/org/${slug}/coach/athletes/${a.athleteUserId}`)}>
+                        <UserCircle className="h-2.5 w-2.5" />Profile
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-0.5 text-[10px] text-muted-foreground">
+                  <div className="flex flex-col items-end gap-0.5 text-[10px] text-muted-foreground flex-shrink-0">
                     {a.readinessScore != null && <span>R: {a.readinessScore}</span>}
                     {a.adherenceScore != null && <span>A: {a.adherenceScore}</span>}
                   </div>
@@ -583,6 +600,20 @@ export default function CoachCommandCenterPage() {
                       <p className="text-[10px] text-primary/70 mt-0.5 flex items-center gap-0.5">
                         <ArrowRight className="h-2.5 w-2.5" />{intv.suggestedAction}
                       </p>
+                    )}
+                    {intv.athleteUserId && (
+                      <div className="flex gap-1 mt-1.5">
+                        <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5 gap-0.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                          data-testid={`button-message-intv-${intv.id}`}
+                          onClick={() => navigateWithContext(setLocation, { route: "/coach/communications-center", orgSlug: slug, athleteId: intv.athleteUserId, source: "command-center", interventionId: intv.id })}>
+                          <MessageSquare className="h-2.5 w-2.5" />Message
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5 gap-0.5 text-muted-foreground hover:text-foreground"
+                          data-testid={`button-profile-intv-${intv.id}`}
+                          onClick={() => setLocation(`/org/${slug}/coach/athletes/${intv.athleteUserId}`)}>
+                          <UserCircle className="h-2.5 w-2.5" />Profile
+                        </Button>
+                      </div>
                     )}
                   </div>
                   <Badge className={`text-[9px] px-1 py-0 h-4 capitalize flex-shrink-0 ${urgencyBadgeClass(intv.severity)}`}>

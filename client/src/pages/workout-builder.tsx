@@ -161,13 +161,21 @@ function SessionCard({ session, completions, orgSlug }: { session: Session; comp
 }
 
 // ─── Program Detail View ──────────────────────────────────────────────────────
-function ProgramDetail({ programId, orgId, isCoach, onBack, orgSlug }: { programId: string; orgId: string | null; isCoach: boolean; onBack: () => void; orgSlug: string }) {
+function ProgramDetail({ programId, orgId, isCoach, onBack, orgSlug, defaultAthleteId, defaultTeamId }: { programId: string; orgId: string | null; isCoach: boolean; onBack: () => void; orgSlug: string; defaultAthleteId?: string; defaultTeamId?: string }) {
   const { toast } = useToast();
   const [showRefineDialog, setShowRefineDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState("");
-  const [assignType, setAssignType] = useState<"athlete" | "team">("athlete");
-  const [assignTargetId, setAssignTargetId] = useState("");
+  const [assignType, setAssignType] = useState<"athlete" | "team">(defaultTeamId ? "team" : "athlete");
+  const [assignTargetId, setAssignTargetId] = useState(defaultAthleteId ?? defaultTeamId ?? "");
+
+  useEffect(() => {
+    if (defaultAthleteId || defaultTeamId) {
+      setAssignType(defaultTeamId ? "team" : "athlete");
+      setAssignTargetId(defaultAthleteId ?? defaultTeamId ?? "");
+      setShowAssignDialog(true);
+    }
+  }, [defaultAthleteId, defaultTeamId]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState("");
 
@@ -1297,7 +1305,7 @@ function ExecutionMonitorTab({ orgId }: { orgId: string }) {
 }
 
 // ─── Main WorkoutBuilderPage ──────────────────────────────────────────────────
-export default function WorkoutBuilderPage({ program, orgSlug }: { program: any; orgSlug: string }) {
+export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId, contextTeamId }: { program: any; orgSlug: string; contextAthleteId?: string; contextTeamId?: string }) {
   const [showWizard, setShowWizard] = useState(false);
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [coachTab, setCoachTab] = useState<"library" | "monitor">("library");
@@ -1540,6 +1548,8 @@ export default function WorkoutBuilderPage({ program, orgSlug }: { program: any;
             isCoach={isCoach}
             onBack={() => setSelectedProgramId(null)}
             orgSlug={orgSlug}
+            defaultAthleteId={contextAthleteId}
+            defaultTeamId={contextTeamId}
           />
         ) : (
           <CoachLibraryView

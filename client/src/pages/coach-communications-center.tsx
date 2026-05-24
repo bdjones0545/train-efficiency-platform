@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams } from "wouter";
+import { useParams, useSearch } from "wouter";
+import { navigateWithContext } from "@/lib/navigateWithContext";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -118,6 +119,9 @@ function ComposeDialog({
   athletes,
   templates,
   onSent,
+  initialAthleteId,
+  initialMessageType,
+  contextBanner,
 }: {
   open: boolean;
   onClose: () => void;
@@ -126,15 +130,25 @@ function ComposeDialog({
   athletes: any[];
   templates: any[];
   onSent: () => void;
+  initialAthleteId?: string;
+  initialMessageType?: string;
+  contextBanner?: string;
 }) {
   const { toast } = useToast();
-  const [recipientId, setRecipientId] = useState("");
+  const [recipientId, setRecipientId] = useState(initialAthleteId ?? "");
   const [channel, setChannel] = useState("in_app");
-  const [messageType, setMessageType] = useState("manual");
+  const [messageType, setMessageType] = useState(initialMessageType ?? "manual");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      if (initialAthleteId) setRecipientId(initialAthleteId);
+      if (initialMessageType) setMessageType(initialMessageType);
+    }
+  }, [open, initialAthleteId, initialMessageType]);
 
   const sendMutation = useMutation({
     mutationFn: () =>
@@ -195,6 +209,13 @@ function ComposeDialog({
             Compose Message
           </DialogTitle>
         </DialogHeader>
+
+        {contextBanner && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs mx-1">
+            <ArrowRight className="h-3 w-3 text-blue-400 flex-shrink-0" />
+            <span className="text-blue-300 capitalize">{contextBanner}</span>
+          </div>
+        )}
 
         <div className="space-y-3 py-2">
           {/* Recipient */}
@@ -548,6 +569,17 @@ export default function CoachCommunicationsCenterPage() {
   const [activeTab, setActiveTab] = useState("inbox");
   const [filterType, setFilterType] = useState("all");
 
+  const search = useSearch();
+  const searchParams = new URLSearchParams(search);
+  const urlAthleteId = searchParams.get("athleteId") ?? "";
+  const urlTeamId = searchParams.get("teamId") ?? "";
+  const urlMessageType = searchParams.get("messageType") ?? "";
+  const urlSource = searchParams.get("source") ?? "";
+
+  useEffect(() => {
+    if (urlAthleteId) setShowCompose(true);
+  }, [urlAthleteId]);
+
   const { data: navCtx } = useQuery<{ orgId: string }>({
     queryKey: [`/api/org/by-slug/${slug}/nav-context`],
     queryFn: () => fetch(`/api/org/by-slug/${slug}/nav-context`, { credentials: "include" }).then((r) => r.json()),
@@ -875,6 +907,9 @@ export default function CoachCommunicationsCenterPage() {
         orgId={orgId ?? ""}
         athletes={athletes}
         templates={templates}
+        initialAthleteId={urlAthleteId || undefined}
+        initialMessageType={urlMessageType || undefined}
+        contextBanner={urlSource ? `Opened from ${urlSource.replace(/-/g, " ")}` : undefined}
         onSent={() => {
           refetchMsgs();
           queryClient.invalidateQueries({ queryKey: ["/api/org/communications", orgId] });
