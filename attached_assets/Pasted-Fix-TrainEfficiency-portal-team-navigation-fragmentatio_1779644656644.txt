@@ -1,0 +1,202 @@
+Fix TrainEfficiency portal/team navigation fragmentation and unify the org/team experience.
+
+Current issues:
+1. Org admins/coaches can see teams under Manage → Teams, but tapping the team card leads to an unauthorized/login-required screen.
+2. The “Portal” route feels disconnected from the main org system and behaves like a separate app.
+3. The My Teams page shows a logout button in the header, which is confusing because the user is already inside the authenticated org dashboard.
+4. Navigation hierarchy between:
+   - Org Dashboard
+   - Teams
+   - Portal
+   - PR Tracker
+   - Workout Builder
+is fragmented and inconsistent.
+
+Goal:
+Make the portal/team system feel like one unified TrainEfficiency platform with shared auth, shared navigation, and shared org context.
+
+PART 1 — Fix team access authorization
+
+Current bug:
+Admins/coaches can see teams but cannot open/manage them.
+
+Audit:
+- team detail route
+- team dashboard route
+- PR Tracker team routes
+- workout builder team routes
+
+Likely issue:
+Routes are still using legacy coach-only auth or team-token auth instead of org membership permissions.
+
+Fix:
+- org admin/owner/coach should all have access to teams they manage or belong to
+- use shared usePermissions(slug) / resolveOrgSession()
+- remove token-only auth assumptions
+- remove coach-only gatekeeping for org admins
+
+Acceptance:
+- org admin clicks a team
+- team dashboard opens successfully
+- no “coach login required” screen
+
+PART 2 — Remove incorrect logout button
+
+Current issue:
+The My Teams header shows a logout icon/button while already inside the authenticated org environment.
+
+Fix:
+- remove logout button from team dashboard headers
+OR
+- replace with:
+   - profile button
+   - org switcher
+   - settings
+   - breadcrumb back action
+
+The only persistent logout action should live in:
+- sidebar account section
+- user/profile menu
+
+PART 3 — Unify Portal architecture
+
+Current issue:
+Portal feels disconnected from the org app and behaves like a separate experience.
+
+Refactor portal routes into the shared app shell.
+
+Portal should inherit:
+- org context
+- permissions
+- sidebar/nav state
+- theme
+- auth session
+- org branding
+
+No separate auth experience should appear if already authenticated.
+
+PART 4 — Route hierarchy cleanup
+
+Define clear route architecture:
+
+/org/:slug
+  -> org public landing
+
+/portal
+  -> authenticated athlete/team portal
+
+/portal/teams
+  -> my teams
+
+/portal/teams/:teamId
+  -> team dashboard
+
+/portal/pr-tracker
+/portal/workouts
+/portal/schedule
+
+/admin/org/:slug
+  -> admin management
+
+OR equivalent clean hierarchy already used.
+
+Goal:
+The app should feel like:
+ONE platform
+not
+multiple stitched-together apps.
+
+PART 5 — Shared app shell
+
+All authenticated portal/team pages should share:
+- same top navigation
+- same background
+- same motion system
+- same auth/session source
+- same org branding
+- same sidebar logic
+
+Avoid:
+- standalone login-required screens
+- isolated mini-layouts
+- disconnected navigation
+
+PART 6 — Team card interaction improvements
+
+Improve team cards:
+- entire card clickable
+- subtle hover/tap animation
+- loading state during navigation
+- smoother transitions
+- no flash/white screens
+
+Show:
+- athlete count
+- season/date
+- join code
+- optional recent activity/status
+
+PART 7 — Portal landing page integration
+
+Current portal home:
+“Your Training Hub”
+
+Improve connection to org:
+- show org branding
+- show active team(s)
+- show coach/staff relationship
+- show quick actions:
+   - Open PR Tracker
+   - View Workouts
+   - View Schedule
+   - Messages
+   - Team Activity
+
+If user is already authenticated:
+DO NOT show login-focused language.
+
+Replace:
+“Log in / Sign Up”
+
+with:
+“Open Training Hub”
+or
+“Continue Training”
+
+PART 8 — Auth consistency sweep
+
+Audit all portal/team routes for:
+- !coachId
+- !orgToken
+- teamToken
+- isolated auth checks
+- separate portal session systems
+
+Everything should use:
+- shared auth session
+- shared org membership
+- shared permissions model
+
+PART 9 — Acceptance tests
+
+As org admin:
+- Open Teams
+- Tap team card
+- Team dashboard opens correctly
+
+As coach:
+- Same behavior
+
+As athlete:
+- Can access only assigned teams/tools
+
+Authenticated users:
+- Never see unnecessary login-required screens
+- Never see disconnected portal auth flows
+- Never see duplicate logout controls
+
+Navigation should feel:
+- unified
+- smooth
+- premium
+- system-wide
