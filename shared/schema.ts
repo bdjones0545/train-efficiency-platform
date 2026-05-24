@@ -3226,3 +3226,92 @@ export const workflowOutcomes = pgTable("workflow_outcomes", {
 export const insertWorkflowOutcomesSchema = createInsertSchema(workflowOutcomes).omit({ id: true, createdAt: true });
 export type WorkflowOutcome = typeof workflowOutcomes.$inferSelect;
 export type InsertWorkflowOutcome = z.infer<typeof insertWorkflowOutcomesSchema>;
+
+// ─── Agent Capability Policies ────────────────────────────────────────────────
+// Per-org, per-agent capability configuration. Every agent action passes through
+// these policies before execution.
+// agentType: executive_agent | growth_agent | retention_agent | scheduling_agent |
+//            finance_agent | communication_agent | research_agent | workflow_agent | system_agent
+// maxAutonomyLevel: supervised | collaborative | autonomous
+// allowedRiskLevels: low | medium | high | critical
+
+export const agentCapabilityPolicies = pgTable("agent_capability_policies", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+
+  // Which agent this policy applies to
+  agentType: text("agent_type").notNull(),
+  capabilityName: text("capability_name").notNull(),
+  capabilityCategory: text("capability_category").notNull(),
+
+  // Enablement
+  enabled: boolean("enabled").default(true),
+  requiresApproval: boolean("requires_approval").default(true),
+
+  // Autonomy
+  maxAutonomyLevel: text("max_autonomy_level").notNull().default("supervised"),
+  minimumConfidenceScore: doublePrecision("minimum_confidence_score").default(0.75),
+  allowedRiskLevels: text("allowed_risk_levels").array().default(["low"]),
+
+  // Review & escalation
+  requiresHumanReview: boolean("requires_human_review").default(true),
+  escalationRequired: boolean("escalation_required").default(false),
+
+  // Execution quotas (JSON: maxEmailsPerHour, maxWorkflowExecutionsPerDay, etc.)
+  executionLimits: jsonb("execution_limits"),
+
+  // Tool access control
+  allowedTools: jsonb("allowed_tools"),   // string[] | null = all allowed
+  restrictedTools: jsonb("restricted_tools"), // string[] | null = none restricted
+
+  notes: text("notes"),
+  createdBy: text("created_by").default("system"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAgentCapabilityPoliciesSchema = createInsertSchema(agentCapabilityPolicies).omit({ id: true, createdAt: true, updatedAt: true });
+export type AgentCapabilityPolicy = typeof agentCapabilityPolicies.$inferSelect;
+export type InsertAgentCapabilityPolicy = z.infer<typeof insertAgentCapabilityPoliciesSchema>;
+
+// ─── Org AI Governance Settings ───────────────────────────────────────────────
+// Central organizational AI governance profile. One row per org.
+// defaultAutonomyMode: supervised | collaborative | autonomous
+// maximumAllowedRiskLevel: low | medium | high | critical
+// aiActivityVisibilityMode: full | summarized | minimal
+
+export const orgAiGovernanceSettings = pgTable("org_ai_governance_settings", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull().unique(),
+
+  // Global autonomy mode
+  defaultAutonomyMode: text("default_autonomy_mode").notNull().default("supervised"),
+  maximumAllowedRiskLevel: text("maximum_allowed_risk_level").notNull().default("medium"),
+  defaultConfidenceThreshold: doublePrecision("default_confidence_threshold").default(0.75),
+
+  // Review controls
+  operatorReviewRequired: boolean("operator_review_required").default(true),
+
+  // Feature flags
+  allowAutonomousCommunication: boolean("allow_autonomous_communication").default(false),
+  allowAutonomousScheduling: boolean("allow_autonomous_scheduling").default(false),
+  allowAutonomousFinancialActions: boolean("allow_autonomous_financial_actions").default(false),
+  allowResearchAgents: boolean("allow_research_agents").default(true),
+  allowExternalWebAccess: boolean("allow_external_web_access").default(false),
+  allowCrossWorkflowMemory: boolean("allow_cross_workflow_memory").default(true),
+
+  // Observability
+  aiActivityVisibilityMode: text("ai_activity_visibility_mode").default("full"),
+
+  // Safety
+  strictModeEnabled: boolean("strict_mode_enabled").default(false),
+  emergencyPauseEnabled: boolean("emergency_pause_enabled").default(false),
+  emergencyPauseReason: text("emergency_pause_reason"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrgAiGovernanceSettingsSchema = createInsertSchema(orgAiGovernanceSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrgAiGovernanceSettings = typeof orgAiGovernanceSettings.$inferSelect;
+export type InsertOrgAiGovernanceSettings = z.infer<typeof insertOrgAiGovernanceSettingsSchema>;

@@ -15444,5 +15444,192 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // GOVERNANCE ROUTES — Phase 3
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /api/governance/settings — get org governance settings (auto-creates defaults)
+  app.get("/api/governance/settings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      let settings = await storage.getGovernanceSettings(orgId);
+      if (!settings) {
+        // Auto-provision safe defaults on first access
+        settings = await storage.upsertGovernanceSettings(orgId, {
+          defaultAutonomyMode: "supervised",
+          maximumAllowedRiskLevel: "medium",
+          defaultConfidenceThreshold: 0.75,
+          operatorReviewRequired: true,
+          allowAutonomousCommunication: false,
+          allowAutonomousScheduling: false,
+          allowAutonomousFinancialActions: false,
+          allowResearchAgents: true,
+          allowExternalWebAccess: false,
+          allowCrossWorkflowMemory: true,
+          aiActivityVisibilityMode: "full",
+          strictModeEnabled: false,
+          emergencyPauseEnabled: false,
+        });
+        await storage.seedDefaultPolicies(orgId);
+      }
+      res.json(settings);
+    } catch (e: any) {
+      console.error("[governance/settings] GET error:", e);
+      res.status(500).json({ message: "Failed to fetch governance settings" });
+    }
+  });
+
+  // PATCH /api/governance/settings — update org governance settings
+  app.patch("/api/governance/settings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const updates = req.body;
+      const settings = await storage.upsertGovernanceSettings(orgId, updates);
+      const { logUnifiedAction } = await import("./unified-action-logger");
+      await logUnifiedAction({
+        orgId,
+        actorType: "admin",
+        actorName: req.user.name ?? req.user.email ?? "admin",
+        actionType: "autonomy_mode_changed",
+        status: "completed",
+        riskLevel: "medium",
+        reasoningSummary: `Governance settings updated by operator: ${JSON.stringify(Object.keys(updates))}`,
+        inputSnapshot: updates,
+      });
+      res.json(settings);
+    } catch (e: any) {
+      console.error("[governance/settings] PATCH error:", e);
+      res.status(500).json({ message: "Failed to update governance settings" });
+    }
+  });
+
+  // POST /api/governance/autonomy-mode — change the global autonomy mode
+  app.post("/api/governance/autonomy-mode", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const { mode } = req.body;
+      if (!["supervised", "collaborative", "autonomous"].includes(mode)) {
+        return res.status(400).json({ message: "Invalid autonomy mode" });
+      }
+      const { changeAutonomyMode } = await import("./capability-enforcement-engine");
+      await changeAutonomyMode(orgId, mode, req.user.name ?? req.user.email ?? "admin");
+      const settings = await storage.getGovernanceSettings(orgId);
+      res.json(settings);
+    } catch (e: any) {
+      console.error("[governance/autonomy-mode] error:", e);
+      res.status(500).json({ message: "Failed to change autonomy mode" });
+    }
+  });
+
+  // POST /api/governance/emergency-pause — activate or deactivate emergency pause
+  app.post("/api/governance/emergency-pause", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const { enable, reason } = req.body;
+      const operatorName = req.user.name ?? req.user.email ?? "admin";
+      const { triggerEmergencyPause, disableEmergencyPause } = await import("./capability-enforcement-engine");
+      if (enable) {
+        await triggerEmergencyPause(orgId, reason ?? "No reason provided", operatorName);
+      } else {
+        await disableEmergencyPause(orgId, operatorName);
+      }
+      const settings = await storage.getGovernanceSettings(orgId);
+      res.json(settings);
+    } catch (e: any) {
+      console.error("[governance/emergency-pause] error:", e);
+      res.status(500).json({ message: "Failed to toggle emergency pause" });
+    }
+  });
+
+  // GET /api/governance/policies — list all capability policies for org
+  app.get("/api/governance/policies", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      // Ensure defaults exist
+      await storage.seedDefaultPolicies(orgId);
+      const policies = await storage.getCapabilityPolicies(orgId);
+      res.json(policies);
+    } catch (e: any) {
+      console.error("[governance/policies] GET error:", e);
+      res.status(500).json({ message: "Failed to fetch capability policies" });
+    }
+  });
+
+  // PATCH /api/governance/policies/:agentType — update a specific agent's policy
+  app.patch("/api/governance/policies/:agentType", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const { agentType } = req.params;
+      const updates = req.body;
+      const policy = await storage.upsertCapabilityPolicy(orgId, agentType, updates);
+      const { logUnifiedAction } = await import("./unified-action-logger");
+      await logUnifiedAction({
+        orgId,
+        actorType: "admin",
+        actorName: req.user.name ?? req.user.email ?? "admin",
+        actionType: "capability_validated",
+        status: "completed",
+        riskLevel: "low",
+        reasoningSummary: `Capability policy updated for ${agentType}: ${JSON.stringify(Object.keys(updates))}`,
+        inputSnapshot: { agentType, ...updates },
+      });
+      res.json(policy);
+    } catch (e: any) {
+      console.error("[governance/policies] PATCH error:", e);
+      res.status(500).json({ message: "Failed to update capability policy" });
+    }
+  });
+
+  // GET /api/governance/agents — list all agent identities with status
+  app.get("/api/governance/agents", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { listAgentIdentities } = await import("./agent-identities");
+      const identities = listAgentIdentities();
+      const orgId = req.user.orgId;
+      const policies = await storage.getCapabilityPolicies(orgId);
+
+      // Merge policy-enabled state into identity status
+      const agentsWithStatus = identities.map(identity => {
+        const policy = policies.find(p => p.agentType === identity.agentType);
+        return {
+          ...identity,
+          status: policy?.enabled === false ? "disabled" : identity.status,
+          policyEnabled: policy?.enabled ?? true,
+          maxAutonomyLevel: policy?.maxAutonomyLevel ?? identity.defaultAutonomyLevel,
+        };
+      });
+      res.json(agentsWithStatus);
+    } catch (e: any) {
+      console.error("[governance/agents] error:", e);
+      res.status(500).json({ message: "Failed to fetch agent identities" });
+    }
+  });
+
+  // GET /api/governance/analytics — governance observability metrics
+  app.get("/api/governance/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const { getGovernanceAnalytics } = await import("./capability-enforcement-engine");
+      const analytics = await getGovernanceAnalytics(orgId);
+      res.json(analytics);
+    } catch (e: any) {
+      console.error("[governance/analytics] error:", e);
+      res.status(500).json({ message: "Failed to fetch governance analytics" });
+    }
+  });
+
+  // POST /api/governance/validate — validate a hypothetical agent action (for explainability)
+  app.post("/api/governance/validate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId;
+      const { validateAgentCapability } = await import("./capability-enforcement-engine");
+      const decision = await validateAgentCapability({ orgId, ...req.body });
+      res.json(decision);
+    } catch (e: any) {
+      console.error("[governance/validate] error:", e);
+      res.status(500).json({ message: "Failed to validate capability" });
+    }
+  });
+
   return httpServer;
 }

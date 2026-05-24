@@ -47,6 +47,29 @@ export async function startWorkflow(input: StartWorkflowInput): Promise<{ runId:
   const def = getWorkflowDefinition(input.workflowType);
   if (!def) return { runId: "", started: false, error: `Unknown workflow type: ${input.workflowType}` };
 
+  // ── Phase 3: Governance early-gate (emergency pause + capability check) ────
+  // Check before any DB writes or tool calls. Non-blocking on config errors.
+  try {
+    const { validateAgentCapability } = await import("../capability-enforcement-engine");
+    const { resolveAgentIdentity } = await import("../agent-identities");
+    const agentName = input.triggeredBy ?? "workflow_agent";
+    const identity = resolveAgentIdentity(agentName);
+    const enfDecision = await validateAgentCapability({
+      orgId: input.orgId,
+      agentType: identity?.agentType ?? "workflow_agent",
+      agentName,
+      workflowType: input.workflowType,
+      riskLevel: "low",
+      confidenceScore: input.context?.confidenceScore ?? undefined,
+    });
+    if (enfDecision.outcome === "blocked") {
+      return { runId: "", started: false, error: enfDecision.reason };
+    }
+  } catch (govErr) {
+    // Governance check must never crash workflow startup — log and continue
+    console.warn("[executor] governance pre-check non-blocking error:", govErr);
+  }
+
   // ── Duplicate prevention ───────────────────────────────────────────────────
   if (input.entityId) {
     const { checkWorkflowDuplicate } = await import("./mapper");

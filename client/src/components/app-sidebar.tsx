@@ -49,6 +49,7 @@ import {
   Brain,
   Plug,
   GitBranch,
+  Shield,
   ShieldAlert,
   Home,
   TrendingUp,
@@ -786,6 +787,13 @@ export function AppSidebar() {
                 url: "/admin/workflows",
                 icon: GitBranch,
                 testId: "nav-workflows",
+              },
+              {
+                title: "AI Governance",
+                simplifiedTitle: "Governance",
+                url: "/admin/ai-governance",
+                icon: Shield,
+                testId: "nav-ai-governance",
               },
               {
                 title: "Trigger Audit",

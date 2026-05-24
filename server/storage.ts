@@ -122,6 +122,12 @@ import {
   workflowOutcomes,
   type WorkflowOutcome,
   type InsertWorkflowOutcome,
+  agentCapabilityPolicies,
+  type AgentCapabilityPolicy,
+  type InsertAgentCapabilityPolicy,
+  orgAiGovernanceSettings,
+  type OrgAiGovernanceSettings,
+  type InsertOrgAiGovernanceSettings,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -3681,6 +3687,88 @@ export class DatabaseStorage implements IStorage {
     const id = crypto.randomUUID();
     const [row] = await db.insert(workflowOutcomes).values({ ...entry, id }).returning();
     return row;
+  }
+
+  // ─── Governance Settings ──────────────────────────────────────────────────
+
+  async getGovernanceSettings(orgId: string): Promise<OrgAiGovernanceSettings | null> {
+    const [row] = await db.select().from(orgAiGovernanceSettings).where(eq(orgAiGovernanceSettings.orgId, orgId));
+    return row ?? null;
+  }
+
+  async upsertGovernanceSettings(orgId: string, updates: Partial<InsertOrgAiGovernanceSettings>): Promise<OrgAiGovernanceSettings> {
+    const existing = await this.getGovernanceSettings(orgId);
+    if (existing) {
+      const [row] = await db.update(orgAiGovernanceSettings)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(orgAiGovernanceSettings.orgId, orgId))
+        .returning();
+      return row;
+    } else {
+      const [row] = await db.insert(orgAiGovernanceSettings)
+        .values({ id: crypto.randomUUID(), orgId, ...updates })
+        .returning();
+      return row;
+    }
+  }
+
+  // ─── Agent Capability Policies ────────────────────────────────────────────
+
+  async getCapabilityPolicies(orgId: string): Promise<AgentCapabilityPolicy[]> {
+    return db.select().from(agentCapabilityPolicies)
+      .where(eq(agentCapabilityPolicies.orgId, orgId))
+      .orderBy(agentCapabilityPolicies.agentType);
+  }
+
+  async getCapabilityPolicy(orgId: string, agentType: string): Promise<AgentCapabilityPolicy | null> {
+    const [row] = await db.select().from(agentCapabilityPolicies)
+      .where(and(eq(agentCapabilityPolicies.orgId, orgId), eq(agentCapabilityPolicies.agentType, agentType)));
+    return row ?? null;
+  }
+
+  async upsertCapabilityPolicy(orgId: string, agentType: string, updates: Partial<InsertAgentCapabilityPolicy>): Promise<AgentCapabilityPolicy> {
+    const existing = await this.getCapabilityPolicy(orgId, agentType);
+    if (existing) {
+      const [row] = await db.update(agentCapabilityPolicies)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(and(eq(agentCapabilityPolicies.orgId, orgId), eq(agentCapabilityPolicies.agentType, agentType)))
+        .returning();
+      return row;
+    } else {
+      const [row] = await db.insert(agentCapabilityPolicies).values({
+        id: crypto.randomUUID(),
+        orgId,
+        agentType,
+        capabilityName: updates.capabilityName ?? agentType,
+        capabilityCategory: updates.capabilityCategory ?? "internal",
+        ...updates,
+      }).returning();
+      return row;
+    }
+  }
+
+  async seedDefaultPolicies(orgId: string): Promise<void> {
+    const { AGENT_IDENTITIES } = await import("./agent-identities");
+    for (const identity of Object.values(AGENT_IDENTITIES)) {
+      const existing = await this.getCapabilityPolicy(orgId, identity.agentType);
+      if (!existing) {
+        await db.insert(agentCapabilityPolicies).values({
+          id: crypto.randomUUID(),
+          orgId,
+          agentType: identity.agentType,
+          capabilityName: identity.role,
+          capabilityCategory: identity.toolCategories[0] ?? "internal",
+          enabled: true,
+          requiresApproval: identity.defaultAutonomyLevel === "supervised",
+          maxAutonomyLevel: identity.defaultAutonomyLevel,
+          minimumConfidenceScore: 0.75,
+          allowedRiskLevels: identity.defaultRiskTolerance === "low" ? ["low"] : identity.defaultRiskTolerance === "medium" ? ["low", "medium"] : ["low", "medium", "high"],
+          requiresHumanReview: identity.defaultAutonomyLevel === "supervised",
+          escalationRequired: false,
+          createdBy: "system",
+        });
+      }
+    }
   }
 }
 

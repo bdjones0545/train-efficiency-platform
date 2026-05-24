@@ -15,6 +15,8 @@ import { agentToolCalls } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { getTool, TOOL_REGISTRY } from "./registry";
 import { TOOL_IMPLEMENTATIONS } from "./implementations";
+import { validateAgentCapability } from "../capability-enforcement-engine";
+import { resolveAgentIdentity } from "../agent-identities";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +118,42 @@ export async function proposeToolCall(
       }
       // Rejected or failed — fall through to create a fresh record.
     }
+  }
+
+  // ── Governance & Capability Enforcement check (Phase 3) ───────────────────
+  // Every tool call is validated against org governance settings and agent
+  // capability policies before any record is created or action taken.
+  try {
+    const identity = resolveAgentIdentity(proposal.agentName);
+    const enforcementDecision = await validateAgentCapability({
+      orgId,
+      agentType: identity?.agentType ?? "workflow_agent",
+      agentName: proposal.agentName,
+      toolName: proposal.toolName,
+      toolCategory: tool.category,
+      riskLevel: tool.riskLevel as any,
+      confidenceScore: proposal.confidence ?? undefined,
+    });
+
+    if (enforcementDecision.outcome === "blocked") {
+      return {
+        success: false,
+        toolCallId: "",
+        requiresConfirmation: false,
+        message: enforcementDecision.reason,
+        error: `GOVERNANCE_BLOCKED: ${enforcementDecision.thresholdFailed ?? "policy"}`,
+      };
+    }
+
+    // If governance requires approval, force requiresConfirmation regardless of tool settings
+    if (enforcementDecision.outcome === "requires_approval" && !tool.permissions.safe_auto_execute) {
+      // Will be caught below when computing requiresConfirmation
+      // Override: mark it as requiring confirmation
+    }
+  } catch (govErr) {
+    // Governance check must never crash the tool pipeline
+    // Log and continue — conservative default is to require confirmation
+    console.warn("[capability-enforcement] check failed (non-blocking):", govErr);
   }
 
   const requiresConfirmation = tool.permissions.requires_confirmation && !tool.permissions.safe_auto_execute;

@@ -1,0 +1,449 @@
+TrainEfficiency AI Operations — Phase 3 Prompt
+
+Agent Capability Policies + Permission Architecture
+
+Build Phase 3 of the AI Operations architecture.
+
+Goal:
+Transform AI Operations into a governed organizational AI system where every agent, workflow, and tool execution operates under explicit capability policies, permission boundaries, risk thresholds, and organizational control.
+
+This phase establishes:
+
+* AI employee permissions
+* org-level governance
+* capability enforcement
+* confidence-based autonomy
+* execution authorization
+* workflow safety boundaries
+* organizational trust controls
+
+IMPORTANT:
+This phase is NOT about making agents more autonomous.
+
+This phase is about:
+
+* controllability
+* safety
+* explainability
+* organizational governance
+* permission architecture
+* bounded execution
+
+The system must remain:
+
+* deterministic
+* auditable
+* org-scoped
+* operator-first
+* human-governed
+
+⸻
+
+PART 1 — agent_capability_policies table
+
+Create:
+agent_capability_policies
+
+Fields:
+
+* id
+* orgId
+* agentType
+    * executive_agent
+    * growth_agent
+    * retention_agent
+    * scheduling_agent
+    * finance_agent
+    * communication_agent
+    * research_agent
+    * workflow_agent
+    * system_agent
+* capabilityName
+* capabilityCategory
+    * communication
+    * scheduling
+    * finance
+    * workflow
+    * analytics
+    * research
+    * admin
+* enabled boolean
+* requiresApproval boolean
+* maxAutonomyLevel
+    * supervised
+    * collaborative
+    * autonomous
+* minimumConfidenceScore
+* allowedRiskLevels
+    * low
+    * medium
+    * high
+    * critical
+* requiresHumanReview boolean
+* escalationRequired boolean
+* executionLimits jsonb
+    Example:
+    {
+    “maxEmailsPerHour”: 50,
+    “maxWorkflowExecutionsPerDay”: 200,
+    “maxResearchRequestsPerHour”: 20
+    }
+* allowedTools jsonb
+* restrictedTools jsonb
+* notes
+* createdBy
+* createdAt
+* updatedAt
+
+All policies must remain org-scoped.
+
+⸻
+
+PART 2 — org_ai_governance_settings table
+
+Create:
+org_ai_governance_settings
+
+Purpose:
+Central organizational AI governance profile.
+
+Fields:
+
+* id
+* orgId
+* defaultAutonomyMode
+    * supervised
+    * collaborative
+    * autonomous
+* maximumAllowedRiskLevel
+* defaultConfidenceThreshold
+* operatorReviewRequired boolean
+* allowAutonomousCommunication boolean
+* allowAutonomousScheduling boolean
+* allowAutonomousFinancialActions boolean
+* allowResearchAgents boolean
+* allowExternalWebAccess boolean
+* allowCrossWorkflowMemory boolean
+* aiActivityVisibilityMode
+    * full
+    * summarized
+    * minimal
+* strictModeEnabled boolean
+* emergencyPauseEnabled boolean
+* emergencyPauseReason
+* createdAt
+* updatedAt
+
+⸻
+
+PART 3 — Capability Enforcement Engine
+
+Create:
+server/capability-enforcement-engine.ts
+
+Responsibilities:
+
+* validate every agent action before execution
+* enforce org governance rules
+* enforce confidence thresholds
+* enforce risk limits
+* enforce tool restrictions
+* route actions into approval flows
+* trigger escalations
+* block unauthorized actions
+
+Functions:
+
+* validateAgentCapability()
+* evaluateAutonomyEligibility()
+* enforceRiskPolicy()
+* checkToolPermissions()
+* checkExecutionLimits()
+* determineApprovalRequirement()
+* triggerGovernanceEscalation()
+
+Every workflow/tool execution must pass through this engine before execution.
+
+⸻
+
+PART 4 — Autonomy Modes
+
+Implement 3 explicit organizational AI modes.
+
+1. SUPERVISED
+
+* all actions require approval
+* no autonomous sends
+* no autonomous workflow advancement
+* safest mode
+
+2. COLLABORATIVE
+
+* low-risk/high-confidence actions auto-execute
+* medium-risk actions require approval
+* critical actions always blocked/escalated
+
+3. AUTONOMOUS
+
+* low + medium risk can auto-execute
+* high-risk still requires approval
+* full audit logging mandatory
+
+Organizations configure:
+
+* global default mode
+* per-agent override
+* per-workflow override
+
+⸻
+
+PART 5 — Agent Identity System
+
+Create standardized AI employee identities.
+
+Each agent should have:
+
+* name
+* role
+* department
+* capability manifest
+* permission profile
+* execution history
+* success metrics
+* confidence trends
+* current status
+    * active
+    * paused
+    * restricted
+    * disabled
+
+Examples:
+
+* Atlas — Executive Agent
+* Pulse — Retention Agent
+* Relay — Communication Agent
+* Vector — Research Agent
+
+These identities should appear consistently across:
+
+* unified logs
+* workflow history
+* approvals
+* attention items
+* dashboards
+
+⸻
+
+PART 6 — Permission-aware workflow execution
+
+Upgrade workflow execution engine.
+
+Before ANY action:
+
+* evaluate governance settings
+* evaluate workflow autonomy level
+* evaluate agent capability policy
+* evaluate confidence threshold
+* evaluate risk classification
+* evaluate tool access
+
+Possible outcomes:
+
+* auto_execute
+* requires_approval
+* blocked
+* escalated
+* reroute_to_operator
+
+All decisions must be explainable.
+
+⸻
+
+PART 7 — Tool permission system
+
+Upgrade Agent Tools into a true capability registry.
+
+Add:
+
+* tool categories
+* permission scopes
+* org-level enable/disable
+* execution quotas
+* rate limits
+* confidence requirements
+* required autonomy mode
+* fallback tools
+* approval requirements
+
+Example:
+Meta Ads Tool:
+
+* disabled by default
+* requires collaborative/autonomous mode
+* requires admin approval
+* max daily spend change limit
+
+⸻
+
+PART 8 — Governance UI
+
+Create new AI Governance section under AI Operations.
+
+Pages:
+
+1. AI Governance Dashboard
+
+* org autonomy mode
+* emergency pause status
+* policy violations
+* blocked actions
+* approval queue stats
+* agent status overview
+
+2. Agent Permissions
+
+* configure capabilities per agent
+* tool access controls
+* risk permissions
+* autonomy overrides
+
+3. Governance Policies
+
+* confidence thresholds
+* risk boundaries
+* execution quotas
+* approval requirements
+
+4. Emergency Controls
+
+* pause all AI operations
+* pause specific agents
+* restrict tool categories
+* revert to supervised mode
+
+⸻
+
+PART 9 — Emergency safety systems
+
+Implement:
+
+* emergency pause switch
+* per-agent kill switches
+* workflow freeze mode
+* tool lockdown mode
+* communication freeze mode
+
+When enabled:
+
+* workflows pause safely
+* queued actions stop
+* agents enter restricted state
+* operators receive alerts
+
+Every emergency action must write to:
+unified_agent_action_log
+
+⸻
+
+PART 10 — Governance observability
+
+Add governance analytics.
+
+Track:
+
+* blocked action count
+* approval rates
+* autonomous execution rate
+* escalation frequency
+* policy violation frequency
+* average confidence by agent
+* most commonly overridden outputs
+* restricted tool attempts
+* emergency interventions
+
+Expose in:
+AI Governance Dashboard.
+
+⸻
+
+PART 11 — Explainability Layer
+
+Every blocked/escalated/approved action must show:
+
+* which policy triggered
+* which threshold failed
+* which capability was denied
+* which governance rule applied
+* what alternative actions are available
+
+Operators should NEVER see:
+“Action blocked.”
+Instead show:
+“Blocked because Retention Agent confidence score (0.61) is below org threshold (0.75) for autonomous communication.”
+
+⸻
+
+PART 12 — Unified logging integration
+
+Every governance decision writes to:
+unified_agent_action_log
+
+New action types:
+
+* capability_validated
+* capability_denied
+* governance_blocked
+* governance_escalated
+* approval_required
+* emergency_pause_enabled
+* emergency_pause_disabled
+* autonomy_mode_changed
+* tool_permission_denied
+
+⸻
+
+PART 13 — Multi-org isolation requirements
+
+Critical:
+
+* no governance leakage across orgs
+* each org controls its own AI workforce
+* policies are isolated per org
+* agent permissions are org-specific
+* no shared execution state
+
+⸻
+
+PART 14 — Architectural Goal
+
+The goal of Phase 3 is:
+turning TrainEfficiency into a governed organizational AI operating system.
+
+This phase should make organizations feel:
+
+* safe
+* in control
+* able to scale AI responsibly
+* able to trust automation gradually
+
+The architecture should resemble:
+“managing a workforce”
+rather than:
+“running random automations.”
+
+Focus heavily on:
+
+* governance
+* explainability
+* observability
+* operator trust
+* bounded autonomy
+* organizational control
+* safety architecture
+
+Do NOT introduce:
+
+* self-modifying AI
+* hidden autonomous learning
+* opaque decision systems
+* uncontrolled agent execution
