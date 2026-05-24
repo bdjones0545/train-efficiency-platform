@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -473,6 +474,10 @@ export default function AdminWorkflowOrchestratorPage() {
         <RunDetail run={selected} onClose={() => setSelected(null)} onUpdate={() => { invalidate(); setSelected(null); }} />
       )}
       <StartDialog templates={templates} open={starting} onClose={() => setStarting(false)} onStarted={invalidate} />
+
+      <div className="max-w-6xl mx-auto px-6 pb-6">
+        <RecentAgentActivity limit={10} title="Recent Agent Activity" compact />
+      </div>
     </div>
   );
 }

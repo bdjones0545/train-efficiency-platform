@@ -23,6 +23,7 @@ import {
   Info, Timer, Lock, CircleDot, Play, Link2, Link2Off, CreditCard, Calendar, Inbox, ArrowRight,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { RecentAgentActivity } from "@/components/recent-agent-activity";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -801,6 +802,8 @@ export default function AdminAgentOpsPage() {
         resolving={resolveMutation.isPending}
         retrying={retryMutation.isPending}
       />
+
+      <RecentActivityPanel />
     </div>
   );
 }
@@ -1035,6 +1038,16 @@ function AuditTrail({ onSelect }: { onSelect: (c: FailedToolCall) => void }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Recent Agent Activity Panel ─────────────────────────────────────────────
+
+function RecentActivityPanel() {
+  return (
+    <div className="mt-8">
+      <RecentAgentActivity limit={15} title="Recent Agent Activity (Unified Log)" />
     </div>
   );
 }

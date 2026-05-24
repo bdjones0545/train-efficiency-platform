@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { formatDistanceToNow } from "date-fns";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -577,6 +578,10 @@ export default function AttentionInboxPage() {
           </p>
         </div>
       )}
+
+      <div className="mt-6">
+        <RecentAgentActivity limit={10} title="Recent Agent Activity" compact />
+      </div>
     </div>
   );
 }

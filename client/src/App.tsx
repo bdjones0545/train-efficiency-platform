@@ -57,6 +57,7 @@ import AdminTeamTrainingLeadsPage from "@/pages/admin-team-training-leads";
 import AdminTeamTrainingDealsPage from "@/pages/admin-team-training-deals";
 import BusinessCommandCenterPage from "@/pages/business-command-center";
 import BusinessBrainPage from "@/pages/business-brain";
+import AdminAiOperationsPage from "@/pages/admin-ai-operations";
 import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import AdminAgentToolsPage from "@/pages/admin-agent-tools";
 import AdminWorkflowsPage from "@/pages/admin-workflows";
@@ -367,6 +368,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/team-training-leads" component={AdminTeamTrainingLeadsPage} />
                   <Route path="/admin/team-training-deals" component={AdminTeamTrainingDealsPage} />
                   <Route path="/admin/business-brain" component={BusinessBrainPage} />
+                  <Route path="/admin/ai-operations" component={AdminAiOperationsPage} />
                   <Route path="/command-center" component={BusinessCommandCenterPage} />
                   <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/agent-tools" component={AdminAgentToolsPage} />

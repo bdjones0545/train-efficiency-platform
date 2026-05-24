@@ -3086,3 +3086,49 @@ export const organizationIntelligenceState = pgTable("organization_intelligence_
 export const insertOrganizationIntelligenceStateSchema = createInsertSchema(organizationIntelligenceState).omit({ id: true, updatedAt: true });
 export type OrganizationIntelligenceState = typeof organizationIntelligenceState.$inferSelect;
 export type InsertOrganizationIntelligenceState = z.infer<typeof insertOrganizationIntelligenceStateSchema>;
+
+// ─── Unified Agent Action Log ─────────────────────────────────────────────────
+// Central audit table for all AI/automation activity across the platform.
+// actorType:  agent | system | admin | coach
+// status:     started | completed | failed | skipped | requires_approval
+// riskLevel:  low | medium | high | critical
+
+export const unifiedAgentActionLog = pgTable("unified_agent_action_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+
+  // Who/what performed the action
+  actorType: text("actor_type").notNull().default("system"),
+  actorName: text("actor_name"),
+
+  // What was done
+  actionType: text("action_type").notNull(),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+
+  // Traceability
+  workflowRunId: text("workflow_run_id"),
+  toolName: text("tool_name"),
+
+  // Outcome
+  status: text("status").notNull().default("completed"),
+  confidenceScore: doublePrecision("confidence_score"),
+  riskLevel: text("risk_level").default("low"),
+
+  // Payload snapshots
+  inputSnapshot: jsonb("input_snapshot"),
+  outputSnapshot: jsonb("output_snapshot"),
+
+  // Human-readable context
+  reasoningSummary: text("reasoning_summary"),
+  errorMessage: text("error_message"),
+
+  // Rollback capability
+  rollbackAvailable: boolean("rollback_available").default(false),
+
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUnifiedAgentActionLogSchema = createInsertSchema(unifiedAgentActionLog).omit({ id: true, createdAt: true });
+export type UnifiedAgentActionLog = typeof unifiedAgentActionLog.$inferSelect;
+export type InsertUnifiedAgentActionLog = z.infer<typeof insertUnifiedAgentActionLogSchema>;

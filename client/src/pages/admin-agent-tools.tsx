@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -626,6 +627,10 @@ export default function AdminAgentToolsPage() {
           <AuditLogTab />
         </TabsContent>
       </Tabs>
+
+      <div className="mt-6">
+        <RecentAgentActivity limit={10} title="Recent Agent Activity" compact />
+      </div>
     </div>
   );
 }

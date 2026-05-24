@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -591,6 +592,8 @@ export default function EmailTriggerAuditPage() {
         <div className="flex items-center gap-1.5"><Bot className="h-3.5 w-3.5" /><span>This panel is for internal debugging only and is not visible to end users.</span></div>
         <div className="flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /><span>Refreshes every 30 seconds</span></div>
       </div>
+
+      <RecentAgentActivity limit={10} title="Recent Agent Activity" compact />
     </div>
   );
 }

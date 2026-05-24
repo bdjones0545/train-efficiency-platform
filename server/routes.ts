@@ -12651,6 +12651,28 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // POST /api/admin/workflows/:id/regenerate — cancel and re-queue with feedback
+  app.post("/api/admin/workflows/:id/regenerate", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { feedback } = req.body;
+      const { cancelWorkflow } = await import("./workflows/index");
+      await cancelWorkflow(req.params.id, orgId);
+      const { logUnifiedAction } = await import("./unified-action-logger");
+      await logUnifiedAction({
+        orgId,
+        actorType: "admin",
+        actionType: "workflow:regenerate_with_feedback",
+        workflowRunId: req.params.id,
+        status: "started",
+        riskLevel: "low",
+        reasoningSummary: feedback ? `Admin feedback: ${feedback}` : "Regeneration requested by admin",
+      });
+      res.json({ success: true, message: "Workflow cancelled; please re-trigger with updated parameters." });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ─── Workflow Settings & Mapper ──────────────────────────────────────────
 
   // GET /api/admin/workflows/settings
@@ -15102,6 +15124,100 @@ Respond with this exact JSON structure:
   // ── Meta Conversions API (server-side pixel) ──────────────────────────────────
   const { registerMetaCapiRoutes } = await import("./meta-capi");
   registerMetaCapiRoutes(app);
+
+  // ── Unified Agent Action Log ──────────────────────────────────────────────────
+
+  // POST /api/unified-action-log — write a log entry
+  app.post("/api/unified-action-log", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No org" });
+      const entry = { ...req.body, orgId };
+      const row = await storage.logUnifiedAction(entry);
+      res.json(row);
+    } catch (e: any) {
+      console.error("[unified-action-log] POST error:", e);
+      res.status(500).json({ message: "Failed to log action" });
+    }
+  });
+
+  // GET /api/unified-action-log — list entries
+  app.get("/api/unified-action-log", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No org" });
+      const { limit, status, actorType, actionType } = req.query as Record<string, string>;
+      const rows = await storage.getUnifiedActionLog(orgId, {
+        limit: limit ? parseInt(limit) : 50,
+        status,
+        actorType,
+        actionType,
+      });
+      res.json(rows);
+    } catch (e: any) {
+      console.error("[unified-action-log] GET error:", e);
+      res.status(500).json({ message: "Failed to fetch log" });
+    }
+  });
+
+  // GET /api/unified-action-log/summary — stats for dashboard
+  app.get("/api/unified-action-log/summary", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No org" });
+      const summary = await storage.getUnifiedActionLogSummary(orgId);
+      res.json(summary);
+    } catch (e: any) {
+      console.error("[unified-action-log] summary error:", e);
+      res.status(500).json({ message: "Failed to fetch summary" });
+    }
+  });
+
+  // GET /api/ai-ops/dashboard — consolidated data for the AI Ops Command Center
+  app.get("/api/ai-ops/dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No org" });
+
+      const { getAttentionItems } = await import("./attention-engine");
+
+      const [
+        attentionRaw,
+        workflowRuns,
+        recentActions,
+        actionSummary,
+      ] = await Promise.all([
+        getAttentionItems(orgId),
+        storage.getWorkflowRuns(orgId),
+        storage.getUnifiedActionLog(orgId, { limit: 10 }),
+        storage.getUnifiedActionLogSummary(orgId),
+      ]);
+
+      const attentionItems = attentionRaw.slice(0, 5);
+
+      const activeWorkflows = workflowRuns.filter(w => w.status === "running" || w.status === "pending");
+      const failedWorkflows = workflowRuns.filter(w => w.status === "failed");
+      const stuckWorkflows = workflowRuns.filter(w => {
+        if (w.status !== "running") return false;
+        const updated = w.updatedAt ? new Date(w.updatedAt) : null;
+        if (!updated) return false;
+        return Date.now() - updated.getTime() > 30 * 60 * 1000; // >30 min
+      });
+
+      res.json({
+        attentionItems,
+        activeWorkflows,
+        failedWorkflows,
+        stuckWorkflows,
+        recentActions,
+        actionSummary,
+        openAttentionCount: attentionItems.length,
+      });
+    } catch (e: any) {
+      console.error("[ai-ops/dashboard] error:", e);
+      res.status(500).json({ message: "Failed to fetch dashboard" });
+    }
+  });
 
   return httpServer;
 }

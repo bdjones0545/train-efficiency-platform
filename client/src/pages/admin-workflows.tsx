@@ -9,12 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import {
   GitBranch, Play, CheckCircle, Clock, XCircle, AlertTriangle,
   ChevronRight, RefreshCw, Zap, BarChart3, Layers, Eye,
   ArrowRight, SkipForward, Timer, MessageSquare, Send, X, Plus,
+  Edit3, RotateCcw, MessageCircle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -235,24 +238,46 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
     refetchInterval: ["running", "waiting_confirmation", "waiting_response"].includes(run.status) ? 3000 : false,
   });
 
+  const [approvalMode, setApprovalMode] = useState<"idle" | "editing" | "rejecting" | "regenerating">("idle");
+  const [editedSubject, setEditedSubject] = useState("");
+  const [editedBody, setEditedBody] = useState("");
+  const [feedbackText, setFeedbackText] = useState("");
+
   const approveMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/workflows/${run.id}/approve`).then(r => r.json()),
+    mutationFn: (opts?: { editedSubject?: string; editedBody?: string }) =>
+      apiRequest("POST", `/api/admin/workflows/${run.id}/approve`, opts ?? {}).then(r => r.json()),
     onSuccess: () => {
       toast({ title: "Step approved", description: "Workflow is resuming." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows", run.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows"] });
+      setApprovalMode("idle");
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const rejectMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/workflows/${run.id}/reject`).then(r => r.json()),
+    mutationFn: (opts?: { feedback?: string }) =>
+      apiRequest("POST", `/api/admin/workflows/${run.id}/reject`, opts ?? {}).then(r => r.json()),
     onSuccess: () => {
       toast({ title: "Step rejected", description: "Workflow cancelled." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows", run.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows"] });
+      setApprovalMode("idle");
       onClose();
     },
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: (opts: { feedback: string }) =>
+      apiRequest("POST", `/api/admin/workflows/${run.id}/regenerate`, opts).then(r => r.json()),
+    onSuccess: () => {
+      toast({ title: "Regeneration queued", description: "The step will be re-run with your feedback." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows", run.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows"] });
+      setApprovalMode("idle");
+      setFeedbackText("");
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const cancelMutation = useMutation({
@@ -315,16 +340,50 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
         )}
 
         {/* Approval gate */}
-        {liveRun.status === "waiting_confirmation" && (
-          <div className="rounded-xl border-2 border-orange-400 bg-orange-50 dark:bg-orange-950/20 p-4 space-y-3" data-testid="panel-approval-gate">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-orange-500 shrink-0" />
-              <p className="text-sm font-semibold text-orange-700 dark:text-orange-300">Human Approval Required</p>
-            </div>
-            {(() => {
-              const currentStep = steps.find(s => s.stepIndex === liveRun.currentStepIndex);
-              const output = currentStep?.output as any;
-              return (
+        {liveRun.status === "waiting_confirmation" && (() => {
+          const currentStep = steps.find(s => s.stepIndex === liveRun.currentStepIndex);
+          const output = currentStep?.output as any;
+          return (
+            <div className="rounded-xl border-2 border-orange-400 bg-orange-50 dark:bg-orange-950/20 p-4 space-y-3" data-testid="panel-approval-gate">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-orange-500 shrink-0" />
+                <p className="text-sm font-semibold text-orange-700 dark:text-orange-300">Human Approval Required</p>
+              </div>
+
+              {/* Content preview or edit mode */}
+              {approvalMode === "editing" ? (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Subject</Label>
+                  <Input
+                    value={editedSubject}
+                    onChange={e => setEditedSubject(e.target.value)}
+                    className="text-xs h-8"
+                    placeholder="Email subject…"
+                    data-testid="input-edited-subject"
+                  />
+                  <Label className="text-xs font-medium">Body</Label>
+                  <Textarea
+                    value={editedBody}
+                    onChange={e => setEditedBody(e.target.value)}
+                    className="text-xs min-h-[120px]"
+                    placeholder="Email body…"
+                    data-testid="textarea-edited-body"
+                  />
+                </div>
+              ) : (approvalMode === "rejecting" || approvalMode === "regenerating") ? (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">
+                    {approvalMode === "rejecting" ? "Rejection reason (optional)" : "Feedback for regeneration"}
+                  </Label>
+                  <Textarea
+                    value={feedbackText}
+                    onChange={e => setFeedbackText(e.target.value)}
+                    className="text-xs min-h-[80px]"
+                    placeholder={approvalMode === "rejecting" ? "Why are you rejecting this step?" : "What should be improved or changed?"}
+                    data-testid="textarea-feedback"
+                  />
+                </div>
+              ) : (
                 <>
                   {output?.prompt && <p className="text-xs text-muted-foreground">{output.prompt}</p>}
                   {output?.subject && (
@@ -334,22 +393,85 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
                     </div>
                   )}
                 </>
-              );
-            })()}
-            <div className="flex gap-2">
-              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}
-                data-testid="button-approve-step">
-                <CheckCircle className="h-3.5 w-3.5 mr-1.5" /> {approveMutation.isPending ? "Approving…" : "Approve & Continue"}
-              </Button>
-              <Button size="sm" variant="outline" className="text-red-600 border-red-300"
-                onClick={() => rejectMutation.mutate()} disabled={rejectMutation.isPending}
-                data-testid="button-reject-step">
-                <X className="h-3.5 w-3.5 mr-1.5" /> Reject
-              </Button>
+              )}
+
+              {/* Action buttons */}
+              {approvalMode === "idle" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white col-span-2"
+                    onClick={() => approveMutation.mutate({})} disabled={approveMutation.isPending}
+                    data-testid="button-approve-step">
+                    <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                    {approveMutation.isPending ? "Approving…" : "Approve & Execute"}
+                  </Button>
+                  {(output?.subject || output?.body || output?.smsBody) && (
+                    <Button size="sm" variant="outline" className="text-blue-600 border-blue-300"
+                      onClick={() => {
+                        setEditedSubject(output.subject ?? "");
+                        setEditedBody(output.body ?? output.smsBody ?? "");
+                        setApprovalMode("editing");
+                      }}
+                      data-testid="button-edit-then-execute">
+                      <Edit3 className="h-3.5 w-3.5 mr-1.5" /> Edit then Execute
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" className="text-amber-600 border-amber-300"
+                    onClick={() => { setFeedbackText(""); setApprovalMode("regenerating"); }}
+                    data-testid="button-regenerate-with-feedback">
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Regenerate
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-red-600 border-red-300 col-span-2"
+                    onClick={() => { setFeedbackText(""); setApprovalMode("rejecting"); }}
+                    data-testid="button-reject-step">
+                    <X className="h-3.5 w-3.5 mr-1.5" /> Reject with Feedback
+                  </Button>
+                </div>
+              )}
+
+              {approvalMode === "editing" && (
+                <div className="flex gap-2">
+                  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={() => approveMutation.mutate({ editedSubject, editedBody })}
+                    disabled={approveMutation.isPending}
+                    data-testid="button-send-edited">
+                    <Send className="h-3.5 w-3.5 mr-1.5" /> {approveMutation.isPending ? "Sending…" : "Send Edited Version"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setApprovalMode("idle")} data-testid="button-cancel-edit">
+                    Cancel
+                  </Button>
+                </div>
+              )}
+
+              {approvalMode === "rejecting" && (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="text-red-600 border-red-300"
+                    onClick={() => rejectMutation.mutate({ feedback: feedbackText })}
+                    disabled={rejectMutation.isPending}
+                    data-testid="button-confirm-reject">
+                    <X className="h-3.5 w-3.5 mr-1.5" /> {rejectMutation.isPending ? "Rejecting…" : "Confirm Rejection"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setApprovalMode("idle")} data-testid="button-cancel-reject">
+                    Back
+                  </Button>
+                </div>
+              )}
+
+              {approvalMode === "regenerating" && (
+                <div className="flex gap-2">
+                  <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={() => regenerateMutation.mutate({ feedback: feedbackText })}
+                    disabled={regenerateMutation.isPending}
+                    data-testid="button-confirm-regenerate">
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> {regenerateMutation.isPending ? "Queuing…" : "Regenerate with Feedback"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setApprovalMode("idle")} data-testid="button-cancel-regenerate">
+                    Back
+                  </Button>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Wait state */}
         {liveRun.status === "waiting_response" && (
@@ -682,6 +804,8 @@ export default function AdminWorkflowsPage() {
       {selectedRun && (
         <WorkflowTimeline run={selectedRun} onClose={() => setSelectedRun(null)} />
       )}
+
+      <RecentAgentActivity limit={10} actionType="workflow" title="Recent Workflow Activity" compact />
     </div>
   );
 }

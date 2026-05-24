@@ -746,6 +746,13 @@ export function AppSidebar() {
             lowPriority: true,
             items: [
               {
+                title: "Command Center",
+                simplifiedTitle: "AI Overview",
+                url: "/admin/ai-operations",
+                icon: Cpu,
+                testId: "nav-ai-operations",
+              },
+              {
                 title: "Attention Inbox",
                 simplifiedTitle: "Attention",
                 url: "/admin/attention",
@@ -754,7 +761,7 @@ export function AppSidebar() {
               },
               {
                 title: "Business Brain",
-                simplifiedTitle: "AI Overview",
+                simplifiedTitle: "Business Brain",
                 url: "/admin/business-brain",
                 icon: Brain,
                 testId: "nav-business-brain",

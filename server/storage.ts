@@ -113,6 +113,9 @@ import {
   workflowStepRuns,
   type WorkflowStepRun,
   type InsertWorkflowStepRun,
+  unifiedAgentActionLog,
+  type UnifiedAgentActionLog,
+  type InsertUnifiedAgentActionLog,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -300,6 +303,11 @@ export interface IStorage {
   logAgentAction(entry: InsertAgentActionLog): Promise<AgentActionLog>;
   getAgentActionLog(orgId: string, limit?: number): Promise<AgentActionLog[]>;
   undoAgentAction(id: string): Promise<boolean>;
+
+  // Unified Agent Action Log
+  logUnifiedAction(entry: InsertUnifiedAgentActionLog): Promise<UnifiedAgentActionLog>;
+  getUnifiedActionLog(orgId: string, opts?: { limit?: number; status?: string; actorType?: string; actionType?: string }): Promise<UnifiedAgentActionLog[]>;
+  getUnifiedActionLogSummary(orgId: string): Promise<{ total: number; failed: number; completed: number; requiresApproval: number }>;
 
   createAgentAction(entry: InsertAgentAction): Promise<AgentAction>;
   getAgentActionById(id: string): Promise<AgentAction | undefined>;
@@ -3584,6 +3592,37 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(agentPendingActions.status, "pending"), lt(agentPendingActions.expiresAt, now)))
       .returning();
     return rows.length;
+  }
+
+  // ─── Unified Agent Action Log ─────────────────────────────────────────────
+  async logUnifiedAction(entry: InsertUnifiedAgentActionLog): Promise<UnifiedAgentActionLog> {
+    const [row] = await db.insert(unifiedAgentActionLog).values(entry).returning();
+    return row;
+  }
+
+  async getUnifiedActionLog(orgId: string, opts: { limit?: number; status?: string; actorType?: string; actionType?: string } = {}): Promise<UnifiedAgentActionLog[]> {
+    const conditions: any[] = [eq(unifiedAgentActionLog.orgId, orgId)];
+    if (opts.status) conditions.push(eq(unifiedAgentActionLog.status, opts.status));
+    if (opts.actorType) conditions.push(eq(unifiedAgentActionLog.actorType, opts.actorType));
+    if (opts.actionType) conditions.push(eq(unifiedAgentActionLog.actionType, opts.actionType));
+    return db
+      .select()
+      .from(unifiedAgentActionLog)
+      .where(and(...conditions))
+      .orderBy(desc(unifiedAgentActionLog.createdAt))
+      .limit(opts.limit ?? 100);
+  }
+
+  async getUnifiedActionLogSummary(orgId: string): Promise<{ total: number; failed: number; completed: number; requiresApproval: number }> {
+    const rows = await db
+      .select()
+      .from(unifiedAgentActionLog)
+      .where(eq(unifiedAgentActionLog.orgId, orgId));
+    const total = rows.length;
+    const failed = rows.filter(r => r.status === "failed").length;
+    const completed = rows.filter(r => r.status === "completed").length;
+    const requiresApproval = rows.filter(r => r.status === "requires_approval").length;
+    return { total, failed, completed, requiresApproval };
   }
 }
 
