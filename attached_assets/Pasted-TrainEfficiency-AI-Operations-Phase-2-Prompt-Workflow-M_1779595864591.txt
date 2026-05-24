@@ -1,0 +1,320 @@
+TrainEfficiency AI Operations — Phase 2 Prompt
+
+Workflow Memory + Context Persistence Layer
+
+Build Phase 2 of the AI Operations architecture.
+
+Goal:
+Transform workflows and agents from stateless automations into memory-aware operational systems that learn from previous interactions, outcomes, and organizational behavior over time.
+
+This phase should establish the foundation for:
+
+* adaptive workflows
+* persistent organizational intelligence
+* contextual AI reasoning
+* historical outcome awareness
+* long-term operational memory
+* future Business Brain learning loops
+
+IMPORTANT:
+Do NOT yet build autonomous learning or self-modifying agents.
+This phase is strictly about:
+
+* memory persistence
+* context retrieval
+* outcome tracking
+* historical awareness
+* workflow continuity
+* explainability
+
+The system must remain deterministic, auditable, and org-scoped.
+
+⸻
+
+PART 1 — workflow_context table
+
+Create a new table:
+workflow_context
+
+Fields:
+
+* id
+* orgId
+* entityType
+    * athlete
+    * lead
+    * coach
+    * workflow
+    * campaign
+    * client
+* entityId
+* contextType
+    * interaction_history
+    * workflow_memory
+    * business_memory
+    * communication_memory
+    * operator_override
+    * ai_reasoning_memory
+* summary
+* structuredContext jsonb
+* lastOutcome
+* lastConfidenceScore
+* memoryImportanceScore
+* sourceWorkflowId
+* sourceActionLogId
+* createdBy
+    * system
+    * agent
+    * admin
+    * coach
+* createdAt
+* updatedAt
+
+All queries must remain strictly org-scoped.
+
+⸻
+
+PART 2 — workflow_outcomes table
+
+Create a new table:
+workflow_outcomes
+
+Purpose:
+Track measurable business outcomes from autonomous and semi-autonomous workflows.
+
+Fields:
+
+* id
+* orgId
+* workflowRunId
+* workflowType
+* entityType
+* entityId
+* outcomeType
+    * converted
+    * retained
+    * booked
+    * failed
+    * ignored
+    * escalated
+    * cancelled
+    * recovered
+* outcomeScore
+* revenueImpact
+* retentionImpact
+* engagementImpact
+* confidenceAccuracyDelta
+* aiRecommendationUsed boolean
+* operatorModified boolean
+* outcomeSummary
+* createdAt
+
+⸻
+
+PART 3 — Workflow Context Engine
+
+Create:
+server/workflow-context-engine.ts
+
+Responsibilities:
+
+* retrieve relevant memory/context before workflow execution
+* compress historical interactions into usable summaries
+* rank memory relevance
+* attach contextual memory to workflow runs
+* persist new memory after workflow completion
+* maintain explainability
+
+Functions:
+
+* getWorkflowContext()
+* buildContextSummary()
+* persistWorkflowMemory()
+* calculateMemoryRelevance()
+* attachOutcomeToMemory()
+
+The engine should:
+
+* prioritize recent + high-impact context
+* avoid infinite memory growth
+* compress low-value historical events
+* preserve important operator overrides permanently
+
+⸻
+
+PART 4 — Context-aware workflow execution
+
+Upgrade workflow execution engine so every workflow run can receive:
+
+* historical workflow context
+* prior communication history
+* previous outcomes
+* operator feedback history
+* prior approval edits
+* known entity preferences
+* AI reasoning summaries
+
+Example:
+If a lead ignored 3 previous email workflows but responded to SMS:
+future workflows should receive this context.
+
+Example:
+If an admin repeatedly edits AI-generated outreach tone:
+future draft generations should include this preference context.
+
+⸻
+
+PART 5 — Operator override memory
+
+When admins/coaches:
+
+* edit generated emails
+* reject recommendations
+* modify workflow outputs
+* override AI decisions
+
+Persist these as:
+operator_override memories.
+
+Purpose:
+Allow future workflows to align better with organizational preferences without becoming fully autonomous.
+
+⸻
+
+PART 6 — Memory visibility UI
+
+Add memory visibility surfaces across AI Operations.
+
+On workflow detail pages show:
+
+* Previous workflow outcomes
+* Historical interaction summaries
+* Operator overrides
+* Related workflow history
+* Prior AI reasoning summaries
+* Last successful workflow pattern
+
+Add:
+“Context Used For This Decision” expandable section.
+
+Goal:
+Operators should understand:
+
+* what memory influenced the workflow
+* why the AI made a recommendation
+* what historical patterns were considered
+
+⸻
+
+PART 7 — Business Brain memory integration
+
+Upgrade Business Brain so recommendations can reference:
+
+* historical recommendation outcomes
+* prior accepted/rejected recommendations
+* recurring operational patterns
+* long-term organizational trends
+
+Examples:
+
+* “The last 3 retention campaigns using SMS outperformed email by 24%.”
+* “This scheduling recommendation is similar to a prior successful intervention from March.”
+
+Do NOT yet allow the Business Brain to self-modify strategy.
+Only allow historical contextual awareness.
+
+⸻
+
+PART 8 — Memory lifecycle management
+
+Implement memory lifecycle rules.
+
+Requirements:
+
+* low-value memories compress automatically
+* duplicate memories merge
+* stale low-importance memories archive
+* high-importance memories persist indefinitely
+* operator overrides never auto-delete
+* auditability must remain intact
+
+Add:
+memoryImportanceScore calculation logic.
+
+Factors:
+
+* business impact
+* operator interaction frequency
+* workflow success correlation
+* recurrence frequency
+* escalation involvement
+
+⸻
+
+PART 9 — Unified logging integration
+
+Every memory creation/update must write to:
+unified_agent_action_log
+
+New action types:
+
+* memory_created
+* memory_updated
+* memory_compressed
+* memory_attached
+* memory_archived
+* outcome_recorded
+
+⸻
+
+PART 10 — AI Operations Dashboard upgrades
+
+Upgrade Command Center with:
+
+* Memory activity feed
+* Top recurring workflow patterns
+* Workflow success trend charts
+* Outcome analytics
+* Most effective workflow types
+* Most modified AI outputs
+* Memory utilization statistics
+
+⸻
+
+PART 11 — Reliability + safety requirements
+
+Critical requirements:
+
+* No cross-org memory leakage
+* No self-modifying prompts
+* No hidden autonomous learning
+* All memory usage must be explainable
+* Operators must always see why memory influenced a decision
+* Workflow execution must remain deterministic
+* Memory retrieval must be bounded and performant
+
+⸻
+
+PART 12 — Architectural goal
+
+The goal of Phase 2 is NOT AGI or fully autonomous behavior.
+
+The goal is:
+
+* persistent operational intelligence
+* adaptive workflow continuity
+* historical awareness
+* organizational preference memory
+* explainable contextual automation
+
+This phase should make TrainEfficiency feel like:
+“the system remembers how this organization operates.”
+
+The architecture should remain:
+
+* auditable
+* observable
+* controllable
+* explainable
+* org-isolated
+* operator-first

@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
+import { OrgMemoryFeed } from "@/components/workflow-memory-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -516,14 +517,19 @@ export default function BusinessBrainPage() {
     queryKey: ["/api/admin/business-brain/runs"],
   });
 
+  const [lastRunContextSummary, setLastRunContextSummary] = useState<string | null>(null);
+
   const runMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/admin/business-brain/run"),
-    onSuccess: () => {
+    onSuccess: async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (data.priorOutcomeContext) setLastRunContextSummary(data.priorOutcomeContext);
       toast({ title: "Business Brain ran successfully", description: "All agents have analyzed your business." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/feed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/brief"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/health-score"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/runs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/workflow-context/stats"] });
     },
     onError: (e: any) => toast({ title: "Run failed", description: e.message, variant: "destructive" }),
   });
@@ -810,7 +816,23 @@ export default function BusinessBrainPage() {
         </Card>
       )}
 
-      <RecentAgentActivity limit={10} title="Recent Agent Activity" compact />
+      {/* Prior Context Used by Last Run */}
+      {lastRunContextSummary && (
+        <div className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 p-4" data-testid="panel-prior-context-used">
+          <div className="flex items-start gap-2">
+            <Brain className="h-4 w-4 text-indigo-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 mb-1">Historical Context Used in This Run</p>
+              <p className="text-xs text-indigo-600 dark:text-indigo-400 leading-relaxed">{lastRunContextSummary}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <OrgMemoryFeed limit={8} />
+        <RecentAgentActivity limit={10} title="Recent Agent Activity" compact />
+      </div>
     </div>
   );
 }

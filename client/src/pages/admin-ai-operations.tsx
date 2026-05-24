@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,10 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
+import { OrgMemoryFeed, OutcomeAnalyticsPanel } from "@/components/workflow-memory-panel";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   Inbox, Brain, ShieldAlert, Activity, GitBranch, Plug, Zap,
   AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw,
-  TrendingUp, BarChart3, AlertCircle, CircleDot, Timer, Cpu,
+  TrendingUp, BarChart3, AlertCircle, CircleDot, Timer, Cpu, Archive,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -399,7 +402,59 @@ export default function AdminAiOperationsPage() {
           <RecentAgentActivity limit={5} status="failed" title="Failed Actions" compact />
         </div>
       </div>
+
+      {/* ── Memory + Outcome Analytics Row ────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <OrgMemoryFeed limit={12} />
+        <OutcomeAnalyticsPanel />
+      </div>
+
+      {/* ── Memory Lifecycle Controls ─────────────────────────────────────── */}
+      <MemoryLifecycleCard />
     </div>
+  );
+}
+
+function MemoryLifecycleCard() {
+  const { toast } = useToast();
+
+  const lifecycleMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/workflow-context/lifecycle"),
+    onSuccess: async (res) => {
+      const data = await res.json();
+      toast({ title: "Memory lifecycle complete", description: `Compressed ${data.compressed}, archived ${data.archived} memories.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/workflow-context/stats"] });
+    },
+    onError: () => toast({ title: "Lifecycle failed", variant: "destructive" }),
+  });
+
+  return (
+    <Card data-testid="memory-lifecycle-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
+          <Archive className="h-4 w-4 text-muted-foreground" />
+          Memory Lifecycle Management
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-sm text-muted-foreground">
+            <p>Compress low-value memories and archive stale entries.</p>
+            <p className="text-xs mt-0.5">Operator overrides are never auto-deleted.</p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => lifecycleMutation.mutate()}
+            disabled={lifecycleMutation.isPending}
+            data-testid="button-run-lifecycle"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${lifecycleMutation.isPending ? "animate-spin" : ""}`} />
+            {lifecycleMutation.isPending ? "Running…" : "Run Lifecycle"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -116,6 +116,12 @@ import {
   unifiedAgentActionLog,
   type UnifiedAgentActionLog,
   type InsertUnifiedAgentActionLog,
+  workflowContext,
+  type WorkflowContext,
+  type InsertWorkflowContext,
+  workflowOutcomes,
+  type WorkflowOutcome,
+  type InsertWorkflowOutcome,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -308,6 +314,13 @@ export interface IStorage {
   logUnifiedAction(entry: InsertUnifiedAgentActionLog): Promise<UnifiedAgentActionLog>;
   getUnifiedActionLog(orgId: string, opts?: { limit?: number; status?: string; actorType?: string; actionType?: string }): Promise<UnifiedAgentActionLog[]>;
   getUnifiedActionLogSummary(orgId: string): Promise<{ total: number; failed: number; completed: number; requiresApproval: number }>;
+
+  // Workflow Context (Memory)
+  getWorkflowContextForEntity(orgId: string, entityType: string, entityId: string, limit?: number): Promise<WorkflowContext[]>;
+  getOrgWorkflowContext(orgId: string, limit?: number): Promise<WorkflowContext[]>;
+  saveWorkflowMemory(entry: InsertWorkflowContext): Promise<WorkflowContext>;
+  getWorkflowOutcomesForOrg(orgId: string, limit?: number): Promise<WorkflowOutcome[]>;
+  saveWorkflowOutcome(entry: InsertWorkflowOutcome): Promise<WorkflowOutcome>;
 
   createAgentAction(entry: InsertAgentAction): Promise<AgentAction>;
   getAgentActionById(id: string): Promise<AgentAction | undefined>;
@@ -3623,6 +3636,51 @@ export class DatabaseStorage implements IStorage {
     const completed = rows.filter(r => r.status === "completed").length;
     const requiresApproval = rows.filter(r => r.status === "requires_approval").length;
     return { total, failed, completed, requiresApproval };
+  }
+
+  // ─── Workflow Context (Memory) ─────────────────────────────────────────────
+  async getWorkflowContextForEntity(orgId: string, entityType: string, entityId: string, limit = 20): Promise<WorkflowContext[]> {
+    return db
+      .select()
+      .from(workflowContext)
+      .where(and(
+        eq(workflowContext.orgId, orgId),
+        eq(workflowContext.entityType, entityType),
+        eq(workflowContext.entityId, entityId),
+        eq(workflowContext.archived, false),
+      ))
+      .orderBy(desc(workflowContext.memoryImportanceScore), desc(workflowContext.updatedAt))
+      .limit(limit);
+  }
+
+  async getOrgWorkflowContext(orgId: string, limit = 50): Promise<WorkflowContext[]> {
+    return db
+      .select()
+      .from(workflowContext)
+      .where(and(eq(workflowContext.orgId, orgId), eq(workflowContext.archived, false)))
+      .orderBy(desc(workflowContext.updatedAt))
+      .limit(limit);
+  }
+
+  async saveWorkflowMemory(entry: InsertWorkflowContext): Promise<WorkflowContext> {
+    const id = crypto.randomUUID();
+    const [row] = await db.insert(workflowContext).values({ ...entry, id }).returning();
+    return row;
+  }
+
+  async getWorkflowOutcomesForOrg(orgId: string, limit = 50): Promise<WorkflowOutcome[]> {
+    return db
+      .select()
+      .from(workflowOutcomes)
+      .where(eq(workflowOutcomes.orgId, orgId))
+      .orderBy(desc(workflowOutcomes.createdAt))
+      .limit(limit);
+  }
+
+  async saveWorkflowOutcome(entry: InsertWorkflowOutcome): Promise<WorkflowOutcome> {
+    const id = crypto.randomUUID();
+    const [row] = await db.insert(workflowOutcomes).values({ ...entry, id }).returning();
+    return row;
   }
 }
 

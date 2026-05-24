@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
+import { EntityMemoryPanel } from "@/components/workflow-memory-panel";
 import {
   GitBranch, Play, CheckCircle, Clock, XCircle, AlertTriangle,
   ChevronRight, RefreshCw, Zap, BarChart3, Layers, Eye,
@@ -566,6 +567,15 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
               );
             })}
           </div>
+        )}
+
+        {/* Memory Panel — Context Used For This Decision */}
+        {liveRun.entityId && (
+          <EntityMemoryPanel
+            entityType={liveRun.entityType ?? "entity"}
+            entityId={liveRun.entityId}
+            entityName={liveRun.entityName}
+          />
         )}
 
         {/* Attribution */}

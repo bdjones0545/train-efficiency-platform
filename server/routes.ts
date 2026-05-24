@@ -12157,9 +12157,44 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      // Attach prior outcome context to the run (for historical awareness)
+      let priorOutcomeContext = "";
+      try {
+        const { getOutcomeAnalytics, getOrgWorkflowContext } = await import("./workflow-context-engine");
+        const [analytics, recentMemories] = await Promise.all([
+          getOutcomeAnalytics(orgId),
+          getOrgWorkflowContext(orgId, 5),
+        ]);
+        if (analytics.totalOutcomes > 0) {
+          const lines = [`Prior workflow outcomes: ${analytics.successRate}% success rate across ${analytics.totalOutcomes} runs.`];
+          if (analytics.operatorModifiedCount > 0) lines.push(`Operators modified ${analytics.modificationRate}% of AI-generated outputs.`);
+          const topOutcome = Object.entries(analytics.byType).sort(([,a],[,b]) => b-a)[0];
+          if (topOutcome) lines.push(`Most common outcome: ${topOutcome[0]} (${topOutcome[1]} times).`);
+          recentMemories.filter(m => m.contextType === "business_memory" || m.contextType === "operator_override")
+            .slice(0, 3).forEach(m => lines.push(`Org memory: ${m.summary}`));
+          priorOutcomeContext = lines.join(" ");
+        }
+      } catch (_) {}
+
       const { runOrchestrator } = await import("./agents/executive-agent");
       const result = await runOrchestrator(orgId, "manual");
-      res.json(result);
+
+      // Log that this run had historical context attached
+      if (priorOutcomeContext) {
+        const { logUnifiedAction } = await import("./unified-action-logger");
+        await logUnifiedAction({
+          orgId,
+          actorType: "agent",
+          actorName: "business_brain",
+          actionType: "memory_attached",
+          status: "completed",
+          riskLevel: "low",
+          reasoningSummary: `Business Brain run enriched with historical context: ${priorOutcomeContext.substring(0, 200)}`,
+        });
+      }
+
+      res.json({ ...result, priorOutcomeContext: priorOutcomeContext || null });
     } catch (e: any) {
       console.error("[BusinessBrain] Run error:", e.message);
       res.status(500).json({ error: e.message });
@@ -12623,8 +12658,62 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { editedSubject, editedBody, feedback } = req.body ?? {};
       const { approveWorkflowStep } = await import("./workflows/index");
+
+      // If the admin edited the draft before approving, patch it into context first
+      if (editedSubject || editedBody) {
+        const { db } = await import("./db");
+        const { workflowRuns } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+        if (run) {
+          const ctx = (run.context as any) ?? {};
+          await db.update(workflowRuns)
+            .set({ context: { ...ctx, draftSubject: editedSubject ?? ctx.draftSubject, draftBody: editedBody ?? ctx.draftBody } })
+            .where(eq(workflowRuns.id, req.params.id));
+        }
+
+        // Persist operator override memory
+        const { persistWorkflowMemory } = await import("./workflow-context-engine");
+        const run2 = run ?? { entityType: "workflow", entityId: req.params.id, workflowType: "" };
+        await persistWorkflowMemory({
+          orgId,
+          entityType: (run2 as any).entityType ?? "workflow",
+          entityId: (run2 as any).entityId ?? req.params.id,
+          contextType: "operator_override",
+          summary: `Admin edited workflow draft before approving.${editedSubject ? ` Subject changed to: "${editedSubject}"` : ""}${editedBody ? " Body was modified." : ""}`,
+          structuredContext: { editedSubject: editedSubject ?? null, editedBodyLength: editedBody?.length ?? 0, workflowRunId: req.params.id },
+          sourceWorkflowId: req.params.id,
+          createdBy: "admin",
+          neverDelete: true,
+        });
+      }
+
       const result = await approveWorkflowStep(req.params.id, orgId, "admin");
+
+      // Persist workflow approval memory
+      if (result.ok) {
+        try {
+          const { persistWorkflowMemory } = await import("./workflow-context-engine");
+          const { db } = await import("./db");
+          const { workflowRuns } = await import("@shared/schema");
+          const { eq } = await import("drizzle-orm");
+          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+          if (run?.entityId) {
+            await persistWorkflowMemory({
+              orgId,
+              entityType: run.entityType ?? "workflow",
+              entityId: run.entityId,
+              contextType: "workflow_memory",
+              summary: `Workflow "${run.displayName ?? run.workflowType}" approved by admin${editedSubject || editedBody ? " (with edits)" : ""}.`,
+              sourceWorkflowId: req.params.id,
+              createdBy: "admin",
+            });
+          }
+        } catch (_) {}
+      }
+
       res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -12634,8 +12723,34 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { feedback } = req.body ?? {};
       const { rejectWorkflowStep } = await import("./workflows/index");
       const result = await rejectWorkflowStep(req.params.id, orgId, "admin");
+
+      // Persist operator override memory for rejection feedback
+      if (result.ok) {
+        try {
+          const { persistWorkflowMemory } = await import("./workflow-context-engine");
+          const { db } = await import("./db");
+          const { workflowRuns } = await import("@shared/schema");
+          const { eq } = await import("drizzle-orm");
+          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+          if (run?.entityId) {
+            await persistWorkflowMemory({
+              orgId,
+              entityType: run.entityType ?? "workflow",
+              entityId: run.entityId,
+              contextType: "operator_override",
+              summary: `Admin rejected workflow "${run.displayName ?? run.workflowType}"${feedback ? `. Feedback: ${feedback}` : "."}`,
+              structuredContext: { feedback: feedback ?? null, workflowRunId: req.params.id, workflowType: run.workflowType },
+              sourceWorkflowId: req.params.id,
+              createdBy: "admin",
+              neverDelete: true,
+            });
+          }
+        } catch (_) {}
+      }
+
       res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -12669,7 +12784,117 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         riskLevel: "low",
         reasoningSummary: feedback ? `Admin feedback: ${feedback}` : "Regeneration requested by admin",
       });
+
+      // Persist operator override memory for regeneration feedback
+      if (feedback) {
+        try {
+          const { persistWorkflowMemory } = await import("./workflow-context-engine");
+          const { db } = await import("./db");
+          const { workflowRuns } = await import("@shared/schema");
+          const { eq } = await import("drizzle-orm");
+          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+          if (run?.entityId) {
+            await persistWorkflowMemory({
+              orgId,
+              entityType: run.entityType ?? "workflow",
+              entityId: run.entityId,
+              contextType: "operator_override",
+              summary: `Admin requested regeneration of "${run.displayName ?? run.workflowType}". Feedback: ${feedback}`,
+              structuredContext: { feedback, workflowRunId: req.params.id, workflowType: run.workflowType },
+              sourceWorkflowId: req.params.id,
+              createdBy: "admin",
+              neverDelete: true,
+            });
+          }
+        } catch (_) {}
+      }
+
       res.json({ success: true, message: "Workflow cancelled; please re-trigger with updated parameters." });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── Workflow Context (Memory) API ────────────────────────────────────────
+
+  // GET /api/workflow-context — get memories for an entity
+  app.get("/api/workflow-context", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { entityType, entityId } = req.query as { entityType?: string; entityId?: string };
+      if (entityType && entityId) {
+        const { getWorkflowContext } = await import("./workflow-context-engine");
+        const memories = await getWorkflowContext({ orgId, entityType, entityId });
+        return res.json(memories);
+      }
+      const { getOrgWorkflowContext } = await import("./workflow-context-engine");
+      const memories = await getOrgWorkflowContext(orgId);
+      res.json(memories);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/workflow-context/stats — memory statistics for dashboard
+  app.get("/api/workflow-context/stats", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { getMemoryStats } = await import("./workflow-context-engine");
+      const stats = await getMemoryStats(orgId);
+      res.json(stats);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/workflow-context/lifecycle — manually trigger memory lifecycle
+  app.post("/api/workflow-context/lifecycle", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { runMemoryLifecycle } = await import("./workflow-context-engine");
+      const result = await runMemoryLifecycle(orgId);
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/workflow-context — manually create a memory (admin)
+  app.post("/api/workflow-context", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { persistWorkflowMemory } = await import("./workflow-context-engine");
+      const id = await persistWorkflowMemory({ ...req.body, orgId, createdBy: "admin" });
+      res.json({ id });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/workflow-outcomes — list outcomes for org
+  app.get("/api/workflow-outcomes", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { getWorkflowOutcomes } = await import("./workflow-context-engine");
+      const outcomes = await getWorkflowOutcomes(orgId);
+      res.json(outcomes);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/workflow-outcomes/analytics — outcome analytics for dashboard
+  app.get("/api/workflow-outcomes/analytics", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { getOutcomeAnalytics } = await import("./workflow-context-engine");
+      const analytics = await getOutcomeAnalytics(orgId);
+      res.json(analytics);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/workflow-outcomes — record an outcome
+  app.post("/api/workflow-outcomes", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+      const { attachOutcomeToMemory } = await import("./workflow-context-engine");
+      const id = await attachOutcomeToMemory({ ...req.body, orgId });
+      res.json({ id });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

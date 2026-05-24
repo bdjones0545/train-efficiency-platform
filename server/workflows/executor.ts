@@ -56,12 +56,37 @@ export async function startWorkflow(input: StartWorkflowInput): Promise<{ runId:
     }
   }
 
+  // ── Retrieve historical context (memory-aware execution) ──────────────────
+  // Load prior memories for this entity so buildInput functions and downstream
+  // tools can reference historical patterns, operator overrides, and outcomes.
+  // Non-blocking: a failure here must never prevent workflow execution.
+  let historicalContextSummary: string | undefined;
+  let historicalContextBlock: string | undefined;
+  try {
+    if (input.entityId && input.entityType) {
+      const { buildContextSummary } = await import("../workflow-context-engine");
+      const ctxSummary = await buildContextSummary({
+        orgId: input.orgId,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        workflowType: input.workflowType,
+      });
+      if (ctxSummary.totalMemories > 0) {
+        historicalContextSummary = `${ctxSummary.totalMemories} memories found`;
+        historicalContextBlock = ctxSummary.contextBlock;
+      }
+    }
+  } catch (_) { /* non-blocking */ }
+
   const context: WorkflowContext = {
     orgId: input.orgId,
     entityType: input.entityType,
     entityId: input.entityId,
     entityName: input.entityName,
     triggerReason: input.triggerReason,
+    // Attach historical context so buildInput functions can reference it
+    ...(historicalContextBlock ? { historicalContext: historicalContextBlock } : {}),
+    ...(historicalContextSummary ? { historicalContextSummary } : {}),
     ...input.initialContext,
   };
 
@@ -549,12 +574,48 @@ async function completeWorkflow(runId: string) {
   await db.update(workflowRuns)
     .set({ status: "completed", completedAt: new Date(), lockedAt: null })
     .where(eq(workflowRuns.id, runId));
+
+  // Persist workflow completion memory (non-blocking)
+  try {
+    const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, runId));
+    if (run?.entityId && run.orgId) {
+      const { persistWorkflowMemory } = await import("../workflow-context-engine");
+      await persistWorkflowMemory({
+        orgId: run.orgId,
+        entityType: run.entityType ?? "workflow",
+        entityId: run.entityId,
+        contextType: "workflow_memory",
+        summary: `Workflow "${run.displayName ?? run.workflowType}" completed successfully.`,
+        lastOutcome: "completed",
+        sourceWorkflowId: runId,
+        createdBy: "system",
+      });
+    }
+  } catch (_) { /* non-blocking — never fail the completion */ }
 }
 
 async function failWorkflow(runId: string, error: string) {
   await db.update(workflowRuns)
     .set({ status: "failed", error, completedAt: new Date(), lockedAt: null })
     .where(eq(workflowRuns.id, runId));
+
+  // Persist workflow failure memory (non-blocking)
+  try {
+    const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, runId));
+    if (run?.entityId && run.orgId) {
+      const { persistWorkflowMemory } = await import("../workflow-context-engine");
+      await persistWorkflowMemory({
+        orgId: run.orgId,
+        entityType: run.entityType ?? "workflow",
+        entityId: run.entityId,
+        contextType: "workflow_memory",
+        summary: `Workflow "${run.displayName ?? run.workflowType}" failed: ${error.substring(0, 100)}`,
+        lastOutcome: "failed",
+        sourceWorkflowId: runId,
+        createdBy: "system",
+      });
+    }
+  } catch (_) { /* non-blocking */ }
 }
 
 async function releaseLock(runId: string) {

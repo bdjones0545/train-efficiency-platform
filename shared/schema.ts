@@ -3132,3 +3132,97 @@ export const unifiedAgentActionLog = pgTable("unified_agent_action_log", {
 export const insertUnifiedAgentActionLogSchema = createInsertSchema(unifiedAgentActionLog).omit({ id: true, createdAt: true });
 export type UnifiedAgentActionLog = typeof unifiedAgentActionLog.$inferSelect;
 export type InsertUnifiedAgentActionLog = z.infer<typeof insertUnifiedAgentActionLogSchema>;
+
+// ─── Workflow Context (Memory) ────────────────────────────────────────────────
+// Persistent memory for workflows, entities, and organizational patterns.
+// entityType: athlete | lead | coach | workflow | campaign | client
+// contextType: interaction_history | workflow_memory | business_memory |
+//              communication_memory | operator_override | ai_reasoning_memory
+// createdBy: system | agent | admin | coach
+
+export const workflowContext = pgTable("workflow_context", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+
+  // What entity this memory is about
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+
+  // Type of memory
+  contextType: text("context_type").notNull(),
+
+  // Human-readable summary of this memory
+  summary: text("summary").notNull(),
+
+  // Structured data payload (flexible)
+  structuredContext: jsonb("structured_context"),
+
+  // Outcome tracking
+  lastOutcome: text("last_outcome"),
+  lastConfidenceScore: doublePrecision("last_confidence_score"),
+
+  // Memory importance for lifecycle management
+  memoryImportanceScore: doublePrecision("memory_importance_score").default(0.5),
+
+  // Traceability
+  sourceWorkflowId: text("source_workflow_id"),
+  sourceActionLogId: text("source_action_log_id"),
+
+  // Who created this memory
+  createdBy: text("created_by").notNull().default("system"),
+
+  // Lifecycle flags
+  archived: boolean("archived").default(false),
+  compressed: boolean("compressed").default(false),
+  neverDelete: boolean("never_delete").default(false),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWorkflowContextSchema = createInsertSchema(workflowContext).omit({ id: true, createdAt: true, updatedAt: true });
+export type WorkflowContext = typeof workflowContext.$inferSelect;
+export type InsertWorkflowContext = z.infer<typeof insertWorkflowContextSchema>;
+
+// ─── Workflow Outcomes ────────────────────────────────────────────────────────
+// Tracks measurable business outcomes from autonomous/semi-autonomous workflows.
+// outcomeType: converted | retained | booked | failed | ignored |
+//              escalated | cancelled | recovered
+
+export const workflowOutcomes = pgTable("workflow_outcomes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+
+  // Which workflow run produced this outcome
+  workflowRunId: text("workflow_run_id").notNull(),
+  workflowType: text("workflow_type").notNull(),
+
+  // The entity the workflow acted upon
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+
+  // Outcome classification
+  outcomeType: text("outcome_type").notNull(),
+
+  // Scoring
+  outcomeScore: doublePrecision("outcome_score"),
+  revenueImpact: doublePrecision("revenue_impact"),
+  retentionImpact: doublePrecision("retention_impact"),
+  engagementImpact: doublePrecision("engagement_impact"),
+
+  // Accuracy tracking (was the AI confidence accurate?)
+  confidenceAccuracyDelta: doublePrecision("confidence_accuracy_delta"),
+
+  // Operator interaction flags
+  aiRecommendationUsed: boolean("ai_recommendation_used").default(true),
+  operatorModified: boolean("operator_modified").default(false),
+
+  // Summary
+  outcomeSummary: text("outcome_summary"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWorkflowOutcomesSchema = createInsertSchema(workflowOutcomes).omit({ id: true, createdAt: true });
+export type WorkflowOutcome = typeof workflowOutcomes.$inferSelect;
+export type InsertWorkflowOutcome = z.infer<typeof insertWorkflowOutcomesSchema>;
