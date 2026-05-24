@@ -1,0 +1,281 @@
+Audit and upgrade the TrainEfficiency org Calendar so coaches/admins can create scheduled events with correct permissions and section-specific behavior.
+
+Current issue:
+Calendar displays events by sections/filters:
+- Bookings
+- Workouts
+- PRs
+- Readiness
+- Alerts
+- Messages
+- Intelligence
+
+But coaches/admins currently have no clear way to create/schedule events from the calendar.
+
+Goal:
+Calendar should become an operational scheduling hub where authorized users can add the right kind of event while respecting org/team permissions.
+
+Permissions:
+- Org owner/admin: can create calendar events for any athlete, team, coach, or org-wide group.
+- Coach/team coach: can create events only for athletes/teams they manage.
+- Staff: depends on assigned permissions.
+- Athlete/client: can view their own calendar and book only allowed sessions.
+- Guest: no access.
+
+PART 1 — Audit current calendar data sources
+
+For each filter, map:
+1. Source table/API
+2. Who can view it
+3. Whether it is read-only or creatable
+4. What action should be available
+
+Audit:
+- Bookings
+- Workouts
+- PRs
+- Readiness
+- Alerts
+- Messages
+- Intelligence
+
+Expected behavior by section:
+
+Bookings:
+- Should support creating a session/booking.
+- Admin can choose any athlete/team/coach.
+- Coach can choose only their team athletes.
+- Should write to athletic_bookings or existing booking model.
+
+Workouts:
+- Should support assigning/scheduling a workout.
+- Admin can assign to any athlete/team.
+- Coach can assign only to managed athletes/teams.
+- Should connect to Workout Builder assignment system.
+
+PRs:
+- Usually read-only timeline events.
+- Optional: add/log PR entry if allowed.
+- Should connect to PR Tracker.
+
+Readiness:
+- Read-only unless creating/checking readiness prompt.
+- Optional: send readiness reminder.
+
+Alerts:
+- Read-only generated events.
+- Should link to Athlete Status or Attention Inbox.
+- Optional: resolve/dismiss if authorized.
+
+Messages:
+- Should support scheduling/sending a message.
+- Should connect to Communications Center.
+- Admin can message any athlete/team.
+- Coach can message only managed athletes/teams.
+
+Intelligence:
+- Read-only generated briefing/recommendation items.
+- Should link to Command Center or Athlete Intelligence.
+- Optional: trigger workflow.
+
+PART 2 — Add calendar create action
+
+Add a floating action button or header button:
+“+ Schedule”
+
+On click, open a Create Calendar Event modal.
+
+Modal should ask:
+- Event type:
+  - Booking / Session
+  - Workout Assignment
+  - Message
+  - Readiness Reminder
+  - Custom Note/Event
+- Date/time
+- Target:
+  - athlete
+  - team
+  - coach
+  - org-wide if admin only
+- Details/notes
+- optional recurrence
+
+The available event types should depend on selected filter:
+- If user is on Bookings filter, default type = Booking
+- Workouts filter → Workout Assignment
+- Messages filter → Message
+- Readiness filter → Readiness Reminder
+
+PART 3 — Permission-scoped target selector
+
+Target selector must respect role:
+
+Admin/owner:
+- all athletes
+- all teams
+- all coaches
+- org-wide
+
+Coach:
+- teams they manage
+- athletes assigned to those teams
+- no org-wide broadcast unless permission granted
+
+Athlete:
+- self only
+- no coach/admin creation controls
+
+PART 4 — Backend endpoints
+
+Create or wire to existing endpoints:
+
+Bookings:
+POST /api/org/calendar/bookings
+
+Workout assignment:
+POST /api/org/calendar/workouts
+
+Scheduled message:
+POST /api/org/calendar/messages
+
+Readiness reminder:
+POST /api/org/calendar/readiness-reminders
+
+Custom note:
+POST /api/org/calendar/events
+
+All endpoints must:
+- use resolveOrgSession()
+- enforce admin/coach/team permissions
+- log activity events
+- invalidate relevant downstream data
+- return created calendar event payload
+
+PART 5 — Calendar event normalization
+
+Create a shared calendar event normalizer:
+
+All events should map into:
+
+{
+  id,
+  type,
+  title,
+  description,
+  startTime,
+  endTime,
+  athleteId,
+  teamId,
+  coachId,
+  source,
+  status,
+  actionUrl,
+  metadata
+}
+
+This prevents every filter from behaving differently.
+
+PART 6 — Section-specific action behavior
+
+Clicking an event should open a detail/action sheet.
+
+Bookings:
+- view booking
+- edit/reschedule
+- cancel
+- message athlete
+
+Workouts:
+- view workout
+- edit assignment
+- message athlete/team
+
+PRs:
+- view PR
+- open PR Tracker
+- message athlete if relevant
+
+Readiness:
+- view readiness entry
+- message athlete
+- trigger workflow
+
+Alerts:
+- open Athlete Status
+- dismiss/resolve
+- message athlete
+
+Messages:
+- view message
+- reply/follow-up
+- open Communications
+
+Intelligence:
+- open Command Center
+- trigger workflow
+- assign workout/message
+
+PART 7 — UI/UX improvements
+
+Mobile:
+- Add obvious “+” or “Schedule” button in the Calendar header
+- Keep within safe area
+- Smooth modal opening
+- No white flashes
+- Event type selector should be simple and thumb-friendly
+
+Empty state:
+If no events:
+- Keep current message
+- Add role-aware CTA:
+  - Admin/coach: “Schedule an Event”
+  - Athlete: “Book a Session” or “No events yet”
+
+PART 8 — Activity logging
+
+Log:
+- booking_created
+- workout_scheduled
+- message_scheduled
+- readiness_reminder_scheduled
+- calendar_event_created
+- booking_rescheduled
+- booking_cancelled
+
+Surface in:
+- Command Center
+- Team Detail
+- Athlete Detail
+- Activity Feed
+
+PART 9 — Acceptance tests
+
+Admin:
+- opens Calendar
+- taps + Schedule
+- creates booking for any athlete
+- creates workout assignment for any team
+- event appears on calendar immediately
+
+Coach:
+- opens Calendar
+- can create booking/workout only for own team athletes
+- cannot target unrelated athletes/teams
+
+Athlete:
+- no admin schedule button
+- can only view/book allowed sessions
+
+Filters:
+- Bookings filter shows booking events
+- Workouts filter shows workout assignments
+- PRs filter links to PR Tracker
+- Messages filter shows scheduled/sent messages
+- Alerts and Intelligence link to the right action pages
+
+Verify:
+- no auth drift
+- no blank flash
+- no unscoped athlete/team selectors
+- cache invalidation updates calendar immediately

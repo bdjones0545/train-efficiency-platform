@@ -13851,6 +13851,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerActivityRoutes } = await import("./activity-routes");
   registerActivityRoutes(app);
 
+  // ── Calendar Create Routes ─────────────────────────────────────────────────
+  const { registerCalendarCreateRoutes } = await import("./calendar-create-routes");
+  registerCalendarCreateRoutes(app);
+
   // ── Nutrition Education Routes ─────────────────────────────────────────────
   const { registerNutritionRoutes } = await import("./nutrition-routes");
   registerNutritionRoutes(app);
