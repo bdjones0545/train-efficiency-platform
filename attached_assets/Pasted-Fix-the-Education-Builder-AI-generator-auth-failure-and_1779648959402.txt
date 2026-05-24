@@ -1,0 +1,101 @@
+Fix the Education Builder AI generator auth failure and clarify/remove the hardcoded “4” field.
+
+Current issues:
+1. Clicking “Generate Complete Program” shows:
+   AI Error: Unauthorized
+2. The Full Program Generator has a field displaying “4” with no label/context. It appears hardcoded or unclear.
+
+PART 1 — Fix AI generator auth
+
+Audit all Education Builder AI endpoints and frontend calls, especially:
+- Full Program Generator
+- module generator
+- quiz generator
+- test generator
+- content generator
+- philosophy settings generator
+
+Find every fetch/mutation related to AI generation.
+
+Ensure every request uses:
+- credentials: "include"
+- ...getAuthHeaders()
+- optional X-Org-Auth-Token only if present
+- active orgId/orgSlug context
+
+Do not rely only on localStorage orgToken.
+
+Backend:
+- Ensure AI generation routes use shared org auth:
+  resolveOrgSession()
+  or the same org auth middleware used by working coach routes.
+- Valid org admins/coaches with main platform sessions must pass.
+- Return structured JSON errors instead of plain Unauthorized text.
+
+PART 2 — Fix the “4” field
+
+Audit the Full Program Generator form fields.
+
+The field currently showing “4” needs a label and purpose.
+
+Determine whether it represents:
+- number of modules
+- number of weeks
+- number of lessons
+- quiz count
+- estimated duration
+- difficulty score
+
+If it is module count:
+- label it clearly: “Number of Modules”
+- default it from the prompt if possible
+- since the prompt says “Create a 6 module education…”, the field should auto-detect and update to 6, not stay 4.
+
+If it is not needed:
+- remove the field from the UI.
+
+PART 3 — Smart prompt parsing
+
+Add lightweight parsing so when the user types:
+“Create a 6 module education for high school athlete nutrition”
+
+The form auto-detects:
+- moduleCount = 6
+- audience = high school athletes
+- topic = nutrition
+
+Do not overcomplicate — simple regex is enough:
+- /(\d+)\s*(module|modules|lesson|lessons)/i
+
+PART 4 — UX polish
+
+Add labels/placeholders to every field:
+- Program description
+- Audience
+- Sport
+- Number of modules
+- Difficulty level
+
+The generator should never show unlabeled numeric fields.
+
+PART 5 — Acceptance tests
+
+As org admin with main session:
+- Open Education Builder
+- Generate complete program
+- No Unauthorized error
+- AI generation succeeds
+
+As org coach with main session:
+- Same behavior if coach has education-builder permission
+
+Prompt:
+“Create a 6 module education for high school athlete nutrition”
+
+Expected:
+- Number of Modules becomes 6
+- Generated program has 6 modules
+- No hardcoded 4 remains
+
+As logged out user:
+- Shows branded login/access state, not raw AI Unauthorized toast
