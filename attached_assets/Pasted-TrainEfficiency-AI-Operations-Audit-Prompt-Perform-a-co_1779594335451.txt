@@ -1,0 +1,171 @@
+TrainEfficiency AI Operations Audit Prompt
+
+Perform a complete architectural and systems audit of the AI Operations layer inside TrainEfficiency.
+
+The goal is to evolve AI Operations from a collection of automation tools into a true organizational AI infrastructure system where connected APIs and AI agents function like operational employees/departments inside a company.
+
+Audit the following sections individually and systemically:
+
+* Attention Inbox
+* Business Brain
+* Agent Ops Monitor
+* Workflow Orchestrator
+* Workflows
+* Trigger Audit
+* Agent Tools
+
+For EACH section provide:
+
+1. Current inferred purpose
+
+* What the section currently represents conceptually
+* What operational/business problem it solves
+* What role it plays inside the organization
+
+2. Current architecture audit
+
+* Likely current implementation patterns
+* Strengths
+* Weaknesses
+* Scalability concerns
+* UX concerns
+* AI reliability concerns
+* Observability concerns
+* Multi-org concerns
+
+3. Long-term evolution path
+
+* What this system should become over the next 12–24 months
+* How it evolves from “tooling” into “organizational intelligence”
+* What features are missing to achieve that vision
+
+4. API/Agent integration recommendations
+    Audit whether the following systems should integrate into AI Operations:
+
+* OpenAI
+* Claude
+* Gemini
+* OpenRouter
+* Gmail
+* Google Calendar
+* Meta Ads
+* Stripe
+* Twilio
+* Slack
+* Discord
+* OpenClaw
+* Zapier
+* HubSpot
+* Notion
+* CRM systems
+* Browser/web agents
+
+For each integration explain:
+
+* Which AI Operations section it belongs to
+* What role it would play operationally
+* Whether it acts more like:
+    * an employee
+    * a department
+    * a tool
+    * a reasoning layer
+    * or infrastructure
+
+5. Workflow architecture audit
+    Deeply audit how workflows should function.
+
+The workflow system should evolve beyond simple automation into:
+
+* AI employee orchestration
+* multi-agent delegation
+* approval chains
+* contextual reasoning
+* memory-aware operations
+* cross-tool execution
+* operational intelligence
+
+Audit:
+
+* trigger system
+* execution engine
+* tool calling
+* approval gates
+* retries/failures
+* escalation logic
+* confidence scoring
+* workflow memory/context
+* audit logging
+* observability
+* rollback systems
+* org permissions
+* multi-agent collaboration
+* human-in-the-loop architecture
+
+6. Organizational AI model
+    Audit the philosophy of:
+    “Connected APIs and agents function like employees/admin staff inside an organization.”
+
+Evaluate:
+
+* whether this is a strong long-term architecture direction
+* scalability implications
+* safety implications
+* UX implications
+* operational implications
+* explainability implications
+
+Provide recommendations for:
+
+* role-based AI employees
+* department-style AI systems
+* tool capability registries
+* orchestration hierarchies
+* executive AI systems
+* operational memory systems
+* AI command centers
+
+7. UI/UX audit
+    Audit the AI Operations sidebar and system organization.
+
+Evaluate:
+
+* naming clarity
+* hierarchy
+* discoverability
+* cognitive load
+* scalability as more APIs/tools are added
+* simplified vs advanced workspace behavior
+* mobile usability
+* operational visibility
+* admin mental models
+
+Recommend:
+
+* restructuring if necessary
+* future navigation systems
+* capability dashboards
+* AI workforce visualization
+* workflow maps
+* agent relationship visualization
+* operational health views
+
+8. Final strategic assessment
+    Provide a high-level assessment of:
+
+* what category TrainEfficiency is evolving into
+* how differentiated this architecture is
+* what risks exist
+* what systems are strongest already
+* what systems should be prioritized next
+* what creates the highest long-term moat
+
+The audit should think like:
+
+* a SaaS architect
+* AI systems designer
+* organizational systems strategist
+* workflow automation engineer
+* product visionary
+* operational intelligence designer
+
+The output should be extremely detailed, future-oriented, and systems-focused.
