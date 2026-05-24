@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Trophy, ShieldCheck, User } from "lucide-react";
+import { Loader2, Trophy, ShieldCheck, User, CheckCircle2, Dumbbell, BarChart3, Users } from "lucide-react";
 
 interface OrgAuthModalProps {
   orgId: string;
@@ -16,10 +16,19 @@ interface OrgAuthModalProps {
   onClose?: () => void;
 }
 
+interface SignupSuccess {
+  token: string;
+  user: any;
+  membership: any;
+  orgName: string;
+  role: "athlete" | "team_coach";
+}
+
 export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticated, onClose }: OrgAuthModalProps) {
   const { toast } = useToast();
   const [tab, setTab] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState<SignupSuccess | null>(null);
 
   // Login
   const [loginEmail, setLoginEmail] = useState("");
@@ -75,13 +84,100 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.message || "Signup failed");
-      toast({ title: "Account created! Welcome." });
-      onAuthenticated(data.token, data.user, data.membership);
+      setSignupSuccess({
+        token: data.token,
+        user: data.user,
+        membership: data.membership,
+        orgName: data.orgName || programName,
+        role: signupRole,
+      });
     } catch (err: any) {
       toast({ title: "Signup failed", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleProceed() {
+    if (!signupSuccess) return;
+    onAuthenticated(signupSuccess.token, signupSuccess.user, signupSuccess.membership);
+  }
+
+  if (signupSuccess) {
+    const isCoach = signupSuccess.role === "team_coach";
+    const firstName = signupSuccess.user?.name?.split(" ")[0] || signupSuccess.user?.name || "there";
+    return (
+      <Dialog open modal onOpenChange={(open) => { if (!open && onClose) onClose(); }}>
+        <DialogContent
+          className="sm:max-w-md"
+          onInteractOutside={(e) => { if (!onClose) e.preventDefault(); }}
+        >
+          <div className="flex flex-col items-center text-center gap-4 py-2" data-testid="signup-success-screen">
+            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center">
+              <CheckCircle2 className="h-9 w-9 text-green-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold" data-testid="text-welcome-heading">
+                Welcome, {firstName}!
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Your {isCoach ? "coach" : "athlete"} account is ready on{" "}
+                <span className="font-semibold text-foreground">{signupSuccess.orgName}</span>.
+              </p>
+            </div>
+
+            <div className="w-full rounded-lg border border-border bg-muted/40 p-4 text-left space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                {isCoach ? "You now have access to" : "Start with any of these"}
+              </p>
+              {isCoach ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm" data-testid="feature-workout-builder">
+                    <Dumbbell className="h-4 w-4 text-primary shrink-0" />
+                    <span>Workout Builder — create and assign programs</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm" data-testid="feature-pr-tracker">
+                    <BarChart3 className="h-4 w-4 text-primary shrink-0" />
+                    <span>PR Tracker management — monitor athlete records</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm" data-testid="feature-team-management">
+                    <Users className="h-4 w-4 text-primary shrink-0" />
+                    <span>Team management — organize your roster</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-sm" data-testid="feature-pr-tracker">
+                    <Trophy className="h-4 w-4 text-primary shrink-0" />
+                    <span>PR Tracker — log and track personal records</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm" data-testid="feature-workout-builder">
+                    <Dumbbell className="h-4 w-4 text-primary shrink-0" />
+                    <span>Workout Builder — view assigned workouts</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm" data-testid="feature-team">
+                    <Users className="h-4 w-4 text-primary shrink-0" />
+                    <span>Team boards — see your team's progress</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              A welcome email is on its way to <strong>{signupSuccess.user?.email}</strong>.
+            </p>
+
+            <Button
+              className="w-full"
+              onClick={handleProceed}
+              data-testid="button-proceed-to-dashboard"
+            >
+              {isCoach ? "Open Coach Dashboard" : "Start Tracking PRs"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
   }
 
   return (
@@ -259,7 +355,7 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
               <Input
                 placeholder="e.g., A1B2C3"
                 value={signupJoinCode}
-                onChange={(e) => setSignupJoinCode(e.target.value)}
+                onChange={(e) => setSignupJoinCode(e.target.value.toUpperCase())}
                 data-testid="input-signup-join-code"
               />
             </div>

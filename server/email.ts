@@ -1180,3 +1180,66 @@ export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) 
   `);
   await sendEmail(toEmail, subject, html, "Train Efficiency");
 }
+
+export async function sendOrgAthleteWelcomeEmail(
+  email: string,
+  name: string,
+  org: OrgBranding,
+  loginUrl?: string,
+) {
+  const b = brand(org);
+  const firstName = name.split(" ")[0] || name;
+  const subject = `Welcome to ${b.name}`;
+  const ctaUrl = loginUrl || "https://trainefficiency.com";
+  const html = emailShell(`Welcome to ${b.name}`, `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
+    ${para(`You're officially part of <strong>${b.name}</strong>. Your athlete account is ready and your coaches are excited to have you.`)}
+    ${detailBox([
+      `<p style="font-size: 15px; margin: 6px 0;"><strong>What you now have access to:</strong></p>`,
+      `<ul style="font-size: 14px; line-height: 1.9; padding-left: 18px; margin: 4px 0;">
+        <li>PR Tracker — log and track every personal record</li>
+        <li>Workout Builder — view and complete assigned workouts</li>
+        <li>Team boards — see your team's progress and standings</li>
+        <li>Coach communication — stay connected with your training staff</li>
+      </ul>`,
+    ], b.color, b.secondaryColor)}
+    ${para("Access everything from your phone or desktop — no app download required.")}
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="${ctaUrl}" style="display: inline-block; background: ${b.color}; color: #fff; font-weight: 600; font-size: 15px; padding: 12px 28px; border-radius: 6px; text-decoration: none;">Start Tracking PRs</a>
+    </div>
+    ${para(`Your coaches at <strong>${b.name}</strong> are ready when you are. Log in, complete your profile, and start building your record.`)}
+  `, org);
+  await sendEmail(email, subject, html, b.name);
+}
+
+export async function sendOrgTeamCoachWelcomeEmail(
+  email: string,
+  name: string,
+  org: OrgBranding,
+  loginUrl?: string,
+) {
+  const b = brand(org);
+  const firstName = name.split(" ")[0] || name;
+  const subject = `You've been added as a coach — ${b.name}`;
+  const ctaUrl = loginUrl || "https://trainefficiency.com";
+  const html = emailShell(`You've been added as a coach`, `
+    <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${firstName},</p>
+    ${para(`Your coach account on <strong>${b.name}</strong> is ready. You can now manage your team, assign workouts, and track athlete progress directly from the platform.`)}
+    ${detailBox([
+      `<p style="font-size: 15px; margin: 6px 0;"><strong>Your coach tools include:</strong></p>`,
+      `<ul style="font-size: 14px; line-height: 1.9; padding-left: 18px; margin: 4px 0;">
+        <li>Workout Builder — create and assign custom programs to athletes</li>
+        <li>PR Tracker management — monitor athlete performance records</li>
+        <li>Team management — organize athletes, set goals, view leaderboards</li>
+        <li>Athlete communication — send updates, notes, and feedback</li>
+        <li>Session scheduling — plan and manage training schedules</li>
+      </ul>`,
+    ], b.color, b.secondaryColor)}
+    ${para("Use your team join code to invite athletes to your roster. They'll connect directly to your team on signup.")}
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="${ctaUrl}" style="display: inline-block; background: ${b.color}; color: #fff; font-weight: 600; font-size: 15px; padding: 12px 28px; border-radius: 6px; text-decoration: none;">Open Coach Dashboard</a>
+    </div>
+    ${para(`Welcome to the ${b.name} coaching staff. Reach out to the organization admin if you need help getting started.`)}
+  `, org);
+  await sendEmail(email, subject, html, b.name);
+}

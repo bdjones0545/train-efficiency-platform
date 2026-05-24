@@ -19,12 +19,14 @@ import {
   organizations,
   athleticPrograms,
   leadCapturePrograms,
+  attentionItems,
 } from "@shared/schema";
 import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
 import { storage } from "./storage";
 import { createAuthToken } from "./replit_integrations/auth";
+import { sendOrgAthleteWelcomeEmail, sendOrgTeamCoachWelcomeEmail, type OrgBranding } from "./email";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -444,6 +446,14 @@ export function registerPrTrackerRoutes(app: Express) {
 
       const normalizedEmail = body.email.trim().toLowerCase();
 
+      // Verify org exists
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, body.orgId)).limit(1);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      console.log(`[org-auth/signup] attempt orgId=${body.orgId} email=${normalizedEmail} role=${body.role}`);
+
       // Find or create org_user
       let [existingUser] = await db
         .select()
@@ -452,6 +462,7 @@ export function registerPrTrackerRoutes(app: Express) {
         .limit(1);
 
       let userId: string;
+      let isNewUser = false;
       if (existingUser) {
         userId = existingUser.id;
       } else {
@@ -462,6 +473,8 @@ export function registerPrTrackerRoutes(app: Express) {
           .returning();
         userId = newUser.id;
         existingUser = newUser;
+        isNewUser = true;
+        console.log(`[org-auth/signup] created org_user userId=${userId} orgId=${body.orgId} role=${body.role}`);
       }
 
       // Find or create membership for this org
@@ -472,6 +485,7 @@ export function registerPrTrackerRoutes(app: Express) {
         .limit(1);
 
       let membership;
+      let isNewMembership = false;
       if (existingMembership) {
         membership = existingMembership;
       } else {
@@ -480,15 +494,19 @@ export function registerPrTrackerRoutes(app: Express) {
           .values({ orgId: body.orgId, userId, role: body.role, status: "active" })
           .returning();
         membership = newMembership;
+        isNewMembership = true;
+        console.log(`[org-auth/signup] org_membership created userId=${userId} orgId=${body.orgId} role=${body.role}`);
       }
 
-      // Handle join code
-      if (body.joinCode && body.programId) {
-        const [team] = await db
+      // Handle join code — programId is optional; search org-wide
+      let joinedTeamName: string | null = null;
+      if (body.joinCode) {
+        const code = body.joinCode.trim().toUpperCase();
+        const teamQuery = db
           .select()
           .from(prTeams)
-          .where(and(eq(prTeams.joinCode, body.joinCode.toUpperCase()), eq(prTeams.orgId, body.orgId)))
-          .limit(1);
+          .where(and(eq(prTeams.joinCode, code), eq(prTeams.orgId, body.orgId)));
+        const [team] = await teamQuery.limit(1);
         if (team) {
           const [existingMember] = await db
             .select()
@@ -497,7 +515,11 @@ export function registerPrTrackerRoutes(app: Express) {
             .limit(1);
           if (!existingMember) {
             await db.insert(prTeamMembers).values({ orgId: body.orgId, teamId: team.id, userId, role: "athlete" });
+            joinedTeamName = team.name;
+            console.log(`[org-auth/signup] joined team teamId=${team.id} userId=${userId} via joinCode=${code}`);
           }
+        } else {
+          console.warn(`[org-auth/signup] invalid join code "${code}" for orgId=${body.orgId}`);
         }
       }
 
@@ -515,9 +537,64 @@ export function registerPrTrackerRoutes(app: Express) {
 
       await db.update(orgUsers).set({ lastLoginAt: new Date() }).where(eq(orgUsers.id, userId));
 
-      res.json({ token: rawToken, user: safeUser(existingUser), membership });
+      // Build org branding for emails / attention items
+      const orgBranding: OrgBranding = {
+        name: org.name,
+        accentColor: org.primaryColor || "#16a34a",
+        emailPrimaryColor: org.emailPrimaryColor || org.primaryColor || undefined,
+        emailSecondaryColor: org.emailSecondaryColor || org.secondaryColor || undefined,
+        ownerName: undefined,
+        ownerEmail: org.ownerEmail || undefined,
+      };
+
+      // ── Onboarding emails (non-blocking) ───────────────────────────────────
+      if (isNewMembership) {
+        if (body.role === "athlete") {
+          sendOrgAthleteWelcomeEmail(normalizedEmail, existingUser.name, orgBranding)
+            .then(() => console.log(`[org-auth/signup] athlete welcome email sent to ${normalizedEmail} orgId=${body.orgId}`))
+            .catch((err: any) => console.error(`[org-auth/signup] athlete welcome email failed: ${err?.message}`));
+        } else if (body.role === "team_coach") {
+          sendOrgTeamCoachWelcomeEmail(normalizedEmail, existingUser.name, orgBranding)
+            .then(() => console.log(`[org-auth/signup] coach welcome email sent to ${normalizedEmail} orgId=${body.orgId}`))
+            .catch((err: any) => console.error(`[org-auth/signup] coach welcome email failed: ${err?.message}`));
+        }
+      }
+
+      // ── Attention item for org admins (non-blocking) ─────────────────────
+      if (isNewMembership) {
+        const roleLabel = body.role === "team_coach" ? "Team Coach" : "Athlete";
+        const title = body.role === "team_coach"
+          ? `New coach signed up — ${existingUser.name}`
+          : `New athlete joined — ${existingUser.name}`;
+        const bodyText = body.role === "team_coach"
+          ? `${existingUser.name} (${normalizedEmail}) created a Team Coach account and joined your organization.`
+          : `${existingUser.name} (${normalizedEmail}) created an Athlete account${joinedTeamName ? ` and joined team "${joinedTeamName}"` : ""}.`;
+        db.insert(attentionItems).values({
+          orgId: body.orgId,
+          level: "informational",
+          category: "insight",
+          title,
+          body: bodyText,
+          source: "pr_tracker_signup",
+          sourceId: `signup_${userId}_${body.orgId}`,
+          severity: 30,
+          urgency: 20,
+          businessImpact: 40,
+          confidence: 1.0,
+          actionUrl: `/admin/users`,
+          actionLabel: `View ${roleLabel}`,
+          status: "active",
+          metadata: { userId, email: normalizedEmail, role: body.role, source: "org-auth-modal", isNewUser },
+        }).onConflictDoNothing()
+          .catch((err: any) => console.error(`[org-auth/signup] attention item insert failed: ${err?.message}`));
+      }
+
+      console.log(`[org-auth/signup] success userId=${userId} orgId=${body.orgId} role=${body.role} isNewUser=${isNewUser} isNewMembership=${isNewMembership}`);
+
+      res.json({ token: rawToken, user: safeUser(existingUser), membership, orgName: org.name, isNewUser, isNewMembership });
     } catch (err: any) {
       if (err?.name === "ZodError") return res.status(400).json({ message: "Invalid input", errors: err.errors });
+      console.error(`[org-auth/signup] error: ${err?.message}`);
       res.status(500).json({ message: err.message || "Signup failed" });
     }
   });
