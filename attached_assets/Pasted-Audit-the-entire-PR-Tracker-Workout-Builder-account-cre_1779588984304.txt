@@ -1,0 +1,189 @@
+Audit the entire PR Tracker / Workout Builder account creation and onboarding pipeline to ensure users are properly integrated into the organization system and receive automated onboarding communication.
+
+Current flow:
+Users can create:
+- Athlete accounts
+- Team Coach accounts
+
+through the PR Tracker / Workout Builder auth modal.
+
+We now need to verify:
+1. how these accounts connect into the org ecosystem
+2. whether onboarding/intro communication is sent automatically
+3. whether org admins/coaches can immediately see/manage these users
+4. whether permissions and org memberships are assigned correctly
+
+PART 1 — Full onboarding audit
+
+Trace the full signup flow from:
+PR Tracker / Workout Builder modal
+→ account creation
+→ org association
+→ role assignment
+→ onboarding communication
+→ dashboard visibility
+
+Audit:
+- frontend form submission
+- API route
+- database writes
+- auth provider sync
+- org membership creation
+- team linkage
+- notification pipeline
+- email automation pipeline
+
+PART 2 — Verify org integration
+
+For every signup type verify:
+
+ATHLETE:
+- user record created
+- org membership created
+- role assigned correctly
+- optional team join code processed
+- appears in org athlete/user management
+- appears in coach dashboard
+- can access athlete-facing tools only
+
+TEAM COACH:
+- user record created
+- org membership created
+- role = coach
+- appears in org staff/team management
+- receives coach permissions
+- can access PR Tracker management + workout builder tools
+
+Verify:
+- no orphaned users
+- no missing org linkage
+- no duplicate memberships
+- no fallback guest accounts
+
+PART 3 — Intro/onboarding email system
+
+Verify whether onboarding emails are currently sent.
+
+If missing:
+Create automated onboarding email flows.
+
+ATHLETE EMAIL:
+Subject:
+“Welcome to Efficiency Strength Training”
+
+Include:
+- welcome message
+- org branding/logo
+- coach introduction
+- what tools they now have access to
+- how to log in
+- mobile usage recommendation
+- CTA button
+
+TEAM COACH EMAIL:
+Subject:
+“You’ve been added as a coach”
+
+Include:
+- coach onboarding message
+- access explanation
+- dashboard/tools overview
+- how to manage athletes
+- scheduling/workout tools
+- CTA button
+
+PART 4 — System notifications
+
+After signup:
+- org admins should receive internal notification
+- optionally coaches/team owners too
+
+Examples:
+“New athlete joined BLHS Athletic”
+“New coach account created”
+
+Add:
+- attention inbox integration
+- notification center entry
+- optional email alert
+
+PART 5 — Dashboard visibility audit
+
+Verify newly created accounts immediately appear in:
+- Users
+- Teams
+- Athlete lists
+- Coach lists
+- Communications
+- Scheduling systems
+- Workout Builder access
+- PR Tracker access
+
+No manual refresh/relogin should be required.
+
+Invalidate/refetch relevant React Query caches after signup.
+
+PART 6 — Edge cases
+
+Audit:
+- invalid join codes
+- duplicate email signup
+- coach signup without permission
+- missing org slug
+- deleted orgs
+- archived teams
+- pending approval states
+
+Ensure failures are graceful and branded.
+
+PART 7 — UX improvements
+
+After successful signup:
+- show premium success state
+- org-branded welcome screen
+- optional auto-login
+- clear next action CTA
+
+Examples:
+“Start Tracking PRs”
+“Open Workout Builder”
+“Complete Athlete Profile”
+
+PART 8 — Logging and diagnostics
+
+Add structured logs for:
+- account creation
+- org membership assignment
+- onboarding email sends
+- failed email delivery
+- join code usage
+- role assignment
+
+Include:
+- orgId
+- role
+- email
+- source tool (pr-tracker/workout-builder)
+
+PART 9 — Acceptance tests
+
+ATHLETE:
+- Sign up from PR Tracker
+- User created
+- Org linked
+- Athlete visible in org dashboard
+- Intro email received
+- Correct permissions assigned
+
+TEAM COACH:
+- Sign up from Workout Builder
+- Coach visible in org systems
+- Coach permissions active
+- Intro email received
+- Can access coach tools
+
+Verify:
+- no orphaned accounts
+- no missing memberships
+- no auth drift
+- onboarding flow feels smooth and premium
