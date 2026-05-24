@@ -1,0 +1,139 @@
+Refactor ONLY the “Meet Our Coaches” section on the org landing page to feel more premium, compact, and modern while preserving the TrainEfficiency/EST visual identity.
+
+Current issues:
+- Coach cards are too tall and text-heavy
+- The section visually dominates the page
+- Layout feels database-rendered instead of premium
+- Mixed avatar styles make the section feel inconsistent
+- The CTA below the section feels disconnected
+
+Goal:
+Create a cleaner, higher-end mobile-first “Meet Our Coaches” experience similar to a premium sports performance brand.
+
+PART 1 — Compact card redesign
+
+Replace the current stacked vertical cards with:
+- compact horizontal cards
+- reduced height (~25–35% shorter)
+- cleaner hierarchy
+- more whitespace discipline
+
+Each card should contain:
+- circular avatar/portrait
+- coach name
+- role/title
+- short one-line specialty
+- compact specialty pills
+
+Remove long descriptive paragraphs entirely.
+
+Example structure:
+
+[avatar]  Bryan Jones
+          Head Strength Coach
+          Sports Performance Development
+
+[pills]
+
+Card styling:
+- soft glass effect
+- subtle green edge glow
+- softer border opacity
+- smoother shadows
+- cleaner padding rhythm
+- slight hover/tap scale animation
+
+PART 2 — Horizontal mobile carousel
+
+On mobile:
+- convert coach cards into a horizontal swipeable carousel
+- smooth momentum scrolling
+- snap scrolling optional
+- cards should feel lightweight and easy to browse
+
+On desktop/tablet:
+- use responsive grid layout
+
+PART 3 — Premium avatar fallbacks
+
+Current initial-based avatars feel placeholder.
+
+Create a better fallback avatar style:
+- EST/neural-inspired gradient background
+- centered initials
+- soft glow ring
+- subtle grid texture
+- consistent sizing with real profile photos
+
+Ensure all avatars visually match even when some coaches lack images.
+
+PART 4 — Improve typography hierarchy
+
+Refine typography:
+- slightly smaller body sizing
+- stronger name prominence
+- softer secondary text
+- tighter vertical spacing
+- cleaner pill styling
+
+Make the section feel:
+- athletic
+- premium
+- modern
+- technical
+- not corporate/database-like
+
+PART 5 — Add section polish
+
+Add:
+- subtle staggered fade-in animation
+- smoother section spacing
+- optional horizontal divider glow
+- softer background contrast behind the section
+
+Section title improvements:
+Current:
+“Meet Our Coaches”
+
+Update to something more premium like:
+- “Performance Staff”
+- “Meet the Coaching Staff”
+- “Elite Coaching Team”
+
+Add a short supporting subtitle:
+“Experienced professionals dedicated to athletic performance development.”
+
+PART 6 — Improve CTA connection
+
+Immediately below the coaches carousel add:
+
+Headline:
+“Ready to Start Training?”
+
+Subheadline:
+“Book your first session with the EST coaching staff.”
+
+Then keep the existing CTA button.
+
+Add:
+- more spacing rhythm
+- smoother visual transition from cards → CTA
+- subtle glow behind CTA section
+
+PART 7 — Mobile optimization
+
+Optimize specifically for:
+- iPhone Safari
+- smooth horizontal swiping
+- no layout shift during hydration
+- safe-area spacing
+- touch-friendly card spacing
+
+Acceptance tests:
+- Open org landing page on mobile Safari
+- Coach section feels compact and premium
+- Cards swipe smoothly horizontally
+- No giant blocks of text
+- Avatars look visually consistent
+- CTA feels connected to the section
+- Entire section feels more cinematic and intentional
