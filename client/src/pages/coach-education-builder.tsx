@@ -80,7 +80,7 @@ export default function CoachEducationBuilderPage() {
   const [newPathway, setNewPathway] = useState({ title: "", category: "custom", description: "" });
   const [aiGenForm, setAiGenForm] = useState({ topic: "", ageGroup: "", sport: "", tone: "", numModules: 6, difficulty: "intermediate", goal: "" });
   const [fullProgramMode, setFullProgramMode] = useState(false);
-  const [fullProgramForm, setFullProgramForm] = useState({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner", coachPhilosophy: "", teachingStyle: "", bannedTerms: "", emphasisAreas: "" });
+  const [fullProgramForm, setFullProgramForm] = useState({ prompt: "", ageGroup: "", sport: "", numModules: 6, difficulty: "beginner", coachPhilosophy: "", teachingStyle: "", bannedTerms: "", emphasisAreas: "" });
   const [showPhilosophySettings, setShowPhilosophySettings] = useState(false);
   const [fullProgramDraft, setFullProgramDraft] = useState<any>(null);
   const [fullProgramLoading, setFullProgramLoading] = useState(false);
@@ -191,7 +191,7 @@ export default function CoachEducationBuilderPage() {
       refetchPathways();
       setFullProgramDraft(null);
       setFullProgramMode(false);
-      setFullProgramForm({ prompt: "", ageGroup: "", sport: "", numModules: 4, difficulty: "beginner", coachPhilosophy: "", teachingStyle: "", bannedTerms: "", emphasisAreas: "" });
+      setFullProgramForm({ prompt: "", ageGroup: "", sport: "", numModules: 6, difficulty: "beginner", coachPhilosophy: "", teachingStyle: "", bannedTerms: "", emphasisAreas: "" });
       setShowPhilosophySettings(false);
       toast({ title: "Program created!", description: `${data.modulesCount} modules ready. Add YouTube links then publish.` });
       const pathway = data.pathway;
@@ -528,26 +528,44 @@ export default function CoachEducationBuilderPage() {
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">Describe what you want to create. AI will generate all modules, content, quizzes, and a final test in one shot.</p>
                 <Textarea
-                  placeholder='e.g. "Create a beginner nutrition program for high school football athletes focused on pre-game fueling"'
+                  placeholder='e.g. "Create a 6 module nutrition program for high school football athletes focused on pre-game fueling"'
                   value={fullProgramForm.prompt}
-                  onChange={(e) => setFullProgramForm((p) => ({ ...p, prompt: e.target.value }))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const moduleMatch = val.match(/(\d+)\s*(?:module|modules|lesson|lessons)/i);
+                    setFullProgramForm((p) => ({
+                      ...p,
+                      prompt: val,
+                      ...(moduleMatch ? { numModules: Math.min(12, Math.max(2, parseInt(moduleMatch[1]))) } : {}),
+                    }));
+                  }}
                   className="text-sm min-h-[80px]"
                   data-testid="input-full-program-prompt"
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="Age group (e.g. high school athletes)" value={fullProgramForm.ageGroup}
-                  onChange={(e) => setFullProgramForm((p) => ({ ...p, ageGroup: e.target.value }))}
-                  className="h-8 text-xs" data-testid="input-age-group" />
-                <Input placeholder="Sport / team (e.g. football)" value={fullProgramForm.sport}
-                  onChange={(e) => setFullProgramForm((p) => ({ ...p, sport: e.target.value }))}
-                  className="h-8 text-xs" data-testid="input-sport" />
-                <div className="flex items-center gap-2 col-span-2">
-                  <Input placeholder="# of modules" type="number" min={2} max={8} value={fullProgramForm.numModules}
-                    onChange={(e) => setFullProgramForm((p) => ({ ...p, numModules: parseInt(e.target.value) || 4 }))}
-                    className="h-8 text-xs w-28" />
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Audience / age group</p>
+                  <Input placeholder="e.g. high school athletes" value={fullProgramForm.ageGroup}
+                    onChange={(e) => setFullProgramForm((p) => ({ ...p, ageGroup: e.target.value }))}
+                    className="h-8 text-xs" data-testid="input-age-group" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Sport / team</p>
+                  <Input placeholder="e.g. football" value={fullProgramForm.sport}
+                    onChange={(e) => setFullProgramForm((p) => ({ ...p, sport: e.target.value }))}
+                    className="h-8 text-xs" data-testid="input-sport" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Number of modules</p>
+                  <Input placeholder="6" type="number" min={2} max={12} value={fullProgramForm.numModules}
+                    onChange={(e) => setFullProgramForm((p) => ({ ...p, numModules: parseInt(e.target.value) || 6 }))}
+                    className="h-8 text-xs" data-testid="input-num-modules" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Difficulty level</p>
                   <Select value={fullProgramForm.difficulty} onValueChange={(v) => setFullProgramForm((p) => ({ ...p, difficulty: v }))}>
-                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-8 text-xs" data-testid="select-difficulty"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="beginner">Beginner</SelectItem>
                       <SelectItem value="intermediate">Intermediate</SelectItem>

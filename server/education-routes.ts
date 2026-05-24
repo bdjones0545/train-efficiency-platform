@@ -12,39 +12,54 @@ import { z } from "zod";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
 import OpenAI from "openai";
+import { resolveOrgSession } from "./org-auth";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 function getUserId(req: any): string | null {
+  // Prefer resolved org session userId (covers all three auth paths)
+  if (req._orgAuth?.userId) return req._orgAuth.userId;
   return req.user?.claims?.sub ?? req.user?.id ?? null;
 }
 
-async function getOrgProfile(req: any) {
-  const userId = getUserId(req);
-  if (!userId) return null;
-  const [p] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-  return p ?? null;
-}
-
+/**
+ * requireAuth — any authenticated org member (athlete, coach, admin).
+ * Uses resolveOrgSession which supports:
+ *   A. X-Org-Auth-Token (org-specific token)
+ *   B. OIDC session (Replit Auth / passport req.user)
+ *   C. Bearer token (email/password coach login)
+ */
 function requireAuth(req: any, res: any, next: any) {
-  (async () => {
-    const p = await getOrgProfile(req);
-    if (!p) return res.status(401).json({ message: "Unauthorized" });
-    (req as any)._profile = p;
-    next();
-  })().catch(() => res.status(500).json({ message: "Auth error" }));
+  resolveOrgSession(req)
+    .then((auth) => {
+      if (!auth) return res.status(401).json({ error: "Unauthorized", message: "Sign in to access this resource." });
+      req._orgAuth = auth;
+      // Provide a _profile-compatible shim so existing route code works unchanged
+      req._profile = { organizationId: auth.orgId, role: auth.role.toUpperCase(), userId: auth.userId };
+      next();
+    })
+    .catch(() => res.status(500).json({ error: "AuthError", message: "Authentication error. Please try again." }));
 }
 
+/**
+ * requireCoach — coach, admin, staff, or owner role required.
+ * Uses resolveOrgSession which supports all three auth paths.
+ */
 function requireCoach(req: any, res: any, next: any) {
-  (async () => {
-    const p = await getOrgProfile(req);
-    if (!p) return res.status(401).json({ message: "Unauthorized" });
-    if (!["ADMIN", "COACH"].includes(p.role ?? "")) return res.status(403).json({ message: "Forbidden" });
-    (req as any)._profile = p;
-    next();
-  })().catch(() => res.status(500).json({ message: "Auth error" }));
+  resolveOrgSession(req)
+    .then((auth) => {
+      if (!auth) return res.status(401).json({ error: "Unauthorized", message: "Sign in to access this resource." });
+      if (!["admin", "coach", "staff", "owner"].includes(auth.role)) {
+        return res.status(403).json({ error: "Forbidden", message: "Coach or admin access required." });
+      }
+      req._orgAuth = auth;
+      // Provide a _profile-compatible shim so existing route code works unchanged
+      req._profile = { organizationId: auth.orgId, role: auth.role.toUpperCase(), userId: auth.userId };
+      next();
+    })
+    .catch(() => res.status(500).json({ error: "AuthError", message: "Authentication error. Please try again." }));
 }
 
 // ─── Education AI System Prompt Builder ───────────────────────────────────────

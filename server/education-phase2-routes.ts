@@ -9,47 +9,49 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, asc, gte, lte, lt, inArray, sql as drizzleSql, count } from "drizzle-orm";
 import OpenAI from "openai";
+import { resolveOrgSession } from "./org-auth";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 function getUserId(req: any): string | null {
+  if (req._orgAuth?.userId) return req._orgAuth.userId;
   return req.user?.claims?.sub ?? req.user?.id ?? null;
 }
 
-// Middleware to require valid org-token (same pattern as phase 1)
+/**
+ * requireCoach — coach, admin, staff, or owner role required.
+ * Supports all three auth paths:
+ *   A. X-Org-Auth-Token  B. OIDC session  C. Bearer token
+ */
 function requireCoach(req: any, res: any, next: any) {
-  const token = req.headers["x-org-auth-token"];
-  if (!token) return res.status(401).json({ message: "Missing org auth token" });
-  req._orgToken = token;
-  // Look up profile via token (same as existing pattern)
-  db.select().from(orgUsers)
-    .where(eq(orgUsers.authToken, token as string))
-    .limit(1)
-    .then(([profile]) => {
-      if (!profile) return res.status(401).json({ message: "Invalid org token" });
-      if (!["admin", "coach", "staff"].includes(profile.role ?? "")) {
-        return res.status(403).json({ message: "Coach access required" });
+  resolveOrgSession(req)
+    .then((auth) => {
+      if (!auth) return res.status(401).json({ error: "Unauthorized", message: "Sign in to access this resource." });
+      if (!["admin", "coach", "staff", "owner"].includes(auth.role)) {
+        return res.status(403).json({ error: "Forbidden", message: "Coach or admin access required." });
       }
-      req._profile = profile;
+      req._orgAuth = auth;
+      req._profile = { organizationId: auth.orgId, userId: auth.userId, role: auth.role };
       next();
     })
-    .catch(() => res.status(500).json({ message: "Auth error" }));
+    .catch(() => res.status(500).json({ error: "AuthError", message: "Authentication error. Please try again." }));
 }
 
+/**
+ * requireOrgUser — any authenticated org member.
+ * Supports all three auth paths.
+ */
 function requireOrgUser(req: any, res: any, next: any) {
-  const token = req.headers["x-org-auth-token"];
-  if (!token) return res.status(401).json({ message: "Missing org auth token" });
-  db.select().from(orgUsers)
-    .where(eq(orgUsers.authToken, token as string))
-    .limit(1)
-    .then(([profile]) => {
-      if (!profile) return res.status(401).json({ message: "Invalid org token" });
-      req._profile = profile;
+  resolveOrgSession(req)
+    .then((auth) => {
+      if (!auth) return res.status(401).json({ error: "Unauthorized", message: "Sign in to access this resource." });
+      req._orgAuth = auth;
+      req._profile = { organizationId: auth.orgId, userId: auth.userId, role: auth.role };
       next();
     })
-    .catch(() => res.status(500).json({ message: "Auth error" }));
+    .catch(() => res.status(500).json({ error: "AuthError", message: "Authentication error. Please try again." }));
 }
 
 // ─── Shared helper: award badge if not already earned ─────────────────────────
