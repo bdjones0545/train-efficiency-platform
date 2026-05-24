@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,9 +61,15 @@ interface IntelAlert {
 
 interface Props {
   athleteUserId: string;
-  orgToken: string;
+  orgToken: string | null;
   athleteName: string;
   orgSlug: string;
+}
+
+function buildHeaders(orgToken: string | null): Record<string, string> {
+  const headers: Record<string, string> = { ...getAuthHeaders() };
+  if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+  return headers;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -169,7 +176,7 @@ function AlertCard({
     mutationFn: async () => {
       const r = await fetch(`/api/org/coach/intelligence/alerts/${alert.id}/read`, {
         method: "PATCH",
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -245,7 +252,7 @@ export default function WatchlistPanel({ athleteUserId, orgToken, athleteName, o
     queryKey: ["/api/org/coach/intelligence/watchlists", athleteUserId],
     queryFn: async () => {
       const r = await fetch(`/api/org/coach/intelligence/watchlists?athleteUserId=${athleteUserId}`, {
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -257,7 +264,7 @@ export default function WatchlistPanel({ athleteUserId, orgToken, athleteName, o
     queryKey: ["/api/org/coach/intelligence/alerts", athleteUserId],
     queryFn: async () => {
       const r = await fetch(`/api/org/coach/intelligence/alerts?athleteUserId=${athleteUserId}&limit=8`, {
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -299,7 +306,7 @@ export default function WatchlistPanel({ athleteUserId, orgToken, athleteName, o
     mutationFn: async () => {
       const r = await fetch("/api/org/coach/watchlists", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+        headers: { "Content-Type": "application/json", ...buildHeaders(orgToken) }, credentials: "include",
         body: JSON.stringify({ athleteUserId, ...localSettings, frequency }),
       });
       if (!r.ok) throw new Error(await r.text());
@@ -318,7 +325,7 @@ export default function WatchlistPanel({ athleteUserId, orgToken, athleteName, o
       if (!watchlist) return;
       const r = await fetch(`/api/org/coach/watchlists/${watchlist.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+        headers: { "Content-Type": "application/json", ...buildHeaders(orgToken) }, credentials: "include",
         body: JSON.stringify({ ...localSettings, frequency }),
       });
       if (!r.ok) throw new Error(await r.text());
@@ -337,7 +344,7 @@ export default function WatchlistPanel({ athleteUserId, orgToken, athleteName, o
       if (!watchlist) return;
       const r = await fetch(`/api/org/coach/watchlists/${watchlist.id}`, {
         method: "DELETE",
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -354,7 +361,7 @@ export default function WatchlistPanel({ athleteUserId, orgToken, athleteName, o
     mutationFn: async () => {
       const r = await fetch(`/api/org/coach/intelligence/run-check/${athleteUserId}`, {
         method: "POST",
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -370,7 +377,7 @@ export default function WatchlistPanel({ athleteUserId, orgToken, athleteName, o
     mutationFn: async () => {
       const r = await fetch(`/api/org/coach/intelligence/alerts/read-all?athleteUserId=${athleteUserId}`, {
         method: "PATCH",
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();

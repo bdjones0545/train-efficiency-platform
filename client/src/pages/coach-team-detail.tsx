@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { logoutAllSessions } from "@/lib/logout";
 import PlayerCard from "@/components/pr-tracker/PlayerCard";
 import type { PlayerCardProfile } from "@/components/pr-tracker/PlayerCard";
 import { useParams } from "wouter";
@@ -13,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import {
   ArrowLeft,
   Users,
@@ -20,7 +21,6 @@ import {
   Search,
   Download,
   FileText,
-  LogOut,
   CalendarCheck,
   Star,
   ChevronRight,
@@ -111,6 +111,7 @@ export default function CoachTeamDetailPage() {
   const orgId = org?.id;
   const [orgToken, setOrgToken] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
+  const { hasAccess, isHydrating } = usePermissions(slug);
 
   useEffect(() => {
     if (!orgId) return;
@@ -124,15 +125,15 @@ export default function CoachTeamDetailPage() {
 
   // Team data
   const { data: teamData, isLoading: teamLoading } = useQuery<any>({
-    queryKey: ["/api/org/coach/teams", teamId, orgToken],
+    queryKey: ["/api/org/coach/teams", teamId, orgToken, hasAccess],
     queryFn: async () => {
-      const res = await fetch(`/api/org/coach/teams/${teamId}`, {
-        headers: { "X-Org-Auth-Token": orgToken! },
-      });
+      const headers: Record<string, string> = { ...getAuthHeaders() };
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const res = await fetch(`/api/org/coach/teams/${teamId}`, { headers, credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
-    enabled: !!orgToken && !!teamId,
+    enabled: !!teamId && (!!orgToken || hasAccess),
   });
 
   // Athlete profile
@@ -140,13 +141,20 @@ export default function CoachTeamDetailPage() {
   const [selectedProfile, setSelectedProfile] = useState<AthleteProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
+  function buildAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { ...getAuthHeaders() };
+    if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+    return headers;
+  }
+
   async function loadAthleteProfile(userId: string) {
     setSelectedUserId(userId);
     setSelectedProfile(null);
     setProfileLoading(true);
     try {
       const res = await fetch(`/api/org/coach/teams/${teamId}/athletes/${userId}`, {
-        headers: { "X-Org-Auth-Token": orgToken! },
+        headers: buildAuthHeaders(),
+        credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       setSelectedProfile(await res.json());
@@ -170,8 +178,9 @@ export default function CoachTeamDetailPage() {
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/teams/${teamId}/athletes/${selectedUserId}/notes`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken! },
+        headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
         body: JSON.stringify({ notes: editingNotes }),
+        credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -244,7 +253,8 @@ export default function CoachTeamDetailPage() {
 
         try {
           const res = await fetch(`/api/org/coach/teams/${teamId}/athletes/${member.userId}`, {
-            headers: { "X-Org-Auth-Token": orgToken! },
+            headers: buildAuthHeaders(),
+            credentials: "include",
           });
           if (!res.ok) continue;
           const profile: AthleteProfile = await res.json();
@@ -287,10 +297,6 @@ export default function CoachTeamDetailPage() {
     }
   }
 
-  function handleLogout() {
-    logoutAllSessions(`/org/${slug}/portal`);
-  }
-
   function handleAuthenticated(token: string) {
     if (orgId) localStorage.setItem(`orgToken_${orgId}`, token);
     setOrgToken(token);
@@ -298,7 +304,7 @@ export default function CoachTeamDetailPage() {
   }
 
   // ── Auth guard ──────────────────────────────────────────────────────────
-  if (!orgToken) {
+  if (!orgToken && !hasAccess && !isHydrating) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-16 text-center space-y-6">
         {org?.logoUrl && <img src={org.logoUrl} alt={org.name} className="h-14 w-auto rounded-xl" />}
@@ -327,24 +333,19 @@ export default function CoachTeamDetailPage() {
             </Button>
           </a>
           <span className="font-semibold text-sm truncate max-w-[180px]">{team?.name || "Team Roster"}</span>
-          <div className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={exportTeamPdf}
-              disabled={isGeneratingPdf || !members.length}
-              data-testid="button-export-pdf"
-            >
-              {isGeneratingPdf ? (
-                <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> {pdfProgress.current}/{pdfProgress.total}</>
-              ) : (
-                <><FileText className="h-3.5 w-3.5 mr-1.5" /> Export PDF</>
-              )}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={exportTeamPdf}
+            disabled={isGeneratingPdf || !members.length}
+            data-testid="button-export-pdf"
+          >
+            {isGeneratingPdf ? (
+              <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> {pdfProgress.current}/{pdfProgress.total}</>
+            ) : (
+              <><FileText className="h-3.5 w-3.5 mr-1.5" /> Export PDF</>
+            )}
+          </Button>
         </div>
       </nav>
 

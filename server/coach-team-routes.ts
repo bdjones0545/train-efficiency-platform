@@ -59,10 +59,15 @@ export function registerCoachTeamRoutes(app: Express) {
       const { user, membership } = req.orgAuth;
       const orgId = membership.orgId;
 
+      const isOrgAdmin = ["admin", "owner"].includes(membership.role);
       const teams = await db
         .select()
         .from(prTeams)
-        .where(and(eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id)))
+        .where(
+          isOrgAdmin
+            ? eq(prTeams.orgId, orgId)
+            : and(eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id))
+        )
         .orderBy(desc(prTeams.createdAt));
 
       const teamIds = teams.map((t) => t.id);
@@ -97,13 +102,18 @@ export function registerCoachTeamRoutes(app: Express) {
       const orgId = membership.orgId;
       const { teamId } = req.params;
 
+      const isOrgAdmin = ["admin", "owner"].includes(membership.role);
       const [team] = await db
         .select()
         .from(prTeams)
-        .where(and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id)))
+        .where(
+          isOrgAdmin
+            ? and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId))
+            : and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id))
+        )
         .limit(1);
 
-      if (!team) return res.status(404).json({ message: "Team not found or not yours" });
+      if (!team) return res.status(404).json({ message: "Team not found or access denied" });
 
       const members = await db
         .select({
@@ -166,13 +176,18 @@ export function registerCoachTeamRoutes(app: Express) {
         const orgId = membership.orgId;
         const { teamId, userId: athleteId } = req.params;
 
+        const isOrgAdmin = ["admin", "owner"].includes(membership.role);
         const [team] = await db
           .select()
           .from(prTeams)
-          .where(and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id)))
+          .where(
+            isOrgAdmin
+              ? and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId))
+              : and(eq(prTeams.id, teamId), eq(prTeams.orgId, orgId), eq(prTeams.coachUserId, user.id))
+          )
           .limit(1);
 
-        if (!team) return res.status(403).json({ message: "Not your team" });
+        if (!team) return res.status(403).json({ message: "Team not found or access denied" });
 
         const [athlete] = await db
           .select({ id: orgUsers.id, name: orgUsers.name, email: orgUsers.email, createdAt: orgUsers.createdAt })

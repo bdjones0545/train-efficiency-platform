@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
-import { logoutAllSessions } from "@/lib/logout";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Users, Trophy, ChevronRight, Plus, Code, Calendar, LogOut } from "lucide-react";
+import { ArrowLeft, Users, Trophy, ChevronRight, Plus, Code, Calendar } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
 import { format } from "date-fns";
@@ -81,10 +80,6 @@ export default function CoachTeamsPage() {
     enabled: !!orgId && (!!orgToken || hasAccess),
   });
 
-  function handleLogout() {
-    logoutAllSessions(`/org/${slug}/portal`);
-  }
-
   function handleAuthenticated(token: string) {
     if (orgId) localStorage.setItem(`orgToken_${orgId}`, token);
     setOrgToken(token);
@@ -135,9 +130,7 @@ export default function CoachTeamsPage() {
             </a>
           </div>
           <span className="font-semibold text-sm">My Teams</span>
-          <Button size="sm" variant="ghost" onClick={handleLogout}>
-            <LogOut className="h-4 w-4" />
-          </Button>
+          <div className="w-16" />
         </div>
       </nav>
 

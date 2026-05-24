@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
-import { logoutAllSessions } from "@/lib/logout";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { usePermissions } from "@/hooks/use-permissions";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,6 @@ import {
   Camera,
   FileText,
   RefreshCw,
-  LogOut,
   LayoutDashboard,
   CheckCircle2,
   Clock,
@@ -130,6 +130,7 @@ export default function CoachAthleteDetailPage() {
 
   const [orgToken, setOrgToken] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
+  const { hasAccess, isHydrating } = usePermissions(slug);
 
   useEffect(() => {
     if (!orgId) return;
@@ -141,16 +142,23 @@ export default function CoachAthleteDetailPage() {
       .catch(() => { localStorage.removeItem(`orgToken_${orgId}`); });
   }, [orgId]);
 
+  function buildAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { ...getAuthHeaders() };
+    if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+    return headers;
+  }
+
   const { data: profile, isLoading, refetch } = useQuery<AthleteFullProfile>({
-    queryKey: ["/api/org/coach/athletes", userId, orgToken],
+    queryKey: ["/api/org/coach/athletes", userId, orgToken, hasAccess],
     queryFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${userId}`, {
-        headers: { "X-Org-Auth-Token": orgToken! },
+        headers: buildAuthHeaders(),
+        credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
-    enabled: !!orgToken && !!userId,
+    enabled: !!userId && (!!orgToken || hasAccess),
   });
 
   // Notes
@@ -164,8 +172,9 @@ export default function CoachAthleteDetailPage() {
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${userId}/notes`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken! },
+        headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
         body: JSON.stringify({ notes: editingNotes }),
+        credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -228,10 +237,6 @@ export default function CoachAthleteDetailPage() {
     }
   }
 
-  function handleLogout() {
-    logoutAllSessions(`/org/${slug}/portal`);
-  }
-
   function handleAuthenticated(token: string) {
     if (orgId) localStorage.setItem(`orgToken_${orgId}`, token);
     setOrgToken(token);
@@ -239,7 +244,7 @@ export default function CoachAthleteDetailPage() {
   }
 
   // ── Auth guard ────────────────────────────────────────────────────────────
-  if (!orgToken) {
+  if (!orgToken && !hasAccess && !isHydrating) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-16 text-center space-y-6">
         {org?.logoUrl && <img src={org.logoUrl} alt={org.name} className="h-14 w-auto rounded-xl" />}
@@ -331,9 +336,6 @@ export default function CoachAthleteDetailPage() {
             </Button>
             <Button size="sm" variant="outline" onClick={exportPdf} disabled={isGeneratingPdf || !profile} className="text-xs px-2" data-testid="button-export-pdf">
               {isGeneratingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>

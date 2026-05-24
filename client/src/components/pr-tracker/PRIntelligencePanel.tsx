@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -85,9 +86,15 @@ interface ResearchJob {
 
 interface Props {
   athleteUserId: string;
-  orgToken: string;
+  orgToken: string | null;
   athleteName: string;
   coachNotes: string;
+}
+
+function buildHeaders(orgToken: string | null): Record<string, string> {
+  const headers: Record<string, string> = { ...getAuthHeaders() };
+  if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+  return headers;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -266,7 +273,7 @@ function SummaryCard({ summary, athleteUserId, orgToken, onUpdated }: { summary:
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/summary/${summary.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+        headers: { "Content-Type": "application/json", ...buildHeaders(orgToken) }, credentials: "include",
         body: JSON.stringify({ editedText: editText }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -280,7 +287,7 @@ function SummaryCard({ summary, athleteUserId, orgToken, onUpdated }: { summary:
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/summary/${summary.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+        headers: { "Content-Type": "application/json", ...buildHeaders(orgToken) }, credentials: "include",
         body: JSON.stringify({ status: "approved" }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -353,7 +360,7 @@ function PublicProfileCard({ profile, athleteUserId, orgToken, onUpdated }: { pr
   const approveMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${athleteUserId}/public-profile/${profile.id}/approve`, {
-        method: "PATCH", headers: { "X-Org-Auth-Token": orgToken },
+        method: "PATCH", headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -365,7 +372,7 @@ function PublicProfileCard({ profile, athleteUserId, orgToken, onUpdated }: { pr
   const rejectMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${athleteUserId}/public-profile/${profile.id}/reject`, {
-        method: "PATCH", headers: { "X-Org-Auth-Token": orgToken },
+        method: "PATCH", headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -431,7 +438,7 @@ function ExternalAssetCard({ asset, athleteUserId, orgToken, onUpdated }: { asse
   const approveMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${athleteUserId}/external-asset/${asset.id}/approve`, {
-        method: "PATCH", headers: { "X-Org-Auth-Token": orgToken },
+        method: "PATCH", headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -443,7 +450,7 @@ function ExternalAssetCard({ asset, athleteUserId, orgToken, onUpdated }: { asse
   const rejectMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${athleteUserId}/external-asset/${asset.id}/reject`, {
-        method: "PATCH", headers: { "X-Org-Auth-Token": orgToken },
+        method: "PATCH", headers: buildHeaders(orgToken), credentials: "include",
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -520,7 +527,7 @@ function ResearchForm({ athleteUserId, orgToken, athleteName, onJobStarted }: { 
     mutationFn: async () => {
       const res = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/research`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+        headers: { "Content-Type": "application/json", ...buildHeaders(orgToken) }, credentials: "include",
         body: JSON.stringify(form),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -657,7 +664,7 @@ export default function PRIntelligencePanel({ athleteUserId, orgToken, athleteNa
   const summariesQ = useQuery<{ summaries: AiSummary[] }>({
     queryKey: ["/api/org/coach/athletes", athleteUserId, "ai/summaries"],
     queryFn: async () => {
-      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/summaries`, { headers: { "X-Org-Auth-Token": orgToken } });
+      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/summaries`, { headers: buildHeaders(orgToken), credentials: "include" });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
@@ -666,7 +673,7 @@ export default function PRIntelligencePanel({ athleteUserId, orgToken, athleteNa
   const jobsQ = useQuery<{ jobs: ResearchJob[] }>({
     queryKey: ["/api/org/coach/athletes", athleteUserId, "ai/research-jobs"],
     queryFn: async () => {
-      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/research-jobs`, { headers: { "X-Org-Auth-Token": orgToken } });
+      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/research-jobs`, { headers: buildHeaders(orgToken), credentials: "include" });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
@@ -676,7 +683,7 @@ export default function PRIntelligencePanel({ athleteUserId, orgToken, athleteNa
   const profilesQ = useQuery<{ profiles: PublicProfile[] }>({
     queryKey: ["/api/org/coach/athletes", athleteUserId, "public-profiles"],
     queryFn: async () => {
-      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/public-profiles`, { headers: { "X-Org-Auth-Token": orgToken } });
+      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/public-profiles`, { headers: buildHeaders(orgToken), credentials: "include" });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
@@ -685,7 +692,7 @@ export default function PRIntelligencePanel({ athleteUserId, orgToken, athleteNa
   const assetsQ = useQuery<{ assets: ExternalAsset[] }>({
     queryKey: ["/api/org/coach/athletes", athleteUserId, "external-assets"],
     queryFn: async () => {
-      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/external-assets`, { headers: { "X-Org-Auth-Token": orgToken } });
+      const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/external-assets`, { headers: buildHeaders(orgToken), credentials: "include" });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
@@ -720,7 +727,7 @@ export default function PRIntelligencePanel({ athleteUserId, orgToken, athleteNa
     try {
       const r = await fetch(`/api/org/coach/athletes/${athleteUserId}/ai/summary`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Org-Auth-Token": orgToken },
+        headers: { "Content-Type": "application/json", ...buildHeaders(orgToken) }, credentials: "include",
         body: JSON.stringify({ summaryType: type, coachNotes }),
       });
       if (!r.ok) throw new Error(await r.text());
