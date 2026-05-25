@@ -14104,7 +14104,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       }
 
       const submittedAt = new Date();
-      const submissionTimestamp = submittedAt.toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" });
+      const { formatEmailTimestamp } = await import("./utils/format-email-timestamp");
+      const orgTimezone = (org as any).timezone || "America/New_York";
+      const submissionTimestamp = formatEmailTimestamp(submittedAt, orgTimezone);
       const commandCenterUrl = `${process.env.APP_URL || "https://trainefficiency.com"}/command-center`;
 
       const adminEmailHtml = `
@@ -14507,7 +14509,9 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       if (!adminEmail) return res.status(400).json({ message: "No admin email recipient found for this organization" });
 
       const { athleteName, parentName, email, phone, age, grade, sport, position, school, goals, commitmentLevel, experienceLevel, currentTrainingStatus, notes, utmSource, utmMedium, utmCampaign, aiQualificationScore, createdAt } = submission;
-      const submissionTimestamp = createdAt ? new Date(createdAt).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "Unknown";
+      const { formatEmailTimestamp: fmtAdminTs } = await import("./utils/format-email-timestamp");
+      const orgTimezoneAdmin = (org as any).timezone || "America/New_York";
+      const submissionTimestamp = createdAt ? fmtAdminTs(new Date(createdAt), orgTimezoneAdmin) : "Unknown";
       const commandCenterUrl = `${process.env.APP_URL || "https://trainefficiency.com"}/command-center`;
       const programName = program?.name || "Lead Capture Program";
 
@@ -14611,7 +14615,9 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       const contactEmail = org.ownerEmail || org.schedulingInquiryEmail || sgFromApplicant;
       const websiteUrl = org.websiteUrl || null;
       const programName = program?.name || "Our Program";
-      const submissionTimestamp = submission.createdAt ? new Date(submission.createdAt).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }) : "Unknown";
+      const { formatEmailTimestamp: fmtApplicantTs } = await import("./utils/format-email-timestamp");
+      const orgTimezoneApplicant = (org as any).timezone || "America/New_York";
+      const submissionTimestamp = submission.createdAt ? fmtApplicantTs(new Date(submission.createdAt), orgTimezoneApplicant) : "Unknown";
       const { athleteName, email, phone, sport, position, age, grade, school, commitmentLevel } = submission;
 
       const applicantHtml = `<!DOCTYPE html>
