@@ -1,0 +1,82 @@
+Audit the entire TrainEfficiency integrations architecture and rebuild the Advanced → Integrations experience to reflect the real platform capabilities.
+
+Problem:
+The current Advanced tab only shows TrainChat AI, even though the platform already supports and/or internally uses:
+- OpenAI/OpenRouter
+- SendGrid/Gmail email infrastructure
+- Twilio SMS
+- Stripe
+- Google Calendar
+- workflow automation
+- OpenClaw/browser automation
+- orchestration tooling
+- AI runtime systems
+
+This makes the platform appear far less sophisticated than it actually is.
+
+Required architecture distinction:
+
+SECTION 1 — System Integrations (read-only)
+These are platform-managed services powering TrainEfficiency globally.
+
+Create cards for:
+- TrainChat AI
+- AI Runtime (OpenAI/OpenRouter)
+- Email Infrastructure
+- SMS Infrastructure
+- Payments
+- Calendar Sync
+- Automation Engine
+- Browser/Web Automation (if applicable)
+
+Each card should include:
+- title
+- short description
+- status badge:
+   Connected / Operational / Degraded / Maintenance
+- optional provider name
+- optional last health check
+- “Managed by TrainEfficiency”
+
+NO editable API fields.
+
+SECTION 2 — Organization Integrations (editable)
+Only show integrations org admins can actually configure.
+
+Potential examples:
+- Google Calendar OAuth
+- Custom SMTP
+- Developer API Keys
+- Webhooks
+- Meta Ads integration
+- Zapier
+- Slack
+- Custom TrainChat API override
+
+Hide section entirely if no org-configurable integrations exist.
+
+Technical requirements:
+1. Audit all existing provider services and integration health systems.
+2. Reuse integration_execution_log and ops-monitor health signals where possible.
+3. Build a normalized integration metadata registry:
+   - id
+   - title
+   - description
+   - category
+   - orgConfigurable
+   - status
+   - provider
+4. Remove all placeholder/dead integration UI.
+5. Mobile-first responsive cards matching existing dark EST styling.
+6. Add subtle enterprise-grade polish:
+   - glow states
+   - operational pulse
+   - uptime feel
+   - non-gimmicky animations
+
+Acceptance criteria:
+- The integrations page accurately reflects the real TrainEfficiency architecture.
+- Users immediately understand the platform is deeply AI-integrated.
+- No fake/disconnected integrations are shown.
+- Org admins only see configurable integrations relevant to them.
+- The page feels like a serious orchestration platform rather than a simple settings page.

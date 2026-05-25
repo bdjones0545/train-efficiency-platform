@@ -47,6 +47,12 @@ import {
   Award,
   Brain,
   CircleDot,
+  Cpu,
+  Globe,
+  Server,
+  Activity,
+  MessageSquare,
+  RefreshCw,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -228,56 +234,211 @@ type CoachWithUser = {
   user: { id: string; firstName: string; lastName: string; email: string };
 };
 
-function AIIntelligenceLayerCard() {
-  const capabilities = [
-    { icon: CalendarCheck, label: "AI scheduling" },
-    { icon: BarChart2, label: "AI recommendations" },
-    { icon: Zap, label: "Conversational programming" },
-    { icon: TrendingUp, label: "Automation engine" },
-  ];
+type SystemIntegration = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  provider: string;
+  status: "operational" | "inactive" | "degraded" | "maintenance";
+  managed: boolean;
+};
+
+const INTEGRATION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  trainchat: Brain,
+  openai: Cpu,
+  sendgrid: Mail,
+  twilio: MessageSquare,
+  stripe: CreditCard,
+  google_calendar: CalendarCheck,
+  automation: Zap,
+  research: Globe,
+  meta_capi: TrendingUp,
+  slack: Activity,
+};
+
+const CATEGORY_ORDER = ["ai", "communication", "platform", "payments", "calendar", "marketing"];
+const CATEGORY_LABELS: Record<string, string> = {
+  ai: "AI Systems",
+  communication: "Communication",
+  platform: "Platform",
+  payments: "Payments",
+  calendar: "Calendar",
+  marketing: "Marketing",
+};
+
+function StatusDot({ status }: { status: SystemIntegration["status"] }) {
+  if (status === "operational") {
+    return (
+      <span className="relative flex h-2 w-2 flex-shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+      </span>
+    );
+  }
+  if (status === "degraded") {
+    return <span className="inline-flex rounded-full h-2 w-2 bg-amber-500 flex-shrink-0" />;
+  }
+  if (status === "maintenance") {
+    return <span className="inline-flex rounded-full h-2 w-2 bg-blue-500 flex-shrink-0" />;
+  }
+  return <span className="inline-flex rounded-full h-2 w-2 bg-muted-foreground/30 flex-shrink-0" />;
+}
+
+function StatusBadge({ status }: { status: SystemIntegration["status"] }) {
+  if (status === "operational") {
+    return (
+      <Badge className="text-[10px] h-5 px-1.5 gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+        Operational
+      </Badge>
+    );
+  }
+  if (status === "degraded") {
+    return (
+      <Badge className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+        Degraded
+      </Badge>
+    );
+  }
+  if (status === "maintenance") {
+    return (
+      <Badge className="text-[10px] h-5 px-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+        Maintenance
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground/60">
+      Inactive
+    </Badge>
+  );
+}
+
+function IntegrationCard({ integration }: { integration: SystemIntegration }) {
+  const Icon = INTEGRATION_ICONS[integration.id] ?? Server;
+  const isOperational = integration.status === "operational";
 
   return (
-    <section data-testid="section-ai-intelligence-layer">
-      <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
-        <Brain className="h-4 w-4 text-muted-foreground" />
-        AI
-      </h2>
-      <Card className="overflow-hidden" data-testid="card-ai-intelligence-layer">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <Brain className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold leading-tight">Powered by TrainChat AI</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Native intelligence layer</p>
-            </div>
-          </div>
-          <Badge className="text-xs gap-1.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" data-testid="badge-ai-active">
-            <CircleDot className="h-3 w-3" /> Connected
-          </Badge>
-        </div>
+    <div
+      className={`relative flex flex-col gap-3 rounded-xl border p-4 transition-all ${
+        isOperational
+          ? "border-border/60 bg-card hover:border-border"
+          : "border-border/30 bg-muted/20 opacity-70"
+      }`}
+      data-testid={`card-integration-${integration.id}`}
+    >
+      {/* Subtle glow for operational cards */}
+      {isOperational && (
+        <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-primary/5" />
+      )}
 
-        {/* Body */}
-        <div className="px-5 py-5 space-y-4">
-          <p className="text-sm text-muted-foreground">
-            This organization is connected to the TrainChat intelligence layer and orchestration engine.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {capabilities.map(({ icon: Icon, label }) => (
-              <div key={label} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-muted/40 border border-border/40">
-                <Icon className="h-4 w-4 text-primary flex-shrink-0" />
-                <span className="text-sm">{label}</span>
-              </div>
-            ))}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className={`h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            isOperational ? "bg-primary/10" : "bg-muted/50"
+          }`}>
+            <Icon className={`h-4 w-4 ${isOperational ? "text-primary" : "text-muted-foreground/50"}`} />
           </div>
-          <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1">
-            <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0" />
-            The AI system is always active and shared across the platform infrastructure.
+          <div>
+            <p className="text-sm font-semibold leading-tight">{integration.title}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{integration.provider}</p>
+          </div>
+        </div>
+        <StatusBadge status={integration.status} />
+      </div>
+
+      <p className="text-xs text-muted-foreground leading-relaxed">{integration.description}</p>
+
+      <div className="flex items-center gap-1.5 pt-0.5">
+        <StatusDot status={integration.status} />
+        <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide font-medium">
+          Managed by TrainEfficiency
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationsSection() {
+  const { data, isLoading, refetch, isFetching } = useQuery<{
+    integrations: SystemIntegration[];
+    checkedAt: string;
+  }>({
+    queryKey: ["/api/admin/system-integrations"],
+    refetchInterval: 60000,
+  });
+
+  const integrations = data?.integrations ?? [];
+  const checkedAt = data?.checkedAt ? new Date(data.checkedAt) : null;
+
+  const grouped = CATEGORY_ORDER.reduce<Record<string, SystemIntegration[]>>((acc, cat) => {
+    const items = integrations.filter((i) => i.category === cat);
+    if (items.length > 0) acc[cat] = items;
+    return acc;
+  }, {});
+
+  const operationalCount = integrations.filter((i) => i.status === "operational").length;
+
+  return (
+    <section data-testid="section-integrations">
+      {/* Section header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-base font-semibold flex items-center gap-2">
+            <Server className="h-4 w-4 text-muted-foreground" />
+            Platform Infrastructure
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Platform-managed services powering TrainEfficiency globally
           </p>
         </div>
-      </Card>
+        <div className="flex items-center gap-2">
+          {!isLoading && (
+            <span className="text-[10px] text-muted-foreground/60 hidden sm:block">
+              {operationalCount}/{integrations.length} operational
+            </span>
+          )}
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="h-7 w-7 rounded-lg border border-border/60 flex items-center justify-center hover:bg-muted/50 transition-colors disabled:opacity-50"
+            data-testid="button-refresh-integrations"
+            title="Refresh status"
+          >
+            <RefreshCw className={`h-3 w-3 text-muted-foreground ${isFetching ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-28 rounded-xl border border-border/30 bg-muted/20 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(grouped).map(([cat, items]) => (
+            <div key={cat}>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60 mb-3">
+                {CATEGORY_LABELS[cat] ?? cat}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {items.map((integration) => (
+                  <IntegrationCard key={integration.id} integration={integration} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {checkedAt && !isLoading && (
+        <p className="text-[10px] text-muted-foreground/40 mt-4 flex items-center gap-1">
+          <ShieldCheck className="h-3 w-3" />
+          Status verified {checkedAt.toLocaleTimeString()}
+        </p>
+      )}
     </section>
   );
 }
@@ -2935,35 +3096,8 @@ export default function AdminConfigurationPage() {
 
         {/* ════════════════════ ADVANCED ════════════════════ */}
         <div className={activeTab !== "advanced" ? "hidden" : "space-y-8"}>
-          <section>
-            <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
-              <Wrench className="h-4 w-4 text-muted-foreground" />
-              System
-            </h2>
-            <div className="grid gap-3">
-              <Card className="p-4 opacity-60">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">AI Settings</p>
-                    <p className="text-xs text-muted-foreground">Configure AI assistant behavior and thresholds.</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
-                </div>
-              </Card>
-              <Card className="p-4 opacity-60">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Automation Rules</p>
-                    <p className="text-xs text-muted-foreground">Set up automated follow-ups, reminders, and triggers.</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
-                </div>
-              </Card>
-            </div>
-          </section>
-
-          {/* ── AI Intelligence Layer ────────────────────────────────────────── */}
-          <AIIntelligenceLayerCard />
+          {/* ── Integrations ─────────────────────────────────────────────────── */}
+          <IntegrationsSection />
 
           {/* ── Danger Zone ─────────────────────────────────────────────────────── */}
           <section className="mt-4">

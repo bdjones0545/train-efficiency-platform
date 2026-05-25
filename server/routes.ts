@@ -16552,5 +16552,123 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ── System Integrations Status ───────────────────────────────────────────
+  app.get("/api/admin/system-integrations", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const env = process.env;
+
+      const openaiKey = !!(env.OPENAI_API_KEY || env.AI_INTEGRATIONS_OPENAI_API_KEY);
+      const openrouterKey = !!(env.OPENROUTER_API_KEY);
+      const sendgridKey = !!(env.SENDGRID_API_KEY || env.REPLIT_CONNECTORS_HOSTNAME);
+      const twilioKey = !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER);
+      const stripeKey = !!(env.STRIPE_SECRET_KEY || (env.REPLIT_CONNECTORS_HOSTNAME));
+      const googleKey = !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+      const trainChatKey = !!(
+        (env.TRAINCHAT_API_KEY || env.TRAINCHAT_EXTERNAL_API_KEY) &&
+        (env.TRAINCHAT_API_BASE_URL || env.TRAINCHAT_EXTERNAL_API_BASE_URL || env.TRAINCHAT_BASE_URL)
+      );
+      const metaKey = !!(env.META_CAPI_TOKEN);
+      const slackKey = !!(env.SLACK_BOT_TOKEN || env.SLACK_WEBHOOK_URL);
+
+      const integrations = [
+        {
+          id: "trainchat",
+          title: "TrainChat AI",
+          description: "Conversational programming engine powering AI workout generation, program building, and session intelligence.",
+          category: "ai",
+          provider: "TrainChat",
+          status: trainChatKey ? "operational" : "inactive",
+          managed: true,
+        },
+        {
+          id: "openai",
+          title: "AI Runtime",
+          description: "Multi-model AI orchestration layer powering scheduling intelligence, recommendations, outreach, and business analysis.",
+          category: "ai",
+          provider: "OpenAI / OpenRouter",
+          status: openaiKey ? "operational" : "inactive",
+          managed: true,
+        },
+        {
+          id: "sendgrid",
+          title: "Email Infrastructure",
+          description: "Transactional email delivery for booking confirmations, follow-ups, outreach sequences, and notification automation.",
+          category: "communication",
+          provider: "SendGrid",
+          status: sendgridKey ? "operational" : "inactive",
+          managed: true,
+        },
+        {
+          id: "twilio",
+          title: "SMS Infrastructure",
+          description: "SMS delivery for booking reminders, session alerts, client outreach, and time-sensitive notifications.",
+          category: "communication",
+          provider: "Twilio",
+          status: twilioKey ? "operational" : "inactive",
+          managed: true,
+        },
+        {
+          id: "stripe",
+          title: "Payments",
+          description: "Subscription billing, session payments, wallet management, and revenue reconciliation.",
+          category: "payments",
+          provider: "Stripe",
+          status: stripeKey ? "operational" : "inactive",
+          managed: true,
+        },
+        {
+          id: "google_calendar",
+          title: "Calendar Sync",
+          description: "Real-time availability checks, booking events, cancellations, and coach schedule synchronization.",
+          category: "calendar",
+          provider: "Google Calendar",
+          status: googleKey ? "operational" : "inactive",
+          managed: true,
+        },
+        {
+          id: "automation",
+          title: "Automation Engine",
+          description: "Governed workflow execution, integration runtime, idempotency enforcement, and multi-step orchestration.",
+          category: "platform",
+          provider: "TrainEfficiency Runtime",
+          status: "operational",
+          managed: true,
+        },
+        {
+          id: "research",
+          title: "Research Agent",
+          description: "Live web search and lead enrichment for prospect discovery, decision-maker contact finding, and data sourcing.",
+          category: "ai",
+          provider: "OpenAI Web Search",
+          status: openaiKey ? "operational" : "inactive",
+          managed: true,
+        },
+        ...(metaKey ? [{
+          id: "meta_capi",
+          title: "Meta Ads",
+          description: "Conversion API events for Meta (Facebook) ad attribution and campaign optimization.",
+          category: "marketing",
+          provider: "Meta CAPI",
+          status: "operational" as const,
+          managed: true,
+        }] : []),
+        ...(slackKey ? [{
+          id: "slack",
+          title: "Slack Ops Alerts",
+          description: "Operational alerts for critical failures, governance escalations, and system health events.",
+          category: "communication",
+          provider: "Slack",
+          status: "operational" as const,
+          managed: true,
+        }] : []),
+      ];
+
+      return res.json({ integrations, checkedAt: new Date().toISOString() });
+    } catch (err: any) {
+      console.error("[system-integrations] error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   return httpServer;
 }
