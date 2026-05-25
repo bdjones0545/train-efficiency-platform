@@ -230,12 +230,10 @@ type CoachWithUser = {
 
 function AIIntelligenceLayerCard() {
   const capabilities = [
-    { icon: CalendarCheck, label: "Scheduling intelligence" },
-    { icon: TrendingUp, label: "Revenue optimization" },
-    { icon: Mail, label: "Automated outreach" },
-    { icon: Users, label: "Retention analysis" },
-    { icon: Zap, label: "Workflow automation" },
-    { icon: BarChart2, label: "Business recommendations" },
+    { icon: CalendarCheck, label: "AI scheduling" },
+    { icon: BarChart2, label: "AI recommendations" },
+    { icon: Zap, label: "Conversational programming" },
+    { icon: TrendingUp, label: "Automation engine" },
   ];
 
   return (
@@ -252,19 +250,19 @@ function AIIntelligenceLayerCard() {
               <Brain className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-semibold leading-tight">AI Intelligence Layer</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Powered by TrainChat</p>
+              <p className="text-sm font-semibold leading-tight">Powered by TrainChat AI</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Native intelligence layer</p>
             </div>
           </div>
           <Badge className="text-xs gap-1.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" data-testid="badge-ai-active">
-            <CircleDot className="h-3 w-3" /> AI Active
+            <CircleDot className="h-3 w-3" /> Connected
           </Badge>
         </div>
 
         {/* Body */}
         <div className="px-5 py-5 space-y-4">
           <p className="text-sm text-muted-foreground">
-            TrainEfficiency uses TrainChat's AI infrastructure as a native intelligence layer — no configuration required.
+            This organization is connected to the TrainChat intelligence layer and orchestration engine.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {capabilities.map(({ icon: Icon, label }) => (

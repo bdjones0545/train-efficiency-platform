@@ -637,9 +637,9 @@ function GenerateWizard({ programToolId, bootstrap, onGenerated, onClose }: { pr
                   : "This context will be sent to TrainChat for AI program generation."}
               </p>
               {!bootstrap?.trainChatConnected && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-destructive text-xs">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs">
                   <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                  TrainChat is not connected. Go to Options → Advanced → Integrations to connect it.
+                  AI program generation is not available in this environment. Contact your platform administrator.
                 </div>
               )}
             </div>
@@ -1046,11 +1046,11 @@ function AthleteWorkoutsView({ orgSlug, orgId, programToolId, trainChatConnected
               <Sparkles className="h-4 w-4" /> Create My Workout
             </Button>
           ) : (
-            <Card className="p-4 flex items-start gap-3 border-amber-500/20 bg-amber-500/5">
-              <WifiOff className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+            <Card className="p-4 flex items-start gap-3 border-muted bg-muted/30">
+              <Brain className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium">TrainChat Not Connected</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Personal workout creation requires TrainChat. Ask your coach to set it up.</p>
+                <p className="text-sm font-medium">AI Workout Generation Unavailable</p>
+                <p className="text-xs text-muted-foreground mt-0.5">AI-powered workout creation is not available in this environment.</p>
               </div>
             </Card>
           )}
@@ -1374,14 +1374,10 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
             <h1 className="text-xl font-bold flex items-center gap-2"><Dumbbell className="h-5 w-5" /> My Workouts</h1>
             <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
           </div>
-          {trainChatConnected ? (
+          {trainChatConnected && (
             <Badge className="text-xs gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
               <Wifi className="h-3 w-3" />
-              {connectionMode === "platform" ? "TrainChat Active — Platform Key" : "TrainChat Active"}
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="text-xs gap-1 text-muted-foreground">
-              <WifiOff className="h-3 w-3" /> TrainChat Off
+              {connectionMode === "platform" ? "AI Active — Platform" : "AI Active"}
             </Badge>
           )}
         </div>
@@ -1462,14 +1458,10 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
           <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {trainChatConnected ? (
+          {trainChatConnected && (
             <Badge className="text-xs gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/30" data-testid="badge-trainchat-status">
               <Wifi className="h-3 w-3" />
-              {connectionMode === "platform" ? "TrainChat Connected — Platform Key" : "TrainChat Connected"}
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="text-xs gap-1 text-muted-foreground" data-testid="badge-trainchat-status-off">
-              <WifiOff className="h-3 w-3" /> TrainChat Not Connected
+              {connectionMode === "platform" ? "AI Active — Platform" : "AI Active"}
             </Badge>
           )}
           {coachTab === "library" && (
@@ -1486,14 +1478,12 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
       </div>
 
       {!trainChatConnected && (
-        <Card className="p-4 flex items-start gap-3 border-amber-500/20 bg-amber-500/5">
-          <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <Card className="p-4 flex items-start gap-3 border-muted bg-muted/30" data-testid="card-ai-unavailable">
+          <Brain className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium">TrainChat not connected</p>
+            <p className="text-sm font-medium text-muted-foreground">AI Program Generation Unavailable</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {bootstrap?.trainChatLastError
-                ? bootstrap.trainChatLastError
-                : "Go to Options → Advanced → Integrations to connect your TrainChat API key."}
+              AI-powered program creation is not active in this environment. Contact your platform administrator to enable it.
             </p>
           </div>
         </Card>
