@@ -1,0 +1,95 @@
+Audit the Team Training Leads system architecture and separate B2B partnership leads from consumer athlete intake leads.
+
+Problem:
+Individual athlete leads from Meta ads and landing pages are currently being rendered inside the Team Training Leads outreach engine.
+
+This creates:
+- incorrect actions (Deep Search, Generate Email, Likely Valid)
+- distorted pipeline metrics
+- confusing UX
+- mixed lead semantics
+- B2B and B2C workflows collapsed together
+
+Required architecture split:
+
+SECTION 1 — Team Training Partnerships (B2B)
+Purpose:
+Research and outreach to schools, clubs, facilities, and organizations.
+
+Allowed actions:
+- Deep Search
+- Generate Outreach Email
+- Create Deal
+- Mark Replied
+- Do Not Contact
+- Pipeline valuation
+- Organization enrichment
+
+Entity types:
+- school
+- club
+- facility
+- academy
+- director
+- coach organization
+
+SECTION 2 — Athlete Leads / Intake Pipeline (B2C)
+Purpose:
+Manage athlete applications and parent inquiries from ads, forms, and landing pages.
+
+Replace current cards with athlete-focused CRM cards.
+
+Card actions:
+- Review Application
+- Contact Parent
+- Schedule Evaluation
+- Send Intake Form
+- Convert to Athlete
+- Assign Program
+- Archive Lead
+
+Card metadata:
+- athlete name
+- parent
+- sport
+- school
+- age
+- readiness/commitment
+- source campaign
+- submitted timestamp
+- application status
+
+Remove completely from athlete cards:
+- Deep Search
+- Likely Valid
+- General Email
+- organization enrichment
+- outreach confidence bars
+
+Metrics for athlete pipeline:
+- total applications
+- evaluations scheduled
+- conversion rate
+- enrolled athletes
+- projected revenue
+- source attribution
+
+Technical requirements:
+1. Add explicit leadType:
+   - team_partnership
+   - athlete_intake
+2. Migrate existing athlete ad leads automatically.
+3. Create separate tabs/pages:
+   - Team Partnerships
+   - Athlete Leads
+4. Preserve shared underlying CRM/deal infrastructure where possible.
+5. Keep EST dark styling but use different visual language:
+   - B2B = intelligence/prospecting
+   - Athlete Leads = onboarding/performance pipeline
+6. Mobile-first optimized cards.
+
+Acceptance criteria:
+- Athlete leads never appear inside organization prospecting workflows.
+- B2B outreach tools only appear for partnership leads.
+- Pipeline metrics accurately reflect their category.
+- UX clearly communicates two distinct business systems.
