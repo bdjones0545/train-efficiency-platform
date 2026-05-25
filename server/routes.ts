@@ -16670,5 +16670,97 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Admin: Athlete Intake Leads ─────────────────────────────────────────
+  app.get("/api/admin/athlete-leads", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const rows = await db.select().from(leadCaptureSubmissions)
+        .where(eq(leadCaptureSubmissions.orgId, profile.organizationId))
+        .orderBy(desc(leadCaptureSubmissions.createdAt));
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[athlete-leads] fetch error:", err);
+      res.status(500).json({ message: "Failed to fetch athlete leads" });
+    }
+  });
+
+  app.get("/api/admin/athlete-leads/stats", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.select().from(leadCaptureSubmissions)
+        .where(eq(leadCaptureSubmissions.orgId, profile.organizationId));
+      const total = rows.length;
+      const evalScheduled = rows.filter((r: any) => r.evaluationBookedAt || r.bookingStatus === "evaluation_booked").length;
+      const converted = rows.filter((r: any) => r.convertedAt).length;
+      const enrolled = rows.filter((r: any) => r.bookingStatus === "enrolled" || r.linkedUserId).length;
+      const conversionRate = total > 0 ? Math.round((converted / total) * 100) : 0;
+      const projectedRevenue = rows.reduce((acc: number, r: any) => acc + (r.estimatedValueCents || 0), 0) / 100;
+
+      const sourceAttribution: Record<string, number> = {};
+      for (const r of rows as any[]) {
+        const src = r.utmSource || r.utmCampaign || "organic";
+        sourceAttribution[src] = (sourceAttribution[src] || 0) + 1;
+      }
+
+      res.json({ total, evalScheduled, converted, enrolled, conversionRate, projectedRevenue, sourceAttribution });
+    } catch (err: any) {
+      console.error("[athlete-leads-stats] error:", err);
+      res.status(500).json({ message: "Failed to fetch stats" });
+    }
+  });
+
+  app.patch("/api/admin/athlete-leads/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const allowed = ["bookingStatus", "notes", "sequenceStatus", "evaluationBookedAt", "convertedAt", "lostAt"];
+      const updates: Record<string, any> = {};
+      for (const key of allowed) {
+        if (key in req.body) updates[key] = req.body[key];
+      }
+      if (Object.keys(updates).length === 0) return res.status(400).json({ message: "No valid fields to update" });
+      const [updated] = await db.update(leadCaptureSubmissions)
+        .set(updates)
+        .where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Lead not found" });
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[athlete-leads-patch] error:", err);
+      res.status(500).json({ message: "Failed to update lead" });
+    }
+  });
+
+  app.delete("/api/admin/athlete-leads/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      await db.delete(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.id, req.params.id), eq(leadCaptureSubmissions.orgId, profile.organizationId)));
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[athlete-leads-delete] error:", err);
+      res.status(500).json({ message: "Failed to delete lead" });
+    }
+  });
+
   return httpServer;
 }

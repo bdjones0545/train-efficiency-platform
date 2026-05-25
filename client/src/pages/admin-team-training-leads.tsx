@@ -21,7 +21,7 @@ import {
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
   Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX,
   Sparkles, RotateCcw, Clock, MapPin, FileSearch, Minimize2, X as XIcon,
-  Upload, Download, Briefcase
+  Upload, Download, Briefcase, Building2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
@@ -2088,6 +2088,38 @@ export default function AdminTeamTrainingLeadsPage() {
 
   return (
     <div className="space-y-6">
+      {/* ── System-type navigation banner ── */}
+      <div className="rounded-lg border border-border bg-muted/30 p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">CRM System:</span>
+          </div>
+          <Link href="/admin/team-training-leads">
+            <button
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-primary text-primary-foreground shadow-sm"
+              data-testid="nav-b2b-partnerships-active"
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              Team Partnerships
+              <span className="ml-1 opacity-80">B2B</span>
+            </button>
+          </Link>
+          <Link href="/admin/athlete-leads">
+            <button
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:border-foreground/30 transition-colors"
+              data-testid="nav-athlete-leads"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Athlete Intake Pipeline
+              <span className="ml-1 opacity-60">B2C</span>
+            </button>
+          </Link>
+          <p className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
+            Schools · clubs · facilities · organizations
+          </p>
+        </div>
+      </div>
+
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-serif font-bold" data-testid="text-page-title">Team Training Leads</h1>
