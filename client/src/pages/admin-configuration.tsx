@@ -53,6 +53,14 @@ import {
   Activity,
   MessageSquare,
   RefreshCw,
+  Key,
+  Unplug,
+  Plug,
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  Code2,
+  Webhook,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -439,6 +447,406 @@ function IntegrationsSection() {
           Status verified {checkedAt.toLocaleTimeString()}
         </p>
       )}
+    </section>
+  );
+}
+
+// ─── Org Integration Registry ────────────────────────────────────────────────
+
+type OrgIntegrationCredentialField = {
+  key: string;
+  label: string;
+  placeholder: string;
+  type?: "text" | "password" | "url";
+  helpText?: string;
+};
+
+type OrgIntegrationDef = {
+  id: string;
+  title: string;
+  description: string;
+  authType: "oauth" | "api_key" | "webhook";
+  provider: string;
+  icon: React.ComponentType<{ className?: string }>;
+  credentialFields: OrgIntegrationCredentialField[];
+  oauthNote?: string;
+};
+
+const ORG_INTEGRATION_REGISTRY: OrgIntegrationDef[] = [
+  {
+    id: "gmail",
+    title: "Gmail Workspace",
+    description: "Connect your organization's Gmail account to send emails directly from your domain, track replies, and power the email outreach agent.",
+    authType: "oauth",
+    provider: "Google Workspace",
+    icon: Mail,
+    credentialFields: [
+      { key: "clientId", label: "OAuth Client ID", placeholder: "your-client-id.apps.googleusercontent.com", type: "text" },
+      { key: "clientSecret", label: "OAuth Client Secret", placeholder: "GOCSPX-...", type: "password" },
+      { key: "accountEmail", label: "Sender Email Address", placeholder: "you@yourcompany.com", type: "text", helpText: "The Gmail address to send from" },
+    ],
+    oauthNote: "Enter your Google Cloud OAuth 2.0 credentials. A redirect URI of /api/integrations/gmail/callback must be registered in your Google Cloud Console.",
+  },
+  {
+    id: "google_calendar",
+    title: "Google Calendar",
+    description: "Sync coach availability in real time, automatically create booking events, and push cancellations back to Google Calendar.",
+    authType: "oauth",
+    provider: "Google Workspace",
+    icon: CalendarCheck,
+    credentialFields: [
+      { key: "clientId", label: "OAuth Client ID", placeholder: "your-client-id.apps.googleusercontent.com", type: "text" },
+      { key: "clientSecret", label: "OAuth Client Secret", placeholder: "GOCSPX-...", type: "password" },
+      { key: "calendarId", label: "Calendar ID", placeholder: "primary or calendar-id@group.calendar.google.com", type: "text", helpText: "Use 'primary' for the main calendar" },
+    ],
+    oauthNote: "Enter your Google Cloud OAuth 2.0 credentials with Calendar API access enabled.",
+  },
+  {
+    id: "meta_ads",
+    title: "Meta Ads",
+    description: "Send conversion events directly to Meta via the Conversions API (CAPI) for accurate ad attribution and campaign optimization.",
+    authType: "api_key",
+    provider: "Meta (Facebook)",
+    icon: TrendingUp,
+    credentialFields: [
+      { key: "accessToken", label: "CAPI Access Token", placeholder: "EAAxxxxx...", type: "password", helpText: "Found in Events Manager → Data Sources → your Pixel → Settings" },
+      { key: "pixelId", label: "Pixel ID", placeholder: "123456789012345", type: "text" },
+    ],
+  },
+  {
+    id: "slack",
+    title: "Slack",
+    description: "Receive operational alerts, AI action summaries, and governance escalations directly in your Slack workspace channels.",
+    authType: "webhook",
+    provider: "Slack",
+    icon: Activity,
+    credentialFields: [
+      { key: "webhookUrl", label: "Incoming Webhook URL", placeholder: "https://hooks.slack.com/services/...", type: "url" },
+      { key: "channel", label: "Default Channel", placeholder: "#ops-alerts", type: "text", helpText: "Channel must match the webhook's configured channel" },
+    ],
+  },
+  {
+    id: "developer_api",
+    title: "Developer API & Webhooks",
+    description: "Configure outbound webhooks and API access for custom integrations, third-party tools, and developer workflows.",
+    authType: "api_key",
+    provider: "TrainEfficiency API",
+    icon: Code2,
+    credentialFields: [
+      { key: "webhookUrl", label: "Outbound Webhook URL", placeholder: "https://your-server.com/webhook", type: "url", helpText: "We will POST events to this endpoint" },
+      { key: "webhookSecret", label: "Webhook Signing Secret", placeholder: "whsec_...", type: "password", helpText: "Used to verify webhook authenticity" },
+    ],
+  },
+];
+
+type OrgIntegrationRecord = {
+  id: string;
+  integrationType: string;
+  status: string;
+  displayName: string | null;
+  authType: string;
+  lastSuccessfulActionAt: string | null;
+  lastHealthCheckAt: string | null;
+};
+
+function OrgIntegrationConnectModal({
+  def,
+  record,
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  def: OrgIntegrationDef;
+  record?: OrgIntegrationRecord;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const isReauth = record?.status === "connected";
+  const [fields, setFields] = useState<Record<string, string>>({});
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const displayName = fields.accountEmail || fields.calendarId || fields.channel || fields.webhookUrl || def.title;
+      await apiRequest("PUT", `/api/integrations/${def.id}`, {
+        status: "connected",
+        displayName,
+        authType: def.authType,
+      });
+      await apiRequest("POST", `/api/integrations/${def.id}/credentials`, {
+        credentials: fields,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: `${def.title} connected`, description: "Integration is now active." });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
+      onOpenChange(false);
+      setFields({});
+      onSuccess();
+    },
+    onError: (e: any) => {
+      toast({ title: "Connection failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <def.icon className="h-4 w-4" />
+            {isReauth ? "Reauthorize" : "Connect"} {def.title}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          {def.oauthNote && (
+            <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
+              <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{def.oauthNote}</p>
+            </div>
+          )}
+          {def.credentialFields.map((field) => (
+            <div key={field.key} className="space-y-1.5">
+              <Label className="text-xs font-medium">{field.label}</Label>
+              <Input
+                type={field.type ?? "text"}
+                placeholder={field.placeholder}
+                value={fields[field.key] ?? ""}
+                onChange={(e) => setFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                data-testid={`input-org-integration-${def.id}-${field.key}`}
+              />
+              {field.helpText && (
+                <p className="text-[11px] text-muted-foreground">{field.helpText}</p>
+              )}
+            </div>
+          ))}
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              data-testid={`button-org-integration-${def.id}-cancel`}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending || def.credentialFields.some((f) => !fields[f.key]?.trim())}
+              data-testid={`button-org-integration-${def.id}-save`}
+            >
+              {connectMutation.isPending ? (
+                <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" />{isReauth ? "Saving..." : "Connecting..."}</>
+              ) : (
+                <><Plug className="h-3 w-3 mr-1.5" />{isReauth ? "Save Credentials" : "Connect"}</>
+              )}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OrgIntegrationCard({
+  def,
+  record,
+  onRefresh,
+}: {
+  def: OrgIntegrationDef;
+  record?: OrgIntegrationRecord;
+  onRefresh: () => void;
+}) {
+  const { toast } = useToast();
+  const [connectOpen, setConnectOpen] = useState(false);
+  const isConnected = record?.status === "connected";
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/integrations/${def.id}`),
+    onSuccess: () => {
+      toast({ title: `${def.title} disconnected` });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
+      onRefresh();
+    },
+    onError: (e: any) => {
+      toast({ title: "Disconnect failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const authTypeLabel: Record<string, string> = {
+    oauth: "OAuth 2.0",
+    api_key: "API Key",
+    webhook: "Webhook",
+  };
+
+  return (
+    <>
+      <div
+        className={`relative flex flex-col gap-3 rounded-xl border p-4 transition-all ${
+          isConnected
+            ? "border-border/50 bg-card/60"
+            : "border-border/20 bg-muted/10"
+        }`}
+        data-testid={`card-org-integration-${def.id}`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className={`h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              isConnected ? "bg-muted/60" : "bg-muted/30"
+            }`}>
+              <def.icon className={`h-4 w-4 ${isConnected ? "text-foreground/70" : "text-muted-foreground/40"}`} />
+            </div>
+            <div>
+              <p className="text-sm font-medium leading-tight">{def.title}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{def.provider}</p>
+            </div>
+          </div>
+          {isConnected ? (
+            <Badge className="text-[10px] h-5 px-1.5 gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 flex-shrink-0">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+              </span>
+              Connected
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground/50 flex-shrink-0">
+              Not connected
+            </Badge>
+          )}
+        </div>
+
+        <p className="text-xs text-muted-foreground/80 leading-relaxed">{def.description}</p>
+
+        {isConnected && record?.displayName && (
+          <div className="flex items-center gap-1.5 rounded-lg bg-muted/30 px-2.5 py-1.5">
+            <Check className="h-3 w-3 text-emerald-500 flex-shrink-0" />
+            <span className="text-xs text-muted-foreground truncate" data-testid={`text-org-integration-${def.id}-account`}>
+              {record.displayName}
+            </span>
+          </div>
+        )}
+
+        {isConnected && record?.lastSuccessfulActionAt && (
+          <p className="text-[10px] text-muted-foreground/50">
+            Last sync: {new Date(record.lastSuccessfulActionAt).toLocaleString()}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between gap-2 pt-0.5">
+          <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wide font-medium">
+            {authTypeLabel[def.authType] ?? def.authType} · Managed by Organization
+          </span>
+          <div className="flex items-center gap-1.5">
+            {isConnected ? (
+              <>
+                <button
+                  onClick={() => setConnectOpen(true)}
+                  className="h-6 px-2 rounded-md border border-border/40 text-[10px] text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors flex items-center gap-1"
+                  data-testid={`button-org-integration-${def.id}-reauth`}
+                >
+                  <RotateCcw className="h-2.5 w-2.5" />
+                  Reauthorize
+                </button>
+                <button
+                  onClick={() => disconnectMutation.mutate()}
+                  disabled={disconnectMutation.isPending}
+                  className="h-6 px-2 rounded-md border border-destructive/30 text-[10px] text-destructive/70 hover:bg-destructive/10 hover:text-destructive transition-colors flex items-center gap-1 disabled:opacity-50"
+                  data-testid={`button-org-integration-${def.id}-disconnect`}
+                >
+                  {disconnectMutation.isPending ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Unplug className="h-2.5 w-2.5" />}
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setConnectOpen(true)}
+                className="h-6 px-2.5 rounded-md bg-primary/90 text-[10px] text-primary-foreground hover:bg-primary transition-colors flex items-center gap-1 font-medium"
+                data-testid={`button-org-integration-${def.id}-connect`}
+              >
+                <Plug className="h-2.5 w-2.5" />
+                Connect
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <OrgIntegrationConnectModal
+        def={def}
+        record={record}
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        onSuccess={onRefresh}
+      />
+    </>
+  );
+}
+
+function OrgIntegrationsSection() {
+  const { data: records, isLoading, refetch } = useQuery<OrgIntegrationRecord[]>({
+    queryKey: ["/api/integrations"],
+    refetchInterval: 30000,
+  });
+
+  const recordsByType = (records ?? []).reduce<Record<string, OrgIntegrationRecord>>((acc, r) => {
+    acc[r.integrationType] = r;
+    return acc;
+  }, {});
+
+  const connectedCount = ORG_INTEGRATION_REGISTRY.filter((def) => recordsByType[def.id]?.status === "connected").length;
+
+  return (
+    <section data-testid="section-org-integrations">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-base font-medium flex items-center gap-2">
+            <Plug className="h-4 w-4 text-muted-foreground/70" />
+            Organization Integrations
+          </h2>
+          <p className="text-xs text-muted-foreground/70 mt-0.5">
+            Connect your organization's own accounts and services
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {!isLoading && (
+            <span className="text-[10px] text-muted-foreground/50 hidden sm:block">
+              {connectedCount}/{ORG_INTEGRATION_REGISTRY.length} connected
+            </span>
+          )}
+          <button
+            onClick={() => refetch()}
+            className="h-7 w-7 rounded-lg border border-border/40 flex items-center justify-center hover:bg-muted/50 transition-colors"
+            data-testid="button-refresh-org-integrations"
+            title="Refresh"
+          >
+            <RefreshCw className="h-3 w-3 text-muted-foreground/60" />
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-36 rounded-xl border border-border/20 bg-muted/10 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {ORG_INTEGRATION_REGISTRY.map((def) => (
+            <OrgIntegrationCard
+              key={def.id}
+              def={def}
+              record={recordsByType[def.id]}
+              onRefresh={() => refetch()}
+            />
+          ))}
+        </div>
+      )}
+
+      <p className="text-[10px] text-muted-foreground/30 mt-4">
+        Organization-managed · Credentials stored securely per organization
+      </p>
     </section>
   );
 }
@@ -3096,8 +3504,14 @@ export default function AdminConfigurationPage() {
 
         {/* ════════════════════ ADVANCED ════════════════════ */}
         <div className={activeTab !== "advanced" ? "hidden" : "space-y-8"}>
-          {/* ── Integrations ─────────────────────────────────────────────────── */}
+          {/* ── Platform Infrastructure ──────────────────────────────────────── */}
           <IntegrationsSection />
+
+          {/* ── Divider ──────────────────────────────────────────────────────── */}
+          <div className="border-t border-border/20" />
+
+          {/* ── Organization Integrations ─────────────────────────────────────── */}
+          <OrgIntegrationsSection />
 
           {/* ── Danger Zone ─────────────────────────────────────────────────────── */}
           <section className="mt-4">

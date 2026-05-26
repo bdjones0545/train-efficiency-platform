@@ -15864,6 +15864,26 @@ Respond with this exact JSON structure:
     }
   });
 
+  // DELETE /api/integrations/:type — disconnect an org integration
+  app.delete("/api/integrations/:type", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      await storage.upsertExternalIntegration(req.user.orgId, req.params.type, {
+        status: "disconnected",
+        displayName: null,
+        encryptedCredentials: {} as any,
+        scopes: [] as any,
+        lastHealthCheckAt: null,
+        lastSuccessfulActionAt: null,
+        lastFailureAt: null,
+        lastFailureReason: null,
+      } as any);
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("[integrations/disconnect] error:", e);
+      res.status(500).json({ message: "Failed to disconnect integration" });
+    }
+  });
+
   // POST /api/integrations/:type/pause — pause an integration
   app.post("/api/integrations/:type/pause", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
