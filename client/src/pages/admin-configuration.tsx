@@ -61,6 +61,8 @@ import {
   ChevronUp,
   Code2,
   Webhook,
+  Copy,
+  BookOpen,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -481,11 +483,11 @@ const ORG_INTEGRATION_REGISTRY: OrgIntegrationDef[] = [
     provider: "Google Workspace",
     icon: Mail,
     credentialFields: [
-      { key: "clientId", label: "Google Client ID", placeholder: "your-client-id.apps.googleusercontent.com", type: "text" },
-      { key: "clientSecret", label: "Google Client Secret", placeholder: "GOCSPX-...", type: "password" },
+      { key: "clientId", label: "Google Client ID", placeholder: "1234567890-abcxyz.apps.googleusercontent.com", type: "text", helpText: "Example: 1234567890-abcxyz.apps.googleusercontent.com" },
+      { key: "clientSecret", label: "Google Client Secret", placeholder: "GOCSPX-xxxxxxxxxxxxxxxx", type: "password", helpText: "Example: GOCSPX-xxxxxxxxxxxxxxxx" },
       { key: "accountEmail", label: "Connected Gmail Account", placeholder: "you@yourworkspace.com", type: "text", helpText: "The Gmail address this OAuth app will authorize and send as" },
     ],
-    oauthNote: "Requires an OAuth 2.0 app in Google Cloud Console with Gmail API scopes (gmail.send, gmail.readonly, gmail.modify). Register the redirect URI /api/integrations/gmail/callback in your app's authorized redirect URIs. Client secret and refresh tokens are stored encrypted.",
+    oauthNote: undefined,
   },
   {
     id: "google_calendar",
@@ -604,10 +606,41 @@ function OrgIntegrationConnectModal({
   function handleClose() {
     setGmailCredentialsSaved(false);
     setFields({});
+    setClientIdError(null);
+    setClientSecretWarning(null);
+    setSetupGuideOpen(false);
     onOpenChange(false);
   }
 
+  const [setupGuideOpen, setSetupGuideOpen] = useState(false);
+  const [uriCopied, setUriCopied] = useState(false);
+  const [clientIdError, setClientIdError] = useState<string | null>(null);
+  const [clientSecretWarning, setClientSecretWarning] = useState<string | null>(null);
   const [oauthStarting, setOauthStarting] = useState(false);
+
+  const REDIRECT_URI = "https://trainefficiency.com/api/integrations/gmail/callback";
+
+  function copyRedirectUri() {
+    navigator.clipboard.writeText(REDIRECT_URI).then(() => {
+      setUriCopied(true);
+      setTimeout(() => setUriCopied(false), 2000);
+    });
+  }
+
+  function validateGmailAndSave() {
+    if (!isGmailOAuth) { saveMutation.mutate(); return; }
+    const cid = fields.clientId?.trim() ?? "";
+    const csec = fields.clientSecret?.trim() ?? "";
+    let error: string | null = null;
+    if (cid.startsWith("AIza")) {
+      error = "This looks like an API key, not an OAuth Client ID. Create a Web Application OAuth 2.0 client in Google Cloud Console.";
+    } else if (!cid.endsWith(".apps.googleusercontent.com")) {
+      error = "Client ID must end with .apps.googleusercontent.com";
+    }
+    setClientIdError(error);
+    setClientSecretWarning(csec && !csec.startsWith("GOCSPX-") ? "Client Secret usually starts with GOCSPX-. Verify you copied it correctly from the Google Cloud Console." : null);
+    if (!error) saveMutation.mutate();
+  }
 
   async function startGmailOAuth() {
     setOauthStarting(true);
@@ -687,11 +720,80 @@ function OrgIntegrationConnectModal({
             </>
           ) : (
             <>
-              {def.oauthNote && (
+              {/* Gmail-only: API key warning + setup guide */}
+              {isGmailOAuth && (
+                <>
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
+                    <div className="flex gap-2 items-start">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                        Do not use a Google API key. Gmail inbox/send access requires OAuth 2.0.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between px-3 py-2.5 text-xs font-medium hover:bg-muted/50 transition-colors"
+                      onClick={() => setSetupGuideOpen((v) => !v)}
+                      data-testid="button-gmail-setup-guide-toggle"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                        Google OAuth Setup Instructions
+                      </span>
+                      {setupGuideOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </button>
+
+                    {setupGuideOpen && (
+                      <div className="border-t border-border px-3 py-3">
+                        <ol className="space-y-2.5">
+                          {[
+                            <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="underline text-primary">Google Cloud Console</a></>,
+                            <>Enable the <strong>Gmail API</strong></>,
+                            <>Go to APIs &amp; Services → Credentials → <strong>Create OAuth Client ID</strong></>,
+                            <>Select Application Type: <strong>Web application</strong></>,
+                            <>
+                              Add this <strong>Authorized Redirect URI</strong>:
+                              <div className="mt-1.5 flex items-center gap-1.5 rounded bg-muted px-2 py-1.5">
+                                <code className="flex-1 text-[11px] font-mono break-all select-all">{REDIRECT_URI}</code>
+                                <button
+                                  type="button"
+                                  onClick={copyRedirectUri}
+                                  className="shrink-0 p-0.5 rounded hover:bg-muted-foreground/20 transition-colors"
+                                  title="Copy redirect URI"
+                                  data-testid="button-gmail-copy-redirect-uri"
+                                >
+                                  {uriCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+                                </button>
+                              </div>
+                            </>,
+                            <>Copy the <strong>Client ID</strong></>,
+                            <>Copy the <strong>Client Secret</strong></>,
+                            <>Paste both into the fields below</>,
+                            <>Click <strong>Save &amp; Continue</strong></>,
+                            <>Click <strong>Authorize with Google</strong></>,
+                          ].map((step, i) => (
+                            <li key={i} className="flex gap-2.5 text-xs text-muted-foreground">
+                              <span className="shrink-0 w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold mt-0.5">{i + 1}</span>
+                              <span className="leading-relaxed">{step}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Non-Gmail oauthNote */}
+              {!isGmailOAuth && def.oauthNote && (
                 <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
                   <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{def.oauthNote}</p>
                 </div>
               )}
+
               {def.credentialFields.map((field) => (
                 <div key={field.key} className="space-y-1.5">
                   <Label className="text-xs font-medium">{field.label}</Label>
@@ -699,14 +801,23 @@ function OrgIntegrationConnectModal({
                     type={field.type ?? "text"}
                     placeholder={field.placeholder}
                     value={fields[field.key] ?? ""}
-                    onChange={(e) => setFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    onChange={(e) => {
+                      setFields((prev) => ({ ...prev, [field.key]: e.target.value }));
+                      if (field.key === "clientId") setClientIdError(null);
+                      if (field.key === "clientSecret") setClientSecretWarning(null);
+                    }}
                     data-testid={`input-org-integration-${def.id}-${field.key}`}
                   />
-                  {field.helpText && (
+                  {field.key === "clientId" && clientIdError ? (
+                    <p className="text-[11px] text-red-600 dark:text-red-400">{clientIdError}</p>
+                  ) : field.key === "clientSecret" && clientSecretWarning ? (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">{clientSecretWarning}</p>
+                  ) : field.helpText ? (
                     <p className="text-[11px] text-muted-foreground">{field.helpText}</p>
-                  )}
+                  ) : null}
                 </div>
               ))}
+
               <div className="flex gap-2 pt-2">
                 <Button
                   variant="outline"
@@ -718,7 +829,7 @@ function OrgIntegrationConnectModal({
                 </Button>
                 <Button
                   className="flex-1"
-                  onClick={() => saveMutation.mutate()}
+                  onClick={validateGmailAndSave}
                   disabled={saveMutation.isPending || def.credentialFields.some((f) => !fields[f.key]?.trim())}
                   data-testid={`button-org-integration-${def.id}-save`}
                 >
@@ -939,6 +1050,14 @@ function OrgIntegrationsSection() {
     }
     if (gmailStatus === "error") {
       toast({ title: "Gmail authorization failed", description: "Something went wrong during Gmail OAuth. Please try again.", variant: "destructive" });
+      return;
+    }
+    if (gmailStatus === "invalid_client") {
+      toast({
+        title: "Google could not find this OAuth client",
+        description: "Recheck your Client ID, Client Secret, and make sure you created a Web Application OAuth client — not an API key.",
+        variant: "destructive",
+      });
       return;
     }
     // For "connected": invalidate cache and wait for data — Phase 2 will show toast

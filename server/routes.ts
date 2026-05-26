@@ -15959,6 +15959,11 @@ Respond with this exact JSON structure:
       res.redirect("/admin/configuration?tab=advanced&gmail=connected");
     } catch (e: any) {
       console.error("[gmail/oauth/callback] error:", e);
+      const errMsg: string = e?.message ?? "";
+      const responseError: string = e?.response?.data?.error ?? "";
+      if (errMsg.includes("invalid_client") || responseError === "invalid_client") {
+        return res.redirect("/admin/configuration?tab=advanced&gmail=invalid_client");
+      }
       res.redirect("/admin/configuration?tab=advanced&gmail=error");
     }
   });
