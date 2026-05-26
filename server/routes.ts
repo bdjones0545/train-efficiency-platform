@@ -15815,8 +15815,42 @@ Respond with this exact JSON structure:
 
   // ── Gmail OAuth flow — must be registered BEFORE the /:type wildcard ────────
 
-  // GET /api/integrations/gmail/oauth/start — redirect to Google consent screen
-  app.get("/api/integrations/gmail/oauth/start", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+  // ── Gmail OAuth helpers ────────────────────────────────────────────────────
+  // Build an HMAC-signed state blob so the callback can trust orgId without
+  // relying on sessions.  State expires after 15 minutes.
+  function buildOAuthState(orgId: string): string {
+    const { createHmac, randomBytes } = require("crypto");
+    const nonce = randomBytes(16).toString("hex");
+    const ts = String(Date.now());
+    const payload = { orgId, nonce, ts };
+    const raw = JSON.stringify(payload);
+    const sig = createHmac("sha256", process.env.SESSION_SECRET ?? "dev-secret")
+      .update(raw)
+      .digest("hex");
+    return Buffer.from(JSON.stringify({ ...payload, sig })).toString("base64url");
+  }
+
+  function verifyOAuthState(state: string): { orgId: string } | null {
+    try {
+      const { createHmac } = require("crypto");
+      const obj = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
+      const { sig, ...payload } = obj;
+      const raw = JSON.stringify(payload);
+      const expected = createHmac("sha256", process.env.SESSION_SECRET ?? "dev-secret")
+        .update(raw)
+        .digest("hex");
+      if (sig !== expected) return null;
+      if (Date.now() - parseInt(payload.ts) > 15 * 60 * 1000) return null; // 15-min expiry
+      return { orgId: payload.orgId };
+    } catch {
+      return null;
+    }
+  }
+
+  // GET /api/integrations/gmail/oauth/start-url — authenticated JSON endpoint.
+  // Frontend calls this with apiRequest (Bearer/cookie auth) and gets back { url }.
+  // The browser then does window.location.href = url — no auth header needed on that redirect.
+  app.get("/api/integrations/gmail/oauth/start-url", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
@@ -15833,13 +15867,13 @@ Respond with this exact JSON structure:
       }
 
       const { google } = await import("googleapis");
-      const redirectUri = `${process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`}/api/integrations/gmail/oauth/callback`;
+      const host = process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`;
+      const redirectUri = `${host}/api/integrations/gmail/oauth/callback`;
       const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
 
-      // Encode orgId in state so the callback knows which org to update
-      const state = Buffer.from(JSON.stringify({ orgId })).toString("base64url");
+      const state = buildOAuthState(orgId);
 
-      const authUrl = oauth2Client.generateAuthUrl({
+      const url = oauth2Client.generateAuthUrl({
         access_type: "offline",
         prompt: "consent",
         scope: [
@@ -15850,10 +15884,11 @@ Respond with this exact JSON structure:
         state,
       });
 
-      res.redirect(authUrl);
+      console.log(`[gmail/oauth/start-url] generated auth URL for orgId=${orgId}`);
+      res.json({ url });
     } catch (e: any) {
-      console.error("[gmail/oauth/start] error:", e);
-      res.status(500).json({ message: "Failed to start Gmail OAuth: " + e.message });
+      console.error("[gmail/oauth/start-url] error:", e);
+      res.status(500).json({ message: "Failed to generate Gmail OAuth URL: " + e.message });
     }
   });
 
@@ -15870,12 +15905,12 @@ Respond with this exact JSON structure:
         return res.redirect("/admin/configuration?tab=advanced&gmail=error");
       }
 
-      let orgId: string;
-      try {
-        ({ orgId } = JSON.parse(Buffer.from(state, "base64url").toString("utf8")));
-      } catch {
+      const verified = verifyOAuthState(state);
+      if (!verified) {
+        console.error("[gmail/oauth/callback] state verification failed — invalid signature or expired");
         return res.redirect("/admin/configuration?tab=advanced&gmail=error");
       }
+      const { orgId } = verified;
 
       const integration = await storage.getExternalIntegration(orgId, "gmail");
       if (!integration?.encryptedCredentials) {
