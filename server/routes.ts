@@ -15850,6 +15850,29 @@ Respond with this exact JSON structure:
   // GET /api/integrations/gmail/oauth/start-url — authenticated JSON endpoint.
   // Frontend calls this with apiRequest (Bearer/cookie auth) and gets back { url }.
   // The browser then does window.location.href = url — no auth header needed on that redirect.
+  // POST /api/integrations/gmail/reset-credentials — wipe OAuth credentials/tokens, reset to disconnected (ADMIN only)
+  app.post("/api/integrations/gmail/reset-credentials", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
+      const existing = await storage.getExternalIntegration(orgId, "gmail");
+      const existingStats = (existing?.usageStats as Record<string, unknown>) ?? {};
+      const { credentialHints: _h, oauthConnectedAt: _o, ...clearedStats } = existingStats as any;
+      await storage.upsertExternalIntegration(orgId, "gmail", {
+        encryptedCredentials: {} as any,
+        status: "disconnected",
+        displayName: "Gmail Workspace",
+        lastSuccessfulActionAt: null,
+        usageStats: clearedStats as any,
+      } as any);
+      console.log(`[gmail/reset-credentials] credentials wiped for orgId=${orgId}`);
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("[gmail/reset-credentials] error:", e);
+      res.status(500).json({ message: "Failed to reset Gmail credentials: " + e.message });
+    }
+  });
+
   app.get("/api/integrations/gmail/oauth/start-url", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
@@ -15873,19 +15896,32 @@ Respond with this exact JSON structure:
 
       const state = buildOAuthState(orgId);
 
+      const scopes = [
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
+      ];
       const url = oauth2Client.generateAuthUrl({
         access_type: "offline",
         prompt: "consent",
-        scope: [
-          "https://www.googleapis.com/auth/gmail.send",
-          "https://www.googleapis.com/auth/gmail.readonly",
-          "https://www.googleapis.com/auth/gmail.modify",
-        ],
+        scope: scopes,
         state,
       });
 
-      console.log(`[gmail/oauth/start-url] generated auth URL for orgId=${orgId}`);
-      res.json({ url });
+      const clientId: string = creds.clientId;
+      const clientIdPreview = clientId.length > 18
+        ? `${clientId.slice(0, 6)}…${clientId.slice(-12)}`
+        : `${clientId.slice(0, 3)}…`;
+      console.log(
+        `[gmail/oauth/start-url] orgId=${orgId}` +
+        ` integrationId=${integration.id}` +
+        ` clientIdPreview=${clientIdPreview}` +
+        ` clientIdLength=${clientId.length}` +
+        ` clientIdEndsWithAppsGoogleusercontent=${clientId.endsWith(".apps.googleusercontent.com")}` +
+        ` redirectUri=${redirectUri}` +
+        ` urlStartsWithGoogle=${url.startsWith("https://accounts.google.com/o/oauth2/v2/auth")}`
+      );
+      res.json({ url, clientIdPreview, redirectUri, scopes });
     } catch (e: any) {
       console.error("[gmail/oauth/start-url] error:", e);
       res.status(500).json({ message: "Failed to generate Gmail OAuth URL: " + e.message });
@@ -16015,15 +16051,27 @@ Respond with this exact JSON structure:
       if (!credentials || typeof credentials !== "object") {
         return res.status(400).json({ message: "credentials object required" });
       }
-      // Validate all values are strings
+      // Validate all values are strings, trim whitespace
+      const trimmed: Record<string, string> = {};
       for (const [k, v] of Object.entries(credentials)) {
         if (typeof v !== "string") {
           return res.status(400).json({ message: `Credential field "${k}" must be a string` });
         }
+        trimmed[k] = v.trim();
+      }
+      // Gmail-specific Client ID server-side validation (defence-in-depth)
+      if (integrationType === "gmail") {
+        const cid = trimmed.clientId ?? "";
+        if (cid.startsWith("AIza")) {
+          return res.status(400).json({ message: "Invalid Client ID: Google API keys (starting with AIza) cannot be used for Gmail OAuth. Create a Web Application OAuth 2.0 client in Google Cloud Console." });
+        }
+        if (!cid.endsWith(".apps.googleusercontent.com")) {
+          return res.status(400).json({ message: "Invalid Client ID: must end with .apps.googleusercontent.com — ensure you selected 'Web application' when creating the OAuth client." });
+        }
       }
       const { encryptCredentials, computeCredentialHints } = await import("./credentials-vault");
-      const encrypted = encryptCredentials(credentials as Record<string, string>);
-      const hints = computeCredentialHints(credentials as Record<string, string>);
+      const encrypted = encryptCredentials(trimmed);
+      const hints = computeCredentialHints(trimmed);
 
       // Fetch existing usageStats so we don't clobber other stats
       const existing = await storage.getExternalIntegration(orgId, integrationType);

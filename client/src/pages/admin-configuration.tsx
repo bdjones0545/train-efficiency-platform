@@ -609,6 +609,7 @@ function OrgIntegrationConnectModal({
     setClientIdError(null);
     setClientSecretWarning(null);
     setSetupGuideOpen(false);
+    setDebugInfo(null);
     onOpenChange(false);
   }
 
@@ -617,6 +618,8 @@ function OrgIntegrationConnectModal({
   const [clientIdError, setClientIdError] = useState<string | null>(null);
   const [clientSecretWarning, setClientSecretWarning] = useState<string | null>(null);
   const [oauthStarting, setOauthStarting] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<{ clientIdPreview: string; redirectUri: string; scopes: string[] } | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
 
   const REDIRECT_URI = "https://trainefficiency.com/api/integrations/gmail/callback";
 
@@ -642,6 +645,42 @@ function OrgIntegrationConnectModal({
     if (!error) saveMutation.mutate();
   }
 
+  const resetMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/integrations/gmail/reset-credentials");
+      return res.json() as Promise<{ ok: boolean }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
+      setGmailCredentialsSaved(false);
+      setFields({});
+      setClientIdError(null);
+      setClientSecretWarning(null);
+      setDebugInfo(null);
+      toast({ title: "Gmail credentials cleared", description: "Paste fresh OAuth credentials and save again." });
+    },
+    onError: (e: any) => {
+      toast({ title: "Reset failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  async function fetchDebugPreview() {
+    setDebugLoading(true);
+    try {
+      const res = await apiRequest("GET", "/api/integrations/gmail/oauth/start-url");
+      const data = await res.json() as any;
+      setDebugInfo({
+        clientIdPreview: data.clientIdPreview ?? "(not returned)",
+        redirectUri: data.redirectUri ?? "(not returned)",
+        scopes: data.scopes ?? [],
+      });
+    } catch (e: any) {
+      toast({ title: "Credential check failed", description: e.message, variant: "destructive" });
+    } finally {
+      setDebugLoading(false);
+    }
+  }
+
   async function startGmailOAuth() {
     setOauthStarting(true);
     try {
@@ -654,9 +693,8 @@ function OrgIntegrationConnectModal({
         throw new Error("Server returned a non-JSON response for OAuth URL");
       }
 
-      console.log("[gmail/oauth] start-url response:", data);
-
-      const url = (data as any)?.url;
+      const { url, clientIdPreview: cidPreview, redirectUri: dbgRedirectUri } = data as any;
+      console.log(`[gmail/oauth] start-url check — clientIdPreview=${cidPreview} redirectUri=${dbgRedirectUri}`);
 
       if (!url || typeof url !== "string") {
         throw new Error(`OAuth URL missing from response. Got: ${JSON.stringify(data)}`);
@@ -689,10 +727,47 @@ function OrgIntegrationConnectModal({
             <>
               <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-3">
                 <p className="text-xs text-green-700 dark:text-green-400 leading-relaxed">
-                  Credentials saved. Click below to open Google's authorization screen and grant access to the Gmail account.
+                  Credentials saved. Click <strong>Authorize with Google</strong> to open Google's consent screen. If you pasted the wrong credentials, use <strong>Reset &amp; re-enter</strong> below.
                 </p>
               </div>
-              <div className="flex gap-2 pt-2">
+
+              {/* Dev-only: credential debug panel */}
+              {import.meta.env.DEV && (
+                <div className="rounded border border-dashed border-border p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Dev — credential check</span>
+                    <button
+                      type="button"
+                      onClick={fetchDebugPreview}
+                      disabled={debugLoading}
+                      className="text-[10px] underline text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      data-testid="button-gmail-debug-check"
+                    >
+                      {debugLoading ? "Checking…" : "Check saved credentials"}
+                    </button>
+                  </div>
+                  {debugInfo && (
+                    <div className="font-mono text-[10px] space-y-0.5 text-muted-foreground">
+                      <div><span className="text-foreground">Client ID:</span> {debugInfo.clientIdPreview}</div>
+                      <div><span className="text-foreground">Redirect URI:</span> {debugInfo.redirectUri}</div>
+                      <div><span className="text-foreground">Scopes:</span> {debugInfo.scopes.length} requested</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Reset credentials link */}
+              <button
+                type="button"
+                onClick={() => resetMutation.mutate()}
+                disabled={resetMutation.isPending}
+                className="text-xs text-muted-foreground underline hover:text-destructive transition-colors disabled:opacity-50 w-full text-left"
+                data-testid="button-gmail-reset-credentials"
+              >
+                {resetMutation.isPending ? "Resetting…" : "Reset & re-enter credentials"}
+              </button>
+
+              <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={handleClose} data-testid="button-org-integration-gmail-cancel">
                   Cancel
                 </Button>

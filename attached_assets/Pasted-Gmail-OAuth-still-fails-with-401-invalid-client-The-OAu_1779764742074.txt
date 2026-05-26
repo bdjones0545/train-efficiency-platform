@@ -1,0 +1,68 @@
+Gmail OAuth still fails with:
+
+401 invalid_client
+"The OAuth client was not found."
+
+Audit the entire Gmail OAuth credential flow end-to-end.
+
+Requirements:
+
+1. Verify the exact client ID being used in the generated Google OAuth URL.
+2. Add safe debug logging in /api/integrations/gmail/oauth/start-url:
+   - orgId
+   - integration record id
+   - clientIdPreview (first 6 chars + last 12 chars only)
+   - clientIdLength
+   - clientIdEndsWithAppsGoogleusercontent (boolean)
+   - redirectUri
+   - scopes
+   - authUrl starts with https://accounts.google.com/o/oauth2/v2/auth
+
+3. NEVER log:
+   - full client ID
+   - client secret
+   - access token
+   - refresh token
+
+4. Add a temporary development-only debug response:
+   {
+     clientIdPreview,
+     redirectUri,
+     scopes
+   }
+
+5. Verify the generated OAuth URL is using:
+   client_id=<saved OAuth Client ID>
+
+6. Confirm the saved Gmail integration credentials are:
+   - organization-specific
+   - persisted in the production database
+   - not stale cached values
+   - not overwritten after republish
+
+7. Add validation before saving:
+   - reject Client IDs that start with AIza
+   - require Client IDs to end with .apps.googleusercontent.com
+   - trim whitespace from Client ID and Client Secret before encrypting/saving
+
+8. Confirm the backend decrypts and uses the latest saved Client ID/Secret for the current org integration.
+
+9. Add a "Reset Gmail OAuth Credentials" action in the modal that:
+   - clears saved Gmail OAuth credentials for the org
+   - clears refresh/access tokens
+   - resets integration status to disconnected
+
+10. After reset:
+   - paste fresh OAuth Web Application credentials from Google Cloud
+   - save again
+   - retry OAuth
+
+11. Confirm the Google OAuth client in Google Cloud:
+   - is a Web Application OAuth client
+   - exists in the active project
+   - has not been deleted
+   - has this exact redirect URI:
+     https://trainefficiency.com/api/integrations/gmail/callback
+
+12. If invalid_client occurs again, surface a clearer UI error:
+   "Google could not find this OAuth client. Verify you used a Web Application OAuth Client ID ending in .apps.googleusercontent.com and not a Google API key."
