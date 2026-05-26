@@ -3809,14 +3809,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getExternalIntegration(orgId: string, integrationType: string): Promise<ExternalIntegration | null> {
-    const [row] = await db.select().from(externalIntegrations)
-      .where(and(eq(externalIntegrations.orgId, orgId), eq(externalIntegrations.integrationType, integrationType)));
-    return row ?? null;
+    const rows = await db.select().from(externalIntegrations)
+      .where(and(eq(externalIntegrations.orgId, orgId), eq(externalIntegrations.integrationType, integrationType)))
+      .orderBy(desc(externalIntegrations.updatedAt));
+    if (rows.length > 1) {
+      console.warn(`[storage] WARNING: ${rows.length} duplicate ${integrationType} rows for orgId=${orgId}. Using newest id=${rows[0].id}. Stale ids: ${rows.slice(1).map(r => r.id).join(", ")}`);
+    }
+    return rows[0] ?? null;
   }
 
   async upsertExternalIntegration(orgId: string, integrationType: string, data: Partial<InsertExternalIntegration>): Promise<ExternalIntegration> {
     const existing = await this.getExternalIntegration(orgId, integrationType);
     if (existing) {
+      // Purge any duplicate rows — keep only the newest (which getExternalIntegration already returned)
+      await db.delete(externalIntegrations)
+        .where(and(
+          eq(externalIntegrations.orgId, orgId),
+          eq(externalIntegrations.integrationType, integrationType),
+          ne(externalIntegrations.id, existing.id),
+        ));
       const [updated] = await db.update(externalIntegrations)
         .set({ ...data, updatedAt: new Date() } as any)
         .where(eq(externalIntegrations.id, existing.id))
@@ -3827,6 +3838,16 @@ export class DatabaseStorage implements IStorage {
       .values({ orgId, integrationType, ...data } as any)
       .returning();
     return created;
+  }
+
+  async hardDeleteExternalIntegration(orgId: string, integrationType: string): Promise<number> {
+    const deleted = await db.delete(externalIntegrations)
+      .where(and(eq(externalIntegrations.orgId, orgId), eq(externalIntegrations.integrationType, integrationType)))
+      .returning();
+    if (deleted.length > 0) {
+      console.log(`[storage] hardDeleteExternalIntegration: removed ${deleted.length} ${integrationType} row(s) for orgId=${orgId} ids=${deleted.map(r => r.id).join(", ")}`);
+    }
+    return deleted.length;
   }
 
   async getIntegrationExecutionLogs(orgId: string, opts?: { integrationType?: string; limit?: number }): Promise<IntegrationExecutionLog[]> {

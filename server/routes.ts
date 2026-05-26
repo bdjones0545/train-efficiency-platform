@@ -15850,26 +15850,80 @@ Respond with this exact JSON structure:
   // GET /api/integrations/gmail/oauth/start-url — authenticated JSON endpoint.
   // Frontend calls this with apiRequest (Bearer/cookie auth) and gets back { url }.
   // The browser then does window.location.href = url — no auth header needed on that redirect.
-  // POST /api/integrations/gmail/reset-credentials — wipe OAuth credentials/tokens, reset to disconnected (ADMIN only)
+  // POST /api/integrations/gmail/reset-credentials — hard-delete all Gmail rows for org, fresh start (ADMIN only)
   app.post("/api/integrations/gmail/reset-credentials", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
-      const existing = await storage.getExternalIntegration(orgId, "gmail");
-      const existingStats = (existing?.usageStats as Record<string, unknown>) ?? {};
-      const { credentialHints: _h, oauthConnectedAt: _o, ...clearedStats } = existingStats as any;
-      await storage.upsertExternalIntegration(orgId, "gmail", {
-        encryptedCredentials: {} as any,
-        status: "disconnected",
-        displayName: "Gmail Workspace",
-        lastSuccessfulActionAt: null,
-        usageStats: clearedStats as any,
-      } as any);
-      console.log(`[gmail/reset-credentials] credentials wiped for orgId=${orgId}`);
-      res.json({ ok: true });
+      const deletedCount = await (storage as any).hardDeleteExternalIntegration(orgId, "gmail");
+      console.log(`[gmail/reset-credentials] hard-deleted ${deletedCount} Gmail row(s) for orgId=${orgId}. Next credential save will create a fresh row.`);
+      res.json({ ok: true, deletedRowCount: deletedCount });
     } catch (e: any) {
       console.error("[gmail/reset-credentials] error:", e);
       res.status(500).json({ message: "Failed to reset Gmail credentials: " + e.message });
+    }
+  });
+
+  // GET /api/integrations/gmail/oauth/debug — safe credential inspection without exposing secrets (ADMIN only)
+  app.get("/api/integrations/gmail/oauth/debug", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
+
+      const allIntegrations = await storage.getExternalIntegrations(orgId);
+      const gmailRows = allIntegrations.filter((i: any) => i.integrationType === "gmail")
+        .sort((a: any, b: any) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime());
+
+      if (gmailRows.length > 1) {
+        console.warn(`[gmail/debug] ${gmailRows.length} Gmail rows for orgId=${orgId}: ${gmailRows.map((r: any) => r.id).join(", ")}`);
+      }
+
+      if (gmailRows.length === 0) {
+        return res.json({ found: false, rowCount: 0 });
+      }
+
+      const integration = gmailRows[0];
+      const enc = integration.encryptedCredentials;
+      const hasCredentials = enc && typeof enc === "object" && Object.keys(enc).length > 0;
+
+      let clientIdPreview: string | null = null;
+      let clientIdLength: number | null = null;
+      let clientIdEndsWithAppsGoogleusercontent: boolean | null = null;
+      let hasClientSecret = false;
+
+      if (hasCredentials) {
+        const { decryptCredentials } = await import("./credentials-vault");
+        const creds = decryptCredentials(enc as any);
+        if (creds?.clientId) {
+          const cid: string = creds.clientId;
+          clientIdPreview = cid.length > 18 ? `${cid.slice(0, 6)}…${cid.slice(-12)}` : `${cid.slice(0, 3)}…`;
+          clientIdLength = cid.length;
+          clientIdEndsWithAppsGoogleusercontent = cid.endsWith(".apps.googleusercontent.com");
+        }
+        hasClientSecret = !!(creds?.clientSecret);
+      }
+
+      const host = process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`;
+      const redirectUri = `${host}/api/integrations/gmail/callback`;
+
+      res.json({
+        found: true,
+        rowCount: gmailRows.length,
+        rowIds: gmailRows.map((r: any) => r.id),
+        integrationId: integration.id,
+        status: integration.status,
+        hasCredentials,
+        clientIdPreview,
+        clientIdLength,
+        clientIdEndsWithAppsGoogleusercontent,
+        redirectUri,
+        hasClientSecret,
+        updatedAt: integration.updatedAt,
+        createdAt: integration.createdAt,
+      });
+    } catch (e: any) {
+      console.error("[gmail/debug] error:", e);
+      res.status(500).json({ message: "Debug check failed: " + e.message });
     }
   });
 
@@ -15879,14 +15933,16 @@ Respond with this exact JSON structure:
       if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
 
       const integration = await storage.getExternalIntegration(orgId, "gmail");
-      if (!integration?.encryptedCredentials) {
-        return res.status(400).json({ message: "Save Gmail credentials before starting OAuth" });
+      const enc = integration?.encryptedCredentials;
+      const hasCredentials = enc && typeof enc === "object" && Object.keys(enc as any).length > 0;
+      if (!integration || !hasCredentials) {
+        return res.status(400).json({ message: "No Gmail credentials found. Save your Client ID and Client Secret first." });
       }
 
       const { decryptCredentials } = await import("./credentials-vault");
-      const creds = decryptCredentials(integration.encryptedCredentials as any);
+      const creds = decryptCredentials(enc as any);
       if (!creds?.clientId || !creds?.clientSecret) {
-        return res.status(400).json({ message: "Gmail Client ID and Client Secret are required" });
+        return res.status(400).json({ message: "Gmail credentials could not be decrypted. Please reset and re-enter them." });
       }
 
       const { google } = await import("googleapis");
@@ -15908,20 +15964,37 @@ Respond with this exact JSON structure:
         state,
       });
 
+      // Parse the generated URL to verify the client_id param matches what we encrypted
+      const parsedUrl = new URL(url);
+      const clientIdFromUrl = parsedUrl.searchParams.get("client_id") ?? "";
       const clientId: string = creds.clientId;
-      const clientIdPreview = clientId.length > 18
-        ? `${clientId.slice(0, 6)}…${clientId.slice(-12)}`
-        : `${clientId.slice(0, 3)}…`;
+
+      function makePreview(s: string) {
+        return s.length > 18 ? `${s.slice(0, 6)}…${s.slice(-12)}` : `${s.slice(0, 3)}…`;
+      }
+      const clientIdPreview = makePreview(clientId);
+      const clientIdFromUrlPreview = makePreview(clientIdFromUrl);
+      const previewsMatch = clientIdPreview === clientIdFromUrlPreview;
+
+      if (!previewsMatch) {
+        console.error(
+          `[gmail/oauth/start-url] MISMATCH — credentials clientId preview (${clientIdPreview}) !== URL client_id preview (${clientIdFromUrlPreview}). ` +
+          `This means the OAuth library may be transforming the client_id.`
+        );
+      }
+
       console.log(
         `[gmail/oauth/start-url] orgId=${orgId}` +
         ` integrationId=${integration.id}` +
-        ` clientIdPreview=${clientIdPreview}` +
-        ` clientIdLength=${clientId.length}` +
-        ` clientIdEndsWithAppsGoogleusercontent=${clientId.endsWith(".apps.googleusercontent.com")}` +
+        ` clientIdFromCredentialsPreview=${clientIdPreview}` +
+        ` clientIdFromUrlPreview=${clientIdFromUrlPreview}` +
+        ` clientIdFromUrlLength=${clientIdFromUrl.length}` +
+        ` clientIdEndsWithAppsGoogleusercontent=${clientIdFromUrl.endsWith(".apps.googleusercontent.com")}` +
+        ` previewsMatch=${previewsMatch}` +
         ` redirectUri=${redirectUri}` +
         ` urlStartsWithGoogle=${url.startsWith("https://accounts.google.com/o/oauth2/v2/auth")}`
       );
-      res.json({ url, clientIdPreview, redirectUri, scopes });
+      res.json({ url, clientIdPreview, clientIdFromUrlPreview, previewsMatch, redirectUri, scopes });
     } catch (e: any) {
       console.error("[gmail/oauth/start-url] error:", e);
       res.status(500).json({ message: "Failed to generate Gmail OAuth URL: " + e.message });

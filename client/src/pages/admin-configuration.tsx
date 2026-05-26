@@ -618,7 +618,13 @@ function OrgIntegrationConnectModal({
   const [clientIdError, setClientIdError] = useState<string | null>(null);
   const [clientSecretWarning, setClientSecretWarning] = useState<string | null>(null);
   const [oauthStarting, setOauthStarting] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<{ clientIdPreview: string; redirectUri: string; scopes: string[] } | null>(null);
+  const [debugInfo, setDebugInfo] = useState<{
+    clientIdPreview: string; redirectUri: string; scopes: string[];
+    rowCount: number; rowIds: string[]; status: string;
+    hasCredentials: boolean; clientIdLength: number | null;
+    clientIdEndsCorrectly: boolean | null; hasClientSecret: boolean;
+    updatedAt: string | null;
+  } | null>(null);
   const [debugLoading, setDebugLoading] = useState(false);
 
   const REDIRECT_URI = "https://trainefficiency.com/api/integrations/gmail/callback";
@@ -667,15 +673,23 @@ function OrgIntegrationConnectModal({
   async function fetchDebugPreview() {
     setDebugLoading(true);
     try {
-      const res = await apiRequest("GET", "/api/integrations/gmail/oauth/start-url");
+      const res = await apiRequest("GET", "/api/integrations/gmail/oauth/debug");
       const data = await res.json() as any;
       setDebugInfo({
-        clientIdPreview: data.clientIdPreview ?? "(not returned)",
+        clientIdPreview: data.clientIdPreview ?? "(none — no credentials saved)",
         redirectUri: data.redirectUri ?? "(not returned)",
         scopes: data.scopes ?? [],
+        rowCount: data.rowCount ?? 0,
+        rowIds: data.rowIds ?? [],
+        status: data.status ?? "unknown",
+        hasCredentials: data.hasCredentials ?? false,
+        clientIdLength: data.clientIdLength ?? null,
+        clientIdEndsCorrectly: data.clientIdEndsWithAppsGoogleusercontent ?? null,
+        hasClientSecret: data.hasClientSecret ?? false,
+        updatedAt: data.updatedAt ?? null,
       });
     } catch (e: any) {
-      toast({ title: "Credential check failed", description: e.message, variant: "destructive" });
+      toast({ title: "Debug check failed", description: e.message, variant: "destructive" });
     } finally {
       setDebugLoading(false);
     }
@@ -747,10 +761,34 @@ function OrgIntegrationConnectModal({
                     </button>
                   </div>
                   {debugInfo && (
-                    <div className="font-mono text-[10px] space-y-0.5 text-muted-foreground">
-                      <div><span className="text-foreground">Client ID:</span> {debugInfo.clientIdPreview}</div>
-                      <div><span className="text-foreground">Redirect URI:</span> {debugInfo.redirectUri}</div>
-                      <div><span className="text-foreground">Scopes:</span> {debugInfo.scopes.length} requested</div>
+                    <div className="font-mono text-[10px] space-y-1 text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-foreground">Client ID:</span>
+                        <span className={debugInfo.clientIdEndsCorrectly === false ? "text-destructive" : "text-yellow-600 dark:text-yellow-400"}>
+                          {debugInfo.clientIdPreview}
+                        </span>
+                        {debugInfo.clientIdPreview && !debugInfo.clientIdPreview.startsWith("(") && (
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(debugInfo.clientIdPreview)}
+                            className="underline text-muted-foreground hover:text-foreground"
+                            title="Copy preview to clipboard"
+                          >copy</button>
+                        )}
+                      </div>
+                      <div><span className="text-foreground">ID length:</span> {debugInfo.clientIdLength ?? "—"} chars</div>
+                      <div><span className="text-foreground">Ends with …usercontent.com:</span>{" "}
+                        <span className={debugInfo.clientIdEndsCorrectly === false ? "text-destructive" : "text-green-600"}>
+                          {debugInfo.clientIdEndsCorrectly === null ? "—" : debugInfo.clientIdEndsCorrectly ? "yes ✓" : "NO ✗"}
+                        </span>
+                      </div>
+                      <div><span className="text-foreground">Has client secret:</span> {debugInfo.hasClientSecret ? "yes" : "NO"}</div>
+                      <div><span className="text-foreground">DB rows for this org:</span>{" "}
+                        <span className={debugInfo.rowCount > 1 ? "text-destructive" : ""}>{debugInfo.rowCount}</span>
+                        {debugInfo.rowCount > 1 && " ← DUPLICATE ROWS (reset will fix)"}
+                      </div>
+                      <div><span className="text-foreground">Status:</span> {debugInfo.status}</div>
+                      <div><span className="text-foreground">Last saved:</span> {debugInfo.updatedAt ? new Date(debugInfo.updatedAt).toLocaleString() : "—"}</div>
                     </div>
                   )}
                 </div>
