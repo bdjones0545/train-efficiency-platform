@@ -1,0 +1,72 @@
+Extend the Advanced → Integrations architecture to support BOTH:
+
+1. Platform Infrastructure (global read-only services)
+2. Organization Integrations (org-configurable connections)
+
+Problem:
+The current rebuild correctly shows platform-managed infrastructure, but there is now no visible way for an organization to connect tenant-level integrations like Gmail, Google Calendar, Meta, Slack, or developer APIs.
+
+The page currently behaves like infrastructure observability only, not integration management.
+
+Required architecture:
+
+SECTION 1 — Platform Infrastructure (keep existing)
+Read-only operational services:
+- TrainChat AI
+- AI Runtime
+- Research Agent
+- Email Infrastructure
+- SMS Infrastructure
+- Automation Engine
+- Payments
+- Calendar Runtime
+etc.
+
+No changes needed except preserving current UI.
+
+SECTION 2 — Organization Integrations (NEW)
+Create a separate section below infrastructure.
+
+Each org integration card should support:
+- connected / disconnected state
+- connect button
+- disconnect button
+- reauthorize
+- last sync
+- connected account info
+- org-scoped credentials/config
+
+Initial integrations:
+1. Gmail Workspace
+2. Google Calendar
+3. Meta Ads
+4. Slack
+5. Developer API Keys / Webhooks
+
+Each card should clearly distinguish:
+- "Managed by Organization"
+vs
+- "Managed by TrainEfficiency"
+
+Technical requirements:
+1. Create normalized org integration registry:
+   - id
+   - title
+   - status
+   - connectedAccount
+   - lastSync
+   - orgId
+   - authType
+2. Preserve existing infrastructure cards exactly as-is.
+3. Add OAuth/connect flows where already supported.
+4. Hide integrations not enabled by feature flags.
+5. Mobile-first responsive layout matching existing EST dark UI.
+6. Use softer visual hierarchy than infrastructure section so infrastructure remains authoritative.
+
+Acceptance criteria:
+- Org admins can clearly see both:
+   a) platform operational infrastructure
+   b) integrations their organization can configure
+- Gmail/Calendar/etc are connectable again.
+- Infrastructure services are not confused with tenant integrations.
+- The Advanced page now reflects a true multi-tenant orchestration platform architecture.
