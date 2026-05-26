@@ -698,7 +698,10 @@ function OrgIntegrationConnectModal({
   async function startGmailOAuth() {
     setOauthStarting(true);
     try {
-      const res = await apiRequest("GET", "/api/integrations/gmail/oauth/start-url");
+      // Pass the current page path+search as returnTo so the callback redirects
+      // back here (e.g. /admin/configuration?tab=advanced) instead of a hardcoded URL.
+      const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+      const res = await apiRequest("GET", `/api/integrations/gmail/oauth/start-url?returnTo=${returnTo}`);
 
       let data: unknown;
       try {
@@ -708,7 +711,7 @@ function OrgIntegrationConnectModal({
       }
 
       const { url, clientIdPreview: cidPreview, redirectUri: dbgRedirectUri } = data as any;
-      console.log(`[gmail/oauth] start-url check — clientIdPreview=${cidPreview} redirectUri=${dbgRedirectUri}`);
+      console.log(`[gmail/oauth] start-url check — clientIdPreview=${cidPreview} redirectUri=${dbgRedirectUri} returnTo=${decodeURIComponent(returnTo)}`);
 
       if (!url || typeof url !== "string") {
         throw new Error(`OAuth URL missing from response. Got: ${JSON.stringify(data)}`);

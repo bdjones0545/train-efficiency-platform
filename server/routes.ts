@@ -15818,11 +15818,27 @@ Respond with this exact JSON structure:
   // ── Gmail OAuth helpers ────────────────────────────────────────────────────
   // Build an HMAC-signed state blob so the callback can trust orgId without
   // relying on sessions.  State expires after 15 minutes.
-  function buildOAuthState(orgId: string): string {
+  const DEFAULT_OAUTH_RETURN = "/admin/configuration?tab=advanced";
+
+  function sanitizeReturnTo(raw: string | undefined | null): string {
+    if (!raw) return DEFAULT_OAUTH_RETURN;
+    const s = decodeURIComponent(String(raw)).trim();
+    // Must be a relative path: starts with /, no protocol colon, no //
+    if (!s.startsWith("/") || s.startsWith("//") || s.includes(":")) return DEFAULT_OAUTH_RETURN;
+    return s;
+  }
+
+  function appendGmailStatus(returnTo: string, status: string): string {
+    const sep = returnTo.includes("?") ? "&" : "?";
+    return `${returnTo}${sep}gmail=${status}`;
+  }
+
+  function buildOAuthState(orgId: string, returnTo?: string): string {
     const { createHmac, randomBytes } = require("crypto");
     const nonce = randomBytes(16).toString("hex");
     const ts = String(Date.now());
-    const payload = { orgId, nonce, ts };
+    const payload: Record<string, string> = { orgId, nonce, ts };
+    if (returnTo) payload.returnTo = sanitizeReturnTo(returnTo);
     const raw = JSON.stringify(payload);
     const sig = createHmac("sha256", process.env.SESSION_SECRET ?? "dev-secret")
       .update(raw)
@@ -15830,7 +15846,7 @@ Respond with this exact JSON structure:
     return Buffer.from(JSON.stringify({ ...payload, sig })).toString("base64url");
   }
 
-  function verifyOAuthState(state: string): { orgId: string } | null {
+  function verifyOAuthState(state: string): { orgId: string; returnTo: string } | null {
     try {
       const { createHmac } = require("crypto");
       const obj = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
@@ -15841,7 +15857,7 @@ Respond with this exact JSON structure:
         .digest("hex");
       if (sig !== expected) return null;
       if (Date.now() - parseInt(payload.ts) > 15 * 60 * 1000) return null; // 15-min expiry
-      return { orgId: payload.orgId };
+      return { orgId: payload.orgId, returnTo: sanitizeReturnTo(payload.returnTo) };
     } catch {
       return null;
     }
@@ -15950,7 +15966,10 @@ Respond with this exact JSON structure:
       const redirectUri = `${host}/api/integrations/gmail/callback`;
       const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
 
-      const state = buildOAuthState(orgId);
+      // Embed returnTo in the signed state so the callback can redirect back
+      // to the exact page the admin was on, preserving the tab + any other params.
+      const returnTo = sanitizeReturnTo((req.query as any).returnTo as string | undefined);
+      const state = buildOAuthState(orgId, returnTo);
 
       const scopes = [
         "https://www.googleapis.com/auth/gmail.send",
@@ -16003,42 +16022,63 @@ Respond with this exact JSON structure:
 
   // GET /api/integrations/gmail/callback — receive code, store tokens
   app.get("/api/integrations/gmail/callback", async (req: any, res) => {
+    const host = process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`;
+    console.log(`[gmail/oauth/callback] hit — host=${host} query=${JSON.stringify(req.query)}`);
+
+    // Helper: redirect using returnTo embedded in state (or fallback default)
+    function cbRedirect(returnTo: string, status: string) {
+      const url = appendGmailStatus(returnTo, status);
+      console.log(`[gmail/oauth/callback] redirecting — status=${status} returnTo="${returnTo}" fullUrl="${url}"`);
+      return res.redirect(url);
+    }
+
     try {
       const { code, state, error } = req.query as Record<string, string>;
 
       if (error) {
-        console.error("[gmail/oauth/callback] OAuth denied:", error);
-        return res.redirect("/admin/configuration?tab=advanced&gmail=denied");
+        console.error("[gmail/oauth/callback] OAuth denied by user or Google:", error);
+        return cbRedirect(DEFAULT_OAUTH_RETURN, "denied");
       }
       if (!code || !state) {
-        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+        console.error("[gmail/oauth/callback] missing code or state — code present:", !!code, "state present:", !!state);
+        return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
       }
 
       const verified = verifyOAuthState(state);
       if (!verified) {
-        console.error("[gmail/oauth/callback] state verification failed — invalid signature or expired");
-        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+        console.error("[gmail/oauth/callback] state verification failed — invalid signature or expired. State length:", state?.length);
+        return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
       }
-      const { orgId } = verified;
+      const { orgId, returnTo } = verified;
+      console.log(`[gmail/oauth/callback] state verified — orgId=${orgId} returnTo="${returnTo}"`);
 
       const integration = await storage.getExternalIntegration(orgId, "gmail");
-      if (!integration?.encryptedCredentials) {
-        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+      const enc = integration?.encryptedCredentials;
+      const hasCredentials = enc && typeof enc === "object" && Object.keys(enc as any).length > 0;
+      if (!integration || !hasCredentials) {
+        console.error(`[gmail/oauth/callback] no credentials in DB for orgId=${orgId} — integration found: ${!!integration}`);
+        return cbRedirect(returnTo, "error");
       }
 
       const { decryptCredentials, encryptCredentials, computeCredentialHints } = await import("./credentials-vault");
-      const creds = decryptCredentials(integration.encryptedCredentials as any);
+      const creds = decryptCredentials(enc as any);
       if (!creds?.clientId || !creds?.clientSecret) {
-        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+        console.error(`[gmail/oauth/callback] credentials failed to decrypt for orgId=${orgId}`);
+        return cbRedirect(returnTo, "error");
       }
 
       const { google } = await import("googleapis");
-      const redirectUri = `${process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`}/api/integrations/gmail/callback`;
+      const redirectUri = `${host}/api/integrations/gmail/callback`;
       const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
 
-      console.log(`[gmail/oauth/callback] token exchange — orgId=${orgId} integrationType=gmail`);
+      console.log(`[gmail/oauth/callback] exchanging code — orgId=${orgId} redirectUri=${redirectUri}`);
       const { tokens } = await oauth2Client.getToken(code);
-      console.log(`[gmail/oauth/callback] token exchange success — access_token=${tokens.access_token ? "present" : "missing"} refresh_token=${tokens.refresh_token ? "present" : "MISSING"} expiry=${tokens.expiry_date}`);
+      console.log(
+        `[gmail/oauth/callback] token exchange success — ` +
+        `access_token=${tokens.access_token ? "present" : "MISSING"} ` +
+        `refresh_token=${tokens.refresh_token ? "present" : "MISSING"} ` +
+        `expiry=${tokens.expiry_date}`
+      );
       if (!tokens.refresh_token) {
         console.warn("[gmail/oauth/callback] no refresh_token — user may need to re-consent (prompt=consent). Existing refreshToken will be reused if available.");
       }
@@ -16064,16 +16104,29 @@ Respond with this exact JSON structure:
         usageStats: { ...existingStats, credentialHints: hints, oauthConnectedAt: new Date().toISOString() } as any,
       } as any);
 
-      console.log(`[gmail/oauth/callback] DB updated — orgId=${orgId} recordId=${updated.id} status=${updated.status} displayName=${displayName} hasRefreshToken=${!!updatedCreds.refreshToken}`);
-      res.redirect("/admin/configuration?tab=advanced&gmail=connected");
+      console.log(
+        `[gmail/oauth/callback] DB updated — orgId=${orgId} recordId=${updated.id} ` +
+        `status=${updated.status} displayName="${displayName}" ` +
+        `hasRefreshToken=${!!updatedCreds.refreshToken}`
+      );
+      return cbRedirect(returnTo, "connected");
     } catch (e: any) {
-      console.error("[gmail/oauth/callback] error:", e);
+      console.error("[gmail/oauth/callback] unexpected error:", e?.message ?? e);
       const errMsg: string = e?.message ?? "";
       const responseError: string = e?.response?.data?.error ?? "";
+      // Try to extract returnTo from state even on error, best-effort
+      let fallbackReturnTo = DEFAULT_OAUTH_RETURN;
+      try {
+        const stateStr = (req.query as any).state as string | undefined;
+        if (stateStr) {
+          const v = verifyOAuthState(stateStr);
+          if (v) fallbackReturnTo = v.returnTo;
+        }
+      } catch { /* ignore */ }
       if (errMsg.includes("invalid_client") || responseError === "invalid_client") {
-        return res.redirect("/admin/configuration?tab=advanced&gmail=invalid_client");
+        return cbRedirect(fallbackReturnTo, "invalid_client");
       }
-      res.redirect("/admin/configuration?tab=advanced&gmail=error");
+      return cbRedirect(fallbackReturnTo, "error");
     }
   });
 
