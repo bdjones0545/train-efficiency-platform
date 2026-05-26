@@ -578,16 +578,17 @@ function OrgIntegrationConnectModal({
         displayName,
         authType: def.authType,
       });
-      const result: any = await apiRequest("POST", `/api/integrations/${def.id}/credentials`, {
+      // apiRequest returns Response — must call .json() to get the body
+      const credRes = await apiRequest("POST", `/api/integrations/${def.id}/credentials`, {
         credentials: fields,
       });
-      return result;
+      return credRes.json() as Promise<{ ok: boolean; integrationId?: string; requiresOAuth?: boolean }>;
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
       if (result?.requiresOAuth) {
         setGmailCredentialsSaved(true);
-        toast({ title: "Credentials saved", description: "Now authorize access with Google to complete setup." });
+        toast({ title: "Credentials saved", description: "Now authorize access with Google to complete the connection." });
       } else {
         toast({ title: `${def.title} connected`, description: "Integration is now active." });
         onOpenChange(false);
@@ -867,6 +868,9 @@ function OrgIntegrationCard({
 
 function OrgIntegrationsSection() {
   const { toast } = useToast();
+  // Phase-1 state: store the OAuth result from URL while waiting for data to load
+  const [pendingOAuthResult, setPendingOAuthResult] = useState<{ provider: string; status: string } | null>(null);
+
   const { data: profile } = useQuery<{ role?: string; organizationId?: string | null }>({
     queryKey: ["/api/profile"],
   });
@@ -878,24 +882,49 @@ function OrgIntegrationsSection() {
     enabled: isAdmin,
   });
 
-  // Detect OAuth callback result from query params (e.g. ?gmail=connected after Google redirect)
+  // Phase 1: detect ?gmail=connected in URL, invalidate cache immediately, store result for Phase 2
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gmailStatus = params.get("gmail");
     if (!gmailStatus) return;
-    // Clean the param from the URL so it doesn't persist on refresh
+    // Clean param so it doesn't re-fire on refresh
     const clean = new URL(window.location.href);
     clean.searchParams.delete("gmail");
     window.history.replaceState({}, "", clean.toString());
-    if (gmailStatus === "connected") {
-      toast({ title: "Gmail connected", description: "Your Gmail account has been authorized successfully." });
-      refetch();
-    } else if (gmailStatus === "denied") {
+
+    if (gmailStatus === "denied") {
       toast({ title: "Gmail authorization denied", description: "You declined the Google permission request.", variant: "destructive" });
-    } else if (gmailStatus === "error") {
-      toast({ title: "Gmail authorization failed", description: "Something went wrong during Gmail OAuth. Please try again.", variant: "destructive" });
+      return;
     }
+    if (gmailStatus === "error") {
+      toast({ title: "Gmail authorization failed", description: "Something went wrong during Gmail OAuth. Please try again.", variant: "destructive" });
+      return;
+    }
+    // For "connected": invalidate cache and wait for data — Phase 2 will show toast
+    queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
+    setPendingOAuthResult({ provider: "gmail", status: gmailStatus });
   }, []);
+
+  // Phase 2: once data actually loads, confirm backend state and show toast
+  useEffect(() => {
+    if (!pendingOAuthResult || !records) return;
+    const { provider, status } = pendingOAuthResult;
+    if (status !== "connected") return;
+    setPendingOAuthResult(null);
+
+    const record = records.find((r) => r.integrationType === provider);
+    console.log(`[${provider}] OAuth callback — backend record:`, JSON.stringify(record, null, 2));
+
+    if (record?.status === "connected") {
+      toast({ title: `${provider === "gmail" ? "Gmail Workspace" : provider} connected`, description: "Your account has been authorized and is now active." });
+    } else {
+      toast({
+        title: "Connection not confirmed",
+        description: `OAuth completed but the backend status is "${record?.status ?? "unknown"}". Check server logs.`,
+        variant: "destructive",
+      });
+    }
+  }, [pendingOAuthResult, records]);
 
   const recordsByType = (records ?? []).reduce<Record<string, OrgIntegrationRecord>>((acc, r) => {
     acc[r.integrationType] = r;

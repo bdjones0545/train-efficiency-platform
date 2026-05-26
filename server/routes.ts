@@ -15892,9 +15892,11 @@ Respond with this exact JSON structure:
       const redirectUri = `${process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`}/api/integrations/gmail/oauth/callback`;
       const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
 
+      console.log(`[gmail/oauth/callback] token exchange — orgId=${orgId} integrationType=gmail`);
       const { tokens } = await oauth2Client.getToken(code);
+      console.log(`[gmail/oauth/callback] token exchange success — access_token=${tokens.access_token ? "present" : "missing"} refresh_token=${tokens.refresh_token ? "present" : "MISSING"} expiry=${tokens.expiry_date}`);
       if (!tokens.refresh_token) {
-        console.warn("[gmail/oauth/callback] no refresh_token — user may need to re-consent with prompt=consent");
+        console.warn("[gmail/oauth/callback] no refresh_token — user may need to re-consent (prompt=consent). Existing refreshToken will be reused if available.");
       }
 
       // Merge tokens into existing credentials and re-encrypt
@@ -15910,15 +15912,15 @@ Respond with this exact JSON structure:
       const existingStats = (integration.usageStats as Record<string, unknown>) ?? {};
       const displayName = creds.accountEmail || updatedCreds.accountEmail || "Gmail connected";
 
-      await storage.upsertExternalIntegration(orgId, "gmail", {
+      const updated = await storage.upsertExternalIntegration(orgId, "gmail", {
         encryptedCredentials: encrypted as any,
         status: "connected",
         displayName,
         lastSuccessfulActionAt: new Date(),
-        usageStats: { ...existingStats, credentialHints: hints } as any,
+        usageStats: { ...existingStats, credentialHints: hints, oauthConnectedAt: new Date().toISOString() } as any,
       } as any);
 
-      console.log(`[gmail/oauth/callback] Gmail connected for org ${orgId} (${displayName})`);
+      console.log(`[gmail/oauth/callback] DB updated — orgId=${orgId} recordId=${updated.id} status=${updated.status} displayName=${displayName} hasRefreshToken=${!!updatedCreds.refreshToken}`);
       res.redirect("/admin/configuration?tab=advanced&gmail=connected");
     } catch (e: any) {
       console.error("[gmail/oauth/callback] error:", e);
