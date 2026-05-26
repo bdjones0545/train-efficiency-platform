@@ -844,6 +844,13 @@ export function AppSidebar() {
                 icon: Plug,
                 testId: "nav-agent-tools",
               },
+              {
+                title: "Gmail Conversations",
+                simplifiedTitle: "Gmail",
+                url: "/admin/gmail-conversations",
+                icon: Inbox,
+                testId: "nav-gmail-conversations",
+              },
             ],
           } as NavSection,
           {

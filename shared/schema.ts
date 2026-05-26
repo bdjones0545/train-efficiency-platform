@@ -3531,3 +3531,60 @@ export const workflowGraphVersions = pgTable("workflow_graph_versions", {
 export const insertWorkflowGraphVersionSchema = createInsertSchema(workflowGraphVersions).omit({ id: true, publishedAt: true });
 export type WorkflowGraphVersion = typeof workflowGraphVersions.$inferSelect;
 export type InsertWorkflowGraphVersion = z.infer<typeof insertWorkflowGraphVersionSchema>;
+
+// ─── Gmail Conversations ──────────────────────────────────────────────────────
+// Tracks linked Gmail threads to leads/deals/clients.
+
+export const gmailConversations = pgTable("gmail_conversations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  leadId: text("lead_id"),
+  dealId: text("deal_id"),
+  clientId: text("client_id"),
+  gmailThreadId: text("gmail_thread_id").notNull(),
+  lastMessageId: text("last_message_id"),
+  subject: text("subject"),
+  participantEmail: text("participant_email"),
+  participantName: text("participant_name"),
+  status: text("status").notNull().default("open"),
+  intent: text("intent"),
+  lastInboundAt: timestamp("last_inbound_at"),
+  lastOutboundAt: timestamp("last_outbound_at"),
+  lastSnippet: text("last_snippet"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertGmailConversationSchema = createInsertSchema(gmailConversations).omit({ id: true, createdAt: true, updatedAt: true });
+export type GmailConversation = typeof gmailConversations.$inferSelect;
+export type InsertGmailConversation = z.infer<typeof insertGmailConversationSchema>;
+
+// ─── Gmail Agent Actions ──────────────────────────────────────────────────────
+// Audit log for every gmail send/draft/read/classify action the agent takes.
+
+export const gmailAgentActions = pgTable("gmail_agent_actions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  actionType: text("action_type").notNull(),
+  gmailThreadId: text("gmail_thread_id"),
+  gmailMessageId: text("gmail_message_id"),
+  leadId: text("lead_id"),
+  dealId: text("deal_id"),
+  recipientEmail: text("recipient_email"),
+  subject: text("subject"),
+  bodyPreview: text("body_preview"),
+  riskLevel: text("risk_level").notNull().default("medium"),
+  approvalRequired: boolean("approval_required").notNull().default(true),
+  status: text("status").notNull().default("proposed"),
+  result: jsonb("result"),
+  errorMessage: text("error_message"),
+  createdByAgent: text("created_by_agent"),
+  approvedBy: text("approved_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  executedAt: timestamp("executed_at"),
+});
+
+export const insertGmailAgentActionSchema = createInsertSchema(gmailAgentActions).omit({ id: true, createdAt: true });
+export type GmailAgentAction = typeof gmailAgentActions.$inferSelect;
+export type InsertGmailAgentAction = z.infer<typeof insertGmailAgentActionSchema>;

@@ -17170,5 +17170,277 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Gmail Agent Routes ────────────────────────────────────────────────────
+
+  // GET /api/org/gmail/conversations — list conversations for the org
+  app.get("/api/org/gmail/conversations", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { gmailConversations } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const rows = await db
+        .select()
+        .from(gmailConversations)
+        .where(eq(gmailConversations.orgId, orgId))
+        .orderBy(desc(gmailConversations.updatedAt))
+        .limit(100);
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[gmail/conversations] error:", err);
+      res.status(500).json({ message: "Failed to fetch conversations" });
+    }
+  });
+
+  // GET /api/org/gmail/conversations/:threadId — single thread detail
+  app.get("/api/org/gmail/conversations/:threadId", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { gmailConversations } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [row] = await db
+        .select()
+        .from(gmailConversations)
+        .where(and(eq(gmailConversations.orgId, orgId), eq(gmailConversations.gmailThreadId, req.params.threadId)))
+        .limit(1);
+      if (!row) return res.status(404).json({ message: "Conversation not found" });
+      // Fetch thread messages from Gmail
+      const { gmailReadThread } = await import("./services/gmail-agent-service");
+      let messages: any[] = [];
+      try {
+        messages = await gmailReadThread({ orgId, threadId: req.params.threadId });
+      } catch (e: any) {
+        console.warn("[gmail/conversations/:threadId] could not load thread messages:", e.message);
+      }
+      res.json({ conversation: row, messages });
+    } catch (err: any) {
+      console.error("[gmail/conversations/:threadId] error:", err);
+      res.status(500).json({ message: "Failed to fetch conversation" });
+    }
+  });
+
+  // POST /api/org/gmail/send — send email via connected Gmail
+  app.post("/api/org/gmail/send", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { to, subject, body, cc, bcc, replyToThreadId, leadId, dealId } = req.body;
+      if (!to || !subject || !body) return res.status(400).json({ message: "to, subject, and body are required" });
+      const { gmailSendEmail } = await import("./services/gmail-agent-service");
+      const result = await gmailSendEmail({ orgId, to, subject, body, cc, bcc, replyToThreadId, leadId, dealId });
+      console.log(`[gmail/send] orgId=${orgId} to=${to} threadId=${result.threadId}`);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("[gmail/send] error:", err);
+      res.status(500).json({ message: err.message ?? "Failed to send email" });
+    }
+  });
+
+  // POST /api/org/gmail/draft — create Gmail draft
+  app.post("/api/org/gmail/draft", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { to, subject, body, cc, bcc, replyToThreadId, leadId, dealId } = req.body;
+      if (!to || !subject || !body) return res.status(400).json({ message: "to, subject, and body are required" });
+      const { gmailCreateDraft } = await import("./services/gmail-agent-service");
+      const result = await gmailCreateDraft({ orgId, to, subject, body, cc, bcc, replyToThreadId, leadId, dealId });
+      console.log(`[gmail/draft] orgId=${orgId} to=${to} draftId=${result.draftId}`);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("[gmail/draft] error:", err);
+      res.status(500).json({ message: err.message ?? "Failed to create draft" });
+    }
+  });
+
+  // POST /api/org/gmail/classify-replies — classify a single thread
+  app.post("/api/org/gmail/classify-replies", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { threadId, messageId } = req.body;
+      if (!threadId) return res.status(400).json({ message: "threadId is required" });
+      const { gmailClassifyReply } = await import("./services/gmail-agent-service");
+      const result = await gmailClassifyReply({ orgId, threadId, messageId });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[gmail/classify-replies] error:", err);
+      res.status(500).json({ message: err.message ?? "Failed to classify reply" });
+    }
+  });
+
+  // POST /api/org/gmail/sync-replies — run the Lead Reply Recovery workflow
+  app.post("/api/org/gmail/sync-replies", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { runLeadReplyRecovery } = await import("./services/gmail-agent-service");
+      const result = await runLeadReplyRecovery(orgId);
+      console.log(`[gmail/sync-replies] orgId=${orgId}`, result);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("[gmail/sync-replies] error:", err);
+      res.status(500).json({ message: err.message ?? "Failed to sync replies" });
+    }
+  });
+
+  // POST /api/org/gmail/conversations/:threadId/mark-processed
+  app.post("/api/org/gmail/conversations/:threadId/mark-processed", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { gmailMarkThreadProcessed } = await import("./services/gmail-agent-service");
+      await gmailMarkThreadProcessed({ orgId, threadId: req.params.threadId, approvedBy: userId });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[gmail/mark-processed] error:", err);
+      res.status(500).json({ message: err.message ?? "Failed to mark thread processed" });
+    }
+  });
+
+  // GET /api/org/gmail/actions — list agent action queue for Gmail
+  app.get("/api/org/gmail/actions", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { gmailAgentActions } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const rows = await db
+        .select()
+        .from(gmailAgentActions)
+        .where(eq(gmailAgentActions.orgId, orgId))
+        .orderBy(desc(gmailAgentActions.createdAt))
+        .limit(100);
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[gmail/actions] error:", err);
+      res.status(500).json({ message: "Failed to fetch actions" });
+    }
+  });
+
+  // POST /api/org/gmail/actions/:id/approve — approve a proposed action
+  app.post("/api/org/gmail/actions/:id/approve", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { gmailAgentActions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [updated] = await db
+        .update(gmailAgentActions)
+        .set({ status: "approved", approvedBy: userId })
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Action not found" });
+      res.json({ success: true, action: updated });
+    } catch (err: any) {
+      console.error("[gmail/actions/approve] error:", err);
+      res.status(500).json({ message: "Failed to approve action" });
+    }
+  });
+
+  // POST /api/org/gmail/actions/:id/cancel — cancel a proposed action
+  app.post("/api/org/gmail/actions/:id/cancel", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { gmailAgentActions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [updated] = await db
+        .update(gmailAgentActions)
+        .set({ status: "cancelled" })
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Action not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[gmail/actions/cancel] error:", err);
+      res.status(500).json({ message: "Failed to cancel action" });
+    }
+  });
+
+  // POST /api/org/gmail/test-sync — test mode: sync using fake payloads
+  app.post("/api/org/gmail/test-sync", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { TEST_GMAIL_PAYLOADS, gmailTrackConversation } = await import("./services/gmail-agent-service");
+      const { db } = await import("./db");
+      const { gmailAgentActions } = await import("@shared/schema");
+
+      const fake = TEST_GMAIL_PAYLOADS.classifiedReply;
+      await gmailTrackConversation({
+        orgId,
+        gmailThreadId: fake.threadId,
+        participantEmail: fake.senderEmail,
+        participantName: fake.senderName,
+        subject: TEST_GMAIL_PAYLOADS.inboundReply.subject,
+        intent: fake.intent,
+        lastInboundAt: new Date(),
+        lastSnippet: fake.snippet,
+        status: "needs_response",
+      });
+
+      await db.insert(gmailAgentActions).values({
+        orgId,
+        actionType: "propose_draft:scheduling_response",
+        gmailThreadId: fake.threadId,
+        recipientEmail: fake.senderEmail,
+        subject: `Re: ${TEST_GMAIL_PAYLOADS.inboundReply.subject}`,
+        riskLevel: "low",
+        approvalRequired: true,
+        status: "proposed",
+        createdByAgent: "test_mode",
+      });
+
+      console.log(`[gmail/test-sync] orgId=${orgId} — injected test payloads`);
+      res.json({
+        success: true,
+        message: "Test payloads injected",
+        synced: 1,
+        classified: 1,
+        actionsQueued: 1,
+        logs: [
+          "Gmail connected: using test mode",
+          "Refresh token present: simulated",
+          "API call: success (test mode)",
+          "Conversations synced: 1",
+          "Replies classified: 1 (intent=wants_schedule)",
+          "Actions queued: 1 (propose_draft:scheduling_response)",
+        ],
+      });
+    } catch (err: any) {
+      console.error("[gmail/test-sync] error:", err);
+      res.status(500).json({ message: err.message ?? "Test sync failed" });
+    }
+  });
+
   return httpServer;
 }

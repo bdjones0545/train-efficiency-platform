@@ -303,12 +303,166 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
       reason: z.string().optional(),
     }),
   },
+
+  // ─── Gmail Tools ────────────────────────────────────────────────────────────
+
+  gmail_send_email: {
+    name: "gmail_send_email",
+    description: "Send an email from the org's connected Gmail account. Requires confirmation. Cannot be undone.",
+    category: "communication",
+    permissions: P({ requires_confirmation: true, external_side_effect: true, client_visible: true }),
+    riskLevel: "high",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      to: z.string().email(),
+      subject: z.string().min(1).max(998),
+      body: z.string().min(1),
+      cc: z.string().optional(),
+      bcc: z.string().optional(),
+      replyToThreadId: z.string().optional(),
+      leadId: z.string().optional(),
+      dealId: z.string().optional(),
+    }),
+  },
+
+  gmail_create_draft: {
+    name: "gmail_create_draft",
+    description: "Create a Gmail draft for human review. Safe to auto-execute — no email is sent until approved.",
+    category: "communication",
+    permissions: P({ safe_auto_execute: true, external_side_effect: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      to: z.string().email(),
+      subject: z.string().min(1).max(998),
+      body: z.string().min(1),
+      cc: z.string().optional(),
+      bcc: z.string().optional(),
+      replyToThreadId: z.string().optional(),
+      leadId: z.string().optional(),
+      dealId: z.string().optional(),
+    }),
+  },
+
+  gmail_search_inbox: {
+    name: "gmail_search_inbox",
+    description: "Search the Gmail inbox using Gmail query syntax. Read-only. Returns sanitized message metadata.",
+    category: "communication",
+    permissions: P({ safe_auto_execute: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      query: z.string().min(1),
+      maxResults: z.number().int().min(1).max(100).optional(),
+    }),
+  },
+
+  gmail_read_thread: {
+    name: "gmail_read_thread",
+    description: "Read all messages in a Gmail thread. Returns sanitized plain-text content only.",
+    category: "communication",
+    permissions: P({ safe_auto_execute: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      threadId: z.string().min(1),
+    }),
+  },
+
+  gmail_list_recent_replies: {
+    name: "gmail_list_recent_replies",
+    description: "List recent unread inbox replies within a date window. Used to detect new lead responses.",
+    category: "communication",
+    permissions: P({ safe_auto_execute: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      maxResults: z.number().int().min(1).max(100).optional(),
+      afterDays: z.number().int().min(1).max(90).optional(),
+    }),
+  },
+
+  gmail_classify_reply: {
+    name: "gmail_classify_reply",
+    description: "Classify the intent of an inbound Gmail reply using AI. Extracts scheduling signals, objections, and urgency.",
+    category: "communication",
+    permissions: P({ safe_auto_execute: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      threadId: z.string().min(1),
+      messageId: z.string().optional(),
+    }),
+  },
+
+  gmail_get_thread_by_email: {
+    name: "gmail_get_thread_by_email",
+    description: "Find Gmail threads associated with a specific email address. Read-only.",
+    category: "communication",
+    permissions: P({ safe_auto_execute: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      email: z.string().email(),
+    }),
+  },
+
+  gmail_track_conversation: {
+    name: "gmail_track_conversation",
+    description: "Link a Gmail thread to a lead, deal, or client record in the CRM. Creates or updates the conversation record.",
+    category: "crm",
+    permissions: P({ safe_auto_execute: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      gmailThreadId: z.string().min(1),
+      leadId: z.string().optional(),
+      dealId: z.string().optional(),
+      clientId: z.string().optional(),
+      subject: z.string().optional(),
+      participantEmail: z.string().email().optional(),
+      participantName: z.string().optional(),
+      status: z.string().optional(),
+      intent: z.string().optional(),
+      lastSnippet: z.string().optional(),
+    }),
+  },
+
+  gmail_mark_thread_processed: {
+    name: "gmail_mark_thread_processed",
+    description: "Mark a Gmail thread as handled so the agent does not re-process it.",
+    category: "communication",
+    permissions: P({ safe_auto_execute: true }),
+    riskLevel: "low",
+    connector: "gmail",
+    connectorStatus: "live",
+    inputSchema: z.object({
+      orgId: z.string(),
+      threadId: z.string().min(1),
+    }),
+  },
 };
 
 export const CONNECTOR_ROADMAP = [
   { name: "Google Calendar", status: "live" as ConnectorStatus, description: "Two-way sync for session scheduling. OAuth per-org. Conflict detection included.", tools: ["create_calendar_event"] },
   { name: "Stripe", status: "live" as ConnectorStatus, description: "Real Stripe invoices, payment recording, webhook payment attribution.", tools: ["create_invoice", "record_payment"] },
-  { name: "Gmail / Outlook", status: "planned" as ConnectorStatus, description: "Send emails from coach's own inbox", tools: ["send_email"] },
+  { name: "Gmail", status: "live" as ConnectorStatus, description: "Send, draft, search, classify, and track emails from the org's connected Gmail account.", tools: ["gmail_send_email", "gmail_create_draft", "gmail_search_inbox", "gmail_read_thread", "gmail_classify_reply", "gmail_track_conversation"] },
   { name: "Meta Ads", status: "planned" as ConnectorStatus, description: "Trigger ad campaigns from AI actions", tools: [] },
   { name: "Google Analytics", status: "planned" as ConnectorStatus, description: "Track conversion events from AI actions", tools: [] },
   { name: "HubSpot / CRM", status: "planned" as ConnectorStatus, description: "Bidirectional contact and deal sync", tools: ["update_lead_status", "update_deal_stage"] },

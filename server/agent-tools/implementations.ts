@@ -477,6 +477,62 @@ export async function impl_record_payment(orgId: string, input: Record<string, a
 
 // ─── Dispatch table ───────────────────────────────────────────────────────────
 
+// ─── Gmail Tool Implementations ───────────────────────────────────────────────
+
+async function impl_gmail_send_email(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailSendEmail } = await import("../services/gmail-agent-service");
+  const result = await gmailSendEmail({ orgId, to: input.to, subject: input.subject, body: input.body, cc: input.cc, bcc: input.bcc, replyToThreadId: input.replyToThreadId, leadId: input.leadId, dealId: input.dealId });
+  return { success: true, message: `Email sent to ${input.to}`, data: result };
+}
+
+async function impl_gmail_create_draft(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailCreateDraft } = await import("../services/gmail-agent-service");
+  const result = await gmailCreateDraft({ orgId, to: input.to, subject: input.subject, body: input.body, cc: input.cc, bcc: input.bcc, replyToThreadId: input.replyToThreadId, leadId: input.leadId, dealId: input.dealId });
+  return { success: true, message: `Draft created for ${input.to}`, draftId: result.draftId, data: result };
+}
+
+async function impl_gmail_search_inbox(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailSearchInbox } = await import("../services/gmail-agent-service");
+  const results = await gmailSearchInbox({ orgId, query: input.query, maxResults: input.maxResults });
+  return { success: true, message: `Found ${results.length} messages`, data: { messages: results } };
+}
+
+async function impl_gmail_read_thread(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailReadThread } = await import("../services/gmail-agent-service");
+  const messages = await gmailReadThread({ orgId, threadId: input.threadId });
+  return { success: true, message: `Thread has ${messages.length} messages`, data: { messages } };
+}
+
+async function impl_gmail_list_recent_replies(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailListRecentReplies } = await import("../services/gmail-agent-service");
+  const results = await gmailListRecentReplies({ orgId, maxResults: input.maxResults, afterDays: input.afterDays });
+  return { success: true, message: `Found ${results.length} recent replies`, data: { replies: results } };
+}
+
+async function impl_gmail_classify_reply(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailClassifyReply } = await import("../services/gmail-agent-service");
+  const result = await gmailClassifyReply({ orgId, threadId: input.threadId, messageId: input.messageId });
+  return { success: true, message: `Classified as: ${result.intent}`, data: result };
+}
+
+async function impl_gmail_get_thread_by_email(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailGetThreadByEmail } = await import("../services/gmail-agent-service");
+  const results = await gmailGetThreadByEmail({ orgId, email: input.email });
+  return { success: true, message: `Found ${results.length} threads`, data: { threads: results } };
+}
+
+async function impl_gmail_track_conversation(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailTrackConversation } = await import("../services/gmail-agent-service");
+  const result = await gmailTrackConversation({ orgId, gmailThreadId: input.gmailThreadId, leadId: input.leadId, dealId: input.dealId, clientId: input.clientId, subject: input.subject, participantEmail: input.participantEmail, participantName: input.participantName, status: input.status, intent: input.intent, lastSnippet: input.lastSnippet });
+  return { success: true, message: result.created ? "Conversation created" : "Conversation updated", data: result };
+}
+
+async function impl_gmail_mark_thread_processed(orgId: string, input: Record<string, any>): Promise<ToolResult> {
+  const { gmailMarkThreadProcessed } = await import("../services/gmail-agent-service");
+  await gmailMarkThreadProcessed({ orgId, threadId: input.threadId });
+  return { success: true, message: `Thread ${input.threadId} marked as processed` };
+}
+
 export const TOOL_IMPLEMENTATIONS: Record<string, (orgId: string, input: Record<string, any>) => Promise<ToolResult>> = {
   send_email: impl_send_email,
   send_sms: impl_send_sms,
@@ -494,4 +550,13 @@ export const TOOL_IMPLEMENTATIONS: Record<string, (orgId: string, input: Record<
   book_session: impl_book_session,
   cancel_session: impl_cancel_session,
   reschedule_session: impl_reschedule_session,
+  gmail_send_email: impl_gmail_send_email,
+  gmail_create_draft: impl_gmail_create_draft,
+  gmail_search_inbox: impl_gmail_search_inbox,
+  gmail_read_thread: impl_gmail_read_thread,
+  gmail_list_recent_replies: impl_gmail_list_recent_replies,
+  gmail_classify_reply: impl_gmail_classify_reply,
+  gmail_get_thread_by_email: impl_gmail_get_thread_by_email,
+  gmail_track_conversation: impl_gmail_track_conversation,
+  gmail_mark_thread_processed: impl_gmail_mark_thread_processed,
 };
