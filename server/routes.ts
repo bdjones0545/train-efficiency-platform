@@ -15868,7 +15868,7 @@ Respond with this exact JSON structure:
 
       const { google } = await import("googleapis");
       const host = process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`;
-      const redirectUri = `${host}/api/integrations/gmail/oauth/callback`;
+      const redirectUri = `${host}/api/integrations/gmail/callback`;
       const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
 
       const state = buildOAuthState(orgId);
@@ -15892,8 +15892,8 @@ Respond with this exact JSON structure:
     }
   });
 
-  // GET /api/integrations/gmail/oauth/callback — receive code, store tokens
-  app.get("/api/integrations/gmail/oauth/callback", async (req: any, res) => {
+  // GET /api/integrations/gmail/callback — receive code, store tokens
+  app.get("/api/integrations/gmail/callback", async (req: any, res) => {
     try {
       const { code, state, error } = req.query as Record<string, string>;
 
@@ -15924,7 +15924,7 @@ Respond with this exact JSON structure:
       }
 
       const { google } = await import("googleapis");
-      const redirectUri = `${process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`}/api/integrations/gmail/oauth/callback`;
+      const redirectUri = `${process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`}/api/integrations/gmail/callback`;
       const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
 
       console.log(`[gmail/oauth/callback] token exchange — orgId=${orgId} integrationType=gmail`);
