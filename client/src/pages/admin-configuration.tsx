@@ -566,33 +566,52 @@ function OrgIntegrationConnectModal({
   const { toast } = useToast();
   const isReauth = record?.status === "connected";
   const [fields, setFields] = useState<Record<string, string>>({});
+  // Gmail OAuth: after credentials are saved, show "Authorize with Google" button
+  const [gmailCredentialsSaved, setGmailCredentialsSaved] = useState(false);
+  const isGmailOAuth = def.id === "gmail" && def.authType === "oauth";
 
-  const connectMutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: async () => {
       const displayName = fields.accountEmail || fields.calendarId || fields.channel || fields.webhookUrl || def.title;
       await apiRequest("PUT", `/api/integrations/${def.id}`, {
-        status: "connected",
+        status: isGmailOAuth ? "disconnected" : "connected",
         displayName,
         authType: def.authType,
       });
-      await apiRequest("POST", `/api/integrations/${def.id}/credentials`, {
+      const result: any = await apiRequest("POST", `/api/integrations/${def.id}/credentials`, {
         credentials: fields,
       });
+      return result;
     },
-    onSuccess: () => {
-      toast({ title: `${def.title} connected`, description: "Integration is now active." });
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
-      onOpenChange(false);
-      setFields({});
-      onSuccess();
+      if (result?.requiresOAuth) {
+        setGmailCredentialsSaved(true);
+        toast({ title: "Credentials saved", description: "Now authorize access with Google to complete setup." });
+      } else {
+        toast({ title: `${def.title} connected`, description: "Integration is now active." });
+        onOpenChange(false);
+        setFields({});
+        onSuccess();
+      }
     },
     onError: (e: any) => {
       toast({ title: "Connection failed", description: e.message, variant: "destructive" });
     },
   });
 
+  function handleClose() {
+    setGmailCredentialsSaved(false);
+    setFields({});
+    onOpenChange(false);
+  }
+
+  function startGmailOAuth() {
+    window.location.href = "/api/integrations/gmail/oauth/start";
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
@@ -601,48 +620,75 @@ function OrgIntegrationConnectModal({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
-          {def.oauthNote && (
-            <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
-              <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{def.oauthNote}</p>
-            </div>
+          {/* Gmail OAuth — step 2: redirect to Google */}
+          {isGmailOAuth && gmailCredentialsSaved ? (
+            <>
+              <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-3">
+                <p className="text-xs text-green-700 dark:text-green-400 leading-relaxed">
+                  Credentials saved. Click below to open Google's authorization screen and grant access to the Gmail account.
+                </p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={handleClose} data-testid="button-org-integration-gmail-cancel">
+                  Cancel
+                </Button>
+                <Button className="flex-1" onClick={startGmailOAuth} data-testid="button-org-integration-gmail-authorize">
+                  <svg className="h-3.5 w-3.5 mr-1.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  Authorize with Google
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {def.oauthNote && (
+                <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
+                  <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{def.oauthNote}</p>
+                </div>
+              )}
+              {def.credentialFields.map((field) => (
+                <div key={field.key} className="space-y-1.5">
+                  <Label className="text-xs font-medium">{field.label}</Label>
+                  <Input
+                    type={field.type ?? "text"}
+                    placeholder={field.placeholder}
+                    value={fields[field.key] ?? ""}
+                    onChange={(e) => setFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    data-testid={`input-org-integration-${def.id}-${field.key}`}
+                  />
+                  {field.helpText && (
+                    <p className="text-[11px] text-muted-foreground">{field.helpText}</p>
+                  )}
+                </div>
+              ))}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleClose}
+                  data-testid={`button-org-integration-${def.id}-cancel`}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending || def.credentialFields.some((f) => !fields[f.key]?.trim())}
+                  data-testid={`button-org-integration-${def.id}-save`}
+                >
+                  {saveMutation.isPending ? (
+                    <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" />{isGmailOAuth ? "Saving..." : isReauth ? "Saving..." : "Connecting..."}</>
+                  ) : (
+                    <><Plug className="h-3 w-3 mr-1.5" />{isGmailOAuth ? "Save & Continue" : isReauth ? "Save Credentials" : "Connect"}</>
+                  )}
+                </Button>
+              </div>
+            </>
           )}
-          {def.credentialFields.map((field) => (
-            <div key={field.key} className="space-y-1.5">
-              <Label className="text-xs font-medium">{field.label}</Label>
-              <Input
-                type={field.type ?? "text"}
-                placeholder={field.placeholder}
-                value={fields[field.key] ?? ""}
-                onChange={(e) => setFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                data-testid={`input-org-integration-${def.id}-${field.key}`}
-              />
-              {field.helpText && (
-                <p className="text-[11px] text-muted-foreground">{field.helpText}</p>
-              )}
-            </div>
-          ))}
-          <div className="flex gap-2 pt-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => onOpenChange(false)}
-              data-testid={`button-org-integration-${def.id}-cancel`}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={() => connectMutation.mutate()}
-              disabled={connectMutation.isPending || def.credentialFields.some((f) => !fields[f.key]?.trim())}
-              data-testid={`button-org-integration-${def.id}-save`}
-            >
-              {connectMutation.isPending ? (
-                <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" />{isReauth ? "Saving..." : "Connecting..."}</>
-              ) : (
-                <><Plug className="h-3 w-3 mr-1.5" />{isReauth ? "Save Credentials" : "Connect"}</>
-              )}
-            </Button>
-          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -820,6 +866,7 @@ function OrgIntegrationCard({
 }
 
 function OrgIntegrationsSection() {
+  const { toast } = useToast();
   const { data: profile } = useQuery<{ role?: string; organizationId?: string | null }>({
     queryKey: ["/api/profile"],
   });
@@ -830,6 +877,25 @@ function OrgIntegrationsSection() {
     refetchInterval: 30000,
     enabled: isAdmin,
   });
+
+  // Detect OAuth callback result from query params (e.g. ?gmail=connected after Google redirect)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gmailStatus = params.get("gmail");
+    if (!gmailStatus) return;
+    // Clean the param from the URL so it doesn't persist on refresh
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("gmail");
+    window.history.replaceState({}, "", clean.toString());
+    if (gmailStatus === "connected") {
+      toast({ title: "Gmail connected", description: "Your Gmail account has been authorized successfully." });
+      refetch();
+    } else if (gmailStatus === "denied") {
+      toast({ title: "Gmail authorization denied", description: "You declined the Google permission request.", variant: "destructive" });
+    } else if (gmailStatus === "error") {
+      toast({ title: "Gmail authorization failed", description: "Something went wrong during Gmail OAuth. Please try again.", variant: "destructive" });
+    }
+  }, []);
 
   const recordsByType = (records ?? []).reduce<Record<string, OrgIntegrationRecord>>((acc, r) => {
     acc[r.integrationType] = r;

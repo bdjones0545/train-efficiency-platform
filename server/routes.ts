@@ -15785,7 +15785,9 @@ Respond with this exact JSON structure:
   // GET /api/integrations — list all integrations for org (ADMIN only — never returns credentials)
   app.get("/api/integrations", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const integrations = await storage.getExternalIntegrations(req.user.orgId);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
+      const integrations = await storage.getExternalIntegrations(orgId);
       const safe = integrations.map(({ encryptedCredentials, ...rest }) => ({
         ...rest,
         credentialHints: (rest.usageStats as any)?.credentialHints ?? null,
@@ -15800,8 +15802,10 @@ Respond with this exact JSON structure:
   // GET /api/integrations/stats — health stats across all integrations
   app.get("/api/integrations/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const { getIntegrationStats } = await import("./integration-runtime");
-      const stats = await getIntegrationStats(req.user.orgId);
+      const stats = await getIntegrationStats(orgId);
       res.json(stats);
     } catch (e: any) {
       console.error("[integrations/stats] error:", e);
@@ -15809,10 +15813,125 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ── Gmail OAuth flow — must be registered BEFORE the /:type wildcard ────────
+
+  // GET /api/integrations/gmail/oauth/start — redirect to Google consent screen
+  app.get("/api/integrations/gmail/oauth/start", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
+
+      const integration = await storage.getExternalIntegration(orgId, "gmail");
+      if (!integration?.encryptedCredentials) {
+        return res.status(400).json({ message: "Save Gmail credentials before starting OAuth" });
+      }
+
+      const { decryptCredentials } = await import("./credentials-vault");
+      const creds = decryptCredentials(integration.encryptedCredentials as any);
+      if (!creds?.clientId || !creds?.clientSecret) {
+        return res.status(400).json({ message: "Gmail Client ID and Client Secret are required" });
+      }
+
+      const { google } = await import("googleapis");
+      const redirectUri = `${process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`}/api/integrations/gmail/oauth/callback`;
+      const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
+
+      // Encode orgId in state so the callback knows which org to update
+      const state = Buffer.from(JSON.stringify({ orgId })).toString("base64url");
+
+      const authUrl = oauth2Client.generateAuthUrl({
+        access_type: "offline",
+        prompt: "consent",
+        scope: [
+          "https://www.googleapis.com/auth/gmail.send",
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.modify",
+        ],
+        state,
+      });
+
+      res.redirect(authUrl);
+    } catch (e: any) {
+      console.error("[gmail/oauth/start] error:", e);
+      res.status(500).json({ message: "Failed to start Gmail OAuth: " + e.message });
+    }
+  });
+
+  // GET /api/integrations/gmail/oauth/callback — receive code, store tokens
+  app.get("/api/integrations/gmail/oauth/callback", async (req: any, res) => {
+    try {
+      const { code, state, error } = req.query as Record<string, string>;
+
+      if (error) {
+        console.error("[gmail/oauth/callback] OAuth denied:", error);
+        return res.redirect("/admin/configuration?tab=advanced&gmail=denied");
+      }
+      if (!code || !state) {
+        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+      }
+
+      let orgId: string;
+      try {
+        ({ orgId } = JSON.parse(Buffer.from(state, "base64url").toString("utf8")));
+      } catch {
+        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+      }
+
+      const integration = await storage.getExternalIntegration(orgId, "gmail");
+      if (!integration?.encryptedCredentials) {
+        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+      }
+
+      const { decryptCredentials, encryptCredentials, computeCredentialHints } = await import("./credentials-vault");
+      const creds = decryptCredentials(integration.encryptedCredentials as any);
+      if (!creds?.clientId || !creds?.clientSecret) {
+        return res.redirect("/admin/configuration?tab=advanced&gmail=error");
+      }
+
+      const { google } = await import("googleapis");
+      const redirectUri = `${process.env.PUBLIC_APP_URL ?? `https://${req.headers.host}`}/api/integrations/gmail/oauth/callback`;
+      const oauth2Client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
+
+      const { tokens } = await oauth2Client.getToken(code);
+      if (!tokens.refresh_token) {
+        console.warn("[gmail/oauth/callback] no refresh_token — user may need to re-consent with prompt=consent");
+      }
+
+      // Merge tokens into existing credentials and re-encrypt
+      const updatedCreds: Record<string, string> = {
+        ...creds,
+        accessToken: tokens.access_token ?? "",
+        refreshToken: tokens.refresh_token ?? creds.refreshToken ?? "",
+        tokenExpiry: tokens.expiry_date ? String(tokens.expiry_date) : "",
+      };
+      const encrypted = encryptCredentials(updatedCreds);
+      const hints = computeCredentialHints(updatedCreds);
+
+      const existingStats = (integration.usageStats as Record<string, unknown>) ?? {};
+      const displayName = creds.accountEmail || updatedCreds.accountEmail || "Gmail connected";
+
+      await storage.upsertExternalIntegration(orgId, "gmail", {
+        encryptedCredentials: encrypted as any,
+        status: "connected",
+        displayName,
+        lastSuccessfulActionAt: new Date(),
+        usageStats: { ...existingStats, credentialHints: hints } as any,
+      } as any);
+
+      console.log(`[gmail/oauth/callback] Gmail connected for org ${orgId} (${displayName})`);
+      res.redirect("/admin/configuration?tab=advanced&gmail=connected");
+    } catch (e: any) {
+      console.error("[gmail/oauth/callback] error:", e);
+      res.redirect("/admin/configuration?tab=advanced&gmail=error");
+    }
+  });
+
   // GET /api/integrations/:type — get single integration (ADMIN only — never returns credentials)
   app.get("/api/integrations/:type", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const integration = await storage.getExternalIntegration(req.user.orgId, req.params.type);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
+      const integration = await storage.getExternalIntegration(orgId, req.params.type);
       if (!integration) return res.status(404).json({ message: "Integration not found" });
       const { encryptedCredentials, ...rest } = integration;
       res.json({
@@ -15820,28 +15939,35 @@ Respond with this exact JSON structure:
         credentialHints: (rest.usageStats as any)?.credentialHints ?? null,
       });
     } catch (e: any) {
+      console.error("[integrations/get] error:", e);
       res.status(500).json({ message: "Failed to fetch integration" });
     }
   });
 
-  // PUT /api/integrations/:type — upsert integration config
+  // PUT /api/integrations/:type — upsert integration config (ADMIN only)
   app.put("/api/integrations/:type", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
       const { encryptedCredentials, ...safeBody } = req.body;
-      const updated = await storage.upsertExternalIntegration(req.user.orgId, req.params.type, {
+      const updated = await storage.upsertExternalIntegration(orgId, req.params.type, {
         ...safeBody,
-        createdBy: req.user.id,
+        createdBy: userId,
       });
-      res.json({ ...updated, encryptedCredentials: undefined });
+      const { encryptedCredentials: _ec, ...safeUpdated } = updated;
+      res.json(safeUpdated);
     } catch (e: any) {
-      console.error("[integrations/upsert] error:", e);
-      res.status(500).json({ message: "Failed to update integration" });
+      console.error("[integrations/upsert] error:", e.message, e.stack);
+      res.status(500).json({ message: "Failed to update integration: " + e.message });
     }
   });
 
   // POST /api/integrations/:type/credentials — encrypt and store credentials (ADMIN only)
   app.post("/api/integrations/:type/credentials", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const integrationType = req.params.type;
       const credentials = req.body.credentials;
       if (!credentials || typeof credentials !== "object") {
@@ -15858,27 +15984,33 @@ Respond with this exact JSON structure:
       const hints = computeCredentialHints(credentials as Record<string, string>);
 
       // Fetch existing usageStats so we don't clobber other stats
-      const existing = await storage.getExternalIntegration(req.user.orgId, integrationType);
+      const existing = await storage.getExternalIntegration(orgId, integrationType);
       const existingStats = (existing?.usageStats as Record<string, unknown>) ?? {};
 
-      const updated = await storage.upsertExternalIntegration(req.user.orgId, integrationType, {
+      // Gmail uses OAuth — saving credentials marks as "pending_oauth", not "connected"
+      // Status becomes "connected" only after the OAuth callback stores tokens
+      const status = integrationType === "gmail" ? "disconnected" : "connected";
+
+      const updated = await storage.upsertExternalIntegration(orgId, integrationType, {
         encryptedCredentials: encrypted as any,
-        status: "connected",
+        status,
         usageStats: { ...existingStats, credentialHints: hints } as any,
       } as any);
       // Never return credentials or hints from this endpoint
-      res.json({ ok: true, integrationId: updated.id });
+      res.json({ ok: true, integrationId: updated.id, requiresOAuth: integrationType === "gmail" });
     } catch (e: any) {
-      console.error("[integrations/credentials] error:", e);
-      res.status(500).json({ message: "Failed to store credentials" });
+      console.error("[integrations/credentials] error:", e.message, e.stack);
+      res.status(500).json({ message: "Failed to store credentials: " + e.message });
     }
   });
 
   // POST /api/integrations/:type/health-check — run health check
   app.post("/api/integrations/:type/health-check", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const { validateIntegrationHealth } = await import("./integration-runtime");
-      const report = await validateIntegrationHealth(req.user.orgId, req.params.type as any);
+      const report = await validateIntegrationHealth(orgId, req.params.type as any);
       res.json(report);
     } catch (e: any) {
       res.status(500).json({ message: "Health check failed" });
@@ -15888,13 +16020,15 @@ Respond with this exact JSON structure:
   // DELETE /api/integrations/:type — disconnect and wipe credentials (ADMIN only)
   app.delete("/api/integrations/:type", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       // Fetch existing usageStats to preserve non-credential stats
-      const existing = await storage.getExternalIntegration(req.user.orgId, req.params.type);
+      const existing = await storage.getExternalIntegration(orgId, req.params.type);
       const existingStats = (existing?.usageStats as Record<string, unknown>) ?? {};
       // Remove credentialHints from usageStats on disconnect
       const { credentialHints: _removed, ...clearedStats } = existingStats as any;
 
-      await storage.upsertExternalIntegration(req.user.orgId, req.params.type, {
+      await storage.upsertExternalIntegration(orgId, req.params.type, {
         status: "disconnected",
         displayName: null,
         encryptedCredentials: {} as any,
@@ -15915,8 +16049,10 @@ Respond with this exact JSON structure:
   // POST /api/integrations/:type/pause — pause an integration
   app.post("/api/integrations/:type/pause", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const { pauseIntegration } = await import("./integration-runtime");
-      await pauseIntegration(req.user.orgId, req.params.type, req.body.reason ?? "Manually paused");
+      await pauseIntegration(orgId, req.params.type, req.body.reason ?? "Manually paused");
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to pause integration" });
@@ -15926,8 +16062,10 @@ Respond with this exact JSON structure:
   // POST /api/integrations/:type/resume — resume a paused integration
   app.post("/api/integrations/:type/resume", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const { resumeIntegration } = await import("./integration-runtime");
-      await resumeIntegration(req.user.orgId, req.params.type);
+      await resumeIntegration(orgId, req.params.type);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to resume integration" });
@@ -15937,8 +16075,10 @@ Respond with this exact JSON structure:
   // GET /api/integrations/:type/logs — execution log for one integration
   app.get("/api/integrations/:type/logs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const limit = parseInt(req.query.limit as string ?? "50");
-      const logs = await storage.getIntegrationExecutionLogs(req.user.orgId, {
+      const logs = await storage.getIntegrationExecutionLogs(orgId, {
         integrationType: req.params.type,
         limit,
       });
@@ -15951,8 +16091,10 @@ Respond with this exact JSON structure:
   // GET /api/integrations/logs/all — all integration execution logs
   app.get("/api/integrations/logs/all", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const limit = parseInt(req.query.limit as string ?? "50");
-      const logs = await storage.getIntegrationExecutionLogs(req.user.orgId, { limit });
+      const logs = await storage.getIntegrationExecutionLogs(orgId, { limit });
       res.json(logs);
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch logs" });
@@ -15962,8 +16104,10 @@ Respond with this exact JSON structure:
   // GET /api/integrations/openrouter/model-stats — model performance metrics
   app.get("/api/integrations/openrouter/model-stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found for this account" });
       const { getModelPerformanceStats } = await import("./integrations/openrouter");
-      const stats = await getModelPerformanceStats(req.user.orgId);
+      const stats = await getModelPerformanceStats(orgId);
       res.json(stats);
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch model stats" });
