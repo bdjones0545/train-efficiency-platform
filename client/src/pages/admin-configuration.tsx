@@ -613,9 +613,29 @@ function OrgIntegrationConnectModal({
     setOauthStarting(true);
     try {
       const res = await apiRequest("GET", "/api/integrations/gmail/oauth/start-url");
-      const { url } = await res.json() as { url: string };
+
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("Server returned a non-JSON response for OAuth URL");
+      }
+
+      console.log("[gmail/oauth] start-url response:", data);
+
+      const url = (data as any)?.url;
+
+      if (!url || typeof url !== "string") {
+        throw new Error(`OAuth URL missing from response. Got: ${JSON.stringify(data)}`);
+      }
+      if (!url.startsWith("https://accounts.google.com")) {
+        throw new Error(`Unexpected OAuth URL (not Google): ${url.slice(0, 100)}`);
+      }
+
+      console.log("[gmail/oauth] redirecting to Google:", url.slice(0, 100) + "…");
       window.location.href = url;
     } catch (e: any) {
+      console.error("[gmail/oauth] startGmailOAuth error:", e);
       toast({ title: "Could not start OAuth", description: e.message, variant: "destructive" });
       setOauthStarting(false);
     }
