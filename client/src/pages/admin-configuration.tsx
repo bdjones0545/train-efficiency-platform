@@ -547,6 +547,7 @@ type OrgIntegrationRecord = {
   authType: string;
   lastSuccessfulActionAt: string | null;
   lastHealthCheckAt: string | null;
+  credentialHints: Record<string, string> | null;
 };
 
 function OrgIntegrationConnectModal({
@@ -651,15 +652,18 @@ function OrgIntegrationConnectModal({
 function OrgIntegrationCard({
   def,
   record,
+  isAdmin,
   onRefresh,
 }: {
   def: OrgIntegrationDef;
   record?: OrgIntegrationRecord;
+  isAdmin: boolean;
   onRefresh: () => void;
 }) {
   const { toast } = useToast();
   const [connectOpen, setConnectOpen] = useState(false);
   const isConnected = record?.status === "connected";
+  const hints = record?.credentialHints ?? null;
 
   const disconnectMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/integrations/${def.id}`),
@@ -727,6 +731,31 @@ function OrgIntegrationCard({
           </div>
         )}
 
+        {/* Masked credential hints — only shown to admins, never raw values */}
+        {isAdmin && isConnected && hints && Object.keys(hints).length > 0 && (
+          <div className="rounded-lg border border-border/20 bg-muted/20 px-3 py-2 space-y-1.5">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold flex items-center gap-1">
+              <Key className="h-2.5 w-2.5" />
+              Stored credentials
+            </p>
+            {def.credentialFields.map((field) => {
+              const masked = hints[field.key];
+              if (!masked) return null;
+              return (
+                <div key={field.key} className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-muted-foreground/60 truncate">{field.label}</span>
+                  <code
+                    className="text-[11px] font-mono text-muted-foreground/70 tracking-wide"
+                    data-testid={`text-credential-hint-${def.id}-${field.key}`}
+                  >
+                    {masked}
+                  </code>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {isConnected && record?.lastSuccessfulActionAt && (
           <p className="text-[10px] text-muted-foreground/50">
             Last sync: {new Date(record.lastSuccessfulActionAt).toLocaleString()}
@@ -738,7 +767,12 @@ function OrgIntegrationCard({
             {authTypeLabel[def.authType] ?? def.authType} · Managed by Organization
           </span>
           <div className="flex items-center gap-1.5">
-            {isConnected ? (
+            {!isAdmin ? (
+              /* Non-admins see a read-only label instead of action buttons */
+              <span className="text-[10px] text-muted-foreground/40 italic" data-testid={`text-org-integration-${def.id}-admin-only`}>
+                Admin access required
+              </span>
+            ) : isConnected ? (
               <>
                 <button
                   onClick={() => setConnectOpen(true)}
@@ -772,21 +806,29 @@ function OrgIntegrationCard({
         </div>
       </div>
 
-      <OrgIntegrationConnectModal
-        def={def}
-        record={record}
-        open={connectOpen}
-        onOpenChange={setConnectOpen}
-        onSuccess={onRefresh}
-      />
+      {isAdmin && (
+        <OrgIntegrationConnectModal
+          def={def}
+          record={record}
+          open={connectOpen}
+          onOpenChange={setConnectOpen}
+          onSuccess={onRefresh}
+        />
+      )}
     </>
   );
 }
 
 function OrgIntegrationsSection() {
+  const { data: profile } = useQuery<{ role?: string; organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const isAdmin = profile?.role === "ADMIN";
+
   const { data: records, isLoading, refetch } = useQuery<OrgIntegrationRecord[]>({
     queryKey: ["/api/integrations"],
     refetchInterval: 30000,
+    enabled: isAdmin,
   });
 
   const recordsByType = (records ?? []).reduce<Record<string, OrgIntegrationRecord>>((acc, r) => {
@@ -809,23 +851,25 @@ function OrgIntegrationsSection() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {!isLoading && (
+          {isAdmin && !isLoading && (
             <span className="text-[10px] text-muted-foreground/50 hidden sm:block">
               {connectedCount}/{ORG_INTEGRATION_REGISTRY.length} connected
             </span>
           )}
-          <button
-            onClick={() => refetch()}
-            className="h-7 w-7 rounded-lg border border-border/40 flex items-center justify-center hover:bg-muted/50 transition-colors"
-            data-testid="button-refresh-org-integrations"
-            title="Refresh"
-          >
-            <RefreshCw className="h-3 w-3 text-muted-foreground/60" />
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => refetch()}
+              className="h-7 w-7 rounded-lg border border-border/40 flex items-center justify-center hover:bg-muted/50 transition-colors"
+              data-testid="button-refresh-org-integrations"
+              title="Refresh"
+            >
+              <RefreshCw className="h-3 w-3 text-muted-foreground/60" />
+            </button>
+          )}
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading && isAdmin ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-36 rounded-xl border border-border/20 bg-muted/10 animate-pulse" />
@@ -838,6 +882,7 @@ function OrgIntegrationsSection() {
               key={def.id}
               def={def}
               record={recordsByType[def.id]}
+              isAdmin={isAdmin}
               onRefresh={() => refetch()}
             />
           ))}
@@ -845,7 +890,7 @@ function OrgIntegrationsSection() {
       )}
 
       <p className="text-[10px] text-muted-foreground/30 mt-4">
-        Organization-managed · Credentials stored securely per organization
+        Organization-managed · Credentials encrypted at rest · Admin access required
       </p>
     </section>
   );

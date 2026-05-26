@@ -15782,11 +15782,15 @@ Respond with this exact JSON structure:
   // INTEGRATIONS ROUTES — Phase 5
   // ─────────────────────────────────────────────────────────────────────────
 
-  // GET /api/integrations — list all integrations for org
-  app.get("/api/integrations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  // GET /api/integrations — list all integrations for org (ADMIN only — never returns credentials)
+  app.get("/api/integrations", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const integrations = await storage.getExternalIntegrations(req.user.orgId);
-      res.json(integrations);
+      const safe = integrations.map(({ encryptedCredentials, ...rest }) => ({
+        ...rest,
+        credentialHints: (rest.usageStats as any)?.credentialHints ?? null,
+      }));
+      res.json(safe);
     } catch (e: any) {
       console.error("[integrations] list error:", e);
       res.status(500).json({ message: "Failed to fetch integrations" });
@@ -15805,14 +15809,16 @@ Respond with this exact JSON structure:
     }
   });
 
-  // GET /api/integrations/:type — get single integration
-  app.get("/api/integrations/:type", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  // GET /api/integrations/:type — get single integration (ADMIN only — never returns credentials)
+  app.get("/api/integrations/:type", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const integration = await storage.getExternalIntegration(req.user.orgId, req.params.type);
       if (!integration) return res.status(404).json({ message: "Integration not found" });
-      // Never return raw credentials
-      const safe = { ...integration, encryptedCredentials: undefined };
-      res.json(safe);
+      const { encryptedCredentials, ...rest } = integration;
+      res.json({
+        ...rest,
+        credentialHints: (rest.usageStats as any)?.credentialHints ?? null,
+      });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch integration" });
     }
@@ -15833,7 +15839,7 @@ Respond with this exact JSON structure:
     }
   });
 
-  // POST /api/integrations/:type/credentials — store encrypted credentials (separate endpoint for security)
+  // POST /api/integrations/:type/credentials — encrypt and store credentials (ADMIN only)
   app.post("/api/integrations/:type/credentials", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const integrationType = req.params.type;
@@ -15841,11 +15847,26 @@ Respond with this exact JSON structure:
       if (!credentials || typeof credentials !== "object") {
         return res.status(400).json({ message: "credentials object required" });
       }
-      // Store credentials — in production these should be encrypted at rest
+      // Validate all values are strings
+      for (const [k, v] of Object.entries(credentials)) {
+        if (typeof v !== "string") {
+          return res.status(400).json({ message: `Credential field "${k}" must be a string` });
+        }
+      }
+      const { encryptCredentials, computeCredentialHints } = await import("./credentials-vault");
+      const encrypted = encryptCredentials(credentials as Record<string, string>);
+      const hints = computeCredentialHints(credentials as Record<string, string>);
+
+      // Fetch existing usageStats so we don't clobber other stats
+      const existing = await storage.getExternalIntegration(req.user.orgId, integrationType);
+      const existingStats = (existing?.usageStats as Record<string, unknown>) ?? {};
+
       const updated = await storage.upsertExternalIntegration(req.user.orgId, integrationType, {
-        encryptedCredentials: credentials,
+        encryptedCredentials: encrypted as any,
         status: "connected",
+        usageStats: { ...existingStats, credentialHints: hints } as any,
       } as any);
+      // Never return credentials or hints from this endpoint
       res.json({ ok: true, integrationId: updated.id });
     } catch (e: any) {
       console.error("[integrations/credentials] error:", e);
@@ -15864,9 +15885,15 @@ Respond with this exact JSON structure:
     }
   });
 
-  // DELETE /api/integrations/:type — disconnect an org integration
+  // DELETE /api/integrations/:type — disconnect and wipe credentials (ADMIN only)
   app.delete("/api/integrations/:type", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      // Fetch existing usageStats to preserve non-credential stats
+      const existing = await storage.getExternalIntegration(req.user.orgId, req.params.type);
+      const existingStats = (existing?.usageStats as Record<string, unknown>) ?? {};
+      // Remove credentialHints from usageStats on disconnect
+      const { credentialHints: _removed, ...clearedStats } = existingStats as any;
+
       await storage.upsertExternalIntegration(req.user.orgId, req.params.type, {
         status: "disconnected",
         displayName: null,
@@ -15876,6 +15903,7 @@ Respond with this exact JSON structure:
         lastSuccessfulActionAt: null,
         lastFailureAt: null,
         lastFailureReason: null,
+        usageStats: clearedStats as any,
       } as any);
       res.json({ ok: true });
     } catch (e: any) {
