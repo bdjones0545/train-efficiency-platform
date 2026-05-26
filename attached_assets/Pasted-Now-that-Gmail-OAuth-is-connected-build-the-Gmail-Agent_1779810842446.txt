@@ -1,0 +1,204 @@
+Now that Gmail OAuth is connected, build the Gmail Agent Tool Layer so the TrainEfficiency agent can safely use the connected org Gmail account.
+
+Goal:
+Allow the AI agent to send emails, draft emails, read inbox conversations, detect replies, classify lead intent, and track email threads — with guardrails, logging, and org-scoped permissions.
+
+Requirements:
+
+1. Create server Gmail service:
+   server/services/gmail-agent-service.ts
+
+It should:
+- Load the org's Gmail OAuth credentials from org integrations
+- Decrypt refresh token/client credentials
+- Refresh access tokens when needed
+- Initialize google.gmail({ version: "v1", auth })
+- Never expose tokens or secrets
+
+2. Add Gmail tool functions:
+- gmail_send_email
+- gmail_create_draft
+- gmail_read_thread
+- gmail_search_inbox
+- gmail_list_recent_replies
+- gmail_classify_reply
+- gmail_get_thread_by_email
+- gmail_track_conversation
+- gmail_mark_thread_processed
+
+3. Tool behavior:
+
+gmail_send_email:
+- Inputs: orgId, to, subject, body, optional cc, bcc, replyToThreadId, leadId, dealId
+- Sends from the connected Gmail account
+- If replyToThreadId exists, send as threaded reply
+- Logs messageId, threadId, recipient, subject, leadId/dealId
+
+gmail_create_draft:
+- Same inputs as send, but creates Gmail draft instead of sending
+- Used for approval workflows
+
+gmail_search_inbox:
+- Inputs: orgId, query, maxResults
+- Uses Gmail search syntax
+- Returns sanitized message metadata only:
+  sender, subject, snippet, threadId, messageId, date
+
+gmail_read_thread:
+- Inputs: orgId, threadId
+- Returns sanitized thread messages:
+  from, to, date, subject, snippet, bodyPlainText
+- Strip HTML/scripts
+- Do not expose raw headers unless needed
+
+gmail_list_recent_replies:
+- Finds recent unread or unprocessed replies from leads/prospects
+- Supports filtering by campaign, leadId, dealId, date window
+
+gmail_classify_reply:
+- Classifies reply intent:
+  interested
+  wants_more_info
+  wants_schedule
+  objection
+  not_interested
+  wrong_person
+  unsubscribe
+  spam
+  unknown
+- Extracts scheduling signals, questions, objections, preferred times, urgency
+
+gmail_track_conversation:
+- Links Gmail threadId/messageId to TrainEfficiency lead/deal/client records
+- Stores lastInboundAt, lastOutboundAt, lastMessageSnippet, replyStatus
+
+gmail_mark_thread_processed:
+- Marks a thread/reply as handled so the agent does not repeatedly process it
+
+4. Database additions:
+Create tables if needed:
+
+gmail_conversations:
+- id
+- orgId
+- leadId nullable
+- dealId nullable
+- clientId nullable
+- gmailThreadId
+- lastMessageId
+- subject
+- participantEmail
+- participantName
+- status
+- intent
+- lastInboundAt
+- lastOutboundAt
+- lastSnippet
+- processedAt
+- createdAt
+- updatedAt
+
+gmail_agent_actions:
+- id
+- orgId
+- actionType
+- gmailThreadId
+- gmailMessageId
+- leadId nullable
+- dealId nullable
+- recipientEmail nullable
+- subject nullable
+- riskLevel
+- approvalRequired
+- status
+- result
+- errorMessage
+- createdByAgent
+- approvedBy nullable
+- createdAt
+- executedAt
+
+5. Guardrails:
+- No mass sends without approval
+- First outbound email to a new lead requires approval unless org setting allows auto-first-response
+- Replies to existing opted-in leads may auto-send if riskLevel is low
+- Unsubscribe/stop requests must never receive promotional follow-ups
+- Any billing/legal/medical-sensitive message requires approval
+- Do not send more than org daily email cap
+- Do not email outside the org/lead/client/contact system unless approved
+- Log every draft/send/read/classification action
+
+6. Agent action queue:
+Route medium/high-risk send actions into the existing agent action queue or create one if needed.
+Statuses:
+- proposed
+- awaiting_approval
+- approved
+- executed
+- failed
+- cancelled
+
+7. API routes:
+Add admin routes:
+- GET /api/org/gmail/conversations
+- GET /api/org/gmail/conversations/:threadId
+- POST /api/org/gmail/send
+- POST /api/org/gmail/draft
+- POST /api/org/gmail/classify-replies
+- POST /api/org/gmail/sync-replies
+- POST /api/org/gmail/conversations/:threadId/mark-processed
+
+All routes must:
+- resolve orgId with the existing org session resolver
+- require admin/coach role as appropriate
+- never expose tokens
+- log integration execution status
+
+8. Agent tool registry:
+Expose Gmail tools to the TrainEfficiency agent with strict schemas.
+Each tool should include:
+- name
+- description
+- zod schema
+- risk level
+- approval policy
+- executor function
+
+9. UI:
+Add a Gmail Conversations panel under Advanced or AI Operations:
+- recent inbound replies
+- unprocessed replies
+- intent classification
+- linked lead/deal
+- suggested next action
+- approve/send draft buttons
+- mark processed button
+
+10. Initial automation workflow:
+Build "Lead Reply Recovery":
+- sync recent Gmail replies
+- classify each reply
+- link to lead/deal by email
+- if wants_schedule, create suggested scheduling response draft
+- if interested, create follow-up draft
+- if objection, create objection-handling draft
+- if not_interested or unsubscribe, suppress future outreach
+- queue draft/action for approval by default
+
+11. Testing:
+Add test mode with fake Gmail payloads so this can be tested without sending real emails.
+Add logs showing:
+- Gmail connected
+- refresh token present
+- API call success/failure
+- conversations synced
+- replies classified
+- actions queued
+- emails sent/drafted
+
+12. Safety:
+Default to drafts/approval first.
+Do not enable automatic sending globally yet.
+Add an org setting later:
+"Allow low-risk Gmail auto-replies"
+default false.
