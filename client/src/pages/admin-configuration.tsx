@@ -476,13 +476,16 @@ const ORG_INTEGRATION_REGISTRY: OrgIntegrationDef[] = [
   {
     id: "gmail",
     title: "Gmail Workspace",
-    description: "Connect Gmail-powered email capabilities for outbound messaging, inbox tracking, reply detection, and AI-assisted communication workflows.",
-    authType: "api_key",
-    provider: "Gmail API",
+    description: "Connect a Gmail Workspace account for inbox sync, reply detection, message threading, send-as-user workflows, and AI-assisted communication.",
+    authType: "oauth",
+    provider: "Google Workspace",
     icon: Mail,
     credentialFields: [
-      { key: "apiKey", label: "Gmail API Key", placeholder: "AIza...", type: "password", helpText: "Your Gmail API key from Google Cloud Console → APIs & Services → Credentials" },
+      { key: "clientId", label: "Google Client ID", placeholder: "your-client-id.apps.googleusercontent.com", type: "text" },
+      { key: "clientSecret", label: "Google Client Secret", placeholder: "GOCSPX-...", type: "password" },
+      { key: "accountEmail", label: "Connected Gmail Account", placeholder: "you@yourworkspace.com", type: "text", helpText: "The Gmail address this OAuth app will authorize and send as" },
     ],
+    oauthNote: "Requires an OAuth 2.0 app in Google Cloud Console with Gmail API scopes (gmail.send, gmail.readonly, gmail.modify). Register the redirect URI /api/integrations/gmail/callback in your app's authorized redirect URIs. Client secret and refresh tokens are stored encrypted.",
   },
   {
     id: "google_calendar",
