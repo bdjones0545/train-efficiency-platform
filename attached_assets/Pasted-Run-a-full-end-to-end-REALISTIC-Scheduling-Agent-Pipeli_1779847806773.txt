@@ -1,0 +1,176 @@
+Run a full end-to-end REALISTIC Scheduling Agent Pipeline test using the actual internal TrainEfficiency availability system, Gmail workflow layer, and deal pipeline automation.
+
+Goal:
+Validate the complete operational flow from:
+lead intake → Gmail reply → scheduling intent → slot offering → booking confirmation → pipeline progression.
+
+Test should simulate a real operational coaching workflow.
+
+Test Athlete:
+- Athlete: Jordan Carter
+- Parent: Melissa Carter
+- Email: jordan.carter.scheduling.test@gmail.com
+- Sport: Football (WR/DB)
+- School: Bluffton High School
+- Goals: acceleration, top-end speed, explosiveness, combine prep
+- Preferred availability:
+  - Tuesday after 4 PM
+  - Thursday after 4 PM
+  - Saturday mornings
+- Campaign:
+  Summer Speed Sprint Offer
+- Preferred location:
+  Oscar Frazier Park
+
+PHASE 1 — Intake → Lead Intelligence
+1. Simulate intake submission
+2. Confirm:
+   - lead created
+   - deal created
+   - lead intelligence profile created
+   - AI summary generated
+   - lead score generated
+   - pipeline stage = new_lead
+   - Gmail outreach draft queued
+3. Return:
+   - leadScore
+   - temperature
+   - suggestedNextAction
+   - AI summary preview
+   - Gmail draft action ID
+
+PHASE 2 — Gmail Reply Detection
+Inject realistic Gmail reply:
+
+"Hey Coach, I'm definitely interested. Thursday after 4 PM would probably work best for me. What availability do you have?"
+
+Confirm:
+1. Gmail sync detects reply
+2. Reply classified correctly:
+   expected = wants_schedule
+3. Conversation linked to lead/deal
+4. Pipeline stage advances:
+   new_lead → engaged → scheduling
+5. Scheduling agent triggered automatically
+
+PHASE 3 — Internal Availability Matching
+Using REAL org availability + location availability:
+
+1. Query available slots
+2. Ensure:
+   - no blocked times
+   - no booking conflicts
+   - correct location filtering
+   - coach availability respected
+3. Generate top 3 ranked slots
+4. Return:
+   - date
+   - start/end time
+   - location
+   - coach
+   - confidence score
+   - reasonSelected
+
+Verify:
+- Thursday after 4 PM receives highest confidence
+- Oscar Frazier Park prioritized if available
+
+PHASE 4 — Gmail Scheduling Draft
+1. Generate scheduling draft response using real slot results
+2. Queue Gmail draft
+3. Confirm:
+   - approvalRequired=true
+   - status=proposed
+   - thread linked correctly
+   - scheduling context persisted
+4. Return generated draft preview
+
+PHASE 5 — Confirmation Parsing
+Inject simulated reply:
+
+"Thursday at 4 works for me."
+
+Confirm:
+1. GPT confirmation parser identifies intended slot
+2. Confidence score >= 0.75
+3. Selected slot matches one previously offered
+4. Booking creation flow starts
+
+Return:
+- parsed slot
+- parser confidence
+- matched offered slot
+
+PHASE 6 — Booking Creation
+1. Create real booking using TrainEfficiency internal booking system
+2. Verify:
+   - no overlap conflict
+   - booking linked to lead/deal
+   - booking linked to scheduling context
+   - booking linked to Gmail thread
+3. Pipeline stage updates:
+   scheduling → booked
+4. Confirmation Gmail draft queued
+
+Return:
+- booking ID
+- booked time
+- coach
+- location
+- booking status
+
+PHASE 7 — Safety Validation
+Verify:
+- no auto-send occurred
+- all drafts require approval
+- no duplicate bookings created
+- no duplicate scheduling contexts created
+- all actions org-scoped
+- all stage transitions recorded
+- all Gmail actions logged
+- all scheduling actions logged
+
+PHASE 8 — Conflict Prevention Test
+1. Simulate another athlete booking the same slot before confirmation
+2. Attempt confirmation again
+3. Confirm:
+   - conflict detected
+   - booking prevented
+   - scheduling context reset to slots_offered
+   - regeneration prompt triggered
+   - new slots generated
+
+PHASE 9 — Recovery Workflow Test
+1. Simulate no confirmation after slots offered
+2. Advance time past expiration window
+3. Confirm:
+   - context marked expired
+   - follow-up draft queued
+   - suggestedNextAction updated
+   - stale slots not reused
+
+PHASE 10 — Final Diagnostic Report
+Return:
+- total processing time
+- stage transition timeline
+- Gmail workflow lifecycle
+- scheduling context lifecycle
+- slot scoring breakdown
+- confirmation parser accuracy
+- duplicate prevention status
+- conflict prevention status
+- recovery workflow status
+- any failed validations
+- recommended hardening improvements
+
+Expected Result:
+TrainEfficiency should successfully:
+- detect scheduling intent
+- use internal availability
+- offer intelligent slot options
+- parse confirmation replies
+- create bookings safely
+- update the deal pipeline automatically
+- maintain full audit visibility
+
+while keeping all outbound messaging draft-first and approval-controlled.

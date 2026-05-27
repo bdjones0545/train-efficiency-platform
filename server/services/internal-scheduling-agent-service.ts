@@ -25,6 +25,7 @@ import {
   athleticPrograms,
   type LeadSchedulingContext,
 } from "@shared/schema";
+import { users } from "@shared/models/auth";
 import { eq, and, gte, lte, inArray, lt, ne, sql } from "drizzle-orm";
 import { addDays, addHours, format, parseISO, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import OpenAI from "openai";
@@ -115,21 +116,17 @@ async function getOrgCoaches(orgId: string) {
 
 async function getCoachName(coachId: string): Promise<string> {
   try {
-    const [coach] = await db
-      .select({ id: coachProfiles.id, userId: coachProfiles.userId })
+    const [row] = await db
+      .select({
+        firstName: users.firstName,
+        lastName: users.lastName,
+      })
       .from(coachProfiles)
+      .innerJoin(users, eq(users.id, coachProfiles.userId))
       .where(eq(coachProfiles.id, coachId))
       .limit(1);
-    if (!coach) return "Coach";
-
-    // Try to get user display name
-    const [user] = await db.execute(
-      sql`SELECT first_name, last_name, display_name FROM users WHERE id = ${coach.userId} LIMIT 1`
-    ) as any;
-    if (user) {
-      return user.display_name || `${user.first_name || ""} ${user.last_name || ""}`.trim() || "Coach";
-    }
-    return "Coach";
+    if (!row) return "Coach";
+    return `${row.firstName || ""} ${row.lastName || ""}`.trim() || "Coach";
   } catch {
     return "Coach";
   }
@@ -157,7 +154,7 @@ async function getExistingBookings(coachIds: string[], fromDate: Date, toDate: D
         inArray(bookings.coachId, coachIds),
         gte(bookings.startAt, fromDate),
         lte(bookings.startAt, toDate),
-        ne(bookings.status, "cancelled" as any),
+        ne(bookings.status, "CANCELLED" as any),
       )
     );
 }
@@ -482,7 +479,7 @@ export async function confirmBookingFromReply(opts: {
         eq(bookings.coachId, selectedSlot.coachId),
         gte(bookings.startAt, slotStart),
         lte(bookings.startAt, slotEnd),
-        ne(bookings.status, "cancelled" as any),
+        ne(bookings.status, "CANCELLED" as any),
       )
     )
     .limit(1);
@@ -688,8 +685,11 @@ Return ONLY valid JSON:
 
 function buildSlotOfferEmail(leadContext: LeadContext, slots: OfferedSlot[]): string {
   const firstName = leadContext.athleteName.split(" ")[0];
-  const programLine = leadContext.programGoals
-    ? `I saw you're focused on ${leadContext.programGoals.toLowerCase()}.`
+  const goalsStr = Array.isArray(leadContext.programGoals)
+    ? (leadContext.programGoals as string[]).join(", ")
+    : leadContext.programGoals || "";
+  const programLine = goalsStr
+    ? `I saw you're focused on ${goalsStr.toLowerCase()}.`
     : leadContext.sport
     ? `I saw you're training for ${leadContext.sport}.`
     : "I'd love to get you started on a personalized training plan.";
@@ -706,8 +706,11 @@ function buildConfirmationEmail(leadContext: { athleteName: string; email: strin
   const locationLine = slot.location && slot.location !== "TBD"
     ? ` at ${slot.location}${slot.locationAddress ? ` (${slot.locationAddress})` : ""}`
     : "";
-  const sessionFocus = leadContext.programGoals
-    ? `We'll kick things off with ${leadContext.programGoals.toLowerCase()}.`
+  const goalsStr2 = Array.isArray(leadContext.programGoals)
+    ? (leadContext.programGoals as string[]).join(", ")
+    : leadContext.programGoals || "";
+  const sessionFocus = goalsStr2
+    ? `We'll kick things off with ${goalsStr2.toLowerCase()}.`
     : leadContext.sport
     ? `We'll start with sport-specific training for ${leadContext.sport}.`
     : "We'll start with an assessment and get your program dialed in from day one.";
