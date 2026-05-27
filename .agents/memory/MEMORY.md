@@ -1,0 +1,1 @@
+- [Intelligent Lead Intake Pipeline](lead-intelligence-pipeline.md) — non-blocking pipeline fires on every lead capture submission; `lead_intelligence_profiles` table holds scores, AI summary, drafts, and pipeline stage.

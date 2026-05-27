@@ -14351,7 +14351,44 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         } as any).onConflictDoNothing();
       } catch (_) {}
 
-      // 4. AI qualification scoring (async, non-blocking)
+      // 4. Intelligent Lead Intake Pipeline (async, non-blocking — runs in parallel with AI scoring)
+      (async () => {
+        try {
+          const { runIntelligentLeadIntakePipeline } = await import("./services/intelligent-lead-intake-service");
+          await runIntelligentLeadIntakePipeline({
+            submissionId: submission.id,
+            orgId: org.id,
+            programId: program.id,
+            programName: program.name,
+            orgName: org.name,
+            athleteName,
+            parentName: parentName || null,
+            email,
+            phone: phone || null,
+            age: age ? String(age) : null,
+            grade: grade || null,
+            sport: sport || null,
+            position: position || null,
+            school: school || null,
+            goals: Array.isArray(goals) ? goals : [],
+            experienceLevel: experienceLevel || null,
+            currentTrainingStatus: currentTrainingStatus || null,
+            commitmentLevel: commitmentLevel || null,
+            notes: notes || null,
+            utmSource: utmSource || null,
+            utmMedium: utmMedium || null,
+            utmCampaign: utmCampaign || null,
+            utmContent: utmContent || null,
+            utmTerm: utmTerm || null,
+            landingPageId: null,
+            submittedAt: new Date(),
+          });
+        } catch (intakeErr: any) {
+          console.error("[IntakeIntelligence] Pipeline error (non-blocking):", intakeErr?.message);
+        }
+      })();
+
+      // 5. AI qualification scoring (async, non-blocking)
       (async () => {
         try {
           const openai = new (await import("openai")).default({ apiKey: process.env.OPENAI_API_KEY });
@@ -17439,6 +17476,286 @@ Respond with this exact JSON structure:
     } catch (err: any) {
       console.error("[gmail/test-sync] error:", err);
       res.status(500).json({ message: err.message ?? "Test sync failed" });
+    }
+  });
+
+  // ─── Intelligent Lead Intake: Intelligence Profile ──────────────────────────
+
+  // GET intelligence profile for a submission
+  app.get("/api/lead-capture/intelligence/:submissionId", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [intel] = await db
+        .select()
+        .from(leadIntelligenceProfiles)
+        .where(
+          and(
+            eq(leadIntelligenceProfiles.submissionId, req.params.submissionId),
+            eq(leadIntelligenceProfiles.orgId, profile.organizationId),
+          ),
+        )
+        .limit(1);
+
+      if (!intel) return res.status(404).json({ message: "Intelligence profile not found" });
+      res.json(intel);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET all intelligence profiles for the org (pipeline view)
+  app.get("/api/lead-capture/intelligence", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles, leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+
+      const rows = await db
+        .select({
+          intelligence: leadIntelligenceProfiles,
+          submission: {
+            id: leadCaptureSubmissions.id,
+            athleteName: leadCaptureSubmissions.athleteName,
+            email: leadCaptureSubmissions.email,
+            phone: leadCaptureSubmissions.phone,
+            sport: leadCaptureSubmissions.sport,
+            school: leadCaptureSubmissions.school,
+            bookingStatus: leadCaptureSubmissions.bookingStatus,
+            createdAt: leadCaptureSubmissions.createdAt,
+          },
+        })
+        .from(leadIntelligenceProfiles)
+        .leftJoin(leadCaptureSubmissions, eq(leadCaptureSubmissions.id, leadIntelligenceProfiles.submissionId))
+        .where(eq(leadIntelligenceProfiles.orgId, profile.organizationId))
+        .orderBy(desc(leadIntelligenceProfiles.createdAt))
+        .limit(200);
+
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH intelligence profile pipeline stage
+  app.patch("/api/lead-capture/intelligence/:id/stage", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { stage } = req.body;
+      if (!stage) return res.status(400).json({ message: "stage required" });
+
+      const validStages = ["new_lead", "engaged", "scheduling", "booked", "converted", "stalled", "lost"];
+      if (!validStages.includes(stage)) return res.status(400).json({ message: "Invalid stage" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [updated] = await db
+        .update(leadIntelligenceProfiles)
+        .set({ pipelineStage: stage, updatedAt: new Date() })
+        .where(
+          and(
+            eq(leadIntelligenceProfiles.id, req.params.id),
+            eq(leadIntelligenceProfiles.orgId, profile.organizationId),
+          ),
+        )
+        .returning();
+
+      if (!updated) return res.status(404).json({ message: "Profile not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST run intelligence pipeline manually for an existing submission
+  app.post("/api/lead-capture/intelligence/:submissionId/reprocess", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions, athleticPrograms } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [sub] = await db
+        .select()
+        .from(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.id, req.params.submissionId), eq(leadCaptureSubmissions.orgId, profile.organizationId)))
+        .limit(1);
+
+      if (!sub) return res.status(404).json({ message: "Submission not found" });
+
+      const [prog] = await db.select({ name: athleticPrograms.name }).from(athleticPrograms).where(eq(athleticPrograms.id, sub.programId)).limit(1);
+      const org = await storage.getOrganizationById(profile.organizationId);
+
+      const { runIntelligentLeadIntakePipeline } = await import("./services/intelligent-lead-intake-service");
+      const result = await runIntelligentLeadIntakePipeline({
+        submissionId: sub.id,
+        orgId: sub.orgId,
+        programId: sub.programId,
+        programName: prog?.name || sub.programId,
+        orgName: org?.name || sub.orgId,
+        athleteName: sub.athleteName,
+        parentName: sub.parentName,
+        email: sub.email,
+        phone: sub.phone,
+        age: sub.age,
+        grade: sub.grade,
+        sport: sub.sport,
+        position: sub.position,
+        school: sub.school,
+        goals: sub.goals || [],
+        experienceLevel: sub.experienceLevel,
+        currentTrainingStatus: sub.currentTrainingStatus,
+        commitmentLevel: sub.commitmentLevel,
+        notes: sub.notes,
+        utmSource: sub.utmSource,
+        utmMedium: sub.utmMedium,
+        utmCampaign: sub.utmCampaign,
+        utmContent: sub.utmContent,
+        utmTerm: sub.utmTerm,
+        landingPageId: null,
+        submittedAt: sub.createdAt || new Date(),
+      });
+
+      res.json({ success: true, profileId: result.profileId, leadScore: result.scoring.leadScore, temperature: result.scoring.temperature });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST test intake pipeline simulation
+  app.post("/api/lead-capture/intelligence/test-simulation", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { TEST_INTAKE_PAYLOADS, runIntelligentLeadIntakePipeline } = await import("./services/intelligent-lead-intake-service");
+      const payloadIndex = parseInt(req.body.payloadIndex || "0", 10);
+      const payload = { ...TEST_INTAKE_PAYLOADS[payloadIndex % TEST_INTAKE_PAYLOADS.length] };
+      // Override with real org for the sim
+      payload.orgId = profile.organizationId;
+      payload.submissionId = `sim-${Date.now()}`;
+
+      const result = await runIntelligentLeadIntakePipeline(payload);
+      res.json({
+        success: true,
+        payload,
+        result: {
+          profileId: result.profileId,
+          leadScore: result.scoring.leadScore,
+          temperature: result.scoring.temperature,
+          urgency: result.scoring.urgency,
+          tags: result.scoring.tags,
+          aiSummary: result.aiSummary,
+          suggestedNextAction: result.suggestedNextAction,
+          draftSubject: result.draftSubject,
+          draftBodyPreview: result.draftBody.slice(0, 200),
+          processingLog: result.processingLog,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET Gmail draft actions for a specific lead (by submissionId)
+  app.get("/api/lead-capture/intelligence/:submissionId/drafts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { db } = await import("./db");
+      const { gmailAgentActions } = await import("@shared/schema");
+      const { eq, and, desc } = await import("drizzle-orm");
+
+      const drafts = await db
+        .select()
+        .from(gmailAgentActions)
+        .where(
+          and(
+            eq(gmailAgentActions.orgId, profile.organizationId),
+            eq(gmailAgentActions.leadId, req.params.submissionId),
+          ),
+        )
+        .orderBy(desc(gmailAgentActions.createdAt));
+
+      res.json(drafts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH approve/dismiss Gmail draft action
+  app.patch("/api/gmail-agent-actions/:id/status", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { status } = req.body;
+      const validStatuses = ["approved", "dismissed", "proposed"];
+      if (!status || !validStatuses.includes(status)) return res.status(400).json({ message: "Invalid status" });
+
+      const { db } = await import("./db");
+      const { gmailAgentActions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [updated] = await db
+        .update(gmailAgentActions)
+        .set({ status, approvedBy: userId, executedAt: status === "approved" ? new Date() : null })
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, profile.organizationId)))
+        .returning();
+
+      if (!updated) return res.status(404).json({ message: "Action not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET pipeline summary stats
+  app.get("/api/lead-capture/intelligence-stats", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles } = await import("@shared/schema");
+      const { eq, count, sql: sqlFn } = await import("drizzle-orm");
+
+      const rows = await db
+        .select({
+          pipelineStage: leadIntelligenceProfiles.pipelineStage,
+          temperature: leadIntelligenceProfiles.temperature,
+          cnt: count(),
+        })
+        .from(leadIntelligenceProfiles)
+        .where(eq(leadIntelligenceProfiles.orgId, profile.organizationId))
+        .groupBy(leadIntelligenceProfiles.pipelineStage, leadIntelligenceProfiles.temperature);
+
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

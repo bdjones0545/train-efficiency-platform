@@ -120,6 +120,7 @@ import CoachCommunicationsCenterPage from "@/pages/coach-communications-center";
 import LeadCaptureLandingPage from "@/pages/lead-capture-landing";
 import LeadCaptureProgramEditorPage from "@/pages/lead-capture-program-editor";
 import AthleteSignupPage from "@/pages/athlete-signup";
+import AdminLeadPipelinePage from "@/pages/admin-lead-pipeline";
 
 interface SubscriptionStatus {
   status: string;
@@ -379,6 +380,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/team-training-leads" component={AdminTeamTrainingLeadsPage} />
                   <Route path="/admin/team-training-deals" component={AdminTeamTrainingDealsPage} />
                   <Route path="/admin/athlete-leads" component={AdminAthleteLeadsPage} />
+                  <Route path="/admin/lead-pipeline" component={AdminLeadPipelinePage} />
                   <Route path="/admin/business-brain" component={BusinessBrainPage} />
                   <Route path="/admin/ai-operations" component={AdminAiOperationsPage} />
                   <Route path="/command-center" component={BusinessCommandCenterPage} />

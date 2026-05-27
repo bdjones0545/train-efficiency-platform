@@ -3588,3 +3588,53 @@ export const gmailAgentActions = pgTable("gmail_agent_actions", {
 export const insertGmailAgentActionSchema = createInsertSchema(gmailAgentActions).omit({ id: true, createdAt: true });
 export type GmailAgentAction = typeof gmailAgentActions.$inferSelect;
 export type InsertGmailAgentAction = z.infer<typeof insertGmailAgentActionSchema>;
+
+// ─── Lead Intelligence Profiles ───────────────────────────────────────────────
+// Stores AI-generated context, lead scoring, and pipeline state for every
+// athlete lead captured via a landing page / application form.
+
+export const leadIntelligenceProfiles = pgTable("lead_intelligence_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  submissionId: varchar("submission_id").notNull().unique(),
+  // Pipeline stage
+  pipelineStage: varchar("pipeline_stage").notNull().default("new_lead"),
+  // AI-generated summary
+  aiSummary: text("ai_summary"),
+  // Normalized intake profile (full object persisted as JSONB)
+  normalizedProfileJson: jsonb("normalized_profile_json"),
+  // Lead scoring
+  leadScore: integer("lead_score"),
+  temperature: varchar("temperature"),
+  urgency: varchar("urgency"),
+  // Suggested next action
+  suggestedNextAction: varchar("suggested_next_action"),
+  suggestedNextActionReason: text("suggested_next_action_reason"),
+  // Campaign attribution
+  campaignSource: varchar("campaign_source"),
+  campaignMedium: varchar("campaign_medium"),
+  campaignName: varchar("campaign_name"),
+  landingPageId: varchar("landing_page_id"),
+  programId: varchar("program_id"),
+  // Tags
+  tags: text("tags").array().default(sql`'{}'::text[]`),
+  // Gmail draft action created
+  gmailDraftActionId: varchar("gmail_draft_action_id"),
+  initialDraftSubject: text("initial_draft_subject"),
+  initialDraftBody: text("initial_draft_body"),
+  // Follow-up tracking
+  followUpStage: varchar("follow_up_stage").default("none"),
+  lastInteractionAt: timestamp("last_interaction_at"),
+  nextFollowUpAt: timestamp("next_follow_up_at"),
+  // Processing audit
+  intakeProcessedAt: timestamp("intake_processed_at"),
+  scoringProcessedAt: timestamp("scoring_processed_at"),
+  draftGeneratedAt: timestamp("draft_generated_at"),
+  processingLog: jsonb("processing_log").default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertLeadIntelligenceProfileSchema = createInsertSchema(leadIntelligenceProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type LeadIntelligenceProfile = typeof leadIntelligenceProfiles.$inferSelect;
+export type InsertLeadIntelligenceProfile = z.infer<typeof insertLeadIntelligenceProfileSchema>;
