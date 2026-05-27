@@ -3740,3 +3740,92 @@ export const agentAutonomyDecisions = pgTable("agent_autonomy_decisions", {
 export const insertAgentAutonomyDecisionSchema = createInsertSchema(agentAutonomyDecisions).omit({ id: true, createdAt: true });
 export type AgentAutonomyDecision = typeof agentAutonomyDecisions.$inferSelect;
 export type InsertAgentAutonomyDecision = z.infer<typeof insertAgentAutonomyDecisionSchema>;
+
+// ─── Workflow Registry ────────────────────────────────────────────────────────
+// Unified catalog of system, template, and org-custom workflows.
+
+export const workflowRegistry = pgTable("workflow_registry", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  workflowKey: text("workflow_key").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  workflowType: text("workflow_type").notNull().default("custom"),
+  // lead_pipeline | outreach | scheduling | recovery | retention | automation | governance | custom
+  source: text("source").notNull().default("org_custom"),
+  // system | template | org_custom
+  protected: boolean("protected").notNull().default(false),
+  editable: boolean("editable").notNull().default(true),
+  enabled: boolean("enabled").notNull().default(true),
+  systemManaged: boolean("system_managed").notNull().default(false),
+  version: text("version").notNull().default("1.0.0"),
+  clonedFromWorkflowId: text("cloned_from_workflow_id"),
+  executionCount: integer("execution_count").notNull().default(0),
+  successCount: integer("success_count").notNull().default(0),
+  failureCount: integer("failure_count").notNull().default(0),
+  blockedCount: integer("blocked_count").notNull().default(0),
+  lastRunAt: timestamp("last_run_at"),
+  lastSuccessAt: timestamp("last_success_at"),
+  lastFailureAt: timestamp("last_failure_at"),
+  estimatedRevenueInfluenced: integer("estimated_revenue_influenced").notNull().default(0),
+  estimatedBookingsCreated: integer("estimated_bookings_created").notNull().default(0),
+  estimatedLeadsConverted: integer("estimated_leads_converted").notNull().default(0),
+  workflowDefinition: jsonb("workflow_definition").default({}),
+  tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+  triggerTypes: text("trigger_types").array().notNull().default(sql`'{}'::text[]`),
+  actionTypes: text("action_types").array().notNull().default(sql`'{}'::text[]`),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWorkflowRegistrySchema = createInsertSchema(workflowRegistry).omit({ id: true, createdAt: true, updatedAt: true });
+export type WorkflowRegistry = typeof workflowRegistry.$inferSelect;
+export type InsertWorkflowRegistry = z.infer<typeof insertWorkflowRegistrySchema>;
+
+// ─── Workflow Conflicts ───────────────────────────────────────────────────────
+
+export const workflowConflicts = pgTable("workflow_conflicts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  workflowId: text("workflow_id").notNull(),
+  conflictingWorkflowId: text("conflicting_workflow_id").notNull(),
+  conflictType: text("conflict_type").notNull(),
+  // trigger_overlap | action_overlap | pipeline_overlap | recursive_loop | duplicate_email
+  details: jsonb("details").default({}),
+  resolution: text("resolution"),
+  // view | clone | disable | continue | pending
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWorkflowConflictSchema = createInsertSchema(workflowConflicts).omit({ id: true, createdAt: true });
+export type WorkflowConflict = typeof workflowConflicts.$inferSelect;
+export type InsertWorkflowConflict = z.infer<typeof insertWorkflowConflictSchema>;
+
+// ─── Workflow Execution Logs ──────────────────────────────────────────────────
+
+export const workflowExecutionLogs = pgTable("workflow_execution_logs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workflowId: text("workflow_id").notNull(),
+  orgId: text("org_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  // pending | running | completed | failed | blocked
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  durationMs: integer("duration_ms"),
+  triggerType: text("trigger_type"),
+  actionCount: integer("action_count").notNull().default(0),
+  approvalGatesHit: integer("approval_gates_hit").notNull().default(0),
+  blockedReason: text("blocked_reason"),
+  leadId: text("lead_id"),
+  bookingId: text("booking_id"),
+  dealId: text("deal_id"),
+  gmailActionId: text("gmail_action_id"),
+  estimatedRevenueInfluenced: integer("estimated_revenue_influenced").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertWorkflowExecutionLogSchema = createInsertSchema(workflowExecutionLogs).omit({ id: true, createdAt: true });
+export type WorkflowExecutionLog = typeof workflowExecutionLogs.$inferSelect;
+export type InsertWorkflowExecutionLog = z.infer<typeof insertWorkflowExecutionLogSchema>;

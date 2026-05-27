@@ -18460,5 +18460,168 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ── Workflow Registry ─────────────────────────────────────────────────────
+
+  // GET /api/admin/workflow-registry — list all workflows for org (seeds system workflows on first call)
+  app.get("/api/admin/workflow-registry", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.claims.org_id as string;
+      const { source, workflowType } = req.query as Record<string, string>;
+
+      // Seed system workflows if not yet seeded for this org
+      const { seedSystemWorkflows } = await import("./workflow-registry-seeder");
+      await seedSystemWorkflows(orgId);
+
+      const all = await storage.getWorkflowRegistry(orgId, {
+        source: source || undefined,
+        workflowType: workflowType || undefined,
+      });
+
+      const system = all.filter(w => w.source === "system");
+      const templates = all.filter(w => w.source === "template");
+      const orgCustom = all.filter(w => w.source === "org_custom");
+
+      res.json({ system, templates, orgCustom, total: all.length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflow-registry/:key — get single workflow
+  app.get("/api/admin/workflow-registry/:key", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.claims.org_id as string;
+      const wf = await storage.getWorkflowRegistryItem(orgId, req.params.key);
+      if (!wf) return res.status(404).json({ error: "Not found" });
+      const logs = await storage.getWorkflowExecutionLogs(orgId, wf.id, 20);
+      res.json({ ...wf, recentExecutions: logs });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-registry — create org-custom workflow
+  app.post("/api/admin/workflow-registry", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.claims.org_id as string;
+      const userId = req.user.claims.sub as string;
+      const { name, description, workflowType, workflowDefinition, tags, triggerTypes, actionTypes } = req.body;
+      if (!name) return res.status(400).json({ error: "name is required" });
+
+      const wf = await storage.createWorkflowRegistryEntry({
+        orgId,
+        workflowKey: `org_custom_${Date.now()}`,
+        name,
+        description,
+        workflowType: workflowType || "custom",
+        source: "org_custom",
+        protected: false,
+        editable: true,
+        enabled: false,
+        systemManaged: false,
+        version: "1.0.0",
+        workflowDefinition: workflowDefinition || {},
+        tags: tags || [],
+        triggerTypes: triggerTypes || [],
+        actionTypes: actionTypes || [],
+        createdBy: userId,
+      });
+      res.json(wf);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PATCH /api/admin/workflow-registry/:id — update org-custom workflow
+  app.patch("/api/admin/workflow-registry/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { name, description, workflowDefinition, enabled, tags, triggerTypes, actionTypes } = req.body;
+      const updated = await storage.updateWorkflowRegistryEntry(req.params.id, {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(workflowDefinition !== undefined && { workflowDefinition }),
+        ...(enabled !== undefined && { enabled }),
+        ...(tags !== undefined && { tags }),
+        ...(triggerTypes !== undefined && { triggerTypes }),
+        ...(actionTypes !== undefined && { actionTypes }),
+      });
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-registry/:id/clone — duplicate & customize
+  app.post("/api/admin/workflow-registry/:id/clone", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.claims.org_id as string;
+      const userId = req.user.claims.sub as string;
+      const cloned = await storage.cloneWorkflowRegistryEntry(req.params.id, orgId, userId);
+      res.json(cloned);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-registry/:id/toggle — enable/disable
+  app.post("/api/admin/workflow-registry/:id/toggle", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) is required" });
+      const updated = await storage.toggleWorkflowRegistry(req.params.id, enabled);
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-registry/conflicts/check — conflict detection
+  app.post("/api/admin/workflow-registry/conflicts/check", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.claims.org_id as string;
+      const { workflowId, triggerTypes = [], actionTypes = [] } = req.body;
+
+      const enabledWorkflows = await storage.getWorkflowRegistry(orgId, { enabled: true });
+      const conflicts: Array<{ workflowId: string; name: string; conflictType: string; details: string }> = [];
+
+      for (const existing of enabledWorkflows) {
+        if (existing.id === workflowId) continue;
+        const existingTriggers = existing.triggerTypes ?? [];
+        const existingActions = existing.actionTypes ?? [];
+
+        const triggerOverlap = triggerTypes.filter((t: string) => existingTriggers.includes(t));
+        const actionOverlap = actionTypes.filter((a: string) => existingActions.includes(a));
+
+        if (triggerOverlap.length > 0) {
+          conflicts.push({
+            workflowId: existing.id,
+            name: existing.name,
+            conflictType: "trigger_overlap",
+            details: `Shared triggers: ${triggerOverlap.join(", ")}`,
+          });
+        } else if (actionOverlap.length >= 2) {
+          conflicts.push({
+            workflowId: existing.id,
+            name: existing.name,
+            conflictType: "action_overlap",
+            details: `Shared actions: ${actionOverlap.join(", ")}`,
+          });
+        }
+      }
+
+      res.json({ conflicts, hasConflicts: conflicts.length > 0 });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/admin/workflow-registry/conflicts/:id/resolve
+  app.post("/api/admin/workflow-registry/conflicts/:id/resolve", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { resolution } = req.body;
+      const updated = await storage.resolveWorkflowConflict(req.params.id, resolution);
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/admin/workflow-registry/:id/executions — execution logs
+  app.get("/api/admin/workflow-registry/:id/executions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.claims.org_id as string;
+      const limit = parseInt((req.query.limit as string) || "30", 10);
+      const logs = await storage.getWorkflowExecutionLogs(orgId, req.params.id, limit);
+      res.json(logs);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   return httpServer;
 }

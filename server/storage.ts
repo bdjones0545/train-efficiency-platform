@@ -146,6 +146,15 @@ import {
   workflowGraphVersions,
   type WorkflowGraphVersion,
   type InsertWorkflowGraphVersion,
+  workflowRegistry,
+  type WorkflowRegistry,
+  type InsertWorkflowRegistry,
+  workflowConflicts,
+  type WorkflowConflict,
+  type InsertWorkflowConflict,
+  workflowExecutionLogs,
+  type WorkflowExecutionLog,
+  type InsertWorkflowExecutionLog,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -296,6 +305,22 @@ export interface IStorage {
   updateWorkflowStepRun(id: string, updates: Partial<WorkflowStepRun>): Promise<WorkflowStepRun | null>;
   getAllActiveWorkflowRuns(): Promise<WorkflowRun[]>;
   getRetryableFailedRuns(): Promise<WorkflowRun[]>;
+  // Workflow Registry
+  getWorkflowRegistry(orgId: string, filters?: { source?: string; workflowType?: string; enabled?: boolean }): Promise<WorkflowRegistry[]>;
+  getWorkflowRegistryItem(orgId: string, workflowKey: string): Promise<WorkflowRegistry | null>;
+  upsertWorkflowRegistryEntry(data: InsertWorkflowRegistry): Promise<WorkflowRegistry>;
+  createWorkflowRegistryEntry(data: InsertWorkflowRegistry): Promise<WorkflowRegistry>;
+  updateWorkflowRegistryEntry(id: string, updates: Partial<WorkflowRegistry>): Promise<WorkflowRegistry | null>;
+  cloneWorkflowRegistryEntry(sourceId: string, orgId: string, createdBy: string): Promise<WorkflowRegistry>;
+  toggleWorkflowRegistry(id: string, enabled: boolean): Promise<WorkflowRegistry | null>;
+  incrementWorkflowExecutionCount(workflowId: string, outcome: "success" | "failure" | "blocked"): Promise<void>;
+  // Workflow Conflicts
+  createWorkflowConflict(data: InsertWorkflowConflict): Promise<WorkflowConflict>;
+  getWorkflowConflicts(orgId: string, workflowId?: string): Promise<WorkflowConflict[]>;
+  resolveWorkflowConflict(id: string, resolution: string): Promise<WorkflowConflict | null>;
+  // Workflow Execution Logs
+  logWorkflowExecution(data: InsertWorkflowExecutionLog): Promise<WorkflowExecutionLog>;
+  getWorkflowExecutionLogs(orgId: string, workflowId?: string, limit?: number): Promise<WorkflowExecutionLog[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
@@ -3960,6 +3985,130 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(workflowGraphs.orgId, orgId), eq(workflowGraphs.id, graphId)))
       .returning();
     return updated ?? null;
+  }
+
+  // ── Workflow Registry ──────────────────────────────────────────────────────
+
+  async getWorkflowRegistry(orgId: string, filters: { source?: string; workflowType?: string; enabled?: boolean } = {}): Promise<WorkflowRegistry[]> {
+    const conditions: any[] = [eq(workflowRegistry.orgId, orgId)];
+    if (filters.source) conditions.push(eq(workflowRegistry.source, filters.source));
+    if (filters.workflowType) conditions.push(eq(workflowRegistry.workflowType, filters.workflowType));
+    if (filters.enabled !== undefined) conditions.push(eq(workflowRegistry.enabled, filters.enabled));
+    return db.select().from(workflowRegistry).where(and(...conditions)).orderBy(desc(workflowRegistry.createdAt));
+  }
+
+  async getWorkflowRegistryItem(orgId: string, workflowKey: string): Promise<WorkflowRegistry | null> {
+    const [row] = await db.select().from(workflowRegistry)
+      .where(and(eq(workflowRegistry.orgId, orgId), eq(workflowRegistry.workflowKey, workflowKey)));
+    return row ?? null;
+  }
+
+  async upsertWorkflowRegistryEntry(data: InsertWorkflowRegistry): Promise<WorkflowRegistry> {
+    const existing = await this.getWorkflowRegistryItem(data.orgId, data.workflowKey);
+    if (existing) return existing;
+    const [row] = await db.insert(workflowRegistry).values(data).returning();
+    return row;
+  }
+
+  async createWorkflowRegistryEntry(data: InsertWorkflowRegistry): Promise<WorkflowRegistry> {
+    const [row] = await db.insert(workflowRegistry).values(data).returning();
+    return row;
+  }
+
+  async updateWorkflowRegistryEntry(id: string, updates: Partial<WorkflowRegistry>): Promise<WorkflowRegistry | null> {
+    const [row] = await db.update(workflowRegistry)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(workflowRegistry.id, id))
+      .returning();
+    return row ?? null;
+  }
+
+  async cloneWorkflowRegistryEntry(sourceId: string, orgId: string, createdBy: string): Promise<WorkflowRegistry> {
+    const [source] = await db.select().from(workflowRegistry).where(eq(workflowRegistry.id, sourceId));
+    if (!source) throw new Error("Source workflow not found");
+    const [row] = await db.insert(workflowRegistry).values({
+      orgId,
+      workflowKey: `${source.workflowKey}_custom_${Date.now()}`,
+      name: `${source.name} (Custom)`,
+      description: source.description,
+      workflowType: source.workflowType,
+      source: "org_custom",
+      protected: false,
+      editable: true,
+      enabled: false,
+      systemManaged: false,
+      version: "1.0.0",
+      clonedFromWorkflowId: source.id,
+      workflowDefinition: source.workflowDefinition,
+      tags: source.tags ?? [],
+      triggerTypes: source.triggerTypes ?? [],
+      actionTypes: source.actionTypes ?? [],
+      createdBy,
+    }).returning();
+    return row;
+  }
+
+  async toggleWorkflowRegistry(id: string, enabled: boolean): Promise<WorkflowRegistry | null> {
+    const [row] = await db.update(workflowRegistry)
+      .set({ enabled, updatedAt: new Date() })
+      .where(eq(workflowRegistry.id, id))
+      .returning();
+    return row ?? null;
+  }
+
+  async incrementWorkflowExecutionCount(workflowId: string, outcome: "success" | "failure" | "blocked"): Promise<void> {
+    const updates: any = {
+      executionCount: sql`${workflowRegistry.executionCount} + 1`,
+      lastRunAt: new Date(),
+      updatedAt: new Date(),
+    };
+    if (outcome === "success") {
+      updates.successCount = sql`${workflowRegistry.successCount} + 1`;
+      updates.lastSuccessAt = new Date();
+    } else if (outcome === "failure") {
+      updates.failureCount = sql`${workflowRegistry.failureCount} + 1`;
+      updates.lastFailureAt = new Date();
+    } else {
+      updates.blockedCount = sql`${workflowRegistry.blockedCount} + 1`;
+    }
+    await db.update(workflowRegistry).set(updates).where(eq(workflowRegistry.id, workflowId));
+  }
+
+  // ── Workflow Conflicts ─────────────────────────────────────────────────────
+
+  async createWorkflowConflict(data: InsertWorkflowConflict): Promise<WorkflowConflict> {
+    const [row] = await db.insert(workflowConflicts).values(data).returning();
+    return row;
+  }
+
+  async getWorkflowConflicts(orgId: string, workflowId?: string): Promise<WorkflowConflict[]> {
+    const conditions: any[] = [eq(workflowConflicts.orgId, orgId)];
+    if (workflowId) conditions.push(eq(workflowConflicts.workflowId, workflowId));
+    return db.select().from(workflowConflicts).where(and(...conditions)).orderBy(desc(workflowConflicts.createdAt));
+  }
+
+  async resolveWorkflowConflict(id: string, resolution: string): Promise<WorkflowConflict | null> {
+    const [row] = await db.update(workflowConflicts)
+      .set({ resolution, resolvedAt: new Date() })
+      .where(eq(workflowConflicts.id, id))
+      .returning();
+    return row ?? null;
+  }
+
+  // ── Workflow Execution Logs ────────────────────────────────────────────────
+
+  async logWorkflowExecution(data: InsertWorkflowExecutionLog): Promise<WorkflowExecutionLog> {
+    const [row] = await db.insert(workflowExecutionLogs).values(data).returning();
+    return row;
+  }
+
+  async getWorkflowExecutionLogs(orgId: string, workflowId?: string, limit = 50): Promise<WorkflowExecutionLog[]> {
+    const conditions: any[] = [eq(workflowExecutionLogs.orgId, orgId)];
+    if (workflowId) conditions.push(eq(workflowExecutionLogs.workflowId, workflowId));
+    return db.select().from(workflowExecutionLogs)
+      .where(and(...conditions))
+      .orderBy(desc(workflowExecutionLogs.createdAt))
+      .limit(limit);
   }
 
   async seedDefaultPolicies(orgId: string): Promise<void> {

@@ -1,0 +1,342 @@
+PHASE: Workflow Registry + System Workflow Visibility Layer
+
+We are evolving the orchestration builder from a blank-canvas workflow editor into a true operational AI workflow platform. The builder must now understand:
+
+1. Built-in system workflows
+2. Organization-created workflows
+3. Workflow templates
+4. Duplicate/conflict detection
+5. Workflow execution analytics
+6. Protected infrastructure workflows
+
+This phase should NOT break the current orchestration builder. Extend the architecture cleanly.
+
+====================================================
+PART 1 — DATABASE: WORKFLOW REGISTRY
+====================================================
+
+Create a new table:
+
+workflow_registry
+
+Fields:
+
+id (uuid)
+org_id
+workflow_key (unique internal key)
+name
+description
+workflow_type
+  - lead_pipeline
+  - outreach
+  - scheduling
+  - recovery
+  - retention
+  - automation
+  - governance
+  - custom
+
+source
+  - system
+  - template
+  - org_custom
+
+protected (boolean)
+editable (boolean)
+enabled (boolean)
+system_managed (boolean)
+
+version
+cloned_from_workflow_id
+
+execution_count
+success_count
+failure_count
+blocked_count
+
+last_run_at
+last_success_at
+last_failure_at
+
+estimated_revenue_influenced
+estimated_bookings_created
+estimated_leads_converted
+
+workflow_definition jsonb
+
+tags text[]
+trigger_types text[]
+action_types text[]
+
+created_by
+created_at
+updated_at
+
+Indexes:
+- org_id
+- workflow_key
+- source
+- workflow_type
+- enabled
+
+====================================================
+PART 2 — SEED BUILT-IN SYSTEM WORKFLOWS
+====================================================
+
+Create a workflow seeder service.
+
+Seed these platform-native workflows automatically for every org:
+
+1. Lead Intake Pipeline
+2. Gmail Reply Recovery
+3. Intelligent Lead Scoring
+4. Scheduling Agent
+5. Recovery Follow-Up Cron
+6. Booking Confirmation Flow
+7. Payment Failure Recovery
+8. Lead Re-Engagement
+9. Autonomy Policy Enforcement
+10. Athlete Reactivation Workflow
+
+Each seeded workflow should include:
+
+- visual node graph
+- trigger nodes
+- logic nodes
+- approval gates
+- outcome nodes
+- metadata
+- protected=true
+- editable=false
+- system_managed=true
+
+These should appear immediately in the orchestration UI.
+
+====================================================
+PART 3 — SYSTEM WORKFLOW VISIBILITY
+====================================================
+
+Update the orchestration builder UI.
+
+Add 3 workflow sections:
+
+1. SYSTEM WORKFLOWS
+2. ORGANIZATION WORKFLOWS
+3. TEMPLATES
+
+System workflows should display:
+
+- lock icon
+- "Managed by TrainEfficiency"
+- active/inactive badge
+- success rate
+- last execution
+- execution count
+- workflow type badge
+
+System workflows:
+- can be viewed
+- can be inspected
+- can be cloned
+- cannot be directly edited unless duplicated
+
+====================================================
+PART 4 — CLONE SYSTEM WORKFLOW
+====================================================
+
+Add:
+"Duplicate & Customize"
+
+Behavior:
+
+- clones workflow_definition
+- sets:
+  source = org_custom
+  protected = false
+  editable = true
+  cloned_from_workflow_id = original
+- appends "(Custom)" to title
+- opens in builder editor
+
+====================================================
+PART 5 — DUPLICATE / CONFLICT DETECTION
+====================================================
+
+Build a workflow conflict engine.
+
+Before saving or enabling a workflow:
+
+Analyze:
+- trigger overlap
+- action overlap
+- same pipeline targets
+- same email actions
+- same scheduling actions
+- recursive trigger loops
+
+Detect conflicts like:
+
+Meta Lead
+→ AI Outreach
+→ Send Email
+
+already exists in another enabled workflow.
+
+Show warning modal:
+
+"An active workflow already handles:
+Meta Lead → AI Qualification → Gmail Outreach
+
+Choose:
+- View Existing Workflow
+- Clone Existing Workflow
+- Disable Existing Workflow
+- Continue Anyway"
+
+Store conflict results in:
+workflow_conflicts table
+
+====================================================
+PART 6 — WORKFLOW ANALYTICS
+====================================================
+
+Create workflow_execution_logs table.
+
+Track:
+
+workflow_id
+org_id
+status
+started_at
+completed_at
+duration_ms
+
+trigger_type
+action_count
+approval_gates_hit
+blocked_reason
+
+lead_id
+booking_id
+deal_id
+gmail_action_id
+
+estimated_revenue_influenced
+
+====================================================
+PART 7 — EXECUTION VISIBILITY UI
+====================================================
+
+Inside workflow cards show:
+
+- runs today
+- success %
+- blocked %
+- failures
+- approvals pending
+- bookings created
+- leads converted
+- revenue influenced
+
+Add:
+"Recent Executions"
+
+Timeline panel:
+- started
+- node-by-node execution
+- failed node
+- approval waits
+- escalation events
+
+====================================================
+PART 8 — LIVE EXECUTION VISUALIZATION
+====================================================
+
+Add optional live execution mode.
+
+When enabled:
+- animate execution path through nodes
+- pulse active node
+- show success/failure transitions
+- show approval pauses
+
+This should feel like:
+AI operations infrastructure
+—not a simple automation tool.
+
+====================================================
+PART 9 — TEMPLATE LIBRARY
+====================================================
+
+Create workflow templates:
+
+- Hot Lead Conversion
+- Athlete Reactivation
+- Parent Follow-Up Funnel
+- Missed Session Recovery
+- No-Reply Recovery
+- Booking Reminder
+- Summer Sprint Funnel
+- High Intent Scheduling Funnel
+
+Templates should:
+- preload graphs
+- preload metadata
+- preload recommended autonomy settings
+
+====================================================
+PART 10 — SAFETY + GOVERNANCE
+====================================================
+
+System workflows must:
+- never allow deletion
+- never allow unsafe edits
+- never bypass autonomy policy engine
+
+All workflow execution must:
+- remain org-scoped
+- remain audit logged
+- remain approval-aware
+
+Prevent:
+- duplicate email sends
+- infinite loops
+- recursive triggers
+- double booking flows
+
+====================================================
+PART 11 — MOBILE UX
+====================================================
+
+The builder must remain mobile-usable.
+
+Requirements:
+- collapsible node palette
+- zoom controls
+- draggable workflow canvas
+- node inspector drawer
+- execution timeline drawer
+- workflow section tabs
+
+====================================================
+PART 12 — FINAL VALIDATION
+====================================================
+
+Run:
+- system workflow seeding test
+- duplicate detection test
+- conflict detection test
+- execution logging test
+- clone workflow test
+- analytics aggregation test
+- mobile responsiveness audit
+- approval gate enforcement audit
+- org isolation audit
+
+Return:
+- total workflows seeded
+- total templates seeded
+- duplicate detection scenarios passed
+- execution analytics verified
+- governance protections verified
+- screenshots/summary of UI sections

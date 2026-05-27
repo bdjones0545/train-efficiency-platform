@@ -33,12 +33,575 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
+} from "@/components/ui/dialog";
+import {
   Save, Play, Upload, Zap, GitBranch, User, CheckCircle, AlertTriangle,
   RefreshCw, Layers, PanelRight, X, Plus, Info, ShieldAlert, Clock,
-  ChevronRight, BookTemplate, Eye, Cpu, Search, Sparkles,
+  ChevronRight, BookTemplate, Eye, Cpu, Search, Sparkles, Lock,
+  Copy, Library, ToggleLeft, ToggleRight, TrendingUp, Calendar,
+  Activity, Star, Settings, Trash2, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { NLWorkflowGenerator } from "@/components/nl-workflow-generator";
+
+// ─── Workflow Registry Types ──────────────────────────────────────────────────
+
+interface RegistryWorkflow {
+  id: string;
+  orgId: string;
+  workflowKey: string;
+  name: string;
+  description?: string;
+  workflowType: string;
+  source: "system" | "template" | "org_custom";
+  protected: boolean;
+  editable: boolean;
+  enabled: boolean;
+  systemManaged: boolean;
+  version: string;
+  clonedFromWorkflowId?: string;
+  executionCount: number;
+  successCount: number;
+  failureCount: number;
+  blockedCount: number;
+  lastRunAt?: string;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  estimatedRevenueInfluenced: number;
+  estimatedBookingsCreated: number;
+  estimatedLeadsConverted: number;
+  workflowDefinition: any;
+  tags: string[];
+  triggerTypes: string[];
+  actionTypes: string[];
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ConflictInfo {
+  workflowId: string;
+  name: string;
+  conflictType: string;
+  details: string;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const WORKFLOW_TYPE_COLORS: Record<string, string> = {
+  lead_pipeline:  "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  outreach:       "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+  scheduling:     "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300",
+  recovery:       "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  retention:      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+  automation:     "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
+  governance:     "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  custom:         "bg-muted text-muted-foreground",
+};
+
+function successRate(wf: RegistryWorkflow): number {
+  if (wf.executionCount === 0) return 0;
+  return Math.round((wf.successCount / wf.executionCount) * 100);
+}
+
+function relativeTime(iso?: string): string {
+  if (!iso) return "Never";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return "Just now";
+  if (diff < 3600000) return `${Math.round(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.round(diff / 3600000)}h ago`;
+  return `${Math.round(diff / 86400000)}d ago`;
+}
+
+// ─── Conflict Modal ───────────────────────────────────────────────────────────
+
+function ConflictModal({
+  conflicts, open, onClose, onContinue,
+}: {
+  conflicts: ConflictInfo[];
+  open: boolean;
+  onClose: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <AlertTriangle className="h-5 w-5" />
+            Workflow Conflict Detected
+          </DialogTitle>
+          <DialogDescription>
+            One or more active workflows already handle overlapping triggers or actions.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          {conflicts.map((c, i) => (
+            <div key={i} className="p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">{c.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{c.details}</p>
+                </div>
+                <Badge variant="outline" className="text-[10px] shrink-0 capitalize">
+                  {c.conflictType.replace("_", " ")}
+                </Badge>
+              </div>
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="flex-col gap-2 sm:flex-row">
+          <Button variant="outline" size="sm" onClick={onClose}>Review Existing</Button>
+          <Button variant="default" size="sm" onClick={onContinue} data-testid="btn-continue-anyway">
+            Continue Anyway
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Workflow Registry Card ───────────────────────────────────────────────────
+
+function RegistryCard({
+  wf, onClone, onToggle, onLoadInBuilder, onDelete,
+}: {
+  wf: RegistryWorkflow;
+  onClone?: (wf: RegistryWorkflow) => void;
+  onToggle?: (wf: RegistryWorkflow, enabled: boolean) => void;
+  onLoadInBuilder?: (wf: RegistryWorkflow) => void;
+  onDelete?: (wf: RegistryWorkflow) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const rate = successRate(wf);
+  const isSystem = wf.source === "system";
+  const isTemplate = wf.source === "template";
+
+  return (
+    <div
+      className={`border rounded-xl bg-background transition-shadow hover:shadow-md ${wf.enabled ? "border-border" : "border-dashed border-muted-foreground/30"}`}
+      data-testid={`registry-card-${wf.workflowKey}`}
+    >
+      {/* Card header */}
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          {/* Lock or status indicator */}
+          <div className={`flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
+            isSystem ? "bg-slate-100 dark:bg-slate-800" :
+            isTemplate ? "bg-violet-50 dark:bg-violet-900/20" :
+            "bg-emerald-50 dark:bg-emerald-900/20"
+          }`}>
+            {isSystem ? <Lock className="h-4 w-4 text-slate-500 dark:text-slate-400" /> :
+             isTemplate ? <Star className="h-4 w-4 text-violet-500" /> :
+             <Settings className="h-4 w-4 text-emerald-600" />}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold truncate">{wf.name}</p>
+                  {isSystem && (
+                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                      Managed by TrainEfficiency
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{wf.description}</p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full capitalize ${WORKFLOW_TYPE_COLORS[wf.workflowType] || WORKFLOW_TYPE_COLORS.custom}`}>
+                  {wf.workflowType.replace("_", " ")}
+                </span>
+                {/* Active/inactive badge */}
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${wf.enabled ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
+                  {wf.enabled ? "Active" : "Inactive"}
+                </span>
+              </div>
+            </div>
+
+            {/* Analytics strip */}
+            <div className="flex items-center gap-4 mt-3 flex-wrap">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Activity className="h-3 w-3" />
+                <span>{wf.executionCount} runs</span>
+              </div>
+              {wf.executionCount > 0 && (
+                <div className={`flex items-center gap-1 text-xs font-medium ${
+                  rate >= 80 ? "text-emerald-600" : rate >= 50 ? "text-amber-600" : "text-red-600"
+                }`}>
+                  <TrendingUp className="h-3 w-3" />
+                  <span>{rate}% success</span>
+                </div>
+              )}
+              {wf.failureCount > 0 && (
+                <div className="flex items-center gap-1 text-xs text-red-600">
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>{wf.failureCount} failed</span>
+                </div>
+              )}
+              {wf.blockedCount > 0 && (
+                <div className="flex items-center gap-1 text-xs text-amber-600">
+                  <ShieldAlert className="h-3 w-3" />
+                  <span>{wf.blockedCount} blocked</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Calendar className="h-3 w-3" />
+                <span>Last run: {relativeTime(wf.lastRunAt)}</span>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              {!isTemplate && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => setExpanded(e => !e)}
+                  data-testid={`btn-inspect-${wf.workflowKey}`}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Inspect
+                  {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                </Button>
+              )}
+              {(isSystem || isTemplate) && onClone && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => onClone(wf)}
+                  data-testid={`btn-clone-${wf.workflowKey}`}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Duplicate &amp; Customize
+                </Button>
+              )}
+              {!isSystem && onLoadInBuilder && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => onLoadInBuilder(wf)}
+                  data-testid={`btn-edit-${wf.workflowKey}`}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  Edit in Builder
+                </Button>
+              )}
+              {!isSystem && !isTemplate && onToggle && (
+                <Button
+                  variant={wf.enabled ? "outline" : "default"}
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => onToggle(wf, !wf.enabled)}
+                  data-testid={`btn-toggle-${wf.workflowKey}`}
+                >
+                  {wf.enabled ? <ToggleRight className="h-3.5 w-3.5 text-emerald-600" /> : <ToggleLeft className="h-3.5 w-3.5" />}
+                  {wf.enabled ? "Disable" : "Enable"}
+                </Button>
+              )}
+              {!isSystem && !isTemplate && onDelete && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5 text-destructive hover:text-destructive"
+                  onClick={() => onDelete(wf)}
+                  data-testid={`btn-delete-${wf.workflowKey}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded node graph preview */}
+      {expanded && wf.workflowDefinition && (
+        <div className="border-t px-4 py-3 bg-muted/20">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Node Graph</p>
+          <div className="flex flex-wrap gap-1.5">
+            {((wf.workflowDefinition as any)?.nodes ?? []).map((node: any, i: number) => (
+              <span
+                key={node.id ?? i}
+                className="inline-flex items-center gap-1 text-[10px] bg-background border rounded px-1.5 py-0.5"
+              >
+                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                  node.data?.riskLevel === "high" || node.data?.riskLevel === "critical" ? "bg-red-500" :
+                  node.data?.riskLevel === "medium" ? "bg-amber-500" : "bg-green-500"
+                }`} />
+                {node.data?.label ?? node.data?.nodeType}
+              </span>
+            ))}
+          </div>
+          {wf.triggerTypes.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <span className="text-[10px] text-muted-foreground">Triggers:</span>
+              {wf.triggerTypes.map(t => (
+                <span key={t} className="text-[10px] bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800 rounded px-1.5 py-0.5">{t.replace("_trigger","")}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Workflow Registry View ────────────────────────────────────────────────────
+
+function WorkflowRegistryView({
+  onLoadInBuilder,
+}: {
+  onLoadInBuilder: (wf: RegistryWorkflow) => void;
+}) {
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<"system" | "org" | "templates">("system");
+  const [search, setSearch] = useState("");
+  const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
+  const [conflictPendingToggle, setConflictPendingToggle] = useState<{ wf: RegistryWorkflow; enabled: boolean } | null>(null);
+
+  const { data: registry, isLoading, refetch } = useQuery<{
+    system: RegistryWorkflow[];
+    templates: RegistryWorkflow[];
+    orgCustom: RegistryWorkflow[];
+    total: number;
+  }>({
+    queryKey: ["/api/admin/workflow-registry"],
+    queryFn: async () => {
+      const r = await fetch("/api/admin/workflow-registry", { credentials: "include" });
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json();
+    },
+  });
+
+  const cloneMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await apiRequest("POST", `/api/admin/workflow-registry/${id}/clone`, {});
+      return r.json();
+    },
+    onSuccess: (cloned) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflow-registry"] });
+      toast({ title: "Workflow cloned", description: `"${cloned.name}" is ready in Organization Workflows.` });
+      setActiveTab("org");
+    },
+    onError: (e: any) => toast({ title: "Clone failed", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      const r = await apiRequest("POST", `/api/admin/workflow-registry/${id}/toggle`, { enabled });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflow-registry"] });
+      setConflictPendingToggle(null);
+      toast({ title: "Workflow updated" });
+    },
+    onError: (e: any) => toast({ title: "Update failed", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await apiRequest("PATCH", `/api/admin/workflow-registry/${id}`, { enabled: false });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workflow-registry"] });
+      toast({ title: "Workflow disabled" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const handleToggle = async (wf: RegistryWorkflow, enabled: boolean) => {
+    if (enabled) {
+      // Check conflicts before enabling
+      try {
+        const r = await fetch("/api/admin/workflow-registry/conflicts/check", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workflowId: wf.id, triggerTypes: wf.triggerTypes, actionTypes: wf.actionTypes }),
+        });
+        const data = await r.json();
+        if (data.hasConflicts) {
+          setConflicts(data.conflicts);
+          setConflictPendingToggle({ wf, enabled });
+          return;
+        }
+      } catch {}
+    }
+    toggleMutation.mutate({ id: wf.id, enabled });
+  };
+
+  const handleConflictContinue = () => {
+    if (conflictPendingToggle) {
+      toggleMutation.mutate({ id: conflictPendingToggle.wf.id, enabled: conflictPendingToggle.enabled });
+    }
+    setConflicts([]);
+  };
+
+  const filterWorkflows = (list: RegistryWorkflow[]) => {
+    if (!search.trim()) return list;
+    const q = search.toLowerCase();
+    return list.filter(w =>
+      w.name.toLowerCase().includes(q) ||
+      w.description?.toLowerCase().includes(q) ||
+      w.workflowType.includes(q) ||
+      w.tags.some(t => t.toLowerCase().includes(q))
+    );
+  };
+
+  const systemList = filterWorkflows(registry?.system ?? []);
+  const orgList = filterWorkflows(registry?.orgCustom ?? []);
+  const templateList = filterWorkflows(registry?.templates ?? []);
+
+  const TABS = [
+    { key: "system" as const, label: "System Workflows", count: systemList.length, icon: Lock },
+    { key: "org" as const, label: "Organization", count: orgList.length, icon: Settings },
+    { key: "templates" as const, label: "Templates", count: templateList.length, icon: Star },
+  ];
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden" data-testid="workflow-registry-view">
+      {/* Registry header */}
+      <div className="border-b bg-background px-5 py-4 shrink-0">
+        <div className="flex items-center justify-between flex-wrap gap-3 max-w-5xl mx-auto">
+          <div>
+            <div className="flex items-center gap-2">
+              <Library className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-bold">Workflow Registry</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {registry?.total ?? 0} workflows · {(registry?.system ?? []).filter(w => w.enabled).length + (registry?.orgCustom ?? []).filter(w => w.enabled).length} active
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search workflows…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-8 pl-8 text-xs w-48"
+                data-testid="input-registry-search"
+              />
+            </div>
+            <Button variant="outline" size="sm" className="h-8" onClick={() => refetch()} data-testid="btn-registry-refresh">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-1 mt-3 max-w-5xl mx-auto overflow-x-auto">
+          {TABS.map(t => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg whitespace-nowrap transition-colors ${activeTab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
+                data-testid={`registry-tab-${t.key}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {t.label}
+                <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${activeTab === t.key ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Content */}
+      <ScrollArea className="flex-1">
+        <div className="p-5 max-w-5xl mx-auto space-y-3">
+          {isLoading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground" data-testid="registry-loading">
+              Loading workflow registry…
+            </div>
+          ) : activeTab === "system" ? (
+            <>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700 mb-4">
+                <Lock className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">System-managed infrastructure</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    These workflows are built into TrainEfficiency and automatically maintained. They can be viewed, inspected, and cloned — but not directly edited. Duplicate &amp; Customize to create your own version.
+                  </p>
+                </div>
+              </div>
+              {systemList.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground" data-testid="system-empty">No system workflows found.</div>
+              ) : systemList.map(wf => (
+                <RegistryCard
+                  key={wf.id}
+                  wf={wf}
+                  onClone={wf => cloneMutation.mutate(wf.id)}
+                />
+              ))}
+            </>
+          ) : activeTab === "org" ? (
+            <>
+              {orgList.length === 0 ? (
+                <div className="py-12 text-center" data-testid="org-empty">
+                  <Settings className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No organization workflows yet.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Clone a system workflow or use a template to get started.</p>
+                </div>
+              ) : orgList.map(wf => (
+                <RegistryCard
+                  key={wf.id}
+                  wf={wf}
+                  onClone={wf => cloneMutation.mutate(wf.id)}
+                  onToggle={handleToggle}
+                  onLoadInBuilder={onLoadInBuilder}
+                  onDelete={wf => deleteMutation.mutate(wf.id)}
+                />
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-violet-50 dark:bg-violet-900/10 border border-violet-200 dark:border-violet-800 mb-4">
+                <Star className="h-4 w-4 text-violet-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-medium text-violet-700 dark:text-violet-300">Proven workflow templates</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Pre-built templates for common business scenarios. Duplicate &amp; Customize to make them your own, or load them directly into the builder to edit.
+                  </p>
+                </div>
+              </div>
+              {templateList.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground" data-testid="templates-empty">No templates found.</div>
+              ) : templateList.map(wf => (
+                <RegistryCard
+                  key={wf.id}
+                  wf={wf}
+                  onClone={wf => cloneMutation.mutate(wf.id)}
+                  onLoadInBuilder={onLoadInBuilder}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Conflict modal */}
+      <ConflictModal
+        conflicts={conflicts}
+        open={conflicts.length > 0}
+        onClose={() => { setConflicts([]); setConflictPendingToggle(null); }}
+        onContinue={handleConflictContinue}
+      />
+    </div>
+  );
+}
 
 // ─── Node palette definition ──────────────────────────────────────────────────
 
@@ -546,6 +1109,9 @@ export default function AdminWorkflowBuilderPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+  // Registry / builder view toggle
+  const [viewMode, setViewMode] = useState<"builder" | "registry">("builder");
+
   // UI state
   const [graphName, setGraphName] = useState("New Workflow");
   const [graphDesc, setGraphDesc] = useState("");
@@ -633,6 +1199,22 @@ export default function AdminWorkflowBuilderPage() {
     toast({ title: "Template loaded", description: "Edit the workflow to match your needs." });
   };
 
+  // Load registry workflow into builder canvas
+  const handleLoadRegistryWorkflow = (wf: RegistryWorkflow) => {
+    const def = wf.workflowDefinition as any;
+    if (def?.nodes) {
+      setNodes(def.nodes ?? []);
+      setEdges(def.edges ?? []);
+      setGraphName(wf.name);
+      setGraphCategory(wf.workflowType === "custom" ? "custom" : wf.workflowType);
+      setIsDirty(true);
+      setViewMode("builder");
+      toast({ title: "Workflow loaded", description: `"${wf.name}" is now in the canvas. Edit and save as a new version.` });
+    } else {
+      toast({ title: "No graph definition", description: "This workflow has no visual canvas definition yet.", variant: "destructive" });
+    }
+  };
+
   // Validate
   const validateMutation = useMutation({
     mutationFn: async () => {
@@ -705,66 +1287,97 @@ export default function AdminWorkflowBuilderPage() {
     <div className="h-screen flex flex-col bg-background" data-testid="page-workflow-builder">
       {/* ── Top bar ── */}
       <div className="flex items-center gap-3 px-4 py-2.5 border-b bg-card/80 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <GitBranch className="h-4 w-4 text-primary shrink-0" />
-          <Input
-            value={graphName}
-            onChange={e => { setGraphName(e.target.value); setIsDirty(true); }}
-            className="h-7 text-sm font-semibold border-0 bg-transparent px-0 focus-visible:ring-0 focus-visible:border-b focus-visible:border-primary rounded-none w-48"
-            data-testid="input-graph-name"
-          />
-          {isDirty && <span className="text-[10px] text-muted-foreground italic">unsaved</span>}
+        {/* View mode toggle */}
+        <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 shrink-0">
+          <button
+            onClick={() => setViewMode("builder")}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === "builder" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            data-testid="view-toggle-builder"
+          >
+            <GitBranch className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Builder</span>
+          </button>
+          <button
+            onClick={() => setViewMode("registry")}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === "registry" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            data-testid="view-toggle-registry"
+          >
+            <Library className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Registry</span>
+          </button>
         </div>
 
-        <Select value={graphCategory} onValueChange={v => { setGraphCategory(v); setIsDirty(true); }}>
-          <SelectTrigger className="h-7 text-xs w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {["custom","onboarding","retention","outreach","scheduling","research","executive"].map(c => (
-              <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {viewMode === "builder" && (
+          <>
+            <div className="flex items-center gap-2 min-w-0">
+              <Input
+                value={graphName}
+                onChange={e => { setGraphName(e.target.value); setIsDirty(true); }}
+                className="h-7 text-sm font-semibold border-0 bg-transparent px-0 focus-visible:ring-0 focus-visible:border-b focus-visible:border-primary rounded-none w-48"
+                data-testid="input-graph-name"
+              />
+              {isDirty && <span className="text-[10px] text-muted-foreground italic">unsaved</span>}
+            </div>
+
+            <Select value={graphCategory} onValueChange={v => { setGraphCategory(v); setIsDirty(true); }}>
+              <SelectTrigger className="h-7 text-xs w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["custom","onboarding","retention","outreach","scheduling","research","executive"].map(c => (
+                  <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        )}
 
         <div className="flex items-center gap-1.5 ml-auto">
-          {/* Validation status */}
-          {validationResult && (
-            <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${hasErrors ? "bg-red-100 text-red-700" : hasWarnings ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
-              {hasErrors ? <AlertTriangle className="h-3 w-3" /> : hasWarnings ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
-              {hasErrors ? `${validationResult.errors.length} errors` : hasWarnings ? `${validationResult.warnings.length} warnings` : "Valid"}
-            </div>
+          {viewMode === "builder" && (
+            <>
+              {/* Validation status */}
+              {validationResult && (
+                <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${hasErrors ? "bg-red-100 text-red-700" : hasWarnings ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                  {hasErrors ? <AlertTriangle className="h-3 w-3" /> : hasWarnings ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+                  {hasErrors ? `${validationResult.errors.length} errors` : hasWarnings ? `${validationResult.warnings.length} warnings` : "Valid"}
+                </div>
+              )}
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20" onClick={() => setShowNLGenerator(true)} data-testid="button-describe-workflow">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Describe</span>
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5" onClick={() => setShowTemplates(true)} data-testid="button-templates">
+                <BookTemplate className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Templates</span>
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => validateMutation.mutate()} disabled={validateMutation.isPending} data-testid="button-validate">
+                <CheckCircle className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">Validate</span>
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => simulateMutation.mutate()} disabled={simulateMutation.isPending} data-testid="button-simulate">
+                <Play className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">{simulateMutation.isPending ? "Simulating…" : "Simulate"}</span>
+              </Button>
+              <Button size="sm" className="h-7 text-xs gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} data-testid="button-save-graph">
+                <Save className="h-3.5 w-3.5" />
+                {saveMutation.isPending ? "…" : <span className="hidden sm:inline">Save</span>}
+              </Button>
+              <Button variant="default" size="sm" className="h-7 text-xs gap-1.5 bg-green-600 hover:bg-green-700" onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending || !currentGraphId} data-testid="button-publish-graph">
+                <Upload className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Publish</span>
+              </Button>
+            </>
           )}
-
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20" onClick={() => setShowNLGenerator(true)} data-testid="button-describe-workflow">
-            <Sparkles className="h-3.5 w-3.5" />
-            Describe
-          </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5" onClick={() => setShowTemplates(true)} data-testid="button-templates">
-            <BookTemplate className="h-3.5 w-3.5" />
-            Templates
-          </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => validateMutation.mutate()} disabled={validateMutation.isPending} data-testid="button-validate">
-            <CheckCircle className="h-3.5 w-3.5" />
-            Validate
-          </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => simulateMutation.mutate()} disabled={simulateMutation.isPending} data-testid="button-simulate">
-            <Play className="h-3.5 w-3.5" />
-            {simulateMutation.isPending ? "Simulating…" : "Simulate"}
-          </Button>
-          <Button size="sm" className="h-7 text-xs gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} data-testid="button-save-graph">
-            <Save className="h-3.5 w-3.5" />
-            {saveMutation.isPending ? "Saving…" : "Save"}
-          </Button>
-          <Button variant="default" size="sm" className="h-7 text-xs gap-1.5 bg-green-600 hover:bg-green-700" onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending || !currentGraphId} data-testid="button-publish-graph">
-            <Upload className="h-3.5 w-3.5" />
-            Publish
-          </Button>
         </div>
       </div>
 
+      {/* ── Registry View ── */}
+      {viewMode === "registry" && (
+        <WorkflowRegistryView onLoadInBuilder={handleLoadRegistryWorkflow} />
+      )}
+
       {/* ── Main canvas area ── */}
-      <div className="flex flex-1 min-h-0">
+      {viewMode === "builder" && <div className="flex flex-1 min-h-0">
         {/* Palette sidebar */}
         {showPalette && (
           <div className="w-56 border-r bg-card flex flex-col shrink-0" data-testid="palette-panel">
@@ -913,7 +1526,7 @@ export default function AdminWorkflowBuilderPage() {
             </ScrollArea>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── Panels ── */}
       {selectedNode && (
