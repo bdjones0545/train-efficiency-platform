@@ -1,0 +1,242 @@
+Build the Internal Scheduling Agent Layer for TrainEfficiency.
+
+Goal:
+When a Gmail reply or lead interaction shows scheduling intent, the agent should use TrainEfficiency’s internal coach availability + location availability system to suggest slots, coordinate booking, and move the deal pipeline forward — without needing Google Calendar.
+
+Core flow:
+Lead submits form
+→ AI creates lead/deal
+→ Gmail agent detects scheduling intent
+→ Scheduling agent checks internal availability
+→ Generates draft with available time options
+→ Lead confirms time
+→ System books session
+→ Deal moves to Booked
+
+Requirements:
+
+1. Create scheduling agent service:
+server/services/internal-scheduling-agent-service.ts
+
+Responsibilities:
+- resolve orgId
+- find lead/deal/client context
+- read coach availability from existing TrainEfficiency availability tables
+- read location availability
+- match available slots to lead preferences
+- generate 2–3 best available options
+- queue Gmail draft response
+- book session when confirmation is detected
+- update deal pipeline stage
+
+2. Add scheduling tools to agent registry:
+
+Tools:
+- scheduling_find_available_slots
+- scheduling_suggest_slots_for_lead
+- scheduling_create_booking
+- scheduling_confirm_booking_from_reply
+- scheduling_update_deal_stage
+- scheduling_track_booking_context
+
+Each tool needs:
+- strict zod schema
+- org-scoped execution
+- risk level
+- approval policy
+- full action logging
+
+3. Availability matching
+
+Use existing internal data:
+- coach availability
+- location availability
+- program/location constraints
+- session duration
+- athlete/parent preferred times if provided
+- campaign/program context
+- coach assignment rules if available
+
+Return:
+- date
+- start time
+- end time
+- location
+- coach
+- confidence score
+- reason selected
+
+4. Gmail reply integration
+
+When gmail_classify_reply returns:
+- wants_schedule
+- interested with scheduling language
+- asks_availability
+- confirms_time
+
+Trigger scheduling flow.
+
+If asking availability:
+- find best 2–3 slots
+- generate Gmail draft:
+  “Here are a few options…”
+- queue draft for approval by default
+
+If confirming a time:
+- match reply to previously offered slot
+- create booking
+- mark conversation processed
+- move pipeline stage to booked
+- queue confirmation email draft
+
+5. Booking creation
+
+Use the existing TrainEfficiency booking/session system.
+
+On booking:
+- create session/booking record
+- link to lead/deal/client
+- set status confirmed or pending_confirmation based on existing system conventions
+- attach campaign attribution
+- attach source Gmail threadId/messageId
+- log booking action
+
+6. Pipeline automation
+
+Stage transitions:
+- new_lead → engaged when reply received
+- engaged → scheduling when scheduling intent detected
+- scheduling → booked when booking created
+- booked → converted when payment/package/session purchase is recorded later
+
+Append stage transition audit history every time.
+
+7. Suggested next action updates
+
+After scheduling intent:
+- suggestedNextAction = suggest_available_slots
+
+After slots sent:
+- suggestedNextAction = wait_for_time_confirmation
+
+After booking:
+- suggestedNextAction = send_confirmation_and_prepare_session
+
+After missed confirmation:
+- suggestedNextAction = follow_up_to_confirm_time
+
+8. Slot hold logic
+
+Add optional soft-hold behavior:
+- when slots are offered, store offeredSlots on the lead intelligence profile or scheduling context
+- hold expires after 12–24 hours
+- if another booking takes the slot, regenerate options
+- do not hard-book until the lead confirms
+
+9. Database additions if needed:
+
+lead_scheduling_contexts:
+- id
+- orgId
+- leadId
+- dealId
+- gmailThreadId
+- offeredSlots jsonb
+- selectedSlot jsonb nullable
+- status: none / slots_offered / awaiting_confirmation / booked / expired / cancelled
+- expiresAt
+- bookingId nullable
+- lastReplyMessageId nullable
+- createdAt
+- updatedAt
+
+Or add equivalent fields to lead_intelligence_profiles if cleaner.
+
+10. API routes
+
+Add admin routes:
+- GET /api/org/scheduling-agent/contexts
+- GET /api/org/scheduling-agent/contexts/:leadId
+- POST /api/org/scheduling-agent/find-slots
+- POST /api/org/scheduling-agent/offer-slots
+- POST /api/org/scheduling-agent/confirm-booking
+- POST /api/org/scheduling-agent/test-flow
+
+All routes:
+- resolve orgId with existing org session resolver
+- never cross org boundaries
+- log all actions
+
+11. UI updates
+
+On /admin/lead-pipeline detail modal add:
+- Scheduling Context section
+- offered slots
+- selected slot
+- booking status
+- location
+- coach
+- expiration timer
+- “Find Slots”
+- “Offer Slots”
+- “Confirm Booking”
+- “Regenerate Options”
+
+On cards:
+- show “Scheduling” badge when scheduling context exists
+- show “Slots Offered” or “Awaiting Confirmation”
+- show booked session time when booked
+
+12. Gmail draft examples
+
+Availability response should use intake context:
+
+Example:
+“Hey Jordan — I saw you’re focused on acceleration and combine prep. I have a few good options for your first speed session at Oscar Frazier Park:
+1. Tuesday 4:00 PM
+2. Thursday 4:00 PM
+3. Saturday 9:00 AM
+Which one works best?”
+
+Confirmation response:
+“Perfect — I have you down for Thursday at 4:00 PM at Oscar Frazier Park. We’ll start with acceleration mechanics, sprint posture, and first-step explosiveness.”
+
+13. Safety rules
+
+- Do not auto-book unless reply clearly confirms one offered slot.
+- Do not send emails automatically yet; queue drafts for approval.
+- Do not double-book coach/location availability.
+- If confidence is low, queue action for manual review.
+- If slot conflict occurs, regenerate options.
+- All booking actions must be logged.
+
+14. Testing
+
+Create test flow:
+- intake created
+- reply asks “What days are available?”
+- scheduling agent finds slots
+- draft queued with 3 options
+- fake reply confirms “Thursday at 4 works”
+- booking created
+- deal moves to booked
+- confirmation draft queued
+- duplicate booking prevented
+- stage transitions recorded
+- scheduling context updated
+
+15. Final diagnostic report
+
+After implementation, run full test and report:
+- slots found
+- selection logic
+- draft queued
+- confirmation parsed
+- booking created
+- duplicate prevention
+- stage transitions
+- UI hydration
+- failed validations
+
+Expected result:
+TrainEfficiency can now move a lead from interested reply → scheduling options → confirmed booking using only the internal org availability system, while keeping Gmail draft approval and full audit logging.

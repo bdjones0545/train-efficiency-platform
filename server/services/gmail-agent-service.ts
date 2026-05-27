@@ -638,6 +638,50 @@ export async function runLeadReplyRecovery(orgId: string): Promise<{
         continue;
       }
 
+      // ── Scheduling Agent Integration ──────────────────────────────────────
+      // When scheduling intent is detected, route to the internal scheduling
+      // agent which finds slots and queues a personalised draft with real times.
+      if (
+        classification.intent === "wants_schedule" ||
+        (classification.intent === "interested" && classification.schedulingSignals?.length > 0)
+      ) {
+        try {
+          // Look up the lead intelligence profile by sender email
+          const { db: _db } = await import("../db");
+          const { leadIntelligenceProfiles: _lip } = await import("@shared/schema");
+          const { sql: _sql } = await import("drizzle-orm");
+          const [intelProfile] = await _db.execute(
+            _sql`SELECT id, submission_id FROM lead_intelligence_profiles
+                 WHERE org_id = ${orgId}
+                   AND normalized_profile_json->>'email' = ${senderEmail}
+                 ORDER BY created_at DESC LIMIT 1`
+          ) as any;
+
+          if (intelProfile?.submission_id) {
+            const { handleSchedulingIntent } = await import("./internal-scheduling-agent-service");
+            const schedResult = await handleSchedulingIntent({
+              orgId,
+              submissionId: intelProfile.submission_id,
+              leadId: intelProfile.id,
+              intent: classification.intent,
+              replyText: reply.snippet,
+              preferredTimes: classification.preferredTimes || [],
+              gmailThreadId: reply.threadId,
+              messageId: reply.messageId,
+            });
+            if (schedResult.handled) {
+              actionsQueued++;
+              console.log(`[gmail-agent] scheduling_agent handled thread=${reply.threadId}: ${schedResult.message}`);
+              continue; // Scheduling agent took ownership — skip generic draft
+            }
+          }
+        } catch (schedErr: any) {
+          console.error(`[gmail-agent] scheduling_agent error: ${schedErr.message}`);
+          // Fall through to generic draft
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
       // Queue a draft action based on intent
       let draftNote = "";
       if (classification.intent === "wants_schedule") draftNote = "scheduling_response";

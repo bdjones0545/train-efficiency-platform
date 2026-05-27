@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -14,7 +15,8 @@ import {
   TrendingUp, BarChart3, FlaskConical, Eye, ArrowRight, User,
   Megaphone, Tag, Calendar, AlertCircle, Loader2, Play, ShieldOff,
   Ban, History, Timer, ChevronDown, Activity, GitBranch, Bell,
-  AlertTriangle,
+  AlertTriangle, CalendarCheck, Search, Send, RotateCcw, BookOpen,
+  MapPinIcon, UserCheck, Hourglass,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -101,6 +103,38 @@ interface GmailDraftAction {
   createdAt: string;
 }
 
+interface OfferedSlot {
+  date: string;
+  startTime: string;
+  endTime: string;
+  displayDate: string;
+  displayTime: string;
+  location: string;
+  locationAddress: string;
+  coachId: string;
+  coachName: string;
+  durationMin: number;
+  confidenceScore: number;
+  reasonSelected: string;
+}
+
+interface SchedulingContext {
+  id: string;
+  orgId: string;
+  leadId: string;
+  submissionId: string;
+  gmailThreadId: string | null;
+  offeredSlots: OfferedSlot[];
+  selectedSlot: OfferedSlot | null;
+  status: string;
+  expiresAt: string | null;
+  athleticBookingId: string | null;
+  lastReplyMessageId: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface StatRow {
   pipelineStage: string;
   temperature: string | null;
@@ -120,13 +154,17 @@ const STAGES = [
 ];
 
 const NEXT_ACTION_LABELS: Record<string, { label: string; icon: any; color: string }> = {
-  call_now:                   { label: "Call Now",                icon: Phone,    color: "text-red-400" },
-  send_educational_followup:  { label: "Send Follow-Up",          icon: Mail,     color: "text-blue-400" },
-  schedule_consultation:      { label: "Schedule Consultation",   icon: Calendar, color: "text-violet-400" },
-  send_urgency_reminder:      { label: "Send Urgency Reminder",   icon: AlertCircle, color: "text-amber-400" },
-  wait_24h:                   { label: "Wait 24h",                icon: Clock,    color: "text-slate-400" },
-  re_engage_7d:               { label: "Re-engage in 7d",         icon: RefreshCw, color: "text-slate-400" },
-  mark_low_priority:          { label: "Mark Low Priority",       icon: Target,   color: "text-slate-500" },
+  call_now:                         { label: "Call Now",                  icon: Phone,        color: "text-red-400" },
+  send_educational_followup:        { label: "Send Follow-Up",            icon: Mail,         color: "text-blue-400" },
+  schedule_consultation:            { label: "Schedule Consultation",     icon: Calendar,     color: "text-violet-400" },
+  send_urgency_reminder:            { label: "Send Urgency Reminder",     icon: AlertCircle,  color: "text-amber-400" },
+  wait_24h:                         { label: "Wait 24h",                  icon: Clock,        color: "text-slate-400" },
+  re_engage_7d:                     { label: "Re-engage in 7d",           icon: RefreshCw,    color: "text-slate-400" },
+  mark_low_priority:                { label: "Mark Low Priority",         icon: Target,       color: "text-slate-500" },
+  suggest_available_slots:          { label: "Suggest Available Slots",   icon: CalendarCheck, color: "text-cyan-400" },
+  wait_for_time_confirmation:       { label: "Awaiting Confirmation",     icon: Hourglass,    color: "text-amber-400" },
+  send_confirmation_and_prepare_session: { label: "Send Confirmation",   icon: CheckCircle2, color: "text-emerald-400" },
+  follow_up_to_confirm_time:        { label: "Follow Up on Time",         icon: Bell,         color: "text-orange-400" },
 };
 
 const FOLLOW_UP_STAGE_LABELS: Record<string, { label: string; color: string }> = {
@@ -228,6 +266,320 @@ function timeUntil(dt: string | null | undefined): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `in ${h}h`;
   return `in ${Math.floor(h / 24)}d`;
+}
+
+// ─── Scheduling Context Panel ─────────────────────────────────────────────────
+
+const SCHED_STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  none:                 { label: "No context",         color: "text-zinc-500",   bg: "bg-zinc-700/40 border-zinc-600" },
+  slots_offered:        { label: "Slots Offered",       color: "text-cyan-400",   bg: "bg-cyan-900/30 border-cyan-700/50" },
+  awaiting_confirmation:{ label: "Awaiting Confirm",   color: "text-amber-400",  bg: "bg-amber-900/30 border-amber-700/50" },
+  booked:               { label: "Booked",              color: "text-emerald-400",bg: "bg-emerald-900/30 border-emerald-700/50" },
+  expired:              { label: "Expired",             color: "text-red-400",    bg: "bg-red-900/20 border-red-800/40" },
+  cancelled:            { label: "Cancelled",           color: "text-zinc-500",   bg: "bg-zinc-800/40 border-zinc-700" },
+};
+
+function ConfidenceDot({ score }: { score: number }) {
+  const cls = score >= 0.85 ? "bg-emerald-500" : score >= 0.70 ? "bg-amber-500" : "bg-zinc-500";
+  return <span title={`${Math.round(score * 100)}% confidence`} className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${cls}`} />;
+}
+
+function SchedulingContextPanel({
+  intel,
+  onRefresh,
+}: {
+  intel: IntelligenceProfile;
+  onRefresh: () => void;
+}) {
+  const { toast } = useToast();
+  const [confirmReplyText, setConfirmReplyText] = useState("");
+  const [showConfirmInput, setShowConfirmInput] = useState(false);
+  const [showTestResult, setShowTestResult] = useState<any>(null);
+
+  const { data: ctx, isLoading } = useQuery<SchedulingContext | null>({
+    queryKey: ["/api/org/scheduling-agent/contexts", intel.submissionId],
+    queryFn: () =>
+      fetch(`/api/org/scheduling-agent/contexts/${intel.submissionId}`, { credentials: "include" })
+        .then(r => r.json()),
+  });
+
+  const findSlotsMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/org/scheduling-agent/find-slots", {
+        submissionId: intel.submissionId,
+        durationMin: 60,
+      }).then(r => r.json()),
+    onSuccess: (data) => {
+      toast({ title: `Found ${data.count} available slot${data.count !== 1 ? "s" : ""}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/scheduling-agent/contexts", intel.submissionId] });
+    },
+    onError: () => toast({ title: "Error finding slots", variant: "destructive" }),
+  });
+
+  const offerSlotsMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/org/scheduling-agent/offer-slots", {
+        submissionId: intel.submissionId,
+        leadId: intel.id,
+        gmailThreadId: ctx?.gmailThreadId || undefined,
+        durationMin: 60,
+      }).then(r => r.json()),
+    onSuccess: (data) => {
+      toast({ title: "Slots offered", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/scheduling-agent/contexts", intel.submissionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });
+      onRefresh();
+    },
+    onError: () => toast({ title: "Error offering slots", variant: "destructive" }),
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/org/scheduling-agent/confirm-booking", {
+        submissionId: intel.submissionId,
+        replyText: confirmReplyText,
+        gmailThreadId: ctx?.gmailThreadId || undefined,
+      }).then(r => r.json()),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "Booking confirmed!", description: data.message });
+      } else {
+        toast({ title: "Review needed", description: data.message, variant: "destructive" });
+      }
+      setShowConfirmInput(false);
+      setConfirmReplyText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/org/scheduling-agent/contexts", intel.submissionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });
+      onRefresh();
+    },
+    onError: () => toast({ title: "Error confirming booking", variant: "destructive" }),
+  });
+
+  const testFlowMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/org/scheduling-agent/test-flow", {}).then(r => r.json()),
+    onSuccess: (data) => {
+      setShowTestResult(data);
+      toast({ title: "Test flow complete", description: data.summary || (data.note ? "Note: " + data.note : "") });
+    },
+    onError: () => toast({ title: "Test flow error", variant: "destructive" }),
+  });
+
+  const statusCfg = SCHED_STATUS_LABELS[ctx?.status || "none"] || SCHED_STATUS_LABELS.none;
+  const isExpired = ctx?.expiresAt && new Date(ctx.expiresAt).getTime() < Date.now() && ctx.status === "slots_offered";
+  const offeredSlots = ctx?.offeredSlots || [];
+  const selectedSlot = ctx?.selectedSlot;
+
+  return (
+    <div className="rounded-lg bg-zinc-800/60 border border-zinc-700 p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-cyan-400 uppercase tracking-wide flex items-center gap-1.5">
+          <CalendarCheck className="h-3.5 w-3.5" /> Scheduling Context
+        </p>
+        {ctx && (
+          <span data-testid="badge-scheduling-status" className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusCfg.bg} ${statusCfg.color}`}>
+            {statusCfg.label}
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-12 bg-zinc-700" />
+      ) : !ctx ? (
+        <p className="text-xs text-zinc-500 italic">No scheduling context yet. Use "Find Slots" to start.</p>
+      ) : (
+        <div className="space-y-3">
+          {/* Expiry warning */}
+          {isExpired && (
+            <div className="rounded bg-red-950/40 border border-red-800/40 px-3 py-2 text-xs text-red-300 flex items-center gap-1.5">
+              <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+              Offered slots expired — regenerate options
+            </div>
+          )}
+
+          {/* Offered Slots */}
+          {offeredSlots.length > 0 && !selectedSlot && (
+            <div>
+              <p className="text-[11px] text-zinc-500 font-medium mb-2 flex items-center gap-1">
+                <Clock className="h-3 w-3" /> Offered Options ({offeredSlots.length})
+                {ctx.expiresAt && !isExpired && (
+                  <span className="ml-auto text-zinc-600">expires {timeUntil(ctx.expiresAt)}</span>
+                )}
+              </p>
+              <div className="space-y-1.5">
+                {offeredSlots.map((slot, i) => (
+                  <div key={i} data-testid={`slot-offered-${i}`} className="rounded bg-zinc-900/60 border border-zinc-700/60 px-3 py-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <ConfidenceDot score={slot.confidenceScore} />
+                      <span className="text-zinc-200 font-medium">{slot.displayDate}</span>
+                      <span className="text-zinc-400">{slot.displayTime}</span>
+                      <span className="ml-auto text-zinc-500">{slot.durationMin}min</span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-[11px] text-zinc-500">
+                      {slot.location && slot.location !== "TBD" && (
+                        <span className="flex items-center gap-1"><MapPinIcon className="h-2.5 w-2.5" />{slot.location}</span>
+                      )}
+                      <span className="flex items-center gap-1"><UserCheck className="h-2.5 w-2.5" />{slot.coachName}</span>
+                      <span className="ml-auto text-zinc-600 italic">{slot.reasonSelected}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Selected / Booked Slot */}
+          {selectedSlot && (
+            <div className="rounded bg-emerald-900/30 border border-emerald-700/40 px-3 py-2 text-xs space-y-1">
+              <p className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Session Booked
+              </p>
+              <p className="text-zinc-200 font-medium">{selectedSlot.displayDate} at {selectedSlot.displayTime}</p>
+              <div className="flex items-center gap-3 text-zinc-400">
+                {selectedSlot.location !== "TBD" && (
+                  <span className="flex items-center gap-1"><MapPinIcon className="h-2.5 w-2.5" />{selectedSlot.location}</span>
+                )}
+                <span className="flex items-center gap-1"><UserCheck className="h-2.5 w-2.5" />{selectedSlot.coachName}</span>
+              </div>
+              {ctx.athleticBookingId && (
+                <p className="text-[11px] text-zinc-600">Booking ID: {ctx.athleticBookingId}</p>
+              )}
+            </div>
+          )}
+
+          {/* Notes */}
+          {ctx.notes && (
+            <p className="text-[11px] text-zinc-600 italic">{ctx.notes}</p>
+          )}
+        </div>
+      )}
+
+      {/* Confirm booking input */}
+      {showConfirmInput && (
+        <div className="space-y-2">
+          <p className="text-xs text-zinc-400">Paste the lead's reply to parse and confirm booking:</p>
+          <Textarea
+            data-testid="input-confirm-reply"
+            value={confirmReplyText}
+            onChange={e => setConfirmReplyText(e.target.value)}
+            placeholder="e.g. Thursday at 4 works for me!"
+            className="text-xs bg-zinc-900 border-zinc-600 text-zinc-200 h-20 resize-none"
+          />
+          <div className="flex gap-2">
+            <Button
+              data-testid="button-parse-confirm"
+              size="sm"
+              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={!confirmReplyText.trim() || confirmMutation.isPending}
+              onClick={() => confirmMutation.mutate()}
+            >
+              {confirmMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
+              Parse &amp; Confirm
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs border-zinc-600 text-zinc-400" onClick={() => setShowConfirmInput(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Test result */}
+      {showTestResult && (
+        <div className="rounded bg-zinc-900/80 border border-zinc-700 p-3 text-[11px] text-zinc-400 space-y-1">
+          <p className="text-xs font-semibold text-zinc-300 mb-1">Test Flow Result</p>
+          {showTestResult.note && <p className="text-amber-400">{showTestResult.note}</p>}
+          {showTestResult.slotsFound && (
+            <p>Slots found: <span className="text-cyan-400">{showTestResult.slotsFound.count}</span></p>
+          )}
+          {showTestResult.selectionLogic && (
+            <p>Best slot: <span className="text-zinc-300">{showTestResult.selectionLogic.topSlot?.displayDate} {showTestResult.selectionLogic.topSlot?.displayTime}</span></p>
+          )}
+          {showTestResult.confirmationParsing && (
+            <div className="space-y-0.5 mt-1">
+              {showTestResult.confirmationParsing.map((t: any, i: number) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className={t.isConfirmation === t.expected ? "text-emerald-400" : "text-red-400"}>
+                    {t.isConfirmation === t.expected ? "✓" : "✗"}
+                  </span>
+                  <span className="truncate">{t.reply}</span>
+                  <span className="ml-auto text-zinc-600">{Math.round(t.confidence * 100)}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button size="sm" variant="ghost" className="h-6 text-[10px] text-zinc-600 mt-1" onClick={() => setShowTestResult(null)}>
+            Close
+          </Button>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      {ctx?.status !== "booked" && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            data-testid="button-find-slots"
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-zinc-600 text-zinc-300 hover:bg-zinc-700"
+            disabled={findSlotsMutation.isPending}
+            onClick={() => findSlotsMutation.mutate()}
+          >
+            {findSlotsMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Search className="h-3 w-3 mr-1" />}
+            Find Slots
+          </Button>
+          <Button
+            data-testid="button-offer-slots"
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/30"
+            disabled={offerSlotsMutation.isPending}
+            onClick={() => offerSlotsMutation.mutate()}
+          >
+            {offerSlotsMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Send className="h-3 w-3 mr-1" />}
+            Offer Slots
+          </Button>
+          {ctx && offeredSlots.length > 0 && !showConfirmInput && (
+            <Button
+              data-testid="button-confirm-booking"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-emerald-700/50 text-emerald-400 hover:bg-emerald-950/30"
+              onClick={() => setShowConfirmInput(true)}
+            >
+              <CheckCircle2 className="h-3 w-3 mr-1" /> Confirm Booking
+            </Button>
+          )}
+          {(isExpired || (ctx && offeredSlots.length > 0)) && (
+            <Button
+              data-testid="button-regenerate-slots"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-zinc-600 text-zinc-400 hover:bg-zinc-700"
+              disabled={offerSlotsMutation.isPending}
+              onClick={() => offerSlotsMutation.mutate()}
+            >
+              <RotateCcw className="h-3 w-3 mr-1" /> Regenerate
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Test Flow button */}
+      <div className="pt-1 border-t border-zinc-700/40">
+        <Button
+          data-testid="button-test-scheduling-flow"
+          size="sm"
+          variant="ghost"
+          className="h-6 text-[10px] text-zinc-600 hover:text-zinc-400"
+          disabled={testFlowMutation.isPending}
+          onClick={() => testFlowMutation.mutate()}
+        >
+          {testFlowMutation.isPending ? <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" /> : <FlaskConical className="h-2.5 w-2.5 mr-1" />}
+          Run Availability Test
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 // ─── Processing Timeline ──────────────────────────────────────────────────────
@@ -528,6 +880,12 @@ function LeadDetailModal({
           {/* Follow-up Schedule */}
           <FollowUpSchedule intel={intel} />
 
+          {/* Scheduling Context */}
+          <SchedulingContextPanel
+            intel={intel}
+            onRefresh={onClose}
+          />
+
           {/* Intake Intelligence */}
           <div className="rounded-lg bg-zinc-800/60 border border-zinc-700 p-4">
             <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
@@ -730,12 +1088,22 @@ function PipelineCard({ row, onClick }: { row: PipelineRow; onClick: () => void 
         <ChevronRight className="h-4 w-4 text-zinc-600 group-hover:text-zinc-400 flex-shrink-0 mt-0.5" />
       </div>
 
-      {/* Temperature + Score + Suppression */}
+      {/* Temperature + Score + Suppression + Scheduling */}
       <div className="flex flex-wrap gap-1.5">
         <TemperatureBadge temp={intel.temperature} />
         <ScoreBadge score={intel.leadScore} />
         {(intel.suppressed || intel.unsubscribed) && (
           <SuppressionBadge unsubscribed={intel.unsubscribed} suppressed={intel.suppressed} />
+        )}
+        {intel.pipelineStage === "scheduling" && (
+          <span data-testid="badge-scheduling" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-cyan-900/30 text-cyan-400 border-cyan-700/50">
+            <CalendarCheck className="h-3 w-3" /> Scheduling
+          </span>
+        )}
+        {intel.pipelineStage === "booked" && (
+          <span data-testid="badge-booked" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-emerald-900/30 text-emerald-400 border-emerald-700/50">
+            <CheckCircle2 className="h-3 w-3" /> Booked
+          </span>
         )}
       </div>
 

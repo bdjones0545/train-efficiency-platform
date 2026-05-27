@@ -3646,3 +3646,28 @@ export const leadIntelligenceProfiles = pgTable("lead_intelligence_profiles", {
 export const insertLeadIntelligenceProfileSchema = createInsertSchema(leadIntelligenceProfiles).omit({ id: true, createdAt: true, updatedAt: true });
 export type LeadIntelligenceProfile = typeof leadIntelligenceProfiles.$inferSelect;
 export type InsertLeadIntelligenceProfile = z.infer<typeof insertLeadIntelligenceProfileSchema>;
+
+// ─── Lead Scheduling Contexts ─────────────────────────────────────────────────
+// Tracks the scheduling lifecycle for a lead from slot offer → confirmation → booking.
+
+export const leadSchedulingContexts = pgTable("lead_scheduling_contexts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  leadId: varchar("lead_id").notNull(),
+  submissionId: varchar("submission_id").notNull().unique(),
+  gmailThreadId: varchar("gmail_thread_id"),
+  offeredSlots: jsonb("offered_slots").notNull().default(sql`'[]'::jsonb`),
+  selectedSlot: jsonb("selected_slot"),
+  // Status: none | slots_offered | awaiting_confirmation | booked | expired | cancelled
+  status: varchar("status").notNull().default("none"),
+  expiresAt: timestamp("expires_at"),
+  athleticBookingId: varchar("athletic_booking_id"),
+  lastReplyMessageId: varchar("last_reply_message_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertLeadSchedulingContextSchema = createInsertSchema(leadSchedulingContexts).omit({ id: true, createdAt: true, updatedAt: true });
+export type LeadSchedulingContext = typeof leadSchedulingContexts.$inferSelect;
+export type InsertLeadSchedulingContext = z.infer<typeof insertLeadSchedulingContextSchema>;

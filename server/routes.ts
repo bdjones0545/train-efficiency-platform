@@ -17875,5 +17875,201 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ===== INTERNAL SCHEDULING AGENT =====
+
+  // GET /api/org/scheduling-agent/contexts — list all scheduling contexts for org
+  app.get("/api/org/scheduling-agent/contexts", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const { db } = await import("./db");
+      const { leadSchedulingContexts } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+
+      const contexts = await db
+        .select()
+        .from(leadSchedulingContexts)
+        .where(eq(leadSchedulingContexts.orgId, orgId))
+        .orderBy(desc(leadSchedulingContexts.updatedAt));
+
+      res.json(contexts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/org/scheduling-agent/contexts/:submissionId — get context for a specific lead
+  app.get("/api/org/scheduling-agent/contexts/:submissionId", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const { db } = await import("./db");
+      const { leadSchedulingContexts } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [ctx] = await db
+        .select()
+        .from(leadSchedulingContexts)
+        .where(and(eq(leadSchedulingContexts.submissionId, req.params.submissionId), eq(leadSchedulingContexts.orgId, orgId)));
+
+      if (!ctx) return res.json(null);
+      res.json(ctx);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/org/scheduling-agent/find-slots — find available slots for a lead
+  app.post("/api/org/scheduling-agent/find-slots", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const { submissionId, durationMin = 60, lookAheadDays = 14 } = req.body;
+      if (!submissionId) return res.status(400).json({ message: "submissionId required" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [leadProfile] = await db
+        .select()
+        .from(leadIntelligenceProfiles)
+        .where(and(eq(leadIntelligenceProfiles.submissionId, submissionId), eq(leadIntelligenceProfiles.orgId, orgId)));
+
+      const np = (leadProfile?.normalizedProfileJson as any) || {};
+      const { findAvailableSlots } = await import("./services/internal-scheduling-agent-service");
+
+      const slots = await findAvailableSlots({
+        orgId,
+        leadContext: {
+          athleteName: np.athleteName || "Athlete",
+          sport: np.sport || null,
+          programGoals: Array.isArray(np.goals) ? np.goals.join(", ") : (np.goals || null),
+          email: np.email || np.parentEmail || "",
+          preferredTimes: np.preferredDays || [],
+          programId: leadProfile?.programId || null,
+          campaignName: leadProfile?.campaignName || null,
+          locationPreference: np.locationPreference || null,
+        },
+        durationMin,
+        lookAheadDays,
+        maxSlots: 3,
+      });
+
+      res.json({ slots, count: slots.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/org/scheduling-agent/offer-slots — find slots + generate draft + create context
+  app.post("/api/org/scheduling-agent/offer-slots", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const { submissionId, leadId, gmailThreadId, durationMin = 60 } = req.body;
+      if (!submissionId || !leadId) return res.status(400).json({ message: "submissionId and leadId required" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [leadProfile] = await db
+        .select()
+        .from(leadIntelligenceProfiles)
+        .where(and(eq(leadIntelligenceProfiles.submissionId, submissionId), eq(leadIntelligenceProfiles.orgId, orgId)));
+
+      const np = (leadProfile?.normalizedProfileJson as any) || {};
+      const { suggestSlotsForLead } = await import("./services/internal-scheduling-agent-service");
+
+      const result = await suggestSlotsForLead({
+        orgId,
+        submissionId,
+        leadId,
+        leadContext: {
+          athleteName: np.athleteName || "Athlete",
+          sport: np.sport || null,
+          programGoals: Array.isArray(np.goals) ? np.goals.join(", ") : (np.goals || null),
+          email: np.email || np.parentEmail || "",
+          preferredTimes: np.preferredDays || [],
+          programId: leadProfile?.programId || null,
+          campaignName: leadProfile?.campaignName || null,
+          locationPreference: np.locationPreference || null,
+        },
+        gmailThreadId,
+        durationMin,
+      });
+
+      // Update lead pipeline stage to "scheduling"
+      if (leadProfile && leadProfile.pipelineStage !== "scheduling" && leadProfile.pipelineStage !== "booked") {
+        const { buildStageTransition } = await import("./services/intelligent-lead-intake-service");
+        const { leadIntelligenceProfiles: lip } = await import("@shared/schema");
+        const existing = (leadProfile.stageTransitions as any[]) || [];
+        const transition = buildStageTransition(leadProfile.pipelineStage, "scheduling", "Scheduling slots offered by admin", "manual_admin", 1.0);
+        await db
+          .update(lip)
+          .set({
+            pipelineStage: "scheduling",
+            suggestedNextAction: "wait_for_time_confirmation",
+            suggestedNextActionReason: `${result.offeredSlots.length} time options sent, waiting for confirmation`,
+            stageTransitions: [...existing, transition] as any,
+            updatedAt: new Date(),
+          })
+          .where(eq(lip.id, leadProfile.id));
+      }
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/org/scheduling-agent/confirm-booking — parse reply and create booking
+  app.post("/api/org/scheduling-agent/confirm-booking", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const { submissionId, replyText, gmailThreadId, messageId } = req.body;
+      if (!submissionId || !replyText) return res.status(400).json({ message: "submissionId and replyText required" });
+
+      const { confirmBookingFromReply } = await import("./services/internal-scheduling-agent-service");
+      const result = await confirmBookingFromReply({ orgId, submissionId, replyText, gmailThreadId, messageId });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/org/scheduling-agent/test-flow — run the full scheduling test scenario
+  app.post("/api/org/scheduling-agent/test-flow", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { runSchedulingTestFlow } = await import("./services/internal-scheduling-agent-service");
+      const result = await runSchedulingTestFlow(profile.organizationId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

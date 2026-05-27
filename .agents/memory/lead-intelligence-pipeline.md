@@ -41,3 +41,24 @@ The pipeline:
 ## Safety
 
 All Gmail drafts are `status=proposed`, `approvalRequired=true`. No autonomous sends.
+
+## Internal Scheduling Agent (added)
+
+`server/services/internal-scheduling-agent-service.ts` — handles the full lead → slot → draft → booking flow.
+
+Key functions exported:
+- `findAvailableSlots` — reads `availability_blocks`, `blocked_times`, `bookings` to return 2–3 best slots with confidence scores
+- `suggestSlotsForLead` — finds slots + generates Gmail draft + upserts `lead_scheduling_contexts`
+- `confirmBookingFromReply` — uses GPT-4o-mini to parse reply, matches to offered slot, creates `athletic_bookings` record
+- `handleSchedulingIntent` — called by Gmail reply recovery when `wants_schedule` detected
+- `runSchedulingTestFlow` — test harness, runs without side effects
+
+New DB table: `lead_scheduling_contexts` (created via `executeSql`, defined in `shared/schema.ts`).
+- status: `none | slots_offered | awaiting_confirmation | booked | expired | cancelled`
+- Slot hold expires 24h after offering
+
+Stage transitions added: `engaged → scheduling` (on intent), `scheduling → booked` (on confirm).
+
+Gmail hook: when `wants_schedule` fires in `runLeadReplyRecovery`, scheduling agent takes ownership if an intel profile is found by email. Falls through to generic draft if not found.
+
+Routes: `GET /api/org/scheduling-agent/contexts`, `GET /api/org/scheduling-agent/contexts/:submissionId`, `POST .../find-slots`, `POST .../offer-slots`, `POST .../confirm-booking`, `POST .../test-flow`.
