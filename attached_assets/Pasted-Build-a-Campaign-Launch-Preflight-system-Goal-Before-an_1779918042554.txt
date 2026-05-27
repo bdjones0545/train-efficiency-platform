@@ -1,0 +1,82 @@
+Build a Campaign Launch Preflight system.
+
+Goal:
+Before any campaign/landing page goes live, verify the full lead → agent → pipeline architecture is correctly wired.
+
+Requirements:
+
+1. Create campaign preflight service:
+server/services/campaign-preflight-service.ts
+
+Check:
+- org exists
+- campaign exists
+- landing page exists
+- athletic_program exists
+- program type = lead_capture
+- slug matches public form URL
+- submission endpoint returns 200 in dry-run mode
+- Gmail integration connected
+- Gmail draft action can be queued
+- lead intelligence pipeline active
+- recovery cron active
+- autonomy settings exist
+- scheduling availability exists if campaign requires scheduling
+- location exists if campaign uses location
+- no missing required form fields
+- no duplicate active program slug conflicts
+
+2. Add status result:
+healthy / warning / failed
+
+3. Add API routes:
+- GET /api/org/campaigns/:campaignId/preflight
+- POST /api/org/campaigns/:campaignId/preflight/run
+- POST /api/org/campaigns/:campaignId/preflight/fix
+
+4. Auto-fix safe issues:
+- create missing lead_capture program
+- repair slug mismatch
+- create default autonomy settings
+- create default follow-up schedule
+- link landing page to program
+- create missing campaign attribution metadata
+
+5. Do NOT auto-fix risky issues:
+- Gmail disconnected
+- no availability configured
+- missing location
+- duplicate slug conflict
+- invalid org ownership
+
+6. UI:
+Add “Launch Readiness” panel on campaign/landing page admin.
+
+Show:
+- green checks
+- yellow warnings
+- red blockers
+- Fix automatically button
+- Test Lead Submission button
+- Last preflight run timestamp
+
+7. Add campaign health badge:
+- Ready
+- Needs Attention
+- Blocked
+
+8. Before publishing or activating a campaign:
+- run preflight automatically
+- block launch if failed
+- allow launch with warnings only after confirmation
+
+9. Test mode:
+Submit a fake lead payload through the same public endpoint in dry-run mode and confirm:
+- submission route resolves
+- lead intelligence would run
+- Gmail draft would queue
+- pipeline stage would initialize
+- no real records are committed
+
+Expected result:
+Any future campaign — Summer Speed Sprint, Autumn Acceleration, team training, evaluations, etc. — must pass preflight before paid traffic is sent to it.

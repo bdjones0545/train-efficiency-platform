@@ -21,7 +21,8 @@ import {
   TrendingUp, Target, Lightbulb, Smartphone, Monitor, RefreshCw,
   X, Award, Shield, Flame, Dumbbell, BriefcaseBusiness, GitBranch,
   Workflow, Bell, Bot, FileCheck, DollarSign, ClipboardList,
-  Upload, Video, Film, ImagePlus, ChevronDown as ChevronDownIcon, Library, UserCircle2
+  Upload, Video, Film, ImagePlus, ChevronDown as ChevronDownIcon, Library, UserCircle2,
+  Rocket, FlaskConical, CheckCircle2, XCircle, AlertCircle, Clock, Wrench, PlayCircle
 } from "lucide-react";
 import { getAuthHeaders } from "@/lib/authToken";
 import { LeadCaptureLaserEffects, getDefaultLaserPreset } from "@/components/lead-capture-laser-effects";
@@ -29,6 +30,44 @@ import { LeadCaptureLaserEffects, getDefaultLaserPreset } from "@/components/lea
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type FunnelType = "athlete_application" | "team_training" | "employment_opportunity";
+
+type CheckStatus = "passed" | "warning" | "failed" | "skipped";
+type HealthBadge = "ready" | "needs_attention" | "blocked";
+
+interface PreflightCheck {
+  id: string;
+  label: string;
+  description: string;
+  status: CheckStatus;
+  detail?: string;
+  autoFixable: boolean;
+  fixLabel?: string;
+}
+
+interface PreflightResult {
+  programId: string;
+  orgId: string;
+  healthBadge: HealthBadge;
+  checks: PreflightCheck[];
+  passedCount: number;
+  warningCount: number;
+  failedCount: number;
+  canLaunch: boolean;
+  canLaunchWithWarnings: boolean;
+  ranAt: string;
+  durationMs: number;
+  dryRunResult?: {
+    routeResolves: boolean;
+    pipelineWouldRun: boolean;
+    gmailDraftWouldQueue: boolean;
+    pipelineStageWouldInit: boolean;
+    noRealRecordsCommitted: boolean;
+    simulatedScore?: number;
+    simulatedTemperature?: string;
+    simulatedDraftSubject?: string;
+    errors: string[];
+  };
+}
 
 interface Testimonial {
   id: string;
@@ -845,6 +884,9 @@ export default function LeadCaptureProgramEditorPage() {
   const [navOrder, setNavOrder] = useState(0);
   const [initialized, setInitialized] = useState(false);
 
+  // ── preflight state
+  const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
+
   // ── queries
   const { data: program } = useQuery<any>({
     queryKey: [`/api/athletic/programs/${programId}`],
@@ -869,6 +911,38 @@ export default function LeadCaptureProgramEditorPage() {
     queryKey: [`/api/lead-capture/programs/${programId}/funnel`],
     enabled: !!programId,
   });
+
+  const { data: lastPreflightData } = useQuery<{ last: { ranAt: string; healthBadge: HealthBadge; passedCount: number; warningCount: number; failedCount: number } | null }>({
+    queryKey: [`/api/lead-capture/programs/${programId}/preflight`],
+    enabled: !!programId,
+  });
+
+  // ── preflight mutations
+  const runPreflightMutation = useMutation({
+    mutationFn: ({ runDryRun }: { runDryRun: boolean }) =>
+      apiRequest("POST", `/api/lead-capture/programs/${programId}/preflight/run`, { runDryRun }),
+    onSuccess: (data: any) => {
+      setPreflightResult(data);
+      queryClient.invalidateQueries({ queryKey: [`/api/lead-capture/programs/${programId}/preflight`] });
+      toast({ title: runPreflightMutation.variables?.runDryRun ? "Dry-run complete" : "Preflight complete", description: `Health: ${data.healthBadge?.replace("_", " ")} — ${data.passedCount} passed, ${data.warningCount} warnings, ${data.failedCount} failed` });
+    },
+    onError: () => toast({ title: "Preflight failed", description: "Could not run preflight checks.", variant: "destructive" }),
+  });
+
+  const fixPreflightMutation = useMutation({
+    mutationFn: (checksToFix: string[]) =>
+      apiRequest("POST", `/api/lead-capture/programs/${programId}/preflight/fix`, { checksToFix }),
+    onSuccess: (data: any) => {
+      setPreflightResult(data.freshPreflight);
+      queryClient.invalidateQueries({ queryKey: [`/api/lead-capture/programs/${programId}/preflight`] });
+      const fixed = data.fixResult?.fixed ?? [];
+      toast({ title: "Auto-fix applied", description: fixed.length > 0 ? fixed.join(" · ") : "No changes were needed." });
+    },
+    onError: () => toast({ title: "Auto-fix failed", variant: "destructive" }),
+  });
+
+  const activeHealth: HealthBadge | null = preflightResult?.healthBadge ?? lastPreflightData?.last?.healthBadge ?? null;
+  const fixableChecks = (preflightResult?.checks ?? []).filter(c => c.autoFixable && (c.status === "failed" || c.status === "warning")).map(c => c.id);
 
   // ── load config into state when it arrives (only once)
   useEffect(() => {
@@ -1112,6 +1186,23 @@ export default function LeadCaptureProgramEditorPage() {
             </p>
           </div>
           <Badge className={`${ft.accentBg} ${ft.accent} border ${ft.accentBorder} text-xs`}>{ft.badgeLabel}</Badge>
+          {activeHealth && (
+            <Badge
+              data-testid="badge-launch-health"
+              className={`text-xs border ${
+                activeHealth === "ready"
+                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                  : activeHealth === "needs_attention"
+                  ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                  : "bg-red-500/15 text-red-400 border-red-500/30"
+              }`}
+            >
+              {activeHealth === "ready" && <CheckCircle2 className="h-3 w-3 mr-1" />}
+              {activeHealth === "needs_attention" && <AlertCircle className="h-3 w-3 mr-1" />}
+              {activeHealth === "blocked" && <XCircle className="h-3 w-3 mr-1" />}
+              {activeHealth === "ready" ? "Ready to Launch" : activeHealth === "needs_attention" ? "Needs Attention" : "Blocked"}
+            </Badge>
+          )}
         </div>
 
         {/* ── Main tabs ── */}
@@ -1128,6 +1219,7 @@ export default function LeadCaptureProgramEditorPage() {
               { value: "branding", label: "Branding", icon: <Palette className="h-3.5 w-3.5" /> },
               { value: "analytics", label: "Analytics", icon: <BarChart2 className="h-3.5 w-3.5" /> },
               { value: "ai", label: "AI Tips", icon: <Lightbulb className="h-3.5 w-3.5" /> },
+              { value: "launch", label: "Launch Readiness", icon: <Shield className="h-3.5 w-3.5" /> },
             ].map(tab => (
               <TabsTrigger
                 key={tab.value}
@@ -2041,6 +2133,259 @@ export default function LeadCaptureProgramEditorPage() {
               </div>
             </Card>
           </TabsContent>
+
+          {/* ── LAUNCH READINESS TAB ── */}
+          <TabsContent value="launch" className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Shield className={`h-5 w-5 ${ft.accent}`} /> Campaign Launch Preflight
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Verify the full lead→agent→pipeline architecture is ready before going live.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={runPreflightMutation.isPending}
+                  onClick={() => runPreflightMutation.mutate({ runDryRun: true })}
+                  data-testid="button-preflight-dry-run"
+                >
+                  {runPreflightMutation.isPending && runPreflightMutation.variables?.runDryRun
+                    ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    : <FlaskConical className="h-3.5 w-3.5 mr-1.5" />}
+                  Test Lead Flow
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={runPreflightMutation.isPending}
+                  onClick={() => runPreflightMutation.mutate({ runDryRun: false })}
+                  className={funnelType === "team_training" ? "bg-cyan-600 hover:bg-cyan-700" : funnelType === "employment_opportunity" ? "bg-purple-600 hover:bg-purple-700" : "bg-orange-500 hover:bg-orange-600"}
+                  data-testid="button-preflight-run"
+                >
+                  {runPreflightMutation.isPending && !runPreflightMutation.variables?.runDryRun
+                    ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    : <PlayCircle className="h-3.5 w-3.5 mr-1.5" />}
+                  Run Preflight
+                </Button>
+              </div>
+            </div>
+
+            {/* Health summary banner */}
+            {preflightResult ? (
+              <Card className={`p-4 border ${
+                preflightResult.healthBadge === "ready"
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : preflightResult.healthBadge === "needs_attention"
+                  ? "border-amber-500/30 bg-amber-500/5"
+                  : "border-red-500/30 bg-red-500/5"
+              }`}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    {preflightResult.healthBadge === "ready" && <CheckCircle2 className="h-8 w-8 text-emerald-400 shrink-0" />}
+                    {preflightResult.healthBadge === "needs_attention" && <AlertCircle className="h-8 w-8 text-amber-400 shrink-0" />}
+                    {preflightResult.healthBadge === "blocked" && <XCircle className="h-8 w-8 text-red-400 shrink-0" />}
+                    <div>
+                      <p className={`font-bold text-base ${
+                        preflightResult.healthBadge === "ready" ? "text-emerald-400"
+                        : preflightResult.healthBadge === "needs_attention" ? "text-amber-400"
+                        : "text-red-400"
+                      }`}>
+                        {preflightResult.healthBadge === "ready" ? "All systems ready — safe to launch"
+                          : preflightResult.healthBadge === "needs_attention" ? "Launch possible — some warnings to review"
+                          : "Launch blocked — critical issues detected"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" />
+                        Ran {new Date(preflightResult.ranAt).toLocaleString()} · {preflightResult.durationMs}ms
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                      <CheckCircle2 className="h-4 w-4" /> {preflightResult.passedCount}
+                    </span>
+                    <span className="flex items-center gap-1 text-amber-400 font-semibold">
+                      <AlertCircle className="h-4 w-4" /> {preflightResult.warningCount}
+                    </span>
+                    <span className="flex items-center gap-1 text-red-400 font-semibold">
+                      <XCircle className="h-4 w-4" /> {preflightResult.failedCount}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            ) : lastPreflightData?.last ? (
+              <Card className="p-4 border border-border/50 bg-muted/20">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4 shrink-0" />
+                  <span>
+                    Last preflight: <strong>{lastPreflightData.last.healthBadge?.replace("_", " ")}</strong> ·
+                    {" "}{lastPreflightData.last.passedCount} passed, {lastPreflightData.last.warningCount} warnings, {lastPreflightData.last.failedCount} failed ·
+                    {" "}{new Date(lastPreflightData.last.ranAt).toLocaleString()}
+                  </span>
+                  <Button size="sm" variant="ghost" className="ml-auto text-xs h-7 px-2" onClick={() => runPreflightMutation.mutate({ runDryRun: false })} data-testid="button-rerun-preflight">
+                    Re-run
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              <Card className="p-6 border border-dashed border-border/50 bg-muted/10">
+                <div className="flex flex-col items-center gap-3 text-center py-4">
+                  <div className={`p-3 rounded-full ${ft.accentBg} border ${ft.accentBorder}`}>
+                    <Rocket className={`h-6 w-6 ${ft.accent}`} />
+                  </div>
+                  <div>
+                    <p className="font-semibold">No preflight run yet</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Click "Run Preflight" to verify all 17 checks across your lead capture, pipeline, and agent configuration before launching.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Check grid */}
+            {preflightResult && preflightResult.checks.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Check Results</p>
+                  {fixableChecks.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={fixPreflightMutation.isPending}
+                      onClick={() => fixPreflightMutation.mutate(fixableChecks)}
+                      className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 text-xs h-7"
+                      data-testid="button-preflight-autofix"
+                    >
+                      {fixPreflightMutation.isPending
+                        ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        : <Wrench className="h-3 w-3 mr-1.5" />}
+                      Auto-Fix {fixableChecks.length} Issue{fixableChecks.length !== 1 ? "s" : ""}
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {preflightResult.checks.map(chk => (
+                    <div
+                      key={chk.id}
+                      data-testid={`preflight-check-${chk.id}`}
+                      className={`flex gap-3 p-4 rounded-xl border transition-all ${
+                        chk.status === "passed" ? "border-emerald-500/20 bg-emerald-500/5"
+                        : chk.status === "warning" ? "border-amber-500/25 bg-amber-500/5"
+                        : chk.status === "failed" ? "border-red-500/25 bg-red-500/5"
+                        : "border-border/40 bg-muted/10 opacity-60"
+                      }`}
+                    >
+                      <div className="shrink-0 mt-0.5">
+                        {chk.status === "passed" && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+                        {chk.status === "warning" && <AlertCircle className="h-4 w-4 text-amber-400" />}
+                        {chk.status === "failed" && <XCircle className="h-4 w-4 text-red-400" />}
+                        {chk.status === "skipped" && <Clock className="h-4 w-4 text-muted-foreground" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold">{chk.label}</p>
+                          {chk.autoFixable && (chk.status === "failed" || chk.status === "warning") && (
+                            <Badge className="text-[10px] h-4 px-1.5 bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              <Wrench className="h-2.5 w-2.5 mr-0.5" /> Auto-fixable
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{chk.description}</p>
+                        {chk.detail && (
+                          <p className={`text-xs mt-1.5 font-mono leading-relaxed ${
+                            chk.status === "failed" ? "text-red-300"
+                            : chk.status === "warning" ? "text-amber-300"
+                            : "text-emerald-300"
+                          }`}>{chk.detail}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Dry-run results */}
+            {preflightResult?.dryRunResult && (
+              <Card className="p-5 space-y-4 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <FlaskConical className={`h-4 w-4 ${ft.accent}`} />
+                  <p className="font-semibold text-sm">Dry-Run Simulation Results</p>
+                  <Badge className="text-[10px] bg-blue-500/15 text-blue-400 border border-blue-500/30 ml-auto">No real records written</Badge>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {[
+                    { label: "Route Resolves", ok: preflightResult.dryRunResult.routeResolves },
+                    { label: "Pipeline Would Run", ok: preflightResult.dryRunResult.pipelineWouldRun },
+                    { label: "Gmail Draft Would Queue", ok: preflightResult.dryRunResult.gmailDraftWouldQueue },
+                    { label: "Stage Would Init", ok: preflightResult.dryRunResult.pipelineStageWouldInit },
+                    { label: "No Real Records Committed", ok: preflightResult.dryRunResult.noRealRecordsCommitted },
+                  ].map(item => (
+                    <div key={item.label} className={`flex items-center gap-2 p-3 rounded-lg border text-sm ${
+                      item.ok ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-300" : "border-red-500/25 bg-red-500/8 text-red-300"
+                    }`}>
+                      {item.ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <XCircle className="h-3.5 w-3.5 shrink-0" />}
+                      <span className="text-xs font-medium">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {(preflightResult.dryRunResult.simulatedScore !== undefined || preflightResult.dryRunResult.simulatedDraftSubject) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+                    {preflightResult.dryRunResult.simulatedScore !== undefined && (
+                      <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Simulated Lead Score</p>
+                        <p className="text-xl font-bold">{preflightResult.dryRunResult.simulatedScore}</p>
+                      </div>
+                    )}
+                    {preflightResult.dryRunResult.simulatedTemperature && (
+                      <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Temperature</p>
+                        <p className="text-xl font-bold capitalize">{preflightResult.dryRunResult.simulatedTemperature}</p>
+                      </div>
+                    )}
+                    {preflightResult.dryRunResult.simulatedDraftSubject && (
+                      <div className="p-3 rounded-lg border border-border/50 bg-muted/20 space-y-1 sm:col-span-1">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Draft Email Subject</p>
+                        <p className="text-xs font-medium leading-snug">{preflightResult.dryRunResult.simulatedDraftSubject}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {preflightResult.dryRunResult.errors.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-red-400 uppercase tracking-wide">Simulation Errors</p>
+                    {preflightResult.dryRunResult.errors.map((err, i) => (
+                      <div key={i} className="flex gap-2 p-2.5 rounded-lg border border-red-500/25 bg-red-500/8">
+                        <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0 mt-0.5" />
+                        <p className="text-xs text-red-300 font-mono">{err}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* About panel */}
+            <Card className="p-4 border border-border/40 bg-muted/10">
+              <div className="flex gap-3">
+                <Shield className={`h-4 w-4 ${ft.accent} shrink-0 mt-0.5`} />
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">What Preflight Checks</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    17 checks spanning: lead capture route health, form fields, pipeline configuration, LIP integration,
+                    Gmail agent setup, AI provider connectivity, email DNS/SPF, Stripe payment links, autonomy policy,
+                    duplicate suppression, and a full end-to-end dry-run simulation. No real records are created during dry-run mode.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
+
         </Tabs>
       </div>
     </div>

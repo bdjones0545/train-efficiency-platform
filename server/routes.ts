@@ -15396,6 +15396,62 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Campaign Preflight Routes ────────────────────────────────────────────
+
+  // GET: fetch last preflight result for a program
+  app.get("/api/lead-capture/programs/:programId/preflight", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { getLastPreflightRun } = await import("./services/campaign-preflight-service");
+      const last = await getLastPreflightRun(req.params.programId, profile.organizationId);
+      res.json({ last });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch preflight", error: e.message });
+    }
+  });
+
+  // POST: run full preflight check
+  app.post("/api/lead-capture/programs/:programId/preflight/run", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { runCampaignPreflight } = await import("./services/campaign-preflight-service");
+      const result = await runCampaignPreflight(
+        req.params.programId,
+        profile.organizationId,
+        { runDryRun: req.body?.runDryRun === true },
+      );
+      res.json(result);
+    } catch (e: any) {
+      console.error("[Preflight] Run error:", e.message);
+      res.status(500).json({ message: "Preflight failed", error: e.message });
+    }
+  });
+
+  // POST: auto-fix safe issues
+  app.post("/api/lead-capture/programs/:programId/preflight/fix", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { checksToFix } = req.body;
+      if (!Array.isArray(checksToFix) || checksToFix.length === 0) {
+        return res.status(400).json({ message: "checksToFix must be a non-empty array of check IDs" });
+      }
+      const { autoFixSafeIssues, runCampaignPreflight } = await import("./services/campaign-preflight-service");
+      const fixResult = await autoFixSafeIssues(req.params.programId, profile.organizationId, checksToFix);
+      // Re-run preflight after fixes
+      const freshResult = await runCampaignPreflight(req.params.programId, profile.organizationId, {});
+      res.json({ fixResult, freshPreflight: freshResult });
+    } catch (e: any) {
+      console.error("[Preflight] Fix error:", e.message);
+      res.status(500).json({ message: "Auto-fix failed", error: e.message });
+    }
+  });
+
   // Admin: Recover a submission through the full intelligent intake pipeline (for manually inserted or missed leads)
   app.post("/api/lead-capture/submissions/:id/recover-pipeline", async (req: any, res) => {
     try {
