@@ -1,0 +1,275 @@
+Build the Intelligent Lead Intake → Deal Pipeline Automation Layer for TrainEfficiency.
+
+Goal:
+When a lead submits a landing page/application form inside TrainEfficiency, the system should automatically create a fully enriched lead + deal + AI context profile so the Gmail agent can immediately generate intelligent, personalized outreach without asking redundant questions.
+
+Core Principle:
+The landing page submission itself becomes structured AI context memory.
+
+Requirements:
+
+1. Lead Intake Intelligence Pipeline
+
+On every landing page/application submission:
+
+Automatically:
+- create/update lead
+- create/update deal
+- attach intake metadata
+- attach campaign attribution
+- generate AI context summary
+- trigger initial workflow state
+
+Do NOT require manual data entry after form submission.
+
+2. Create new service:
+server/services/intelligent-lead-intake-service.ts
+
+Responsibilities:
+- normalize intake data
+- enrich lead profile
+- score lead quality
+- classify intent
+- generate AI conversation context
+- create/update deal pipeline records
+- queue Gmail workflow actions
+
+3. Structured Intake Context
+
+Create a normalized intake profile object:
+
+{
+  athleteName,
+  parentName,
+  email,
+  phone,
+  age,
+  grade,
+  sport,
+  position,
+  school,
+  goals,
+  commitmentLevel,
+  injuryHistory,
+  availability,
+  experienceLevel,
+  campaignSource,
+  landingPageId,
+  programId,
+  submittedAt,
+  aiSummary,
+  leadScore,
+  urgency,
+  tags
+}
+
+This object should persist on the lead/deal record and be accessible by agents/tools.
+
+4. AI Intake Summary Generator
+
+Use OpenAI to generate a concise internal AI summary:
+
+Example:
+"College freshman 400m/200m/800m athlete exploring speed training to improve explosiveness and sprint performance. Moderate purchase intent. Likely needs educational/value-first follow-up."
+
+Store this summary on the lead/deal.
+
+5. Lead Scoring Engine
+
+Build heuristic + AI-assisted scoring.
+
+Factors:
+- commitment level
+- age
+- athlete level
+- sport specificity
+- response quality
+- urgency
+- local proximity
+- scheduling readiness
+- parent involvement
+
+Return:
+- leadScore (0–100)
+- temperature:
+  hot
+  warm
+  cold
+
+6. Deal Pipeline Automation
+
+Automatically create or update deals.
+
+Pipeline stages:
+- new_lead
+- engaged
+- scheduling
+- booked
+- converted
+- stalled
+- lost
+
+Initial submission:
+→ create deal in new_lead
+
+If Gmail reply detected:
+→ engaged
+
+If scheduling intent detected:
+→ scheduling
+
+If session booked:
+→ booked
+
+If payment/package purchased:
+→ converted
+
+7. Gmail Agent Context Integration
+
+When generating Gmail drafts/replies, inject:
+- intake profile
+- AI summary
+- campaign source
+- deal stage
+- previous conversation history
+
+The Gmail agent should NEVER ask questions already answered in the intake form.
+
+8. Initial Outreach Draft Generator
+
+Immediately after lead creation:
+
+Generate a personalized draft email.
+
+Example behavior:
+- reference sport
+- reference goals
+- reference school/level
+- acknowledge commitment level
+- tailor tone to athlete/parent intent
+
+DO NOT send automatically yet.
+Queue as:
+- low-risk draft
+- awaiting approval
+
+9. Intake → Gmail Workflow
+
+Submission flow:
+
+Landing page submit
+→ intelligent intake processing
+→ lead/deal creation
+→ AI summary generation
+→ Gmail draft creation
+→ action queue entry
+→ dashboard notification
+
+10. Database Additions
+
+If needed, create:
+lead_intelligence_profiles
+
+Fields:
+- id
+- orgId
+- leadId
+- dealId
+- aiSummary
+- normalizedProfileJson
+- leadScore
+- temperature
+- urgency
+- tags
+- campaignSource
+- createdAt
+- updatedAt
+
+11. Pipeline Intelligence Dashboard Enhancements
+
+On Deal Pipeline cards show:
+- lead temperature
+- AI summary preview
+- source campaign
+- last interaction
+- suggested next action
+- response status
+- AI confidence
+
+12. Suggested Next Action Engine
+
+Generate:
+- call now
+- send educational follow-up
+- schedule consultation
+- send urgency reminder
+- wait 24h
+- re-engage in 7d
+- mark low priority
+
+13. Recovery Workflows
+
+If:
+- no reply after 24h
+→ queue follow-up draft
+
+No reply after 72h
+→ second follow-up draft
+
+No reply after 7d
+→ recovery/re-engagement draft
+
+Respect unsubscribe/not interested status.
+
+14. Agent Workflow Logging
+
+Log:
+- intake processing
+- scoring
+- deal creation
+- Gmail draft generation
+- stage transitions
+- follow-up automation decisions
+
+15. UI
+
+Add:
+- AI Summary card on lead/deal detail
+- Lead Temperature badge
+- Suggested Next Action section
+- Intake Intelligence section
+- Campaign Attribution section
+
+16. Safety
+
+Default to:
+- drafts only
+- approval required for sends
+- no autonomous outbound messaging yet
+
+17. Future-Proofing
+
+Architect this so later phases can support:
+- SMS agent
+- conversational scheduling
+- Google Calendar coordination
+- Meta attribution feedback loops
+- autonomous low-risk follow-up
+- voice agents
+
+18. Testing
+
+Add test intake payloads and logs so the full pipeline can be simulated without real leads.
+
+Expected Result:
+
+A lead submits a landing page form and TrainEfficiency automatically:
+- creates the lead
+- creates the deal
+- scores the lead
+- summarizes the athlete context
+- generates intelligent outreach
+- queues follow-up actions
+- tracks the pipeline state
+
+with minimal manual work from the coach.
