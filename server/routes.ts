@@ -18071,5 +18071,176 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // AUTONOMY POLICY ENGINE ROUTES
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /api/admin/autonomy/settings — get or create org automation settings
+  app.get("/api/admin/autonomy/settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { getOrCreateOrgAutomationSettings } = await import("./services/autonomy-policy-engine");
+      const settings = await getOrCreateOrgAutomationSettings(profile.organizationId);
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH /api/admin/autonomy/settings — update org automation settings
+  app.patch("/api/admin/autonomy/settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const { db } = await import("./db");
+      const { orgAutomationSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const allowedFields = [
+        "autoSendFirstResponse", "autoSendLowRiskFollowUps", "autoSendBookingConfirmation",
+        "autoOfferSchedulingSlots", "autoBookConfirmedSlots",
+        "minAutoSendConfidence", "minAutoBookingConfidence",
+        "dailyEmailCap", "dailyBookingCap",
+        "allowedSendWindowStart", "allowedSendWindowEnd",
+        "requireApprovalForFirstContact", "requireApprovalForNewRecipients",
+        "notifyCoachOnAutoAction",
+      ];
+
+      const updates: Record<string, any> = { updatedAt: new Date() };
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) updates[field] = req.body[field];
+      }
+
+      const [updated] = await db
+        .update(orgAutomationSettings)
+        .set(updates)
+        .where(eq(orgAutomationSettings.orgId, orgId))
+        .returning();
+
+      if (!updated) {
+        // Create with updates applied
+        const { getOrCreateOrgAutomationSettings } = await import("./services/autonomy-policy-engine");
+        const created = await getOrCreateOrgAutomationSettings(orgId);
+        const [final] = await db
+          .update(orgAutomationSettings)
+          .set(updates)
+          .where(eq(orgAutomationSettings.orgId, orgId))
+          .returning();
+        return res.json(final || created);
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/autonomy/decisions — recent autonomy decision log
+  app.get("/api/admin/autonomy/decisions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const limit = Math.min(parseInt(String(req.query.limit ?? "100")), 500);
+      const { getRecentDecisions } = await import("./services/autonomy-policy-engine");
+      const decisions = await getRecentDecisions(profile.organizationId, limit);
+      res.json(decisions);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/autonomy/decisions/:actionId — decisions for a specific action
+  app.get("/api/admin/autonomy/decisions/:actionId", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    try {
+      const { getDecisionsForAction } = await import("./services/autonomy-policy-engine");
+      const decisions = await getDecisionsForAction(req.params.actionId);
+      res.json(decisions);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/autonomy/evaluate — on-demand policy evaluation (for testing)
+  app.post("/api/admin/autonomy/evaluate", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { evaluatePolicy } = await import("./services/autonomy-policy-engine");
+      const result = await evaluatePolicy({ ...req.body, orgId: profile.organizationId });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/autonomy/executor/run — manually trigger an executor cycle
+  app.post("/api/admin/autonomy/executor/run", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const { runActionExecutorCycle } = await import("./services/agent-action-executor");
+      const stats = await runActionExecutorCycle();
+      res.json({ success: true, stats });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/autonomy/stats — summary stats for the UI dashboard
+  app.get("/api/admin/autonomy/stats", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+
+      const { db } = await import("./db");
+      const { agentAutonomyDecisions, gmailAgentActions } = await import("@shared/schema");
+      const { eq, and, gte, sql } = await import("drizzle-orm");
+
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const [todayStats] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          autoExecuted: sql<number>`count(*) filter (where ${agentAutonomyDecisions.decision} = 'auto_execute')::int`,
+          approvalRequired: sql<number>`count(*) filter (where ${agentAutonomyDecisions.decision} = 'approval_required')::int`,
+          blocked: sql<number>`count(*) filter (where ${agentAutonomyDecisions.decision} = 'blocked')::int`,
+        })
+        .from(agentAutonomyDecisions)
+        .where(and(eq(agentAutonomyDecisions.orgId, orgId), gte(agentAutonomyDecisions.createdAt, startOfDay)));
+
+      const [weekStats] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          autoExecuted: sql<number>`count(*) filter (where ${agentAutonomyDecisions.decision} = 'auto_execute')::int`,
+          approvalRequired: sql<number>`count(*) filter (where ${agentAutonomyDecisions.decision} = 'approval_required')::int`,
+          blocked: sql<number>`count(*) filter (where ${agentAutonomyDecisions.decision} = 'blocked')::int`,
+        })
+        .from(agentAutonomyDecisions)
+        .where(and(eq(agentAutonomyDecisions.orgId, orgId), gte(agentAutonomyDecisions.createdAt, startOfWeek)));
+
+      const [pendingApproval] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(gmailAgentActions)
+        .where(and(eq(gmailAgentActions.orgId, orgId), eq(gmailAgentActions.status as any, "awaiting_approval")));
+
+      res.json({
+        today: todayStats,
+        week: weekStats,
+        pendingApproval: pendingApproval?.count ?? 0,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

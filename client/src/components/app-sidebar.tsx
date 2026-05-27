@@ -846,6 +846,13 @@ export function AppSidebar() {
                 testId: "nav-agent-tools",
               },
               {
+                title: "Autonomy Controls",
+                simplifiedTitle: "Autonomy",
+                url: "/admin/autonomy-controls",
+                icon: Sliders,
+                testId: "nav-autonomy-controls",
+              },
+              {
                 title: "Gmail Conversations",
                 simplifiedTitle: "Gmail",
                 url: "/admin/gmail-conversations",

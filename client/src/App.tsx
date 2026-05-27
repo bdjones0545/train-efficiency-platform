@@ -85,6 +85,7 @@ import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { CommandPalette } from "@/components/command-palette";
 import { Search } from "lucide-react";
 import AttentionInboxPage from "@/pages/attention-inbox";
+import AdminAutonomyControlsPage from "@/pages/admin-autonomy-controls";
 import { AttentionBell } from "@/components/attention-bell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -397,6 +398,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/outreach-queue" component={AdminOutreachQueuePage} />
                   <Route path="/admin/workflow-orchestrator" component={AdminWorkflowOrchestratorPage} />
                   <Route path="/admin/attention" component={AttentionInboxPage} />
+                  <Route path="/admin/autonomy-controls" component={AdminAutonomyControlsPage} />
                   <Route path="/admin/ai-governance" component={AdminAiGovernancePage} />
                   <Route path="/admin/ai-workforce" component={AdminAiWorkforcePage} />
                   <Route path="/admin/ai-employee/:agentId" component={AdminAiEmployeeProfilePage} />

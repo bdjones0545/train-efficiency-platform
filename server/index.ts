@@ -474,6 +474,12 @@ app.use((req, res, next) => {
   const { startLeadRecoveryCron } = await import("./services/lead-recovery-cron");
   startLeadRecoveryCron(15 * 60 * 1000);
 
+  // ─── Autonomy Policy Engine — Action Executor ─────────────────────────────
+  // Evaluates proposed Gmail actions against org policy every 5 minutes.
+  // Auto-executes only if all policy checks pass; otherwise marks awaiting_approval.
+  const { startActionExecutor } = await import("./services/agent-action-executor");
+  startActionExecutor();
+
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
 

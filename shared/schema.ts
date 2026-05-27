@@ -3671,3 +3671,72 @@ export const leadSchedulingContexts = pgTable("lead_scheduling_contexts", {
 export const insertLeadSchedulingContextSchema = createInsertSchema(leadSchedulingContexts).omit({ id: true, createdAt: true, updatedAt: true });
 export type LeadSchedulingContext = typeof leadSchedulingContexts.$inferSelect;
 export type InsertLeadSchedulingContext = z.infer<typeof insertLeadSchedulingContextSchema>;
+
+// ─── Org Automation Settings ──────────────────────────────────────────────────
+// Granular per-org settings for the Autonomy Policy Engine.
+// All dangerous settings default to false (safe by default).
+
+export const orgAutomationSettings = pgTable("org_automation_settings", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull().unique(),
+
+  // Email automation
+  autoSendFirstResponse: boolean("auto_send_first_response").notNull().default(false),
+  autoSendLowRiskFollowUps: boolean("auto_send_low_risk_follow_ups").notNull().default(false),
+  autoSendBookingConfirmation: boolean("auto_send_booking_confirmation").notNull().default(false),
+
+  // Scheduling automation
+  autoOfferSchedulingSlots: boolean("auto_offer_scheduling_slots").notNull().default(false),
+  autoBookConfirmedSlots: boolean("auto_book_confirmed_slots").notNull().default(false),
+
+  // Confidence thresholds
+  minAutoSendConfidence: doublePrecision("min_auto_send_confidence").notNull().default(0.85),
+  minAutoBookingConfidence: doublePrecision("min_auto_booking_confidence").notNull().default(0.90),
+
+  // Daily rate caps
+  dailyEmailCap: integer("daily_email_cap").notNull().default(20),
+  dailyBookingCap: integer("daily_booking_cap").notNull().default(10),
+
+  // Allowed send window (HH:MM 24h format)
+  allowedSendWindowStart: text("allowed_send_window_start").notNull().default("08:00"),
+  allowedSendWindowEnd: text("allowed_send_window_end").notNull().default("20:00"),
+
+  // Approval gates
+  requireApprovalForFirstContact: boolean("require_approval_for_first_contact").notNull().default(true),
+  requireApprovalForNewRecipients: boolean("require_approval_for_new_recipients").notNull().default(true),
+  notifyCoachOnAutoAction: boolean("notify_coach_on_auto_action").notNull().default(true),
+
+  policyVersion: text("policy_version").notNull().default("1.0.0"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrgAutomationSettingsSchema = createInsertSchema(orgAutomationSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrgAutomationSettings = typeof orgAutomationSettings.$inferSelect;
+export type InsertOrgAutomationSettings = z.infer<typeof insertOrgAutomationSettingsSchema>;
+
+// ─── Agent Autonomy Decisions ─────────────────────────────────────────────────
+// Full audit log of every policy evaluation — who asked, what was decided, why.
+
+export const agentAutonomyDecisions = pgTable("agent_autonomy_decisions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  actionId: text("action_id"),
+  leadId: text("lead_id"),
+  dealId: text("deal_id"),
+  actionType: text("action_type").notNull(),
+  decision: text("decision").notNull(),  // auto_execute | approval_required | blocked
+  reasons: jsonb("reasons").notNull().default(sql`'[]'::jsonb`),
+  confidence: doublePrecision("confidence").notNull().default(0),
+  riskLevel: text("risk_level").notNull().default("medium"),
+  policyVersion: text("policy_version").notNull().default("1.0.0"),
+  settingsSnapshot: jsonb("settings_snapshot"),
+  createdAt: timestamp("created_at").defaultNow(),
+  executedAt: timestamp("executed_at"),
+  result: text("result"),
+  errorMessage: text("error_message"),
+});
+
+export const insertAgentAutonomyDecisionSchema = createInsertSchema(agentAutonomyDecisions).omit({ id: true, createdAt: true });
+export type AgentAutonomyDecision = typeof agentAutonomyDecisions.$inferSelect;
+export type InsertAgentAutonomyDecision = z.infer<typeof insertAgentAutonomyDecisionSchema>;

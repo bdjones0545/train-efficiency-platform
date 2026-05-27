@@ -1,0 +1,282 @@
+Build the TrainEfficiency Autonomy Policy Engine.
+
+Goal:
+Allow the agent to act on its own only when org-approved automation settings, confidence thresholds, risk rules, safety checks, and audit logging all pass.
+
+Core principle:
+Agent decides → policy engine checks → auto-execute only if allowed → log everything → notify coach.
+
+1. Create Autonomy Policy Service
+
+Create:
+server/services/autonomy-policy-engine.ts
+
+Responsibilities:
+- evaluate whether an agent action can auto-execute
+- enforce org automation settings
+- enforce confidence thresholds
+- enforce risk levels
+- enforce suppression/unsubscribe rules
+- enforce daily caps
+- enforce duplicate prevention
+- log every decision
+- return allow/deny/approval_required with reasons
+
+Decision result format:
+{
+  decision: "auto_execute" | "approval_required" | "blocked",
+  reasons: string[],
+  confidence: number,
+  riskLevel: "low" | "medium" | "high",
+  policyVersion: string,
+  evaluatedAt: Date
+}
+
+2. Add Org Automation Settings
+
+Create or extend org settings table with:
+
+automationSettings:
+{
+  autoSendFirstResponse: false,
+  autoSendLowRiskFollowUps: false,
+  autoOfferSchedulingSlots: false,
+  autoBookConfirmedSlots: false,
+  autoSendBookingConfirmation: false,
+  dailyEmailCap: 20,
+  dailyBookingCap: 10,
+  minAutoSendConfidence: 0.85,
+  minAutoBookingConfidence: 0.90,
+  allowedAutoSendWindowStart: "08:00",
+  allowedAutoSendWindowEnd: "20:00",
+  requireApprovalForFirstContact: true,
+  requireApprovalForNewRecipients: true,
+  notifyCoachOnAutoAction: true
+}
+
+Default everything risky to false.
+
+3. Add Autonomy Decision Log
+
+Create table:
+agent_autonomy_decisions
+
+Fields:
+- id
+- orgId
+- actionId nullable
+- leadId nullable
+- dealId nullable
+- actionType
+- decision
+- reasons jsonb
+- confidence
+- riskLevel
+- policyVersion
+- settingsSnapshot jsonb
+- createdAt
+- executedAt nullable
+- result nullable
+- errorMessage nullable
+
+4. Integrate With Gmail Agent Actions
+
+Before any Gmail action executes, call autonomy policy engine.
+
+Rules:
+
+Auto-send first response only if:
+- autoSendFirstResponse = true
+- lead came from approved internal landing page
+- recipient exists in org lead/client/contact system
+- message riskLevel = low
+- confidence >= minAutoSendConfidence
+- not suppressed
+- not unsubscribed
+- under dailyEmailCap
+- within allowed send window
+- no sensitive/billing/legal/medical language detected
+
+Auto-send follow-up only if:
+- autoSendLowRiskFollowUps = true
+- existing lead/deal exists
+- prior outreach exists
+- follow-up stage is valid
+- message riskLevel = low
+- confidence >= threshold
+- not suppressed/unsubscribed
+- under dailyEmailCap
+
+If policy denies:
+- keep as proposed/awaiting approval
+- show reason in UI
+
+If policy blocks:
+- cancel/dismiss action
+- log reason
+
+5. Integrate With Scheduling Agent
+
+Auto-offer slots only if:
+- autoOfferSchedulingSlots = true
+- intent = wants_schedule or asks_availability
+- lead exists
+- slots found
+- confidence >= minAutoSendConfidence
+- no suppressed/unsubscribed flag
+- draft only or auto-send depending on setting
+
+Auto-book confirmed slots only if:
+- autoBookConfirmedSlots = true
+- lead confirms one previously offered slot
+- parser confidence >= minAutoBookingConfidence
+- slot still available
+- no overlap conflict
+- coach/location match
+- not suppressed/unsubscribed
+- under dailyBookingCap
+
+If allowed:
+- create booking automatically
+- queue or send confirmation based on autoSendBookingConfirmation
+
+If not allowed:
+- queue approval action with clear reason
+
+6. Add Action Executor
+
+Create:
+server/services/agent-action-executor.ts
+
+Responsibilities:
+- poll proposed actions
+- evaluate policy
+- execute auto-approved actions
+- leave approval-required actions untouched
+- update action status:
+  proposed
+  awaiting_approval
+  auto_executed
+  blocked
+  failed
+  cancelled
+- write autonomy decision log
+- notify coach if configured
+
+Run every 5 minutes.
+
+7. Add UI: Automation Control Center
+
+Add page or section:
+AI Operations → Autonomy Controls
+
+Show settings:
+- Auto-send first responses
+- Auto-send follow-ups
+- Auto-offer scheduling slots
+- Auto-book confirmed slots
+- Auto-send booking confirmations
+- confidence thresholds
+- daily caps
+- send window
+
+Add warning labels:
+- Safe
+- Moderate autonomy
+- High autonomy
+
+Add confirmation modal before enabling:
+- autoSendFirstResponse
+- autoBookConfirmedSlots
+- autoSendBookingConfirmation
+
+8. Add UI Visibility on Actions
+
+In Gmail Conversations / Lead Pipeline:
+
+For every action show:
+- autonomy decision
+- reason
+- confidence
+- policy version
+- whether it was auto-executed or requires approval
+- blocked reason if blocked
+
+Add filters:
+- Auto-executed
+- Requires approval
+- Blocked
+- Failed
+
+9. Start With Safe Defaults
+
+Initial recommended default:
+{
+  autoSendFirstResponse: false,
+  autoSendLowRiskFollowUps: true,
+  autoOfferSchedulingSlots: false,
+  autoBookConfirmedSlots: false,
+  autoSendBookingConfirmation: false
+}
+
+This allows the system to autonomously queue and possibly send low-risk follow-ups only if explicitly enabled.
+
+10. Safety Rules
+
+Never auto-execute if:
+- suppressed or unsubscribed
+- recipient is outside lead/client/contact system
+- message contains billing/legal/medical-sensitive language
+- confidence below threshold
+- daily cap exceeded
+- outside send window
+- duplicate action exists
+- slot conflict exists
+- org integration is disconnected
+- Gmail token refresh fails
+
+11. Testing
+
+Create full autonomy E2E test:
+
+Scenario A — Low-risk follow-up:
+- setting enabled
+- confidence 0.92
+- lead not suppressed
+- under cap
+Expected: auto_execute
+
+Scenario B — First response:
+- setting disabled
+Expected: approval_required
+
+Scenario C — Suppressed lead:
+Expected: blocked
+
+Scenario D — Booking confirmation:
+- setting enabled
+- parser confidence 0.96
+- slot available
+Expected: auto-book
+
+Scenario E — Slot conflict:
+Expected: blocked
+
+Scenario F — Daily cap exceeded:
+Expected: approval_required or blocked depending on policy
+
+12. Final Diagnostic Report
+
+After implementation, report:
+- policy decisions
+- actions auto-executed
+- actions requiring approval
+- blocked actions
+- cap enforcement
+- suppression enforcement
+- booking safety
+- UI hydration
+- recommended default settings
+
+Expected Result:
+The agent can now act on its own only inside a controlled policy framework. The coach can choose how autonomous the system becomes without losing safety, auditability, or control.
