@@ -13978,7 +13978,39 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const org = await storage.getOrganizationBySlug(req.params.orgSlug);
       if (!org) return res.status(404).json({ message: "Organization not found" });
       const program = await storage.getAthleticProgramBySlug(org.id, req.params.programSlug);
-      if (!program || program.type !== "lead_capture") return res.status(404).json({ message: "Program not found" });
+      if (!program || program.type !== "lead_capture") {
+        // Guardrail: never silently drop a lead — log, persist admin alert, return clear error
+        const guardCtx = {
+          orgSlug: req.params.orgSlug,
+          programSlug: req.params.programSlug,
+          orgId: org?.id ?? null,
+          programFound: !!program,
+          programType: (program as any)?.type ?? null,
+          submittedEmail: req.body?.email ?? null,
+          submittedAthlete: req.body?.athleteName ?? null,
+          timestamp: new Date().toISOString(),
+        };
+        console.error("[LeadCapture][GUARDRAIL] Submission dropped — program missing or wrong type", JSON.stringify(guardCtx));
+        // Persist to organization_event_log so the admin dashboard can surface this
+        try {
+          const { db: gdb } = await import("./db");
+          const { organizationEventLog } = await import("@shared/schema");
+          await gdb.insert(organizationEventLog).values({
+            orgId: org.id,
+            eventType: "lead_capture_program_missing",
+            payload: guardCtx as any,
+            createdAt: new Date(),
+          });
+        } catch (_guardLogErr) {
+          console.warn("[LeadCapture][GUARDRAIL] Could not persist event log:", (_guardLogErr as any)?.message);
+        }
+        return res.status(404).json({
+          message: "Program not found or not configured for lead capture",
+          orgSlug: req.params.orgSlug,
+          programSlug: req.params.programSlug,
+          hint: "Ensure an athletic_program row with type='lead_capture' exists for this slug. Contact your administrator.",
+        });
+      }
 
       const { athleteName, parentName, email, phone, age, grade, sport, position, school, goals, experienceLevel, currentTrainingStatus, commitmentLevel, notes, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, abandonedId } = req.body;
       if (!athleteName || !email) return res.status(400).json({ message: "athleteName and email are required" });
@@ -15361,6 +15393,74 @@ Respond with this exact JSON structure:
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch lead capture summary" });
+    }
+  });
+
+  // Admin: Recover a submission through the full intelligent intake pipeline (for manually inserted or missed leads)
+  app.post("/api/lead-capture/submissions/:id/recover-pipeline", async (req: any, res) => {
+    try {
+      const { db: rdb } = await import("./db");
+      const { leadCaptureSubmissions, athleticPrograms } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [submission] = await rdb.select().from(leadCaptureSubmissions)
+        .where(eq(leadCaptureSubmissions.id, req.params.id)).limit(1);
+      if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+      const [program] = await rdb.select().from(athleticPrograms)
+        .where(eq(athleticPrograms.id, submission.programId)).limit(1);
+
+      const org = await storage.getOrganizationById(submission.orgId);
+      if (!org) return res.status(404).json({ message: "Org not found" });
+
+      const { runIntelligentLeadIntakePipeline } = await import("./services/intelligent-lead-intake-service");
+      const result = await runIntelligentLeadIntakePipeline({
+        submissionId: submission.id,
+        orgId: submission.orgId,
+        programId: submission.programId,
+        programName: program?.name || "Summer Speed Sprint",
+        orgName: org.name,
+        athleteName: submission.athleteName,
+        parentName: submission.parentName || null,
+        email: submission.email,
+        phone: submission.phone || null,
+        age: submission.age || null,
+        grade: submission.grade || null,
+        sport: submission.sport || null,
+        position: submission.position || null,
+        school: submission.school || null,
+        goals: Array.isArray(submission.goals) ? submission.goals : [],
+        experienceLevel: submission.experienceLevel || null,
+        currentTrainingStatus: submission.currentTrainingStatus || null,
+        commitmentLevel: submission.commitmentLevel || null,
+        notes: submission.notes || null,
+        utmSource: submission.utmSource || null,
+        utmMedium: submission.utmMedium || null,
+        utmCampaign: submission.utmCampaign || "Summer Speed Sprint",
+        utmContent: submission.utmContent || null,
+        utmTerm: submission.utmTerm || null,
+        landingPageId: null,
+        submittedAt: submission.createdAt ? new Date(submission.createdAt) : new Date(),
+      });
+
+      res.json({
+        success: true,
+        submissionId: submission.id,
+        profileId: result.profileId,
+        leadScore: result.scoring.leadScore,
+        temperature: result.scoring.temperature,
+        urgency: result.scoring.urgency,
+        suggestedNextAction: result.suggestedNextAction,
+        suggestedNextActionReason: result.suggestedNextActionReason,
+        aiSummaryPreview: result.aiSummary?.slice(0, 200),
+        draftSubject: result.draftSubject,
+        gmailDraftActionId: result.gmailDraftActionId,
+        processingDurationMs: result.processingDurationMs,
+        processingLog: result.processingLog,
+      });
+    } catch (error: any) {
+      console.error("[RecoverPipeline] Error:", error?.message);
+      res.status(500).json({ message: "Pipeline recovery failed", error: error?.message });
     }
   });
 
