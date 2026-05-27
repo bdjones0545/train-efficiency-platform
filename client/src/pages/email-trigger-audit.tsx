@@ -28,15 +28,18 @@ import {
 } from "lucide-react";
 
 type TriggerAuditSummary = {
-  summary: {
-    totalEvaluated: number;
-    totalExecuted: number;
-    totalBlocked: number;
-    byTriggerType: Record<string, number>;
-    byActionType: Record<string, number>;
+  summary?: {
+    totalEvaluated?: number;
+    totalExecuted?: number;
+    totalTriggered?: number;
+    totalBlocked?: number;
+    totalFailed?: number;
+    successRate?: number;
+    byTriggerType?: Record<string, number>;
+    byActionType?: Record<string, number>;
   };
-  blockReasons: { reason: string; count: number }[];
-  timeline: {
+  blockReasons?: { reason: string; count: number }[];
+  timeline?: {
     timestamp: string;
     triggerType: string;
     actionType: string;
@@ -48,9 +51,9 @@ type TriggerAuditSummary = {
     missedOpportunity: boolean;
     collisionDetected: boolean;
   }[];
-  missedOpportunities: number;
-  collisions: number;
-  events: any[];
+  missedOpportunities?: number;
+  collisions?: number;
+  events?: any[];
 };
 
 const TRIGGER_TYPE_LABELS: Record<string, string> = {
@@ -250,20 +253,24 @@ export default function EmailTriggerAuditPage() {
     refetchInterval: 30_000,
   });
 
-  const execRate = data
-    ? data.summary.totalEvaluated > 0
-      ? Math.round((data.summary.totalExecuted / data.summary.totalEvaluated) * 100)
-      : 0
+  const totalEvaluated = data?.summary?.totalEvaluated ?? 0;
+  const totalExecuted = data?.summary?.totalExecuted ?? 0;
+  const totalBlocked = data?.summary?.totalBlocked ?? 0;
+  const byTriggerType = data?.summary?.byTriggerType ?? {};
+  const byActionType = data?.summary?.byActionType ?? {};
+
+  const execRate = totalEvaluated > 0
+    ? Math.round((totalExecuted / totalEvaluated) * 100)
     : 0;
 
-  const mostCommonTrigger = data
-    ? Object.entries(data.summary.byTriggerType).sort((a, b) => b[1] - a[1])[0]?.[0]
+  const mostCommonTrigger = Object.keys(byTriggerType).length > 0
+    ? Object.entries(byTriggerType).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
     : null;
 
-  const triggerTypeEntries = data ? Object.entries(data.summary.byTriggerType).sort((a, b) => b[1] - a[1]) : [];
+  const triggerTypeEntries = Object.entries(byTriggerType).sort((a, b) => b[1] - a[1]);
   const maxTriggerCount = triggerTypeEntries[0]?.[1] ?? 1;
 
-  const actionTypeEntries = data ? Object.entries(data.summary.byActionType).sort((a, b) => b[1] - a[1]) : [];
+  const actionTypeEntries = Object.entries(byActionType).sort((a, b) => b[1] - a[1]);
 
   if (prospectIdFilter) {
     return (
@@ -411,16 +418,16 @@ export default function EmailTriggerAuditPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <SummaryCard
             label="Emails Sent"
-            value={data?.summary.totalExecuted ?? 0}
+            value={totalExecuted}
             icon={Send}
-            sub={`of ${data?.summary.totalEvaluated ?? 0} evaluated`}
+            sub={`of ${totalEvaluated} evaluated`}
             colorClass="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
           />
           <SummaryCard
             label="Emails Blocked"
-            value={data?.summary.totalBlocked ?? 0}
+            value={totalBlocked}
             icon={XCircle}
-            sub={`${data?.summary.totalEvaluated ? Math.round((data.summary.totalBlocked / data.summary.totalEvaluated) * 100) : 0}% of evaluated`}
+            sub={`${totalEvaluated > 0 ? Math.round((totalBlocked / totalEvaluated) * 100) : 0}% of evaluated`}
             colorClass="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
           />
           <SummaryCard
@@ -434,29 +441,29 @@ export default function EmailTriggerAuditPage() {
             label="Top Trigger"
             value={mostCommonTrigger ? TRIGGER_TYPE_LABELS[mostCommonTrigger] ?? mostCommonTrigger : "—"}
             icon={Zap}
-            sub={mostCommonTrigger ? `${data?.summary.byTriggerType[mostCommonTrigger] ?? 0} events` : "no events yet"}
+            sub={mostCommonTrigger ? `${byTriggerType[mostCommonTrigger] ?? 0} events` : "no events yet"}
             colorClass="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
           />
         </div>
       )}
 
       {/* ── Alerts ──────────────────────────────────────────────────────────── */}
-      {data && (data.missedOpportunities > 0 || data.collisions > 0) && (
+      {((data?.missedOpportunities ?? 0) > 0 || (data?.collisions ?? 0) > 0) && (
         <div className="space-y-2">
-          {data.missedOpportunities > 0 && (
+          {(data?.missedOpportunities ?? 0) > 0 && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-700" data-testid="alert-missed-opportunities">
               <AlertTriangle className="h-4 w-4 text-yellow-600 shrink-0" />
               <span className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
-                {data.missedOpportunities} missed revenue opportunit{data.missedOpportunities === 1 ? "y" : "ies"} detected
+                {data!.missedOpportunities} missed revenue opportunit{data!.missedOpportunities === 1 ? "y" : "ies"} detected
               </span>
               <span className="text-xs text-yellow-700 dark:text-yellow-400">— follow-ups were due but not sent</span>
             </div>
           )}
-          {data.collisions > 0 && (
+          {(data?.collisions ?? 0) > 0 && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-50 border border-purple-200 dark:bg-purple-900/20 dark:border-purple-700" data-testid="alert-collisions">
               <AlertOctagon className="h-4 w-4 text-purple-600 shrink-0" />
               <span className="text-sm font-medium text-purple-800 dark:text-purple-300">
-                {data.collisions} trigger collision{data.collisions === 1 ? "" : "s"} detected
+                {data!.collisions} trigger collision{data!.collisions === 1 ? "" : "s"} detected
               </span>
               <span className="text-xs text-purple-700 dark:text-purple-400">— same prospect triggered by multiple sources</span>
             </div>
@@ -503,14 +510,14 @@ export default function EmailTriggerAuditPage() {
           </h2>
           {isLoading ? (
             <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-7" />)}</div>
-          ) : !data || data.blockReasons.length === 0 ? (
+          ) : !data || (data.blockReasons?.length ?? 0) === 0 ? (
             <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 py-4">
               <CheckCircle className="h-4 w-4" />
               No blocked events in this window
             </div>
           ) : (
             <div className="space-y-1.5">
-              {data.blockReasons.map(({ reason, count }) => (
+              {(data.blockReasons ?? []).map(({ reason, count }) => (
                 <div key={reason} className="flex items-center justify-between" data-testid={`block-reason-${reason}`}>
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${BLOCK_REASON_COLORS[reason] ?? "bg-gray-100 text-gray-700"}`}>
                     {reason}
@@ -535,7 +542,7 @@ export default function EmailTriggerAuditPage() {
           ) : (
             <div className="space-y-2.5">
               {actionTypeEntries.map(([type, count]) => {
-                const eventsOfType = data?.events.filter((e) => e.actionType === type) ?? [];
+                const eventsOfType = (data?.events ?? []).filter((e) => e.actionType === type);
                 const executed = eventsOfType.filter((e) => e.wasExecuted).length;
                 const blocked = eventsOfType.filter((e) => e.executionBlocked).length;
                 return (
@@ -563,7 +570,7 @@ export default function EmailTriggerAuditPage() {
           <Clock className="h-4 w-4 text-primary" />
           Event Timeline
           {data && (
-            <Badge variant="secondary" className="ml-1 text-xs">{data.timeline.length} events</Badge>
+            <Badge variant="secondary" className="ml-1 text-xs">{data.timeline?.length ?? 0} events</Badge>
           )}
         </h2>
         <p className="text-xs text-muted-foreground mb-3">
@@ -572,7 +579,7 @@ export default function EmailTriggerAuditPage() {
 
         {isLoading ? (
           <div className="space-y-2">{[...Array(8)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-        ) : !data || data.timeline.length === 0 ? (
+        ) : !data || (data.timeline?.length ?? 0) === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <Info className="h-8 w-8 mx-auto mb-2 opacity-40" />
             <p className="text-sm">No trigger events found in this time window.</p>
@@ -580,7 +587,7 @@ export default function EmailTriggerAuditPage() {
           </div>
         ) : (
           <div className="max-h-[500px] overflow-y-auto">
-            {data.timeline.map((event, idx) => (
+            {(data.timeline ?? []).map((event, idx) => (
               <TimelineRow key={idx} event={event} idx={idx} />
             ))}
           </div>

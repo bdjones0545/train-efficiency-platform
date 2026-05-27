@@ -11984,35 +11984,45 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   // GET /api/email-agent/trigger-audit — Trigger audit summary
   app.get("/api/email-agent/trigger-audit", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    const SAFE_EMPTY = {
+      summary: { totalEvaluated: 0, totalExecuted: 0, totalTriggered: 0, totalBlocked: 0, totalFailed: 0, successRate: 0, byTriggerType: {}, byActionType: {} },
+      blockReasons: [],
+      timeline: [],
+      missedOpportunities: 0,
+      collisions: 0,
+      events: [],
+    };
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
-      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      if (!profile?.organizationId) return res.json(SAFE_EMPTY);
 
       const windowHours = req.query.window ? parseInt(req.query.window as string, 10) : 24;
       const triggerType = req.query.trigger_type as string | undefined;
       const actionType = req.query.action_type as string | undefined;
 
-      let summary;
+      let result;
       if (triggerType || actionType) {
-        // Filtered events
-        const events = await storage.getEmailTriggerEvents(profile.organizationId, {
-          sinceHours: windowHours,
-          triggerType,
-          actionType,
-          limit: 500,
-        });
-        summary = await storage.getTriggerAuditSummary(profile.organizationId, windowHours);
-        // Override events with filtered version
-        summary.events = events;
+        result = await storage.getTriggerAuditSummary(profile.organizationId, windowHours);
+        try {
+          const filteredEvents = await storage.getEmailTriggerEvents(profile.organizationId, {
+            sinceHours: windowHours,
+            triggerType,
+            actionType,
+            limit: 500,
+          });
+          result = { ...result, events: filteredEvents };
+        } catch {
+          // keep unfiltered events rather than crashing
+        }
       } else {
-        summary = await storage.getTriggerAuditSummary(profile.organizationId, windowHours);
+        result = await storage.getTriggerAuditSummary(profile.organizationId, windowHours);
       }
 
-      res.json(summary);
+      res.json(result ?? SAFE_EMPTY);
     } catch (err: any) {
       console.error("[Trigger Audit]", err);
-      res.status(500).json({ message: err.message });
+      res.json(SAFE_EMPTY);
     }
   });
 

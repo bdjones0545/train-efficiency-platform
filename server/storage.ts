@@ -556,7 +556,16 @@ export interface IStorage {
   updateEmailTriggerEvent(id: string, data: Partial<import("@shared/schema").EmailTriggerEvent>): Promise<void>;
   getEmailTriggerEvents(orgId: string, opts?: { sinceMinutes?: number; sinceHours?: number; sinceDays?: number; triggerType?: string; actionType?: string; prospectId?: string; limit?: number }): Promise<import("@shared/schema").EmailTriggerEvent[]>;
   getTriggerAuditSummary(orgId: string, windowHours?: number): Promise<{
-    summary: { totalEvaluated: number; totalExecuted: number; totalBlocked: number; byTriggerType: Record<string, number>; byActionType: Record<string, number> };
+    summary: {
+      totalEvaluated: number;
+      totalExecuted: number;
+      totalTriggered: number;
+      totalBlocked: number;
+      totalFailed: number;
+      successRate: number;
+      byTriggerType: Record<string, number>;
+      byActionType: Record<string, number>;
+    };
     blockReasons: { reason: string; count: number }[];
     timeline: { timestamp: string; triggerType: string; actionType: string; prospectName: string | null; outcome: string; reason: string | null; confidenceLevel: string | null }[];
     missedOpportunities: number;
@@ -3523,51 +3532,87 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTriggerAuditSummary(orgId: string, windowHours = 24) {
-    const events = await this.getEmailTriggerEvents(orgId, { sinceHours: windowHours, limit: 1000 });
-
-    const totalEvaluated = events.length;
-    const totalExecuted = events.filter((e) => e.wasExecuted).length;
-    const totalBlocked = events.filter((e) => e.executionBlocked).length;
-    const missedOpportunities = events.filter((e) => e.missedOpportunity).length;
-    const collisions = events.filter((e) => e.collisionDetected).length;
-
-    const byTriggerType: Record<string, number> = {};
-    const byActionType: Record<string, number> = {};
-    const blockReasonCounts: Record<string, number> = {};
-
-    for (const e of events) {
-      byTriggerType[e.triggerType] = (byTriggerType[e.triggerType] || 0) + 1;
-      byActionType[e.actionType] = (byActionType[e.actionType] || 0) + 1;
-      if (e.blockReason) {
-        blockReasonCounts[e.blockReason] = (blockReasonCounts[e.blockReason] || 0) + 1;
-      }
-    }
-
-    const blockReasons = Object.entries(blockReasonCounts)
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count);
-
-    const timeline = events.slice(0, 200).map((e) => ({
-      timestamp: e.createdAt.toISOString(),
-      triggerType: e.triggerType,
-      actionType: e.actionType,
-      prospectName: e.prospectName ?? null,
-      outcome: e.wasExecuted ? "executed" : e.executionBlocked ? "blocked" : "evaluated",
-      reason: e.blockReason ?? e.reasoning ?? null,
-      confidenceLevel: e.confidenceLevel ?? null,
-      riskScore: e.riskScore ?? null,
-      missedOpportunity: e.missedOpportunity ?? false,
-      collisionDetected: e.collisionDetected ?? false,
-    }));
-
-    return {
-      summary: { totalEvaluated, totalExecuted, totalBlocked, byTriggerType, byActionType },
-      blockReasons,
-      timeline,
-      missedOpportunities,
-      collisions,
-      events,
+    const EMPTY_SUMMARY = {
+      summary: {
+        totalEvaluated: 0,
+        totalExecuted: 0,
+        totalTriggered: 0,
+        totalBlocked: 0,
+        totalFailed: 0,
+        successRate: 0,
+        byTriggerType: {} as Record<string, number>,
+        byActionType: {} as Record<string, number>,
+      },
+      blockReasons: [] as { reason: string; count: number }[],
+      timeline: [] as { timestamp: string; triggerType: string; actionType: string; prospectName: string | null; outcome: string; reason: string | null; confidenceLevel: string | null; riskScore: number | null; missedOpportunity: boolean; collisionDetected: boolean }[],
+      missedOpportunities: 0,
+      collisions: 0,
+      events: [] as import("@shared/schema").EmailTriggerEvent[],
     };
+
+    try {
+      const events = await this.getEmailTriggerEvents(orgId, { sinceHours: windowHours, limit: 1000 });
+
+      if (!events || events.length === 0) return EMPTY_SUMMARY;
+
+      const totalEvaluated = events.length;
+      const totalExecuted = events.filter((e) => e.wasExecuted).length;
+      const totalBlocked = events.filter((e) => e.executionBlocked).length;
+      const totalFailed = events.filter((e) => !e.wasExecuted && !e.executionBlocked).length;
+      const successRate = totalEvaluated > 0 ? Math.round((totalExecuted / totalEvaluated) * 100) : 0;
+      const missedOpportunities = events.filter((e) => e.missedOpportunity).length;
+      const collisions = events.filter((e) => e.collisionDetected).length;
+
+      const byTriggerType: Record<string, number> = {};
+      const byActionType: Record<string, number> = {};
+      const blockReasonCounts: Record<string, number> = {};
+
+      for (const e of events) {
+        byTriggerType[e.triggerType] = (byTriggerType[e.triggerType] || 0) + 1;
+        byActionType[e.actionType] = (byActionType[e.actionType] || 0) + 1;
+        if (e.blockReason) {
+          blockReasonCounts[e.blockReason] = (blockReasonCounts[e.blockReason] || 0) + 1;
+        }
+      }
+
+      const blockReasons = Object.entries(blockReasonCounts)
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count);
+
+      const timeline = events.slice(0, 200).map((e) => ({
+        timestamp: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+        triggerType: e.triggerType ?? "unknown",
+        actionType: e.actionType ?? "unknown",
+        prospectName: e.prospectName ?? null,
+        outcome: e.wasExecuted ? "executed" : e.executionBlocked ? "blocked" : "evaluated",
+        reason: e.blockReason ?? e.reasoning ?? null,
+        confidenceLevel: e.confidenceLevel ?? null,
+        riskScore: e.riskScore ?? null,
+        missedOpportunity: e.missedOpportunity ?? false,
+        collisionDetected: e.collisionDetected ?? false,
+      }));
+
+      return {
+        summary: {
+          totalEvaluated,
+          totalExecuted,
+          totalTriggered: totalExecuted,
+          totalBlocked,
+          totalFailed,
+          successRate,
+          byTriggerType,
+          byActionType,
+        },
+        blockReasons,
+        timeline,
+        missedOpportunities,
+        collisions,
+        events,
+      };
+    } catch (err) {
+      console.error("[getTriggerAuditSummary] Aggregation error, returning safe defaults:", err);
+      return EMPTY_SUMMARY;
+    }
   }
   // ─── Agent Pending Actions ──────────────────────────────────────────────────
 
