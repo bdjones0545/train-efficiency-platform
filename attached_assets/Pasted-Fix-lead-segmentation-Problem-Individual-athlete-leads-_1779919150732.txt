@@ -1,0 +1,84 @@
+Fix lead segmentation.
+
+Problem:
+Individual athlete leads from lead capture forms are showing inside Team Training Leads. Example: Taylah Page / Shadow Creek High School appears in Team Training Leads, but she is an individual athlete lead from Summer Speed Sprint.
+
+Requirements:
+
+1. Separate lead types clearly:
+- individual_athlete_lead
+- team_training_lead
+- organization_prospect
+- general_contact
+
+2. Lead capture submissions from athlete/program landing pages should route to:
+- Athlete Lead Pipeline
+- lead_intelligence_profiles
+- individual athlete lead records
+
+They should NOT appear in Team Training Leads.
+
+3. Team Training Leads should only include:
+- schools
+- clubs
+- teams
+- organizations
+- facilities
+- decision-makers
+- group training prospects
+
+4. Add/verify lead_type field on lead records and prospects.
+For Taylah Page:
+lead_type = individual_athlete_lead
+
+For Egret & Iron Golf:
+lead_type = team_training_lead or organization_prospect
+
+5. Update queries:
+- Team Training Leads page must filter OUT individual_athlete_lead
+- Athlete Lead Pipeline must include individual_athlete_lead
+- Deal Pipeline should support both, but label them clearly
+
+6. Add migration/backfill:
+- Any lead created from lead_capture_submissions gets individual_athlete_lead
+- Any lead with athleteName/email/parentName from a campaign application gets individual_athlete_lead
+- Any organization/facility/team lead remains team_training_lead
+
+7. UI:
+Create or confirm separate nav sections:
+- Athlete Leads
+- Team Training Leads
+
+Athlete Leads should show:
+- athlete name
+- parent
+- age/grade
+- school
+- sport/goals
+- campaign
+- status
+- suggested next action
+
+Team Training Leads should show:
+- organization/team/facility name
+- category
+- city
+- contact person
+- decision-maker info
+- deal opportunity
+
+8. Add guardrail:
+When a lead_capture_submission is processed, never insert that record into Team Training Leads unless campaign type explicitly equals team_training.
+
+9. Audit current data:
+- Move Taylah Page out of Team Training Leads
+- Ensure Taylah remains in Athlete Lead Pipeline
+- Do not delete her intelligence profile or Gmail draft action
+- Preserve her deal/pipeline state
+
+10. Return diagnostic:
+- records updated
+- pages affected
+- query filters changed
+- confirmation Taylah no longer appears in Team Training Leads
+- confirmation Taylah appears in Athlete Lead Pipeline
