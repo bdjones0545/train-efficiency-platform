@@ -17547,14 +17547,14 @@ Respond with this exact JSON structure:
     }
   });
 
-  // PATCH intelligence profile pipeline stage
+  // PATCH intelligence profile pipeline stage (records transition history)
   app.patch("/api/lead-capture/intelligence/:id/stage", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
 
-      const { stage } = req.body;
+      const { stage, reason } = req.body;
       if (!stage) return res.status(400).json({ message: "stage required" });
 
       const validStages = ["new_lead", "engaged", "scheduling", "booked", "converted", "stalled", "lost"];
@@ -17564,15 +17564,25 @@ Respond with this exact JSON structure:
       const { leadIntelligenceProfiles } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
 
+      const [current] = await db
+        .select({ pipelineStage: leadIntelligenceProfiles.pipelineStage, stageTransitions: leadIntelligenceProfiles.stageTransitions })
+        .from(leadIntelligenceProfiles)
+        .where(and(eq(leadIntelligenceProfiles.id, req.params.id), eq(leadIntelligenceProfiles.orgId, profile.organizationId)))
+        .limit(1);
+      if (!current) return res.status(404).json({ message: "Profile not found" });
+
+      const { buildStageTransition } = await import("./services/intelligent-lead-intake-service");
+      const transition = buildStageTransition(current.pipelineStage, stage, reason || "Manual admin update", "manual_admin", 1.0);
+      const existingTransitions = (current.stageTransitions as any[]) || [];
+
       const [updated] = await db
         .update(leadIntelligenceProfiles)
-        .set({ pipelineStage: stage, updatedAt: new Date() })
-        .where(
-          and(
-            eq(leadIntelligenceProfiles.id, req.params.id),
-            eq(leadIntelligenceProfiles.orgId, profile.organizationId),
-          ),
-        )
+        .set({
+          pipelineStage: stage,
+          stageTransitions: [...existingTransitions, transition] as any,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(leadIntelligenceProfiles.id, req.params.id), eq(leadIntelligenceProfiles.orgId, profile.organizationId)))
         .returning();
 
       if (!updated) return res.status(404).json({ message: "Profile not found" });
@@ -17741,7 +17751,7 @@ Respond with this exact JSON structure:
 
       const { db } = await import("./db");
       const { leadIntelligenceProfiles } = await import("@shared/schema");
-      const { eq, count, sql: sqlFn } = await import("drizzle-orm");
+      const { eq, count } = await import("drizzle-orm");
 
       const rows = await db
         .select({
@@ -17754,6 +17764,112 @@ Respond with this exact JSON structure:
         .groupBy(leadIntelligenceProfiles.pipelineStage, leadIntelligenceProfiles.temperature);
 
       res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH intelligence profile — suppress or unsubscribe a lead
+  app.patch("/api/lead-capture/intelligence/:id/suppress", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { reason, unsubscribe } = req.body as { reason?: string; unsubscribe?: boolean };
+      if (!reason) return res.status(400).json({ message: "reason required" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles, gmailAgentActions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [existing] = await db
+        .select({ id: leadIntelligenceProfiles.id, submissionId: leadIntelligenceProfiles.submissionId })
+        .from(leadIntelligenceProfiles)
+        .where(and(eq(leadIntelligenceProfiles.id, req.params.id), eq(leadIntelligenceProfiles.orgId, profile.organizationId)))
+        .limit(1);
+      if (!existing) return res.status(404).json({ message: "Profile not found" });
+
+      const { buildStageTransition } = await import("./services/intelligent-lead-intake-service");
+      const [current] = await db.select({ pipelineStage: leadIntelligenceProfiles.pipelineStage, stageTransitions: leadIntelligenceProfiles.stageTransitions })
+        .from(leadIntelligenceProfiles).where(eq(leadIntelligenceProfiles.id, existing.id)).limit(1);
+      const transition = buildStageTransition(current?.pipelineStage || "unknown", "lost", reason, "manual_admin", 1.0);
+      const existingTransitions = (current?.stageTransitions as any[]) || [];
+
+      await Promise.all([
+        db.update(leadIntelligenceProfiles)
+          .set({
+            suppressed: true,
+            unsubscribed: !!unsubscribe,
+            suppressionReason: reason,
+            suppressedAt: new Date(),
+            pipelineStage: "lost",
+            stageTransitions: [...existingTransitions, transition] as any,
+            updatedAt: new Date(),
+          })
+          .where(eq(leadIntelligenceProfiles.id, existing.id)),
+        db.update(gmailAgentActions)
+          .set({ status: "dismissed", result: { reason: `suppressed:${reason}`, suppressedAt: new Date().toISOString() } as any })
+          .where(and(eq(gmailAgentActions.leadId, existing.submissionId), eq(gmailAgentActions.status, "proposed"))),
+      ]);
+
+      res.json({ success: true, suppressed: true, reason });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH intelligence profile pipeline stage — with transition history
+  app.patch("/api/lead-capture/intelligence/:id/stage-transition", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { stage, reason } = req.body as { stage: string; reason?: string };
+      const validStages = ["new_lead", "engaged", "scheduling", "booked", "converted", "stalled", "lost"];
+      if (!stage || !validStages.includes(stage)) return res.status(400).json({ message: "Invalid stage" });
+
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [current] = await db.select({ pipelineStage: leadIntelligenceProfiles.pipelineStage, stageTransitions: leadIntelligenceProfiles.stageTransitions })
+        .from(leadIntelligenceProfiles)
+        .where(and(eq(leadIntelligenceProfiles.id, req.params.id), eq(leadIntelligenceProfiles.orgId, profile.organizationId)))
+        .limit(1);
+      if (!current) return res.status(404).json({ message: "Profile not found" });
+
+      const { buildStageTransition } = await import("./services/intelligent-lead-intake-service");
+      const transition = buildStageTransition(current.pipelineStage, stage, reason || "Manual admin update", "manual_admin", 1.0);
+      const existingTransitions = (current.stageTransitions as any[]) || [];
+
+      const [updated] = await db
+        .update(leadIntelligenceProfiles)
+        .set({
+          pipelineStage: stage,
+          stageTransitions: [...existingTransitions, transition] as any,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(leadIntelligenceProfiles.id, req.params.id), eq(leadIntelligenceProfiles.orgId, profile.organizationId)))
+        .returning();
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST manually trigger the recovery cron (admin only)
+  app.post("/api/lead-capture/recovery-cron/run", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+
+      const { runLeadRecoveryCron } = await import("./services/lead-recovery-cron");
+      const result = await runLeadRecoveryCron();
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

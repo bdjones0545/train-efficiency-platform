@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -13,10 +12,33 @@ import {
   Flame, Thermometer, Snowflake, Brain, Zap, Mail, Phone, MapPin,
   Clock, ChevronRight, CheckCircle2, XCircle, RefreshCw, Target,
   TrendingUp, BarChart3, FlaskConical, Eye, ArrowRight, User,
-  Megaphone, Tag, Calendar, AlertCircle, Loader2, Play,
+  Megaphone, Tag, Calendar, AlertCircle, Loader2, Play, ShieldOff,
+  Ban, History, Timer, ChevronDown, Activity, GitBranch, Bell,
+  AlertTriangle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface StageTransition {
+  fromStage: string;
+  toStage: string;
+  reason: string;
+  source: string;
+  confidence: number;
+  timestamp: string;
+}
+
+interface ProcessingTimelineEntry {
+  intake_received: string | null;
+  scoring_completed: string | null;
+  ai_summary_generated: string | null;
+  outreach_draft_generated: string | null;
+  profile_persisted: string | null;
+  gmail_draft_queued: string | null;
+  follow_up_scheduled: string | null;
+  processing_completed: string | null;
+  processing_duration_ms: number | null;
+}
 
 interface IntelligenceProfile {
   id: string;
@@ -42,7 +64,14 @@ interface IntelligenceProfile {
   lastInteractionAt: string | null;
   intakeProcessedAt: string | null;
   processingLog: any[];
+  processingDurationMs: number | null;
+  unsubscribed: boolean;
+  suppressed: boolean;
+  suppressionReason: string | null;
+  suppressedAt: string | null;
+  stageTransitions: StageTransition[];
   createdAt: string;
+  updatedAt: string | null;
 }
 
 interface PipelineRow {
@@ -100,6 +129,23 @@ const NEXT_ACTION_LABELS: Record<string, { label: string; icon: any; color: stri
   mark_low_priority:          { label: "Mark Low Priority",       icon: Target,   color: "text-slate-500" },
 };
 
+const FOLLOW_UP_STAGE_LABELS: Record<string, { label: string; color: string }> = {
+  none:         { label: "No Follow-up",   color: "text-zinc-500" },
+  pending_24h:  { label: "24h Due",        color: "text-amber-400" },
+  pending_72h:  { label: "72h Due",        color: "text-orange-400" },
+  pending_7d:   { label: "7-day Due",      color: "text-red-400" },
+  exhausted:    { label: "Exhausted",      color: "text-zinc-500" },
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  intake_pipeline:      "Intake Pipeline",
+  gmail_reply_classifier: "Reply AI",
+  recovery_cron:        "Recovery Cron",
+  manual_admin:         "Admin",
+  scheduling_system:    "Scheduler",
+  payment_system:       "Payments",
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function TemperatureBadge({ temp }: { temp: string | null | undefined }) {
@@ -144,6 +190,20 @@ function UrgencyBadge({ urgency }: { urgency: string | null | undefined }) {
   );
 }
 
+function SuppressionBadge({ unsubscribed, suppressed }: { unsubscribed: boolean; suppressed: boolean }) {
+  if (unsubscribed) return (
+    <span data-testid="badge-unsubscribed" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-red-900/30 text-red-400 border-red-500/40">
+      <Ban className="h-3 w-3" /> Unsubscribed
+    </span>
+  );
+  if (suppressed) return (
+    <span data-testid="badge-suppressed" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-zinc-700/60 text-zinc-400 border-zinc-600">
+      <ShieldOff className="h-3 w-3" /> Suppressed
+    </span>
+  );
+  return null;
+}
+
 function timeAgo(dt: string | null | undefined): string {
   if (!dt) return "—";
   const diff = Date.now() - new Date(dt).getTime();
@@ -152,6 +212,172 @@ function timeAgo(dt: string | null | undefined): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function formatDateTime(dt: string | null | undefined): string {
+  if (!dt) return "—";
+  return new Date(dt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function timeUntil(dt: string | null | undefined): string {
+  if (!dt) return "—";
+  const diff = new Date(dt).getTime() - Date.now();
+  if (diff < 0) return "overdue";
+  const m = Math.floor(diff / 60000);
+  if (m < 60) return `in ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `in ${h}h`;
+  return `in ${Math.floor(h / 24)}d`;
+}
+
+// ─── Processing Timeline ──────────────────────────────────────────────────────
+
+function ProcessingTimeline({ log, durationMs }: { log: any[]; durationMs: number | null }) {
+  const timelineEntry = log?.find((e: any) => e.step === "processing_timeline");
+  const timeline: ProcessingTimelineEntry | null = timelineEntry?.detail
+    ? (() => { try { return JSON.parse(timelineEntry.detail); } catch { return null; } })()
+    : null;
+
+  const steps = log?.filter((e: any) => e.step !== "processing_timeline") || [];
+
+  return (
+    <details className="rounded-lg bg-zinc-800/40 border border-zinc-700/50" open>
+      <summary className="cursor-pointer px-4 py-2.5 text-xs font-semibold text-zinc-400 uppercase tracking-wide flex items-center justify-between">
+        <span className="flex items-center gap-1.5"><Timer className="h-3 w-3 text-blue-400" /> Processing Timeline</span>
+        {durationMs != null && (
+          <span className="text-[11px] font-normal text-zinc-500 normal-case">{durationMs}ms total</span>
+        )}
+      </summary>
+      <div className="px-4 pb-4 space-y-3">
+        {/* Step log */}
+        <div className="space-y-1 pt-1">
+          {steps.map((entry: any, i: number) => (
+            <div key={i} className="flex items-center gap-2 text-[11px]">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${entry.status === "ok" ? "bg-emerald-500" : entry.status === "error" ? "bg-red-500" : "bg-zinc-500"}`} />
+              <span className="text-zinc-400 font-medium w-36 flex-shrink-0">{entry.step}</span>
+              {entry.detail && <span className="text-zinc-500 truncate">{entry.detail}</span>}
+              <span className="ml-auto text-zinc-600 flex-shrink-0">{formatDateTime(entry.timestamp)}</span>
+            </div>
+          ))}
+        </div>
+        {/* Named timestamps */}
+        {timeline && (
+          <div className="mt-2 pt-2 border-t border-zinc-700/50 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+            {[
+              ["Intake received",     timeline.intake_received],
+              ["Scoring done",        timeline.scoring_completed],
+              ["AI summary",          timeline.ai_summary_generated],
+              ["Draft generated",     timeline.outreach_draft_generated],
+              ["Profile persisted",   timeline.profile_persisted],
+              ["Gmail draft queued",  timeline.gmail_draft_queued],
+              ["Follow-up scheduled", timeline.follow_up_scheduled],
+              ["Pipeline complete",   timeline.processing_completed],
+            ].map(([label, dt]) => dt && (
+              <div key={label as string} className="flex items-center gap-1.5">
+                <span className="text-zinc-600">{label}:</span>
+                <span className="text-zinc-400">{formatDateTime(dt as string)}</span>
+              </div>
+            ))}
+            {timeline.processing_duration_ms != null && (
+              <div className="col-span-2 flex items-center gap-1.5 mt-1">
+                <span className="text-zinc-600">Duration:</span>
+                <span className="text-emerald-400 font-semibold">{timeline.processing_duration_ms}ms</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+// ─── Stage Transition History ─────────────────────────────────────────────────
+
+function StageTransitionHistory({ transitions }: { transitions: StageTransition[] }) {
+  if (!transitions?.length) return null;
+  return (
+    <details className="rounded-lg bg-zinc-800/40 border border-zinc-700/50">
+      <summary className="cursor-pointer px-4 py-2.5 text-xs font-semibold text-zinc-400 uppercase tracking-wide flex items-center justify-between">
+        <span className="flex items-center gap-1.5"><GitBranch className="h-3 w-3 text-violet-400" /> Stage History</span>
+        <span className="text-[11px] font-normal text-zinc-500 normal-case">{transitions.length} transition{transitions.length !== 1 ? "s" : ""}</span>
+      </summary>
+      <div className="px-4 pb-4 pt-2 space-y-2">
+        {transitions.map((t, i) => (
+          <div key={i} className="flex items-start gap-2 text-[11px]">
+            <div className="flex flex-col items-center mt-0.5">
+              <div className="w-2 h-2 rounded-full bg-violet-500/60 flex-shrink-0" />
+              {i < transitions.length - 1 && <div className="w-px h-4 bg-zinc-700 mt-0.5" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-zinc-400 font-medium capitalize">{t.fromStage.replace(/_/g, " ")}</span>
+                <ArrowRight className="h-2.5 w-2.5 text-zinc-600" />
+                <span className="text-zinc-200 font-semibold capitalize">{t.toStage.replace(/_/g, " ")}</span>
+                <span className="text-zinc-600 ml-auto flex-shrink-0">{timeAgo(t.timestamp)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5 text-zinc-500 flex-wrap">
+                <span className="bg-zinc-700/60 px-1.5 py-0.5 rounded text-[10px]">{SOURCE_LABELS[t.source] || t.source}</span>
+                {t.confidence < 1 && <span className="text-zinc-600">{Math.round(t.confidence * 100)}% conf</span>}
+                <span className="text-zinc-600 truncate">{t.reason}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+// ─── Follow-up Schedule Panel ─────────────────────────────────────────────────
+
+function FollowUpSchedule({ intel }: { intel: IntelligenceProfile }) {
+  const fus = intel.followUpStage || "none";
+  const cfg = FOLLOW_UP_STAGE_LABELS[fus] || FOLLOW_UP_STAGE_LABELS.none;
+  const isDue = intel.nextFollowUpAt && new Date(intel.nextFollowUpAt).getTime() < Date.now();
+
+  return (
+    <div className="rounded-lg bg-zinc-800/60 border border-zinc-700 p-4">
+      <p className="text-xs font-semibold text-cyan-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+        <Bell className="h-3.5 w-3.5" /> Follow-up Schedule
+      </p>
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <span className="text-zinc-500">Stage: </span>
+          <span className={`font-semibold ${cfg.color}`}>{cfg.label}</span>
+        </div>
+        <div>
+          <span className="text-zinc-500">Next due: </span>
+          <span className={`font-semibold ${isDue ? "text-red-400" : "text-zinc-300"}`}>
+            {intel.nextFollowUpAt ? `${timeUntil(intel.nextFollowUpAt)} (${formatDateTime(intel.nextFollowUpAt)})` : "—"}
+          </span>
+        </div>
+        {intel.intakeProcessedAt && (
+          <div>
+            <span className="text-zinc-500">Intake processed: </span>
+            <span className="text-zinc-300">{formatDateTime(intel.intakeProcessedAt)}</span>
+          </div>
+        )}
+        {intel.lastInteractionAt && (
+          <div>
+            <span className="text-zinc-500">Last interaction: </span>
+            <span className="text-zinc-300">{timeAgo(intel.lastInteractionAt)}</span>
+          </div>
+        )}
+        {intel.processingDurationMs != null && (
+          <div>
+            <span className="text-zinc-500">Pipeline time: </span>
+            <span className="text-emerald-400 font-semibold">{intel.processingDurationMs}ms</span>
+          </div>
+        )}
+        {intel.updatedAt && (
+          <div>
+            <span className="text-zinc-500">Last automation: </span>
+            <span className="text-zinc-300">{timeAgo(intel.updatedAt)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── Lead Detail Modal ────────────────────────────────────────────────────────
@@ -169,6 +395,7 @@ function LeadDetailModal({
   const intel = row.intelligence;
   const sub = row.submission;
   const np = intel.normalizedProfileJson as any;
+  const [showSuppressConfirm, setShowSuppressConfirm] = useState(false);
 
   const { data: drafts, isLoading: draftsLoading } = useQuery<GmailDraftAction[]>({
     queryKey: ["/api/lead-capture/intelligence", intel.submissionId, "drafts"],
@@ -195,8 +422,22 @@ function LeadDetailModal({
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
+  const suppressMutation = useMutation({
+    mutationFn: ({ reason, unsubscribe }: { reason: string; unsubscribe: boolean }) =>
+      apiRequest("PATCH", `/api/lead-capture/intelligence/${intel.id}/suppress`, { reason, unsubscribe }),
+    onSuccess: () => {
+      toast({ title: "Lead suppressed", description: "All pending drafts dismissed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });
+      setShowSuppressConfirm(false);
+      onClose();
+    },
+    onError: () => toast({ title: "Error suppressing lead", variant: "destructive" }),
+  });
+
   const nextActionCfg = NEXT_ACTION_LABELS[intel.suggestedNextAction || ""] || null;
   const NextActionIcon = nextActionCfg?.icon || Target;
+  const transitions = (intel.stageTransitions as StageTransition[]) || [];
+  const isContactable = !intel.suppressed && !intel.unsubscribed;
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -214,6 +455,7 @@ function LeadDetailModal({
             <TemperatureBadge temp={intel.temperature} />
             <ScoreBadge score={intel.leadScore} />
             <UrgencyBadge urgency={intel.urgency} />
+            <SuppressionBadge unsubscribed={intel.unsubscribed} suppressed={intel.suppressed} />
             {intel.tags?.map(tag => (
               <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-zinc-700/60 text-zinc-300 border border-zinc-600">
                 <Tag className="h-2.5 w-2.5" />
@@ -222,12 +464,27 @@ function LeadDetailModal({
             ))}
           </div>
 
+          {/* Suppression warning */}
+          {(intel.suppressed || intel.unsubscribed) && (
+            <div className="rounded-lg bg-red-950/40 border border-red-800/40 px-4 py-3 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <p className="text-red-300 font-semibold">
+                  {intel.unsubscribed ? "Unsubscribed" : "Suppressed"} — No further outreach
+                </p>
+                {intel.suppressionReason && <p className="text-red-400/80 mt-0.5">Reason: {intel.suppressionReason}</p>}
+                {intel.suppressedAt && <p className="text-red-500/70 mt-0.5">{formatDateTime(intel.suppressedAt)}</p>}
+              </div>
+            </div>
+          )}
+
           {/* Pipeline Stage Selector */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 font-medium">Pipeline Stage:</span>
             <Select
               value={intel.pipelineStage}
               onValueChange={v => onStageChange(intel.id, v)}
+              disabled={intel.suppressed || intel.unsubscribed}
             >
               <SelectTrigger data-testid="select-pipeline-stage" className="h-7 w-44 bg-zinc-800 border-zinc-600 text-xs text-zinc-200">
                 <SelectValue />
@@ -267,6 +524,9 @@ function LeadDetailModal({
               </div>
             </div>
           )}
+
+          {/* Follow-up Schedule */}
+          <FollowUpSchedule intel={intel} />
 
           {/* Intake Intelligence */}
           <div className="rounded-lg bg-zinc-800/60 border border-zinc-700 p-4">
@@ -319,9 +579,9 @@ function LeadDetailModal({
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div>
                         <p className="text-xs font-semibold text-zinc-200">{draft.subject}</p>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">To: {draft.recipientEmail}</p>
+                        <p className="text-[11px] text-zinc-500 mt-0.5">To: {draft.recipientEmail} · {draft.actionType}</p>
                       </div>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 ${
                         draft.status === "approved" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" :
                         draft.status === "dismissed" ? "bg-red-500/15 text-red-400 border-red-500/30" :
                         "bg-amber-500/15 text-amber-400 border-amber-500/30"
@@ -359,26 +619,16 @@ function LeadDetailModal({
             )}
           </div>
 
-          {/* Processing Log */}
+          {/* Processing Timeline */}
           {intel.processingLog?.length > 0 && (
-            <details className="rounded-lg bg-zinc-800/40 border border-zinc-700/50">
-              <summary className="cursor-pointer px-4 py-2 text-xs font-semibold text-zinc-500 uppercase tracking-wide flex items-center gap-1.5">
-                <FlaskConical className="h-3 w-3" /> Processing Log
-              </summary>
-              <div className="px-4 pb-3 space-y-1">
-                {intel.processingLog.map((entry: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2 text-[11px]">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${entry.status === "ok" ? "bg-emerald-500" : entry.status === "error" ? "bg-red-500" : "bg-zinc-500"}`} />
-                    <span className="text-zinc-400 font-medium">{entry.step}</span>
-                    {entry.detail && <span className="text-zinc-500">— {entry.detail}</span>}
-                  </div>
-                ))}
-              </div>
-            </details>
+            <ProcessingTimeline log={intel.processingLog} durationMs={intel.processingDurationMs} />
           )}
 
+          {/* Stage Transition History */}
+          <StageTransitionHistory transitions={transitions} />
+
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-700/50">
             <Button
               data-testid="button-reprocess-intelligence"
               size="sm"
@@ -390,7 +640,55 @@ function LeadDetailModal({
               {reprocessMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
               Re-run AI Pipeline
             </Button>
+            {isContactable && (
+              <Button
+                data-testid="button-suppress-lead"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-red-800/50 text-red-400 hover:bg-red-950/30"
+                onClick={() => setShowSuppressConfirm(true)}
+              >
+                <ShieldOff className="h-3 w-3 mr-1" /> Suppress Lead
+              </Button>
+            )}
           </div>
+
+          {/* Suppress confirm */}
+          {showSuppressConfirm && (
+            <div className="rounded-lg bg-red-950/40 border border-red-700/40 p-4 space-y-3">
+              <p className="text-sm text-red-300 font-semibold">Suppress this lead?</p>
+              <p className="text-xs text-zinc-400">This will dismiss all pending outreach drafts and prevent future recovery cron drafts. The lead's stage will be set to Lost.</p>
+              <div className="flex gap-2">
+                <Button
+                  data-testid="button-confirm-suppress"
+                  size="sm"
+                  className="h-7 text-xs bg-red-700 hover:bg-red-800 text-white"
+                  disabled={suppressMutation.isPending}
+                  onClick={() => suppressMutation.mutate({ reason: "Manually suppressed by admin", unsubscribe: false })}
+                >
+                  {suppressMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Ban className="h-3 w-3 mr-1" />}
+                  Confirm Suppress
+                </Button>
+                <Button
+                  data-testid="button-confirm-unsubscribe"
+                  size="sm"
+                  className="h-7 text-xs bg-red-900 hover:bg-red-800 text-red-200"
+                  disabled={suppressMutation.isPending}
+                  onClick={() => suppressMutation.mutate({ reason: "Unsubscribed via admin", unsubscribe: true })}
+                >
+                  Mark Unsubscribed
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs border-zinc-600 text-zinc-400"
+                  onClick={() => setShowSuppressConfirm(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
@@ -408,6 +706,10 @@ function PipelineCard({ row, onClick }: { row: PipelineRow; onClick: () => void 
   const school = sub?.school || np?.school;
   const nextActionCfg = NEXT_ACTION_LABELS[intel.suggestedNextAction || ""] || null;
   const NextActionIcon = nextActionCfg?.icon || Target;
+  const transitions = (intel.stageTransitions as StageTransition[]) || [];
+  const fus = intel.followUpStage || "none";
+  const fusCfg = FOLLOW_UP_STAGE_LABELS[fus];
+  const isFollowUpDue = intel.nextFollowUpAt && new Date(intel.nextFollowUpAt).getTime() < Date.now() && fus !== "none" && fus !== "exhausted";
 
   return (
     <div
@@ -428,10 +730,13 @@ function PipelineCard({ row, onClick }: { row: PipelineRow; onClick: () => void 
         <ChevronRight className="h-4 w-4 text-zinc-600 group-hover:text-zinc-400 flex-shrink-0 mt-0.5" />
       </div>
 
-      {/* Temperature + Score */}
+      {/* Temperature + Score + Suppression */}
       <div className="flex flex-wrap gap-1.5">
         <TemperatureBadge temp={intel.temperature} />
         <ScoreBadge score={intel.leadScore} />
+        {(intel.suppressed || intel.unsubscribed) && (
+          <SuppressionBadge unsubscribed={intel.unsubscribed} suppressed={intel.suppressed} />
+        )}
       </div>
 
       {/* AI Summary preview */}
@@ -448,17 +753,32 @@ function PipelineCard({ row, onClick }: { row: PipelineRow; onClick: () => void 
       )}
 
       {/* Suggested Next Action */}
-      {nextActionCfg && (
+      {nextActionCfg && !intel.suppressed && !intel.unsubscribed && (
         <div className={`flex items-center gap-1.5 text-[11px] font-medium ${nextActionCfg.color}`}>
           <NextActionIcon className="h-3 w-3" />
           <span>{nextActionCfg.label}</span>
         </div>
       )}
 
+      {/* Follow-up due indicator */}
+      {isFollowUpDue && !intel.suppressed && !intel.unsubscribed && (
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-400">
+          <Bell className="h-3 w-3" />
+          <span>{fusCfg?.label} follow-up overdue</span>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between text-[10px] text-zinc-600 border-t border-zinc-700/50 pt-2">
-        <span>{timeAgo(intel.createdAt)}</span>
-        {intel.gmailDraftActionId && (
+        <div className="flex items-center gap-2">
+          <span>{timeAgo(intel.createdAt)}</span>
+          {transitions.length > 0 && (
+            <span className="flex items-center gap-0.5 text-violet-500/70">
+              <GitBranch className="h-2.5 w-2.5" /> {transitions.length}
+            </span>
+          )}
+        </div>
+        {intel.gmailDraftActionId && !intel.suppressed && (
           <span className="flex items-center gap-1 text-amber-500/70">
             <Mail className="h-2.5 w-2.5" /> Draft queued
           </span>
@@ -506,6 +826,7 @@ export default function AdminLeadPipelinePage() {
   const [selectedRow, setSelectedRow] = useState<PipelineRow | null>(null);
   const [activeStageFilter, setActiveStageFilter] = useState<string>("all");
   const [simLoading, setSimLoading] = useState(false);
+  const [cronResult, setCronResult] = useState<any>(null);
 
   const { data: rows = [], isLoading } = useQuery<PipelineRow[]>({
     queryKey: ["/api/lead-capture/intelligence"],
@@ -522,180 +843,196 @@ export default function AdminLeadPipelinePage() {
       queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });
       queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence-stats"] });
       toast({ title: "Stage updated" });
+      if (selectedRow) {
+        queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence", selectedRow.intelligence.submissionId] });
+      }
     },
     onError: () => toast({ title: "Error updating stage", variant: "destructive" }),
+  });
+
+  const cronMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/lead-capture/recovery-cron/run", {}),
+    onSuccess: async (res) => {
+      const data = await res.json();
+      setCronResult(data);
+      toast({ title: "Recovery cron ran", description: `Queued ${data.queuedDrafts} draft(s)` });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });
+    },
+    onError: () => toast({ title: "Cron error", variant: "destructive" }),
   });
 
   const runSimulation = async (index: number) => {
     setSimLoading(true);
     try {
-      const resp = await apiRequest("POST", "/api/lead-capture/intelligence/test-simulation", { payloadIndex: index });
-      const data = await resp.json();
-      toast({
-        title: `Simulation complete — ${data.result?.temperature} lead`,
-        description: `Score: ${data.result?.leadScore}/100 · ${data.result?.suggestedNextAction}`,
+      const res = await fetch("/api/lead-capture/intelligence/test-simulation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ payloadIndex: index }),
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence-stats"] });
+      const data = await res.json();
+      if (data.profileId) {
+        toast({ title: "Simulation complete", description: `Score: ${data.leadScore} (${data.temperature})` });
+        queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence-stats"] });
+      } else {
+        toast({ title: "Simulation failed", description: data.message, variant: "destructive" });
+      }
     } catch {
-      toast({ title: "Simulation failed", variant: "destructive" });
+      toast({ title: "Error", variant: "destructive" });
     } finally {
       setSimLoading(false);
     }
   };
 
-  const filteredRows =
-    activeStageFilter === "all"
-      ? rows
-      : rows.filter(r => r.intelligence.pipelineStage === activeStageFilter);
+  const filteredRows = activeStageFilter === "all"
+    ? rows
+    : rows.filter(r => r.intelligence.pipelineStage === activeStageFilter);
 
-  const groupedByStage = STAGES.reduce<Record<string, PipelineRow[]>>((acc, s) => {
-    acc[s.key] = rows.filter(r => r.intelligence.pipelineStage === s.key);
-    return acc;
-  }, {});
-
-  const stagesToShow = activeStageFilter === "all" ? STAGES : STAGES.filter(s => s.key === activeStageFilter);
+  const stageGroups = STAGES.map(s => ({
+    ...s,
+    rows: rows.filter(r => r.intelligence.pipelineStage === s.key),
+  }));
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
+    <div className="p-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Brain className="h-6 w-6 text-orange-400" />
-            Athlete Lead Pipeline
+            <TrendingUp className="h-6 w-6 text-orange-400" />
+            Lead Pipeline
           </h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            AI-powered intake intelligence, lead scoring, and deal pipeline automation
-          </p>
+          <p className="text-sm text-zinc-500 mt-1">AI-powered lead intelligence and follow-up automation</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <Button
-            data-testid="button-simulate-intake-0"
+            data-testid="button-run-recovery-cron"
             size="sm"
             variant="outline"
-            className="h-8 text-xs border-zinc-600 text-zinc-300 hover:bg-zinc-700"
-            disabled={simLoading}
-            onClick={() => runSimulation(0)}
+            className="h-8 text-xs border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/30"
+            disabled={cronMutation.isPending}
+            onClick={() => cronMutation.mutate()}
           >
-            {simLoading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FlaskConical className="h-3 w-3 mr-1" />}
-            Simulate Intake
+            {cronMutation.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Activity className="h-3 w-3 mr-1.5" />}
+            Run Recovery Cron
           </Button>
-          <Button
-            data-testid="button-simulate-intake-1"
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs border-zinc-600 text-zinc-300 hover:bg-zinc-700"
-            disabled={simLoading}
-            onClick={() => runSimulation(1)}
-          >
-            <Play className="h-3 w-3 mr-1" />
-            Simulate Lead 2
-          </Button>
+          {[0, 1].map(i => (
+            <Button
+              key={i}
+              data-testid={`button-run-simulation-${i}`}
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs border-zinc-600 text-zinc-300 hover:bg-zinc-700"
+              disabled={simLoading}
+              onClick={() => runSimulation(i)}
+            >
+              {simLoading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FlaskConical className="h-3 w-3 mr-1" />}
+              Sim {i + 1}
+            </Button>
+          ))}
         </div>
       </div>
+
+      {/* Cron result */}
+      {cronResult && (
+        <div className="mb-4 rounded-lg bg-cyan-950/30 border border-cyan-700/30 px-4 py-3 text-xs text-cyan-300 flex items-start gap-2">
+          <Activity className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+          <div>
+            <span className="font-semibold">Recovery Cron Result: </span>
+            Processed {cronResult.processedCount} leads · Queued {cronResult.queuedDrafts} draft(s) · Skipped {cronResult.skippedDuplicate} duplicates · {cronResult.skippedSuppressed} suppressed · {cronResult.durationMs}ms
+            {cronResult.errors?.length > 0 && <span className="text-red-400 ml-2">{cronResult.errors.length} error(s)</span>}
+          </div>
+        </div>
+      )}
 
       {/* Stats Bar */}
       {stats.length > 0 && <StatsBar stats={stats} />}
 
-      {/* Stage Filter Tabs */}
+      {/* Stage Filter */}
       <div className="flex gap-2 mb-5 flex-wrap">
         <button
           data-testid="filter-stage-all"
           onClick={() => setActiveStageFilter("all")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
             activeStageFilter === "all"
-              ? "bg-orange-500/20 border-orange-500/40 text-orange-300"
-              : "bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200"
+              ? "bg-zinc-700 border-zinc-500 text-zinc-100"
+              : "bg-transparent border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
           }`}
         >
           All ({rows.length})
         </button>
         {STAGES.map(s => {
-          const cnt = groupedByStage[s.key]?.length || 0;
+          const cnt = rows.filter(r => r.intelligence.pipelineStage === s.key).length;
+          if (!cnt && activeStageFilter !== s.key) return null;
           return (
             <button
               key={s.key}
               data-testid={`filter-stage-${s.key}`}
-              onClick={() => setActiveStageFilter(s.key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+              onClick={() => setActiveStageFilter(activeStageFilter === s.key ? "all" : s.key)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                 activeStageFilter === s.key
-                  ? "bg-orange-500/20 border-orange-500/40 text-orange-300"
-                  : "bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200"
+                  ? `${s.color} font-semibold`
+                  : "bg-transparent border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
               }`}
             >
-              {s.label} {cnt > 0 && <span className="ml-1 opacity-70">({cnt})</span>}
+              {s.label} ({cnt})
             </button>
           );
         })}
       </div>
 
-      {/* Pipeline Kanban (or filtered list) */}
+      {/* Kanban Board */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="space-y-3">
-              <Skeleton className="h-6 w-24 bg-zinc-800" />
-              <Skeleton className="h-32 bg-zinc-800" />
-              <Skeleton className="h-32 bg-zinc-800" />
+        <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+          {STAGES.slice(0, 4).map(s => (
+            <div key={s.key} className="space-y-2">
+              <Skeleton className="h-6 bg-zinc-700" />
+              <Skeleton className="h-24 bg-zinc-800" />
             </div>
           ))}
         </div>
-      ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <Brain className="h-12 w-12 text-zinc-700 mb-4" />
-          <p className="text-zinc-400 font-medium">No intelligence profiles yet</p>
-          <p className="text-zinc-600 text-sm mt-1 max-w-sm">
-            Intelligence profiles are created automatically when a lead submits a landing page form. Use the Simulate button above to test the pipeline.
-          </p>
-        </div>
-      ) : activeStageFilter !== "all" ? (
-        // Filtered list view
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filteredRows.map(row => (
-            <PipelineCard
-              key={row.intelligence.id}
-              row={row}
-              onClick={() => setSelectedRow(row)}
-            />
+      ) : activeStageFilter === "all" ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+          {stageGroups.map(group => (
+            <div key={group.key} className="min-w-0">
+              <div className={`rounded-t-lg px-3 py-2 border-t border-x mb-2 ${group.color}`}>
+                <span className="text-xs font-semibold">{group.label}</span>
+                <span className="ml-1.5 text-[11px] opacity-60">({group.rows.length})</span>
+              </div>
+              <div className="space-y-2">
+                {group.rows.length === 0 ? (
+                  <div className="text-center py-4 text-[11px] text-zinc-600 border border-dashed border-zinc-700/50 rounded-lg">
+                    Empty
+                  </div>
+                ) : (
+                  group.rows.map(row => (
+                    <PipelineCard
+                      key={row.intelligence.id}
+                      row={row}
+                      onClick={() => setSelectedRow(row)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
           ))}
-          {filteredRows.length === 0 && (
-            <p className="text-zinc-500 text-sm col-span-4 py-8 text-center">No leads in this stage.</p>
-          )}
         </div>
       ) : (
-        // Kanban view — show all stages side by side (show only non-empty + first 2 stages by default)
-        <div className="overflow-x-auto pb-4">
-          <div className="flex gap-4 min-w-max">
-            {stagesToShow.map(stage => {
-              const stageRows = groupedByStage[stage.key] || [];
-              return (
-                <div key={stage.key} className="w-64 flex-shrink-0">
-                  {/* Stage Header */}
-                  <div className={`flex items-center justify-between rounded-t-lg border px-3 py-2 mb-2 ${stage.color}`}>
-                    <span className="text-xs font-semibold">{stage.label}</span>
-                    <span className="text-xs font-bold">{stageRows.length}</span>
-                  </div>
-                  {/* Cards */}
-                  <div className="space-y-2">
-                    {stageRows.length === 0 ? (
-                      <div className="h-16 rounded-lg border border-dashed border-zinc-700/40 flex items-center justify-center">
-                        <span className="text-[11px] text-zinc-600">Empty</span>
-                      </div>
-                    ) : (
-                      stageRows.map(row => (
-                        <PipelineCard
-                          key={row.intelligence.id}
-                          row={row}
-                          onClick={() => setSelectedRow(row)}
-                        />
-                      ))
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filteredRows.length === 0 ? (
+            <div className="col-span-3 text-center py-16 text-zinc-500">
+              No leads in <span className="font-medium">{STAGES.find(s => s.key === activeStageFilter)?.label}</span>
+            </div>
+          ) : (
+            filteredRows.map(row => (
+              <PipelineCard
+                key={row.intelligence.id}
+                row={row}
+                onClick={() => setSelectedRow(row)}
+              />
+            ))
+          )}
         </div>
       )}
 
@@ -706,10 +1043,10 @@ export default function AdminLeadPipelinePage() {
           onClose={() => setSelectedRow(null)}
           onStageChange={(id, stage) => {
             stageMutation.mutate({ id, stage });
-            setSelectedRow(prev => prev ? {
-              ...prev,
-              intelligence: { ...prev.intelligence, pipelineStage: stage },
-            } : null);
+            setSelectedRow(prev => prev
+              ? { ...prev, intelligence: { ...prev.intelligence, pipelineStage: stage } }
+              : null
+            );
           }}
         />
       )}

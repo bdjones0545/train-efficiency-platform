@@ -468,6 +468,12 @@ app.use((req, res, next) => {
   // Run at 6 AM each day via a smart scheduler (first run: 8 minutes after startup)
   setTimeout(runDailyOpsCron, 8 * 60 * 1000);
 
+  // ─── Lead Recovery Cron ──────────────────────────────────────────────────
+  // Queues follow-up drafts for leads whose follow-up window has passed.
+  // Never auto-sends — all drafts require approval. Runs every 15 minutes.
+  const { startLeadRecoveryCron } = await import("./services/lead-recovery-cron");
+  startLeadRecoveryCron(15 * 60 * 1000);
+
   const { fixServiceTypes } = await import("./fix-service-types");
   await fixServiceTypes();
 

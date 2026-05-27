@@ -3626,11 +3626,19 @@ export const leadIntelligenceProfiles = pgTable("lead_intelligence_profiles", {
   followUpStage: varchar("follow_up_stage").default("none"),
   lastInteractionAt: timestamp("last_interaction_at"),
   nextFollowUpAt: timestamp("next_follow_up_at"),
+  // Suppression / unsubscribe
+  unsubscribed: boolean("unsubscribed").notNull().default(false),
+  suppressed: boolean("suppressed").notNull().default(false),
+  suppressionReason: text("suppression_reason"),
+  suppressedAt: timestamp("suppressed_at"),
+  // Stage transition audit history [{fromStage,toStage,reason,source,confidence,timestamp}]
+  stageTransitions: jsonb("stage_transitions").notNull().default(sql`'[]'::jsonb`),
   // Processing audit
   intakeProcessedAt: timestamp("intake_processed_at"),
   scoringProcessedAt: timestamp("scoring_processed_at"),
   draftGeneratedAt: timestamp("draft_generated_at"),
   processingLog: jsonb("processing_log").default(sql`'[]'::jsonb`),
+  processingDurationMs: integer("processing_duration_ms"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -1,0 +1,154 @@
+Build the Intelligent Lead Pipeline Hardening Layer.
+
+Goal:
+Turn the working intake → Gmail → pipeline loop into a more reliable production system that can keep working while the coach is busy.
+
+Implement the 5 hardening items found in the E2E diagnostic report:
+
+1. Parallelize AI Processing
+
+In intelligent-lead-intake-service.ts:
+- Run AI summary generation and outreach draft generation concurrently using Promise.all where possible.
+- Keep heuristic scoring synchronous.
+- Preserve error handling so if one AI task fails, the other can still complete.
+- Expected improvement: reduce processing time from ~7s to ~3–4s.
+
+2. Complete Processing Log Persistence
+
+Issue:
+The DB processing log only captures early pipeline steps.
+
+Fix:
+- After all steps complete — profile upsert, Gmail draft queue, follow-up schedule, suggested action — write one final processingLog update.
+- Include timestamps for:
+  - intake_received
+  - scoring_completed
+  - ai_summary_generated
+  - outreach_draft_generated
+  - profile_persisted
+  - gmail_draft_queued
+  - follow_up_scheduled
+  - pipeline_initialized
+  - processing_completed
+- Add processingDurationMs.
+
+3. Recovery Cron for Follow-Ups
+
+Build a scheduled recovery worker:
+server/services/lead-recovery-cron.ts
+
+Runs every 15 minutes.
+
+Find profiles where:
+- next_follow_up_at <= now
+- pipeline_stage IN ('new_lead', 'engaged', 'stalled')
+- not unsubscribed
+- not suppressed
+- no pending proposed Gmail action already exists for the same lead/follow-up stage
+
+Then:
+- generate appropriate follow-up draft
+- queue gmail_agent_actions record
+- advance follow_up_stage:
+  pending_24h → pending_72h
+  pending_72h → pending_7d
+  pending_7d → exhausted
+- set next_follow_up_at accordingly
+- log action
+
+Do not auto-send. Approval required by default.
+
+4. Suppression / Unsubscribe Fields
+
+Add fields to lead_intelligence_profiles:
+- unsubscribed boolean default false
+- suppressed boolean default false
+- suppressionReason text nullable
+- suppressedAt timestamp nullable
+
+When Gmail reply intent is:
+- unsubscribe
+- not_interested
+
+Then:
+- set suppressed = true
+- set suppressionReason
+- set suppressedAt
+- dismiss pending Gmail actions for that lead/deal
+- prevent all future recovery drafts
+
+5. Stage Transition Audit History
+
+Add stageTransitions jsonb array to lead_intelligence_profiles.
+
+Each transition should record:
+{
+  fromStage,
+  toStage,
+  reason,
+  source,
+  confidence,
+  timestamp
+}
+
+Sources:
+- intake_pipeline
+- gmail_reply_classifier
+- recovery_cron
+- manual_admin
+- scheduling_system
+- payment_system
+
+Update all automatic stage changes to append transition history.
+
+6. UI Updates
+
+On /admin/lead-pipeline detail modal, add:
+- Processing Timeline section
+- Stage Transition History section
+- Suppression status badge
+- Follow-up schedule status
+- Processing duration
+- Last automation run timestamp
+
+On cards, show:
+- suppressed/unsubscribed badge when active
+- next follow-up due indicator
+- stage transition count
+
+7. Safety Rules
+
+- Cron never sends emails directly.
+- Cron only queues drafts/actions.
+- Suppressed or unsubscribed leads are never contacted again.
+- No duplicate follow-up drafts for the same lead + follow_up_stage.
+- All actions must be org-scoped.
+- All logs must avoid secrets/tokens.
+
+8. Test Coverage
+
+Add/update test simulation to verify:
+- AI calls are parallelized
+- full processing log persists
+- 24h recovery draft queues
+- 72h recovery draft queues
+- 7d recovery draft queues
+- unsubscribe suppresses future drafts
+- not_interested suppresses future drafts
+- duplicate follow-up drafts are prevented
+- stage transitions are recorded
+- UI API returns processing timeline and stage transition data
+
+9. Final Diagnostic
+
+After implementation, run an E2E hardening test and report:
+- processing time before/after
+- recovery cron behavior
+- suppression behavior
+- duplicate prevention
+- stage transition log
+- any failed validations
+
+Expected Result:
+The intelligent lead pipeline should now operate as a production-ready recovery system:
+lead comes in → AI context created → draft queued → follow-up schedule created → cron queues follow-up drafts automatically → reply classifier updates stage → suppression prevents unwanted follow-up → full audit timeline visible in the UI.
