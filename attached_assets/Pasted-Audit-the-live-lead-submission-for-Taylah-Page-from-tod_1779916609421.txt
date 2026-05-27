@@ -1,0 +1,76 @@
+Audit the live lead submission for Taylah Page from today’s Summer Speed Sprint application.
+
+Goal:
+Verify whether the new live lead flowed correctly through the full agent architecture.
+
+Lead details:
+- Athlete: Taylah Page
+- Parent: Lecretria
+- Age: 16
+- Grade: 11th
+- School: Shadow Creek High School
+- Email: jaetaylah@gmail.com
+- Phone: 8322147665
+- Program/Campaign: Summer Speed Sprint
+- Submitted: May 27, 2026 around 3:09 PM EDT
+
+Audit these systems:
+
+1. Lead capture
+- Was the submission saved?
+- Was the lead created or updated?
+- Was duplicate detection applied?
+
+2. Lead intelligence
+- Was lead_intelligence_profile created?
+- Was AI summary generated?
+- Was lead score generated?
+- Was temperature assigned?
+- Was suggestedNextAction generated?
+- Was campaign attribution attached?
+
+3. Deal pipeline
+- Was a deal created?
+- Is pipeline_stage = new_lead or correct stage?
+- Does the lead appear on /admin/lead-pipeline?
+- Are stats updated?
+
+4. Gmail agent
+- Was an initial outreach draft generated?
+- Was gmail_agent_action created?
+- Is approvalRequired=true?
+- Was anything accidentally auto-sent?
+- Is the Gmail thread/message linked?
+
+5. Autonomy policy
+- Did the autonomy engine evaluate the action?
+- What decision was made?
+- auto_execute / approval_required / blocked?
+- What reasons were logged?
+
+6. Recovery automation
+- Was next_follow_up_at set?
+- Was follow_up_stage initialized?
+- Will recovery cron pick this lead up if no response?
+
+7. Scheduling readiness
+- Did the system create or leave empty a scheduling context?
+- It should not offer slots until scheduling intent is detected.
+
+8. Safety
+- Confirm no duplicate lead profile
+- Confirm no duplicate deal
+- Confirm no duplicate Gmail action
+- Confirm no auto-send unless explicitly allowed
+- Confirm orgId = Efficiency Strength Training org
+
+Return a diagnostic report with:
+- ✅ passed checks
+- ❌ failed checks
+- database record IDs
+- action status
+- AI summary preview
+- lead score/temperature
+- suggested next action
+- whether I need to manually approve the outreach draft
+- any bugs or missing links in the architecture
