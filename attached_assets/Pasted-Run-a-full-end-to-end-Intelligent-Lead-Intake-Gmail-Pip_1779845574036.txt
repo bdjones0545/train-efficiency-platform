@@ -1,0 +1,124 @@
+Run a full end-to-end Intelligent Lead Intake → Gmail → Pipeline automation test and verify every transition/state update.
+
+Goal:
+Validate the complete operational loop from lead submission through Gmail workflow and pipeline progression.
+
+Test Scenario:
+Simulate a realistic athlete lead submission for the Summer Speed Sprint funnel.
+
+Test Intake Payload:
+- Athlete: Jordan Carter
+- Parent: Melissa Carter
+- Email: jordan.carter.test@gmail.com
+- Phone: 8435551122
+- Age: 17
+- Grade: High School Junior
+- Sport: Football / WR / DB
+- School: Bluffton High School
+- Goals: Improve acceleration, top-end speed, explosiveness, and combine performance
+- Commitment: Highly committed
+- Campaign Source: Summer Speed Sprint Offer
+- Landing Page: Summer Speed Sprint Funnel
+- Experience: Varsity athlete
+
+Run the following verification sequence:
+
+PHASE 1 — Intake Processing
+1. Simulate intake submission
+2. Confirm intelligent intake service runs automatically
+3. Confirm lead record created
+4. Confirm deal record created
+5. Confirm lead_intelligence_profile created
+6. Confirm AI summary generated
+7. Confirm lead score generated
+8. Confirm temperature classification assigned
+9. Confirm suggested next action generated
+10. Confirm outreach draft generated
+11. Confirm Gmail draft action queued (NOT sent)
+
+Log:
+- processing duration
+- score
+- temperature
+- suggested action
+- draft creation result
+
+PHASE 2 — Pipeline Verification
+1. Confirm lead appears in:
+   /admin/lead-pipeline
+2. Confirm card appears in:
+   New Lead stage
+3. Confirm UI shows:
+   - AI summary preview
+   - campaign source
+   - lead score
+   - temperature badge
+   - suggested next action
+4. Confirm stats counters increment correctly
+
+PHASE 3 — Gmail Workflow Verification
+1. Approve the queued Gmail draft
+2. Confirm draft created successfully in Gmail
+3. Confirm gmail_agent_actions updated:
+   - proposed → approved → executed
+4. Confirm Gmail thread tracking record created
+5. Confirm gmail_conversations row linked to:
+   - leadId
+   - dealId
+6. Confirm audit log entry created
+
+PHASE 4 — Reply Recovery Test
+1. Use test-sync or fake reply injection
+2. Simulate inbound athlete reply:
+   "I'm definitely interested. What days are available this summer?"
+3. Confirm Gmail sync detects reply
+4. Confirm AI classifies reply correctly:
+   expected = wants_schedule or interested
+5. Confirm pipeline stage auto-updates:
+   New Lead → Engaged or Scheduling
+6. Confirm suggested next action updates
+7. Confirm follow-up draft generated
+8. Confirm reply thread links correctly to original conversation
+
+PHASE 5 — Recovery Automation Test
+1. Simulate no response for 24h
+2. Confirm follow-up draft queued
+3. Simulate no response for 72h
+4. Confirm second follow-up draft queued
+5. Simulate unsubscribe reply:
+   "Please stop messaging me."
+6. Confirm suppression logic activates
+7. Confirm no further drafts/actions generated
+
+PHASE 6 — Safety + Logging Audit
+Verify:
+- no emails auto-send without approval
+- all Gmail actions logged
+- all pipeline stage transitions logged
+- no duplicate leads/deals created
+- no duplicate Gmail conversation rows created
+- org-scoped isolation works correctly
+- all actions attributed to correct orgId
+
+PHASE 7 — Final Diagnostic Report
+Return:
+- full processing timeline
+- stage transition timeline
+- Gmail action lifecycle
+- detected bottlenecks
+- failed validations
+- UI hydration issues
+- duplicate detection issues
+- recommended hardening improvements
+
+Expected Result:
+A single lead submission should automatically create:
+- intelligent lead profile
+- scored deal
+- AI context summary
+- Gmail outreach draft
+- tracked Gmail conversation
+- pipeline progression
+- follow-up automation lifecycle
+
+with minimal manual coach involvement and full audit visibility.
