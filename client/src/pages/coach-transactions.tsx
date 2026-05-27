@@ -92,7 +92,7 @@ export default function CoachTransactionsPage() {
   const [txFilter, setTxFilter] = useState<"all" | "CREDIT" | "DEBIT">("all");
   const [paymentUser, setPaymentUser] = useState<UserBalance | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "venmo">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "venmo" | "stripe">("cash");
   const [revenuePeriod, setRevenuePeriod] = useState<RevenuePeriod>("monthly");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [showSubscriptions, setShowSubscriptions] = useState(false);
@@ -157,7 +157,8 @@ export default function CoachTransactionsPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Payment Recorded", description: `$${parseFloat(paymentAmount).toFixed(2)} added to ${paymentUser?.firstName || "user"}'s wallet via ${paymentMethod === "cash" ? "Cash" : "Venmo"}.` });
+      const methodLabel = paymentMethod === "cash" ? "Cash" : paymentMethod === "venmo" ? "Venmo" : "Stripe";
+      toast({ title: "Payment Recorded", description: `$${parseFloat(paymentAmount).toFixed(2)} added to ${paymentUser?.firstName || "user"}'s wallet via ${methodLabel}.` });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/user-balances"] });
       queryClient.invalidateQueries({ queryKey: ["/api/coach/transactions"] });
       setPaymentUser(null);
@@ -878,13 +879,14 @@ export default function CoachTransactionsPage() {
 
             <div className="space-y-2">
               <Label>Payment Method</Label>
-              <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "cash" | "venmo")}>
+              <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "cash" | "venmo" | "stripe")}>
                 <SelectTrigger data-testid="select-payment-method">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cash">Cash</SelectItem>
                   <SelectItem value="venmo">Venmo</SelectItem>
+                  <SelectItem value="stripe">Stripe (manual sync)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -909,7 +911,7 @@ export default function CoachTransactionsPage() {
               data-testid="button-confirm-payment"
             >
               <DollarSign className="h-4 w-4 mr-2" />
-              {manualPaymentMutation.isPending ? "Recording..." : `Record ${paymentMethod === "cash" ? "Cash" : "Venmo"} Payment`}
+              {manualPaymentMutation.isPending ? "Recording..." : `Record ${paymentMethod === "cash" ? "Cash" : paymentMethod === "venmo" ? "Venmo" : "Stripe"} Payment`}
             </Button>
           </div>
         </DialogContent>

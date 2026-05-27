@@ -3524,14 +3524,15 @@ export async function registerRoutes(
       if (amountCents <= 0) {
         return res.status(400).json({ message: "Amount must be greater than zero" });
       }
-      if (!["cash", "venmo"].includes(method)) {
-        return res.status(400).json({ message: "Method must be cash or venmo" });
+      if (!["cash", "venmo", "stripe"].includes(method)) {
+        return res.status(400).json({ message: "Method must be cash, venmo, or stripe" });
       }
 
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      const description = `Manual payment (${method === "cash" ? "Cash" : "Venmo"})`;
+      const methodLabel = method === "cash" ? "Cash" : method === "venmo" ? "Venmo" : "Stripe";
+      const description = `Manual payment (${methodLabel})`;
       const tx = await storage.creditWallet(userId, amountCents, description);
 
       // ── Revenue recognition: record payment received ─────────────────────────

@@ -1,8 +1,9 @@
 import Stripe from 'stripe';
 import { getStripeSync, getUncachableStripeClient } from './stripeClient';
 import { storage } from './storage';
-import { organizationSubscriptionPlans } from '@shared/schema';
+import { organizationSubscriptionPlans, financialEventFailures } from '@shared/schema';
 import { sendTeamQuoteEmail, sendSubscriptionExpiredEmail, type OrgBranding } from './email';
+import { db } from './db';
 
 const LOG_PREFIX = '[Stripe Wallet Sync]';
 
@@ -57,6 +58,20 @@ async function matchUserToStripePayment(
   }
 
   console.warn(`${LOG_PREFIX} unmatched payment warning — could not find user for stripeCustomerId=${stripeCustomerId}, email=${customerEmail}, name=${customerName}`);
+
+  try {
+    await db.insert(financialEventFailures).values({
+      sourceType: 'stripe_webhook',
+      eventType: 'unmatched_payment',
+      payload: { stripeCustomerId, customerEmail, customerName },
+      failureMessage: `No matching user found — stripeCustomerId: ${stripeCustomerId}, email: ${customerEmail}, name: ${customerName}`,
+      status: 'pending',
+      maxAttempts: 1,
+    });
+  } catch (logErr) {
+    console.error(`${LOG_PREFIX} failed to log unmatched payment:`, logErr);
+  }
+
   return null;
 }
 
