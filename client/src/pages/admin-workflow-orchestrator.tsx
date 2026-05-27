@@ -360,14 +360,31 @@ export default function AdminWorkflowOrchestratorPage() {
     return p;
   };
 
-  const { data: runs, isLoading, refetch, isFetching } = useQuery<WorkflowRun[]>({
+  const { data: runsRaw, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["/api/admin/workflow-runs", tab],
     queryFn: async () => {
       const r = await fetch(`/api/admin/workflow-runs?${buildParams()}`, { credentials: "include" });
-      return r.json();
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`Failed to load workflow runs (${r.status}): ${text}`);
+      }
+      const raw = await r.json();
+      if (!Array.isArray(raw)) {
+        console.warn("[WorkflowOrchestrator] Unexpected API response shape:", raw);
+      }
+      const normalized: WorkflowRun[] = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.workflows)
+          ? raw.workflows
+          : Array.isArray(raw?.data)
+            ? raw.data
+            : [];
+      return normalized;
     },
     refetchInterval: tab === "running" || tab === "waiting" ? 10000 : false,
   });
+
+  const runs: WorkflowRun[] = Array.isArray(runsRaw) ? runsRaw : [];
 
   const { data: templates = [] } = useQuery<WorkflowTemplate[]>({
     queryKey: ["/api/admin/workflow-templates"],
@@ -377,7 +394,7 @@ export default function AdminWorkflowOrchestratorPage() {
     qc.invalidateQueries({ queryKey: ["/api/admin/workflow-runs"] });
   };
 
-  const filtered = (runs || []).filter(r => {
+  const filtered = runs.filter(r => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const meta = r.metadata || {};
@@ -388,9 +405,9 @@ export default function AdminWorkflowOrchestratorPage() {
 
   // Summary counts
   const counts = {
-    running: (runs || []).filter(r => r.status === "running").length,
-    waiting: (runs || []).filter(r => r.status === "waiting").length,
-    failed: (runs || []).filter(r => r.status === "failed").length,
+    running: runs.filter(r => r.status === "running").length,
+    waiting: runs.filter(r => r.status === "waiting").length,
+    failed: runs.filter(r => r.status === "failed").length,
   };
 
   return (
@@ -450,11 +467,20 @@ export default function AdminWorkflowOrchestratorPage() {
         {view === "templates" ? (
           <TemplateBrowser templates={templates} />
         ) : isLoading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading workflow runs…</div>
+          <div className="p-8 text-center text-sm text-muted-foreground" data-testid="state-loading">Loading workflow runs…</div>
+        ) : isError ? (
+          <div className="p-8 text-center" data-testid="state-error">
+            <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+            <p className="text-sm font-medium text-foreground mb-1">Failed to load workflow runs</p>
+            <p className="text-xs text-muted-foreground mb-3">There was a problem reaching the server. Try refreshing.</p>
+            <Button size="sm" variant="outline" onClick={() => refetch()}>
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Retry
+            </Button>
+          </div>
         ) : filtered.length === 0 ? (
-          <div className="p-8 text-center">
+          <div className="p-8 text-center" data-testid="state-empty">
             <CheckCircle2 className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-40" />
-            <p className="text-sm text-muted-foreground">No workflow runs match the current filter.</p>
+            <p className="text-sm text-muted-foreground">No orchestration workflows found.</p>
             <Button size="sm" variant="outline" className="mt-3" onClick={() => setStarting(true)}>Start your first workflow</Button>
           </div>
         ) : (
