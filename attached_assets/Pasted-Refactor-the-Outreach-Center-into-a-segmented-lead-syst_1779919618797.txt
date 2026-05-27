@@ -1,0 +1,179 @@
+Refactor the Outreach Center into a segmented lead system.
+
+Problem:
+The Outreach Center currently mixes:
+- individual athlete leads
+- team training leads
+- organization prospects
+- outreach contacts
+
+with no visual distinction or filtering.
+
+Example:
+Taylah Page (individual athlete lead from Summer Speed Sprint) appears in the same prospect list as Egret & Iron Golf (organization/team prospect).
+
+Requirements:
+
+1. Add Lead Type System Everywhere
+
+Standardize:
+- individual_athlete_lead
+- team_training_lead
+- organization_prospect
+- outreach_contact
+
+Expose leadType in:
+- API responses
+- DB queries
+- UI cards
+- filters
+- badges
+- analytics
+
+2. Outreach Center UI Refactor
+
+At the top of Outreach Center add segmented tabs:
+
+- All
+- Athlete Leads
+- Team Training
+- Organizations
+- Outreach Contacts
+
+Tabs should filter instantly client-side.
+
+3. Add Lead Type Badge To Every Card
+
+Examples:
+
+Athlete lead:
+Badge:
+🏃 Athlete Lead
+
+Team training:
+Badge:
+🏆 Team Training
+
+Organization:
+Badge:
+🏢 Organization
+
+Outreach contact:
+Badge:
+✉️ Outreach Contact
+
+Color-code them.
+
+4. Add Filters
+
+Add filters for:
+- Lead Type
+- Pipeline Stage
+- Temperature
+- Campaign
+- Sport
+- City
+- Status
+- Requires Approval
+- Has Active Gmail Draft
+- Scheduling Status
+
+5. Athlete Lead Card Layout
+
+Athlete cards should show:
+- athlete name
+- parent
+- age/grade
+- school
+- sport
+- campaign source
+- lead score
+- temperature
+- suggested next action
+- pipeline stage
+- Gmail draft status
+
+6. Team Training Card Layout
+
+Show:
+- organization/team name
+- category
+- city/state
+- decision maker
+- outreach status
+- deal value
+- stage
+- contact confidence
+- outreach history
+
+7. Add “Source” Visibility
+
+Each card should show:
+- Lead Capture Form
+- Deep Search
+- Manual Entry
+- Referral
+- Meta Ad
+- Gmail Reply Recovery
+- Import
+
+8. Query Separation
+
+Team Training queries must exclude:
+leadType = individual_athlete_lead
+
+Athlete Lead queries must include:
+leadType = individual_athlete_lead
+
+9. Backfill Existing Data
+
+Taylah Page:
+leadType = individual_athlete_lead
+
+Egret & Iron Golf:
+leadType = organization_prospect or team_training_lead
+
+10. Add Stats Bar
+
+Top metrics:
+- Athlete Leads
+- Team Prospects
+- Hot Leads
+- Requires Approval
+- Scheduling
+- Booked
+- Outreach Pending
+
+11. Add Smart Empty States
+
+If viewing Athlete Leads:
+show:
+“Individual athlete leads from campaigns and landing pages appear here.”
+
+If viewing Team Training:
+show:
+“Schools, clubs, organizations, and group opportunities appear here.”
+
+12. Mobile UX
+
+Current mobile layout is crowded.
+
+Improve:
+- collapsible metadata
+- compact badges
+- expandable details
+- sticky filters
+- segmented control at top
+- quick actions row
+
+13. Return Diagnostic Report
+
+Include:
+- routes changed
+- query filters updated
+- records backfilled
+- lead types assigned
+- tabs added
+- mobile improvements
+- confirmation Taylah only appears in Athlete Leads
+- confirmation Egret & Iron Golf only appears in Team Training/Organizations
