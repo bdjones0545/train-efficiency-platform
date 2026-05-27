@@ -2552,6 +2552,8 @@ export class DatabaseStorage implements IStorage {
     let q = db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId));
     const results = await q.orderBy(desc(teamTrainingProspects.createdAt));
     return results.filter((r) => {
+      // Guardrail: never show individual athlete leads in Team Training Leads
+      if (r.leadType === "individual_athlete_lead") return false;
       if (opts?.sport && r.sport?.toLowerCase() !== opts.sport.toLowerCase()) return false;
       if (opts?.outreachStatus && r.outreachStatus !== opts.outreachStatus) return false;
       if (opts?.city && !r.city?.toLowerCase().includes(opts.city.toLowerCase())) return false;

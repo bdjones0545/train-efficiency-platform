@@ -9631,6 +9631,66 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
   });
 
   // Get all prospects for org
+  // Backfill: mark any lead_capture_submission-sourced records as individual_athlete_lead
+  app.post("/api/admin/team-training/prospects/backfill-lead-types", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { teamTrainingProspects } = await import("@shared/schema");
+      const { eq, and, like, or, ne } = await import("drizzle-orm");
+
+      // Find all prospects in this org that were created from lead capture (notes contain the marker)
+      // and are NOT already tagged as individual_athlete_lead
+      const allProspects = await db.select({
+        id: teamTrainingProspects.id,
+        prospectName: teamTrainingProspects.prospectName,
+        notes: teamTrainingProspects.notes,
+        leadType: teamTrainingProspects.leadType,
+      }).from(teamTrainingProspects)
+        .where(eq(teamTrainingProspects.orgId, profile.organizationId));
+
+      const toFix = allProspects.filter(p =>
+        p.notes?.includes("Moved from Lead Capture") &&
+        p.leadType !== "individual_athlete_lead"
+      );
+
+      let updated = 0;
+      for (const p of toFix) {
+        await db.update(teamTrainingProspects)
+          .set({ leadType: "individual_athlete_lead" })
+          .where(eq(teamTrainingProspects.id, p.id));
+        updated++;
+      }
+
+      // Count how many individual_athlete_lead records now exist (correctly tagged)
+      const allAfter = await db.select({
+        id: teamTrainingProspects.id,
+        prospectName: teamTrainingProspects.prospectName,
+        leadType: teamTrainingProspects.leadType,
+      }).from(teamTrainingProspects)
+        .where(eq(teamTrainingProspects.orgId, profile.organizationId));
+
+      const individualLeads = allAfter.filter(p => p.leadType === "individual_athlete_lead");
+      const teamLeads = allAfter.filter(p => p.leadType !== "individual_athlete_lead");
+
+      res.json({
+        success: true,
+        recordsUpdated: updated,
+        individualAthleteLeadsTotal: individualLeads.length,
+        teamTrainingLeadsTotal: teamLeads.length,
+        updatedNames: toFix.map(p => p.prospectName),
+        diagnosis: {
+          taylahInTeamTrainingLeads: teamLeads.some(p => p.prospectName?.toLowerCase().includes("taylah")),
+          taylahInIndividualLeads: individualLeads.some(p => p.prospectName?.toLowerCase().includes("taylah")),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/admin/team-training/prospects", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
@@ -15534,6 +15594,7 @@ Respond with this exact JSON structure:
       if (!sub) return res.status(404).json({ message: "Submission not found" });
       const [prospect] = await db.insert(teamTrainingProspects).values({
         orgId: profile.organizationId,
+        leadType: "individual_athlete_lead",
         prospectName: sub.athleteName + (sub.school ? ` / ${sub.school}` : ""),
         sport: sub.sport || "General",
         city: sub.school || "Unknown",

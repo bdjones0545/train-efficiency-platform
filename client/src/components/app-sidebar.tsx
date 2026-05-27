@@ -724,6 +724,7 @@ export function AppSidebar() {
       items: [
         ...(isAdmin
           ? [
+              { title: "Athlete Leads", url: "/admin/athlete-leads", icon: Users, testId: "nav-athlete-leads" },
               { title: "Team Training Leads", url: "/admin/team-training-leads", icon: Target, testId: "nav-team-training-leads" },
               { title: "Deal Pipeline", url: "/admin/team-training-deals", icon: KanbanSquare, testId: "nav-deal-pipeline" },
               { title: "Athlete Lead Pipeline", url: "/admin/lead-pipeline", icon: Brain, testId: "nav-lead-pipeline" },
