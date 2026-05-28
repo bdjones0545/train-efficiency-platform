@@ -887,6 +887,38 @@ export async function sendSchedulingInquiryEmail(
   await sendEmail(toEmail, subject, html, b.name);
 }
 
+/**
+ * Returns dynamic subject/body labels for session reminder emails based on the
+ * session date relative to "now", both evaluated in the org/session timezone.
+ *
+ * - same calendar day  → "Session Today"  / "today"
+ * - next calendar day  → "Session Tomorrow" / "tomorrow"
+ * - anything else      → "Upcoming Session" / "soon"
+ *
+ * Dates are compared as YYYY-MM-DD strings in the given timezone so that UTC
+ * midnight crossings never flip a same-day session to "tomorrow".
+ */
+export function getSessionReminderLabel(
+  sessionStartTime: Date,
+  timezone: string = "America/New_York"
+): { subjectLabel: string; bodyLabel: string } {
+  const toDateStr = (d: Date) =>
+    toZonedTime(d, timezone).toLocaleDateString("en-CA", { timeZone: timezone }); // YYYY-MM-DD
+
+  const sessionDateStr = toDateStr(sessionStartTime);
+  const nowDateStr = toDateStr(new Date());
+
+  const sessionDay = new Date(sessionDateStr);
+  const nowDay = new Date(nowDateStr);
+  const diffDays = Math.round(
+    (sessionDay.getTime() - nowDay.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays === 0) return { subjectLabel: "Session Today", bodyLabel: "today" };
+  if (diffDays === 1) return { subjectLabel: "Session Tomorrow", bodyLabel: "tomorrow" };
+  return { subjectLabel: "Upcoming Session", bodyLabel: "soon" };
+}
+
 export async function sendUpcomingSessionReminderEmailToClient(
   clientEmail: string,
   clientFirstName: string,
@@ -900,16 +932,17 @@ export async function sendUpcomingSessionReminderEmailToClient(
   logCtx?: EmailLogContext
 ) {
   const b = brand(org);
-  const subject = `Reminder: Session Tomorrow — ${serviceName}`;
+  const { subjectLabel, bodyLabel } = getSessionReminderLabel(startAt, timezone);
+  const subject = `Reminder: ${subjectLabel} — ${serviceName}`;
   const zonedStart = toZonedTime(startAt, timezone);
   const zonedEnd = toZonedTime(endAt, timezone);
   const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
   const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
   const locationLine = location ? line("Location", location) : '';
 
-  const html = emailShell(`Session Reminder — ${serviceName}`, `
+  const html = emailShell(`${subjectLabel} — ${serviceName}`, `
     <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${clientFirstName},</p>
-    ${para("This is a friendly reminder that you have a training session coming up tomorrow:")}
+    ${para(`This is a friendly reminder that you have a training session on your schedule ${bodyLabel}:`)}
     ${detailBox([
       line("Service", serviceName),
       line("Coach", coachName),
@@ -935,16 +968,17 @@ export async function sendUpcomingSessionReminderEmailToCoach(
   logCtx?: EmailLogContext
 ) {
   const b = brand(org);
-  const subject = `Reminder: Session Tomorrow — ${clientName}`;
+  const { subjectLabel, bodyLabel } = getSessionReminderLabel(startAt, timezone);
+  const subject = `Reminder: ${subjectLabel} — ${clientName}`;
   const zonedStart = toZonedTime(startAt, timezone);
   const zonedEnd = toZonedTime(endAt, timezone);
   const dateStr = format(zonedStart, "EEEE, MMMM d, yyyy");
   const timeStr = `${format(zonedStart, "h:mm a")} — ${format(zonedEnd, "h:mm a")}`;
   const locationLine = location ? line("Location", location) : '';
 
-  const html = emailShell(`Session Reminder — ${clientName}`, `
+  const html = emailShell(`${subjectLabel} — ${clientName}`, `
     <p style="font-size: 16px; line-height: 1.6; margin-top: 0;">Hi ${coachFirstName},</p>
-    ${para("This is a reminder that you have a session on your schedule tomorrow:")}
+    ${para(`This is a reminder that you have a session on your schedule ${bodyLabel}:`)}
     ${detailBox([
       line("Client", clientName),
       line("Service", serviceName),
