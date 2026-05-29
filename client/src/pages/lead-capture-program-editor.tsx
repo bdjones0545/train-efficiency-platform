@@ -422,6 +422,7 @@ interface MediaUploadZoneProps {
   accentBg: string;
   accentBorder: string;
   maxSizeMB?: number;
+  section?: string;
 }
 
 function MediaUploadZone({
@@ -433,6 +434,7 @@ function MediaUploadZone({
   accentBg,
   accentBorder,
   maxSizeMB,
+  section = "hero",
 }: MediaUploadZoneProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -480,7 +482,7 @@ function MediaUploadZone({
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("section", "hero");
+    formData.append("section", section);
 
     try {
       setUploadProgress(40);
@@ -1743,6 +1745,7 @@ export default function LeadCaptureProgramEditorPage() {
                           accentBg={ft.accentBg}
                           accentBorder={ft.accentBorder}
                           maxSizeMB={5}
+                          section="testimonials"
                         />
                       </div>
                       <div className="space-y-1.5">

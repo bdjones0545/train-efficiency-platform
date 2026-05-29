@@ -270,7 +270,7 @@ const SECTION_LIMITS: Record<string, number> = {
   training_showcase: 20,
   facility: 20,
   coaches: 10,
-  testimonials: 10,
+  testimonials: 20,
   results: 10,
 };
 

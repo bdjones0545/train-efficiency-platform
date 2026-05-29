@@ -353,11 +353,16 @@ export default function AdminMediaPage() {
     if (!files || files.length === 0) return;
 
     const sectionInfo = SECTIONS.find(s => s.key === activeSection);
-    const currentCount = (mediaData?.grouped?.[activeSection] || []).length;
+    const sectionLimit = sectionInfo?.limit ?? 10;
+    let currentCount = (mediaData?.grouped?.[activeSection] || []).length;
 
     for (const file of Array.from(files)) {
-      if (currentCount >= (sectionInfo?.limit || 10)) {
-        toast({ title: "Limit reached", description: `${sectionInfo?.label} supports up to ${sectionInfo?.limit} items.`, variant: "destructive" });
+      if (currentCount >= sectionLimit) {
+        toast({
+          title: `${sectionInfo?.label ?? "Section"} limit reached (${currentCount}/${sectionLimit})`,
+          description: `Remove an existing item to upload more, or switch to a different section.`,
+          variant: "destructive",
+        });
         break;
       }
 
@@ -400,6 +405,7 @@ export default function AdminMediaPage() {
           }
           toast({ title: "Upload failed", description: errMsg, variant: "destructive" });
         } else {
+          currentCount++;
           queryClient.invalidateQueries({ queryKey: ["/api/org/media"] });
           toast({ title: "Uploaded!", description: `${file.name} added to ${sectionInfo?.label}.` });
         }
