@@ -1,0 +1,281 @@
+TrainEfficiency Availability System — Phase 2 Scalability Redesign
+
+Objective:
+Replace the current form-based availability management system with a scheduling operating system that scales from 1 coach to hundreds of coaches, locations, and thousands of monthly bookings.
+
+Guiding Principle:
+Coaches do not think in terms of individual availability records.
+
+Current mindset:
+Day → Start Time → End Time → Location
+
+Desired mindset:
+Location → Schedule → Capacity → Revenue
+
+The system should feel like Google Calendar, Calendly, and Mindbody combined.
+
+───────────────────────────────
+PHASE 1 — Weekly Availability Builder
+───────────────────────────────
+
+Replace the current "Add Availability Block" form as the primary interface.
+
+New layout:
+
+Weekly Availability
+
+Monday
+6:00 AM–2:00 PM  Spring Island
+3:00 PM–5:00 PM  Bluffton High
+
+Tuesday
+6:00 AM–2:00 PM  Spring Island
+
+Wednesday
+6:00 AM–2:00 PM  Spring Island
+
+[ + Add Block ]
+
+Each day becomes its own section.
+
+Availability blocks become editable cards instead of database rows.
+
+Actions:
+
+Edit
+Duplicate
+Delete
+
+No more scrolling through seven giant "No availability set" cards.
+
+───────────────────────────────
+PHASE 2 — Calendar-Based Availability
+───────────────────────────────
+
+Add a new Calendar tab.
+
+Views:
+
+Day
+Week
+
+Coaches can:
+
+Click and drag availability
+
+Resize blocks
+
+Move blocks
+
+Assign locations
+
+Example:
+
+Monday
+
+6AM ───────────────
+7AM ██████████████
+8AM ██████████████
+9AM ██████████████
+10AM █████████████
+11AM █████████████
+
+Drag:
+
+6AM → 2PM
+
+System creates:
+
+Availability Block
+Location: Spring Island
+
+This mirrors how coaches already think about their schedules.
+
+───────────────────────────────
+PHASE 3 — Availability Templates
+───────────────────────────────
+
+Add a template library.
+
+Examples:
+
+Spring Island Coach
+
+High School Coach
+
+Semi-Private Coach
+
+Football Coach
+
+Basketball Coach
+
+Custom Template
+
+Example:
+
+Spring Island Coach
+
+Monday      6AM–2PM
+Tuesday     6AM–2PM
+Wednesday   6AM–2PM
+Thursday    6AM–2PM
+Friday      6AM–2PM
+
+One click populates the entire schedule.
+
+Huge quality-of-life improvement for onboarding.
+
+───────────────────────────────
+PHASE 4 — Capacity Intelligence
+───────────────────────────────
+
+Under the schedule show:
+
+Coach Capacity
+
+Availability Hours
+Booked Hours
+Remaining Hours
+Utilization %
+
+Example:
+
+Bryan Jones
+
+Available:
+40 Hours
+
+Booked:
+33 Hours
+
+Open Capacity:
+7 Hours
+
+Utilization:
+82%
+
+Revenue Potential:
+$840 Open Capacity
+
+This connects:
+
+Availability
+→ Scheduling
+→ Utilization
+→ Revenue
+
+───────────────────────────────
+PHASE 5 — Location-Based Capacity
+───────────────────────────────
+
+Add a second intelligence layer.
+
+Spring Island
+
+Available Hours:
+80
+
+Booked Hours:
+61
+
+Open Capacity:
+19
+
+Utilization:
+76%
+
+Potential Revenue:
+$2,280
+
+Bluffton High
+
+Available Hours:
+15
+
+Booked Hours:
+14
+
+Utilization:
+93%
+
+This allows organizations to identify:
+
+Underutilized locations
+
+Overloaded locations
+
+Expansion opportunities
+
+Scheduling bottlenecks
+
+───────────────────────────────
+PHASE 6 — AI Availability Optimization
+───────────────────────────────
+
+Add AI recommendations.
+
+Examples:
+
+"Bryan is consistently 95% utilized on Mondays."
+
+"Move 3 semi-private sessions to Hunter to free 4 hours."
+
+"Spring Island has 12 unused hours this week worth approximately $1,440."
+
+"Hunter has capacity for 8 additional sessions."
+
+"Friday afternoons show the lowest booking demand."
+
+AI should suggest:
+
+Schedule changes
+
+Capacity balancing
+
+Revenue opportunities
+
+Staffing recommendations
+
+───────────────────────────────
+PHASE 7 — Multi-Coach Scale Readiness
+───────────────────────────────
+
+Add organization-wide scheduling board.
+
+Filters:
+
+Coach
+
+Location
+
+Service Type
+
+Team
+
+View Modes:
+
+Coach Capacity
+
+Location Capacity
+
+Revenue Capacity
+
+This becomes the operational command center for organizations running multiple coaches.
+
+───────────────────────────────
+SUCCESS CRITERIA
+───────────────────────────────
+
+A coach should be able to:
+
+1. Set an entire week's availability in under 60 seconds.
+
+2. Understand their utilization immediately.
+
+3. See open revenue opportunities instantly.
+
+4. Manage availability visually rather than through forms.
+
+5. Scale from 1 coach to 100+ coaches without changing workflows.
+
+This should evolve Availability from a settings page into a Capacity & Revenue Management System.

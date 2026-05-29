@@ -2903,6 +2903,20 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/coach/availability/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { startTime, endTime, location, dayOfWeek } = req.body;
+      if (startTime && endTime && startTime >= endTime) {
+        return res.status(400).json({ message: "End time must be after start time" });
+      }
+      const updated = await storage.updateAvailabilityBlock(req.params.id, { startTime, endTime, location, dayOfWeek });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating availability:", error);
+      res.status(500).json({ message: "Failed to update availability" });
+    }
+  });
+
   app.delete("/api/coach/availability/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       await storage.deleteAvailabilityBlock(req.params.id);

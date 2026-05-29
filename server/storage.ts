@@ -189,6 +189,7 @@ export interface IStorage {
 
   getAvailabilityBlocks(coachId: string): Promise<AvailabilityBlock[]>;
   createAvailabilityBlock(block: InsertAvailabilityBlock): Promise<AvailabilityBlock>;
+  updateAvailabilityBlock(id: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock>;
   deleteAvailabilityBlock(id: string): Promise<void>;
 
   getBookings(clientId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
@@ -766,6 +767,11 @@ export class DatabaseStorage implements IStorage {
   async createAvailabilityBlock(block: InsertAvailabilityBlock): Promise<AvailabilityBlock> {
     const [created] = await db.insert(availabilityBlocks).values(block).returning();
     return created;
+  }
+
+  async updateAvailabilityBlock(id: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock> {
+    const [updated] = await db.update(availabilityBlocks).set(data).where(eq(availabilityBlocks.id, id)).returning();
+    return updated;
   }
 
   async deleteAvailabilityBlock(id: string): Promise<void> {
