@@ -468,6 +468,36 @@ app.use((req, res, next) => {
   // Run at 6 AM each day via a smart scheduler (first run: 8 minutes after startup)
   setTimeout(runDailyOpsCron, 8 * 60 * 1000);
 
+  // ─── Daily Revenue Opportunity Sync ──────────────────────────────────────
+  // Ensures Revenue Opportunity signals (R1–R4) appear in the Attention Inbox
+  // even if no coach manually opens it. Runs once on startup (after a short delay)
+  // and every 24 hours thereafter. Respects existing deduplication/sourceId rules.
+  const runDailyRevenueSync = async () => {
+    try {
+      const { db: dbInst } = await import("./db");
+      const { syncAttentionItems } = await import("./attention-engine");
+      const { sql: sqlTag } = await import("drizzle-orm");
+      // Get all org IDs — handle drizzle execute returning either array or { rows }
+      const raw = await dbInst.execute(sqlTag`SELECT DISTINCT id FROM organizations LIMIT 50`);
+      const orgs: any[] = Array.isArray(raw) ? raw : ((raw as any).rows ?? []);
+      let synced = 0;
+      let errors = 0;
+      for (const org of orgs) {
+        try {
+          await syncAttentionItems(org.id);
+          synced++;
+        } catch {
+          errors++;
+        }
+      }
+      if (synced > 0) console.log(`[RevenueSync] Daily sync complete — ${synced} org(s) synced (${errors} errors)`);
+    } catch (err: any) {
+      console.error("[RevenueSync] Cron error:", err?.message ?? err);
+    }
+  };
+  setInterval(runDailyRevenueSync, 24 * 60 * 60 * 1000); // every 24 hours
+  setTimeout(runDailyRevenueSync, 60 * 1000); // first run 60 seconds after startup
+
   // ─── Lead Recovery Cron ──────────────────────────────────────────────────
   // Queues follow-up drafts for leads whose follow-up window has passed.
   // Never auto-sends — all drafts require approval. Runs every 15 minutes.

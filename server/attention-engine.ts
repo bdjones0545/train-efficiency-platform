@@ -65,6 +65,143 @@ function severityToLevel(severity: string): string {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Revenue opportunity value estimation
+// Derives dollar estimates from the org's real service prices instead of
+// using hardcoded universal assumptions.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** Returns the average paid service price for an org in dollars (per session). */
+async function getOrgAvgServicePrice(orgId: string): Promise<number> {
+  try {
+    const rawRows = await db.execute(sql`
+      SELECT
+        AVG(price_cents) FILTER (WHERE price_cents > 0 AND counts_toward_revenue = true) AS avg_paid,
+        MIN(price_cents) FILTER (WHERE price_cents > 0 AND counts_toward_revenue = true) AS min_paid
+      FROM services
+      WHERE organization_id = ${orgId} AND active = true
+    `);
+    const row = Array.isArray(rawRows) ? (rawRows as any[])[0] : (rawRows as any)?.rows?.[0];
+    const avgCents = Number(row?.avg_paid ?? 0);
+    const minCents = Number(row?.min_paid ?? 0);
+    const baseCents = avgCents > 0 ? avgCents : (minCents > 0 ? minCents : 5000);
+    return baseCents / 100; // dollars per session
+  } catch {
+    return 50; // absolute last-resort fallback ($50)
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Condition-based auto-dismissal for revenue signals
+// Runs at the START of every syncAttentionItems cycle.
+// Dismisses active items whose underlying business condition is no longer true,
+// so coaches never see stale "solved" opportunities.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async function resolveStaleRevenueSignals(orgId: string): Promise<void> {
+  const now = new Date();
+  const cutoff72h = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+  const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  // R1 — dismiss when lead now has any outreach event or is resolved
+  try {
+    await db.execute(sql`
+      UPDATE attention_items ai
+      SET status = 'dismissed',
+          metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{dismissReason}', '"resolved_by_followup_sent"'),
+          updated_at = NOW()
+      WHERE ai.org_id = ${orgId}
+        AND ai.status IN ('active', 'escalated')
+        AND ai.source = 'revenue'
+        AND ai.source_id LIKE 'revenue-lead-new-%'
+        AND EXISTS (
+          SELECT 1 FROM lead_capture_submissions lcs
+          WHERE lcs.org_id = ${orgId}
+            AND ai.source_id LIKE ('revenue-lead-new-' || lcs.id || '-%')
+            AND (
+              lcs.contacted_at IS NOT NULL
+              OR lcs.last_follow_up_at IS NOT NULL
+              OR (lcs.follow_up_count IS NOT NULL AND lcs.follow_up_count > 0)
+              OR lcs.converted_at IS NOT NULL
+              OR lcs.sequence_status IN ('converted', 'closed', 'lost')
+              OR lcs.sequence_status LIKE 'followup%'
+            )
+        )
+    `);
+  } catch {}
+
+  // R2 — dismiss when lead converted, booked, or re-contacted within 72h
+  try {
+    await db.execute(sql`
+      UPDATE attention_items ai
+      SET status = 'dismissed',
+          metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{dismissReason}', '"resolved_by_condition_change"'),
+          updated_at = NOW()
+      WHERE ai.org_id = ${orgId}
+        AND ai.status IN ('active', 'escalated')
+        AND ai.source = 'revenue'
+        AND ai.source_id LIKE 'revenue-lead-followup-%'
+        AND EXISTS (
+          SELECT 1 FROM lead_capture_submissions lcs
+          WHERE lcs.org_id = ${orgId}
+            AND ai.source_id LIKE ('revenue-lead-followup-' || lcs.id || '-%')
+            AND (
+              lcs.converted_at IS NOT NULL
+              OR lcs.sequence_status IN ('converted', 'closed', 'lost')
+              OR lcs.booking_status = 'booked'
+              OR COALESCE(lcs.last_follow_up_at, lcs.contacted_at) >= ${cutoff72h}
+            )
+        )
+    `);
+  } catch {}
+
+  // R3 — dismiss when paid booking now exists after the free intro date
+  try {
+    await db.execute(sql`
+      UPDATE attention_items ai
+      SET status = 'dismissed',
+          metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{dismissReason}', '"resolved_by_booking_created"'),
+          updated_at = NOW()
+      WHERE ai.org_id = ${orgId}
+        AND ai.status IN ('active', 'escalated')
+        AND ai.source = 'revenue'
+        AND ai.source_id LIKE 'revenue-intro-noconv-%'
+        AND EXISTS (
+          SELECT 1 FROM bookings b_free
+          JOIN bookings b_paid ON b_paid.client_id = b_free.client_id
+            AND b_paid.organization_id = ${orgId}
+          JOIN services s_paid ON s_paid.id = b_paid.service_id
+          WHERE b_free.organization_id = ${orgId}
+            AND ai.source_id LIKE ('revenue-intro-noconv-' || b_free.id || '-%')
+            AND b_paid.created_at > b_free.start_at
+            AND s_paid.price_cents > 0
+            AND s_paid.counts_toward_revenue = true
+        )
+    `);
+  } catch {}
+
+  // R4 — dismiss when at least one confirmed booking exists in next 7 days
+  try {
+    await db.execute(sql`
+      UPDATE attention_items ai
+      SET status = 'dismissed',
+          metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{dismissReason}', '"resolved_by_booking_created"'),
+          updated_at = NOW()
+      WHERE ai.org_id = ${orgId}
+        AND ai.status IN ('active', 'escalated')
+        AND ai.source = 'revenue'
+        AND ai.source_id LIKE 'revenue-empty-schedule-%'
+        AND EXISTS (
+          SELECT 1 FROM bookings
+          WHERE organization_id = ${orgId}
+            AND status = 'CONFIRMED'
+            AND start_at >= NOW()
+            AND start_at < ${weekEnd}
+        )
+    `);
+  } catch {}
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Sync — pull from all sources and upsert into attention_items
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -103,6 +240,12 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           lt(attentionItems.createdAt, threeDaysAgo)
         )
       );
+  } catch {}
+
+  // Condition-based auto-dismissal — dismiss resolved revenue signals immediately
+  // so coaches never see opportunities that are already handled.
+  try {
+    await resolveStaleRevenueSignals(orgId);
   } catch {}
 
   // Purge stale agent_recommendations that were generated from bad booking data
@@ -823,8 +966,15 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
     }
   } catch {}
 
-  // ── R1. New Lead Submitted — Never Contacted (Critical Revenue) ───────────
-  // Fires once per day per lead until the lead is contacted.
+  // ── Pre-fetch org service price — shared by R1–R4 for value estimation ──────
+  // Uses real org data; falls back to $50/session only if no paid services exist.
+  const orgAvgPrice = await getOrgAvgServicePrice(orgId); // dollars per session
+
+  // ── R1. New Lead Submitted — Zero Outreach (Critical Revenue) ────────────
+  // Fires ONLY when the lead has received no contact at all — not even automated.
+  // A lead moves out of R1 as soon as any outreach occurs (contacted_at set,
+  // last_follow_up_at set, follow_up_count > 0, or sequence_status indicates
+  // a follow-up was sent). R1 and R2 are mutually exclusive by design.
   try {
     const dayKey = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
     const newLeads = await db.execute(sql`
@@ -834,7 +984,10 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
       FROM lead_capture_submissions
       WHERE org_id = ${orgId}
         AND contacted_at IS NULL
+        AND last_follow_up_at IS NULL
+        AND (follow_up_count IS NULL OR follow_up_count = 0)
         AND sequence_status NOT IN ('converted', 'closed', 'lost')
+        AND sequence_status NOT LIKE 'followup%'
         AND created_at >= NOW() - INTERVAL '7 days'
       ORDER BY created_at ASC
       LIMIT 20
@@ -843,7 +996,9 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
     for (const lead of newLeads) {
       const name = (lead.athlete_name || lead.parent_name || lead.email || "Unknown lead").trim();
       const hoursWaiting = Math.floor(Number(lead.hours_waiting ?? 0));
-      const estValue = Number(lead.estimated_value_cents ?? 0) / 100;
+      const leadCents = Number(lead.estimated_value_cents ?? 0);
+      // Priority: lead's own estimated value → org avg × 4 sessions (conservative)
+      const estValue = leadCents > 0 ? leadCents / 100 : Math.round(orgAvgPrice * 4);
       const level = hoursWaiting >= 2 ? "critical" : "important";
       const urgency = hoursWaiting >= 4 ? 95 : hoursWaiting >= 2 ? 88 : 72;
       const d = defaults(level);
@@ -853,7 +1008,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         level,
         category: "lead",
         title: `New lead awaiting first contact`,
-        body: `${name} submitted ${waitStr} ago — no contact has been made yet.${estValue > 0 ? ` Estimated value: $${Math.round(estValue)}.` : ""}`,
+        body: `${name} submitted ${waitStr} ago — no contact has been made yet. Estimated value: $${estValue}.`,
         source: "revenue",
         sourceId: `revenue-lead-new-${lead.id}-d${dayKey}`,
         actionUrl: "/admin/leads",
@@ -872,25 +1027,39 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           aiQualificationScore: lead.ai_qualification_score ?? null,
           ctaOptions: ["send-email", "send-sms", "schedule-call"],
           signalType: "new-lead-uncontacted",
+          valueSource: leadCents > 0 ? "lead_estimated_value" : "org_service_avg",
         },
       });
     }
   } catch {}
 
-  // ── R2. Lead Awaiting Follow-Up 72h+ (Important → Critical) ──────────────
+  // ── R2. Lead Needs Human Follow-Up (72h+ since last contact) ─────────────
+  // Broader than original: includes leads contacted by automation (sequence)
+  // as well as those contacted by a coach. Uses COALESCE(last_follow_up_at,
+  // contacted_at, created_at) as the authoritative "last contact time" so
+  // automated email outreach is properly accounted for.
   try {
     const dayKey = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
     const staleLeads = await db.execute(sql`
       SELECT id, athlete_name, parent_name, email, phone,
         estimated_value_cents, follow_up_count, ai_qualification_score,
-        EXTRACT(EPOCH FROM (NOW() - COALESCE(last_follow_up_at, contacted_at))) / 3600 AS hours_since_contact
+        booking_status,
+        COALESCE(last_follow_up_at, contacted_at, created_at) AS last_contact_time,
+        EXTRACT(EPOCH FROM (NOW() - COALESCE(last_follow_up_at, contacted_at, created_at))) / 3600
+          AS hours_since_contact
       FROM lead_capture_submissions
       WHERE org_id = ${orgId}
-        AND contacted_at IS NOT NULL
         AND converted_at IS NULL
         AND sequence_status NOT IN ('converted', 'closed', 'lost')
-        AND COALESCE(last_follow_up_at, contacted_at) < NOW() - INTERVAL '72 hours'
-      ORDER BY last_follow_up_at ASC NULLS FIRST
+        AND (booking_status IS NULL OR booking_status != 'booked')
+        AND (
+          contacted_at IS NOT NULL
+          OR last_follow_up_at IS NOT NULL
+          OR (follow_up_count IS NOT NULL AND follow_up_count > 0)
+          OR sequence_status LIKE 'followup%'
+        )
+        AND COALESCE(last_follow_up_at, contacted_at, created_at) < NOW() - INTERVAL '72 hours'
+      ORDER BY COALESCE(last_follow_up_at, contacted_at, created_at) ASC
       LIMIT 20
     `) as any[];
 
@@ -898,17 +1067,19 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
       const name = (lead.athlete_name || lead.parent_name || lead.email || "Lead").trim();
       const hoursSince = Math.floor(Number(lead.hours_since_contact ?? 0));
       const daysSince = Math.floor(hoursSince / 24);
-      const estValue = Number(lead.estimated_value_cents ?? 0) / 100;
+      const leadCents = Number(lead.estimated_value_cents ?? 0);
+      const estValue = leadCents > 0 ? leadCents / 100 : Math.round(orgAvgPrice * 4);
       const followUpCount = Number(lead.follow_up_count ?? 0);
       const level = daysSince >= 7 ? "critical" : "important";
       const urgency = daysSince >= 7 ? 87 : daysSince >= 5 ? 78 : 70;
       const d = defaults(level);
+      const daysStr = daysSince >= 1 ? `${daysSince} day${daysSince !== 1 ? "s" : ""}` : `${hoursSince} hours`;
       add({
         orgId,
         level,
         category: "lead",
-        title: `Lead awaiting follow-up`,
-        body: `${name} has not been contacted in ${daysSince >= 1 ? `${daysSince} day${daysSince !== 1 ? "s" : ""}` : `${hoursSince} hours`}. ${followUpCount} prior contact${followUpCount !== 1 ? "s" : ""} made.`,
+        title: `Lead needs follow-up`,
+        body: `${name} last contacted ${daysStr} ago. ${followUpCount} outreach event${followUpCount !== 1 ? "s" : ""} to date — human follow-up overdue.`,
         source: "revenue",
         sourceId: `revenue-lead-followup-${lead.id}-d${dayKey}`,
         actionUrl: "/admin/leads",
@@ -929,6 +1100,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           aiQualificationScore: Number(lead.ai_qualification_score ?? 0),
           ctaOptions: ["send-follow-up-email", "send-sms", "schedule-consultation"],
           signalType: "lead-followup-overdue",
+          valueSource: leadCents > 0 ? "lead_estimated_value" : "org_service_avg",
         },
       });
     }
@@ -936,8 +1108,10 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
 
   // ── R3. Free Intro Completed — No Paid Conversion (Critical Revenue) ──────
   // Highest-intent conversion window: client attended a free session but hasn't bought.
+  // Value = org avg session price × 8 sessions (minimum training commitment).
   try {
     const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+    const r3EstValue = Math.round(orgAvgPrice * 8); // 8-session conversion assumption
     const noConvRows = await db.execute(sql`
       SELECT b.id AS booking_id, b.client_id, b.start_at,
         u.first_name, u.last_name, u.email,
@@ -992,10 +1166,11 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           assessmentDate: new Date(row.start_at).toISOString(),
           daysSinceAssessment: daysSince,
           serviceName: row.service_name,
-          estimatedValue: 840,
-          estimatedAnnualValue: 840,
+          estimatedValue: r3EstValue,
           ctaOptions: ["send-program-offer", "schedule-followup-call", "generate-recommendation"],
           signalType: "intro-no-conversion",
+          valueSource: "org_service_avg_x8",
+          orgAvgSessionPrice: orgAvgPrice,
         },
       });
     }
@@ -1003,17 +1178,20 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
 
   // ── R4. Zero Upcoming Bookings This Week (Critical Revenue) ───────────────
   // Org-level signal — empty schedule = zero revenue for the week.
+  // Value = org avg session price × 4 sessions (conservative open-week estimate).
   try {
     const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
-    const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const [upcomingRow] = await db.execute(sql`
+    const weekEndIso = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const r4EstValue = Math.round(orgAvgPrice * 4); // 4 sessions/week baseline
+    const r4Rows = await db.execute(sql`
       SELECT COUNT(*) AS confirmed_count
       FROM bookings
       WHERE organization_id = ${orgId}
         AND status = 'CONFIRMED'
         AND start_at >= NOW()
-        AND start_at < ${weekEnd}
+        AND start_at < ${weekEndIso}::timestamptz
     `) as any;
+    const upcomingRow = Array.isArray(r4Rows) ? r4Rows[0] : (r4Rows as any)?.rows?.[0];
     const confirmedCount = Number(upcomingRow?.confirmed_count ?? 0);
     if (confirmedCount === 0) {
       const d = defaults("critical");
@@ -1022,7 +1200,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         level: "critical",
         category: "revenue",
         title: "No bookings scheduled this week",
-        body: "Your schedule has no confirmed sessions over the next 7 days. Reach out to leads or promote your availability to fill the gap.",
+        body: `Your schedule has no confirmed sessions in the next 7 days. At an average of $${Math.round(orgAvgPrice)}/session, each empty slot is direct lost revenue.`,
         source: "revenue",
         sourceId: `revenue-empty-schedule-w${weekKey}`,
         actionUrl: "/scheduling",
@@ -1033,10 +1211,12 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         businessImpact: 96,
         metadata: {
           confirmedCount: 0,
-          weekEnd: weekEnd.toISOString(),
-          estimatedValue: 280,
+          weekEnd: weekEndIso,
+          estimatedValue: r4EstValue,
+          orgAvgSessionPrice: orgAvgPrice,
           ctaOptions: ["promote-availability", "contact-leads", "launch-followup-campaign"],
           signalType: "empty-schedule",
+          valueSource: "org_service_avg_x4",
         },
       });
     }

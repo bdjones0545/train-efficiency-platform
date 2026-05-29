@@ -333,10 +333,23 @@ function RevenueOpportunitiesSection({
 
   if (revenueItems.length === 0) return null;
 
-  const totalEstValue = revenueItems.reduce((sum, item) => {
-    const meta = item.metadata ?? {};
-    return sum + (Number(meta.estimatedValue ?? meta.estimatedAnnualValue ?? 0));
-  }, 0);
+  // Dedup total by email/clientId — count only the highest-value signal per unique person/entity.
+  // Org-level signals (R4, no email) are always included once.
+  const totalEstValue = (() => {
+    const seenKeys = new Map<string, number>(); // uniqueKey → max value
+    let orgLevelTotal = 0;
+    for (const item of revenueItems) {
+      const meta = item.metadata ?? {};
+      const value = Number(meta.estimatedValue ?? 0);
+      const key = meta.leadEmail || meta.clientEmail || null;
+      if (key) {
+        seenKeys.set(key, Math.max(seenKeys.get(key) ?? 0, value));
+      } else {
+        orgLevelTotal += value; // e.g. R4 empty-schedule is org-level
+      }
+    }
+    return orgLevelTotal + Array.from(seenKeys.values()).reduce((s, v) => s + v, 0);
+  })();
 
   const critCount = revenueItems.filter((i) => i.level === "critical" || i.status === "escalated").length;
 
@@ -369,7 +382,7 @@ function RevenueOpportunitiesSection({
             </div>
             {totalEstValue > 0 && (
               <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                ${totalEstValue.toLocaleString()} in potential revenue identified
+                ~${totalEstValue.toLocaleString()} estimated potential (not guaranteed revenue)
               </p>
             )}
           </div>

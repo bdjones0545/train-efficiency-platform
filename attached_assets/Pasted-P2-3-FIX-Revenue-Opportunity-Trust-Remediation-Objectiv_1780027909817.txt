@@ -1,0 +1,190 @@
+P2.3 FIX — Revenue Opportunity Trust Remediation
+
+Objective:
+
+Fix the trust issues discovered in the P2.2 Revenue Opportunity Accuracy Audit.
+
+Do not add new revenue signals yet.
+
+Improve the accuracy, resolution behavior, and value estimation of the four existing revenue signals:
+
+R1 — New Lead Never Contacted
+R2 — Lead Awaiting Follow-Up 72h+
+R3 — Free Intro Completed, No Paid Conversion
+R4 — Zero Upcoming Bookings This Week
+
+Tasks:
+
+1. Fix R1 false-positive logic
+
+Current problem:
+
+R1 fires for leads where contacted_at IS NULL, even if automated outreach already occurred.
+
+Example:
+
+A lead had:
+
+* follow_up_count = 1
+* last_follow_up_at IS NOT NULL
+* sequence_status = followup_24hr_sent
+
+but R1 still called it “never contacted.”
+
+Update R1 criteria.
+
+R1 should only fire when:
+
+* contacted_at IS NULL
+* last_follow_up_at IS NULL
+* follow_up_count = 0 OR follow_up_count IS NULL
+* sequence_status is not converted, closed, lost, or follow-up-sent
+* lead created within the last 7 days
+
+If automated email/SMS outreach occurs, the lead should move out of R1.
+
+2. Improve R2 eligibility
+
+R2 should include leads that received automated follow-up but still need human follow-up.
+
+Use:
+
+last_contact_time = COALESCE(last_follow_up_at, contacted_at, created_at)
+
+R2 should fire when:
+
+* lead is not converted
+* lead is not closed/lost
+* last_contact_time is older than 72 hours
+* lead is not booked
+* lead has at least one contact/follow-up event OR sequence status indicates follow-up was sent
+
+This turns R2 into:
+
+“Lead needs follow-up”
+
+instead of only:
+
+“Human-contacted lead needs follow-up.”
+
+3. Add condition-based auto-dismissal
+
+At the start of every syncAttentionItems(orgId) run, resolve active revenue items whose condition is no longer true.
+
+Auto-dismiss R1 when:
+
+* contacted_at IS NOT NULL
+* OR last_follow_up_at IS NOT NULL
+* OR follow_up_count > 0
+* OR converted/closed/lost
+
+Auto-dismiss R2 when:
+
+* converted/closed/lost
+* OR booked
+* OR last follow-up happened within the last 72 hours
+
+Auto-dismiss R3 when:
+
+* paid booking exists after the free intro
+* OR subscription/package purchase exists after intro
+* OR client is no longer eligible
+
+Auto-dismiss R4 when:
+
+* at least one CONFIRMED booking exists in the next 7 days
+
+Store dismissal reason if the schema supports it.
+
+Examples:
+
+* resolved_by_condition_change
+* resolved_by_booking_created
+* resolved_by_followup_sent
+* resolved_by_conversion
+
+4. Improve estimated value calculations
+
+Create reusable helper:
+
+estimateRevenueOpportunityValue(orgId, signalType, context)
+
+Use real organization data where possible.
+
+R1/R2 lead value fallback:
+
+Priority:
+
+1. lead_capture_submissions.estimated_value_cents
+2. Average paid service price for org × estimated expected sessions
+3. Median paid service price for org × estimated expected sessions
+4. Conservative fallback: average paid service price × 4
+5. Final fallback: $0
+
+R3 assessment conversion value:
+
+Priority:
+
+1. Average paid service price × 8–12 sessions
+2. Most common paid service price × 8
+3. Conservative fallback from actual org services
+4. No hardcoded universal $840 unless org has no paid services
+
+R4 empty schedule value:
+
+Calculate from:
+
+* average paid service price
+* number of open bookable slots if available
+* otherwise conservative estimate: average paid service price × 4
+
+Do not use hardcoded $280 unless no org-specific data exists.
+
+5. Prevent misleading totals
+
+The Revenue Opportunities header should distinguish:
+
+* Estimated potential
+* not guaranteed revenue
+
+Avoid summing duplicate stage values for the same lead/client when possible.
+
+If same email/client appears in multiple revenue items, count only the highest value in the header total while still displaying both items if operationally useful.
+
+6. Add daily revenue sync
+
+Add a lightweight daily cron:
+
+* Runs once per org
+* Calls syncAttentionItems(orgId)
+* Logs success/failure
+* Does not spam duplicate items
+* Respects existing deduplication/sourceId rules
+
+This ensures Revenue Opportunities appear even if nobody manually opens the inbox.
+
+7. Verification
+
+After implementation, run validation for org-est.
+
+Provide:
+
+* R1 active item count before/after
+* R2 active item count before/after
+* R3 active item count
+* R4 active item count
+* Example auto-dismiss logs
+* Estimated value calculation details
+* Revenue header total before/after
+* Daily cron registration confirmation
+
+Expected result for current org-est data:
+
+* Taylah Page should NOT appear as “never contacted” if automated follow-up already occurred.
+* Taylah Page may appear as “Lead awaiting follow-up” only if the last follow-up is older than 72 hours.
+* R4 should appear if there are truly zero confirmed bookings in the next 7 days.
+* Estimated values should be based on org-est services, not hardcoded universal assumptions.
+
+Production readiness target after fix:
+
+Composite trust score should improve from 6.9/10 to at least 8.5/10.
