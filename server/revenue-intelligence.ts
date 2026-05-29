@@ -13,6 +13,7 @@ import {
   organizations,
 } from "@shared/schema";
 import { eq, and, inArray, gte, lte, sql, desc } from "drizzle-orm";
+import { getEligibleClientIds } from "./client-eligibility";
 
 export interface ClientLTV {
   clientId: string;
@@ -159,7 +160,7 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
   const orgRow = await db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
   const orgTimezone = orgRow[0]?.timezone ?? "America/New_York";
 
-  const [allBookings, coachRows, userSubs, subPlans] = await Promise.all([
+  const [allBookings, coachRows, userSubs, subPlans, eligibleClientIds] = await Promise.all([
     getOrgBookingsWithService(orgId),
     db.select({
       id: coachProfiles.id,
@@ -176,6 +177,7 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     db.select().from(organizationSubscriptionPlans).where(
       and(eq(organizationSubscriptionPlans.organizationId, orgId), eq(organizationSubscriptionPlans.active, true))
     ),
+    getEligibleClientIds(orgId),
   ]);
 
   const coachMap = new Map(coachRows.map(c => [c.id, `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()]));
@@ -231,8 +233,10 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     .sort((a, b) => b.totalRevenueCents - a.totalRevenueCents);
 
   // Revenue by time block (hour of day) — grouped in org's local timezone
+  // Only eligible real clients are included — excludes coach/admin/walk-in bookings
+  const eligibleLast30d = last30d.filter(b => eligibleClientIds.has(b.clientId));
   const hourMap = new Map<number, { revenue: number; sessions: number }>();
-  for (const b of last30d) {
+  for (const b of eligibleLast30d) {
     const zonedDate = toZonedTime(new Date(b.startAt), orgTimezone);
     const hour = zonedDate.getHours();
     if (!hourMap.has(hour)) hourMap.set(hour, { revenue: 0, sessions: 0 });
@@ -250,10 +254,15 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     }))
     .sort((a, b) => a.hour - b.hour);
 
-  // Top clients by revenue
+  // Top clients by revenue — eligibility-filtered
+  // Excludes coaches, admins, staff, walk-ins, test users, internal aliases, and org owner
+  const eligibleClientBookings = allBookings.filter(b => eligibleClientIds.has(b.clientId));
+  const ineligibleCount = allBookings.filter(b => !eligibleClientIds.has(b.clientId)).length;
+  console.log(`[RevIntel][${orgId}] topClients eligibility audit: total_booking_rows=${allBookings.length}, eligible_rows=${eligibleClientBookings.length}, excluded_rows=${ineligibleCount}`);
+
   const clientRevenueMap = new Map<string, number>();
   const clientSessionMap = new Map<string, number>();
-  for (const b of allBookings) {
+  for (const b of eligibleClientBookings) {
     clientRevenueMap.set(b.clientId, (clientRevenueMap.get(b.clientId) ?? 0) + (b.priceCents ?? 0));
     clientSessionMap.set(b.clientId, (clientSessionMap.get(b.clientId) ?? 0) + 1);
   }
@@ -277,6 +286,8 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
       sessionCount: clientSessionMap.get(id) ?? 0,
     };
   });
+
+  console.log(`[RevIntel][${orgId}] topClients after eligibility filter: ${topClients.map(c => `${c.clientName}=$${(c.totalRevenueCents / 100).toFixed(0)}`).join(", ") || "(none)"}`);
 
   // Churn risk count and session package alerts
   const [churnRisks, packageAlerts] = await Promise.all([
@@ -323,7 +334,10 @@ export async function computeChurnRisks(orgId: string): Promise<ChurnRisk[]> {
   const last14d = subDays(now, 14);
   const prior14d = subDays(now, 28);
 
-  const coachIds = await getOrgCoachIds(orgId);
+  const [coachIds, eligibleClientIds] = await Promise.all([
+    getOrgCoachIds(orgId),
+    getEligibleClientIds(orgId),
+  ]);
   if (coachIds.length === 0) return [];
 
   // Get all bookings (including recent cancellations for context)
@@ -344,12 +358,16 @@ export async function computeChurnRisks(orgId: string): Promise<ChurnRisk[]> {
   );
   const subByClient = new Map(activeSubs.map(s => [s.userId, s]));
 
-  // Group by client
+  // Group by client — only include eligible real clients
+  // Excludes coaches, admins, staff, walk-ins, test users, internal aliases, org owner
+  const rawClientCount = new Set(allRows.map(r => r.clientId)).size;
   const clientBookings = new Map<string, { date: Date; status: string }[]>();
   for (const row of allRows) {
+    if (!eligibleClientIds.has(row.clientId)) continue;
     if (!clientBookings.has(row.clientId)) clientBookings.set(row.clientId, []);
     clientBookings.get(row.clientId)!.push({ date: new Date(row.startAt), status: row.status });
   }
+  console.log(`[ChurnRisks][${orgId}] eligibility audit: raw_client_ids=${rawClientCount}, eligible_client_ids=${clientBookings.size}, excluded=${rawClientCount - clientBookings.size}`);
 
   // Get client names
   const clientIds = Array.from(clientBookings.keys());
@@ -440,10 +458,13 @@ export async function computeUpsellOpportunities(orgId: string): Promise<UpsellO
   const now = new Date();
   const last30d = subDays(now, 30);
 
-  const coachIds = await getOrgCoachIds(orgId);
+  const [coachIds, eligibleClientIds] = await Promise.all([
+    getOrgCoachIds(orgId),
+    getEligibleClientIds(orgId),
+  ]);
   if (coachIds.length === 0) return [];
 
-  const recentBookings = await db.select({
+  const rawBookings = await db.select({
     clientId: bookings.clientId,
     startAt: bookings.startAt,
     sessionType: services.sessionType,
@@ -457,6 +478,10 @@ export async function computeUpsellOpportunities(orgId: string): Promise<UpsellO
       inArray(bookings.status as any, ["CONFIRMED", "COMPLETED"]),
       gte(bookings.startAt, last30d)
     ));
+
+  // Only consider eligible real clients — excludes coaches/admins/walk-ins
+  const recentBookings = rawBookings.filter(b => eligibleClientIds.has(b.clientId));
+  console.log(`[UpsellOpps][${orgId}] eligibility audit: raw_rows=${rawBookings.length}, eligible_rows=${recentBookings.length}, excluded=${rawBookings.length - recentBookings.length}`);
 
   const clientIds = Array.from(new Set(recentBookings.map((b) => b.clientId)));
   const clientUsers = clientIds.length > 0
@@ -519,7 +544,9 @@ export async function computeUpsellOpportunities(orgId: string): Promise<UpsellO
 }
 
 export async function computeSessionPackageAlerts(orgId: string): Promise<SessionPackageAlert[]> {
-  const subs = await db.select({
+  const eligibleClientIds = await getEligibleClientIds(orgId);
+
+  const allSubs = await db.select({
     id: userSubscriptions.id,
     userId: userSubscriptions.userId,
     planId: userSubscriptions.planId,
@@ -532,6 +559,10 @@ export async function computeSessionPackageAlerts(orgId: string): Promise<Sessio
       eq(userSubscriptions.organizationId, orgId),
       inArray(userSubscriptions.status as any, ["active", "past_due"])
     ));
+
+  // Filter to eligible real clients only — excludes coaches/admins/walk-ins
+  const subs = allSubs.filter(s => eligibleClientIds.has(s.userId));
+  console.log(`[PkgAlerts][${orgId}] eligibility audit: raw_subs=${allSubs.length}, eligible_subs=${subs.length}, excluded=${allSubs.length - subs.length}`);
 
   if (subs.length === 0) return [];
 
@@ -579,10 +610,13 @@ export async function computeSessionPackageAlerts(orgId: string): Promise<Sessio
 
 export async function computeClientLTVs(orgId: string): Promise<ClientLTV[]> {
   const now = new Date();
-  const coachIds = await getOrgCoachIds(orgId);
+  const [coachIds, eligibleClientIds] = await Promise.all([
+    getOrgCoachIds(orgId),
+    getEligibleClientIds(orgId),
+  ]);
   if (coachIds.length === 0) return [];
 
-  const allBookings = await db.select({
+  const rawBookings = await db.select({
     clientId: bookings.clientId,
     startAt: bookings.startAt,
     status: bookings.status,
@@ -594,6 +628,10 @@ export async function computeClientLTVs(orgId: string): Promise<ClientLTV[]> {
       inArray(bookings.coachId, coachIds),
       inArray(bookings.status as any, ["CONFIRMED", "COMPLETED"])
     ));
+
+  // Only aggregate LTV for eligible real clients — excludes coaches/admins/walk-ins
+  const allBookings = rawBookings.filter(b => eligibleClientIds.has(b.clientId));
+  console.log(`[ClientLTV][${orgId}] eligibility audit: raw_rows=${rawBookings.length}, eligible_rows=${allBookings.length}, excluded=${rawBookings.length - allBookings.length}`);
 
   const userSubs = await db.select().from(userSubscriptions).where(eq(userSubscriptions.organizationId, orgId));
   const subByClient = new Map(userSubs.map(s => [s.userId, s]));

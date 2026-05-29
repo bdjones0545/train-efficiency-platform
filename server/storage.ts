@@ -349,6 +349,7 @@ export interface IStorage {
   getBookingsByOrganization(orgId: string): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]>;
   getBookingsByDateRangeForOrg(orgId: string, start: Date, end: Date): Promise<(Booking & { service?: Service; client?: User; coach?: CoachProfile & { user: User } })[]>;
   findClientsWithNoBookingsSince(orgId: string, since: Date): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; lastBookingDate: string | null }[]>;
+  /** @deprecated No route calls this. Use computeCoachUtilizationDiagnostic() in scheduling-intelligence.ts instead. */
   getCoachUtilizationForOrg(orgId: string, start: Date, end: Date): Promise<{ coachId: string; coachName: string; bookedMinutes: number; availableMinutes: number; utilizationPct: number }[]>;
 
   getWaitlistByOrganization(orgId: string): Promise<(Waitlist & { client?: User })[]>;
@@ -2106,6 +2107,11 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  /**
+   * @deprecated Dead code — no route in routes.ts calls this method.
+   * The Agent Dashboard utilization widget is powered by computeOrgDigest() in scheduling-intelligence.ts.
+   * For per-coach diagnostics use computeCoachUtilizationDiagnostic() in scheduling-intelligence.ts.
+   */
   async getCoachUtilizationForOrg(
     orgId: string,
     start: Date,

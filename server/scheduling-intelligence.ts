@@ -1,6 +1,9 @@
 import { storage } from "./storage";
-import { addDays, startOfWeek, endOfWeek, format, differenceInMinutes } from "date-fns";
+import { addDays, startOfWeek, endOfWeek, format, differenceInMinutes, subDays } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { db } from "./db";
+import { bookings, coachProfiles, availabilityBlocks, users } from "@shared/schema";
+import { eq, and, inArray, gte, lte, sql } from "drizzle-orm";
 
 const TIMEZONE = "America/New_York";
 
@@ -296,4 +299,134 @@ export async function computeOrgDigest(orgId: string): Promise<OpsDigest> {
     insights,
     recentCancellations,
   };
+}
+
+// ── Coach Utilization Diagnostic ──────────────────────────────────────────────
+// Identifies the root cause when a coach shows 0% utilization on the dashboard.
+// Checks availability blocks and booking history for each coach in the org.
+// Call via GET /api/admin/coach-utilization-diagnostic
+
+export interface CoachUtilizationDiagnosticEntry {
+  coachId: string;
+  coachName: string;
+  userId: string;
+  availabilityBlockCount: number;
+  availableMinutesFuture30d: number;
+  completedSessionsLast90d: number;
+  confirmedSessionsFuture30d: number;
+  utilizationPct: number;
+  diagnosis: string;
+}
+
+export async function computeCoachUtilizationDiagnostic(
+  orgId: string
+): Promise<CoachUtilizationDiagnosticEntry[]> {
+  const now = new Date();
+  const future30d = addDays(now, 30);
+  const past90d = subDays(now, 90);
+
+  const coaches = await db
+    .select({
+      id: coachProfiles.id,
+      userId: coachProfiles.userId,
+      firstName: users.firstName,
+      lastName: users.lastName,
+    })
+    .from(coachProfiles)
+    .leftJoin(users, eq(coachProfiles.userId, users.id))
+    .where(eq(coachProfiles.organizationId, orgId));
+
+  if (coaches.length === 0) return [];
+
+  const coachProfileIds = coaches.map(c => c.id);
+
+  const [allAvailability, completedBookings, futureBookings] = await Promise.all([
+    db
+      .select({
+        coachId: availabilityBlocks.coachId,
+        startAt: availabilityBlocks.startAt,
+        endAt: availabilityBlocks.endAt,
+      })
+      .from(availabilityBlocks)
+      .where(
+        and(
+          inArray(availabilityBlocks.coachId, coachProfileIds),
+          gte(availabilityBlocks.startAt, now),
+          lte(availabilityBlocks.startAt, future30d)
+        )
+      ),
+    db
+      .select({ coachId: bookings.coachId })
+      .from(bookings)
+      .where(
+        and(
+          inArray(bookings.coachId, coachProfileIds),
+          inArray(bookings.status as any, ["COMPLETED"]),
+          gte(bookings.startAt, past90d)
+        )
+      ),
+    db
+      .select({ coachId: bookings.coachId })
+      .from(bookings)
+      .where(
+        and(
+          inArray(bookings.coachId, coachProfileIds),
+          inArray(bookings.status as any, ["CONFIRMED"]),
+          gte(bookings.startAt, now),
+          lte(bookings.startAt, future30d)
+        )
+      ),
+  ]);
+
+  const availByCoach = new Map<string, number>();
+  const availBlockCount = new Map<string, number>();
+  for (const block of allAvailability) {
+    const mins = differenceInMinutes(new Date(block.endAt), new Date(block.startAt));
+    availByCoach.set(block.coachId, (availByCoach.get(block.coachId) ?? 0) + mins);
+    availBlockCount.set(block.coachId, (availBlockCount.get(block.coachId) ?? 0) + 1);
+  }
+
+  const completedByCoach = new Map<string, number>();
+  for (const b of completedBookings) {
+    completedByCoach.set(b.coachId, (completedByCoach.get(b.coachId) ?? 0) + 1);
+  }
+
+  const futureByCoach = new Map<string, number>();
+  for (const b of futureBookings) {
+    futureByCoach.set(b.coachId, (futureByCoach.get(b.coachId) ?? 0) + 1);
+  }
+
+  return coaches.map(coach => {
+    const availMins = availByCoach.get(coach.id) ?? 0;
+    const blockCount = availBlockCount.get(coach.id) ?? 0;
+    const completed = completedByCoach.get(coach.id) ?? 0;
+    const confirmed = futureByCoach.get(coach.id) ?? 0;
+    const totalBookedMins = confirmed * 60;
+    const utilizationPct = availMins > 0 ? Math.round((totalBookedMins / availMins) * 100) : 0;
+
+    let diagnosis: string;
+    if (blockCount === 0) {
+      diagnosis = "NO_AVAILABILITY_BLOCKS — coach has not set any availability windows for the next 30 days; the dashboard cannot calculate utilization without these.";
+    } else if (availMins === 0) {
+      diagnosis = "ZERO_AVAILABLE_MINUTES — availability blocks exist but resolve to 0 minutes (possible data issue: endAt <= startAt).";
+    } else if (confirmed === 0 && completed === 0) {
+      diagnosis = "NO_BOOKINGS — availability is set but no completed or upcoming confirmed sessions found; coach may be newly onboarded or inactive.";
+    } else if (confirmed === 0) {
+      diagnosis = `LOW_FUTURE_BOOKINGS — has ${completed} completed sessions in last 90d but 0 confirmed upcoming; consider backfill outreach.`;
+    } else {
+      diagnosis = `OK — ${blockCount} availability blocks (${availMins}min open), ${confirmed} upcoming confirmed sessions, ${completed} completed in 90d. Utilization ${utilizationPct}%.`;
+    }
+
+    return {
+      coachId: coach.id,
+      coachName: `${coach.firstName ?? ""} ${coach.lastName ?? ""}`.trim() || coach.id,
+      userId: coach.userId,
+      availabilityBlockCount: blockCount,
+      availableMinutesFuture30d: availMins,
+      completedSessionsLast90d: completed,
+      confirmedSessionsFuture30d: confirmed,
+      utilizationPct,
+      diagnosis,
+    };
+  });
 }

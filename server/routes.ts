@@ -8614,6 +8614,22 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
+  // ===== COACH UTILIZATION DIAGNOSTIC =====
+  // Identifies why individual coaches (e.g. Bryan Jones) show 0% utilization on the Agent Dashboard.
+  // Checks availability blocks and booking counts for every coach in the org and returns a root-cause diagnosis.
+  app.get("/api/admin/coach-utilization-diagnostic", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { computeCoachUtilizationDiagnostic } = await import("./scheduling-intelligence");
+      const results = await computeCoachUtilizationDiagnostic(profile.organizationId);
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ===== WAITLIST =====
   app.get("/api/scheduling/waitlist", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
     try {

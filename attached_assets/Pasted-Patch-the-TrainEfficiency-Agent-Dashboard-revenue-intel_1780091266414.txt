@@ -1,0 +1,97 @@
+Patch the TrainEfficiency Agent Dashboard revenue intelligence layer.
+
+Use the completed forensic audit as the source of truth.
+
+Primary file:
+server/revenue-intelligence.ts
+
+Required fixes:
+
+1. Import and apply CLIENT_ELIGIBILITY_SQL(orgId) from server/client-eligibility.ts anywhere dashboard logic aggregates, ranks, or flags clients.
+2. Fix Top Clients by Revenue:
+
+* Replace the current in-memory clientRevenueMap/clientSessionMap logic.
+* Only include eligible real clients.
+* Exclude coaches, admins, staff, walk-ins, test users, internal aliases, and org owner accounts.
+* Bryan Jones and Hunter Thaxton must never appear.
+
+3. Fix Revenue by Time Block:
+
+* Keep current startAt + org timezone logic.
+* But feed it only from bookings where clientId is eligible.
+* This should remove distorted buckets caused by coach/admin bookings.
+
+4. Fix Retention Risks:
+
+* Apply CLIENT_ELIGIBILITY_SQL(orgId) before building the client risk pool.
+* Retention risks must only include eligible real clients.
+* Bryan Jones, Hunter Thaxton, walk-ins, and test users must never appear.
+
+5. Fix Client LTV:
+
+* Apply eligibility before client aggregation.
+* LTV rankings must only include eligible real clients.
+
+6. Fix Upsell Opportunities:
+
+* Apply eligibility before identifying clients.
+* Only real eligible clients should be considered.
+
+7. Fix Session Package Alerts:
+
+* Apply eligibility before producing alerts.
+* No coaches/admins/test/walk-in/internal aliases.
+
+8. Add verification logging or temporary audit output showing:
+
+* total booking rows before eligibility
+* total booking rows after eligibility
+* excluded client IDs count
+* top clients after filtering
+* retention risks after filtering
+
+9. Coach Utilization:
+
+* Do not change calculation yet.
+* Add a diagnostic query/report for Bryan Jones:
+    * coach_profiles.id
+    * bookings.coachId counts by profile
+    * availability_blocks count
+    * availableMinutes
+    * bookedMinutes
+    * utilizationPct
+* Determine whether Bryan’s 0% is caused by missing availability blocks or coach profile ID mismatch.
+
+10. Remove or mark dead code:
+
+* server/storage.ts getCoachUtilizationForOrg() is not wired to the current route.
+* Do not rely on it unless intentionally replacing computeOrgDigest().
+
+Verification requirements:
+
+After patching, run:
+
+* Revenue Summary for org-est
+* Churn Risks for org-est
+* Client LTV for org-est
+* Upsell Opportunities for org-est
+* Session Package Alerts for org-est
+
+Confirm:
+
+* Bryan Jones does not appear as a top client.
+* Hunter Thaxton does not appear as a top client.
+* No coach/admin/staff/test/walk-in/internal alias appears in any client-facing revenue or risk widget.
+* Revenue by time block recalculates using only eligible client bookings.
+* Retention risks only show eligible clients.
+* The dashboard alert count decreases if invalid coach/admin risks were previously counted.
+* Coach utilization diagnostic explains Bryan’s 0% value.
+
+Deliver a final report with:
+
+* files changed
+* functions changed
+* before/after widget outputs
+* eligibility counts
+* remaining risks
+* whether Coach Utilization needs a second patch
