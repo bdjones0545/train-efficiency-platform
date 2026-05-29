@@ -1,0 +1,265 @@
+P2.1 IMPLEMENTATION — Revenue Opportunity Intelligence (Phase 1)
+
+Objective
+
+Implement the first Revenue Opportunity Intelligence signals inside the Attention Inbox.
+
+These signals were identified in the P2 audit as:
+
+* Highest revenue impact
+* Highest actionability
+* Lowest implementation effort
+* Fully supported by existing schema
+
+The goal is for every coach to open TrainEfficiency and immediately see the fastest path to generating revenue today.
+
+Signals To Build
+
+1. New Lead Submitted — Never Contacted
+2. Lead Awaiting Follow-Up (72h+)
+3. Free Intro / Assessment Completed — No Paid Conversion
+4. Zero Upcoming Bookings This Week
+
+These four signals become the foundation of:
+
+TODAY’S REVENUE OPPORTUNITIES
+
+Section.
+
+Signal 1 — New Lead Submitted (Critical Revenue)
+
+Purpose:
+
+Detect leads that have entered the system and have never been contacted.
+
+Criteria:
+
+lead_capture_submissions
+
+WHERE:
+
+* contacted_at IS NULL
+* status not converted
+* status not lost
+* created_at within last 7 days
+
+Priority:
+
+Critical
+
+Attention Item:
+
+Title:
+“New lead awaiting first contact”
+
+Body:
+“[Lead Name] submitted [Offer Name] X hours ago and has not been contacted.”
+
+Metadata:
+
+* leadId
+* leadName
+* leadEmail
+* leadPhone
+* estimatedValue
+* sourceOffer
+* hoursWaiting
+
+CTAs:
+
+* Send Email
+* Send SMS
+* Schedule Call
+
+Signal 2 — Lead Awaiting Follow-Up (72+ Hours)
+
+Purpose:
+
+Detect warm leads that have not received timely follow-up.
+
+Criteria:
+
+lead_capture_submissions
+
+WHERE:
+
+* contacted_at IS NOT NULL
+* converted_at IS NULL
+* booking_status != booked
+* last_follow_up_at older than 72 hours
+
+Priority:
+
+Important
+
+Attention Item:
+
+Title:
+“Lead awaiting follow-up”
+
+Body:
+“[Lead Name] has not been contacted in X days.”
+
+Metadata:
+
+* leadId
+* followUpCount
+* daysWaiting
+* aiQualificationScore
+* estimatedValue
+
+CTAs:
+
+* Send Follow-Up Email
+* Send SMS
+* Schedule Consultation
+
+Signal 3 — Assessment Completed, No Paid Conversion
+
+Purpose:
+
+Capture the highest-intent conversion opportunity.
+
+Criteria:
+
+Bookings + Services
+
+WHERE:
+
+* Service categorized as:
+    * Intro Session
+    * Evaluation
+    * Assessment
+    * Consultation
+* Session status = COMPLETED
+* Completed more than 48 hours ago
+* No paid booking exists afterward
+
+Priority:
+
+Critical
+
+Attention Item:
+
+Title:
+“Assessment completed — no conversion”
+
+Body:
+“[Client Name] completed an assessment X days ago and has not purchased training.”
+
+Metadata:
+
+* clientId
+* assessmentDate
+* daysSinceAssessment
+* estimatedAnnualValue
+
+CTAs:
+
+* Send Program Offer
+* Schedule Follow-Up Call
+* Generate Recommendation
+
+Signal 4 — Zero Upcoming Bookings This Week
+
+Purpose:
+
+Surface empty schedule capacity.
+
+Criteria:
+
+Organization-level signal.
+
+WHERE:
+
+* No confirmed bookings in next 7 days
+
+Priority:
+
+Critical
+
+Attention Item:
+
+Title:
+“No bookings scheduled this week”
+
+Body:
+“Your schedule has no confirmed bookings over the next 7 days.”
+
+Metadata:
+
+* openDays
+* estimatedCapacity
+* estimatedRevenueOpportunity
+
+CTAs:
+
+* Promote Availability
+* Contact Leads
+* Launch Follow-Up Campaign
+
+Revenue Opportunity Section
+
+Add:
+
+TODAY’S REVENUE OPPORTUNITIES
+
+Display order:
+
+1. Critical
+2. Important
+3. Suggested
+
+Sort by:
+
+urgency DESC
+business_impact DESC
+
+Each item should show:
+
+* Priority badge
+* Estimated value
+* Recommended action
+* CTA buttons
+
+Do not show generic counts.
+
+Show specific opportunities.
+
+Examples:
+
+🔥 New lead submitted 47 minutes ago
+Potential value: $297
+
+⚠️ Assessment completed 3 days ago
+Potential value: $840/year
+
+💰 No bookings scheduled this week
+Potential opportunity: $1,200
+
+Deduplication Rules
+
+Prevent duplicates:
+
+* One active revenue item per lead
+* One active conversion item per assessment
+* One active schedule-capacity item per organization
+
+Implementation Deliverables
+
+Provide:
+
+1. Signals added
+2. Queries used
+3. Sample output
+4. Estimated values calculation method
+5. Attention Inbox screenshots
+6. Revenue Opportunities section verification
+
+Expected Result
+
+The Attention Inbox should stop behaving like a monitoring dashboard and begin functioning like a revenue command center.
+
+Every alert should answer:
+
+“What action can I take right now that could generate revenue?”

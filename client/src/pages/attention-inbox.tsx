@@ -7,6 +7,8 @@ import {
   RefreshCw, X, CheckCheck, Clock, ArrowRight, ChevronDown,
   RotateCcw, Inbox, Filter, Zap, Brain, GitBranch, BadgeCheck,
   TrendingUp, Activity, Plug, SlidersHorizontal, Sun, Moon,
+  DollarSign, Mail, Phone, Calendar, Users, Megaphone,
+  ChevronUp, Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +93,9 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   brain: Brain,
   trigger: Zap,
   manual: Bell,
+  revenue: DollarSign,
+  lead: Users,
+  activation: Zap,
 };
 
 const SNOOZE_OPTIONS = [
@@ -99,6 +104,21 @@ const SNOOZE_OPTIONS = [
   { label: "24 hours", hours: 24 },
   { label: "1 week", hours: 168 },
 ];
+
+// CTA metadata → {label, icon, path}
+const CTA_CONFIG: Record<string, { label: string; icon: React.ElementType; path: string }> = {
+  "send-email":              { label: "Email",          icon: Mail,       path: "/admin/leads" },
+  "send-sms":                { label: "SMS",            icon: Phone,      path: "/admin/leads" },
+  "send-follow-up-email":    { label: "Follow Up",      icon: Mail,       path: "/admin/leads" },
+  "send-program-offer":      { label: "Send Offer",     icon: Mail,       path: "/coach/users" },
+  "schedule-call":           { label: "Schedule Call",  icon: Calendar,   path: "/scheduling" },
+  "schedule-consultation":   { label: "Schedule",       icon: Calendar,   path: "/scheduling" },
+  "schedule-followup-call":  { label: "Schedule Call",  icon: Calendar,   path: "/scheduling" },
+  "promote-availability":    { label: "Promote",        icon: Megaphone,  path: "/scheduling" },
+  "contact-leads":           { label: "Contact Leads",  icon: Users,      path: "/admin/leads" },
+  "launch-followup-campaign":{ label: "Campaign",       icon: Megaphone,  path: "/admin/leads" },
+  "generate-recommendation": { label: "Recommend",      icon: Brain,      path: "/coach/users" },
+};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Types
@@ -124,6 +144,7 @@ type AttentionItem = {
   escalatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  metadata?: Record<string, any> | null;
 };
 
 type DigestData = {
@@ -138,6 +159,242 @@ type DigestData = {
   recentlyResolved: number;
   summary: string;
 };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RevenueCard — compact revenue opportunity card
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function RevenueCard({
+  item,
+  onDismiss,
+  onComplete,
+}: {
+  item: AttentionItem;
+  onDismiss: (id: string) => void;
+  onComplete: (id: string) => void;
+}) {
+  const [, navigate] = useLocation();
+  const cfg = getLevelConfig(item.level, item.status);
+  const meta = item.metadata ?? {};
+  const ctaOptions: string[] = meta.ctaOptions ?? [];
+  const estimatedValue = meta.estimatedValue ?? meta.estimatedAnnualValue ?? 0;
+
+  // Priority icon + color
+  const priorityIcon = item.level === "critical" || item.status === "escalated" ? "🔥" :
+                       item.level === "important" ? "⚠️" : "💰";
+
+  const topCtaKeys = ctaOptions.slice(0, 2);
+
+  return (
+    <div
+      className={cn(
+        "relative rounded-lg border border-l-4 bg-card transition-all hover:shadow-sm",
+        cfg.border
+      )}
+      data-testid={`revenue-card-${item.id}`}
+    >
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          {/* Priority emoji */}
+          <span className="text-lg flex-shrink-0 mt-0.5" aria-hidden>
+            {priorityIcon}
+          </span>
+
+          <div className="flex-1 min-w-0">
+            {/* Title row */}
+            <div className="flex items-start gap-2 flex-wrap">
+              <span className="text-sm font-semibold leading-snug flex-1 min-w-0">
+                {item.title}
+              </span>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <span className={cn(
+                  "text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase tracking-wide",
+                  cfg.badgeCls
+                )}>
+                  {cfg.label}
+                </span>
+              </div>
+            </div>
+
+            {/* Body */}
+            {item.body && (
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                {item.body}
+              </p>
+            )}
+
+            {/* Value + age row */}
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              {estimatedValue > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full">
+                  <DollarSign className="h-3 w-3" />
+                  {meta.estimatedAnnualValue && !meta.estimatedValue
+                    ? `$${estimatedValue.toLocaleString()}/yr potential`
+                    : `$${estimatedValue.toLocaleString()} potential`}
+                </span>
+              )}
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+              </span>
+            </div>
+
+            {/* CTA buttons */}
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              {topCtaKeys.map((key) => {
+                const cta = CTA_CONFIG[key];
+                if (!cta) return null;
+                const CtaIcon = cta.icon;
+                return (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant="outline"
+                    className={cn("h-7 text-xs gap-1.5", cfg.color)}
+                    onClick={() => navigate(item.actionUrl || cta.path)}
+                    data-testid={`revenue-cta-${key}-${item.id}`}
+                  >
+                    <CtaIcon className="h-3 w-3" />
+                    {cta.label}
+                  </Button>
+                );
+              })}
+
+              {/* View button */}
+              {item.actionUrl && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs gap-1 text-muted-foreground"
+                  onClick={() => navigate(item.actionUrl!)}
+                  data-testid={`revenue-view-${item.id}`}
+                >
+                  View <ArrowRight className="h-3 w-3" />
+                </Button>
+              )}
+
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => onComplete(item.id)}
+                  title="Mark done"
+                  data-testid={`revenue-done-${item.id}`}
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => onDismiss(item.id)}
+                  title="Dismiss"
+                  data-testid={`revenue-dismiss-${item.id}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RevenueOpportunitiesSection
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const REVENUE_CATEGORIES = new Set(["revenue", "lead", "activation"]);
+
+function RevenueOpportunitiesSection({
+  items,
+  onDismiss,
+  onComplete,
+}: {
+  items: AttentionItem[];
+  onDismiss: (id: string) => void;
+  onComplete: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  const revenueItems = items
+    .filter((i) => i.source === "revenue" || REVENUE_CATEGORIES.has(i.category))
+    .sort((a, b) => {
+      const LEVEL_ORDER: Record<string, number> = { critical: 0, escalated: 0, important: 1, suggested: 2 };
+      const la = LEVEL_ORDER[a.level] ?? 3;
+      const lb = LEVEL_ORDER[b.level] ?? 3;
+      if (la !== lb) return la - lb;
+      if (b.urgency !== a.urgency) return b.urgency - a.urgency;
+      return b.businessImpact - a.businessImpact;
+    });
+
+  if (revenueItems.length === 0) return null;
+
+  const totalEstValue = revenueItems.reduce((sum, item) => {
+    const meta = item.metadata ?? {};
+    return sum + (Number(meta.estimatedValue ?? meta.estimatedAnnualValue ?? 0));
+  }, 0);
+
+  const critCount = revenueItems.filter((i) => i.level === "critical" || i.status === "escalated").length;
+
+  return (
+    <div
+      className="rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50/60 to-background dark:from-emerald-950/20 dark:to-background overflow-hidden"
+      data-testid="revenue-opportunities-section"
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
+        onClick={() => setCollapsed((c) => !c)}
+        data-testid="revenue-section-toggle"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="h-7 w-7 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+            <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold tracking-tight">Today's Revenue Opportunities</span>
+              {critCount > 0 && (
+                <Badge className="bg-red-500 text-white text-[10px] h-4 px-1.5 border-0">
+                  {critCount} urgent
+                </Badge>
+              )}
+              <span className="text-[11px] text-muted-foreground font-medium">
+                {revenueItems.length} action{revenueItems.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            {totalEstValue > 0 && (
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                ${totalEstValue.toLocaleString()} in potential revenue identified
+              </p>
+            )}
+          </div>
+        </div>
+        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground">
+          {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+        </Button>
+      </div>
+
+      {/* Cards */}
+      {!collapsed && (
+        <div className="px-4 pb-4 space-y-2.5">
+          {revenueItems.map((item) => (
+            <RevenueCard
+              key={item.id}
+              item={item}
+              onDismiss={onDismiss}
+              onComplete={onComplete}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AttentionCard
@@ -432,6 +689,9 @@ export default function AttentionInboxPage() {
   };
 
   const hasCritical = counts.critical > 0;
+  const revenueCount = items.filter(
+    (i) => i.source === "revenue" || REVENUE_CATEGORIES.has(i.category)
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -450,9 +710,15 @@ export default function AttentionInboxPage() {
                 {counts.critical} critical
               </Badge>
             )}
+            {revenueCount > 0 && (
+              <Badge className="text-xs px-2 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                <DollarSign className="h-3 w-3 mr-0.5" />
+                {revenueCount} revenue
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Unified view of all alerts, approvals, AI recommendations, and operational priorities — ranked by impact.
+            Unified view of all alerts, approvals, AI recommendations, and revenue opportunities — ranked by impact.
           </p>
         </div>
         <Button
@@ -467,6 +733,21 @@ export default function AttentionInboxPage() {
           {syncing ? "Syncing…" : "Sync Now"}
         </Button>
       </div>
+
+      {/* Revenue Opportunities — pinned above digest */}
+      {isLoading ? (
+        <div className="rounded-xl border-2 border-emerald-200 dark:border-emerald-800 p-4 space-y-3">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      ) : (
+        <RevenueOpportunitiesSection
+          items={items}
+          onDismiss={(id) => dismissMutation.mutate(id)}
+          onComplete={(id) => completeMutation.mutate(id)}
+        />
+      )}
 
       {/* Digest */}
       {digest && <DigestPanel digest={digest} />}
@@ -523,7 +804,7 @@ export default function AttentionInboxPage() {
               </h3>
               <p className="text-xs text-muted-foreground mt-1 max-w-xs">
                 {tab === "all"
-                  ? "Everything is clear. Your business systems are operating normally."
+                  ? "All systems operating normally. Revenue opportunities will appear here as they arise."
                   : `No ${tab} attention items right now.`}
               </p>
               <Button
@@ -555,8 +836,8 @@ export default function AttentionInboxPage() {
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Priority Model</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { level: "critical", desc: "Immediate action required. Failed workflows, stuck approvals, payment failures." },
-              { level: "important", desc: "Should be addressed soon. Stalled deals, follow-ups due, churn risks." },
+              { level: "critical", desc: "Immediate action required. Failed workflows, stuck approvals, uncontacted leads, empty schedule." },
+              { level: "important", desc: "Should be addressed soon. Stalled follow-ups, churn risks, overdue pipeline items." },
               { level: "suggested", desc: "Growth opportunities, AI recommendations, workflow suggestions." },
               { level: "informational", desc: "Passive insights, completed syncs, status updates." },
             ].map(({ level, desc }) => {

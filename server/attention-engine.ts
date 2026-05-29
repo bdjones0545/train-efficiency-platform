@@ -88,6 +88,23 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
       );
   } catch {}
 
+  // Dismiss stale revenue signals older than 3 days — lead signals use daily keys so old
+  // ones accumulate; clear them so only today's are visible.
+  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+  try {
+    await db
+      .update(attentionItems)
+      .set({ status: "dismissed", updatedAt: now })
+      .where(
+        and(
+          eq(attentionItems.orgId, orgId),
+          eq(attentionItems.status, "active"),
+          eq(attentionItems.source, "revenue"),
+          lt(attentionItems.createdAt, threeDaysAgo)
+        )
+      );
+  } catch {}
+
   // Purge stale agent_recommendations that were generated from bad booking data
   // (aggregate re-engage / churn-risk / no-bookings signals pre-backfill).
   try {
@@ -803,6 +820,225 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           businessImpact: Math.min(100, 40 + idleCoachCount * 10),
         });
       }
+    }
+  } catch {}
+
+  // ── R1. New Lead Submitted — Never Contacted (Critical Revenue) ───────────
+  // Fires once per day per lead until the lead is contacted.
+  try {
+    const dayKey = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
+    const newLeads = await db.execute(sql`
+      SELECT id, athlete_name, parent_name, email, phone,
+        estimated_value_cents, ai_qualification_score,
+        EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600 AS hours_waiting
+      FROM lead_capture_submissions
+      WHERE org_id = ${orgId}
+        AND contacted_at IS NULL
+        AND sequence_status NOT IN ('converted', 'closed', 'lost')
+        AND created_at >= NOW() - INTERVAL '7 days'
+      ORDER BY created_at ASC
+      LIMIT 20
+    `) as any[];
+
+    for (const lead of newLeads) {
+      const name = (lead.athlete_name || lead.parent_name || lead.email || "Unknown lead").trim();
+      const hoursWaiting = Math.floor(Number(lead.hours_waiting ?? 0));
+      const estValue = Number(lead.estimated_value_cents ?? 0) / 100;
+      const level = hoursWaiting >= 2 ? "critical" : "important";
+      const urgency = hoursWaiting >= 4 ? 95 : hoursWaiting >= 2 ? 88 : 72;
+      const d = defaults(level);
+      const waitStr = hoursWaiting < 1 ? "less than an hour" : hoursWaiting === 1 ? "1 hour" : `${hoursWaiting} hours`;
+      add({
+        orgId,
+        level,
+        category: "lead",
+        title: `New lead awaiting first contact`,
+        body: `${name} submitted ${waitStr} ago — no contact has been made yet.${estValue > 0 ? ` Estimated value: $${Math.round(estValue)}.` : ""}`,
+        source: "revenue",
+        sourceId: `revenue-lead-new-${lead.id}-d${dayKey}`,
+        actionUrl: "/admin/leads",
+        actionLabel: "View Lead",
+        status: "active",
+        ...d,
+        urgency,
+        businessImpact: 92,
+        metadata: {
+          leadId: lead.id,
+          leadName: name,
+          leadEmail: lead.email ?? null,
+          leadPhone: lead.phone ?? null,
+          estimatedValue: estValue,
+          hoursWaiting,
+          aiQualificationScore: lead.ai_qualification_score ?? null,
+          ctaOptions: ["send-email", "send-sms", "schedule-call"],
+          signalType: "new-lead-uncontacted",
+        },
+      });
+    }
+  } catch {}
+
+  // ── R2. Lead Awaiting Follow-Up 72h+ (Important → Critical) ──────────────
+  try {
+    const dayKey = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
+    const staleLeads = await db.execute(sql`
+      SELECT id, athlete_name, parent_name, email, phone,
+        estimated_value_cents, follow_up_count, ai_qualification_score,
+        EXTRACT(EPOCH FROM (NOW() - COALESCE(last_follow_up_at, contacted_at))) / 3600 AS hours_since_contact
+      FROM lead_capture_submissions
+      WHERE org_id = ${orgId}
+        AND contacted_at IS NOT NULL
+        AND converted_at IS NULL
+        AND sequence_status NOT IN ('converted', 'closed', 'lost')
+        AND COALESCE(last_follow_up_at, contacted_at) < NOW() - INTERVAL '72 hours'
+      ORDER BY last_follow_up_at ASC NULLS FIRST
+      LIMIT 20
+    `) as any[];
+
+    for (const lead of staleLeads) {
+      const name = (lead.athlete_name || lead.parent_name || lead.email || "Lead").trim();
+      const hoursSince = Math.floor(Number(lead.hours_since_contact ?? 0));
+      const daysSince = Math.floor(hoursSince / 24);
+      const estValue = Number(lead.estimated_value_cents ?? 0) / 100;
+      const followUpCount = Number(lead.follow_up_count ?? 0);
+      const level = daysSince >= 7 ? "critical" : "important";
+      const urgency = daysSince >= 7 ? 87 : daysSince >= 5 ? 78 : 70;
+      const d = defaults(level);
+      add({
+        orgId,
+        level,
+        category: "lead",
+        title: `Lead awaiting follow-up`,
+        body: `${name} has not been contacted in ${daysSince >= 1 ? `${daysSince} day${daysSince !== 1 ? "s" : ""}` : `${hoursSince} hours`}. ${followUpCount} prior contact${followUpCount !== 1 ? "s" : ""} made.`,
+        source: "revenue",
+        sourceId: `revenue-lead-followup-${lead.id}-d${dayKey}`,
+        actionUrl: "/admin/leads",
+        actionLabel: "Follow Up Now",
+        status: "active",
+        ...d,
+        urgency,
+        businessImpact: 82,
+        metadata: {
+          leadId: lead.id,
+          leadName: name,
+          leadEmail: lead.email ?? null,
+          leadPhone: lead.phone ?? null,
+          estimatedValue: estValue,
+          daysWaiting: daysSince,
+          hoursWaiting: hoursSince,
+          followUpCount,
+          aiQualificationScore: Number(lead.ai_qualification_score ?? 0),
+          ctaOptions: ["send-follow-up-email", "send-sms", "schedule-consultation"],
+          signalType: "lead-followup-overdue",
+        },
+      });
+    }
+  } catch {}
+
+  // ── R3. Free Intro Completed — No Paid Conversion (Critical Revenue) ──────
+  // Highest-intent conversion window: client attended a free session but hasn't bought.
+  try {
+    const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+    const noConvRows = await db.execute(sql`
+      SELECT b.id AS booking_id, b.client_id, b.start_at,
+        u.first_name, u.last_name, u.email,
+        s.name AS service_name,
+        EXTRACT(EPOCH FROM (NOW() - b.start_at)) / 86400 AS days_since
+      FROM bookings b
+      JOIN services s ON s.id = b.service_id
+      JOIN users u ON u.id = b.client_id
+      WHERE b.organization_id = ${orgId}
+        AND b.status = 'COMPLETED'
+        AND (s.price_cents = 0 OR s.counts_toward_revenue = false)
+        AND b.start_at < NOW() - INTERVAL '48 hours'
+        AND b.start_at > NOW() - INTERVAL '60 days'
+        AND NOT EXISTS (
+          SELECT 1 FROM bookings b2
+          JOIN services s2 ON s2.id = b2.service_id
+          WHERE b2.client_id = b.client_id
+            AND b2.organization_id = ${orgId}
+            AND b2.created_at > b.start_at
+            AND s2.price_cents > 0
+            AND s2.counts_toward_revenue = true
+        )
+      ORDER BY b.start_at DESC
+      LIMIT 15
+    `) as any[];
+
+    for (const row of noConvRows) {
+      const clientName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || row.email || "Client";
+      const daysSince = Math.floor(Number(row.days_since ?? 0));
+      const level = daysSince > 14 ? "important" : "critical";
+      const urgency = daysSince > 14 ? 65 : daysSince > 7 ? 78 : 88;
+      const d = defaults(level);
+      add({
+        orgId,
+        level,
+        category: "revenue",
+        title: `Free intro completed — no paid booking yet`,
+        body: `${clientName} completed a ${row.service_name || "free session"} ${daysSince} day${daysSince !== 1 ? "s" : ""} ago and has not purchased training.`,
+        source: "revenue",
+        sourceId: `revenue-intro-noconv-${row.booking_id}-w${weekKey}`,
+        actionUrl: "/coach/users",
+        actionLabel: "Send Program Offer",
+        status: "active",
+        ...d,
+        urgency,
+        businessImpact: 87,
+        metadata: {
+          clientId: row.client_id,
+          clientName,
+          clientEmail: row.email ?? null,
+          bookingId: row.booking_id,
+          assessmentDate: new Date(row.start_at).toISOString(),
+          daysSinceAssessment: daysSince,
+          serviceName: row.service_name,
+          estimatedValue: 840,
+          estimatedAnnualValue: 840,
+          ctaOptions: ["send-program-offer", "schedule-followup-call", "generate-recommendation"],
+          signalType: "intro-no-conversion",
+        },
+      });
+    }
+  } catch {}
+
+  // ── R4. Zero Upcoming Bookings This Week (Critical Revenue) ───────────────
+  // Org-level signal — empty schedule = zero revenue for the week.
+  try {
+    const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+    const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const [upcomingRow] = await db.execute(sql`
+      SELECT COUNT(*) AS confirmed_count
+      FROM bookings
+      WHERE organization_id = ${orgId}
+        AND status = 'CONFIRMED'
+        AND start_at >= NOW()
+        AND start_at < ${weekEnd}
+    `) as any;
+    const confirmedCount = Number(upcomingRow?.confirmed_count ?? 0);
+    if (confirmedCount === 0) {
+      const d = defaults("critical");
+      add({
+        orgId,
+        level: "critical",
+        category: "revenue",
+        title: "No bookings scheduled this week",
+        body: "Your schedule has no confirmed sessions over the next 7 days. Reach out to leads or promote your availability to fill the gap.",
+        source: "revenue",
+        sourceId: `revenue-empty-schedule-w${weekKey}`,
+        actionUrl: "/scheduling",
+        actionLabel: "Promote Availability",
+        status: "active",
+        ...d,
+        urgency: 92,
+        businessImpact: 96,
+        metadata: {
+          confirmedCount: 0,
+          weekEnd: weekEnd.toISOString(),
+          estimatedValue: 280,
+          ctaOptions: ["promote-availability", "contact-leads", "launch-followup-campaign"],
+          signalType: "empty-schedule",
+        },
+      });
     }
   } catch {}
 
