@@ -1,0 +1,107 @@
+Audit ONLY the Gmail API agent outreach automation for new prospects/leads.
+
+Do not audit SendGrid notification emails. We already know the internal lead notification email works.
+
+Objective:
+Verify whether the newly added Gmail API automation is connected to the live lead intake flow and whether the agent automatically creates/sends a personalized email to the prospect with scheduling intent.
+
+Lead context:
+New Summer Speed Sprint lead / prospect flow
+Example lead: Selena Torres
+
+Audit questions:
+
+1. Gmail Integration Status
+
+* Is Gmail OAuth/API connected for org-est?
+* Are Gmail credentials available at runtime?
+* Is the Gmail service initialized successfully?
+* Are token refreshes working?
+* Is there any runtime Gmail auth error?
+
+2. Trigger Wiring
+    When a new lead/prospect is created:
+
+* Does it trigger the Gmail outreach agent?
+* Which file/function calls the Gmail outreach automation?
+* Is the call inside the live lead intake path?
+* Or is it only available manually from the dashboard?
+
+3. Agent Execution
+    For a new prospect:
+
+* Does the AI generate a personalized email?
+* Does it include the prospect’s name, program, and scheduling CTA?
+* Does it include the correct booking/scheduling link?
+* Does it choose send vs draft vs queue?
+* Does it log the decision?
+
+4. Gmail Action
+    Check:
+
+* gmail_agent_actions table
+* Gmail API send/draft responses
+* Gmail message ID
+* action status: pending / drafted / sent / failed
+* error messages
+* retry count
+* timestamp
+
+5. Scheduling Automation
+    Verify:
+
+* Does the email include a direct scheduling link?
+* Does the agent create a scheduling task for the coach?
+* Does the system detect if the prospect books?
+* Does it stop future follow-ups after booking?
+
+6. Follow-Up Automation
+    Verify:
+
+* Is follow-up email 1 created?
+* Is follow-up email 2 created?
+* Are follow-ups scheduled?
+* Are stop conditions implemented?
+* Are follow-ups connected to Gmail, not SendGrid?
+
+7. Missing Integration Point
+    If Gmail outreach did not happen, identify exactly why:
+
+Possible causes:
+
+* Gmail OAuth not connected
+* Gmail service not initialized
+* Lead intake path does not call Gmail outreach agent
+* Gmail agent only creates drafts but does not send
+* Agent requires manual approval
+* Missing prospect email
+* Missing booking link
+* Feature flag disabled
+* Org setting disabled
+* Wrong org ID
+* Error swallowed without logging
+
+8. Required Final Output
+    Produce:
+
+A. Current live path:
+Lead submitted
+→ record created
+→ [what happens next]
+
+B. Intended Gmail automation path:
+Lead submitted
+→ prospect created
+→ AI outreach email generated
+→ Gmail draft/send created
+→ scheduling CTA included
+→ follow-up sequence scheduled
+
+C. Gap analysis:
+What is currently missing between A and B?
+
+D. Exact patch plan:
+Files/functions to update so every new lead automatically invokes Gmail agent outreach after the lead/prospect record is created.
+
+Important:
+Do not use SendGrid or communication_logs as the proof source for this audit. The proof source is Gmail OAuth/API status, gmail_agent_actions, Gmail draft/send result, and the lead intake code path that should invoke the Gmail outreach agent.
