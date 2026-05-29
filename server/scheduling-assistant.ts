@@ -1387,6 +1387,7 @@ async function executeTool(
           location: "",
           maxParticipants: isSemiPrivate ? 6 : null,
           groupDescription: "",
+          organizationId: organizationId || null,
         });
 
         // Send confirmation emails to client and coach (non-blocking)
@@ -1779,6 +1780,7 @@ async function executeTool(
           location: location || "",
           maxParticipants: isSemiPrivate ? 6 : null,
           groupDescription: "",
+          organizationId: organizationId || null,
         });
 
         // Send confirmation emails to client and coach (non-blocking)
@@ -3024,6 +3026,7 @@ async function executeTool(
               location: location || "",
               maxParticipants: isSemiPrivate ? 6 : null,
               groupDescription: "",
+              organizationId: organizationId || null,
             });
             created.push(dateLabel);
             createdStartDates.push(start);

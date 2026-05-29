@@ -456,9 +456,28 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
   } catch {}
 
   // ── 11. Inactive Clients (30+ days no booking) ────────────────────────────
+  // Guard: skip if booking org_id coverage for this org is below 80% — signals
+  // would produce false positives when organization_id is not reliably populated.
   try {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+
+    // Data quality gate — require ≥80% of org bookings to have organization_id set
+    const [coverageRow] = await db.execute<{ total: number; with_org: number }>(
+      sql`SELECT COUNT(*) AS total,
+               COUNT(organization_id) AS with_org
+          FROM bookings
+          WHERE client_id IN (
+            SELECT user_id FROM user_profiles WHERE organization_id = ${orgId}
+          )`
+    ) as any;
+    const coverageTotal = Number(coverageRow?.total ?? 0);
+    const coverageWithOrg = Number(coverageRow?.with_org ?? 0);
+    const coverageOk = coverageTotal === 0 || (coverageWithOrg / coverageTotal) >= 0.80;
+    if (!coverageOk) {
+      console.warn(`[AttentionEngine] Signal 11 skipped for org ${orgId}: booking org_id coverage ${coverageWithOrg}/${coverageTotal}`);
+      // skip — don't throw, just fall through
+    } else {
 
     const clientProfileRows = await db
       .select({ userId: userProfiles.userId })
@@ -509,11 +528,28 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         });
       }
     }
+    } // end else (coverage ok — signal 11)
   } catch {}
 
   // ── 12. Never-Booked Clients ──────────────────────────────────────────────
+  // Guard: same booking org_id coverage check as Signal 11.
   try {
     const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+
+    // Data quality gate — require ≥80% of org-client bookings to have organization_id
+    const [cov12Row] = await db.execute<{ total: number; with_org: number }>(
+      sql`SELECT COUNT(*) AS total,
+               COUNT(organization_id) AS with_org
+          FROM bookings
+          WHERE client_id IN (
+            SELECT user_id FROM user_profiles WHERE organization_id = ${orgId}
+          )`
+    ) as any;
+    const cov12Total = Number(cov12Row?.total ?? 0);
+    const cov12WithOrg = Number(cov12Row?.with_org ?? 0);
+    if (cov12Total > 0 && (cov12WithOrg / cov12Total) < 0.80) {
+      console.warn(`[AttentionEngine] Signal 12 skipped for org ${orgId}: booking org_id coverage ${cov12WithOrg}/${cov12Total}`);
+    } else {
 
     const clientProfileRows = await db
       .select({ userId: userProfiles.userId })
@@ -562,12 +598,31 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         });
       }
     }
+    } // end else (coverage ok — signal 12)
   } catch {}
 
   // ── 13. Coach Schedule Overload (7+ sessions in next 7 days) ─────────────
+  // Guard: skip when all upcoming bookings for this org are missing organization_id
+  // (indicates the bookings table has not been backfilled yet).
   try {
     const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const dayKey = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
+
+    // Data quality gate — check that at least one upcoming booking for the org has org_id set
+    const [cov13Row] = await db.execute<{ total: number; with_org: number }>(
+      sql`SELECT COUNT(*) AS total,
+               COUNT(organization_id) AS with_org
+          FROM bookings
+          WHERE organization_id = ${orgId}
+             OR coach_id IN (
+               SELECT id FROM coach_profiles WHERE organization_id = ${orgId}
+             )`
+    ) as any;
+    const cov13Total = Number(cov13Row?.total ?? 0);
+    const cov13WithOrg = Number(cov13Row?.with_org ?? 0);
+    if (cov13Total > 0 && (cov13WithOrg / cov13Total) < 0.80) {
+      console.warn(`[AttentionEngine] Signal 13 skipped for org ${orgId}: booking org_id coverage ${cov13WithOrg}/${cov13Total}`);
+    } else {
 
     const upcomingBookings = await db
       .select({ coachId: bookings.coachId })
@@ -608,6 +663,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         });
       }
     }
+    } // end else (coverage ok — signal 13)
   } catch {}
 
   // ── 14. Low Coach Utilization (0 confirmed sessions next 7 days) ──────────

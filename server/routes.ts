@@ -1886,6 +1886,7 @@ export async function registerRoutes(
         groupDescription: isSemiPrivate ? (req.body.groupDescription || "") : "",
         ageRange: isSemiPrivate ? (req.body.ageRange || "") : "",
         skillLevel: isSemiPrivate ? (req.body.skillLevel || "") : "",
+        organizationId: coach.organizationId || null,
       });
 
       if (coach.organizationId) {
@@ -2348,6 +2349,7 @@ export async function registerRoutes(
         sport: isSemiPrivate ? (sport || "") : "",
         teamQuoteProgramId: req.body.teamQuoteProgramId || null,
         subscriptionPlanId: subscriptionPlanId || null,
+        organizationId: coachOrgId || null,
       });
 
       if (resolvedClientId && coachOrgId) {
@@ -2516,6 +2518,7 @@ export async function registerRoutes(
               skillLevel: sourceBooking.skillLevel || "",
               sport: sourceBooking.sport || "",
               recurringGroupId: groupId,
+              organizationId: sourceBooking.organizationId || null,
             });
             created.push(booking);
           }
@@ -8131,6 +8134,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
             sport: isSemiPrivate ? (sport || "") : "",
             teamQuoteProgramId: null,
             subscriptionPlanId,
+            organizationId: profile.organizationId || null,
           });
           created++;
         }
@@ -8221,6 +8225,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
             sport: schedule.sport || "",
             teamQuoteProgramId: null,
             subscriptionPlanId: schedule.subscriptionPlanId,
+            organizationId: profile.organizationId || null,
           });
           created++;
         }

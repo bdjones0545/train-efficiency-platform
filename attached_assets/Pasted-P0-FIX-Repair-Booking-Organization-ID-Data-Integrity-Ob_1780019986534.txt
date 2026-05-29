@@ -1,0 +1,123 @@
+P0 FIX — Repair Booking Organization ID Data Integrity
+
+Objective:
+
+Fix the root data integrity issue causing false Attention Inbox alerts.
+
+The audit found that every record in the bookings table currently has organization_id = NULL. Because Attention Inbox signals filter bookings by organization_id, all booking-based signals falsely behave as if clients have no sessions and coaches have no bookings.
+
+Do not redesign the Attention Inbox yet. Fix the booking data model first.
+
+Tasks:
+
+1. Inspect the bookings schema
+
+Audit:
+
+* bookings.organization_id
+* bookings.client_id
+* bookings.coach_id
+* bookings.created_by
+* any linked client profile / coach profile / user profile relationships
+
+Determine the most reliable way to infer the correct organization for each historical booking.
+
+Priority inference order:
+
+1. Client profile organization
+2. Coach profile organization
+3. Created-by user organization
+4. Related program/session organization
+5. If still unknown, leave null and log for manual review
+6. Write a safe backfill migration
+
+Create a migration or one-time script that:
+
+* Backfills bookings.organization_id
+* Uses deterministic joins only
+* Does not guess across organizations
+* Logs before/after counts
+* Logs unresolved booking IDs
+* Can be safely re-run without duplicating or corrupting data
+
+Before running update, output:
+
+* Total bookings
+* Bookings with null organization_id
+* Bookings resolvable by client profile
+* Bookings resolvable by coach profile
+* Bookings resolvable by created_by
+* Bookings unresolved
+
+3. Run the backfill
+
+After running, verify:
+
+* Total bookings unchanged
+* Null organization_id count reduced
+* No booking was assigned to an organization without evidence
+* Sample at least 10 updated rows showing booking ID, client ID, coach ID, inferred organization ID, and inference source
+
+4. Fix future booking creation
+
+Find every code path that creates a booking.
+
+Examples may include:
+
+* client self-booking
+* coach-created booking
+* admin-created booking
+* walk-in booking
+* recurring booking creation
+* reschedule / clone booking flows
+* public lead-to-booking flow
+* AI scheduling agent booking tool
+
+Ensure every new booking writes a valid organization_id.
+
+Add guardrails:
+
+* If org context exists, write it directly.
+* If org context is missing, infer from authenticated session or related coach/client.
+* If org still cannot be resolved, reject booking creation with a clear error instead of saving NULL.
+
+5. Add validation tests
+
+Add tests or direct verification scripts for:
+
+* Client booking creates booking with organization_id
+* Coach booking creates booking with organization_id
+* Walk-in booking creates booking with organization_id
+* AI scheduling booking creates booking with organization_id
+* Reschedule preserves organization_id
+* Recurring booking instances preserve organization_id
+
+6. Temporarily disable polluted signals
+
+Until the booking backfill passes validation, disable or guard these Attention Inbox signals:
+
+* Signal 11: Inactive Clients
+* Signal 12: Never-Booked Clients
+* Signal 13: Coach Overload
+
+They should not generate alerts when booking organization data is incomplete.
+
+7. Final verification
+
+After the fix, rerun these queries:
+
+* bookings with NULL organization_id
+* bookings grouped by organization_id
+* recent bookings for org-est
+* clients with completed/confirmed bookings for org-est
+* clients with truly zero bookings for org-est
+
+Expected result:
+
+The Attention Inbox should no longer claim that the entire client base is inactive or never booked when real session history exists.
+
+Do not purge recommendations yet.
+
+Do not redesign Attention Inbox yet.
+
+First deliver the data integrity fix, verification output, and list of remaining unresolved bookings.
