@@ -1,0 +1,312 @@
+# AI Operations Navigation Refactor — Reduce Cognitive Load
+
+The AI Operations section has become feature-rich, but the current navigation exposes too many options at the same hierarchy level, creating unnecessary complexity for coaches and administrators.
+
+## Objective
+
+Reorganize AI Operations into logical groups while preserving all existing functionality, routes, permissions, and pages.
+
+This is a navigation/UX refactor only.
+
+Do not remove any features.
+
+---
+
+# Current Problem
+
+AI Operations currently displays:
+
+- AI Overview
+- Attention
+- Business Brain
+- System Health
+- Library
+- Builder
+- Heatmap
+- Orchestration
+- Automations
+- Workforce
+- Governance
+- Suggestions
+- Activity Log
+- AI Tools
+- Autonomy
+- Gmail
+
+This creates decision fatigue and makes the platform feel more complex than it actually is.
+
+Many users do not understand the difference between:
+
+- Orchestration
+- Automations
+- Workforce
+- Autonomy
+
+or
+
+- System Health
+- Governance
+- Activity Log
+
+or
+
+- Builder
+- Library
+- AI Tools
+
+These should be grouped.
+
+---
+
+# New AI Operations Structure
+
+## Intelligence
+
+Purpose:
+Insights, recommendations, alerts, and business awareness.
+
+Contains:
+
+- AI Overview
+- Attention
+- Business Brain
+- Suggestions
+- Heatmap
+
+Default expanded.
+
+---
+
+## Automation
+
+Purpose:
+Agent execution and workflow management.
+
+Contains:
+
+- Orchestration
+- Automations
+- Workforce
+- Autonomy
+
+Collapsed by default.
+
+---
+
+## Build & Configure
+
+Purpose:
+Create and customize AI capabilities.
+
+Contains:
+
+- Builder
+- Library
+- AI Tools
+
+Collapsed by default.
+
+---
+
+## Monitoring
+
+Purpose:
+Audit, governance, and operational visibility.
+
+Contains:
+
+- System Health
+- Activity Log
+- Governance
+
+Collapsed by default.
+
+---
+
+## Integrations
+
+Purpose:
+External AI-connected services.
+
+Contains:
+
+- Gmail
+
+Future-proof structure for:
+
+- Google Calendar
+- Slack
+- Meta Ads
+- Stripe
+- HubSpot
+
+Collapsed by default.
+
+---
+
+# Advanced Workspace Concept
+
+Add a workspace mode toggle.
+
+Modes:
+
+## Standard Workspace
+
+Visible:
+
+- AI Overview
+- Attention
+- Business Brain
+- Suggestions
+- Heatmap
+
+Hidden:
+
+- Orchestration
+- Workforce
+- Governance
+- Activity Log
+- AI Tools
+- Autonomy
+
+This is the default experience for coaches.
+
+---
+
+## Advanced Workspace
+
+Visible:
+
+Everything.
+
+This is intended for administrators, owners, and power users.
+
+---
+
+# Mobile UX Requirements
+
+Current mobile sidebar is becoming too tall.
+
+Requirements:
+
+## Collapsible Groups
+
+Only one section expanded at a time.
+
+Example:
+
+▼ Intelligence
+
+▶ Automation
+
+▶ Build & Configure
+
+▶ Monitoring
+
+▶ Integrations
+
+---
+
+## State Persistence
+
+Remember:
+
+- Expanded section
+- Workspace mode
+
+Store in localStorage.
+
+---
+
+## Visual Hierarchy
+
+Section headers should have:
+
+- Stronger contrast
+- Section icon
+- Section count badge
+
+Example:
+
+Intelligence (5)
+
+Automation (4)
+
+Build & Configure (3)
+
+Monitoring (3)
+
+Integrations (1)
+
+---
+
+# Cleanup Opportunity
+
+Move the purple "AI Workforce Setup Wizard" out of the sidebar navigation.
+
+Create a dedicated CTA card at the top of the AI Overview page instead.
+
+The Workforce Setup Wizard is an action, not a navigation destination.
+
+---
+
+# Additional Improvement
+
+Create a dedicated "AI Command Center" landing page as the default destination when users click AI Operations.
+
+This page should provide a high-level summary of:
+
+## Intelligence Snapshot
+
+- Attention Items
+- Business Brain Insights
+- Suggestions
+- Heatmap Highlights
+
+## Automation Snapshot
+
+- Active Workflows
+- Running Automations
+- Workforce Status
+- Autonomy Status
+
+## Monitoring Snapshot
+
+- System Health
+- Governance Alerts
+- Recent Activity
+
+## Integrations Snapshot
+
+- Gmail Status
+- Future Integration Status Cards
+
+This becomes the home page for AI Operations.
+
+Users can then drill into individual tools as needed.
+
+This greatly reduces first-time user overwhelm.
+
+---
+
+# Success Criteria
+
+After refactor:
+
+- AI Operations feels significantly simpler.
+- New coaches see only relevant intelligence tools.
+- Advanced users still have access to every feature.
+- Mobile sidebar height is reduced by at least 50%.
+- Navigation feels comparable to HubSpot, Salesforce, and Monday.com rather than a developer control panel.
+- AI Operations has a clear Command Center landing page.
+- No routes, permissions, APIs, or functionality are removed.
+
+Return:
+
+1. Updated navigation hierarchy
+2. Components modified
+3. Workspace mode implementation
+4. Mobile UX improvements
+5. AI Command Center design
+6. Before vs after screenshots
+7. Any route changes required
