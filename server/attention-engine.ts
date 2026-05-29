@@ -29,6 +29,7 @@ import {
 } from "@shared/schema";
 import { eq, and, or, lt, gt, sql, inArray, isNotNull, ne, gte, lte } from "drizzle-orm";
 import { computeTriggerAlerts } from "./email-agent/trigger-alerts";
+import { CLIENT_ELIGIBILITY_SQL } from "./client-eligibility";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Scoring
@@ -504,17 +505,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         LEFT JOIN bookings b ON b.client_id = up.user_id AND b.organization_id = ${orgId}
         WHERE up.organization_id = ${orgId}
           AND up.role = 'CLIENT'
-          AND up.user_id NOT LIKE 'walk-in-%'
-          AND (
-            u.email IS NULL OR (
-              LOWER(u.email) NOT LIKE '%test%' AND
-              LOWER(u.email) NOT LIKE '%demo%' AND
-              LOWER(u.email) NOT LIKE '%example%' AND
-              LOWER(u.email) NOT LIKE '%dev%'
-            )
-          )
-          AND LOWER(up.user_id) NOT LIKE '%test%'
-          AND LOWER(up.user_id) NOT LIKE '%theme-test%'
+          ${sql.raw(CLIENT_ELIGIBILITY_SQL(orgId))}
         GROUP BY up.user_id, u.first_name, u.last_name, u.email, u.phone
         HAVING
           COUNT(b.id) FILTER (WHERE b.status IN ('CONFIRMED','COMPLETED') AND b.start_at < NOW()) >= 1
@@ -628,17 +619,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         JOIN users u ON u.id = up.user_id
         WHERE up.organization_id = ${orgId}
           AND up.role = 'CLIENT'
-          AND up.user_id NOT LIKE 'walk-in-%'
-          AND (
-            u.email IS NULL OR (
-              LOWER(u.email) NOT LIKE '%test%' AND
-              LOWER(u.email) NOT LIKE '%demo%' AND
-              LOWER(u.email) NOT LIKE '%example%' AND
-              LOWER(u.email) NOT LIKE '%dev%'
-            )
-          )
-          AND LOWER(up.user_id) NOT LIKE '%test%'
-          AND LOWER(up.user_id) NOT LIKE '%theme-test%'
+          ${sql.raw(CLIENT_ELIGIBILITY_SQL(orgId))}
           AND (u.email IS NOT NULL OR u.phone IS NOT NULL)
           AND u.created_at > NOW() - INTERVAL '30 days'
           AND u.created_at < NOW() - INTERVAL '24 hours'

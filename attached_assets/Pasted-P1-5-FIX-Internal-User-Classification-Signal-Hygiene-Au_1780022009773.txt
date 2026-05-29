@@ -1,0 +1,230 @@
+P1.5 FIX — Internal User Classification & Signal Hygiene Audit
+
+Objective:
+
+The client engagement signals are now data-correct, but internal users can still appear as inactive clients if they possess CLIENT records or historical bookings.
+
+TrainEfficiency should never generate churn, activation, retention, or client-success alerts for internal platform users.
+
+This phase establishes a definitive distinction between:
+
+* Real clients
+* Coaches
+* Admins
+* Owners
+* Internal staff
+* Test accounts
+* Walk-in profiles
+
+and ensures only true clients participate in client-facing intelligence signals.
+
+Tasks
+
+1. Audit User Identity Classification
+
+Inventory all user-related tables:
+
+* users
+* user_profiles
+* coach_profiles
+* organization_members
+* roles tables
+* permissions tables
+* ownership tables
+
+For each account determine:
+
+* userId
+* organizationId
+* primary role
+* secondary roles
+* ownership status
+* coach status
+* admin status
+* client status
+
+Produce a role matrix showing how identity is currently determined.
+
+2. Create Internal User Detection Layer
+
+Implement a reusable helper:
+
+isInternalUser(userId, organizationId)
+
+Returns true for:
+
+* Organization owners
+* Admins
+* Coaches
+* Staff
+* Platform operators
+* Internal support accounts
+
+Returns false for:
+
+* Paying clients
+* Athletes
+* Parents
+* Customers
+* Prospects
+
+The helper should not rely solely on a single role field.
+
+Use multiple signals:
+
+* ownership
+* permissions
+* coach profile existence
+* staff membership
+* organization membership type
+
+3. Create Client Eligibility Layer
+
+Implement:
+
+isEligibleClientForSignals(userId, organizationId)
+
+Requirements:
+
+Must be:
+
+* Real client
+* Not owner
+* Not admin
+* Not coach
+* Not staff
+* Not test account
+* Not walk-in profile
+* Not archived
+* Not deleted
+
+This helper becomes the single source of truth for all client intelligence signals.
+
+4. Apply Eligibility Filtering
+
+Update:
+
+Signal 11 — Inactive Clients
+Signal 12 — Activation Clients
+
+And any future:
+
+* Churn signals
+* Retention signals
+* Readiness alerts
+* Attendance alerts
+* Client success alerts
+
+Only eligible clients may enter these pipelines.
+
+5. Audit Existing Alerts
+
+Run a validation against live production data.
+
+Show:
+
+Current active attention items
+Current active recommendations
+
+Identify:
+
+* Internal users appearing as clients
+* Coaches appearing as clients
+* Owners appearing as clients
+* Staff appearing as clients
+
+Invalidate any discovered false positives.
+
+6. Verify Bryan Jones Classification
+
+Specifically audit:
+
+Bryan Jones
+
+Determine:
+
+* User ID
+* Organization membership
+* Role assignments
+* Coach profile existence
+* Ownership status
+
+Expected result:
+
+Bryan Jones should be classified as:
+
+OWNER
+COACH
+ADMIN
+
+and therefore automatically excluded from:
+
+* Inactive client alerts
+* Never-booked alerts
+* Churn alerts
+* Client activation alerts
+* Client success alerts
+
+The system should never recommend that Bryan Jones contact Bryan Jones.
+
+7. Add Signal Safety Guards
+
+Before any client intelligence item is generated:
+
+Validate:
+
+if (!isEligibleClientForSignals(userId, organizationId))
+skip
+
+Log:
+
+signal skipped due to internal-user classification
+
+This becomes a platform-wide safeguard.
+
+8. Regression Protection
+
+Add tests for:
+
+Owner account
+Admin account
+Coach account
+Staff account
+Walk-in profile
+Test account
+Real client
+
+Verify:
+
+Signal 11
+Signal 12
+
+only fire for real clients.
+
+9. Final Verification Report
+
+Provide:
+
+* Number of internal users excluded
+* Number of coaches excluded
+* Number of admins excluded
+* Number of owners excluded
+* Number of staff excluded
+* Number of real eligible clients remaining
+* Updated Signal 11 output
+* Updated Signal 12 output
+* Updated Attention Inbox sample
+
+Expected Outcome
+
+The Attention Inbox should exclusively surface actionable client intelligence.
+
+Bad:
+
+“Bryan Jones has not trained in 100 days.”
+
+Good:
+
+“Sarah Johnson has not trained in 28 days. Send follow-up message?”
+
+The platform should fully understand the difference between a coach running the business and a client receiving services.
