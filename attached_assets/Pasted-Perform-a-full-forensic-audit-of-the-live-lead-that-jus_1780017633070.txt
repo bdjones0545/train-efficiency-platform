@@ -1,0 +1,166 @@
+Perform a full forensic audit of the live lead that just entered the production system.
+
+Lead:
+Selena Torres
+Program: Summer Speed Sprint
+
+Objective:
+Reconstruct the complete lifecycle of this lead from submission to current state and verify every AI, workflow, CRM, scheduling, automation, and orchestration layer functioned correctly.
+
+Audit Scope:
+
+PHASE 1 — Lead Capture
+
+Verify:
+
+* Lead submission received
+* Form payload stored
+* Submission timestamp
+* Source campaign
+* Source page
+* UTM parameters
+* Meta attribution data
+* Referrer data
+* Device/browser metadata
+
+Report:
+
+PASS / FAIL
+Stored record IDs
+Captured fields
+Missing fields
+
+PHASE 2 — CRM Pipeline
+
+Verify:
+
+* Lead record created
+* Prospect record created (if applicable)
+* Deal record created (if applicable)
+* Pipeline stage assigned
+* Lead ownership assigned
+
+Report:
+
+Current stage
+Current status
+Assigned owner
+Duplicate detection results
+
+PHASE 3 — Workflow Engine
+
+Inspect workflow execution logs.
+
+Identify:
+
+* Which workflows fired
+* Which workflows evaluated but did not execute
+* Which workflows were blocked
+* Which workflows failed
+
+For each workflow provide:
+
+Workflow Name
+Trigger
+Execution Time
+Status
+Reason
+
+PHASE 4 — Orchestration Layer
+
+Trace orchestration events.
+
+Verify:
+
+* Trigger routing
+* Action execution
+* Decision engine behavior
+* Governance checks
+* Conflict detection
+
+Report complete execution chain.
+
+PHASE 5 — Communication Layer
+
+Verify:
+
+* Coach notification email sent
+* SendGrid delivery status
+* Delivery timestamp
+* Open tracking enabled
+* Follow-up emails queued
+* SMS actions queued
+* Inbox workflow actions created
+
+Provide message IDs and delivery results.
+
+PHASE 6 — Activity Log
+
+Verify:
+
+* Activity Log entry created
+* Execution timeline generated
+* Audit trail complete
+
+Identify any missing events.
+
+PHASE 7 — AI Agent Audit
+
+Determine if any AI agents were involved.
+
+Check:
+
+* Lead qualification agent
+* Research agent
+* Recommendation agent
+* Outreach agent
+* Scheduling agent
+* Business Brain
+
+For each:
+
+Evaluated?
+Executed?
+Result?
+Latency?
+Errors?
+
+PHASE 8 — Database Integrity
+
+Verify:
+
+* No duplicate lead records
+* No orphaned records
+* Proper foreign key relationships
+* Workflow execution logs attached
+* Communication logs attached
+
+PHASE 9 — Revenue Funnel Readiness
+
+Determine whether the lead can currently progress through:
+
+Lead
+→ Prospect
+→ Account Creation
+→ Scheduling
+→ Payment
+→ Athlete
+→ Active Client
+
+Identify any blockers.
+
+PHASE 10 — Executive Summary
+
+Generate:
+
+1. Complete timeline of events.
+2. Everything that worked.
+3. Everything that failed.
+4. Latency bottlenecks.
+5. Missing automations.
+6. Recommended improvements.
+7. Overall Production Health Score (0-100).
+
+Output should be a forensic audit report, not a code report.
+
+I want to know exactly how this real production lead moved through the live TrainEfficiency ecosystem.
