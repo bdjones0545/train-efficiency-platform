@@ -15760,6 +15760,134 @@ Respond with this exact JSON structure:
     }
   });
 
+  // GET /api/ai-ops/scorecard — unified executive scorecard aggregation
+  app.get("/api/ai-ops/scorecard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(400).json({ message: "No org" });
+
+      const { getAttentionItems } = await import("./attention-engine");
+      const { computeChurnRisks, computeUpsellOpportunities } = await import("./revenue-intelligence");
+      const { getIntegrationStats } = await import("./integration-runtime");
+
+      const [
+        attentionResult,
+        workflowResult,
+        actionSummaryResult,
+        churnResult,
+        upsellResult,
+        integrationResult,
+      ] = await Promise.allSettled([
+        getAttentionItems(orgId),
+        storage.getWorkflowRuns(orgId),
+        storage.getUnifiedActionLogSummary(orgId),
+        computeChurnRisks(orgId),
+        computeUpsellOpportunities(orgId),
+        getIntegrationStats(orgId),
+      ]);
+
+      // ── Attention / Alerts ──────────────────────────────────────────────
+      const attentionItems = attentionResult.status === "fulfilled" ? attentionResult.value : [];
+      const activeItems = attentionItems.filter((i: any) => i.status === "active" || i.status === "escalated");
+      const criticalAlerts = activeItems.filter((i: any) => i.level === "critical" || i.status === "escalated").length;
+      const importantAlerts = activeItems.filter((i: any) => i.level === "important").length;
+
+      // ── Workflows / Agents ──────────────────────────────────────────────
+      const workflows = workflowResult.status === "fulfilled" ? workflowResult.value : [];
+      const runningWorkflows = workflows.filter((w: any) => w.status === "running" || w.status === "pending");
+      const failedWorkflows = workflows.filter((w: any) => w.status === "failed");
+      const stuckWorkflows = runningWorkflows.filter((w: any) => {
+        const updated = w.updatedAt ? new Date(w.updatedAt) : null;
+        return updated && Date.now() - updated.getTime() > 30 * 60 * 1000;
+      });
+
+      const actionSummary = actionSummaryResult.status === "fulfilled" ? actionSummaryResult.value : null;
+      const lastActivityAt = workflows.reduce((latest: string | null, w: any) => {
+        const t = w.updatedAt || w.startedAt;
+        if (!t) return latest;
+        if (!latest) return t;
+        return new Date(t) > new Date(latest) ? t : latest;
+      }, null as string | null);
+
+      // ── Revenue ─────────────────────────────────────────────────────────
+      const upsells = upsellResult.status === "fulfilled" ? upsellResult.value : [];
+      const estimatedLiftCents = upsells.reduce((sum: number, u: any) => sum + (u.estimatedRevenueLiftCents ?? 0), 0);
+
+      // ── Churn ────────────────────────────────────────────────────────────
+      const churnRisks = churnResult.status === "fulfilled" ? churnResult.value : [];
+      const highRisk = churnRisks.filter((r: any) => r.riskLevel === "high").length;
+      const mediumRisk = churnRisks.filter((r: any) => r.riskLevel === "medium").length;
+
+      // ── Integrations ─────────────────────────────────────────────────────
+      const intStats = integrationResult.status === "fulfilled" ? integrationResult.value : { total: 0, connected: 0, degraded: 0, error: 0, integrations: [] };
+      const knownTypes = ["gmail", "google_calendar", "slack", "meta_ads", "stripe", "hubspot"];
+      const integrationList = (intStats.integrations ?? []).filter((i: any) => knownTypes.includes(i.integrationType));
+
+      // ── Health Score ──────────────────────────────────────────────────────
+      let score = 100;
+      score -= criticalAlerts * 10;
+      score -= importantAlerts * 3;
+      score -= failedWorkflows.length * 5;
+      score -= stuckWorkflows.length * 3;
+      score -= (intStats.error ?? 0) * 8;
+      score -= (intStats.degraded ?? 0) * 3;
+      score = Math.max(0, Math.min(100, score));
+
+      const automationsStatus = (failedWorkflows.length > 2 || stuckWorkflows.length > 2) ? "critical"
+        : (failedWorkflows.length > 0 || stuckWorkflows.length > 0) ? "warning" : "healthy";
+      const integrationsStatus = (intStats.error ?? 0) > 0 ? "critical"
+        : (intStats.degraded ?? 0) > 0 ? "warning" : "healthy";
+      const revenueStatus = highRisk > 3 ? "warning" : "healthy";
+      const alertsLabel = criticalAlerts > 0 ? `${criticalAlerts} Critical` : importantAlerts > 0 ? `${importantAlerts} Important` : "All Clear";
+
+      res.json({
+        agents: {
+          running: runningWorkflows.length - stuckWorkflows.length,
+          paused: stuckWorkflows.length,
+          failed: failedWorkflows.length,
+          lastActivityAt,
+          successRate: actionSummary ? Math.round(((actionSummary.completed) / Math.max(actionSummary.total, 1)) * 100) : 100,
+        },
+        revenue: {
+          upsellCount: upsells.length,
+          estimatedLiftCents,
+        },
+        churn: {
+          highRisk,
+          mediumRisk,
+          total: churnRisks.length,
+        },
+        alerts: {
+          critical: criticalAlerts,
+          important: importantAlerts,
+          total: activeItems.length,
+          unresolved: activeItems.length,
+        },
+        integrations: {
+          connected: intStats.connected ?? 0,
+          total: intStats.total ?? 0,
+          error: intStats.error ?? 0,
+          degraded: intStats.degraded ?? 0,
+          items: integrationList.map((i: any) => ({
+            type: i.integrationType,
+            displayName: i.displayName ?? i.integrationType,
+            status: i.status,
+          })),
+        },
+        healthScore: {
+          score,
+          revenueIntelligence: revenueStatus,
+          automations: automationsStatus,
+          integrations: integrationsStatus,
+          alerts: alertsLabel,
+        },
+      });
+    } catch (e: any) {
+      console.error("[ai-ops/scorecard] error:", e);
+      res.status(500).json({ message: "Failed to fetch scorecard" });
+    }
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // GOVERNANCE ROUTES — Phase 3
   // ─────────────────────────────────────────────────────────────────────────

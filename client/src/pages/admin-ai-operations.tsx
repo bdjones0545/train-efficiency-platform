@@ -163,6 +163,340 @@ function WorkflowRow({ wf, isStuck }: { wf: WorkflowRun; isStuck?: boolean }) {
   );
 }
 
+// ─── Scorecard Types ──────────────────────────────────────────────────────────
+
+type ScorecardData = {
+  agents: { running: number; paused: number; failed: number; lastActivityAt: string | null; successRate: number };
+  revenue: { upsellCount: number; estimatedLiftCents: number };
+  churn: { highRisk: number; mediumRisk: number; total: number };
+  alerts: { critical: number; important: number; total: number; unresolved: number };
+  integrations: { connected: number; total: number; error: number; degraded: number; items: { type: string; displayName: string; status: string }[] };
+  healthScore: { score: number; revenueIntelligence: string; automations: string; integrations: string; alerts: string };
+};
+
+// ─── Scorecard Helper ─────────────────────────────────────────────────────────
+
+function statusColor(status: string) {
+  if (status === "critical") return "text-red-500";
+  if (status === "warning") return "text-amber-500";
+  return "text-green-500";
+}
+
+function statusDot(status: string) {
+  if (status === "critical") return "bg-red-500";
+  if (status === "warning") return "bg-amber-500";
+  return "bg-green-500";
+}
+
+function integrationStatusColor(status: string) {
+  if (status === "error") return "text-red-500";
+  if (status === "degraded") return "text-amber-500";
+  if (status === "connected") return "text-green-500";
+  return "text-muted-foreground";
+}
+
+function integrationStatusDot(status: string) {
+  if (status === "error") return "bg-red-500";
+  if (status === "degraded") return "bg-amber-500";
+  if (status === "connected") return "bg-green-500";
+  return "bg-muted-foreground";
+}
+
+const INTEGRATION_LABELS: Record<string, string> = {
+  gmail: "Gmail",
+  google_calendar: "Calendar",
+  slack: "Slack",
+  meta_ads: "Meta",
+  stripe: "Stripe",
+  hubspot: "HubSpot",
+};
+
+// ─── Scorecard Component ──────────────────────────────────────────────────────
+
+function AiOpsScorecard() {
+  const { data, isLoading } = useQuery<ScorecardData>({
+    queryKey: ["/api/ai-ops/scorecard"],
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+
+  const healthScore = data?.healthScore.score ?? 0;
+  const healthColor =
+    healthScore >= 85 ? "text-green-500" : healthScore >= 65 ? "text-amber-500" : "text-red-500";
+  const healthRingColor =
+    healthScore >= 85 ? "stroke-green-500" : healthScore >= 65 ? "stroke-amber-500" : "stroke-red-500";
+
+  const circumference = 2 * Math.PI * 20;
+  const dashOffset = circumference - (healthScore / 100) * circumference;
+
+  return (
+    <div data-testid="ai-ops-scorecard" className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <BarChart3 className="h-3.5 w-3.5" />
+          Executive Scorecard
+        </p>
+        {!isLoading && data && (
+          <span className={`text-xs font-semibold ${healthColor}`}>
+            AI Health: {healthScore}/100
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {/* ── Card 1: Active Agents ───────────────────────────────────────── */}
+        <Link href="/admin/workflows">
+          <div
+            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+            data-testid="scorecard-agents"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 border-b border-blue-500/20">
+              <GitBranch className="h-3.5 w-3.5 text-blue-500" />
+              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">Active Agents</span>
+            </div>
+            <div className="px-3 py-2.5">
+              {isLoading ? (
+                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    {(data?.agents.running ?? 0) + (data?.agents.paused ?? 0)}
+                  </p>
+                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-1"><CircleDot className="h-2.5 w-2.5 text-green-500" /> Running</span>
+                      <span className="font-medium">{data?.agents.running ?? 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-1"><Timer className="h-2.5 w-2.5 text-amber-500" /> Paused</span>
+                      <span className="font-medium">{data?.agents.paused ?? 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-1"><XCircle className="h-2.5 w-2.5 text-red-500" /> Failed</span>
+                      <span className="font-medium">{data?.agents.failed ?? 0}</span>
+                    </div>
+                  </div>
+                  {data?.agents.lastActivityAt && (
+                    <p className="mt-1.5 text-[10px] text-muted-foreground/70 truncate">
+                      Last: {formatDistanceToNow(new Date(data.agents.lastActivityAt), { addSuffix: true })}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </Link>
+
+        {/* ── Card 2: Revenue Opportunities ───────────────────────────────── */}
+        <Link href="/admin/recommendations">
+          <div
+            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+            data-testid="scorecard-revenue"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border-b border-emerald-500/20">
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Revenue</span>
+            </div>
+            <div className="px-3 py-2.5">
+              {isLoading ? (
+                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                    {data?.revenue.upsellCount ?? 0}
+                  </p>
+                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span>Upsell Opps</span>
+                      <span className="font-medium">{data?.revenue.upsellCount ?? 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Est. Lift</span>
+                      <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                        ${((data?.revenue.estimatedLiftCents ?? 0) / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground/70">Upsell opportunities identified</p>
+                </>
+              )}
+            </div>
+          </div>
+        </Link>
+
+        {/* ── Card 3: Churn Risks ─────────────────────────────────────────── */}
+        <Link href="/admin/attention">
+          <div
+            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+            data-testid="scorecard-churn"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 bg-orange-500/10 border-b border-orange-500/20">
+              <Users className="h-3.5 w-3.5 text-orange-500" />
+              <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">Churn Risk</span>
+            </div>
+            <div className="px-3 py-2.5">
+              {isLoading ? (
+                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
+              ) : (
+                <>
+                  <p className={`text-2xl font-bold ${(data?.churn.highRisk ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                    {data?.churn.total ?? 0}
+                  </p>
+                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500 inline-block" /> High</span>
+                      <span className="font-medium text-red-500">{data?.churn.highRisk ?? 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500 inline-block" /> Medium</span>
+                      <span className="font-medium text-amber-500">{data?.churn.mediumRisk ?? 0}</span>
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground/70">Clients at retention risk</p>
+                </>
+              )}
+            </div>
+          </div>
+        </Link>
+
+        {/* ── Card 4: Open Alerts ─────────────────────────────────────────── */}
+        <Link href="/admin/attention">
+          <div
+            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+            data-testid="scorecard-alerts"
+          >
+            <div className={`flex items-center gap-2 px-3 py-2 border-b ${(data?.alerts.critical ?? 0) > 0 ? "bg-red-500/10 border-red-500/20" : "bg-amber-500/10 border-amber-500/20"}`}>
+              <AlertTriangle className={`h-3.5 w-3.5 ${(data?.alerts.critical ?? 0) > 0 ? "text-red-500" : "text-amber-500"}`} />
+              <span className={`text-xs font-semibold ${(data?.alerts.critical ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
+                Open Alerts
+              </span>
+            </div>
+            <div className="px-3 py-2.5">
+              {isLoading ? (
+                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
+              ) : (
+                <>
+                  <p className={`text-2xl font-bold ${(data?.alerts.critical ?? 0) > 0 ? "text-red-600 dark:text-red-400" : (data?.alerts.total ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}>
+                    {data?.alerts.total ?? 0}
+                  </p>
+                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-1"><XCircle className="h-2.5 w-2.5 text-red-500" /> Critical</span>
+                      <span className="font-medium">{data?.alerts.critical ?? 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-1"><AlertTriangle className="h-2.5 w-2.5 text-amber-500" /> Important</span>
+                      <span className="font-medium">{data?.alerts.important ?? 0}</span>
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground/70">
+                    {(data?.alerts.total ?? 0) === 0 ? "All clear — no open alerts" : "Need attention"}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </Link>
+
+        {/* ── Card 5: Integrations ────────────────────────────────────────── */}
+        <Link href="/admin/gmail-conversations">
+          <div
+            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+            data-testid="scorecard-integrations"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 bg-violet-500/10 border-b border-violet-500/20">
+              <Globe className="h-3.5 w-3.5 text-violet-500" />
+              <span className="text-xs font-semibold text-violet-600 dark:text-violet-400">Integrations</span>
+            </div>
+            <div className="px-3 py-2.5">
+              {isLoading ? (
+                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
+              ) : (
+                <>
+                  <p className={`text-2xl font-bold ${(data?.integrations.error ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-violet-600 dark:text-violet-400"}`}>
+                    {data?.integrations.connected ?? 0}
+                    <span className="text-sm font-normal text-muted-foreground">/{data?.integrations.total ?? 0}</span>
+                  </p>
+                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
+                    {(data?.integrations.items ?? []).slice(0, 3).map((item) => (
+                      <div key={item.type} className="flex justify-between items-center">
+                        <span>{INTEGRATION_LABELS[item.type] ?? item.displayName}</span>
+                        <span className={`flex items-center gap-1 ${integrationStatusColor(item.status)}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${integrationStatusDot(item.status)}`} />
+                          {item.status === "connected" ? "OK" : item.status}
+                        </span>
+                      </div>
+                    ))}
+                    {(data?.integrations.items ?? []).length === 0 && (
+                      <p className="text-muted-foreground/70">No integrations configured</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </Link>
+
+        {/* ── Card 6: AI Health Score ─────────────────────────────────────── */}
+        <Link href="/admin/agent-ops">
+          <div
+            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+            data-testid="scorecard-health"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-500/10 border-b border-slate-500/20">
+              <ShieldAlert className="h-3.5 w-3.5 text-slate-500" />
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">AI Health</span>
+            </div>
+            <div className="px-3 py-2.5">
+              {isLoading ? (
+                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <svg className="h-9 w-9 -rotate-90 flex-shrink-0" viewBox="0 0 48 48">
+                      <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="4" className="text-muted/30" />
+                      <circle
+                        cx="24" cy="24" r="20"
+                        fill="none" strokeWidth="4" strokeLinecap="round"
+                        className={healthRingColor}
+                        strokeDasharray={circumference}
+                        strokeDashoffset={dashOffset}
+                        style={{ transition: "stroke-dashoffset 0.6s ease" }}
+                      />
+                    </svg>
+                    <p className={`text-2xl font-bold ${healthColor}`}>{healthScore}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
+                  </div>
+                  <div className="mt-1.5 space-y-0.5 text-[11px]">
+                    {[
+                      { label: "Revenue", val: data?.healthScore.revenueIntelligence ?? "healthy" },
+                      { label: "Automations", val: data?.healthScore.automations ?? "healthy" },
+                      { label: "Integrations", val: data?.healthScore.integrations ?? "healthy" },
+                    ].map(({ label, val }) => (
+                      <div key={label} className="flex items-center justify-between">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className={`flex items-center gap-1 capitalize font-medium ${statusColor(val)}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${statusDot(val)}`} />
+                          {val}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Alerts</span>
+                      <span className={`text-[10px] font-medium ${(data?.alerts.critical ?? 0) > 0 ? "text-red-500" : "text-green-500"}`}>
+                        {data?.healthScore.alerts ?? "All Clear"}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 // ─── Section Nav Groups ────────────────────────────────────────────────────────
 
 const NAV_GROUPS = [
@@ -267,6 +601,9 @@ export default function AdminAiOperationsPage() {
           Refresh
         </Button>
       </div>
+
+      {/* Executive Scorecard */}
+      <AiOpsScorecard />
 
       {/* Workforce Setup Wizard CTA */}
       <Link href="/onboarding/ai-workforce">

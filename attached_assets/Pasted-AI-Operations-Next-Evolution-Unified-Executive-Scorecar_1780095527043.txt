@@ -1,0 +1,160 @@
+AI Operations — Next Evolution (Unified Executive Scorecard)
+
+The recent AI Operations navigation reorganization is a major improvement. The next step is not adding more features—it is creating a unified executive scorecard at the top of AI Overview.
+
+Objective:
+Transform AI Overview from a navigation landing page into the central operating dashboard for the entire AI ecosystem.
+
+Build a new "AI Operations Scorecard" section at the very top of AI Overview.
+
+Cards to Include
+
+1. Active Agents
+- Running Agents
+- Paused Agents
+- Failed Agents
+- Last Activity Timestamp
+
+Purpose:
+Provide immediate visibility into AI system activity.
+
+2. Revenue Opportunities
+- Revenue Recovery Opportunities
+- Upsell Opportunities
+- Estimated Pipeline Value
+- Potential Revenue Impact
+
+Purpose:
+Show where AI believes money can be generated immediately.
+
+3. Churn Risks
+- High Risk Clients
+- Medium Risk Clients
+- Estimated Revenue At Risk
+
+Purpose:
+Provide a retention snapshot without navigating elsewhere.
+
+4. Open Alerts
+- Critical Alerts
+- Warnings
+- Attention Items
+- Unresolved Issues
+
+Purpose:
+Centralize all actionable items.
+
+5. Connected Integrations
+- Gmail
+- Calendar
+- SMS
+- Meta
+- CRM
+- Other Connected Services
+
+Display:
+Connected / Disconnected
+Health Status
+
+Purpose:
+Quickly identify broken integrations.
+
+6. AI Health Score
+Calculate from:
+- Agent success rate
+- Workflow success rate
+- Integration health
+- Alert severity
+
+Example:
+
+AI Health Score
+96 / 100
+
+Revenue Intelligence: Healthy
+Automations: Healthy
+Integrations: Healthy
+Alerts: 2 Active
+
+Navigation Philosophy Audit
+
+Ensure every AI Operations area has a clearly defined purpose:
+
+AI Overview
+"What is happening?"
+
+Attention
+"What needs action?"
+
+Business Brain
+"What should we do next?"
+
+Automation
+"What runs automatically?"
+
+Monitoring
+"Is the system healthy?"
+
+Integrations
+"What systems are connected?"
+
+Automation Naming Audit
+
+Review overlap between:
+
+- Orchestration
+- Automations
+- Workforce
+- Autonomy
+
+Requirement:
+Every section should be explainable in one sentence.
+
+If a first-time user cannot immediately understand the difference, add:
+- Section descriptions
+or
+- Refined labels
+
+Example:
+
+Orchestration
+Build and manage multi-step AI workflows.
+
+Automations
+View and manage automated triggers and actions.
+
+Workforce
+Manage AI workers and responsibilities.
+
+Autonomy
+Control AI decision-making permissions and authority levels.
+
+Design Requirements
+
+- Use the same dark theme and visual language as the current AI Overview.
+- Scorecard should be the first thing visible when opening AI Overview.
+- Mobile-first responsive layout.
+- Cards should collapse cleanly on smaller screens.
+- Include drill-down links from every card to the related section.
+- No functionality removed.
+- Existing AI Operations Areas panel remains below the new scorecard.
+
+Expected Outcome
+
+AI Overview becomes the executive command center for the entire AI system.
+
+Users should be able to answer these questions within 5 seconds:
+
+- Is the AI healthy?
+- Is money being left on the table?
+- Are clients at risk?
+- Are automations running?
+- Are integrations connected?
+- What needs my attention right now?
+
+Deliver:
+- Files changed
+- New components created
+- New metrics added
+- Mobile responsiveness verification
+- Before vs After UX summary
