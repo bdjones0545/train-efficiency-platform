@@ -1,0 +1,297 @@
+P2 AUDIT — Revenue Opportunity Intelligence System
+
+Objective
+
+The Attention Inbox client intelligence layer is now clean.
+
+The next phase is transforming TrainEfficiency into a true business operating system by identifying and surfacing revenue-generating opportunities automatically.
+
+The goal is to answer:
+
+“What actions can the coach take today to increase revenue?”
+
+rather than:
+
+“What statistics exist in the database?”
+
+This is an audit phase.
+
+Do not build new signals yet.
+
+First identify every revenue opportunity signal that can already be generated using existing platform data.
+
+Part 1 — Revenue Data Source Inventory
+
+Audit every existing revenue-related table, service, workflow, and event source.
+
+Inventory:
+
+Lead Sources
+
+* Lead submissions
+* Landing page leads
+* Team training leads
+* Individual training leads
+* Imported leads
+* Lead capture forms
+* Public lead routes
+
+Sales Pipeline
+
+* Deals
+* Team training deals
+* Opportunity stages
+* Deal activity logs
+* Follow-up tasks
+* Revenue agent actions
+
+Scheduling
+
+* Assessments
+* Consultations
+* Discovery calls
+* Evaluations
+* Bookings
+* Recurring bookings
+* Coach schedules
+
+Payments
+
+* Invoices
+* Stripe payments
+* Failed payments
+* Pending payments
+* Refunds
+
+Subscriptions
+
+* Active subscriptions
+* Expiring subscriptions
+* Canceled subscriptions
+* Renewal events
+
+Packages
+
+* Session packages
+* Remaining sessions
+* Expiring packages
+
+Communications
+
+* Email outreach
+* SMS outreach
+* Outreach drafts
+* Outreach sequences
+* Reply tracking
+
+For each source provide:
+
+* Table/service name
+* Row count
+* Organization scope
+* Last activity timestamp
+* Revenue relevance score (1–10)
+
+Part 2 — Existing Revenue Signal Audit
+
+Identify every signal already present that has direct revenue impact.
+
+Examples:
+
+* Revenue agent actions
+* Stalled deals
+* Expiring subscriptions
+* Failed payments
+* Pending approvals that block sales
+
+For each signal:
+
+* Current logic
+* Accuracy assessment
+* Business value score
+* Production readiness score
+
+Part 3 — Revenue Opportunity Discovery
+
+Determine which new revenue signals can already be generated with existing data.
+
+Do not create them yet.
+
+Potential examples:
+
+Lead Intelligence
+
+* New lead submitted
+* Lead awaiting follow-up 24h+
+* Lead awaiting follow-up 72h+
+* Lead contacted but no response
+* Lead engaged but not scheduled
+
+Assessment Intelligence
+
+* Assessment scheduled tomorrow
+* Assessment completed but not converted
+* Assessment no-show
+* Assessment awaiting follow-up
+
+Pipeline Intelligence
+
+* Deal stalled 7+ days
+* Deal stalled 14+ days
+* High-value deal inactive
+* Proposal sent but no response
+
+Capacity Intelligence
+
+* Open appointment slots this week
+* Open coach capacity
+* Underutilized coach
+* Empty group training sessions
+
+Retention Revenue
+
+* Package expiring
+* Subscription expiring
+* Subscription canceled recently
+* Client likely to churn
+
+Recovery Revenue
+
+* Failed payment
+* Outstanding invoice
+* Expired package renewal opportunity
+
+Part 4 — Revenue Opportunity Scoring
+
+For every potential signal assign:
+
+Revenue Impact Score (1–10)
+
+Questions:
+
+* Does it directly affect cash flow?
+* Does it recover lost revenue?
+* Does it increase conversion?
+* Does it improve retention?
+* Is there an immediate action available?
+
+Classification:
+
+Critical Revenue
+High Revenue
+Medium Revenue
+Low Revenue
+Noise
+
+Part 5 — Actionability Audit
+
+Every revenue signal must answer:
+
+“What should the coach do next?”
+
+For every signal provide:
+
+* Recommended action
+* CTA
+* Automation opportunity
+
+Examples:
+
+Lead awaiting follow-up
+
+CTA:
+
+* Send SMS
+* Send Email
+* Call Lead
+
+Failed payment
+
+CTA:
+
+* Retry payment
+* Send payment link
+
+Assessment not converted
+
+CTA:
+
+* Send follow-up offer
+* Schedule consultation
+
+Part 6 — Revenue Inbox Vision
+
+Evaluate whether the Attention Inbox can support a dedicated section:
+
+TODAY’S REVENUE OPPORTUNITIES
+
+Example output:
+
+🔥 New Lead: Summer Speed Sprint
+Submitted 37 minutes ago
+Potential value: $297
+
+⚠️ Assessment completed 3 days ago
+No conversion yet
+Potential value: $497
+
+💰 Hunter has 5 open appointments this week
+Potential value: $600
+
+🔄 Subscription expires in 4 days
+Potential value at risk: $149
+
+Determine if current infrastructure supports this today.
+
+Part 7 — Gap Analysis
+
+Identify:
+
+* Revenue signals possible immediately
+* Revenue signals requiring minor schema changes
+* Revenue signals requiring new infrastructure
+
+Estimate implementation complexity:
+
+Small
+Medium
+Large
+
+Part 8 — Deliverables
+
+Provide:
+
+1. Revenue data source inventory
+2. Existing revenue signal audit
+3. New revenue opportunity opportunities
+4. Revenue impact rankings
+5. Actionability rankings
+6. Revenue inbox feasibility assessment
+7. Gap analysis
+8. Top 10 revenue signals to build first
+
+Expected Outcome
+
+Determine how TrainEfficiency can evolve from:
+
+“Showing business data”
+
+to
+
+“Driving business growth.”
+
+The final recommendation should prioritize signals that directly increase:
+
+* Lead conversion
+* Assessment conversion
+* Session sales
+* Package renewals
+* Subscription retention
+* Revenue per coach
+* Schedule utilization
+
+Do not build anything yet.
+
+Audit first.
+
+Present findings with evidence before implementation.
