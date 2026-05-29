@@ -2142,41 +2142,43 @@ export default function AdminConfigurationPage() {
 
   return (
     <div className="min-h-0" data-testid="page-admin-configuration">
-      {/* ── Page Header ─────────────────────────────────────────────────────── */}
-      <div className="pb-4">
-        <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-config-title">
-          <Settings className="h-6 w-6" />
-          Options
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">Manage coaches, training options, pricing, and organization settings.</p>
-      </div>
-
-      {/* ── Sticky Tab Nav ───────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b border-border/60 -mx-4 sm:-mx-6 px-4 sm:px-6 mb-6">
-        <div className="flex overflow-x-auto gap-0 -mb-px" style={{ scrollbarWidth: "none" }}>
-          {TAB_LIST.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  const mainEl = document.querySelector("main.main-scroll");
-                  if (mainEl) mainEl.scrollTop = 0;
-                }}
-                data-testid={`tab-${tab.id}`}
-                className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0 ${
-                  isActive
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-                {tab.label}
-              </button>
-            );
-          })}
+      {/* ── Sticky Header + Tab Nav (one connected unit) ─────────────────────── */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur -mx-4 sm:-mx-6 -mt-4 md:-mt-6 mb-6">
+        {/* Page Header */}
+        <div className="px-4 sm:px-6 pt-4 md:pt-6 pb-3">
+          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-config-title">
+            <Settings className="h-6 w-6" />
+            Options
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage coaches, training options, pricing, and organization settings.</p>
+        </div>
+        {/* Tab Bar */}
+        <div className="border-b border-border/60 px-4 sm:px-6">
+          <div className="flex overflow-x-auto gap-0 -mb-px" style={{ scrollbarWidth: "none" }}>
+            {TAB_LIST.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    const mainEl = document.querySelector("main.main-scroll");
+                    if (mainEl) mainEl.scrollTop = 0;
+                  }}
+                  data-testid={`tab-${tab.id}`}
+                  className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0 ${
+                    isActive
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
