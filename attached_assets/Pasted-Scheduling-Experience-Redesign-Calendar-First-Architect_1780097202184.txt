@@ -1,0 +1,230 @@
+Scheduling Experience Redesign — Calendar First Architecture
+
+Objective
+
+The platform has reached a booking volume where a card-based list is no longer the optimal primary scheduling experience.
+
+Current example:
+- 157 upcoming bookings
+- Multiple coaches
+- Multiple locations
+- Multiple service types
+
+At this scale, users are forced to mentally reconstruct a calendar by scrolling through large cards.
+
+The scheduling system should evolve from a list-first interface into a calendar-first interface.
+
+Core Philosophy
+
+Users naturally think:
+
+"What does my day look like?"
+"What does my week look like?"
+"Where are my openings?"
+
+They do not think:
+
+"Show me 157 booking cards."
+
+Recommended Navigation
+
+Replace:
+
+[List] [Week]
+
+With:
+
+[Day] [Week] [Month] [Agenda]
+
+Definitions:
+
+Day
+- Detailed daily schedule
+- Mobile optimized
+- Time-block view
+
+Week (Default)
+- Primary scheduling experience
+- Similar to Google Calendar
+- Shows density, openings, conflicts, utilization
+
+Month
+- High-level planning
+- Booking volume overview
+
+Agenda
+- Existing card-based list view
+- Current UI remains available
+- Simply renamed from "List" to "Agenda"
+
+Default View Rules
+
+Admin:
+Default = Week View
+
+Coach:
+Default = Week View
+
+Mobile:
+Default = Day View
+(Optional if Week view feels cramped)
+
+Scheduling Dashboard
+
+Add a dashboard section above the calendar.
+
+Metrics:
+
+Today's Sessions
+This Week's Sessions
+Open Slots
+Coach Utilization
+Revenue Scheduled
+Waitlist Count
+
+Example:
+
+Today's Sessions: 18
+This Week: 157
+Open Slots: 43
+Utilization: 82%
+Revenue Scheduled: $4,380
+Waitlist: 3
+
+Calendar Event Design
+
+Use color coding by service type:
+
+Green = Group Session
+Blue = 1-on-1
+Purple = Team Training
+Orange = Assessment
+Red = Cancelled
+
+Display:
+
+Session Name
+Coach
+Location
+Client Count (for groups)
+
+Quick Actions
+
+Clicking an event opens:
+
+- View Details
+- Reschedule
+- Cancel
+- Check-In
+- Open Client Profile
+
+No separate page required.
+
+Coach Resource View (Phase 2)
+
+Add resource scheduling mode:
+
+Bryan Jones
+Hunter Thaxton
+Coach 3
+Coach 4
+
+Sessions displayed horizontally under each coach.
+
+Benefits:
+
+- Capacity planning
+- Utilization visibility
+- Scheduling conflicts become obvious
+- Easier coach management
+
+Availability Overlay
+
+Show:
+
+Available Time Blocks
+Booked Time Blocks
+Blocked Time
+Unavailable Time
+
+Allow visual gap identification.
+
+Drag & Drop Scheduling (Phase 2)
+
+Support:
+
+- Drag booking to new time
+- Drag booking to another coach
+- Drag booking to another day
+
+System automatically:
+
+- Recalculates availability
+- Updates utilization
+- Sends notifications if enabled
+
+Agenda View Improvements
+
+Keep current card view.
+
+Rename:
+
+List → Agenda
+
+Add:
+
+Date grouping
+Collapsible days
+Compact mode
+
+Example:
+
+Monday (18 Sessions)
+▼
+
+Tuesday (23 Sessions)
+▶
+
+Wednesday (14 Sessions)
+▶
+
+This reduces scrolling significantly.
+
+Mobile Requirements
+
+Week view must remain usable.
+
+If Week view becomes crowded:
+
+Automatically switch to Day view on phones.
+
+Events should be tappable.
+
+No horizontal page overflow.
+
+Performance Requirements
+
+157 bookings should load instantly.
+
+Use:
+
+- Virtualized agenda rendering
+- Lazy-loaded calendar events
+- Memoized event calculations
+
+No noticeable lag.
+
+Deliverables
+
+1. Architecture recommendation
+2. Calendar component recommendation
+3. Files requiring modification
+4. Migration plan from current List/Week system
+5. Mobile behavior verification
+6. Desktop behavior verification
+7. Performance impact analysis
+8. Before vs After UX comparison
+
+Goal
+
+Transform Scheduling from a booking list into a true scheduling operating system while preserving the existing agenda view for users who prefer list-based workflows.
