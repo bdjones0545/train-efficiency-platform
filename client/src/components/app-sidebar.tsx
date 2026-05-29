@@ -67,6 +67,10 @@ import {
   ClipboardList,
   Layers,
   Zap,
+  Lightbulb,
+  Wrench,
+  Eye,
+  Globe,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -101,6 +105,15 @@ type NavSection = {
 
 type NavRef = { url: string; title: string };
 
+type AiSubGroup = {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  items: NavItem[];
+  standardVisible: boolean;
+  defaultOpen: boolean;
+};
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Storage helpers
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -109,7 +122,77 @@ const OPEN_KEY = "sidebar_open_sections";
 const MODE_KEY = "workspace_mode";
 const PINNED_KEY = "nav_pinned";
 const RECENTS_KEY = "nav_recents";
+const AI_OUTER_KEY = "ai_ops_outer_open";
+const AI_SUB_KEY = "ai_ops_subgroups_open";
 const MAX_RECENTS = 5;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AI Operations sub-group definitions (static — no component state)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const AI_SUB_GROUPS: AiSubGroup[] = [
+  {
+    id: "ai-intelligence",
+    label: "Intelligence",
+    icon: Lightbulb,
+    standardVisible: true,
+    defaultOpen: true,
+    items: [
+      { title: "Command Center", simplifiedTitle: "AI Overview", url: "/admin/ai-operations", icon: Cpu, testId: "nav-ai-operations" },
+      { title: "Attention Inbox", simplifiedTitle: "Attention", url: "/admin/attention", icon: Inbox, testId: "nav-attention-inbox" },
+      { title: "Business Brain", simplifiedTitle: "Business Brain", url: "/admin/business-brain", icon: Brain, testId: "nav-business-brain" },
+      { title: "Recommendations", simplifiedTitle: "Suggestions", url: "/admin/recommendations", icon: Zap, testId: "nav-recommendations" },
+      { title: "Workflow Heatmap", simplifiedTitle: "Heatmap", url: "/admin/workflow-heatmap", icon: BarChart2, testId: "nav-workflow-heatmap" },
+    ],
+  },
+  {
+    id: "ai-automation",
+    label: "Automation",
+    icon: GitBranch,
+    standardVisible: false,
+    defaultOpen: false,
+    items: [
+      { title: "Workflow Orchestrator", simplifiedTitle: "Orchestration", url: "/admin/workflow-orchestrator", icon: Activity, testId: "nav-workflow-orchestrator" },
+      { title: "Workflows", simplifiedTitle: "Automations", url: "/admin/workflows", icon: GitBranch, testId: "nav-workflows" },
+      { title: "AI Workforce", simplifiedTitle: "Workforce", url: "/admin/ai-workforce", icon: Users, testId: "nav-ai-workforce" },
+      { title: "Autonomy Controls", simplifiedTitle: "Autonomy", url: "/admin/autonomy-controls", icon: Sliders, testId: "nav-autonomy-controls" },
+    ],
+  },
+  {
+    id: "ai-build",
+    label: "Build & Configure",
+    icon: Wrench,
+    standardVisible: false,
+    defaultOpen: false,
+    items: [
+      { title: "Workflow Builder", simplifiedTitle: "Builder", url: "/admin/workflow-builder", icon: Zap, testId: "nav-workflow-builder" },
+      { title: "Workflow Library", simplifiedTitle: "Library", url: "/admin/workflows-library", icon: Layers, testId: "nav-workflows-library" },
+      { title: "Agent Tools", simplifiedTitle: "AI Tools", url: "/admin/agent-tools", icon: Plug, testId: "nav-agent-tools" },
+    ],
+  },
+  {
+    id: "ai-monitoring",
+    label: "Monitoring",
+    icon: Eye,
+    standardVisible: false,
+    defaultOpen: false,
+    items: [
+      { title: "Agent Ops Monitor", simplifiedTitle: "System Health", url: "/admin/agent-ops", icon: ShieldAlert, testId: "nav-agent-ops" },
+      { title: "Trigger Audit", simplifiedTitle: "Activity Log", url: "/admin/trigger-audit", icon: Activity, testId: "nav-trigger-audit" },
+      { title: "AI Governance", simplifiedTitle: "Governance", url: "/admin/ai-governance", icon: Shield, testId: "nav-ai-governance" },
+    ],
+  },
+  {
+    id: "ai-integrations",
+    label: "Integrations",
+    icon: Globe,
+    standardVisible: false,
+    defaultOpen: false,
+    items: [
+      { title: "Gmail Conversations", simplifiedTitle: "Gmail", url: "/admin/gmail-conversations", icon: Inbox, testId: "nav-gmail-conversations" },
+    ],
+  },
+];
 
 function ls<T>(key: string, fallback: T): T {
   try {
@@ -326,6 +409,190 @@ function AccordionSection({
           {section.aiSection && simplified && (
             <p className="ml-1 px-3 pt-1 pb-0.5 text-[10px] text-muted-foreground/70 leading-relaxed">
               Switch to Advanced workspace to configure internals.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AiOpsNavSection – nested grouped navigation for AI Operations
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function AiOpsNavSection({
+  location,
+  onNavClick,
+}: {
+  location: string;
+  onNavClick: () => void;
+}) {
+  const { workspaceMode } = useContext(SidebarContext);
+  const { isMobile } = useSidebar();
+  const isSimplified = workspaceMode === "simplified";
+
+  const isAnyAiActive = AI_SUB_GROUPS.some((g) =>
+    g.items.some((i) => itemIsActive(location, i.url))
+  );
+
+  const [outerOpen, setOuterOpen] = useState<boolean>(() => {
+    if (isAnyAiActive) return true;
+    return ls<boolean>(AI_OUTER_KEY, false);
+  });
+
+  const [subOpen, setSubOpen] = useState<Set<string>>(() =>
+    new Set(ls<string[]>(AI_SUB_KEY, ["ai-intelligence"]))
+  );
+
+  useEffect(() => {
+    if (isAnyAiActive && !outerOpen) {
+      setOuterOpen(true);
+      lsSet(AI_OUTER_KEY, true);
+    }
+    AI_SUB_GROUPS.forEach((group) => {
+      if (group.items.some((i) => itemIsActive(location, i.url))) {
+        setSubOpen((prev) => {
+          if (prev.has(group.id)) return prev;
+          const next = new Set(prev);
+          next.add(group.id);
+          lsSet(AI_SUB_KEY, [...next]);
+          return next;
+        });
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+
+  const toggleOuter = () => {
+    setOuterOpen((prev) => {
+      lsSet(AI_OUTER_KEY, !prev);
+      return !prev;
+    });
+  };
+
+  const toggleSub = (id: string) => {
+    setSubOpen((prev) => {
+      let next: Set<string>;
+      if (isMobile) {
+        next = prev.has(id) ? new Set<string>() : new Set([id]);
+      } else {
+        next = new Set(prev);
+        prev.has(id) ? next.delete(id) : next.add(id);
+      }
+      lsSet(AI_SUB_KEY, [...next]);
+      return next;
+    });
+  };
+
+  const visibleGroups = isSimplified
+    ? AI_SUB_GROUPS.filter((g) => g.standardVisible)
+    : AI_SUB_GROUPS;
+
+  return (
+    <div className="mb-0.5">
+      {/* Outer AI Operations header */}
+      <button
+        onClick={toggleOuter}
+        data-testid="section-ai-ops"
+        className={cn(
+          "w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors",
+          "text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20",
+          isAnyAiActive ? "text-violet-700 dark:text-violet-300" : ""
+        )}
+      >
+        <span className="flex items-center gap-1.5">
+          <Cpu className="h-3.5 w-3.5 text-violet-500" />
+          AI Operations
+          {isSimplified && (
+            <span className="ml-1 text-[9px] font-medium px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 uppercase tracking-wide leading-none">
+              Adv
+            </span>
+          )}
+          {isAnyAiActive && (
+            <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+          )}
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 transition-transform duration-200",
+            outerOpen ? "rotate-180" : ""
+          )}
+        />
+      </button>
+
+      {/* Sub-groups */}
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-200 ease-in-out",
+          outerOpen ? "max-h-[1400px] opacity-100" : "max-h-0 opacity-0"
+        )}
+      >
+        <div className="mt-0.5 space-y-0.5 pb-1 pl-2">
+          {visibleGroups.map((group) => {
+            const groupActive = group.items.some((i) =>
+              itemIsActive(location, i.url)
+            );
+            const isOpen = subOpen.has(group.id);
+
+            return (
+              <div key={group.id}>
+                {/* Sub-group header */}
+                <button
+                  onClick={() => toggleSub(group.id)}
+                  data-testid={`section-${group.id}`}
+                  className={cn(
+                    "w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors",
+                    groupActive
+                      ? "text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20"
+                      : "text-violet-500 dark:text-violet-500 hover:bg-violet-50/60 dark:hover:bg-violet-900/10"
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <group.icon className="h-3 w-3" />
+                    {group.label}
+                    <span className="text-[9px] font-medium px-1 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-500 leading-none">
+                      {group.items.length}
+                    </span>
+                    {groupActive && (
+                      <span className="h-1 w-1 rounded-full bg-violet-500" />
+                    )}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-3 w-3 transition-transform duration-200",
+                      isOpen ? "rotate-180" : ""
+                    )}
+                  />
+                </button>
+
+                {/* Sub-group items */}
+                <div
+                  className={cn(
+                    "overflow-hidden transition-all duration-200 ease-in-out",
+                    isOpen ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"
+                  )}
+                >
+                  <div className="mt-0.5 space-y-0.5 pb-0.5">
+                    {group.items.map((item) => (
+                      <NavLink
+                        key={item.url}
+                        item={item}
+                        location={location}
+                        onClick={onNavClick}
+                        aiSection={true}
+                        useSimplifiedTitle={isSimplified}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {isSimplified && (
+            <p className="px-2 pt-1 pb-0.5 text-[10px] text-muted-foreground/70 leading-relaxed">
+              Switch to Advanced workspace to access automation & monitoring tools.
             </p>
           )}
         </div>
@@ -743,127 +1010,6 @@ export function AppSidebar() {
     ...(isAdmin
       ? [
           {
-            id: "ai-ops",
-            label: "AI Operations",
-            icon: Cpu,
-            aiSection: true,
-            lowPriority: true,
-            items: [
-              {
-                title: "Command Center",
-                simplifiedTitle: "AI Overview",
-                url: "/admin/ai-operations",
-                icon: Cpu,
-                testId: "nav-ai-operations",
-              },
-              {
-                title: "Attention Inbox",
-                simplifiedTitle: "Attention",
-                url: "/admin/attention",
-                icon: Inbox,
-                testId: "nav-attention-inbox",
-              },
-              {
-                title: "Business Brain",
-                simplifiedTitle: "Business Brain",
-                url: "/admin/business-brain",
-                icon: Brain,
-                testId: "nav-business-brain",
-              },
-              {
-                title: "Agent Ops Monitor",
-                simplifiedTitle: "System Health",
-                url: "/admin/agent-ops",
-                icon: ShieldAlert,
-                testId: "nav-agent-ops",
-              },
-              {
-                title: "Workflow Library",
-                simplifiedTitle: "Library",
-                url: "/admin/workflows-library",
-                icon: Layers,
-                testId: "nav-workflows-library",
-              },
-              {
-                title: "Workflow Builder",
-                simplifiedTitle: "Builder",
-                url: "/admin/workflow-builder",
-                icon: Zap,
-                testId: "nav-workflow-builder",
-              },
-              {
-                title: "Workflow Heatmap",
-                simplifiedTitle: "Heatmap",
-                url: "/admin/workflow-heatmap",
-                icon: BarChart2,
-                testId: "nav-workflow-heatmap",
-              },
-              {
-                title: "Workflow Orchestrator",
-                simplifiedTitle: "Orchestration",
-                url: "/admin/workflow-orchestrator",
-                icon: Activity,
-                testId: "nav-workflow-orchestrator",
-              },
-              {
-                title: "Workflows",
-                simplifiedTitle: "Automations",
-                url: "/admin/workflows",
-                icon: GitBranch,
-                testId: "nav-workflows",
-              },
-              {
-                title: "AI Workforce",
-                simplifiedTitle: "Workforce",
-                url: "/admin/ai-workforce",
-                icon: Users,
-                testId: "nav-ai-workforce",
-              },
-              {
-                title: "AI Governance",
-                simplifiedTitle: "Governance",
-                url: "/admin/ai-governance",
-                icon: Shield,
-                testId: "nav-ai-governance",
-              },
-              {
-                title: "Recommendations",
-                simplifiedTitle: "Suggestions",
-                url: "/admin/recommendations",
-                icon: Zap,
-                testId: "nav-recommendations",
-              },
-              {
-                title: "Trigger Audit",
-                simplifiedTitle: "Activity Log",
-                url: "/admin/trigger-audit",
-                icon: Activity,
-                testId: "nav-trigger-audit",
-              },
-              {
-                title: "Agent Tools",
-                simplifiedTitle: "AI Tools",
-                url: "/admin/agent-tools",
-                icon: Plug,
-                testId: "nav-agent-tools",
-              },
-              {
-                title: "Autonomy Controls",
-                simplifiedTitle: "Autonomy",
-                url: "/admin/autonomy-controls",
-                icon: Sliders,
-                testId: "nav-autonomy-controls",
-              },
-              {
-                title: "Gmail Conversations",
-                simplifiedTitle: "Gmail",
-                url: "/admin/gmail-conversations",
-                icon: Inbox,
-                testId: "nav-gmail-conversations",
-              },
-            ],
-          } as NavSection,
-          {
             id: "organization",
             label: "Organization",
             icon: Building2,
@@ -894,6 +1040,7 @@ export function AppSidebar() {
   // All nav items across all roles (for recents lookup)
   const allNavItems: NavItem[] = [
     ...coachAdminSections.flatMap((s) => s.items),
+    ...AI_SUB_GROUPS.flatMap((g) => g.items),
     ...staffSections.flatMap((s) => s.items),
     ...clientItems,
   ];
@@ -1039,6 +1186,10 @@ export function AppSidebar() {
                     />
                   ))}
 
+                  {/* AI Operations grouped sub-navigation (admin only) */}
+                  {isAdmin && (
+                    <AiOpsNavSection location={location} onNavClick={handleNavClick} />
+                  )}
                 </div>
 
                 {/* Workspace mode toggle */}
@@ -1102,17 +1253,6 @@ export function AppSidebar() {
 
           {/* ── Footer ──────────────────────────────────────────────────────── */}
           <SidebarFooter className="p-3 border-t border-border/50">
-            {isAdmin && (
-              <Link href="/onboarding/ai-workforce" onClick={handleNavClick}>
-                <button
-                  className="w-full mb-2 flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors border border-violet-200 dark:border-violet-800/50"
-                  data-testid="button-setup-wizard"
-                >
-                  <Zap className="h-3.5 w-3.5" />
-                  AI Workforce Setup Wizard
-                </button>
-              </Link>
-            )}
             {user && (
               <div className="flex items-center gap-2">
                 <Avatar className="h-7 w-7 flex-shrink-0">

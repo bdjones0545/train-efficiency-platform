@@ -17,7 +17,8 @@ import {
   Inbox, Brain, ShieldAlert, Activity, GitBranch, Plug, Zap,
   AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw,
   TrendingUp, BarChart3, AlertCircle, CircleDot, Timer, Cpu, Archive,
-  Layers, SkipForward, Ban, Repeat,
+  Layers, SkipForward, Ban, Repeat, Users, Sliders, BarChart2,
+  Shield, Eye, Lightbulb, Wrench, Globe, ChevronRight,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -162,16 +163,69 @@ function WorkflowRow({ wf, isStuck }: { wf: WorkflowRun; isStuck?: boolean }) {
   );
 }
 
-// ─── Quick Links ──────────────────────────────────────────────────────────────
+// ─── Section Nav Groups ────────────────────────────────────────────────────────
 
-const QUICK_LINKS = [
-  { href: "/admin/attention", label: "Attention Inbox", icon: Inbox },
-  { href: "/admin/business-brain", label: "Business Brain", icon: Brain },
-  { href: "/admin/agent-ops", label: "Agent Ops Monitor", icon: ShieldAlert },
-  { href: "/admin/workflow-orchestrator", label: "Orchestrator", icon: Activity },
-  { href: "/admin/workflows", label: "Workflows", icon: GitBranch },
-  { href: "/admin/trigger-audit", label: "Trigger Audit", icon: Zap },
-  { href: "/admin/agent-tools", label: "Agent Tools", icon: Plug },
+const NAV_GROUPS = [
+  {
+    label: "Intelligence",
+    icon: Lightbulb,
+    color: "text-violet-600",
+    bg: "bg-violet-50 dark:bg-violet-900/20",
+    border: "border-violet-200 dark:border-violet-800/50",
+    links: [
+      { href: "/admin/attention", label: "Attention Inbox", icon: Inbox },
+      { href: "/admin/business-brain", label: "Business Brain", icon: Brain },
+      { href: "/admin/recommendations", label: "Suggestions", icon: Zap },
+      { href: "/admin/workflow-heatmap", label: "Heatmap", icon: BarChart2 },
+    ],
+  },
+  {
+    label: "Automation",
+    icon: GitBranch,
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-900/20",
+    border: "border-blue-200 dark:border-blue-800/50",
+    links: [
+      { href: "/admin/workflow-orchestrator", label: "Orchestration", icon: Activity },
+      { href: "/admin/workflows", label: "Automations", icon: GitBranch },
+      { href: "/admin/ai-workforce", label: "Workforce", icon: Users },
+      { href: "/admin/autonomy-controls", label: "Autonomy", icon: Sliders },
+    ],
+  },
+  {
+    label: "Build & Configure",
+    icon: Wrench,
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 dark:bg-emerald-900/20",
+    border: "border-emerald-200 dark:border-emerald-800/50",
+    links: [
+      { href: "/admin/workflow-builder", label: "Builder", icon: Zap },
+      { href: "/admin/workflows-library", label: "Library", icon: Layers },
+      { href: "/admin/agent-tools", label: "AI Tools", icon: Plug },
+    ],
+  },
+  {
+    label: "Monitoring",
+    icon: Eye,
+    color: "text-orange-600",
+    bg: "bg-orange-50 dark:bg-orange-900/20",
+    border: "border-orange-200 dark:border-orange-800/50",
+    links: [
+      { href: "/admin/agent-ops", label: "System Health", icon: ShieldAlert },
+      { href: "/admin/trigger-audit", label: "Activity Log", icon: Activity },
+      { href: "/admin/ai-governance", label: "Governance", icon: Shield },
+    ],
+  },
+  {
+    label: "Integrations",
+    icon: Globe,
+    color: "text-pink-600",
+    bg: "bg-pink-50 dark:bg-pink-900/20",
+    border: "border-pink-200 dark:border-pink-800/50",
+    links: [
+      { href: "/admin/gmail-conversations", label: "Gmail", icon: Inbox },
+    ],
+  },
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -192,7 +246,7 @@ export default function AdminAiOperationsPage() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-ai-operations">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Cpu className="h-6 w-6 text-primary" />
@@ -212,6 +266,61 @@ export default function AdminAiOperationsPage() {
           <RefreshCw className={`h-4 w-4 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
         </Button>
+      </div>
+
+      {/* Workforce Setup Wizard CTA */}
+      <Link href="/onboarding/ai-workforce">
+        <div
+          className="flex items-center gap-4 px-5 py-4 rounded-xl border border-violet-200 dark:border-violet-800/50 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
+          data-testid="cta-workforce-setup-wizard"
+        >
+          <div className="h-10 w-10 rounded-lg bg-violet-100 dark:bg-violet-800/40 flex items-center justify-center flex-shrink-0">
+            <Zap className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-violet-900 dark:text-violet-200 text-sm">AI Workforce Setup Wizard</p>
+            <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5">Configure and deploy your AI workforce — agents, roles, and automation rules.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-violet-500 flex-shrink-0" />
+        </div>
+      </Link>
+
+      {/* AI Area Navigation */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+          <Cpu className="h-3.5 w-3.5" />
+          AI Operations Areas
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {NAV_GROUPS.map((group) => (
+            <div
+              key={group.label}
+              className={`rounded-lg border p-3 ${group.bg} ${group.border}`}
+              data-testid={`nav-group-${group.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <div className={`flex items-center gap-1.5 mb-2 ${group.color}`}>
+                <group.icon className="h-3.5 w-3.5" />
+                <span className="text-xs font-semibold">{group.label}</span>
+                <span className="ml-auto text-[9px] font-medium px-1 py-0.5 rounded-full bg-white/60 dark:bg-black/20">
+                  {group.links.length}
+                </span>
+              </div>
+              <div className="space-y-0.5">
+                {group.links.map(({ href, label, icon: Icon }) => (
+                  <Link key={href} href={href}>
+                    <button
+                      className="w-full flex items-center gap-2 px-2 py-1 rounded text-xs hover:bg-white/50 dark:hover:bg-white/5 transition-colors text-left text-foreground/80"
+                      data-testid={`link-nav-group-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
+                      <span className="truncate">{label}</span>
+                    </button>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -390,32 +499,6 @@ export default function AdminAiOperationsPage() {
 
         {/* Right column */}
         <div className="space-y-6">
-          {/* Quick Nav */}
-          <Card data-testid="card-quick-nav">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Cpu className="h-4 w-4 text-primary" />
-                AI Ops Sections
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 pb-3">
-              <div className="space-y-0.5">
-                {QUICK_LINKS.map(({ href, label, icon: Icon }) => (
-                  <Link key={href} href={href}>
-                    <button
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-muted/60 transition-colors text-left"
-                      data-testid={`link-ai-ops-${label.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                      {label}
-                      <ArrowRight className="h-3 w-3 ml-auto text-muted-foreground" />
-                    </button>
-                  </Link>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
           {/* System Health Summary */}
           <Card data-testid="card-system-health">
             <CardHeader className="pb-2">
