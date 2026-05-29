@@ -683,7 +683,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     staleTime: 60 * 1000,
   });
 
-  const { data: revenueSummary, isLoading: revenueLoading, refetch: refetchRevenue } = useQuery<RevenueSummary>({
+  const { data: revenueSummary, isLoading: revenueLoading, isError: revenueError, refetch: refetchRevenue } = useQuery<RevenueSummary>({
     queryKey: ["/api/scheduling/revenue-summary"],
     enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
@@ -975,12 +975,35 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
   const activePackageAlerts = isDemo ? DEMO_PACKAGE_ALERTS : packageAlerts;
   const activeWaitlist = isDemo ? DEMO_WAITLIST : waitlist;
 
-  const maxCoachRevenue = activeRevenueSummary ? Math.max(...activeRevenueSummary.coachRevenues.map(c => c.totalRevenueCents), 1) : 1;
-  const maxTimeBlockRevenue = activeRevenueSummary ? Math.max(...activeRevenueSummary.timeBlockRevenues.map(t => t.totalRevenueCents), 1) : 1;
+  // Normalize revenue — guarantees coachRevenues / topClients / timeBlockRevenues are always arrays
+  // even when the API returns a partial or malformed response. This prevents .map() / .length crashes
+  // that would blank the entire panel, not just the Revenue tab.
+  const safeRevenue = activeRevenueSummary ? {
+    ...activeRevenueSummary,
+    coachRevenues: activeRevenueSummary.coachRevenues ?? [],
+    timeBlockRevenues: activeRevenueSummary.timeBlockRevenues ?? [],
+    topClients: activeRevenueSummary.topClients ?? [],
+    churnRiskCount: activeRevenueSummary.churnRiskCount ?? 0,
+    sessionPackageAlertCount: activeRevenueSummary.sessionPackageAlertCount ?? 0,
+    upsellOpportunityCount: activeRevenueSummary.upsellOpportunityCount ?? 0,
+    last30dRevenueCents: activeRevenueSummary.last30dRevenueCents ?? 0,
+    revenueGrowthPct: activeRevenueSummary.revenueGrowthPct ?? 0,
+    mrr: activeRevenueSummary.mrr ?? 0,
+    activeSubscribers: activeRevenueSummary.activeSubscribers ?? 0,
+    avgRevenuePerSessionCents: activeRevenueSummary.avgRevenuePerSessionCents ?? 0,
+    sessionsLast30d: activeRevenueSummary.sessionsLast30d ?? 0,
+  } : null;
+
+  const maxCoachRevenue = safeRevenue && safeRevenue.coachRevenues.length > 0
+    ? Math.max(...safeRevenue.coachRevenues.map(c => c.totalRevenueCents), 1)
+    : 1;
+  const maxTimeBlockRevenue = safeRevenue && safeRevenue.timeBlockRevenues.length > 0
+    ? Math.max(...safeRevenue.timeBlockRevenues.map(t => t.totalRevenueCents), 1)
+    : 1;
 
   const highPriorityInsights = activeDigest?.insights.filter(i => i.priority === "high") ?? [];
   const topActions = activeDigest?.insights.slice(0, 3) ?? [];
-  const topAgentAlerts = getTopAgentAlerts(activeDigest, activeRevenueSummary);
+  const topAgentAlerts = getTopAgentAlerts(activeDigest, safeRevenue ?? undefined);
 
   function getPrimaryHeadline(): string {
     if (isDemo) return "12 open slots worth ~$840 (Demo)";
@@ -2075,13 +2098,22 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
               )}
               {revenueLoading && !isDemo ? (
                 <div className="space-y-3"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-48 w-full rounded-xl" /></div>
-              ) : activeRevenueSummary ? (
+              ) : revenueError ? (
+                <Card data-testid="revenue-error-state">
+                  <CardContent className="p-6 text-center space-y-2">
+                    <AlertTriangle className="h-6 w-6 text-orange-400 mx-auto" />
+                    <p className="text-sm font-medium">Revenue data unavailable</p>
+                    <p className="text-xs text-muted-foreground">Please refresh or check server logs.</p>
+                    <button className="text-xs text-primary underline mt-1" onClick={() => refetchRevenue()}>Try again</button>
+                  </CardContent>
+                </Card>
+              ) : safeRevenue ? (
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {[
-                      { label: "Last 30d Revenue", value: `$${(activeRevenueSummary.last30dRevenueCents / 100).toLocaleString()}`, sub: activeRevenueSummary.revenueGrowthPct >= 0 ? `+${activeRevenueSummary.revenueGrowthPct.toFixed(1)}% vs prior 30d` : `${activeRevenueSummary.revenueGrowthPct.toFixed(1)}% vs prior 30d`, id: "rev-last30", color: "text-green-600", subColor: activeRevenueSummary.revenueGrowthPct >= 0 ? "text-green-500" : "text-red-500" },
-                      { label: "MRR", value: `$${(activeRevenueSummary.mrr / 100).toLocaleString()}`, sub: `${activeRevenueSummary.activeSubscribers} active subscribers`, id: "rev-mrr", color: "", subColor: "" },
-                      { label: "Avg Session Value", value: `$${(activeRevenueSummary.avgRevenuePerSessionCents / 100).toFixed(0)}`, sub: `${activeRevenueSummary.sessionsLast30d} sessions last 30d`, id: "rev-session-val", color: "", subColor: "" },
+                      { label: "Last 30d Revenue", value: `$${(safeRevenue.last30dRevenueCents / 100).toLocaleString()}`, sub: safeRevenue.revenueGrowthPct >= 0 ? `+${safeRevenue.revenueGrowthPct.toFixed(1)}% vs prior 30d` : `${safeRevenue.revenueGrowthPct.toFixed(1)}% vs prior 30d`, id: "rev-last30", color: "text-green-600", subColor: safeRevenue.revenueGrowthPct >= 0 ? "text-green-500" : "text-red-500" },
+                      { label: "MRR", value: `$${(safeRevenue.mrr / 100).toLocaleString()}`, sub: `${safeRevenue.activeSubscribers} active subscribers`, id: "rev-mrr", color: "", subColor: "" },
+                      { label: "Avg Session Value", value: `$${(safeRevenue.avgRevenuePerSessionCents / 100).toFixed(0)}`, sub: `${safeRevenue.sessionsLast30d} sessions last 30d`, id: "rev-session-val", color: "", subColor: "" },
                     ].map(m => (
                       <Card key={m.id} className="border-0 shadow-sm" data-testid={m.id}>
                         <CardContent className="p-3">
@@ -2093,48 +2125,48 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     ))}
                   </div>
 
-                  {(activeRevenueSummary.churnRiskCount > 0 || activeRevenueSummary.sessionPackageAlertCount > 0 || activeRevenueSummary.upsellOpportunityCount > 0) && (
+                  {(safeRevenue.churnRiskCount > 0 || safeRevenue.sessionPackageAlertCount > 0 || safeRevenue.upsellOpportunityCount > 0) && (
                     <>
                       <h3 className="font-semibold text-sm flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 text-orange-500" />Revenue Alerts</h3>
                       <div className="flex flex-wrap gap-2">
-                        {activeRevenueSummary.churnRiskCount > 0 && (
+                        {safeRevenue.churnRiskCount > 0 && (
                           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-800 dark:text-red-400 hover:opacity-80 transition-opacity"
                             data-testid="churn-pill" onClick={() => document.getElementById("churn-section")?.scrollIntoView({ behavior: "smooth" })}>
-                            <AlertTriangle className="h-3 w-3" />{activeRevenueSummary.churnRiskCount} churn risk{activeRevenueSummary.churnRiskCount > 1 ? "s" : ""}
+                            <AlertTriangle className="h-3 w-3" />{safeRevenue.churnRiskCount} churn risk{safeRevenue.churnRiskCount > 1 ? "s" : ""}
                           </button>
                         )}
-                        {activeRevenueSummary.sessionPackageAlertCount > 0 && (
+                        {safeRevenue.sessionPackageAlertCount > 0 && (
                           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-800 dark:text-orange-400 hover:opacity-80 transition-opacity"
                             data-testid="packages-pill" onClick={() => document.getElementById("packages-section")?.scrollIntoView({ behavior: "smooth" })}>
-                            <Package className="h-3 w-3" />{activeRevenueSummary.sessionPackageAlertCount} package alert{activeRevenueSummary.sessionPackageAlertCount > 1 ? "s" : ""}
+                            <Package className="h-3 w-3" />{safeRevenue.sessionPackageAlertCount} package alert{safeRevenue.sessionPackageAlertCount > 1 ? "s" : ""}
                           </button>
                         )}
-                        {activeRevenueSummary.upsellOpportunityCount > 0 && (
+                        {safeRevenue.upsellOpportunityCount > 0 && (
                           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 hover:opacity-80 transition-opacity"
                             data-testid="upsell-pill" onClick={() => document.getElementById("upsell-section")?.scrollIntoView({ behavior: "smooth" })}>
-                            <TrendingUp className="h-3 w-3" />{activeRevenueSummary.upsellOpportunityCount} upsell opportunity{activeRevenueSummary.upsellOpportunityCount > 1 ? "s" : ""}
+                            <TrendingUp className="h-3 w-3" />{safeRevenue.upsellOpportunityCount} upsell opportunity{safeRevenue.upsellOpportunityCount > 1 ? "s" : ""}
                           </button>
                         )}
                       </div>
                     </>
                   )}
 
-                  {activeRevenueSummary.coachRevenues.length > 0 && (
+                  {safeRevenue.coachRevenues.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><BarChart3 className="h-4 w-4 text-green-500" />Revenue by Coach</h3>
                       <Card>
                         <CardContent className="p-4 space-y-3">
-                          {activeRevenueSummary.coachRevenues.map(c => <CoachBar key={c.coachId} coach={c} maxRevenue={maxCoachRevenue} />)}
+                          {safeRevenue.coachRevenues.map(c => <CoachBar key={c.coachId} coach={c} maxRevenue={maxCoachRevenue} />)}
                         </CardContent>
                       </Card>
                     </div>
                   )}
 
-                  {activeRevenueSummary.topClients.length > 0 && (
+                  {safeRevenue.topClients.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Users className="h-4 w-4 text-blue-500" />Top Clients by Revenue</h3>
                       <div className="space-y-2">
-                        {activeRevenueSummary.topClients.map((c, i) => (
+                        {safeRevenue.topClients.map((c, i) => (
                           <Card key={c.clientId} data-testid={`top-client-${i}`}>
                             <CardContent className="p-3 flex items-center justify-between gap-3">
                               <div className="flex items-center gap-2 min-w-0">
@@ -2152,15 +2184,15 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     </div>
                   )}
 
-                  {activeRevenueSummary.timeBlockRevenues.length > 0 && (
+                  {safeRevenue.timeBlockRevenues.length > 0 && (
                     <div>
                       <h3 className="font-semibold text-sm mb-1 flex items-center gap-1.5"><Clock className="h-4 w-4 text-purple-500" />Revenue by Time Block (Last 30d)</h3>
-                      {activeRevenueSummary.timezone && (
-                        <p className="text-xs text-muted-foreground mb-2" data-testid="time-block-timezone-label">Times shown in org timezone: {activeRevenueSummary.timezone}</p>
+                      {safeRevenue.timezone && (
+                        <p className="text-xs text-muted-foreground mb-2" data-testid="time-block-timezone-label">Times shown in org timezone: {safeRevenue.timezone}</p>
                       )}
                       <Card>
                         <CardContent className="p-4 space-y-2">
-                          {activeRevenueSummary.timeBlockRevenues
+                          {safeRevenue.timeBlockRevenues
                             .sort((a, b) => a.hour - b.hour)
                             .map(tb => <TimeBlockBar key={tb.hour} block={tb} maxRevenue={maxTimeBlockRevenue} />)}
                         </CardContent>
