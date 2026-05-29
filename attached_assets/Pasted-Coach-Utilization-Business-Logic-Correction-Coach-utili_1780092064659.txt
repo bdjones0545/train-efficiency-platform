@@ -1,0 +1,148 @@
+Coach Utilization Business Logic Correction
+
+Coach utilization should represent:
+
+Scheduled Capacity Utilization = Scheduled Session Time ÷ Available Coach Time
+
+The current implementation appears to be measuring availability incorrectly and producing misleading results.
+
+Requirements:
+
+Utilization Formula
+
+If availability blocks exist:
+
+Utilization % =
+(Booked Minutes This Week ÷ Available Minutes This Week) × 100
+
+Only include:
+
+* Confirmed bookings
+* Completed bookings
+* Current week
+
+Exclude:
+
+* Cancelled bookings
+* No-shows
+* Draft bookings
+
+⸻
+
+No Availability Blocks Scenario
+
+If a coach has bookings but no availability blocks:
+
+Do NOT show:
+
+0% Utilization
+
+Instead show:
+
+Active
+X sessions this week
+No availability schedule configured
+
+Reason:
+
+A coach cannot logically be 0% utilized if they are actively delivering sessions.
+
+⸻
+
+Open Slots Logic
+
+Current open slot calculation appears inflated because it includes the entire week’s recurring template.
+
+Replace with:
+
+Future Open Slots =
+Future Available Capacity
+−
+Future Confirmed Bookings
+
+Only count:
+
+* Future availability
+* Remaining days in the week
+
+Do NOT count:
+
+* Past unfilled availability
+* Expired availability blocks
+* Historical unused hours
+
+Example:
+
+If Hunter has:
+
+20 future available hours
+5 future booked hours
+
+Display:
+
+15 Open Slots
+25% Utilization
+
+Not:
+
+80 Open Slots
+7% Utilization
+
+based on the full weekly template.
+
+⸻
+
+Dashboard Display Rules
+
+Case 1:
+
+Availability exists + bookings exist
+
+Display:
+
+42% Utilized
+12 Open Slots
+
+Case 2:
+
+Availability exists + no bookings
+
+Display:
+
+0% Utilized
+20 Open Slots
+
+Case 3:
+
+No availability + bookings exist
+
+Display:
+
+Active
+8 Sessions This Week
+Availability Not Configured
+
+Case 4:
+
+No availability + no bookings
+
+Display:
+
+No Availability Set
+
+⸻
+
+Verification
+
+For Bryan Jones and Hunter Thaxton return:
+
+* availabilityBlocksCount
+* availableMinutesThisWeek
+* futureAvailableMinutes
+* bookedMinutesThisWeek
+* futureBookedMinutes
+* utilizationPct
+* openSlots
+* diagnosis
+
+Confirm utilization reflects actual coaching capacity and not historical unused availability.

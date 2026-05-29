@@ -1,8 +1,8 @@
 import { storage } from "./storage";
-import { addDays, startOfWeek, endOfWeek, format, differenceInMinutes, subDays } from "date-fns";
+import { addDays, startOfWeek, endOfWeek, format, differenceInMinutes, subDays, getDay } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { db } from "./db";
-import { bookings, coachProfiles, availabilityBlocks, users } from "@shared/schema";
+import { bookings, coachProfiles, users } from "@shared/schema";
 import { eq, and, inArray, gte, lte, sql } from "drizzle-orm";
 
 const TIMEZONE = "America/New_York";
@@ -18,7 +18,7 @@ export interface ScheduleInsight {
   actionPrompt?: string;
 }
 
-export type UtilizationStatus = "overloaded" | "high_load" | "healthy" | "underbooked" | "no_availability";
+export type UtilizationStatus = "overloaded" | "high_load" | "healthy" | "underbooked" | "no_availability" | "active_no_schedule";
 
 export interface CoachDigest {
   coachId: string;
@@ -28,17 +28,31 @@ export interface CoachDigest {
   utilizationPct: number;
   openSlots: number;
   todayBookings: number;
+  weekSessionCount: number;
   statusLabel: UtilizationStatus;
   statusMessage: string;
   recommendation: string;
 }
 
-export function getUtilizationStatus(pct: number, availableMinutes: number): {
+export function getUtilizationStatus(
+  pct: number,
+  availableMinutes: number,
+  weekSessionCount: number = 0,
+): {
   statusLabel: UtilizationStatus;
   statusMessage: string;
   recommendation: string;
 } {
   if (availableMinutes === 0) {
+    // Case 3: no availability blocks but coach is actively delivering sessions
+    if (weekSessionCount > 0) {
+      return {
+        statusLabel: "active_no_schedule",
+        statusMessage: `Active — ${weekSessionCount} session${weekSessionCount !== 1 ? "s" : ""} this week, no availability schedule configured`,
+        recommendation: "Add availability blocks so the dashboard can calculate and track this coach's utilization.",
+      };
+    }
+    // Case 4: no availability blocks and no sessions
     return {
       statusLabel: "no_availability",
       statusMessage: "No availability blocks set",
@@ -126,59 +140,99 @@ export async function computeOrgDigest(orgId: string): Promise<OpsDigest> {
 
   for (const coach of orgCoaches) {
     const coachBlocks = await storage.getAvailabilityBlocks(coach.id);
-    const coachBookingsThisWeek = activeBookings.filter(b => b.coachId === coach.id);
+
+    // Only CONFIRMED and COMPLETED count toward utilization (exclude DRAFT, CANCELLED, NO_SHOW)
+    const coachBookingsThisWeek = weekBookings.filter(b =>
+      b.coachId === coach.id &&
+      (b.status === "CONFIRMED" || b.status === "COMPLETED")
+    );
     const todayBookings = coachBookingsThisWeek.filter(b => {
       const d = new Date(b.startAt);
       return d >= todayStart && d <= todayEnd;
     });
+    // Future confirmed bookings (from now to end of week) for open-slots calc
+    const futureConfirmedBookings = weekBookings.filter(b =>
+      b.coachId === coach.id &&
+      b.status === "CONFIRMED" &&
+      new Date(b.startAt) > now
+    );
 
-    let availableMinutes = 0;
-    let openSlots = 0;
-    const daysInWeek = 7;
+    // ── Availability: recurring weekly template mapped to this week ──────────
+    // availableMinutesThisWeek = full Mon–Sun template → utilization % denominator
+    // futureAvailableMinutes   = blocks whose wall-clock start is still in the future
+    //                            → open-slots numerator
+    let availableMinutesThisWeek = 0;
+    let futureAvailableMinutes = 0;
 
-    for (let d = 0; d < daysInWeek; d++) {
-      const dayBlocks = coachBlocks.filter(b => b.dayOfWeek === d);
+    for (let d = 0; d < 7; d++) {
+      const dayDate = addDays(weekStart, d);
+      const dow = getDay(dayDate); // 0=Sun, 1=Mon … matches dayOfWeek column
+      const dayBlocks = coachBlocks.filter(b => b.dayOfWeek === dow);
       for (const block of dayBlocks) {
         const [sh, sm] = block.startTime.split(":").map(Number);
         const [eh, em] = block.endTime.split(":").map(Number);
         const blockMins = (eh * 60 + em) - (sh * 60 + sm);
-        availableMinutes += blockMins;
-        openSlots += Math.floor(blockMins / 60);
+        if (blockMins <= 0) continue;
+        availableMinutesThisWeek += blockMins;
+
+        // Only count this block toward open-slots if it hasn't passed yet
+        const blockStart = new Date(dayDate);
+        blockStart.setHours(sh, sm, 0, 0);
+        if (blockStart > now) {
+          futureAvailableMinutes += blockMins;
+        }
       }
     }
 
-    const bookedMinutes = coachBookingsThisWeek.reduce((sum, b) => {
-      return sum + differenceInMinutes(new Date(b.endAt), new Date(b.startAt));
-    }, 0);
+    // Utilization = booked this week ÷ available this week (full week denominator)
+    const bookedMinutesThisWeek = coachBookingsThisWeek.reduce((sum, b) =>
+      sum + differenceInMinutes(new Date(b.endAt), new Date(b.startAt)), 0);
 
-    const freeMinutes = Math.max(0, availableMinutes - bookedMinutes);
+    // Open slots = future available capacity − future confirmed bookings
+    const futureBookedMinutes = futureConfirmedBookings.reduce((sum, b) =>
+      sum + differenceInMinutes(new Date(b.endAt), new Date(b.startAt)), 0);
+
+    const freeMinutes = Math.max(0, futureAvailableMinutes - futureBookedMinutes);
     const actualOpenSlots = Math.floor(freeMinutes / 60);
     totalOpenSlots += actualOpenSlots;
 
-    const utilizationPct = availableMinutes > 0
-      ? Math.min(100, Math.round((bookedMinutes / availableMinutes) * 100))
+    const utilizationPct = availableMinutesThisWeek > 0
+      ? Math.min(100, Math.round((bookedMinutesThisWeek / availableMinutesThisWeek) * 100))
       : 0;
 
     const coachName = coach.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown";
-    const statusInfo = getUtilizationStatus(utilizationPct, availableMinutes);
+    const weekSessionCount = coachBookingsThisWeek.length;
+    const statusInfo = getUtilizationStatus(utilizationPct, availableMinutesThisWeek, weekSessionCount);
 
     coachDigests.push({
       coachId: coach.id,
       coachName,
-      bookedMinutes,
-      availableMinutes,
+      bookedMinutes: bookedMinutesThisWeek,
+      availableMinutes: availableMinutesThisWeek,
       utilizationPct,
       openSlots: actualOpenSlots,
       todayBookings: todayBookings.length,
+      weekSessionCount,
       ...statusInfo,
     });
 
-    if (statusInfo.statusLabel === "overloaded") {
+    if (statusInfo.statusLabel === "active_no_schedule") {
+      insights.push({
+        type: "warning",
+        category: "utilization",
+        title: `${coachName} has no availability schedule`,
+        description: `Actively coaching ${weekSessionCount} session${weekSessionCount !== 1 ? "s" : ""} this week but has no availability blocks — utilization cannot be calculated.`,
+        metric: `${weekSessionCount} sessions`,
+        priority: "medium",
+        actionLabel: "Configure availability",
+        actionPrompt: `Help me set up availability blocks for coach ${coachName}`,
+      });
+    } else if (statusInfo.statusLabel === "overloaded") {
       insights.push({
         type: "warning",
         category: "utilization",
         title: `${coachName} is overloaded this week`,
-        description: `At ${utilizationPct}% capacity — only ${actualOpenSlots} hour-slot${actualOpenSlots !== 1 ? "s" : ""} remaining. Risk of burnout and declining client experience.`,
+        description: `At ${utilizationPct}% capacity — only ${actualOpenSlots} open slot${actualOpenSlots !== 1 ? "s" : ""} remaining. Risk of burnout and declining client experience.`,
         metric: `${utilizationPct}% booked`,
         priority: "high",
         actionLabel: "Review schedule",
@@ -200,13 +254,13 @@ export async function computeOrgDigest(orgId: string): Promise<OpsDigest> {
         type: "opportunity",
         category: "utilization",
         title: `${coachName} has significant capacity this week`,
-        description: `At ${utilizationPct}% with ~${actualOpenSlots} open hour-slots. Strong opportunity to fill with new or reactivated clients.`,
+        description: `At ${utilizationPct}% with ${actualOpenSlots} open slot${actualOpenSlots !== 1 ? "s" : ""}. Strong opportunity to fill with new or reactivated clients.`,
         metric: `${utilizationPct}% booked`,
         priority: "high",
         actionLabel: "Find open slots",
         actionPrompt: `Show me open time slots for coach ${coachName} this week`,
       });
-    } else if (statusInfo.statusLabel === "healthy" && availableMinutes > 0) {
+    } else if (statusInfo.statusLabel === "healthy" && availableMinutesThisWeek > 0) {
       insights.push({
         type: "info",
         category: "utilization",
@@ -303,18 +357,22 @@ export async function computeOrgDigest(orgId: string): Promise<OpsDigest> {
 
 // ── Coach Utilization Diagnostic ──────────────────────────────────────────────
 // Identifies the root cause when a coach shows 0% utilization on the dashboard.
-// Checks availability blocks and booking history for each coach in the org.
+// Returns the exact same metrics used by computeOrgDigest() so you can verify
+// what Bryan Jones, Hunter Thaxton, or any coach actually shows and why.
 // Call via GET /api/admin/coach-utilization-diagnostic
 
 export interface CoachUtilizationDiagnosticEntry {
   coachId: string;
   coachName: string;
   userId: string;
-  availabilityBlockCount: number;
-  availableMinutesFuture30d: number;
-  completedSessionsLast90d: number;
-  confirmedSessionsFuture30d: number;
+  availabilityBlocksCount: number;
+  availableMinutesThisWeek: number;
+  futureAvailableMinutes: number;
+  bookedMinutesThisWeek: number;
+  futureBookedMinutes: number;
   utilizationPct: number;
+  openSlots: number;
+  statusLabel: UtilizationStatus;
   diagnosis: string;
 }
 
@@ -322,9 +380,11 @@ export async function computeCoachUtilizationDiagnostic(
   orgId: string
 ): Promise<CoachUtilizationDiagnosticEntry[]> {
   const now = new Date();
-  const future30d = addDays(now, 30);
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
   const past90d = subDays(now, 90);
 
+  // Load all coaches for the org (with user names)
   const coaches = await db
     .select({
       id: coachProfiles.id,
@@ -340,19 +400,22 @@ export async function computeCoachUtilizationDiagnostic(
 
   const coachProfileIds = coaches.map(c => c.id);
 
-  const [allAvailability, completedBookings, futureBookings] = await Promise.all([
+  // Week bookings (confirmed + completed) and past-90d completed for history context
+  const [weekBookingsRaw, completedLast90d] = await Promise.all([
     db
       .select({
-        coachId: availabilityBlocks.coachId,
-        startAt: availabilityBlocks.startAt,
-        endAt: availabilityBlocks.endAt,
+        coachId: bookings.coachId,
+        startAt: bookings.startAt,
+        endAt: bookings.endAt,
+        status: bookings.status,
       })
-      .from(availabilityBlocks)
+      .from(bookings)
       .where(
         and(
-          inArray(availabilityBlocks.coachId, coachProfileIds),
-          gte(availabilityBlocks.startAt, now),
-          lte(availabilityBlocks.startAt, future30d)
+          inArray(bookings.coachId, coachProfileIds),
+          gte(bookings.startAt, weekStart),
+          lte(bookings.startAt, weekEnd),
+          inArray(bookings.status as any, ["CONFIRMED", "COMPLETED"])
         )
       ),
     db
@@ -365,68 +428,87 @@ export async function computeCoachUtilizationDiagnostic(
           gte(bookings.startAt, past90d)
         )
       ),
-    db
-      .select({ coachId: bookings.coachId })
-      .from(bookings)
-      .where(
-        and(
-          inArray(bookings.coachId, coachProfileIds),
-          inArray(bookings.status as any, ["CONFIRMED"]),
-          gte(bookings.startAt, now),
-          lte(bookings.startAt, future30d)
-        )
-      ),
   ]);
 
-  const availByCoach = new Map<string, number>();
-  const availBlockCount = new Map<string, number>();
-  for (const block of allAvailability) {
-    const mins = differenceInMinutes(new Date(block.endAt), new Date(block.startAt));
-    availByCoach.set(block.coachId, (availByCoach.get(block.coachId) ?? 0) + mins);
-    availBlockCount.set(block.coachId, (availBlockCount.get(block.coachId) ?? 0) + 1);
-  }
-
   const completedByCoach = new Map<string, number>();
-  for (const b of completedBookings) {
+  for (const b of completedLast90d) {
     completedByCoach.set(b.coachId, (completedByCoach.get(b.coachId) ?? 0) + 1);
   }
 
-  const futureByCoach = new Map<string, number>();
-  for (const b of futureBookings) {
-    futureByCoach.set(b.coachId, (futureByCoach.get(b.coachId) ?? 0) + 1);
-  }
+  const results: CoachUtilizationDiagnosticEntry[] = [];
 
-  return coaches.map(coach => {
-    const availMins = availByCoach.get(coach.id) ?? 0;
-    const blockCount = availBlockCount.get(coach.id) ?? 0;
-    const completed = completedByCoach.get(coach.id) ?? 0;
-    const confirmed = futureByCoach.get(coach.id) ?? 0;
-    const totalBookedMins = confirmed * 60;
-    const utilizationPct = availMins > 0 ? Math.round((totalBookedMins / availMins) * 100) : 0;
+  for (const coach of coaches) {
+    // Availability blocks are recurring weekly templates — use storage helper (same as computeOrgDigest)
+    const coachBlocks = await storage.getAvailabilityBlocks(coach.id);
 
-    let diagnosis: string;
-    if (blockCount === 0) {
-      diagnosis = "NO_AVAILABILITY_BLOCKS — coach has not set any availability windows for the next 30 days; the dashboard cannot calculate utilization without these.";
-    } else if (availMins === 0) {
-      diagnosis = "ZERO_AVAILABLE_MINUTES — availability blocks exist but resolve to 0 minutes (possible data issue: endAt <= startAt).";
-    } else if (confirmed === 0 && completed === 0) {
-      diagnosis = "NO_BOOKINGS — availability is set but no completed or upcoming confirmed sessions found; coach may be newly onboarded or inactive.";
-    } else if (confirmed === 0) {
-      diagnosis = `LOW_FUTURE_BOOKINGS — has ${completed} completed sessions in last 90d but 0 confirmed upcoming; consider backfill outreach.`;
-    } else {
-      diagnosis = `OK — ${blockCount} availability blocks (${availMins}min open), ${confirmed} upcoming confirmed sessions, ${completed} completed in 90d. Utilization ${utilizationPct}%.`;
+    let availableMinutesThisWeek = 0;
+    let futureAvailableMinutes = 0;
+
+    for (let d = 0; d < 7; d++) {
+      const dayDate = addDays(weekStart, d);
+      const dow = getDay(dayDate);
+      const dayBlocks = coachBlocks.filter(b => b.dayOfWeek === dow);
+      for (const block of dayBlocks) {
+        const [sh, sm] = block.startTime.split(":").map(Number);
+        const [eh, em] = block.endTime.split(":").map(Number);
+        const blockMins = (eh * 60 + em) - (sh * 60 + sm);
+        if (blockMins <= 0) continue;
+        availableMinutesThisWeek += blockMins;
+        const blockStart = new Date(dayDate);
+        blockStart.setHours(sh, sm, 0, 0);
+        if (blockStart > now) futureAvailableMinutes += blockMins;
+      }
     }
 
-    return {
+    const coachWeekBookings = weekBookingsRaw.filter(b => b.coachId === coach.id);
+    const futureFirmedBookings = coachWeekBookings.filter(b =>
+      b.status === "CONFIRMED" && new Date(b.startAt) > now
+    );
+
+    const bookedMinutesThisWeek = coachWeekBookings.reduce((sum, b) =>
+      sum + differenceInMinutes(new Date(b.endAt), new Date(b.startAt)), 0);
+    const futureBookedMinutes = futureFirmedBookings.reduce((sum, b) =>
+      sum + differenceInMinutes(new Date(b.endAt), new Date(b.startAt)), 0);
+
+    const freeMinutes = Math.max(0, futureAvailableMinutes - futureBookedMinutes);
+    const openSlots = Math.floor(freeMinutes / 60);
+
+    const utilizationPct = availableMinutesThisWeek > 0
+      ? Math.min(100, Math.round((bookedMinutesThisWeek / availableMinutesThisWeek) * 100))
+      : 0;
+
+    const weekSessionCount = coachWeekBookings.length;
+    const { statusLabel } = getUtilizationStatus(utilizationPct, availableMinutesThisWeek, weekSessionCount);
+
+    let diagnosis: string;
+    if (coachBlocks.length === 0) {
+      diagnosis = weekSessionCount > 0
+        ? `ACTIVE_NO_SCHEDULE — ${weekSessionCount} session(s) this week but 0 availability blocks configured. Dashboard shows "Active" instead of %. Add availability blocks to enable utilization tracking.`
+        : `NO_AVAILABILITY_BLOCKS — 0 blocks configured, 0 bookings this week. Set dayOfWeek+startTime+endTime blocks in Availability settings.`;
+    } else if (availableMinutesThisWeek === 0) {
+      diagnosis = `ZERO_AVAILABLE_MINUTES — ${coachBlocks.length} block(s) exist but resolve to 0 minutes (check endTime > startTime for each block).`;
+    } else if (weekSessionCount === 0) {
+      const completed90 = completedByCoach.get(coach.id) ?? 0;
+      diagnosis = `NO_BOOKINGS_THIS_WEEK — ${availableMinutesThisWeek}min available, 0 confirmed/completed sessions. ${completed90} completed sessions in last 90d. ${completed90 === 0 ? "Coach may be newly onboarded." : "Consider backfill outreach."}`;
+    } else {
+      diagnosis = `OK — ${coachBlocks.length} blocks, ${availableMinutesThisWeek}min available this week, ${bookedMinutesThisWeek}min booked (${utilizationPct}%), ${futureAvailableMinutes}min future available, ${openSlots} open slot(s).`;
+    }
+
+    results.push({
       coachId: coach.id,
       coachName: `${coach.firstName ?? ""} ${coach.lastName ?? ""}`.trim() || coach.id,
       userId: coach.userId,
-      availabilityBlockCount: blockCount,
-      availableMinutesFuture30d: availMins,
-      completedSessionsLast90d: completed,
-      confirmedSessionsFuture30d: confirmed,
+      availabilityBlocksCount: coachBlocks.length,
+      availableMinutesThisWeek,
+      futureAvailableMinutes,
+      bookedMinutesThisWeek,
+      futureBookedMinutes,
       utilizationPct,
+      openSlots,
+      statusLabel,
       diagnosis,
-    };
-  });
+    });
+  }
+
+  return results;
 }

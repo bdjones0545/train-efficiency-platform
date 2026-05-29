@@ -78,6 +78,10 @@ interface CoachDigest {
   utilizationPct: number;
   openSlots: number;
   todayBookings: number;
+  weekSessionCount: number;
+  statusLabel?: "overloaded" | "high_load" | "healthy" | "underbooked" | "no_availability" | "active_no_schedule";
+  statusMessage?: string;
+  recommendation?: string;
 }
 
 export interface OpsDigest {
@@ -359,8 +363,8 @@ const DEMO_OPS_DIGEST: OpsDigest = {
   inactiveClientsCount: 3,
   waitlistCount: 3,
   coaches: [
-    { coachId: "demo-1", coachName: "Coach Alex", bookedMinutes: 480, availableMinutes: 600, utilizationPct: 80, openSlots: 4, todayBookings: 5 },
-    { coachId: "demo-2", coachName: "Coach Riley", bookedMinutes: 360, availableMinutes: 600, utilizationPct: 60, openSlots: 8, todayBookings: 3 },
+    { coachId: "demo-1", coachName: "Coach Alex", bookedMinutes: 480, availableMinutes: 600, utilizationPct: 80, openSlots: 4, todayBookings: 5, weekSessionCount: 8, statusLabel: "high_load", statusMessage: "At 80% capacity — healthy but limited room for additions", recommendation: "Accept new bookings with caution." },
+    { coachId: "demo-2", coachName: "Coach Riley", bookedMinutes: 300, availableMinutes: 600, utilizationPct: 50, openSlots: 8, todayBookings: 3, weekSessionCount: 5, statusLabel: "healthy", statusMessage: "At 50% — good balance of bookings and flexibility", recommendation: "Room to add 1–2 new clients." },
   ],
   insights: [
     { type: "opportunity", category: "open-slots", title: "12 open slots this week", description: "Fill available time to capture ~$840 in revenue.", priority: "high", actionLabel: "View opportunities", actionPrompt: "How can I fill my open slots?" },
@@ -559,6 +563,34 @@ function CoachBar({ coach, maxRevenue }: { coach: RevenueSummary["coachRevenues"
 }
 
 function UtilizationBar({ coach }: { coach: CoachDigest }) {
+  const status = coach.statusLabel;
+
+  // Case 3: active deliveries but no availability schedule configured
+  if (status === "active_no_schedule") {
+    return (
+      <div className="flex flex-col gap-0.5" data-testid={`coach-bar-${coach.coachId}`}>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium truncate">{coach.coachName}</span>
+          <span className="text-xs font-semibold text-blue-500 shrink-0">Active</span>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {coach.weekSessionCount} session{coach.weekSessionCount !== 1 ? "s" : ""} this week · Availability not configured
+        </div>
+      </div>
+    );
+  }
+
+  // Case 4: no availability blocks and no sessions
+  if (status === "no_availability") {
+    return (
+      <div className="flex items-center justify-between gap-3" data-testid={`coach-bar-${coach.coachId}`}>
+        <span className="text-sm font-medium w-28 truncate shrink-0">{coach.coachName}</span>
+        <span className="text-xs text-muted-foreground italic">No Availability Set</span>
+      </div>
+    );
+  }
+
+  // Case 1 & 2: availability blocks exist — show bar + open slots
   const pct = coach.utilizationPct;
   const barColor = pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-400";
   return (
