@@ -1,0 +1,192 @@
+ATTENTION INBOX — FULL PRODUCTION AUDIT
+
+Objective:
+
+The Attention Inbox is currently producing alerts that appear inaccurate, non-actionable, and potentially damaging to user trust. Before any new features are added, perform a complete audit of the Attention Inbox signal generation system and validate every alert against live production data.
+
+AUDIT REQUIREMENTS
+
+Part 1 — Inventory Every Signal
+
+Locate every alert source that can generate an Attention Inbox item.
+
+For each signal provide:
+
+* Signal name
+* Source file
+* Source service
+* Trigger conditions
+* Priority assignment logic
+* Severity assignment logic
+* Query used
+* Entity types involved
+
+Output a complete signal registry.
+
+Part 2 — Validate Live Data
+
+For every active signal:
+
+Show:
+
+* Exact SQL query or ORM query
+* Raw count returned
+* Sample 20 records contributing to the alert
+* Organization IDs included
+* User IDs included
+* Session IDs included (if applicable)
+
+Determine whether the alert is actually correct.
+
+Examples:
+
+“56 clients inactive for 30+ days”
+
+Validate:
+
+* How inactivity is calculated
+* Whether sessions exist
+* Whether bookings exist
+* Whether completed sessions are required
+* Whether scheduled sessions count
+* Whether login activity is being used incorrectly
+* Whether coaches/admins are being included
+* Whether cross-organization data is leaking
+
+“56 registered clients with no booking”
+
+Validate:
+
+* Booking joins
+* Booking status filtering
+* Registration date logic
+* Organization scoping
+* Athlete/client filtering
+
+Part 3 — Organization Isolation Audit
+
+Verify every signal is properly scoped.
+
+Confirm:
+
+* No cross-org data leakage
+* No platform-wide aggregation
+* No admin users counted as athletes
+* No coaches counted as athletes
+* No deleted users counted
+* No archived users counted
+
+Produce evidence for each verification.
+
+Part 4 — Business Value Scoring
+
+For every Attention Inbox signal assign:
+
+Business Impact Score (1–10)
+
+Questions:
+
+Does this drive revenue?
+Does this prevent churn?
+Does this require immediate action?
+Would a coach actually care?
+
+Classify:
+
+Critical
+High Value
+Medium Value
+Low Value
+Noise
+
+Part 5 — Replace Low Value Signals
+
+Identify all signals that should be removed.
+
+Examples of likely removal candidates:
+
+* Generic inactive-user counts
+* Generic account counts
+* Vanity statistics
+* Alerts that cannot be acted upon immediately
+
+Recommend replacements.
+
+HIGH VALUE ATTENTION INBOX SIGNALS
+
+Revenue
+
+* New lead submitted
+* Lead awaiting follow-up
+* Consultation not converted
+* Open appointment capacity
+* Expiring package
+* Failed payment
+* Outstanding invoice
+
+Scheduling
+
+* Athlete created account but has not booked
+* Coach schedule underutilized
+* Schedule conflict detected
+* Last-minute cancellation
+* Waitlist opportunity
+
+Retention
+
+* Athlete missed consecutive sessions
+* Athlete inactive after previous engagement
+* Athlete attendance decline
+* Athlete compliance decline
+
+Client Success
+
+* Readiness trend worsening
+* Injury concern reported
+* Athlete goal milestone reached
+* High-risk athlete identified
+
+Growth
+
+* Best performing offer
+* Lead volume increase
+* Conversion increase
+* Coach utilization opportunity
+
+Part 6 — Attention Inbox Vision Audit
+
+Evaluate whether the current system behaves like:
+
+A. Database Statistics Dashboard
+
+or
+
+B. Operational Intelligence System
+
+TrainEfficiency should operate as:
+
+“An AI-powered business operating system that surfaces the highest-leverage actions a coach should take today.”
+
+Every inbox item should answer:
+
+“What should I do right now to improve revenue, retention, scheduling, or athlete outcomes?”
+
+Part 7 — Deliverables
+
+Produce:
+
+1. Full signal inventory
+2. Validation results for every signal
+3. False-positive analysis
+4. Organization isolation verification
+5. Business impact scoring
+6. Signals to remove
+7. Signals to add
+8. Recommended prioritization framework
+9. Final production-readiness score
+
+Do not make code changes initially.
+
+Audit first.
+
+Present findings with evidence before proposing implementation changes.
