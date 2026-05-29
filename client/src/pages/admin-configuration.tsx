@@ -2143,7 +2143,7 @@ export default function AdminConfigurationPage() {
   return (
     <div className="min-h-0" data-testid="page-admin-configuration">
       {/* ── Sticky Header + Tab Nav (one connected unit) ─────────────────────── */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur -mx-4 sm:-mx-6 -mt-4 md:-mt-6 mb-6">
+      <div className="sticky top-[-1rem] md:top-[-1.5rem] z-20 bg-background/95 backdrop-blur -mx-4 sm:-mx-6 -mt-4 md:-mt-6 mb-6">
         {/* Page Header */}
         <div className="px-4 sm:px-6 pt-4 md:pt-6 pb-3">
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-config-title">
