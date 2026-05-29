@@ -124,6 +124,8 @@ const PINNED_KEY = "nav_pinned";
 const RECENTS_KEY = "nav_recents";
 const AI_OUTER_KEY = "ai_ops_outer_open";
 const AI_SUB_KEY = "ai_ops_subgroups_open";
+const GR_OUTER_KEY = "gr_outer_open";
+const GR_SUB_KEY = "gr_subgroups_open";
 const MAX_RECENTS = 5;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -602,6 +604,241 @@ function AiOpsNavSection({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GrowthRevenueNavSection – nested grouped navigation for Growth & Revenue
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function buildGrSubGroups(isAdmin: boolean, coachTransactionsVisible: boolean): AiSubGroup[] {
+  return [
+    {
+      id: "gr-lead-generation",
+      label: "Lead Generation",
+      icon: Target,
+      standardVisible: true,
+      defaultOpen: true,
+      items: isAdmin
+        ? [
+            { title: "Athlete Leads", url: "/admin/athlete-leads", icon: Users, testId: "nav-athlete-leads" },
+            { title: "Team Training Leads", url: "/admin/team-training-leads", icon: Target, testId: "nav-team-training-leads" },
+            { title: "Outreach Center", url: "/admin/outreach-center", icon: Radio, testId: "nav-outreach-center-admin" },
+          ]
+        : [
+            { title: "Outreach Center", url: "/coach/communications", icon: Radio, testId: "nav-outreach-center" },
+          ],
+    },
+    {
+      id: "gr-sales-pipeline",
+      label: "Sales Pipeline",
+      icon: KanbanSquare,
+      standardVisible: true,
+      defaultOpen: false,
+      items: [
+        ...(isAdmin
+          ? [
+              { title: "Deal Pipeline", url: "/admin/team-training-deals", icon: KanbanSquare, testId: "nav-deal-pipeline" },
+              { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText, testId: "nav-team-quotes" },
+              { title: "Lead Pipeline", url: "/admin/lead-pipeline", icon: TrendingUp, testId: "nav-lead-pipeline" },
+            ]
+          : [
+              { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText, testId: "nav-team-quotes" },
+            ]
+        ),
+      ],
+    },
+    {
+      id: "gr-revenue-management",
+      label: "Revenue Management",
+      icon: Wallet,
+      standardVisible: true,
+      defaultOpen: false,
+      items: [
+        ...(coachTransactionsVisible
+          ? [{ title: "Transactions", url: "/coach/transactions", icon: Wallet, testId: "nav-transactions" }]
+          : []),
+        { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign, testId: "nav-redemptions" },
+      ],
+    },
+    {
+      id: "gr-business-planning",
+      label: "Business Planning",
+      icon: Briefcase,
+      standardVisible: true,
+      defaultOpen: false,
+      items: [
+        { title: "Business Plan", url: "/coach/business-plan", icon: Briefcase, testId: "nav-business-plan" },
+      ],
+    },
+  ];
+}
+
+function GrowthRevenueNavSection({
+  location,
+  onNavClick,
+  isAdmin,
+  coachTransactionsVisible,
+}: {
+  location: string;
+  onNavClick: () => void;
+  isAdmin: boolean;
+  coachTransactionsVisible: boolean;
+}) {
+  const { isMobile } = useSidebar();
+  const grSubGroups = buildGrSubGroups(isAdmin, coachTransactionsVisible);
+
+  const isAnyGrActive = grSubGroups.some((g) =>
+    g.items.some((i) => itemIsActive(location, i.url))
+  );
+
+  const [outerOpen, setOuterOpen] = useState<boolean>(() => {
+    if (isAnyGrActive) return true;
+    return ls<boolean>(GR_OUTER_KEY, false);
+  });
+
+  const [subOpen, setSubOpen] = useState<Set<string>>(() => {
+    const saved = ls<string[]>(GR_SUB_KEY, ["gr-lead-generation"]);
+    return new Set(saved);
+  });
+
+  useEffect(() => {
+    if (isAnyGrActive && !outerOpen) {
+      setOuterOpen(true);
+      lsSet(GR_OUTER_KEY, true);
+    }
+    grSubGroups.forEach((group) => {
+      if (group.items.some((i) => itemIsActive(location, i.url))) {
+        setSubOpen((prev) => {
+          if (prev.has(group.id)) return prev;
+          const next = new Set(prev);
+          next.add(group.id);
+          lsSet(GR_SUB_KEY, [...next]);
+          return next;
+        });
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+
+  const toggleOuter = () => {
+    setOuterOpen((prev) => {
+      lsSet(GR_OUTER_KEY, !prev);
+      return !prev;
+    });
+  };
+
+  const toggleSub = (id: string) => {
+    setSubOpen((prev) => {
+      let next: Set<string>;
+      if (isMobile) {
+        next = prev.has(id) ? new Set<string>() : new Set([id]);
+      } else {
+        next = new Set(prev);
+        prev.has(id) ? next.delete(id) : next.add(id);
+      }
+      lsSet(GR_SUB_KEY, [...next]);
+      return next;
+    });
+  };
+
+  return (
+    <div className="mb-0.5">
+      {/* Outer Growth & Revenue header */}
+      <button
+        onClick={toggleOuter}
+        data-testid="section-growth-revenue"
+        className={cn(
+          "w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors",
+          "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20",
+          isAnyGrActive ? "text-emerald-700 dark:text-emerald-300" : ""
+        )}
+      >
+        <span className="flex items-center gap-1.5">
+          <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+          Growth & Revenue
+          {isAnyGrActive && (
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          )}
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 transition-transform duration-200",
+            outerOpen ? "rotate-180" : ""
+          )}
+        />
+      </button>
+
+      {/* Sub-groups */}
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-200 ease-in-out",
+          outerOpen ? "max-h-[1000px] opacity-100" : "max-h-0 opacity-0"
+        )}
+      >
+        <div className="mt-0.5 space-y-0.5 pb-1 pl-2">
+          {grSubGroups.map((group) => {
+            if (group.items.length === 0) return null;
+            const groupActive = group.items.some((i) => itemIsActive(location, i.url));
+            const isOpen = subOpen.has(group.id);
+
+            return (
+              <div key={group.id}>
+                {/* Sub-group header */}
+                <button
+                  onClick={() => toggleSub(group.id)}
+                  data-testid={`section-${group.id}`}
+                  className={cn(
+                    "w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors",
+                    groupActive
+                      ? "text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20"
+                      : "text-emerald-500 dark:text-emerald-500 hover:bg-emerald-50/60 dark:hover:bg-emerald-900/10"
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <group.icon className="h-3 w-3" />
+                    {group.label}
+                    <span className="text-[9px] font-medium px-1 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-500 leading-none">
+                      {group.items.length}
+                    </span>
+                    {groupActive && (
+                      <span className="h-1 w-1 rounded-full bg-emerald-500" />
+                    )}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-3 w-3 transition-transform duration-200",
+                      isOpen ? "rotate-180" : ""
+                    )}
+                  />
+                </button>
+
+                {/* Sub-group items */}
+                <div
+                  className={cn(
+                    "overflow-hidden transition-all duration-200 ease-in-out",
+                    isOpen ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"
+                  )}
+                >
+                  <div className="mt-0.5 space-y-0.5 pb-0.5">
+                    {group.items.map((item) => (
+                      <NavLink
+                        key={item.url}
+                        item={item}
+                        location={location}
+                        onClick={onNavClick}
+                        aiSection={false}
+                        useSimplifiedTitle={false}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AttentionCountChip – single compact badge pointing to Attention Inbox
 // Replaces multiple duplicate alert strips; bell + inbox are the source of truth
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -984,29 +1221,6 @@ export function AppSidebar() {
           items: programToolItems,
         } as NavSection]
       : []),
-    {
-      id: "growth",
-      label: "Growth & Revenue",
-      icon: TrendingUp,
-      items: [
-        ...(isAdmin
-          ? [
-              { title: "Outreach Center", url: "/admin/outreach-center", icon: Radio, testId: "nav-outreach-center-admin" },
-              { title: "Athlete Leads", url: "/admin/athlete-leads", icon: Users, testId: "nav-athlete-leads" },
-              { title: "Team Training Leads", url: "/admin/team-training-leads", icon: Target, testId: "nav-team-training-leads" },
-              { title: "Deal Pipeline", url: "/admin/team-training-deals", icon: KanbanSquare, testId: "nav-deal-pipeline" },
-              { title: "Athlete Lead Pipeline", url: "/admin/lead-pipeline", icon: Brain, testId: "nav-lead-pipeline" },
-            ]
-          : []),
-        { title: "Redemptions", url: "/coach/redemptions", icon: DollarSign, testId: "nav-redemptions" },
-        ...(coachTransactionsVisible
-          ? [{ title: "Transactions", url: "/coach/transactions", icon: Wallet, testId: "nav-transactions" }]
-          : []),
-        { title: "Outreach Center", url: "/coach/communications", icon: Radio, testId: "nav-outreach-center" },
-        { title: "Business Plan", url: "/coach/business-plan", icon: Briefcase, testId: "nav-business-plan" },
-        { title: "Team Quotes", url: "/coach/team-quotes", icon: FileText, testId: "nav-team-quotes" },
-      ],
-    },
     ...(isAdmin
       ? [
           {
@@ -1038,8 +1252,10 @@ export function AppSidebar() {
   ];
 
   // All nav items across all roles (for recents lookup)
+  const grSubGroupsForRecents = buildGrSubGroups(isAdmin, coachTransactionsVisible);
   const allNavItems: NavItem[] = [
     ...coachAdminSections.flatMap((s) => s.items),
+    ...grSubGroupsForRecents.flatMap((g) => g.items),
     ...AI_SUB_GROUPS.flatMap((g) => g.items),
     ...staffSections.flatMap((s) => s.items),
     ...clientItems,
@@ -1185,6 +1401,14 @@ export function AppSidebar() {
                       onNavClick={handleNavClick}
                     />
                   ))}
+
+                  {/* Growth & Revenue grouped sub-navigation */}
+                  <GrowthRevenueNavSection
+                    location={location}
+                    onNavClick={handleNavClick}
+                    isAdmin={isAdmin}
+                    coachTransactionsVisible={coachTransactionsVisible}
+                  />
 
                   {/* AI Operations grouped sub-navigation (admin only) */}
                   {isAdmin && (
