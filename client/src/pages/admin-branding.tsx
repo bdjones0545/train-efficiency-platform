@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, Image, Link2, Type, ExternalLink, Globe, Mail, Music, Share2 } from "lucide-react";
+import { Save, Image, Link2, Type, ExternalLink, Globe, Mail, Share2 } from "lucide-react";
 import { SiInstagram, SiFacebook, SiYoutube, SiTiktok } from "react-icons/si";
 import type { Organization } from "@shared/schema";
 
@@ -152,7 +152,7 @@ export default function AdminBrandingPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6 max-w-2xl">
+      <div className="w-full min-w-0 overflow-x-hidden px-4 sm:px-6 py-6 space-y-6 max-w-2xl">
         <h1 className="text-2xl font-bold">Branding</h1>
         <p className="text-muted-foreground">Loading...</p>
       </div>
@@ -160,17 +160,20 @@ export default function AdminBrandingPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
-      <div className="flex items-center justify-between">
+    <div className="w-full min-w-0 overflow-x-hidden px-4 sm:px-6 py-6 pb-24 space-y-6 max-w-2xl">
+
+      {/* ── Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-branding-title">Branding</h1>
           <p className="text-sm text-muted-foreground">Customize your organization's look and feel</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           <Button
             variant="outline"
             onClick={handlePreview}
             disabled={updateMutation.isPending}
+            className="w-full sm:w-auto"
             data-testid="button-preview-landing"
           >
             <ExternalLink className="h-4 w-4 mr-2" />
@@ -179,6 +182,7 @@ export default function AdminBrandingPage() {
           <Button
             onClick={handleSave}
             disabled={updateMutation.isPending || !hasChanges}
+            className="w-full sm:w-auto"
             data-testid="button-save-branding"
           >
             <Save className="h-4 w-4 mr-2" />
@@ -189,18 +193,20 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
+      {/* ── Identity ── */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Type className="h-5 w-5" />
-          Organization Name
+          <Type className="h-5 w-5 shrink-0" />
+          Identity
         </h2>
-        <Card className="p-4">
+        <Card className="p-4 w-full">
           <div className="space-y-2">
             <Label>Business Name</Label>
             <Input
               value={name}
               onChange={(e) => { setName(e.target.value); markChanged(); }}
               placeholder="Your business name"
+              className="w-full min-w-0"
               data-testid="input-org-name"
             />
           </div>
@@ -209,27 +215,29 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
+      {/* ── Logo ── */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Image className="h-5 w-5" />
+          <Image className="h-5 w-5 shrink-0" />
           Logo
         </h2>
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4 w-full">
           <div className="space-y-2">
             <Label>Logo URL</Label>
             <Input
               value={logoUrl}
               onChange={(e) => { setLogoUrl(e.target.value); markChanged(); }}
               placeholder="https://example.com/your-logo.png"
+              className="w-full min-w-0"
               data-testid="input-logo-url"
             />
             <p className="text-xs text-muted-foreground">
-              Paste a direct link to your logo image. Recommended size: 200x200px or larger.
+              Paste a direct link to your logo image. Recommended size: 200×200px or larger.
             </p>
           </div>
           {logoUrl && (
             <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-lg border flex items-center justify-center overflow-hidden bg-muted">
+              <div className="w-20 h-20 shrink-0 rounded-lg border flex items-center justify-center overflow-hidden bg-muted">
                 <img
                   src={logoUrl}
                   alt="Logo preview"
@@ -246,12 +254,13 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
+      {/* ── Social Preview ── */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Share2 className="h-5 w-5" />
-          Social Preview Image
+          <Share2 className="h-5 w-5 shrink-0" />
+          Social Preview
         </h2>
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4 w-full">
           <p className="text-sm text-muted-foreground">
             When your landing page is shared on iMessage, Facebook, LinkedIn, or X, this image appears in the link preview card. For best results, use a 1200×630px image.
           </p>
@@ -261,6 +270,7 @@ export default function AdminBrandingPage() {
               value={socialPreviewImageUrl}
               onChange={(e) => { setSocialPreviewImageUrl(e.target.value); markChanged(); }}
               placeholder="https://example.com/your-preview-image.png"
+              className="w-full min-w-0"
               data-testid="input-social-preview-image-url"
             />
             <p className="text-xs text-muted-foreground">
@@ -270,7 +280,7 @@ export default function AdminBrandingPage() {
           {socialPreviewImageUrl && (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Preview</p>
-              <div className="rounded-lg border overflow-hidden max-w-sm">
+              <div className="rounded-lg border overflow-hidden w-full max-w-sm">
                 <img
                   src={socialPreviewImageUrl}
                   alt="Social preview"
@@ -287,19 +297,21 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
+      {/* ── URL ── */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Link2 className="h-5 w-5" />
-          URL Extension
+          <Link2 className="h-5 w-5 shrink-0" />
+          URL
         </h2>
-        <Card className="p-4 space-y-2">
+        <Card className="p-4 space-y-2 w-full">
           <Label>Landing Page URL</Label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground whitespace-nowrap">/org/</span>
+          <div className="flex items-center gap-2 w-full min-w-0">
+            <span className="text-sm text-muted-foreground whitespace-nowrap shrink-0">/org/</span>
             <Input
               value={slug}
               onChange={(e) => { setSlug(e.target.value); markChanged(); }}
               placeholder="your-business-name"
+              className="flex-1 min-w-0 w-full"
               data-testid="input-slug"
             />
           </div>
@@ -307,7 +319,7 @@ export default function AdminBrandingPage() {
             This is the URL where clients will find your landing page. Only lowercase letters, numbers, and hyphens.
           </p>
           {slug && (
-            <p className="text-sm font-medium" data-testid="text-slug-preview">
+            <p className="text-sm font-medium break-all" data-testid="text-slug-preview">
               Your page: /org/{slug.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")}
             </p>
           )}
@@ -316,18 +328,20 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
+      {/* ── Taglines ── */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Type className="h-5 w-5" />
+          <Type className="h-5 w-5 shrink-0" />
           Taglines
         </h2>
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4 w-full">
           <div className="space-y-2">
             <Label>Tagline 1 (Main)</Label>
             <Input
               value={tagline}
               onChange={(e) => { setTagline(e.target.value); markChanged(); }}
               placeholder="Your primary tagline or slogan"
+              className="w-full min-w-0"
               data-testid="input-tagline-1"
             />
             <p className="text-xs text-muted-foreground">
@@ -340,6 +354,7 @@ export default function AdminBrandingPage() {
               value={tagline2}
               onChange={(e) => { setTagline2(e.target.value); markChanged(); }}
               placeholder="A supporting description or subtitle"
+              className="w-full min-w-0"
               data-testid="input-tagline-2"
             />
             <p className="text-xs text-muted-foreground">
@@ -351,26 +366,27 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
+      {/* ── Social Links ── */}
       <section className="space-y-3">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Globe className="h-5 w-5" />
+            <Globe className="h-5 w-5 shrink-0" />
             Social Links
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Add the links visitors should see on your landing page.
           </p>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
-            { label: "Website", icon: <Globe className="h-3.5 w-3.5" />, value: websiteUrl, setter: setWebsiteUrl, placeholder: "https://yourwebsite.com", testId: "input-website-url" },
-            { label: "Instagram", icon: <SiInstagram className="h-3.5 w-3.5" />, value: instagramUrl, setter: setInstagramUrl, placeholder: "instagram.com/yourhandle", testId: "input-instagram-url" },
-            { label: "Facebook", icon: <SiFacebook className="h-3.5 w-3.5" />, value: facebookUrl, setter: setFacebookUrl, placeholder: "facebook.com/yourpage", testId: "input-facebook-url" },
-            { label: "YouTube", icon: <SiYoutube className="h-3.5 w-3.5" />, value: youtubeUrl, setter: setYoutubeUrl, placeholder: "youtube.com/@yourchannel", testId: "input-youtube-url" },
-            { label: "TikTok", icon: <SiTiktok className="h-3.5 w-3.5" />, value: tiktokUrl, setter: setTiktokUrl, placeholder: "tiktok.com/@yourhandle", testId: "input-tiktok-url" },
-            { label: "Linktree", icon: <ExternalLink className="h-3.5 w-3.5" />, value: linktreeUrl, setter: setLinktreeUrl, placeholder: "linktr.ee/yourhandle", testId: "input-linktree-url" },
+            { label: "Website", icon: <Globe className="h-3.5 w-3.5 shrink-0" />, value: websiteUrl, setter: setWebsiteUrl, placeholder: "https://yourwebsite.com", testId: "input-website-url" },
+            { label: "Instagram", icon: <SiInstagram className="h-3.5 w-3.5 shrink-0" />, value: instagramUrl, setter: setInstagramUrl, placeholder: "instagram.com/yourhandle", testId: "input-instagram-url" },
+            { label: "Facebook", icon: <SiFacebook className="h-3.5 w-3.5 shrink-0" />, value: facebookUrl, setter: setFacebookUrl, placeholder: "facebook.com/yourpage", testId: "input-facebook-url" },
+            { label: "YouTube", icon: <SiYoutube className="h-3.5 w-3.5 shrink-0" />, value: youtubeUrl, setter: setYoutubeUrl, placeholder: "youtube.com/@yourchannel", testId: "input-youtube-url" },
+            { label: "TikTok", icon: <SiTiktok className="h-3.5 w-3.5 shrink-0" />, value: tiktokUrl, setter: setTiktokUrl, placeholder: "tiktok.com/@yourhandle", testId: "input-tiktok-url" },
+            { label: "Linktree", icon: <ExternalLink className="h-3.5 w-3.5 shrink-0" />, value: linktreeUrl, setter: setLinktreeUrl, placeholder: "linktr.ee/yourhandle", testId: "input-linktree-url" },
           ].map(({ label, icon, value, setter, placeholder, testId }) => (
-            <Card key={label} className="p-2.5 space-y-1.5">
+            <Card key={label} className="p-3 space-y-2 w-full min-w-0">
               <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 {icon}
                 {label}
@@ -380,7 +396,7 @@ export default function AdminBrandingPage() {
                 onChange={(e) => { setter(e.target.value); markChanged(); }}
                 onBlur={(e) => { const n = normalizeUrl(e.target.value); if (n !== e.target.value) { setter(n); markChanged(); } }}
                 placeholder={placeholder}
-                className="h-7 text-xs px-2"
+                className="h-8 text-xs w-full min-w-0"
                 data-testid={testId}
               />
             </Card>
@@ -390,30 +406,32 @@ export default function AdminBrandingPage() {
 
       <Separator />
 
+      {/* ── Email Colors ── */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Mail className="h-5 w-5" />
+          <Mail className="h-5 w-5 shrink-0" />
           Email Colors
         </h2>
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4 w-full">
           <p className="text-sm text-muted-foreground">
             Customize the colors used in emails sent to your clients and teams. The primary color is used for the email header and buttons. The secondary color is used for detail box backgrounds.
           </p>
+
           <div className="space-y-2">
-            <Label>Primary Color (Header & Buttons)</Label>
-            <div className="flex items-center gap-3">
+            <Label>Primary Color (Header &amp; Buttons)</Label>
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="color"
                 value={emailPrimaryColor || "#16a34a"}
                 onChange={(e) => { setEmailPrimaryColor(e.target.value); markChanged(); }}
-                className="w-10 h-10 rounded border cursor-pointer bg-transparent"
+                className="w-10 h-10 shrink-0 rounded border cursor-pointer bg-transparent"
                 data-testid="input-email-primary-color-picker"
               />
               <Input
                 value={emailPrimaryColor}
                 onChange={(e) => { setEmailPrimaryColor(e.target.value); markChanged(); }}
                 placeholder="#16a34a"
-                className="max-w-[180px]"
+                className="flex-1 min-w-0 max-w-[180px]"
                 data-testid="input-email-primary-color"
               />
               {emailPrimaryColor && (
@@ -428,21 +446,22 @@ export default function AdminBrandingPage() {
               )}
             </div>
           </div>
+
           <div className="space-y-2">
             <Label>Secondary Color (Detail Backgrounds)</Label>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="color"
                 value={emailSecondaryColor || "#1a1a1a"}
                 onChange={(e) => { setEmailSecondaryColor(e.target.value); markChanged(); }}
-                className="w-10 h-10 rounded border cursor-pointer bg-transparent"
+                className="w-10 h-10 shrink-0 rounded border cursor-pointer bg-transparent"
                 data-testid="input-email-secondary-color-picker"
               />
               <Input
                 value={emailSecondaryColor}
                 onChange={(e) => { setEmailSecondaryColor(e.target.value); markChanged(); }}
                 placeholder="#1a1a1a"
-                className="max-w-[180px]"
+                className="flex-1 min-w-0 max-w-[180px]"
                 data-testid="input-email-secondary-color"
               />
               {emailSecondaryColor && (
@@ -457,6 +476,7 @@ export default function AdminBrandingPage() {
               )}
             </div>
           </div>
+
           <div className="rounded-lg overflow-hidden border" data-testid="email-color-preview">
             <div style={{ background: emailPrimaryColor || "#16a34a", padding: "16px 24px" }}>
               <p className="text-white font-semibold text-sm">Email Header Preview</p>
