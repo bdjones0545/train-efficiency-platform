@@ -1,0 +1,93 @@
+Audit ONLY the agent email automation for the live production lead Selena Torres.
+
+Do not audit the full lead capture system, CRM, or database lifecycle. We already know the lead was captured and the notification email worked.
+
+Objective:
+Verify whether the AI email automation layer processed this lead correctly after submission.
+
+Lead:
+Selena Torres
+Program:
+Summer Speed Sprint
+
+Audit Scope:
+
+1. Did the email agent evaluate this lead?
+
+* Was an email automation trigger created?
+* Was the trigger matched to a workflow?
+* Was the email agent invoked?
+* Was a decision made to send, draft, queue, or skip?
+
+2. What automation path was used?
+    Identify:
+
+* Trigger name
+* Workflow name
+* Agent name
+* Action type
+* Decision result
+* Status: sent / drafted / queued / skipped / blocked / failed
+
+3. What email content was generated?
+    Find:
+
+* Subject line
+* Body copy
+* Recipient
+* Sender
+* Personalization fields used
+* CTA used
+* Scheduling link included or missing
+
+4. Was the email sent or only drafted?
+    Check:
+
+* SendGrid log
+* Gmail action log
+* communication_logs
+* email_follow_ups
+* email_trigger_events
+* agent_action_log
+* workflow_execution_logs
+
+5. Was a follow-up sequence created?
+    Verify:
+
+* Follow-up 1 scheduled?
+* Follow-up 2 scheduled?
+* Follow-up timing
+* Stop condition if lead replies/books
+* Owner/coach assignment
+
+6. Did governance block or modify anything?
+    Check:
+
+* Duplicate send prevention
+* Emergency pause
+* Unsubscribe/consent checks
+* Missing email checks
+* Conflict detection
+* Rate limits
+* Approval gates
+
+7. Did the automation create an inbox item?
+    Verify:
+
+* Inbox workflow action created?
+* Coach task created?
+* Follow-up reminder created?
+* Manual review needed?
+
+8. Produce final answer as:
+
+* Agent email automation status: PASS / PARTIAL / FAIL
+* What happened
+* What did not happen
+* Exact reason if skipped or blocked
+* Recommended next fix
+
+Important:
+Trace backward from any email, draft, queued action, or skipped trigger connected to Selena Torres.
+
+This audit is specifically about whether the AI agent email automation moved this lead toward outreach, follow-up, and scheduling after the lead entered the system.
