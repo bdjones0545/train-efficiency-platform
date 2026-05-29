@@ -1,0 +1,179 @@
+P1 FIX — Clean Attention Inbox Client Signals and Purge Polluted Recommendations
+
+Objective:
+
+Now that bookings.organization_id has been backfilled and future booking creation paths write valid organization IDs, clean the client engagement signals so the Attention Inbox becomes business-accurate, not just data-accurate.
+
+Do not redesign the entire Attention Inbox yet. Fix the polluted client signals and stale recommendations first.
+
+Tasks:
+
+1. Exclude non-actionable client profiles
+
+Update Signal 11: Inactive Clients
+Update Signal 12: Never-Booked Clients
+
+Exclude these from both signals:
+
+* Walk-in profiles where user ID starts with walk-in-
+* Test/dev users where user ID or email contains:
+    * test
+    * theme-test
+    * demo
+    * dev
+    * example
+* Deleted, archived, disabled, or inactive profiles if those fields exist
+* Coaches/admins/staff
+* Any client profile without a real contact path unless the signal is specifically about missing contact info
+
+The goal is to count only real, actionable registered clients.
+
+2. Convert bulk counts into actionable records
+
+Do not generate generic alerts like:
+
+* “13 clients have never booked”
+* “15 clients inactive for 30+ days”
+
+Instead generate actionable inbox items like:
+
+* “[Client Name] created an account 3 days ago but has not booked”
+* “[Client Name] has not trained in 21 days”
+* “[Client Name] completed 3 sessions but has no upcoming booking”
+
+Each item should include:
+
+* Client name
+* Client ID
+* Last booking date, if any
+* Last booking status, if any
+* Upcoming booking count
+* Days since last session
+* Recommended action
+* CTA metadata for text/email/schedule/follow-up
+
+3. Improve Signal 11 logic: Inactive Clients
+
+Only trigger inactive-client alerts for clients who previously had meaningful engagement.
+
+Required criteria:
+
+* Client has at least 1 completed or confirmed historical booking
+* Client has no confirmed upcoming booking
+* Client has not had a completed/confirmed session in at least 14 or 30 days depending on signal threshold
+* Client is not a walk-in-only profile
+* Client is not test/dev
+
+Preferred alert logic:
+
+* 14+ days since last session = suggested
+* 30+ days since last session = important
+* 45+ days since last session = critical only if client had 3+ prior sessions or active package/subscription
+
+Do not mark brand-new never-booked users as inactive. They belong to onboarding/activation, not churn.
+
+4. Improve Signal 12 logic: Never-Booked Clients
+
+Rename this signal conceptually to:
+
+“New Registered Client Needs Activation”
+
+Only trigger for real registered clients who:
+
+* Created an account
+* Have zero bookings
+* Are not walk-in/test/dev
+* Have email or phone available
+* Created account more than 24 hours ago
+* Created account less than 30 days ago
+
+Thresholds:
+
+* 24–72 hours after signup with no booking = suggested
+* 3–7 days = important
+* 7–30 days = important with stronger CTA
+* Older than 30 days = do not keep escalating forever; move to dormant lead/reactivation category
+
+Alert examples:
+
+* “New client Sarah Johnson signed up 3 days ago but hasn’t booked”
+* “Send onboarding message”
+* “Offer help scheduling first session”
+
+5. Purge polluted recommendations
+
+Find all existing agent_recommendations generated from flawed booking data.
+
+Specifically purge or mark resolved/stale:
+
+* “Re-engage [Name]”
+* “No bookings in 30+ days”
+* “Churn risk is high”
+* Any recommendation produced before the booking organization_id backfill that relied on missing org-scoped booking data
+
+For safety:
+
+* Do not delete rows permanently unless that is the project convention.
+* Prefer marking as resolved, stale, invalidated, or superseded.
+* Add a reason field if available:
+    “Invalidated by booking organization_id backfill and client-signal correction.”
+
+6. Regenerate only valid recommendations
+
+After cleanup, regenerate recommendations only from corrected signals.
+
+Expected org-est result:
+
+* Clients with actual session history should not be labeled never-booked.
+* Walk-in profiles should not inflate activation alerts.
+* Test/dev accounts should not appear.
+* Genuine registered clients with no bookings may appear as activation opportunities only if they meet the age/contact criteria.
+* Inactive-client alerts should only appear for clients who previously trained and then stopped.
+
+7. Add deduplication rules
+
+Prevent duplicate inbox noise between:
+
+* Signal 11 inactive client alerts
+* Signal 12 activation alerts
+* Agent recommendations
+* Revenue agent actions
+
+Rules:
+
+* One active attention item per client per signal type.
+* Do not create both “inactive” and “never booked” for the same client.
+* Do not create a generic aggregate alert if individual client alerts exist.
+* If an agent recommendation already exists for the exact client/action, update it instead of creating a duplicate.
+
+8. Verification output
+
+After implementation, provide:
+
+* Count of excluded walk-in profiles
+* Count of excluded test/dev profiles
+* Count of real actionable never-booked clients
+* Count of real inactive clients
+* List of stale recommendations invalidated
+* List of regenerated valid recommendations
+* Sample Attention Inbox output for org-est
+
+Expected product behavior:
+
+The Attention Inbox should stop acting like a database count panel and start surfacing specific operational actions.
+
+Bad:
+
+“13 clients have never booked.”
+
+Good:
+
+“Sarah Johnson signed up 3 days ago and has not booked. Send onboarding message?”
+
+Bad:
+
+“15 clients inactive.”
+
+Good:
+
+“Mike Davis completed 4 sessions but has not trained in 28 days. Send follow-up?”

@@ -23,6 +23,7 @@ import {
   outreachDrafts,
   financialEventFailures,
   userSubscriptions,
+  users,
   type AttentionItem,
   type InsertAttentionItem,
 } from "@shared/schema";
@@ -84,6 +85,12 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
           lt(attentionItems.createdAt, sevenDaysAgo)
         )
       );
+  } catch {}
+
+  // Purge stale agent_recommendations that were generated from bad booking data
+  // (aggregate re-engage / churn-risk / no-bookings signals pre-backfill).
+  try {
+    await purgeStaleClientRecommendations(orgId);
   } catch {}
 
   // Load existing sourceIds for this org (skip dismissed/completed so they can't re-appear)
@@ -455,150 +462,246 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
     }
   } catch {}
 
-  // ── 11. Inactive Clients (30+ days no booking) ────────────────────────────
-  // Guard: skip if booking org_id coverage for this org is below 80% — signals
-  // would produce false positives when organization_id is not reliably populated.
+  // ── 11. Inactive Clients — per-client, 14+ days since last session ────────
+  // Generates one actionable item per real client who had prior sessions but has
+  // gone quiet. Excludes walk-ins, test/dev accounts, and clients with upcoming
+  // confirmed bookings. Does NOT flag brand-new never-booked users (Signal 12).
   try {
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
 
-    // Data quality gate — require ≥80% of org bookings to have organization_id set
-    const [coverageRow] = await db.execute<{ total: number; with_org: number }>(
-      sql`SELECT COUNT(*) AS total,
-               COUNT(organization_id) AS with_org
+    // Data quality gate — require ≥80% of org-client bookings to carry organization_id
+    const [coverageRow11] = await db.execute(
+      sql`SELECT COUNT(*) AS total, COUNT(organization_id) AS with_org
           FROM bookings
-          WHERE client_id IN (
-            SELECT user_id FROM user_profiles WHERE organization_id = ${orgId}
-          )`
+          WHERE client_id IN (SELECT user_id FROM user_profiles WHERE organization_id = ${orgId})`
     ) as any;
-    const coverageTotal = Number(coverageRow?.total ?? 0);
-    const coverageWithOrg = Number(coverageRow?.with_org ?? 0);
-    const coverageOk = coverageTotal === 0 || (coverageWithOrg / coverageTotal) >= 0.80;
-    if (!coverageOk) {
-      console.warn(`[AttentionEngine] Signal 11 skipped for org ${orgId}: booking org_id coverage ${coverageWithOrg}/${coverageTotal}`);
-      // skip — don't throw, just fall through
+    const cov11Total = Number(coverageRow11?.total ?? 0);
+    const cov11WithOrg = Number(coverageRow11?.with_org ?? 0);
+    if (cov11Total > 0 && (cov11WithOrg / cov11Total) < 0.80) {
+      console.warn(`[AttentionEngine] Signal 11 skipped for org ${orgId}: booking org_id coverage ${cov11WithOrg}/${cov11Total}`);
     } else {
+      // Dismiss old aggregate-count "X clients inactive" items — replaced by per-client rows
+      try {
+        await db.update(attentionItems).set({ status: "dismissed", updatedAt: now })
+          .where(and(
+            eq(attentionItems.orgId, orgId),
+            sql`source_id LIKE 'inactive-clients-30d-%'`
+          ));
+      } catch {}
 
-    const clientProfileRows = await db
-      .select({ userId: userProfiles.userId })
-      .from(userProfiles)
-      .where(
-        and(
-          eq(userProfiles.organizationId, orgId),
-          eq(userProfiles.role, "CLIENT")
-        )
-      )
-      .limit(300);
-
-    if (clientProfileRows.length > 0) {
-      const clientIds = clientProfileRows.map((c) => c.userId);
-
-      const recentlyActive = await db
-        .selectDistinct({ clientId: bookings.clientId })
-        .from(bookings)
-        .where(
-          and(
-            eq(bookings.organizationId, orgId),
-            inArray(bookings.clientId, clientIds),
-            gte(bookings.startAt, thirtyDaysAgo),
-            inArray(bookings.status, ["CONFIRMED", "COMPLETED"])
+      const inactiveRows = await db.execute(sql`
+        SELECT
+          up.user_id,
+          u.first_name,
+          u.last_name,
+          u.email,
+          u.phone,
+          COUNT(b.id) FILTER (WHERE b.status IN ('CONFIRMED','COMPLETED') AND b.start_at < NOW())::int AS past_session_count,
+          MAX(b.start_at) FILTER (WHERE b.status IN ('CONFIRMED','COMPLETED') AND b.start_at < NOW()) AS last_session_at,
+          COUNT(b.id) FILTER (WHERE b.status = 'CONFIRMED' AND b.start_at >= NOW())::int AS upcoming_count
+        FROM user_profiles up
+        JOIN users u ON u.id = up.user_id
+        LEFT JOIN bookings b ON b.client_id = up.user_id AND b.organization_id = ${orgId}
+        WHERE up.organization_id = ${orgId}
+          AND up.role = 'CLIENT'
+          AND up.user_id NOT LIKE 'walk-in-%'
+          AND (
+            u.email IS NULL OR (
+              LOWER(u.email) NOT LIKE '%test%' AND
+              LOWER(u.email) NOT LIKE '%demo%' AND
+              LOWER(u.email) NOT LIKE '%example%' AND
+              LOWER(u.email) NOT LIKE '%dev%'
+            )
           )
-        );
+          AND LOWER(up.user_id) NOT LIKE '%test%'
+          AND LOWER(up.user_id) NOT LIKE '%theme-test%'
+        GROUP BY up.user_id, u.first_name, u.last_name, u.email, u.phone
+        HAVING
+          COUNT(b.id) FILTER (WHERE b.status IN ('CONFIRMED','COMPLETED') AND b.start_at < NOW()) >= 1
+          AND COUNT(b.id) FILTER (WHERE b.status = 'CONFIRMED' AND b.start_at >= NOW()) = 0
+          AND MAX(b.start_at) FILTER (WHERE b.status IN ('CONFIRMED','COMPLETED') AND b.start_at < NOW()) < NOW() - INTERVAL '14 days'
+        ORDER BY last_session_at ASC
+        LIMIT 50
+      `) as any[];
 
-      const activeClientIds = new Set(recentlyActive.map((b) => b.clientId));
-      const inactiveCount = clientIds.filter((id) => !activeClientIds.has(id)).length;
+      for (const row of inactiveRows) {
+        const clientName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || row.email || row.user_id;
+        const lastSessionAt = row.last_session_at ? new Date(row.last_session_at) : null;
+        const daysSince = lastSessionAt
+          ? Math.floor((now.getTime() - lastSessionAt.getTime()) / (1000 * 60 * 60 * 24))
+          : 999;
+        const pastCount = Number(row.past_session_count ?? 0);
+        const upcomingCount = Number(row.upcoming_count ?? 0);
 
-      if (inactiveCount >= 2) {
-        const level = inactiveCount >= 5 ? "important" : "suggested";
+        let level: string;
+        let urgency: number;
+        let bodyNote: string;
+        if (daysSince >= 45 && pastCount >= 3) {
+          level = "critical";
+          urgency = 88;
+          bodyNote = "High churn risk — urgent outreach recommended.";
+        } else if (daysSince >= 30) {
+          level = "important";
+          urgency = 72;
+          bodyNote = "Proactive re-engagement could recover this client.";
+        } else {
+          level = "suggested";
+          urgency = 50;
+          bodyNote = "A brief check-in message could re-activate this client.";
+        }
+
+        const lastDateStr = lastSessionAt
+          ? lastSessionAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+          : "unknown";
         const d = defaults(level);
+
         add({
           orgId,
           level,
           category: "churn",
-          title: `${inactiveCount} client${inactiveCount !== 1 ? "s" : ""} inactive for 30+ days`,
-          body: "These clients have had no sessions in over a month. Proactive re-engagement outreach could recover revenue.",
+          title: `${clientName} has not trained in ${daysSince} day${daysSince !== 1 ? "s" : ""}`,
+          body: `Last session: ${lastDateStr} (${pastCount} total). No upcoming bookings. ${bodyNote}`,
           source: "scheduling",
-          sourceId: `inactive-clients-30d-w${weekKey}`,
-          actionUrl: "/coach/users",
-          actionLabel: "View Clients",
+          sourceId: `inactive-client-${row.user_id}-w${weekKey}`,
+          actionUrl: `/coach/users`,
+          actionLabel: "View Client",
           status: "active",
           ...d,
-          urgency: inactiveCount >= 5 ? 72 : 50,
-          businessImpact: Math.min(100, 40 + inactiveCount * 5),
+          urgency,
+          businessImpact: Math.min(100, 40 + pastCount * 6),
+          metadata: {
+            clientId: row.user_id,
+            clientName,
+            clientEmail: row.email ?? null,
+            clientPhone: row.phone ?? null,
+            lastSessionAt: lastSessionAt?.toISOString() ?? null,
+            lastSessionDate: lastDateStr,
+            daysSinceLast: daysSince,
+            pastSessionCount: pastCount,
+            upcomingCount,
+            recommendedAction: daysSince >= 45 ? "urgent-re-engage" : daysSince >= 30 ? "re-engage" : "check-in",
+            ctaOptions: ["send-email", "send-sms", "schedule-session"],
+            signalVersion: "v2-per-client",
+          },
         });
       }
     }
-    } // end else (coverage ok — signal 11)
   } catch {}
 
-  // ── 12. Never-Booked Clients ──────────────────────────────────────────────
-  // Guard: same booking org_id coverage check as Signal 11.
+  // ── 12. New Client Needs Activation — per-client, 1–30 days old, zero bookings
+  // Generates one actionable item per real registered client who signed up but
+  // has never booked. Excludes walk-ins, test/dev accounts, accounts > 30 days
+  // old (those go to dormant/reactivation), and clients with no contact path.
+  // Never overlaps with Signal 11: Signal 11 requires ≥1 past booking.
   try {
-    const weekKey = Math.floor(now.getTime() / (7 * 24 * 60 * 60 * 1000));
+    const dayKey = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
 
-    // Data quality gate — require ≥80% of org-client bookings to have organization_id
-    const [cov12Row] = await db.execute<{ total: number; with_org: number }>(
-      sql`SELECT COUNT(*) AS total,
-               COUNT(organization_id) AS with_org
-          FROM bookings
-          WHERE client_id IN (
-            SELECT user_id FROM user_profiles WHERE organization_id = ${orgId}
-          )`
+    // Data quality gate
+    const [cov12Row] = await db.execute(
+      sql`SELECT COUNT(*) AS total, COUNT(organization_id) AS with_org
+          FROM bookings WHERE client_id IN (SELECT user_id FROM user_profiles WHERE organization_id = ${orgId})`
     ) as any;
     const cov12Total = Number(cov12Row?.total ?? 0);
     const cov12WithOrg = Number(cov12Row?.with_org ?? 0);
     if (cov12Total > 0 && (cov12WithOrg / cov12Total) < 0.80) {
-      console.warn(`[AttentionEngine] Signal 12 skipped for org ${orgId}: booking org_id coverage ${cov12WithOrg}/${cov12Total}`);
+      console.warn(`[AttentionEngine] Signal 12 skipped for org ${orgId}: coverage ${cov12WithOrg}/${cov12Total}`);
     } else {
+      // Dismiss old aggregate "X clients never booked" items — replaced by per-client rows
+      try {
+        await db.update(attentionItems).set({ status: "dismissed", updatedAt: now })
+          .where(and(
+            eq(attentionItems.orgId, orgId),
+            sql`source_id LIKE 'never-booked-%'`
+          ));
+      } catch {}
 
-    const clientProfileRows = await db
-      .select({ userId: userProfiles.userId })
-      .from(userProfiles)
-      .where(
-        and(
-          eq(userProfiles.organizationId, orgId),
-          eq(userProfiles.role, "CLIENT")
-        )
-      )
-      .limit(300);
-
-    if (clientProfileRows.length > 0) {
-      const clientIds = clientProfileRows.map((c) => c.userId);
-
-      const everBooked = await db
-        .selectDistinct({ clientId: bookings.clientId })
-        .from(bookings)
-        .where(
-          and(
-            eq(bookings.organizationId, orgId),
-            inArray(bookings.clientId, clientIds)
+      const activationRows = await db.execute(sql`
+        SELECT
+          up.user_id,
+          u.first_name,
+          u.last_name,
+          u.email,
+          u.phone,
+          u.created_at,
+          EXTRACT(EPOCH FROM (NOW() - u.created_at)) / 86400 AS account_age_days
+        FROM user_profiles up
+        JOIN users u ON u.id = up.user_id
+        WHERE up.organization_id = ${orgId}
+          AND up.role = 'CLIENT'
+          AND up.user_id NOT LIKE 'walk-in-%'
+          AND (
+            u.email IS NULL OR (
+              LOWER(u.email) NOT LIKE '%test%' AND
+              LOWER(u.email) NOT LIKE '%demo%' AND
+              LOWER(u.email) NOT LIKE '%example%' AND
+              LOWER(u.email) NOT LIKE '%dev%'
+            )
           )
-        );
+          AND LOWER(up.user_id) NOT LIKE '%test%'
+          AND LOWER(up.user_id) NOT LIKE '%theme-test%'
+          AND (u.email IS NOT NULL OR u.phone IS NOT NULL)
+          AND u.created_at > NOW() - INTERVAL '30 days'
+          AND u.created_at < NOW() - INTERVAL '24 hours'
+          AND NOT EXISTS (
+            SELECT 1 FROM bookings b
+            WHERE b.client_id = up.user_id AND b.organization_id = ${orgId}
+          )
+        ORDER BY u.created_at ASC
+        LIMIT 50
+      `) as any[];
 
-      const bookedIds = new Set(everBooked.map((b) => b.clientId));
-      const neverBookedCount = clientIds.filter((id) => !bookedIds.has(id)).length;
+      for (const row of activationRows) {
+        const clientName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || row.email || row.user_id;
+        const ageDays = Math.floor(Number(row.account_age_days ?? 0));
 
-      if (neverBookedCount >= 1) {
-        const level = neverBookedCount >= 3 ? "important" : "suggested";
+        let level: string;
+        let urgency: number;
+        let ctaMessage: string;
+        if (ageDays <= 3) {
+          level = "suggested";
+          urgency = 55;
+          ctaMessage = "Send a welcome message and offer to help schedule their first session.";
+        } else if (ageDays <= 7) {
+          level = "important";
+          urgency = 68;
+          ctaMessage = "Follow up — offer a free intro call or help scheduling their first session.";
+        } else {
+          level = "important";
+          urgency = 72;
+          ctaMessage = "Interest may be fading. Send a personalized activation message or schedule offer.";
+        }
+
+        const signedUpStr = ageDays === 1 ? "1 day ago" : `${ageDays} days ago`;
         const d = defaults(level);
+
         add({
           orgId,
           level,
           category: "growth",
-          title: `${neverBookedCount} registered client${neverBookedCount !== 1 ? "s" : ""} with no bookings yet`,
-          body: "These clients created accounts but haven't scheduled their first session. A personal touch could convert them.",
+          title: `${clientName} signed up ${signedUpStr} but hasn't booked yet`,
+          body: ctaMessage,
           source: "scheduling",
-          sourceId: `never-booked-w${weekKey}`,
-          actionUrl: "/coach/users",
-          actionLabel: "View Clients",
+          sourceId: `activation-client-${row.user_id}-d${dayKey}`,
+          actionUrl: `/coach/users`,
+          actionLabel: "View Client",
           status: "active",
           ...d,
-          urgency: 55,
-          businessImpact: Math.min(100, 40 + neverBookedCount * 8),
+          urgency,
+          businessImpact: Math.min(100, 50 + ageDays * 2),
+          metadata: {
+            clientId: row.user_id,
+            clientName,
+            clientEmail: row.email ?? null,
+            clientPhone: row.phone ?? null,
+            accountCreatedAt: row.created_at,
+            accountAgeDays: ageDays,
+            recommendedAction: "activate",
+            ctaOptions: ["send-email", "send-sms", "schedule-session", "offer-intro"],
+            signalVersion: "v2-per-client",
+          },
         });
       }
     }
-    } // end else (coverage ok — signal 12)
   } catch {}
 
   // ── 13. Coach Schedule Overload (7+ sessions in next 7 days) ─────────────
@@ -938,4 +1041,48 @@ export async function getAttentionCount(orgId: string): Promise<{ critical: numb
   const critical = active.filter((r) => r.level === "critical" || r.status === "escalated").length;
   const important = active.filter((r) => r.level === "important").length;
   return { critical, important, total: active.length };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Purge stale client recommendations
+// ─────────────────────────────────────────────────────────────────────────────
+// Marks agent_recommendations that were generated from polluted booking data
+// (aggregate re-engage / churn-risk / never-booked signals) as "stale".
+// Called automatically at the start of each syncAttentionItems run and also
+// available as a standalone export for one-off cleanup operations.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export async function purgeStaleClientRecommendations(
+  orgId: string
+): Promise<{ purged: number }> {
+  const now = new Date();
+  const INVALIDATION_REASON =
+    "Invalidated by booking organization_id backfill and client-signal correction. " +
+    "Generated from incomplete booking data where organization_id was NULL on all bookings. " +
+    "Per-client signals v2 will regenerate accurate recommendations on next sync.";
+
+  const result = await db
+    .update(agentRecommendations)
+    .set({ status: "stale", reason: INVALIDATION_REASON, updatedAt: now })
+    .where(
+      and(
+        eq(agentRecommendations.orgId, orgId),
+        inArray(agentRecommendations.status, ["pending", "active"]),
+        sql`(
+          LOWER(title) LIKE '%re-engage%' OR
+          LOWER(title) LIKE '%no bookings%' OR
+          LOWER(title) LIKE '%churn risk%' OR
+          LOWER(description) LIKE '%inactive%' OR
+          LOWER(description) LIKE '%no bookings%' OR
+          LOWER(description) LIKE '%re-engage%'
+        )`
+      )
+    )
+    .returning({ id: agentRecommendations.id });
+
+  if (result.length > 0) {
+    console.log(`[AttentionEngine] purgeStaleClientRecommendations: marked ${result.length} stale recommendations for org ${orgId}`);
+  }
+
+  return { purged: result.length };
 }
