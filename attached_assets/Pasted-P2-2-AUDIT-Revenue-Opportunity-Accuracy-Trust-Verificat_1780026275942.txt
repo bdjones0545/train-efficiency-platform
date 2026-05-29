@@ -1,0 +1,289 @@
+P2.2 AUDIT — Revenue Opportunity Accuracy & Trust Verification
+
+Objective
+
+The Revenue Opportunity Intelligence system is now live.
+
+Before expanding automation, validate that every revenue opportunity is accurate, non-duplicative, automatically resolvable, and trustworthy.
+
+Revenue opportunities directly influence coach behavior and business decisions.
+
+If the inbox reports inflated revenue, duplicate opportunities, or stale opportunities, trust in the system will degrade rapidly.
+
+This audit is focused on accuracy, resolution behavior, value estimation, and operational trust.
+
+Do not build new signals.
+
+Audit the existing implementation.
+
+Revenue Signals In Scope
+
+R1 — New Lead Never Contacted
+
+R2 — Lead Awaiting Follow-Up 72h+
+
+R3 — Free Intro / Assessment Completed — No Paid Conversion
+
+R4 — Zero Upcoming Bookings This Week
+
+Part 1 — Signal Accuracy Verification
+
+For each revenue signal:
+
+Provide:
+
+* Total active items
+* Sample records
+* Exact query used
+* Matching database records
+* Signal creation timestamp
+* Current status
+
+Verify:
+
+* Signal correctly identifies the intended business event
+* Signal excludes invalid records
+* Signal is scoped to the correct organization
+* Signal is not firing due to stale or orphaned data
+
+Deliver evidence for each verification.
+
+Part 2 — Estimated Revenue Validation
+
+Audit every estimated value calculation.
+
+For each signal:
+
+Document:
+
+* Formula used
+* Inputs used
+* Fallback assumptions
+* Missing-data behavior
+
+Examples:
+
+R1 — Lead Never Contacted
+
+How is potential value calculated?
+
+Possible sources:
+
+* estimated_value_cents
+* service price
+* organization average conversion value
+* static fallback
+
+Determine which is actually being used.
+
+R3 — Assessment Completed, No Conversion
+
+How is estimated annual value calculated?
+
+Verify:
+
+* Not inflated
+* Not duplicated
+* Not using unrealistic assumptions
+
+Provide:
+
+Minimum value
+Average value
+Maximum value
+
+for current production records.
+
+Part 3 — Duplication Audit
+
+Determine whether one business opportunity can create multiple alerts.
+
+Examples:
+
+Lead submitted
+
+Can it simultaneously generate:
+
+* R1
+* R2
+* activation signal
+* agent recommendation
+* revenue action
+
+Assessment completed
+
+Can it simultaneously generate:
+
+* R3
+* retention signal
+* conversion signal
+* recommendation
+
+Produce:
+
+Opportunity → Signal Matrix
+
+Identify:
+
+* duplicate opportunities
+* overlapping alerts
+* double counting
+
+Part 4 — Resolution Audit
+
+Verify that revenue opportunities disappear automatically when solved.
+
+R1
+
+Should resolve when:
+
+* contacted_at populated
+* lead converted
+* lead lost
+
+R2
+
+Should resolve when:
+
+* follow-up sent
+* converted
+* booked
+
+R3
+
+Should resolve when:
+
+* paid booking created
+* client purchases package
+* subscription starts
+
+R4
+
+Should resolve when:
+
+* confirmed booking exists within next 7 days
+
+For each signal verify:
+
+* automatic dismissal logic
+* stale item cleanup
+* orphaned item prevention
+
+Provide evidence.
+
+Part 5 — Revenue Inflation Audit
+
+Determine whether estimated revenue is being counted multiple times.
+
+Example:
+
+Lead estimated at $297
+
+Later:
+
+Assessment opportunity estimated at $297
+
+Later:
+
+Conversion opportunity estimated at $297
+
+Question:
+
+Does the inbox now show:
+
+$891 opportunity
+
+for the same customer?
+
+Audit:
+
+* duplicate revenue attribution
+* overlapping opportunity values
+* cumulative dashboard totals
+
+Deliver:
+
+True opportunity value
+Displayed opportunity value
+Inflation percentage
+
+Part 6 — Organization Isolation Verification
+
+Verify for all revenue signals:
+
+* no cross-org leakage
+* no orphaned opportunities
+* no stale deleted leads
+* no archived prospects
+* no test/demo accounts
+
+Produce evidence.
+
+Part 7 — Revenue Trust Score
+
+For each signal assign:
+
+Accuracy Score (1–10)
+
+Questions:
+
+* Is the event real?
+* Is the timing correct?
+* Is the value realistic?
+* Is the action meaningful?
+
+Example:
+
+Signal	Accuracy	Value Accuracy	Actionability	Trust Score
+R1	9	8	10	9
+R2	8	8	9	8
+R3	7	6	10	7
+R4	10	10	9	10
+
+Part 8 — Dashboard Integrity Audit
+
+Review the new:
+
+TODAY’S REVENUE OPPORTUNITIES
+
+section.
+
+Verify:
+
+* sort order correct
+* critical opportunities first
+* estimated values render correctly
+* stale opportunities removed
+* CTA buttons align with opportunity type
+
+Ensure:
+
+The dashboard never presents misleading revenue totals.
+
+Part 9 — Deliverables
+
+Provide:
+
+1. Signal accuracy report
+2. Revenue calculation formulas
+3. Duplication matrix
+4. Resolution verification
+5. Revenue inflation analysis
+6. Organization isolation verification
+7. Revenue trust scores
+8. Dashboard integrity report
+9. Production readiness score
+
+Expected Outcome
+
+The Revenue Opportunity system should be trusted enough that a coach can make business decisions directly from it.
+
+The goal is:
+
+“When TrainEfficiency says an opportunity is worth $500, that number is believable.”
+
+Do not implement fixes yet.
+
+Audit first.
+
+Present evidence before making changes.
