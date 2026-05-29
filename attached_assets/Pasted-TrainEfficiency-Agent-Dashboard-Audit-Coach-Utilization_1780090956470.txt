@@ -1,0 +1,197 @@
+TrainEfficiency Agent Dashboard Audit — Coach Utilization, Revenue Attribution, and Time Block Analytics
+
+Conduct a full end-to-end audit of the Agent Dashboard data sources and calculations.
+
+Objective
+
+The Business Brain signals are now fixed (P1.5 + P2.3), but several dashboard widgets appear to be using legacy queries or incorrect aggregation logic.
+
+The goal is to verify every calculation from source data to UI rendering and identify the exact root cause of any discrepancies.
+
+⸻
+
+Section 1 — Coach Utilization Audit
+
+Current dashboard shows:
+
+* Bryan Jones → 0% utilization
+* Hunter Thaxton → 7% utilization
+* Hunter → 80 open slots
+
+These numbers appear inconsistent with actual booking volume.
+
+Audit:
+
+1. Identify the exact query powering Coach Utilization.
+2. Show:
+    * coach_id
+    * coach name
+    * available hours
+    * booked hours
+    * utilization %
+    * booking count
+    * date range used
+3. Verify whether calculation uses:
+    * org_sessions
+    * org_bookings
+    * recurring bookings
+    * availability blocks
+4. Verify timezone handling.
+5. Verify coach ID mapping.
+6. Verify org_user_id mapping.
+7. Compare dashboard values against actual booking data.
+
+Deliver:
+
+* Current calculation
+* Raw source values
+* Expected value
+* Root cause if mismatch exists
+
+⸻
+
+Section 2 — Top Clients By Revenue Audit
+
+Current dashboard incorrectly displays:
+
+#1 Bryan Jones
+154 sessions
+$5,390
+
+Bryan Jones is an ADMIN + COACH and must never appear in client revenue rankings.
+
+Audit:
+
+1. Locate exact query powering Top Clients By Revenue.
+2. Return every included row:
+    * user_id
+    * name
+    * role
+    * revenue
+    * session count
+3. Verify query uses:
+
+CLIENT_ELIGIBILITY_SQL(orgId)
+
+4. Verify exclusions:
+    * ADMIN
+    * COACH
+    * TEST USERS
+    * WALK-IN PROFILES
+    * CROSS-ACCOUNT ALIASES
+    * INTERNAL USERS
+5. Verify Bryan Jones CLIENT account is excluded.
+6. Verify Hunter Thaxton CLIENT account is excluded.
+
+Deliver:
+
+* Current query
+* Current results
+* Expected results
+* Root cause
+* Proposed fix
+
+⸻
+
+Section 3 — Revenue By Time Block Audit
+
+Current graph appears inconsistent.
+
+Audit:
+
+1. Identify exact query.
+2. Show:
+    * hour bucket
+    * booking count
+    * revenue
+    * source timestamps
+3. Verify grouping uses:
+
+session start time
+
+NOT:
+
+created_at
+
+4. Verify timezone conversion:
+    UTC → org timezone
+5. Validate sample sessions contributing to:
+    * 12 PM
+    * 1 PM
+    * 2 PM
+    * 6 PM
+    * 7 PM
+6. Confirm revenue calculations match actual bookings.
+
+Deliver:
+
+* Raw contributing records
+* Aggregation logic
+* Root cause if mismatch exists
+
+⸻
+
+Section 4 — Retention Risk Validation
+
+Audit every active retention risk.
+
+For each risk:
+
+Return:
+
+* Client name
+* Last session date
+* Days inactive
+* Signal reason
+* Risk score
+* Eligibility status
+
+Verify all risks pass:
+
+CLIENT_ELIGIBILITY_SQL(orgId)
+
+Verify no:
+
+* coaches
+* admins
+* test accounts
+* walk-ins
+* cross-account aliases
+
+can appear.
+
+⸻
+
+Section 5 — Dashboard Query Integrity Audit
+
+Identify every dashboard widget currently bypassing:
+
+CLIENT_ELIGIBILITY_SQL(orgId)
+
+List:
+
+Widget
+Query Source
+Uses Eligibility Layer? (Y/N)
+Risk Level
+Recommended Fix
+
+⸻
+
+Section 6 — Final Report
+
+Produce:
+
+1. Widget Health Matrix
+
+Widget | Status | Confidence
+
+2. Root Cause Summary
+3. Required Fixes
+4. Files requiring modification
+5. Exact code locations
+6. Verification steps
+
+Do not patch anything initially.
+
+First perform a complete forensic audit and provide evidence-backed findings for every discrepancy.
