@@ -1,0 +1,116 @@
+Growth & Revenue Navigation Reorganization
+
+Objective:
+Reduce menu clutter, improve discoverability, and create a logical progression from lead generation → sales → revenue.
+
+Current Problems:
+- Outreach Center appears twice
+- Athlete Leads and Athlete Lead Pipeline are difficult to distinguish
+- Team Training Leads, Team Quotes, and Deal Pipeline are part of the same workflow but are separated
+- Revenue tools are mixed with lead generation tools
+- New users have no clear mental model for where to go
+
+Proposed Navigation Structure
+
+▼ Growth & Revenue
+
+  ▼ Lead Generation (3)
+      Athlete Leads
+      Team Training Leads
+      Outreach Center
+
+  ▶ Sales Pipeline (3)
+      Deal Pipeline
+      Team Quotes
+      Lead Pipeline
+
+  ▶ Revenue Management (2)
+      Transactions
+      Redemptions
+
+  ▶ Business Planning (1)
+      Business Plan
+
+Definitions
+
+Lead Generation
+Purpose:
+Where opportunities enter the business.
+
+Pages:
+- Athlete Leads
+- Team Training Leads
+- Outreach Center
+
+Sales Pipeline
+Purpose:
+Where opportunities are nurtured and converted.
+
+Pages:
+- Deal Pipeline
+- Team Quotes
+- Lead Pipeline
+
+Revenue Management
+Purpose:
+Where money and payments are tracked.
+
+Pages:
+- Transactions
+- Redemptions
+
+Business Planning
+Purpose:
+Long-term business growth and forecasting.
+
+Pages:
+- Business Plan
+
+Implementation Requirements
+
+Sidebar
+- Convert Growth & Revenue into a grouped accordion structure similar to AI Operations.
+- Display item counts beside each group.
+- Lead Generation expanded by default.
+- Other groups collapsed by default.
+- On mobile, only one subgroup can be open at a time.
+- Persist expansion state in localStorage.
+
+Cleanup
+- Remove duplicate Outreach Center entry.
+- Keep all routes unchanged.
+- Navigation-only refactor; no backend changes.
+
+Visual Consistency
+Match AI Operations behavior:
+- Group headers with icons
+- Count badges
+- Expand/collapse chevrons
+- Active route highlighting
+- Auto-expand correct group when navigating directly to a page
+
+Additional Naming Audit
+
+Review:
+- Athlete Leads
+- Athlete Lead Pipeline
+
+Potential issue:
+These names are extremely similar and may confuse users.
+
+Recommendation:
+Rename "Athlete Lead Pipeline" to one of:
+- Lead Pipeline
+- Sales Pipeline
+- Athlete Sales Pipeline
+- Conversions
+
+Choose the option that best reflects the page's actual purpose.
+
+Deliverables
+- Files changed
+- Navigation tree before/after
+- Routes mapped to new groups
+- Mobile verification
+- Desktop verification
+- Confirmation no routes, permissions, or APIs changed
