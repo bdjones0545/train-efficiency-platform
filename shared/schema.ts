@@ -3932,3 +3932,40 @@ export const orgAiOpportunities = pgTable("org_ai_opportunities", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 export type OrgAiOpportunity = typeof orgAiOpportunities.$inferSelect;
+
+// ─── AI Learning Events ─────────────────────────────────────────────────────
+// Immutable record of every learning signal the workforce accumulates.
+// eventType: success | failure | missed_opportunity | recommendation_accepted |
+//            recommendation_rejected | recommendation_deferred | workflow_outcome
+export const orgAiLearningEvents = pgTable("org_ai_learning_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentId: text("agent_id"),
+  workflowId: text("workflow_id"),
+  eventType: text("event_type").notNull(),
+  outcome: text("outcome"),
+  score: doublePrecision("score").default(0),
+  context: jsonb("context"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type OrgAiLearningEvent = typeof orgAiLearningEvents.$inferSelect;
+
+// ─── AI Workforce Memory ─────────────────────────────────────────────────────
+// Long-term organizational memory for preventing repeated recommendations
+// and building compounding intelligence.
+// memoryType: recommendation | opportunity | decision | workflow_outcome
+// outcome: accepted | rejected | deferred | resolved | expired
+export const orgAiWorkforceMemory = pgTable("org_ai_workforce_memory", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  memoryType: text("memory_type").notNull(),
+  key: text("key").notNull(),
+  title: text("title").notNull(),
+  summary: text("summary"),
+  outcome: text("outcome"),
+  value: doublePrecision("value").default(0),
+  context: jsonb("context"),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+});
+export type OrgAiWorkforceMemory = typeof orgAiWorkforceMemory.$inferSelect;

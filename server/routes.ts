@@ -20089,5 +20089,188 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Phase 4: Intelligence, Optimization & Self-Improvement ──────────────────
+
+  // Optimization Recommendations
+  app.get("/api/workforce/optimization-recommendations", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { generateOptimizationRecommendations } = await import("./workforce-intelligence-engine");
+      const recs = await generateOptimizationRecommendations(orgId);
+      res.json(recs);
+    } catch (e: any) {
+      console.error("[workforce/optimization-recommendations] error:", e);
+      res.status(500).json({ message: "Failed to generate recommendations" });
+    }
+  });
+
+  // Business Health Score
+  app.get("/api/workforce/business-health", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { computeBusinessHealth } = await import("./workforce-intelligence-engine");
+      const health = await computeBusinessHealth(orgId);
+      res.json(health);
+    } catch (e: any) {
+      console.error("[workforce/business-health] error:", e);
+      res.status(500).json({ message: "Failed to compute business health" });
+    }
+  });
+
+  // Forecasts
+  app.get("/api/workforce/forecast", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const window = (req.query.window as string) ?? "7d";
+      const { computeForecast } = await import("./workforce-intelligence-engine");
+      const forecast = await computeForecast(orgId, window);
+      res.json(forecast);
+    } catch (e: any) {
+      console.error("[workforce/forecast] error:", e);
+      res.status(500).json({ message: "Failed to compute forecast" });
+    }
+  });
+
+  // Workflow Effectiveness
+  app.get("/api/workforce/workflow-effectiveness", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { computeWorkflowEffectiveness } = await import("./workforce-intelligence-engine");
+      const effectiveness = await computeWorkflowEffectiveness(orgId);
+      res.json(effectiveness);
+    } catch (e: any) {
+      console.error("[workforce/workflow-effectiveness] error:", e);
+      res.status(500).json({ message: "Failed to compute workflow effectiveness" });
+    }
+  });
+
+  // Executive Insights (Atlas)
+  app.get("/api/workforce/executive-insights", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { generateExecutiveInsights } = await import("./workforce-intelligence-engine");
+      const insights = await generateExecutiveInsights(orgId);
+      res.json(insights);
+    } catch (e: any) {
+      console.error("[workforce/executive-insights] error:", e);
+      res.status(500).json({ message: "Failed to generate executive insights" });
+    }
+  });
+
+  // Intelligence Scorecard
+  app.get("/api/workforce/intelligence-scorecard", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { computeIntelligenceScorecard } = await import("./workforce-intelligence-engine");
+      const scorecard = await computeIntelligenceScorecard(orgId);
+      res.json(scorecard);
+    } catch (e: any) {
+      console.error("[workforce/intelligence-scorecard] error:", e);
+      res.status(500).json({ message: "Failed to compute intelligence scorecard" });
+    }
+  });
+
+  // Workforce Memory — GET (list)
+  app.get("/api/workforce/memory", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { orgAiWorkforceMemory } = await import("@shared/schema");
+      const rows = await db.select().from(orgAiWorkforceMemory).where(
+        eq(orgAiWorkforceMemory.orgId, orgId)
+      ).orderBy(orgAiWorkforceMemory.createdAt).catch(() => []);
+      res.json(rows.reverse());
+    } catch (e: any) {
+      console.error("[workforce/memory GET] error:", e);
+      res.status(500).json({ message: "Failed to fetch memory" });
+    }
+  });
+
+  // Workforce Memory — POST (upsert)
+  app.post("/api/workforce/memory", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { memoryType, key, title, summary, outcome, value, context } = req.body;
+      if (!memoryType || !key || !title) return res.status(400).json({ message: "memoryType, key, title required" });
+      const { orgAiWorkforceMemory, orgAiLearningEvents } = await import("@shared/schema");
+
+      // Upsert by (orgId, key)
+      const existing = await db.select().from(orgAiWorkforceMemory).where(
+        and(eq(orgAiWorkforceMemory.orgId, orgId), eq(orgAiWorkforceMemory.key, key))
+      ).catch(() => []);
+
+      let row;
+      if (existing[0]) {
+        [row] = await db.update(orgAiWorkforceMemory).set({
+          outcome, value: value ?? 0, summary, context,
+        }).where(
+          and(eq(orgAiWorkforceMemory.orgId, orgId), eq(orgAiWorkforceMemory.key, key))
+        ).returning();
+      } else {
+        [row] = await db.insert(orgAiWorkforceMemory).values({
+          orgId, memoryType, key, title, summary, outcome, value: value ?? 0, context,
+          expiresAt: new Date(Date.now() + 30 * 86400000), // 30-day TTL
+        }).returning();
+      }
+
+      // Also record a learning event
+      await db.insert(orgAiLearningEvents).values({
+        orgId,
+        eventType: outcome === "accepted" ? "recommendation_accepted" :
+                   outcome === "rejected" ? "recommendation_rejected" : "recommendation_deferred",
+        outcome,
+        score: outcome === "accepted" ? 1 : outcome === "rejected" ? -0.5 : 0,
+        context: { memoryKey: key, memoryType, title },
+      }).catch(() => {});
+
+      res.json(row);
+    } catch (e: any) {
+      console.error("[workforce/memory POST] error:", e);
+      res.status(500).json({ message: "Failed to save to memory" });
+    }
+  });
+
+  // Learning Events — POST (record)
+  app.post("/api/workforce/learning-events", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentId, workflowId, eventType, outcome, score, context } = req.body;
+      if (!eventType) return res.status(400).json({ message: "eventType required" });
+      const { orgAiLearningEvents } = await import("@shared/schema");
+      const [row] = await db.insert(orgAiLearningEvents).values({
+        orgId, agentId, workflowId, eventType, outcome, score: score ?? 0, context,
+      }).returning();
+      res.json(row);
+    } catch (e: any) {
+      console.error("[workforce/learning-events POST] error:", e);
+      res.status(500).json({ message: "Failed to record learning event" });
+    }
+  });
+
+  // Learning Events — GET (list recent)
+  app.get("/api/workforce/learning-events", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { orgAiLearningEvents } = await import("@shared/schema");
+      const { getPeriodStart } = await import("./workforce-attribution-engine");
+      const since = getPeriodStart((req.query.period as string) ?? "30d");
+      const rows = await db.select().from(orgAiLearningEvents).where(
+        and(eq(orgAiLearningEvents.orgId, orgId), gte(orgAiLearningEvents.createdAt, since))
+      ).orderBy(orgAiLearningEvents.createdAt).catch(() => []);
+      res.json(rows.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch learning events" });
+    }
+  });
+
   return httpServer;
 }

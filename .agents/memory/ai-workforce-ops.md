@@ -61,6 +61,28 @@ description: Phase 2+3 backend endpoints, frontend pages, and architectural deci
 | `/admin/ai-workforce/leaderboard` | `admin-ai-workforce-leaderboard.tsx` | 3 |
 | `/admin/ai-workforce/outcomes` | `admin-ai-workforce-outcomes.tsx` | 3 |
 
+## Endpoints (Phase 4)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/workforce/optimization-recommendations` | Evidence-based recs; reads memory to skip rejected items |
+| `GET /api/workforce/business-health` | Composite 0–100 score across 8 components |
+| `GET /api/workforce/forecast?window=` | 7d/30d/90d linear projection (expected/best/worst) |
+| `GET /api/workforce/workflow-effectiveness` | Per-workflow success rate, hours saved, ROI |
+| `GET /api/workforce/executive-insights` | Atlas Q&A: focus today, costs, gains, risks, opportunities |
+| `GET /api/workforce/intelligence-scorecard` | Recommendation acceptance rate, opportunity conversion, etc. |
+| `GET /api/workforce/memory` | Organizational memory list (decisions, outcomes) |
+| `POST /api/workforce/memory` | Upsert memory entry by (orgId, key) — auto-records learning event |
+| `POST /api/workforce/learning-events` | Record learning event |
+| `GET /api/workforce/learning-events` | List recent learning events |
+
+## Pages (Phase 4)
+
+| Route | File |
+|---|---|
+| `/admin/ai-workforce/optimization` | `admin-ai-workforce-optimization.tsx` — 5-tab Strategic Command Center |
+| `/admin/ai-workforce/approvals` | `admin-ai-workforce-approvals.tsx` — Approve/Reject/Defer with memory history |
+
 ## Tables
 
 | Table | Phase | Purpose |
@@ -69,6 +91,8 @@ description: Phase 2+3 backend endpoints, frontend pages, and architectural deci
 | `org_ai_workforce_audit_log` | 2 | Config change history |
 | `org_ai_workforce_outcomes` | 3 | Evidence-based outcome records |
 | `org_ai_opportunities` | 3 | AI-identified opportunities (open/in_progress/resolved/expired) |
+| `org_ai_learning_events` | 4 | Immutable learning signals (accepted/rejected/deferred/success/failure) |
+| `org_ai_workforce_memory` | 4 | Org memory; unique on (org_id, key); 30-day TTL; prevents repeat recs |
 
 ## How to apply
 
