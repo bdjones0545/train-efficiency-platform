@@ -16769,7 +16769,8 @@ Respond with this exact JSON structure:
     }
   });
 
-  // GET /api/workforce/agents — all agents with live stats
+  // GET /api/workforce/agents — all agents with live stats and department filtering
+  // Phase 1: respects enabled_departments from org_ai_workforce_settings
   app.get("/api/workforce/agents", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = req.user.orgId;
@@ -16792,14 +16793,29 @@ Respond with this exact JSON structure:
         if (log.status === "blocked") actionCounts[at].blocked++;
       }
 
-      const agents = identities.map(identity => {
+      // Resolve department-enabled state for all agents in parallel
+      const enabledFlags = await Promise.all(
+        identities.map(identity => storage.isAgentEnabledForOrg(orgId, identity.agentType))
+      );
+
+      const agents = identities.map((identity, idx) => {
         const policy = policyMap.get(identity.agentType);
         const stats = actionCounts[identity.agentType] ?? { total: 0, success: 0, blocked: 0 };
+        const deptEnabled = enabledFlags[idx];
+        const policyEnabled = policy?.enabled ?? true;
+        const isEnabled = deptEnabled && policyEnabled;
+
         return {
           ...identity,
           autonomyMode: policy?.maxAutonomyLevel ?? identity.defaultAutonomyLevel,
           requiresApproval: policy?.requiresApproval ?? false,
-          enabled: policy?.enabled ?? true,
+          enabled: isEnabled,
+          // Surface a clear reason when disabled so the dashboard can explain it
+          disabledReason: !deptEnabled
+            ? "Department not enabled in AI Workforce setup"
+            : !policyEnabled
+              ? "Disabled by governance policy"
+              : undefined,
           recentActions: stats.total,
           successRate: stats.total > 0 ? Math.round((stats.success / stats.total) * 100) : null,
           blockedActions: stats.blocked,
@@ -16856,50 +16872,135 @@ Respond with this exact JSON structure:
   // ─────────────────────────────────────────────────────────────────────────
 
   // POST /api/onboarding/ai-workforce/complete — complete the setup wizard
+  // Phase 1 hardening: persists all selections, seeds governance, validates integrations
   app.post("/api/onboarding/ai-workforce/complete", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { goals, orgPreset, departments, governanceMode, integrations, workflowTemplates } = req.body;
       const orgId = req.user.orgId;
+      const { logUnifiedAction } = await import("./unified-action-logger");
 
-      // Create draft workflow graphs for selected templates
+      const verificationLog: string[] = [];
+      const integrationWarnings: string[] = [];
+
+      // ── 1. Persist all wizard selections ────────────────────────────────────
+      await storage.upsertAiWorkforceSettings(orgId, {
+        goals: Array.isArray(goals) ? goals : [],
+        orgPreset: orgPreset ?? null,
+        enabledDepartments: Array.isArray(departments) ? departments : [],
+        governanceMode: governanceMode ?? "collaborative",
+        selectedIntegrations: Array.isArray(integrations) ? integrations : [],
+        selectedWorkflowTemplates: Array.isArray(workflowTemplates) ? workflowTemplates : [],
+        onboardingCompleted: true,
+        onboardingCompletedAt: new Date(),
+      });
+      verificationLog.push("settings_saved");
+
+      // ── 2. Immediately seed governance policies (do not wait for page visit) ─
+      try {
+        await storage.seedGovernancePoliciesForMode(orgId, governanceMode ?? "collaborative");
+        verificationLog.push("governance_seeded");
+      } catch (govErr: any) {
+        console.error("[onboarding/complete] governance seeding error:", govErr);
+        verificationLog.push("governance_seed_failed");
+      }
+
+      // ── 3. Create workflow graphs for selected templates ────────────────────
       const { BUILT_IN_TEMPLATES } = await import("./workflow-graph-engine");
       const created: string[] = [];
+      const autoPublished: string[] = [];
+
+      // tpl-executive-summary is read-only (no external side effects) — safe to auto-publish
+      const AUTO_PUBLISH_ID = "tpl-executive-summary";
+
       if (Array.isArray(workflowTemplates)) {
         for (const tplId of workflowTemplates) {
           const tpl = BUILT_IN_TEMPLATES.find((t: any) => t.id === tplId);
           if (tpl) {
+            const isAutoPublish = tplId === AUTO_PUBLISH_ID && tpl.riskLevel === "low";
             await storage.createWorkflowGraph({
-              organizationId: orgId,
+              orgId,
               name: tpl.name,
               description: tpl.description,
               category: tpl.category,
-              governanceMode: governanceMode ?? "collaborative",
               riskLevel: tpl.riskLevel ?? "medium",
-              requiresApproval: tpl.requiresApproval ?? true,
-              estimatedComplexity: tpl.estimatedComplexity ?? 50,
+              requiresApproval: isAutoPublish ? false : true,
               graphDefinition: tpl.graphDefinition,
-              published: false,
-              version: 1,
-            });
+              published: isAutoPublish,
+              lastPublishedAt: isAutoPublish ? new Date() : undefined,
+              // Wizard provenance metadata stored in tags jsonb field
+              tags: [
+                "source:ai_workforce_wizard",
+                "selected_during_onboarding:true",
+                `onboarding_governance_mode:${governanceMode ?? "collaborative"}`,
+                "recommended_next_step:review_and_publish",
+                ...(isAutoPublish ? ["auto_published_by_wizard:true"] : []),
+              ],
+              sourceTemplateId: tplId,
+              createdBy: req.user.id,
+            } as any);
             created.push(tpl.name);
+            if (isAutoPublish) autoPublished.push(tpl.name);
           }
         }
       }
+      verificationLog.push("workflows_created");
 
-      // Log onboarding completion
+      // ── 4. Integration status validation (warn but do not block) ──────────
+      const INTEGRATION_LABELS: Record<string, string> = {
+        gmail: "Gmail",
+        google_calendar: "Google Calendar",
+        slack: "Slack",
+        openrouter: "AI Models (OpenRouter)",
+      };
+
+      if (Array.isArray(integrations) && integrations.length > 0) {
+        const connectedIntegrations = await storage.getExternalIntegrations(orgId);
+        const connectedTypes = new Set(
+          connectedIntegrations
+            .filter(i => i.status === "connected")
+            .map(i => i.integrationType)
+        );
+        for (const intType of integrations) {
+          if (!connectedTypes.has(intType)) {
+            const label = INTEGRATION_LABELS[intType] ?? intType;
+            integrationWarnings.push(`${label} selected but not connected — configure it in Integration settings`);
+          }
+        }
+      }
+      if (integrationWarnings.length > 0) {
+        verificationLog.push("integration_warnings_generated");
+      }
+
+      // ── 5. Verification audit log ──────────────────────────────────────────
       try {
-        const { logUnifiedAction } = await import("./unified-action-logger");
         await logUnifiedAction({
-          orgId, agentType: "system_agent",
+          orgId,
+          agentType: "system_agent",
           actionType: "onboarding_completed",
           status: "success",
-          summary: `AI Workforce setup wizard completed — ${departments?.length ?? 0} depts, ${governanceMode} governance, ${created.length} workflows created`,
-          metadata: { goals, orgPreset, departments, governanceMode, integrations, workflowsCreated: created },
+          summary: `AI Workforce wizard completed — ${departments?.length ?? 0} depts enabled, ${governanceMode} governance seeded, ${created.length} workflows created (${autoPublished.length} auto-published)`,
+          metadata: {
+            goals,
+            orgPreset,
+            departments,
+            governanceMode,
+            integrations,
+            workflowsCreated: created,
+            autoPublished,
+            integrationWarnings,
+            verificationLog,
+          },
           triggeredBy: req.user.id,
         });
       } catch {}
 
-      res.json({ success: true, workflowsCreated: created });
+      res.json({
+        success: true,
+        workflowsCreated: created,
+        autoPublished,
+        integrationWarnings,
+        verificationLog,
+      });
     } catch (e: any) {
       console.error("[onboarding/complete] error:", e);
       res.status(500).json({ message: "Onboarding completion failed" });

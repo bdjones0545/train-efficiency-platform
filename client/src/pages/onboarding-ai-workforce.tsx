@@ -70,9 +70,9 @@ const GOVERNANCE_MODES = [
     id: "conservative",
     label: "Conservative",
     sub: "Maximum oversight",
-    desc: "Every AI action requires your approval before it executes. Perfect for new organizations building trust with AI.",
+    desc: "External AI actions (emails, bookings, payments) require your approval. Read-only and research actions run automatically.",
     badge: "bg-green-100 text-green-700",
-    features: ["All actions require approval", "Maximum visibility", "Zero unexpected actions", "Ideal for getting started"],
+    features: ["Approval rules configured on save", "External actions need approval", "Research & briefings run freely", "Ideal for getting started"],
     internalMode: "supervised",
     icon: Shield,
     color: "border-green-400",
@@ -132,7 +132,7 @@ function StepWelcome() {
       </div>
 
       <div>
-        <h2 className="text-2xl font-bold">Meet Your AI Workforce</h2>
+        <h2 className="text-2xl font-bold">Set up your AI Workforce preferences</h2>
         <p className="text-muted-foreground mt-2 text-base leading-relaxed">
           TrainEfficiency comes with a team of specialized AI agents — each designed to handle
           a specific part of running your coaching business.
@@ -143,7 +143,7 @@ function StepWelcome() {
         {[
           { icon: Users, title: "Specialized Agents", desc: "Each AI agent has a specific role — like email, scheduling, or lead research" },
           { icon: Shield, title: "Governance Protected", desc: "You decide what AI can do autonomously and what requires your approval first" },
-          { icon: Zap, title: "Always Explainable", desc: "Every AI action is logged, explainable, and reversible" },
+          { icon: Zap, title: "Always Explainable", desc: "Every AI action is logged, explainable, and governed by your organization's approval settings" },
         ].map(item => (
           <div key={item.title} className="rounded-xl border p-4 bg-card space-y-2">
             <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -157,7 +157,7 @@ function StepWelcome() {
 
       <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
         <Shield className="h-3.5 w-3.5 text-green-500" />
-        <span>Your data never leaves your organization. All AI runs within your governance boundaries.</span>
+        <span>AI actions are logged and governed by your organization's approval settings.</span>
       </div>
     </div>
   );
@@ -234,6 +234,8 @@ function StepOrgPreset({ selected, onSelect }: { selected: string; onSelect: (id
 }
 
 function StepDepartments({ selected, onToggle, goals }: { selected: string[]; onToggle: (id: string) => void; goals: string[] }) {
+  // NOTE: department selection is persisted to org_ai_workforce_settings.enabled_departments
+  // and used by isAgentEnabledForOrg() to filter the workforce dashboard agent roster.
   const recommended = DEPARTMENTS.filter(d => {
     if (goals.includes("communication") || goals.includes("onboarding")) return true;
     if (goals.includes("leads") || goals.includes("research")) return d.id === "growth" || d.id === "research";
@@ -246,8 +248,8 @@ function StepDepartments({ selected, onToggle, goals }: { selected: string[]; on
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold">Enable AI departments</h2>
-        <p className="text-sm text-muted-foreground mt-1">Each department contains specialized agents. Enable the ones you need.</p>
+        <h2 className="text-xl font-bold">Choose which AI departments you want active</h2>
+        <p className="text-sm text-muted-foreground mt-1">Each department contains specialized agents. Select the ones relevant to your business — you can change this later.</p>
       </div>
       <div className="space-y-3">
         {DEPARTMENTS.map(dept => {
@@ -341,8 +343,8 @@ function StepIntegrations({ selected, onToggle }: { selected: string[]; onToggle
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold">Connect your tools</h2>
-        <p className="text-sm text-muted-foreground mt-1">Integrations can be configured in detail later. Select what you want to enable.</p>
+        <h2 className="text-xl font-bold">Choose tools to connect next</h2>
+        <p className="text-sm text-muted-foreground mt-1">Select the integrations you plan to set up. You'll configure credentials in the Integrations settings after finishing this wizard.</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {INTEGRATIONS.map(int => {
@@ -370,7 +372,7 @@ function StepIntegrations({ selected, onToggle }: { selected: string[]; onToggle
       </div>
       <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
         <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        <span>Integration credentials are stored securely and never shared across organizations. You can configure each in detail from the Integrations settings page.</span>
+        <span>Your selections are saved so we can prompt you to complete each connection. Credentials are configured separately in Integration settings and are never shared across organizations.</span>
       </div>
     </div>
   );
@@ -506,9 +508,9 @@ function StepReview({ state }: { state: WizardState }) {
       <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
         <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Ready to activate</p>
+          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Ready to save</p>
           <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
-            Your AI workforce will be configured with the settings above. All workflows start as drafts — nothing runs until you publish them.
+            Your preferences will be saved and governance rules applied. Starter workflows are created as drafts — you review and publish them when ready. Selected integrations will show as pending setup in your dashboard.
           </p>
         </div>
       </div>
@@ -580,13 +582,43 @@ export default function OnboardingAiWorkforcePage() {
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: {
+      success: boolean;
+      workflowsCreated: string[];
+      autoPublished: string[];
+      integrationWarnings: string[];
+      verificationLog: string[];
+    }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/workforce/agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/workflow-graphs"] });
-      toast({ title: "AI Workforce activated!", description: "Your team is ready. Workflows created as drafts." });
+      queryClient.invalidateQueries({ queryKey: ["/api/governance/settings"] });
+
+      // Primary success toast — truthful about what actually happened
+      const workflowMsg = data.workflowsCreated?.length
+        ? `${data.workflowsCreated.length} starter workflow${data.workflowsCreated.length > 1 ? "s" : ""} created as drafts.`
+        : "No workflows selected.";
+      const autoMsg = data.autoPublished?.length
+        ? ` Daily Executive Summary was auto-published.`
+        : "";
+      toast({
+        title: "AI Workforce setup saved.",
+        description: `${workflowMsg}${autoMsg} Governance rules applied.`,
+      });
+
+      // Secondary warning toast for unconnected integrations
+      if (data.integrationWarnings?.length) {
+        setTimeout(() => {
+          toast({
+            title: "Integration setup needed",
+            description: data.integrationWarnings.join(" · "),
+            variant: "destructive",
+          });
+        }, 800);
+      }
+
       navigate("/admin/ai-workforce");
     },
-    onError: () => toast({ title: "Launch failed — please try again", variant: "destructive" }),
+    onError: () => toast({ title: "Setup failed — please try again", variant: "destructive" }),
   });
 
   const pct = Math.round(((stepIdx + 1) / STEPS.length) * 100);
@@ -677,7 +709,7 @@ export default function OnboardingAiWorkforcePage() {
                 disabled={launchMutation.isPending}
                 data-testid="button-launch-workforce"
               >
-                {launchMutation.isPending ? "Activating…" : (<><Zap className="h-4 w-4" />Activate Workforce</>)}
+                {launchMutation.isPending ? "Saving…" : (<><Zap className="h-4 w-4" />Save & Continue</>)}
               </Button>
             ) : (
               <Button

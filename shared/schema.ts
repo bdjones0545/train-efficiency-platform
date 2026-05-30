@@ -3829,3 +3829,49 @@ export const workflowExecutionLogs = pgTable("workflow_execution_logs", {
 export const insertWorkflowExecutionLogSchema = createInsertSchema(workflowExecutionLogs).omit({ id: true, createdAt: true });
 export type WorkflowExecutionLog = typeof workflowExecutionLogs.$inferSelect;
 export type InsertWorkflowExecutionLog = z.infer<typeof insertWorkflowExecutionLogSchema>;
+
+// ─── Org AI Workforce Settings ────────────────────────────────────────────────
+// Persists every wizard selection from the AI Workforce Setup Wizard.
+// One row per org. Written on wizard completion, read by workforce agents
+// to determine enabled departments, governance mode, and selected integrations.
+// Future use: goals + orgPreset will drive recommended workflows, agent
+// prioritization, business intelligence, and onboarding personalization.
+
+export const orgAiWorkforceSettings = pgTable("org_ai_workforce_settings", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull().unique(),
+
+  // Goals selected in step 2 (leads, retention, scheduling, admin, etc.)
+  // Future: drive recommended workflow priorities and agent focus areas
+  goals: jsonb("goals").default([]),
+
+  // Org type preset selected in step 3 (private_trainer, performance_facility, etc.)
+  // Future: personalize onboarding prompts, report templates, and AI recommendations
+  orgPreset: text("org_preset"),
+
+  // Departments the operator chose to activate (communications, scheduling, etc.)
+  // Runtime: used by isAgentEnabledForOrg to filter which agents appear active
+  enabledDepartments: jsonb("enabled_departments").default([]),
+
+  // Internal governance mode string (supervised | collaborative | autonomous)
+  // Mirrors org_ai_governance_settings.default_autonomy_mode after being seeded
+  governanceMode: text("governance_mode").notNull().default("collaborative"),
+
+  // Integration types the operator indicated interest in (gmail, slack, etc.)
+  // Currently informational — will drive integration setup prompts
+  selectedIntegrations: jsonb("selected_integrations").default([]),
+
+  // Template IDs the operator selected (tpl-onboarding, tpl-retention, etc.)
+  selectedWorkflowTemplates: jsonb("selected_workflow_templates").default([]),
+
+  // Completion state
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+  onboardingCompletedAt: timestamp("onboarding_completed_at"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrgAiWorkforceSettingsSchema = createInsertSchema(orgAiWorkforceSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrgAiWorkforceSettings = typeof orgAiWorkforceSettings.$inferSelect;
+export type InsertOrgAiWorkforceSettings = z.infer<typeof insertOrgAiWorkforceSettingsSchema>;

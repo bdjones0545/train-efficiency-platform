@@ -1,0 +1,196 @@
+Implement Phase 1 of the AI Workforce Setup Wizard hardening.
+
+Goal:
+Make the AI Workforce Setup Wizard operational by persisting wizard selections and enforcing them in runtime behavior.
+
+Do not redesign the UI yet. Focus only on backend wiring, database persistence, and runtime effects.
+
+Required changes:
+
+1. Persist wizard completion state
+Create or extend an org-level AI workforce settings table.
+
+Suggested table:
+org_ai_workforce_settings
+
+Columns:
+- id
+- org_id
+- goals jsonb
+- org_preset text
+- enabled_departments jsonb
+- governance_mode text
+- selected_integrations jsonb
+- selected_workflow_templates jsonb
+- onboarding_completed boolean
+- onboarding_completed_at timestamp
+- created_at
+- updated_at
+
+If an equivalent table already exists, use it instead.
+
+2. Update POST /api/onboarding/ai-workforce/complete
+
+Currently the route creates draft workflow_graphs and logs completion.
+
+Update it to also:
+- Upsert org_ai_workforce_settings for the current org
+- Save goals
+- Save orgPreset
+- Save departments
+- Save governanceMode
+- Save selected integrations
+- Save selected workflow templates
+- Set onboarding_completed = true
+- Set onboarding_completed_at = now()
+
+3. Wire governance mode into the existing governance system
+
+When wizard submits governanceMode:
+
+- Immediately seed or update agent_capability_policies for the org
+- Do not wait for the admin to visit /admin/governance
+- Map governance modes as follows:
+
+conservative:
+- All external actions require approval
+- No autonomous emails
+- No autonomous bookings
+- No autonomous payment actions
+- Research and read-only briefings allowed
+
+collaborative / balanced:
+- Read-only actions allowed
+- Draft recommendations allowed
+- Emails require approval
+- Bookings require approval unless initiated by a coach/admin
+- Payment actions require approval
+
+advanced:
+- Read-only actions allowed
+- Low-risk communications allowed
+- Scheduling actions allowed within safe constraints
+- Payment actions still require approval
+- High-risk actions require approval
+
+Use the existing agent_capability_policies schema and autonomy policy engine. If exact columns differ, map to the closest existing fields and document the mapping in comments.
+
+4. Persist enabled departments
+
+The departments selected in the wizard should affect which agents appear active.
+
+Create a helper function:
+
+isAgentEnabledForOrg(orgId, agentId)
+
+It should check:
+- org_ai_workforce_settings.enabled_departments
+- the agent's department from agent-identities.ts
+- hidden/system agents should remain available internally but not appear as enabled user-facing departments unless explicitly surfaced
+
+Update /api/workforce/agents so agents from disabled departments show as:
+- enabled: false
+- status: "disabled"
+- disabledReason: "Department not enabled in AI Workforce setup"
+
+Do not break internal system agents.
+
+5. Persist goals and orgPreset for future intelligence
+
+Store goals and orgPreset now even if they are not used yet.
+
+Add comments explaining these will be used later for:
+- recommended workflows
+- agent prioritization
+- business intelligence
+- onboarding personalization
+
+6. Improve workflow creation behavior
+
+Currently selected workflow templates create draft workflow_graphs.
+
+Keep drafts by default, but add metadata:
+- source: "ai_workforce_wizard"
+- selectedDuringOnboarding: true
+- onboardingGovernanceMode
+- recommendedNextStep: "review_and_publish"
+
+Do not auto-publish risky workflows yet.
+
+However, if there is a read-only executive-summary template with no external side effects, auto-publish that one only and mark it as:
+published: true
+autoPublishedByWizard: true
+
+7. Add integration status validation
+
+Do not make the integration step fully functional yet.
+
+But update the backend route so it checks selected integrations against actual connection status.
+
+Return warnings like:
+- Gmail selected but not connected
+- Google Calendar selected but not connected
+- Slack selected but not connected
+- OpenRouter selected but not connected
+
+Do not block completion yet.
+Include warnings in the response.
+
+8. Update frontend success toast / post-submit behavior
+
+After successful activation, show a more truthful toast:
+
+"AI Workforce setup saved. Starter workflows were created as drafts."
+
+If there are integration warnings, show them in a follow-up warning toast or visible post-launch checklist.
+
+9. Remove misleading runtime claims
+
+Do a copy audit only in onboarding-ai-workforce.tsx.
+
+Replace misleading claims:
+
+"Your AI Workforce is ready to launch"
+with:
+"Set up your AI Workforce preferences"
+
+"Connect your tools"
+with:
+"Choose tools to connect next"
+
+"Enable AI departments"
+with:
+"Choose which AI departments you want active"
+
+"Your data never leaves your organization"
+with:
+"AI actions are logged and governed by your organization's approval settings"
+
+"All actions require approval"
+with:
+"Approval rules will be configured based on your governance mode"
+
+10. Add verification logs
+
+When onboarding completes, log:
+- settings_saved
+- governance_seeded
+- workflows_created
+- integration_warnings_generated
+
+Use unified_agent_action_log.
+
+11. Final verification
+
+After implementation, provide:
+
+A. Files changed
+B. Database tables/migrations added or changed
+C. Exact behavior before vs after
+D. Test results
+E. Any remaining gaps
+
+Do not implement marketplace features yet.
+Do not redesign the dashboard yet.
+Do not remove existing agent services.
+This phase is only to make the existing wizard truthfully operational.

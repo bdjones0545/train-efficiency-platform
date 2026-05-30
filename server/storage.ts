@@ -155,6 +155,9 @@ import {
   workflowExecutionLogs,
   type WorkflowExecutionLog,
   type InsertWorkflowExecutionLog,
+  orgAiWorkforceSettings,
+  type OrgAiWorkforceSettings,
+  type InsertOrgAiWorkforceSettings,
 } from "@shared/schema";
 import type { User } from "@shared/models/auth";
 import { passwordResetTokens } from "@shared/models/auth";
@@ -574,6 +577,12 @@ export interface IStorage {
     collisions: number;
     events: import("@shared/schema").EmailTriggerEvent[];
   }>;
+
+  // AI Workforce Settings
+  getAiWorkforceSettings(orgId: string): Promise<OrgAiWorkforceSettings | null>;
+  upsertAiWorkforceSettings(orgId: string, data: Partial<InsertOrgAiWorkforceSettings>): Promise<OrgAiWorkforceSettings>;
+  isAgentEnabledForOrg(orgId: string, agentType: string): Promise<boolean>;
+  seedGovernancePoliciesForMode(orgId: string, governanceMode: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4189,6 +4198,205 @@ export class DatabaseStorage implements IStorage {
           createdBy: "system",
         });
       }
+    }
+  }
+
+  // ─── AI Workforce Settings ─────────────────────────────────────────────────
+
+  async getAiWorkforceSettings(orgId: string): Promise<OrgAiWorkforceSettings | null> {
+    const [row] = await db.select().from(orgAiWorkforceSettings)
+      .where(eq(orgAiWorkforceSettings.orgId, orgId));
+    return row ?? null;
+  }
+
+  async upsertAiWorkforceSettings(orgId: string, data: Partial<InsertOrgAiWorkforceSettings>): Promise<OrgAiWorkforceSettings> {
+    const existing = await this.getAiWorkforceSettings(orgId);
+    if (existing) {
+      const [row] = await db.update(orgAiWorkforceSettings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(orgAiWorkforceSettings.orgId, orgId))
+        .returning();
+      return row;
+    }
+    const [row] = await db.insert(orgAiWorkforceSettings)
+      .values({ id: crypto.randomUUID(), orgId, ...data })
+      .returning();
+    return row;
+  }
+
+  /**
+   * Returns true if the agent's department was selected in the wizard.
+   * System-internal agents (system_agent, workflow_agent) are always enabled
+   * regardless of department settings, since they underpin the platform itself.
+   * If the org has not completed onboarding, all agents are enabled by default.
+   */
+  async isAgentEnabledForOrg(orgId: string, agentType: string): Promise<boolean> {
+    const { AGENT_IDENTITIES } = await import("./agent-identities");
+
+    // Internal/system agents always enabled
+    const ALWAYS_ENABLED = ["system_agent", "workflow_agent"];
+    if (ALWAYS_ENABLED.includes(agentType)) return true;
+
+    const settings = await this.getAiWorkforceSettings(orgId);
+
+    // If onboarding not completed, default all agents to enabled
+    if (!settings || !settings.onboardingCompleted) return true;
+
+    const enabledDepts = (settings.enabledDepartments as string[]) ?? [];
+    // If departments array is empty or malformed, default to enabled
+    if (!Array.isArray(enabledDepts) || enabledDepts.length === 0) return true;
+
+    const identity = Object.values(AGENT_IDENTITIES).find(i => i.agentType === agentType);
+    if (!identity) return true;
+
+    // Map agent departments → wizard department IDs
+    // agent-identities.ts uses full department names; wizard uses short IDs
+    const DEPT_MAP: Record<string, string[]> = {
+      "Client Communications": ["communications"],
+      "Operations":            ["scheduling"],
+      "Client Success":        ["retention"],
+      "Revenue Operations":    ["growth"],
+      "Intelligence":          ["research"],
+      "Executive Intelligence":["executive"],
+      "Finance":               ["finance"],
+      "Infrastructure":        [],   // system-level, handled by ALWAYS_ENABLED
+    };
+
+    const wizardDeptIds = DEPT_MAP[identity.department] ?? [];
+    if (wizardDeptIds.length === 0) return true; // unmapped → enabled by default
+
+    return wizardDeptIds.some(d => enabledDepts.includes(d));
+  }
+
+  /**
+   * Seeds or updates agent_capability_policies + org_ai_governance_settings
+   * based on the wizard's governance mode selection.
+   *
+   * Mode mapping:
+   *   conservative / supervised:
+   *     - All external actions require approval
+   *     - No autonomous emails, bookings, or payment actions
+   *     - Read-only and research actions are allowed
+   *   collaborative (balanced):
+   *     - Read-only actions are auto-approved
+   *     - Drafting recommendations is allowed
+   *     - Emails and bookings require explicit approval
+   *     - Payment actions always require approval
+   *   autonomous (advanced):
+   *     - Low-risk communications allowed autonomously
+   *     - Scheduling within safe constraints allowed
+   *     - Payment actions still require approval
+   *     - High-risk actions require approval
+   */
+  async seedGovernancePoliciesForMode(orgId: string, governanceMode: string): Promise<void> {
+    const { AGENT_IDENTITIES } = await import("./agent-identities");
+
+    // Map wizard governance mode → org governance settings fields
+    const GOV_SETTINGS: Record<string, Partial<InsertOrgAiGovernanceSettings>> = {
+      supervised: {
+        defaultAutonomyMode: "supervised",
+        maximumAllowedRiskLevel: "low",
+        defaultConfidenceThreshold: 0.85,
+        operatorReviewRequired: true,
+        allowAutonomousCommunication: false,
+        allowAutonomousScheduling: false,
+        allowAutonomousFinancialActions: false,
+        allowResearchAgents: true,
+        allowExternalWebAccess: false,
+        strictModeEnabled: true,
+      },
+      collaborative: {
+        defaultAutonomyMode: "collaborative",
+        maximumAllowedRiskLevel: "medium",
+        defaultConfidenceThreshold: 0.75,
+        operatorReviewRequired: false,
+        allowAutonomousCommunication: false,   // emails still need approval
+        allowAutonomousScheduling: false,      // bookings still need approval
+        allowAutonomousFinancialActions: false,
+        allowResearchAgents: true,
+        allowExternalWebAccess: true,
+        strictModeEnabled: false,
+      },
+      autonomous: {
+        defaultAutonomyMode: "autonomous",
+        maximumAllowedRiskLevel: "high",
+        defaultConfidenceThreshold: 0.70,
+        operatorReviewRequired: false,
+        allowAutonomousCommunication: true,
+        allowAutonomousScheduling: true,
+        allowAutonomousFinancialActions: false, // payment actions always require approval
+        allowResearchAgents: true,
+        allowExternalWebAccess: true,
+        strictModeEnabled: false,
+      },
+    };
+
+    const govSettings = GOV_SETTINGS[governanceMode] ?? GOV_SETTINGS.collaborative;
+
+    // Upsert org-level governance settings
+    await this.upsertGovernanceSettings(orgId, govSettings);
+
+    // Per-agent policy overrides keyed by governance mode
+    // Maps: agentType → { requiresApproval, maxAutonomyLevel, allowedRiskLevels }
+    const AGENT_OVERRIDES: Record<string, Record<string, {
+      requiresApproval: boolean;
+      maxAutonomyLevel: string;
+      allowedRiskLevels: string[];
+      requiresHumanReview: boolean;
+    }>> = {
+      supervised: {
+        executive_agent:     { requiresApproval: false, maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: false },
+        research_agent:      { requiresApproval: false, maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: false },
+        retention_agent:     { requiresApproval: true,  maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: true },
+        growth_agent:        { requiresApproval: true,  maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: true },
+        scheduling_agent:    { requiresApproval: true,  maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: true },
+        communication_agent: { requiresApproval: true,  maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: true },
+        finance_agent:       { requiresApproval: true,  maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: true },
+        workflow_agent:      { requiresApproval: false, maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: false },
+        system_agent:        { requiresApproval: false, maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: false },
+      },
+      collaborative: {
+        executive_agent:     { requiresApproval: false, maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        research_agent:      { requiresApproval: false, maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        retention_agent:     { requiresApproval: true,  maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        growth_agent:        { requiresApproval: true,  maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        scheduling_agent:    { requiresApproval: true,  maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        communication_agent: { requiresApproval: true,  maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        finance_agent:       { requiresApproval: true,  maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low"], requiresHumanReview: true },
+        workflow_agent:      { requiresApproval: false, maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        system_agent:        { requiresApproval: false, maxAutonomyLevel: "collaborative", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+      },
+      autonomous: {
+        executive_agent:     { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium", "high"], requiresHumanReview: false },
+        research_agent:      { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium", "high"], requiresHumanReview: false },
+        retention_agent:     { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        growth_agent:        { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        scheduling_agent:    { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        communication_agent: { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium"], requiresHumanReview: false },
+        finance_agent:       { requiresApproval: true,  maxAutonomyLevel: "supervised", allowedRiskLevels: ["low"], requiresHumanReview: true }, // always supervised
+        workflow_agent:      { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium", "high"], requiresHumanReview: false },
+        system_agent:        { requiresApproval: false, maxAutonomyLevel: "autonomous", allowedRiskLevels: ["low", "medium", "high"], requiresHumanReview: false },
+      },
+    };
+
+    const overrides = AGENT_OVERRIDES[governanceMode] ?? AGENT_OVERRIDES.collaborative;
+
+    for (const identity of Object.values(AGENT_IDENTITIES)) {
+      const override = overrides[identity.agentType];
+      if (!override) continue;
+      await this.upsertCapabilityPolicy(orgId, identity.agentType, {
+        capabilityName: identity.role,
+        capabilityCategory: identity.toolCategories[0] ?? "internal",
+        enabled: true,
+        requiresApproval: override.requiresApproval,
+        maxAutonomyLevel: override.maxAutonomyLevel,
+        minimumConfidenceScore: govSettings.defaultConfidenceThreshold ?? 0.75,
+        allowedRiskLevels: override.allowedRiskLevels,
+        requiresHumanReview: override.requiresHumanReview,
+        escalationRequired: false,
+        notes: `Seeded by AI Workforce wizard — governance mode: ${governanceMode}`,
+        createdBy: "wizard",
+      });
     }
   }
 }
