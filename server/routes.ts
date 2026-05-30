@@ -20089,6 +20089,260 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Phase 5: Autonomous Execution & Closed-Loop Optimization ───────────────
+
+  // List execution plans
+  app.get("/api/workforce/executions", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { orgAiExecutionPlans } = await import("@shared/schema");
+      const plans = await db.select().from(orgAiExecutionPlans).where(
+        eq(orgAiExecutionPlans.orgId, orgId)
+      ).orderBy(orgAiExecutionPlans.createdAt).catch(() => []);
+      res.json(plans.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch execution plans" });
+    }
+  });
+
+  // Create execution plan from recommendation
+  app.post("/api/workforce/executions", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const rec = req.body;
+      if (!rec.title && !rec.id) return res.status(400).json({ message: "Recommendation data required" });
+      const { createExecutionPlan, seedDefaultApprovalRules } = await import("./workforce-execution-engine");
+      await seedDefaultApprovalRules(orgId);
+      const plan = await createExecutionPlan(orgId, {
+        recommendationId: rec.id ?? "manual",
+        title: rec.title ?? "Manual execution plan",
+        category: rec.category ?? "operations",
+        agentResponsible: rec.agentResponsible ?? "executive_agent",
+        priority: rec.priority ?? "medium",
+        estimatedImpactValue: rec.estimatedImpactValue ?? 0,
+        requiresApproval: rec.requiresApproval ?? true,
+        recommendation: rec.recommendation ?? rec.title ?? "",
+        evidence: rec.evidence ?? [],
+      });
+      res.json(plan);
+    } catch (e: any) {
+      console.error("[workforce/executions POST] error:", e);
+      res.status(500).json({ message: "Failed to create execution plan" });
+    }
+  });
+
+  // Approve or reject execution plan
+  app.patch("/api/workforce/executions/:id", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { id } = req.params;
+      const { action, notes } = req.body;
+      if (!action) return res.status(400).json({ message: "action required (approve|reject)" });
+      const { approveExecutionPlan } = await import("./workforce-execution-engine");
+      const plan = await approveExecutionPlan(id, orgId, action === "approve" ? "approved" : "rejected", notes);
+      res.json(plan);
+    } catch (e: any) {
+      console.error("[workforce/executions PATCH] error:", e);
+      res.status(500).json({ message: e.message ?? "Failed to update execution plan" });
+    }
+  });
+
+  // Execute an approved plan
+  app.post("/api/workforce/executions/:id/run", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { id } = req.params;
+      const { executeApprovedPlan } = await import("./workforce-execution-engine");
+      const plan = await executeApprovedPlan(id, orgId);
+      res.json(plan);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message ?? "Failed to execute plan" });
+    }
+  });
+
+  // Simulate execution (dry run — no real actions)
+  app.post("/api/workforce/simulate", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const rec = req.body;
+      const { simulateExecution } = await import("./workforce-execution-engine");
+      const result = await simulateExecution(orgId, {
+        recommendationId: rec.id ?? "manual",
+        title: rec.title ?? "",
+        category: rec.category ?? "operations",
+        agentResponsible: rec.agentResponsible ?? "executive_agent",
+        priority: rec.priority ?? "medium",
+        estimatedImpactValue: rec.estimatedImpactValue ?? 0,
+        requiresApproval: rec.requiresApproval ?? true,
+        recommendation: rec.recommendation ?? "",
+        evidence: rec.evidence ?? [],
+      });
+      res.json(result);
+    } catch (e: any) {
+      console.error("[workforce/simulate] error:", e);
+      res.status(500).json({ message: "Simulation failed" });
+    }
+  });
+
+  // Trust Score
+  app.get("/api/workforce/trust", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { computeTrustScore } = await import("./workforce-execution-engine");
+      const trust = await computeTrustScore(orgId);
+      res.json(trust);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute trust score" });
+    }
+  });
+
+  // Agent Performance Reviews
+  app.get("/api/workforce/performance-reviews", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { computePerformanceReviews } = await import("./workforce-execution-engine");
+      const reviews = await computePerformanceReviews(orgId);
+      res.json(reviews);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute performance reviews" });
+    }
+  });
+
+  // COO Dashboard
+  app.get("/api/workforce/coo-dashboard", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { computeCOODashboard } = await import("./workforce-execution-engine");
+      const dashboard = await computeCOODashboard(orgId);
+      res.json(dashboard);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute COO dashboard" });
+    }
+  });
+
+  // Approval Rules — GET
+  app.get("/api/workforce/approval-rules", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { orgAiApprovalRules } = await import("@shared/schema");
+      const { seedDefaultApprovalRules } = await import("./workforce-execution-engine");
+      await seedDefaultApprovalRules(orgId);
+      const rules = await db.select().from(orgAiApprovalRules).where(
+        eq(orgAiApprovalRules.orgId, orgId)
+      ).catch(() => []);
+      res.json(rules);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch approval rules" });
+    }
+  });
+
+  // Approval Rules — PUT (update a rule)
+  app.put("/api/workforce/approval-rules/:id", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { id } = req.params;
+      const { requiresApproval, autoApprove, approvalThreshold } = req.body;
+      const { orgAiApprovalRules } = await import("@shared/schema");
+      const [updated] = await db.update(orgAiApprovalRules).set({
+        requiresApproval, autoApprove, approvalThreshold, updatedAt: new Date(),
+      }).where(and(eq(orgAiApprovalRules.id, id), eq(orgAiApprovalRules.orgId, orgId))).returning();
+      res.json(updated ?? { message: "Rule not found" });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to update approval rule" });
+    }
+  });
+
+  // Experiments — GET
+  app.get("/api/workforce/experiments", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { orgAiExperiments } = await import("@shared/schema");
+      const experiments = await db.select().from(orgAiExperiments).where(
+        eq(orgAiExperiments.orgId, orgId)
+      ).orderBy(orgAiExperiments.createdAt).catch(() => []);
+      res.json(experiments.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch experiments" });
+    }
+  });
+
+  // Experiments — POST
+  app.post("/api/workforce/experiments", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { name, description, agentId, workflowId, experimentType, variantA, variantB } = req.body;
+      if (!name || !experimentType) return res.status(400).json({ message: "name and experimentType required" });
+      const { orgAiExperiments } = await import("@shared/schema");
+      const [exp] = await db.insert(orgAiExperiments).values({
+        orgId, name, description, agentId, workflowId, experimentType,
+        variantA, variantB, status: "pending", startedAt: new Date(),
+      }).returning();
+      res.json(exp);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to create experiment" });
+    }
+  });
+
+  // Workflow Optimization Recommendations — GET
+  app.get("/api/workforce/workflow-optimization", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { workflowOptimizationRecs } = await import("@shared/schema");
+      const { analyzeExecutionHistory } = await import("./workforce-learning-engine");
+      await analyzeExecutionHistory(orgId); // generates new recs as side effect
+      const recs = await db.select().from(workflowOptimizationRecs).where(
+        eq(workflowOptimizationRecs.orgId, orgId)
+      ).orderBy(workflowOptimizationRecs.createdAt).catch(() => []);
+      res.json(recs.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch workflow optimization recommendations" });
+    }
+  });
+
+  // Learning Improvements (self-improvement loop)
+  app.get("/api/workforce/learning-improvements", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { analyzeExecutionHistory, computeLearningInsights } = await import("./workforce-learning-engine");
+      const [opportunities, insights] = await Promise.all([
+        analyzeExecutionHistory(orgId),
+        computeLearningInsights(orgId),
+      ]);
+      res.json({ opportunities, insights });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute learning improvements" });
+    }
+  });
+
+  // Governance recommendations (based on trust)
+  app.get("/api/workforce/governance-recommendations", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { computeTrustScore } = await import("./workforce-execution-engine");
+      const { generateGovernanceRecommendations } = await import("./workforce-learning-engine");
+      const trust = await computeTrustScore(orgId);
+      const recs = await generateGovernanceRecommendations(orgId, trust.overall, trust.tier);
+      res.json({ trust, recommendations: recs });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to generate governance recommendations" });
+    }
+  });
+
   // ─── Phase 4: Intelligence, Optimization & Self-Improvement ──────────────────
 
   // Optimization Recommendations

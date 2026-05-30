@@ -3969,3 +3969,105 @@ export const orgAiWorkforceMemory = pgTable("org_ai_workforce_memory", {
   expiresAt: timestamp("expires_at"),
 });
 export type OrgAiWorkforceMemory = typeof orgAiWorkforceMemory.$inferSelect;
+
+// ─── Execution Plans ─────────────────────────────────────────────────────────
+// Source of truth for every approved workforce action.
+// executionStatus: draft | awaiting_approval | approved | executing | completed | failed | cancelled
+// approvalStatus:  pending | approved | rejected | auto_approved
+// riskLevel:       low | medium | high | critical
+export const orgAiExecutionPlans = pgTable("org_ai_execution_plans", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentId: text("agent_id"),
+  recommendationId: text("recommendation_id"),
+  title: text("title").notNull(),
+  executionType: text("execution_type").notNull(),
+  executionStatus: text("execution_status").notNull().default("draft"),
+  approvalStatus: text("approval_status").notNull().default("pending"),
+  riskLevel: text("risk_level").notNull().default("low"),
+  estimatedValue: doublePrecision("estimated_value").default(0),
+  actualValue: doublePrecision("actual_value"),
+  executionSteps: jsonb("execution_steps"),
+  auditTrail: jsonb("audit_trail"),
+  notes: text("notes"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type OrgAiExecutionPlan = typeof orgAiExecutionPlans.$inferSelect;
+
+// ─── Approval Rules ───────────────────────────────────────────────────────────
+// Governs which agent actions can auto-execute vs require human approval.
+export const orgAiApprovalRules = pgTable("org_ai_approval_rules", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentId: text("agent_id"),
+  riskLevel: text("risk_level").notNull(),
+  actionType: text("action_type"),
+  requiresApproval: boolean("requires_approval").notNull().default(true),
+  autoApprove: boolean("auto_approve").notNull().default(false),
+  approvalThreshold: doublePrecision("approval_threshold").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type OrgAiApprovalRule = typeof orgAiApprovalRules.$inferSelect;
+
+// ─── Experiments ─────────────────────────────────────────────────────────────
+// A/B testing framework for workflows, messages, and cadences.
+// status: running | completed | cancelled | pending
+// winner: a | b | tie | inconclusive
+export const orgAiExperiments = pgTable("org_ai_experiments", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  agentId: text("agent_id"),
+  workflowId: text("workflow_id"),
+  experimentType: text("experiment_type").notNull(),
+  status: text("status").notNull().default("pending"),
+  variantA: jsonb("variant_a"),
+  variantB: jsonb("variant_b"),
+  variantAMetrics: jsonb("variant_a_metrics"),
+  variantBMetrics: jsonb("variant_b_metrics"),
+  winner: text("winner"),
+  confidence: doublePrecision("confidence").default(0),
+  learningEvents: jsonb("learning_events"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type OrgAiExperiment = typeof orgAiExperiments.$inferSelect;
+
+// ─── Workflow Optimization Recommendations ────────────────────────────────────
+// Suggestions to improve specific workflows. Human approval required before change.
+export const workflowOptimizationRecs = pgTable("workflow_optimization_recs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  workflowId: text("workflow_id"),
+  workflowName: text("workflow_name"),
+  currentConversion: doublePrecision("current_conversion"),
+  suggestedChange: text("suggested_change"),
+  rationale: text("rationale"),
+  expectedConversion: doublePrecision("expected_conversion"),
+  confidence: doublePrecision("confidence").default(0),
+  estimatedLift: doublePrecision("estimated_lift").default(0),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type WorkflowOptimizationRec = typeof workflowOptimizationRecs.$inferSelect;
+
+// ─── Agent Templates (Marketplace Foundation) ────────────────────────────────
+// Internal only — groundwork for future installable agent marketplace.
+export const agentTemplates = pgTable("agent_templates", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentName: text("agent_name").notNull(),
+  department: text("department"),
+  capabilities: jsonb("capabilities"),
+  requiredIntegrations: jsonb("required_integrations"),
+  benchmarkMetrics: jsonb("benchmark_metrics"),
+  averageRoi: doublePrecision("average_roi"),
+  averageSuccessRate: doublePrecision("average_success_rate"),
+  installationCount: integer("installation_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentTemplate = typeof agentTemplates.$inferSelect;

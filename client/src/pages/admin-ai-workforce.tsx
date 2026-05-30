@@ -823,6 +823,11 @@ export default function AdminAiWorkforcePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Link href="/admin/ai-workforce/executions">
+            <Button variant="outline" size="sm" className="border-cyan-700 text-cyan-400 hover:bg-cyan-900/30" data-testid="button-executions-link">
+              <Zap className="h-4 w-4 mr-1.5" />Execute
+            </Button>
+          </Link>
           <Link href="/admin/ai-workforce/optimization">
             <Button variant="outline" size="sm" className="border-purple-700 text-purple-400 hover:bg-purple-900/30" data-testid="button-optimization-link">
               <Brain className="h-4 w-4 mr-1.5" />Optimize

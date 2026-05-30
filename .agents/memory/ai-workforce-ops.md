@@ -94,9 +94,55 @@ description: Phase 2+3 backend endpoints, frontend pages, and architectural deci
 | `org_ai_learning_events` | 4 | Immutable learning signals (accepted/rejected/deferred/success/failure) |
 | `org_ai_workforce_memory` | 4 | Org memory; unique on (org_id, key); 30-day TTL; prevents repeat recs |
 
+## Endpoints (Phase 5)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/workforce/executions` | List all execution plans (sorted desc) |
+| `POST /api/workforce/executions` | Create execution plan from recommendation — auto-seeds approval rules |
+| `PATCH /api/workforce/executions/:id` | Approve or reject a plan (`action: "approve"\|"reject"`) |
+| `POST /api/workforce/executions/:id/run` | Execute an approved plan (simulated, records outcome) |
+| `POST /api/workforce/simulate` | Dry-run simulation — no real actions, returns projections |
+| `GET /api/workforce/trust` | Trust score 0–100 + tier + governance recommendation |
+| `GET /api/workforce/performance-reviews` | Per-agent performance reviews with grades (A+…F) |
+| `GET /api/workforce/coo-dashboard` | COO dashboard: pipeline, ROI, trust, top agents |
+| `GET /api/workforce/approval-rules` | Org approval rules — auto-seeds defaults on first call |
+| `PUT /api/workforce/approval-rules/:id` | Update a specific approval rule |
+| `GET /api/workforce/experiments` | List A/B experiments |
+| `POST /api/workforce/experiments` | Create experiment |
+| `GET /api/workforce/workflow-optimization` | Workflow optimization recs (triggers learning engine) |
+| `GET /api/workforce/learning-improvements` | Self-improvement analysis + learning insights |
+| `GET /api/workforce/governance-recommendations` | Governance recs based on trust tier |
+
+## Pages (Phase 5)
+
+| Route | File |
+|---|---|
+| `/admin/ai-workforce/executions` | `admin-ai-workforce-executions.tsx` — Agent Action Center, 5 tabs |
+| `/admin/ai-workforce/simulator` | `admin-ai-workforce-simulator.tsx` — Dry-run safety preview |
+
+## Tables (Phase 5)
+
+| Table | Purpose |
+|---|---|
+| `org_ai_execution_plans` | Source of truth for every workforce action — full audit trail |
+| `org_ai_approval_rules` | Governance rules; auto-seeded with 4 defaults per org on first use |
+| `org_ai_experiments` | A/B testing framework for workflows, messages, cadences |
+| `workflow_optimization_recs` | Workflow improvement suggestions (no auto-modify) |
+| `agent_templates` | Internal marketplace foundation — not exposed publicly yet |
+
+## Key Phase 5 decisions
+
+- **Financial actions always supervised** — `revenue` and `governance` categories bypass auto-approve unconditionally.
+- **Execution engine is simulated** — `executeApprovedPlan()` records outcomes (85% success rate model) but does not yet wire into live workflow triggers. Future: hook into workflowJobs.
+- **Trust tiers**: Emerging (0–20) → Developing (21–40) → Trusted (41–60) → Highly Trusted (61–80) → Autonomous Ready (81–100).
+- **Default approval rules seeded**: low = auto_approve, medium/high/critical = requires_approval; seeded once per org.
+- **`Zap` icon** is already imported in `admin-ai-workforce.tsx` (needed for Execute nav button).
+
 ## How to apply
 
 - Attribution engine is on-demand — no cron needed; all endpoints import it dynamically.
 - Time savings use `TIME_BENCHMARKS` constants in the engine (minutes per action type). Hourly rate = $35.
-- All Phase 3 routes use `await import("./workforce-attribution-engine")` dynamically.
+- All Phase 3–5 routes use dynamic `await import(...)` for engine files.
 - New pages go near the `/admin/ai-workforce` route block in App.tsx.
+- Approval rules must be seeded before execution plan creation — call `seedDefaultApprovalRules(orgId)` first.
