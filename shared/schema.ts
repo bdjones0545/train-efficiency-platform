@@ -3892,3 +3892,43 @@ export const orgAiWorkforceAuditLog = pgTable("org_ai_workforce_audit_log", {
 });
 
 export type OrgAiWorkforceAuditLog = typeof orgAiWorkforceAuditLog.$inferSelect;
+
+// ─── AI Workforce Outcomes ─────────────────────────────────────────────────────
+// Evidence-based record of every business outcome attributed to an AI agent.
+// outcomeType: revenue_generated | revenue_recovered | revenue_protected |
+//   appointment_booked | lead_recovered | client_retained | no_show_prevented |
+//   hours_saved | task_automated | workflow_executed | opportunity_identified
+export const orgAiWorkforceOutcomes = pgTable("org_ai_workforce_outcomes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  outcomeType: text("outcome_type").notNull(),
+  outcomeCategory: text("outcome_category").notNull(),
+  value: doublePrecision("value").default(0),
+  currencyValue: doublePrecision("currency_value").default(0),
+  sourceRecordId: text("source_record_id"),
+  sourceTable: text("source_table"),
+  confidenceScore: doublePrecision("confidence_score").default(0.8),
+  attributedAt: timestamp("attributed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type OrgAiWorkforceOutcome = typeof orgAiWorkforceOutcomes.$inferSelect;
+
+// ─── AI Workforce Opportunities ────────────────────────────────────────────────
+// Actionable opportunities identified by AI agents.
+// status: open | in_progress | resolved | expired
+export const orgAiOpportunities = pgTable("org_ai_opportunities", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category").notNull(),
+  potentialValue: doublePrecision("potential_value").default(0),
+  confidence: doublePrecision("confidence").default(0.8),
+  status: text("status").notNull().default("open"),
+  sourceData: jsonb("source_data"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type OrgAiOpportunity = typeof orgAiOpportunities.$inferSelect;

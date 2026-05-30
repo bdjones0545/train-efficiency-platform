@@ -19,7 +19,7 @@ import {
   XCircle, AlertTriangle, Clock, RefreshCw, Link2, Link2Off,
   Cpu, Globe, Mail, Calendar, Hash, Search, Zap, BarChart3,
   CircleDot, Brain, Play, Pause, GitBranch, ArrowRight, Eye,
-  Settings, Target, ListChecks, HeartPulse,
+  Settings, Target, ListChecks, HeartPulse, Trophy, DollarSign,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
@@ -823,6 +823,16 @@ export default function AdminAiWorkforcePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Link href="/admin/ai-workforce/outcomes">
+            <Button variant="outline" size="sm" className="border-green-700 text-green-400 hover:bg-green-900/30" data-testid="button-outcomes-link">
+              <DollarSign className="h-4 w-4 mr-1.5" />ROI
+            </Button>
+          </Link>
+          <Link href="/admin/ai-workforce/leaderboard">
+            <Button variant="outline" size="sm" className="border-yellow-700 text-yellow-400 hover:bg-yellow-900/30" data-testid="button-leaderboard-link">
+              <Trophy className="h-4 w-4 mr-1.5" />Leaderboard
+            </Button>
+          </Link>
           <Link href="/admin/ai-workforce/activity">
             <Button variant="outline" size="sm" data-testid="button-activity-link">
               <Activity className="h-4 w-4 mr-1.5" />Activity

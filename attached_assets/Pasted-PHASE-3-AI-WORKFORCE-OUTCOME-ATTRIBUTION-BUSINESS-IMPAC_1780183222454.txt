@@ -1,0 +1,524 @@
+PHASE 3 — AI WORKFORCE OUTCOME ATTRIBUTION & BUSINESS IMPACT ENGINE
+
+Objective
+
+Phase 1 made the AI Workforce real.
+
+Phase 2 made the AI Workforce observable.
+
+Phase 3 must make the AI Workforce valuable.
+
+The goal is to move from:
+
+“Agents performed actions”
+
+to
+
+“Agents produced measurable business outcomes.”
+
+Every agent action should ultimately connect to revenue, retention, efficiency, lead generation, scheduling, or operational performance.
+
+Do not create synthetic metrics.
+
+All attribution must be evidence-based and traceable.
+
+PART 1 — Business Outcome Framework
+
+Create a workforce outcome model.
+
+New table:
+
+org_ai_workforce_outcomes
+
+Suggested fields:
+
+id
+
+org_id
+
+agent_id
+
+outcome_type
+
+outcome_category
+
+value
+
+currency_value
+
+source_record_id
+
+source_table
+
+confidence_score
+
+attributed_at
+
+created_at
+
+Supported outcome categories:
+
+Revenue Generated
+
+Revenue Recovered
+
+Revenue Protected
+
+Appointments Booked
+
+Leads Recovered
+
+Clients Retained
+
+No Shows Prevented
+
+Hours Saved
+
+Tasks Automated
+
+Workflows Executed
+
+Opportunities Identified
+
+Each outcome must be traceable to a real event.
+
+PART 2 — Agent Attribution Engine
+
+Create attribution services for every workforce agent.
+
+Atlas (Executive Agent)
+
+Track:
+
+Revenue opportunities surfaced
+
+Business risks detected
+
+Operational bottlenecks identified
+
+Hours of executive review avoided
+
+Vector (Research Agent)
+
+Track:
+
+Prospects researched
+
+Reports generated
+
+Hours saved
+
+Research requests completed
+
+Apex (Growth Agent)
+
+Track:
+
+Leads recovered
+
+Consultations booked
+
+Applications generated
+
+Revenue influenced
+
+Campaign opportunities identified
+
+Pulse (Retention Agent)
+
+Track:
+
+At-risk clients recovered
+
+Retention interventions
+
+Revenue protected
+
+Re-engagement success rate
+
+Tempo (Scheduling Agent)
+
+Track:
+
+Appointments booked
+
+Open slots filled
+
+No-shows prevented
+
+Capacity utilization improvements
+
+Relay (Communications Agent)
+
+Track:
+
+Emails sent
+
+Responses generated
+
+Conversations started
+
+Follow-ups completed
+
+Conversion impact
+
+Ledger (Finance Agent)
+
+Track:
+
+Revenue opportunities identified
+
+Outstanding balances flagged
+
+Collections recovered
+
+Financial anomalies detected
+
+PART 3 — Revenue Attribution Layer
+
+Create a revenue attribution system.
+
+New endpoint:
+
+GET /api/workforce/revenue-attribution
+
+Return:
+
+Revenue Generated
+
+Revenue Recovered
+
+Revenue Protected
+
+Pipeline Influenced
+
+Bookings Influenced
+
+Attributed Agents
+
+Attribution Confidence
+
+Period Filters:
+
+Today
+
+7 Days
+
+30 Days
+
+Quarter
+
+Year
+
+All Time
+
+Every revenue claim must include evidence.
+
+Example:
+
+Apex
+Recovered Lead
+Lead became paying customer
+$300 session package
+Confidence: 92%
+
+PART 4 — Time Savings Engine
+
+Create workforce efficiency tracking.
+
+Estimate time saved using configurable benchmarks.
+
+Examples:
+
+Email sent manually:
+5 minutes
+
+Appointment scheduling:
+8 minutes
+
+Lead follow-up:
+10 minutes
+
+Research report:
+20 minutes
+
+Track:
+
+Time Saved Today
+
+Time Saved This Month
+
+Time Saved All Time
+
+Equivalent Labor Cost Saved
+
+Display assumptions transparently.
+
+PART 5 — Workforce ROI Dashboard
+
+Create:
+
+GET /api/workforce/roi
+
+Return:
+
+{
+revenueGenerated,
+revenueRecovered,
+revenueProtected,
+laborHoursSaved,
+estimatedLaborSavings,
+workforceCost,
+netROI,
+roiPercentage
+}
+
+Formula:
+
+ROI =
+(Business Value Created - Workforce Cost)
+/
+Workforce Cost
+
+Display:
+
+Today
+
+7 Days
+
+30 Days
+
+Year
+
+PART 6 — Opportunity Engine
+
+Create a workforce opportunity layer.
+
+Agents should generate opportunities.
+
+New table:
+
+org_ai_opportunities
+
+Fields:
+
+id
+
+org_id
+
+agent_id
+
+title
+
+description
+
+category
+
+potential_value
+
+confidence
+
+status
+
+created_at
+
+Examples:
+
+“12 leads have not been contacted in 72 hours”
+
+Potential Value:
+$2,400
+
+“3 former clients likely to return”
+
+Potential Value:
+$900
+
+“Scheduling capacity available Thursday”
+
+Potential Value:
+$600
+
+Display:
+
+Open
+
+In Progress
+
+Resolved
+
+Expired
+
+PART 7 — Executive Summary Agent
+
+Upgrade Atlas.
+
+Create:
+
+GET /api/workforce/executive-summary
+
+Generate:
+
+Workforce Performance
+
+Revenue Impact
+
+Top Opportunities
+
+Top Risks
+
+Most Valuable Agent
+
+Least Utilized Agent
+
+Recommended Actions
+
+Executive Snapshot Score
+
+This should become the CEO dashboard.
+
+PART 8 — Agent Leaderboards
+
+Create workforce rankings.
+
+Route:
+
+/admin/ai-workforce/leaderboard
+
+Rank agents by:
+
+Revenue Influenced
+
+Revenue Recovered
+
+Time Saved
+
+Tasks Completed
+
+Success Rate
+
+Opportunities Generated
+
+Retention Impact
+
+Booking Impact
+
+Display:
+
+Top Performer
+
+Most Efficient
+
+Highest ROI
+
+Most Improved
+
+PART 9 — Workforce Benchmarking
+
+Create organization benchmarks.
+
+Compare:
+
+Current Month
+
+Previous Month
+
+Quarter
+
+Year
+
+Track:
+
+Revenue Influence
+
+Agent Adoption
+
+Hours Saved
+
+Workflow Executions
+
+Automation Coverage
+
+Approval Rates
+
+Show trend indicators.
+
+PART 10 — Outcome Evidence System
+
+Every outcome must have evidence.
+
+New endpoint:
+
+GET /api/workforce/outcomes/:id
+
+Show:
+
+Outcome
+
+Agent
+
+Timestamp
+
+Source Action
+
+Related Records
+
+Revenue Evidence
+
+Workflow Evidence
+
+Confidence Score
+
+This prevents inflated AI claims.
+
+PART 11 — AI Workforce Business Report
+
+Create downloadable workforce business reports.
+
+Monthly report should include:
+
+Executive Summary
+
+Revenue Impact
+
+Time Savings
+
+Opportunities Created
+
+Top Agents
+
+Agent Performance
+
+ROI
+
+Recommendations
+
+This becomes client-facing proof of value.
+
+PART 12 — Success Criteria
+
+At completion the AI Workforce platform should answer:
+
+How much revenue did the workforce generate?
+
+How much revenue did it recover?
+
+How much revenue did it protect?
+
+How many hours did it save?
+
+What opportunities did it uncover?
+
+Which agents create the most value?
+
+What is the workforce ROI?
+
+What business outcomes were directly influenced by AI?
+
+The platform should no longer be measuring activity.
+
+It should be measuring economic impact.
+
+Final Goal:
+
+Transform TrainEfficiency from an AI Workforce Management System into an AI Workforce Performance Platform where every agent is accountable for measurable business outcomes.
