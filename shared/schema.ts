@@ -3875,3 +3875,20 @@ export const orgAiWorkforceSettings = pgTable("org_ai_workforce_settings", {
 export const insertOrgAiWorkforceSettingsSchema = createInsertSchema(orgAiWorkforceSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type OrgAiWorkforceSettings = typeof orgAiWorkforceSettings.$inferSelect;
 export type InsertOrgAiWorkforceSettings = z.infer<typeof insertOrgAiWorkforceSettingsSchema>;
+
+// ─── AI Workforce Audit Log ────────────────────────────────────────────────────
+// Immutable record of every change made to workforce configuration.
+// eventType: wizard_completed | governance_changed | departments_changed |
+//            templates_changed | integrations_changed | settings_updated
+
+export const orgAiWorkforceAuditLog = pgTable("org_ai_workforce_audit_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  eventType: text("event_type").notNull(),
+  changedBy: text("changed_by"),
+  oldValue: jsonb("old_value"),
+  newValue: jsonb("new_value"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type OrgAiWorkforceAuditLog = typeof orgAiWorkforceAuditLog.$inferSelect;

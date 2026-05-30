@@ -19,6 +19,7 @@ import {
   XCircle, AlertTriangle, Clock, RefreshCw, Link2, Link2Off,
   Cpu, Globe, Mail, Calendar, Hash, Search, Zap, BarChart3,
   CircleDot, Brain, Play, Pause, GitBranch, ArrowRight, Eye,
+  Settings, Target, ListChecks, HeartPulse,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
@@ -723,6 +724,24 @@ export default function AdminAiWorkforcePage() {
     select: (d: any) => Array.isArray(d) ? d : [],
   });
 
+  const { data: health, refetch: refetchHealth } = useQuery<any>({
+    queryKey: ["/api/workforce/health"],
+    queryFn: async () => { const r = await fetch("/api/workforce/health"); return r.json(); },
+    refetchInterval: 60000,
+  });
+
+  const { data: readiness } = useQuery<any>({
+    queryKey: ["/api/workforce/readiness"],
+    queryFn: async () => { const r = await fetch("/api/workforce/readiness"); return r.json(); },
+    refetchInterval: 120000,
+  });
+
+  const { data: scorecard } = useQuery<any>({
+    queryKey: ["/api/workforce/scorecard", "7d"],
+    queryFn: async () => { const r = await fetch("/api/workforce/scorecard?period=7d"); return r.json(); },
+    refetchInterval: 120000,
+  });
+
   const pauseMutation = useMutation({
     mutationFn: async (type: string) => {
       const res = await apiRequest("POST", `/api/integrations/${type}/pause`, { reason: "Manually paused by admin" });
@@ -782,6 +801,14 @@ export default function AdminAiWorkforcePage() {
 
   const isActing = pauseMutation.isPending || resumeMutation.isPending || healthCheckMutation.isPending;
 
+  const HEALTH_CONFIG: Record<string, { cls: string; dot: string }> = {
+    Healthy: { cls: "text-green-700 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400", dot: "bg-green-500" },
+    "Attention Needed": { cls: "text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400", dot: "bg-amber-400" },
+    Critical: { cls: "text-red-700 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400", dot: "bg-red-500" },
+  };
+  const healthStatus = health?.systemHealth ?? "Healthy";
+  const healthCfg = HEALTH_CONFIG[healthStatus] ?? HEALTH_CONFIG.Healthy;
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-ai-workforce">
       {/* Header */}
@@ -792,44 +819,117 @@ export default function AdminAiWorkforcePage() {
             AI Workforce
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Organizational AI departments, external integrations, and relationship map.
+            Operational command center for your AI agent workforce.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => { refetchAgents(); refetchIntegrations(); }} data-testid="button-refresh-workforce">
-            <RefreshCw className="h-4 w-4 mr-1.5" />
-            Refresh
-          </Button>
-          <Link href="/admin/ai-governance">
-            <Button variant="outline" size="sm" data-testid="button-governance-link">
-              <ShieldCheck className="h-4 w-4 mr-1.5" />
-              Governance
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Link href="/admin/ai-workforce/activity">
+            <Button variant="outline" size="sm" data-testid="button-activity-link">
+              <Activity className="h-4 w-4 mr-1.5" />Activity
             </Button>
           </Link>
+          <Link href="/admin/ai-workforce/capabilities">
+            <Button variant="outline" size="sm" data-testid="button-capabilities-link">
+              <ShieldCheck className="h-4 w-4 mr-1.5" />Capabilities
+            </Button>
+          </Link>
+          <Link href="/admin/ai-workforce/settings">
+            <Button variant="outline" size="sm" data-testid="button-settings-link">
+              <Settings className="h-4 w-4 mr-1.5" />Settings
+            </Button>
+          </Link>
+          <Button variant="outline" size="sm" onClick={() => { refetchAgents(); refetchIntegrations(); refetchHealth(); }} data-testid="button-refresh-workforce">
+            <RefreshCw className="h-4 w-4 mr-1.5" />Refresh
+          </Button>
         </div>
       </div>
+
+      {/* System health banner */}
+      {health && (
+        <div className={`flex items-center justify-between gap-4 px-4 py-3 rounded-lg border ${healthCfg.cls}`} data-testid="banner-workforce-health">
+          <div className="flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${healthCfg.dot} ${healthStatus !== "Healthy" ? "animate-pulse" : ""}`} />
+            <span className="text-sm font-semibold">System {healthStatus}</span>
+            {health.failedActionsToday > 0 && (
+              <span className="text-xs">· {health.failedActionsToday} failed action{health.failedActionsToday > 1 ? "s" : ""} today</span>
+            )}
+            {health.approvalsPending > 0 && (
+              <span className="text-xs">· {health.approvalsPending} pending approval{health.approvalsPending > 1 ? "s" : ""}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <span>{health.actionsToday} actions today</span>
+            <span>{health.workflowsPublished} workflows active</span>
+            <Link href="/admin/ai-workforce/activity">
+              <button className="underline underline-offset-2 font-medium">View feed →</button>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Summary stat strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4 text-center" data-testid="stat-total-agents">
-          <p className="text-2xl font-bold text-primary">{agents?.length ?? "—"}</p>
-          <p className="text-xs text-muted-foreground mt-1">AI Agents</p>
+          <p className="text-2xl font-bold text-primary">{health?.activeAgents ?? agents?.length ?? "—"}</p>
+          <p className="text-xs text-muted-foreground mt-1">Active Agents</p>
         </Card>
         <Card className="p-4 text-center" data-testid="stat-connected-integrations">
-          <p className="text-2xl font-bold text-green-600 dark:text-green-400">{integrationStats?.connected ?? 0}</p>
+          <p className="text-2xl font-bold text-green-600 dark:text-green-400">{health?.integrationsConnected ?? integrationStats?.connected ?? 0}</p>
           <p className="text-xs text-muted-foreground mt-1">Connected Integrations</p>
         </Card>
-        <Card className="p-4 text-center" data-testid="stat-recent-actions">
-          <p className="text-2xl font-bold text-blue-600">{integrationStats?.recentActions ?? 0}</p>
-          <p className="text-xs text-muted-foreground mt-1">Recent Actions</p>
+        <Card className="p-4 text-center" data-testid="stat-actions-today">
+          <p className="text-2xl font-bold text-blue-600">{health?.actionsToday ?? 0}</p>
+          <p className="text-xs text-muted-foreground mt-1">Actions Today</p>
         </Card>
         <Card className="p-4 text-center" data-testid="stat-success-rate">
-          <p className={`text-2xl font-bold ${(integrationStats?.successRate ?? 100) >= 80 ? "text-green-600" : "text-amber-600"}`}>
-            {integrationStats?.successRate ?? 100}%
+          <p className={`text-2xl font-bold ${(scorecard?.successRate ?? 100) >= 80 ? "text-green-600" : "text-amber-600"}`}>
+            {scorecard?.successRate ?? 100}%
           </p>
-          <p className="text-xs text-muted-foreground mt-1">Success Rate</p>
+          <p className="text-xs text-muted-foreground mt-1">7d Success Rate</p>
         </Card>
       </div>
+
+      {/* Readiness checklist (show if not fully complete) */}
+      {readiness && readiness.completionPercent < 100 && (
+        <Card className="p-4" data-testid="card-readiness-checklist">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Workforce Readiness</h3>
+              <span className="text-xs text-muted-foreground">{readiness.completionPercent}% complete</span>
+            </div>
+            <Link href="/admin/ai-workforce/settings">
+              <Button variant="ghost" size="sm" className="text-xs h-6 gap-1">
+                Configure <ArrowRight className="h-3 w-3" />
+              </Button>
+            </Link>
+          </div>
+          <div className="w-full bg-muted rounded-full h-1.5 mb-3">
+            <div className="bg-primary rounded-full h-1.5 transition-all" style={{ width: `${readiness.completionPercent}%` }} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {readiness.checklist?.map((item: any) => (
+              <div key={item.id} className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs ${
+                item.status === "complete" ? "text-green-700 dark:text-green-400" :
+                item.status === "in_progress" ? "text-amber-600 dark:text-amber-400" :
+                "text-muted-foreground"
+              }`} data-testid={`readiness-item-${item.id}`}>
+                {item.status === "complete" ? (
+                  <CheckCircle className="h-3 w-3 shrink-0 text-green-600" />
+                ) : item.status === "in_progress" ? (
+                  <Clock className="h-3 w-3 shrink-0 text-amber-500" />
+                ) : (
+                  <div className="h-3 w-3 rounded-full border border-muted-foreground shrink-0" />
+                )}
+                <span className={item.status === "complete" ? "line-through opacity-60" : ""}>{item.title}</span>
+                {item.status !== "complete" && item.priority === "high" && (
+                  <span className="ml-auto text-[9px] px-1 rounded bg-amber-100 text-amber-700 shrink-0">High</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Main tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -837,7 +937,7 @@ export default function AdminAiWorkforcePage() {
           <TabsTrigger value="agents" data-testid="tab-agents">Agents</TabsTrigger>
           <TabsTrigger value="integrations" data-testid="tab-integrations">Integrations</TabsTrigger>
           <TabsTrigger value="relationship-map" data-testid="tab-relationship-map">Org Map</TabsTrigger>
-          <TabsTrigger value="activity" data-testid="tab-activity">Activity</TabsTrigger>
+          <TabsTrigger value="scorecard" data-testid="tab-scorecard">Scorecard</TabsTrigger>
         </TabsList>
 
         {/* ── Agents tab ── */}
@@ -922,6 +1022,42 @@ export default function AdminAiWorkforcePage() {
             </div>
           )}
 
+          {/* Integration setup CTAs — show agents affected by missing integrations */}
+          {health && health.integrationsMissing > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-2" data-testid="integration-setup-ctas">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">{health.integrationsMissing} integrations not connected</p>
+              </div>
+              {[
+                { type: "gmail", label: "Gmail", agents: ["Relay (Communications)"], desc: "Email outreach, follow-ups, notifications" },
+                { type: "google_calendar", label: "Google Calendar", agents: ["Tempo (Scheduling)"], desc: "Session booking, reschedules, availability" },
+                { type: "stripe", label: "Stripe", agents: ["Ledger (Finance)"], desc: "Payment tracking, revenue reporting" },
+                { type: "slack", label: "Slack", agents: ["Relay (Communications)", "Atlas (Executive)"], desc: "Team alerts, daily briefings" },
+                { type: "twilio", label: "Twilio", agents: ["Relay (Communications)"], desc: "SMS outreach, appointment reminders" },
+                { type: "hubspot", label: "HubSpot", agents: ["Apex (Revenue)"], desc: "CRM sync, lead tracking" },
+              ]
+                .filter(({ type }) => {
+                  const int = integrationMap.get(type);
+                  return !int || int.status !== "connected";
+                })
+                .map(({ type, label, agents, desc }) => (
+                  <div key={type} className="flex items-start justify-between gap-3 bg-white dark:bg-slate-900 rounded p-2.5 border border-amber-100 dark:border-amber-800/50">
+                    <div>
+                      <p className="text-xs font-semibold">{label}</p>
+                      <p className="text-[10px] text-muted-foreground">{desc}</p>
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">Required by: {agents.join(", ")}</p>
+                    </div>
+                    <Link href="/admin/ai-workforce/settings">
+                      <Button size="sm" variant="outline" className="text-xs h-7 shrink-0 border-amber-300 hover:bg-amber-50" data-testid={`button-setup-${type}`}>
+                        Set up →
+                      </Button>
+                    </Link>
+                  </div>
+                ))}
+            </div>
+          )}
+
           <div className="bg-muted/40 rounded-lg p-4 text-sm text-muted-foreground" data-testid="integration-setup-hint">
             <p className="font-medium mb-1">Setting up integrations</p>
             <p>Configure credentials via <code className="text-xs bg-muted px-1 rounded">PUT /api/integrations/:type/credentials</code>. All credentials are org-scoped and never exposed via the API. All actions route through the governance runtime.</p>
@@ -952,32 +1088,91 @@ export default function AdminAiWorkforcePage() {
           )}
         </TabsContent>
 
-        {/* ── Activity tab ── */}
-        <TabsContent value="activity" className="mt-4">
-          <div className="mb-3 flex items-center justify-between">
+        {/* ── Scorecard tab ── */}
+        <TabsContent value="scorecard" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
-              Integration Execution Log
+              <TrendingUp className="h-4 w-4 text-primary" />
+              Workforce Scorecard — Last 7 Days
             </h3>
-            <Link href="/admin/agent-ops">
-              <Button variant="ghost" size="sm" className="text-xs gap-1">
-                <Eye className="h-3.5 w-3.5" />
-                Full Agent Ops
-              </Button>
-            </Link>
-          </div>
-          {logsLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 rounded" />)}
+            <div className="flex gap-2">
+              <Link href="/admin/ai-workforce/activity">
+                <Button variant="ghost" size="sm" className="text-xs gap-1">
+                  <Activity className="h-3.5 w-3.5" />Full Activity Feed
+                </Button>
+              </Link>
+              <Link href="/admin/ai-workforce/capabilities">
+                <Button variant="ghost" size="sm" className="text-xs gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5" />Capability Matrix
+                </Button>
+              </Link>
             </div>
-          ) : !execLogs?.length ? (
-            <div className="text-center py-10 text-sm text-muted-foreground border-2 border-dashed rounded-lg" data-testid="text-no-exec-logs">
-              No integration actions logged yet. Actions will appear here once integrations are configured and running.
+          </div>
+
+          {!scorecard ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}
             </div>
           ) : (
-            <div className="border rounded-lg px-3 py-1" data-testid="list-exec-logs">
-              {execLogs.map(log => <LogRow key={log.id} log={log} />)}
-            </div>
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: "Total Actions", value: scorecard.totalActions, cls: "text-primary" },
+                  { label: "Success Rate", value: `${scorecard.successRate ?? 0}%`, cls: scorecard.successRate >= 80 ? "text-green-600" : "text-amber-600" },
+                  { label: "Workflow Runs", value: scorecard.workflowExecutions, cls: "text-blue-600" },
+                  { label: "Approvals Requested", value: scorecard.approvalsRequested, cls: "text-amber-600" },
+                  { label: "Successful Actions", value: scorecard.successfulActions, cls: "text-green-600" },
+                  { label: "Failed Actions", value: scorecard.failedActions, cls: "text-red-600" },
+                  { label: "Agent Utilization", value: `${scorecard.agentUtilization ?? 0}%`, cls: "text-purple-600" },
+                  { label: "Approvals Approved", value: scorecard.approvalsApproved, cls: "text-green-600" },
+                ].map(s => (
+                  <Card key={s.label} className="p-4 text-center" data-testid={`scorecard-${s.label.toLowerCase().replace(/\s/g, "-")}`}>
+                    <p className={`text-2xl font-bold ${s.cls}`}>{s.value}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Card className="p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Most Active Agent</p>
+                  <p className="text-sm font-semibold">{scorecard.mostActiveAgent ?? "—"}</p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Top Error Source</p>
+                  <p className="text-sm font-semibold text-red-600">{scorecard.topErrorSource ?? "—"}</p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Revenue Influenced</p>
+                  <p className="text-sm font-semibold text-green-600">
+                    {scorecard.revenueInfluenced > 0 ? `$${scorecard.revenueInfluenced.toLocaleString()}` : "Not tracked"}
+                  </p>
+                </Card>
+              </div>
+
+              {scorecard.agentBreakdown?.length > 0 && (
+                <Card className="p-4">
+                  <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Per-Agent Breakdown (7d)</p>
+                  <div className="space-y-2">
+                    {scorecard.agentBreakdown.map((a: any) => (
+                      <div key={a.agentType} className="flex items-center gap-3" data-testid={`scorecard-agent-${a.agentType}`}>
+                        <span className="text-xs font-medium w-44 shrink-0">{a.agentName}</span>
+                        <div className="flex-1 bg-muted rounded-full h-1.5 relative">
+                          <div
+                            className="bg-primary rounded-full h-1.5"
+                            style={{ width: `${scorecard.totalActions > 0 ? Math.round((a.actions / scorecard.totalActions) * 100) : 0}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-12 text-right">{a.actions} runs</span>
+                        {a.errors > 0 && (
+                          <span className="text-[10px] text-red-600 w-16 text-right">{a.errors} err</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </>
           )}
         </TabsContent>
       </Tabs>

@@ -17112,22 +17112,71 @@ Respond with this exact JSON structure:
     }
   });
 
-  // GET /api/workforce/agent-stats/:agentId — per-agent execution stats
+  // GET /api/workforce/agent-stats/:agentId — real per-agent execution stats
   app.get("/api/workforce/agent-stats/:agentId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const jobs = await storage.getWorkflowJobs(req.user.orgId, undefined, 50).catch(() => []);
-      const agentJobs = jobs.filter((j: any) => j.agentType === req.params.agentId || j.triggeredBy === req.params.agentId);
-      const completed = agentJobs.filter((j: any) => j.status === "completed");
-      const successRate = agentJobs.length > 0 ? Math.round((completed.length / agentJobs.length) * 100) : 0;
+      const orgId = req.user.orgId as string;
+      const agentId = req.params.agentId;
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      // Pull all unified action log entries for this agent
+      const allLogs = await storage.getUnifiedActionLog(orgId, { actorType: agentId, limit: 500 }).catch(() => []);
+      const todayLogs = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= todayStart);
+      const last7Logs = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= sevenDaysAgo);
+      const successful = allLogs.filter((l: any) => l.status === "completed" || l.status === "success");
+      const failed = allLogs.filter((l: any) => l.status === "failed" || l.status === "error");
+
+      // Pending approvals for this agent type from agentPendingActions
+      const { db } = await import("./db");
+      const { agentPendingActions, unifiedAgentActionLog } = await import("@shared/schema");
+      const { eq, and, gt, desc, avg } = await import("drizzle-orm");
+      const now = new Date();
+      const pendingRows = await db.select()
+        .from(agentPendingActions)
+        .where(and(
+          eq(agentPendingActions.orgId, orgId),
+          eq(agentPendingActions.status, "pending"),
+          gt(agentPendingActions.expiresAt, now),
+          eq(agentPendingActions.actionType, agentId),
+        ))
+        .catch(() => []);
+
+      // Average confidence from the log
+      const confScores = allLogs
+        .filter((l: any) => l.confidenceScore != null)
+        .map((l: any) => Number(l.confidenceScore));
+      const avgConfidence = confScores.length > 0
+        ? Math.round(confScores.reduce((a: number, b: number) => a + b, 0) / confScores.length * 100)
+        : 0;
+
+      // Last execution timestamp
+      const lastEntry = allLogs[0];
+
+      // Active workflows: workflow_jobs linked to this agent
+      const jobs = await storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []);
+      const agentJobs = jobs.filter((j: any) => j.agentType === agentId || j.triggeredBy === agentId);
+      const activeWorkflows = new Set(agentJobs.filter((j: any) => j.status === "running" || j.status === "queued").map((j: any) => j.workflowId)).size;
+
+      const successRate = allLogs.length > 0
+        ? Math.round((successful.length / allLogs.length) * 100)
+        : 0;
+
       res.json({
-        actionsToday: Math.floor(Math.random() * 12),
+        actionsToday: todayLogs.length,
+        actionsLast7Days: last7Logs.length,
+        successfulActions: successful.length,
+        failedActions: failed.length,
         successRate,
-        avgConfidence: 72 + Math.floor(Math.random() * 25),
-        approvalsNeeded: Math.floor(Math.random() * 5),
-        totalActions: agentJobs.length,
+        approvalsPending: pendingRows.length,
+        averageConfidence: avgConfidence,
+        totalActions: allLogs.length,
+        activeWorkflows,
+        errorCount: failed.length,
+        lastExecutionAt: lastEntry?.createdAt ?? null,
       });
     } catch (e: any) {
-      res.json({ actionsToday: 0, successRate: 0, avgConfidence: 0, approvalsNeeded: 0, totalActions: 0 });
+      res.json({ actionsToday: 0, actionsLast7Days: 0, successfulActions: 0, failedActions: 0, successRate: 0, approvalsPending: 0, averageConfidence: 0, totalActions: 0, activeWorkflows: 0, errorCount: 0, lastExecutionAt: null });
     }
   });
 
@@ -18895,6 +18944,667 @@ Respond with this exact JSON structure:
       const logs = await storage.getWorkflowExecutionLogs(orgId, req.params.id, limit);
       res.json(logs);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AI WORKFORCE PHASE 2 — OPERATIONS LAYER
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /api/workforce/health — real workforce health summary
+  app.get("/api/workforce/health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { db } = await import("./db");
+      const { unifiedAgentActionLog, agentPendingActions, orgAiWorkforceAuditLog } = await import("@shared/schema");
+      const { eq, and, gt, gte, count, sql: drizzleSql } = await import("drizzle-orm");
+
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+
+      // Agents — use listAgentIdentities + isAgentEnabledForOrg (same as /api/workforce/agents)
+      const { listAgentIdentities } = await import("./agent-identities");
+      const identities = listAgentIdentities();
+      const enabledFlags = await Promise.all(
+        identities.map((id: any) => storage.isAgentEnabledForOrg(orgId, id.agentType).catch(() => true))
+      );
+      const policies = await storage.getCapabilityPolicies(orgId).catch(() => []);
+      const policyMap = new Map(policies.map((p: any) => [p.agentType, p]));
+      const activeAgents = identities.filter((_: any, i: number) => enabledFlags[i] && (policyMap.get(identities[i].agentType) as any)?.enabled !== false).length;
+      const disabledAgents = identities.length - activeAgents;
+
+      // Integrations
+      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
+      const integrationsConnected = integrations.filter((i: any) => i.status === "connected").length;
+      const integrationsMissing = integrations.filter((i: any) => i.status !== "connected").length;
+
+      // Workflows
+      const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
+      const workflowsPublished = graphs.filter((g: any) => g.published).length;
+      const workflowsDraft = graphs.filter((g: any) => !g.published).length;
+
+      // Actions today
+      const allLogsToday = await storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []);
+      const actionsToday = allLogsToday.filter((l: any) => l.createdAt && new Date(l.createdAt) >= todayStart).length;
+      const failedToday = allLogsToday.filter((l: any) => (l.status === "failed" || l.status === "error") && l.createdAt && new Date(l.createdAt) >= todayStart).length;
+
+      // Approval backlog
+      const now = new Date();
+      const pending = await db.select().from(agentPendingActions)
+        .where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now)))
+        .catch(() => []);
+      const approvalsPending = pending.length;
+
+      // Attention items (open)
+      const { attentionItems } = await import("@shared/schema");
+      const openAlerts = await db.select().from(attentionItems)
+        .where(and(eq(attentionItems.orgId, orgId), eq(attentionItems.status, "active")))
+        .catch(() => []);
+
+      // System health scoring
+      let healthScore = 100;
+      if (failedToday > 5) healthScore -= 30;
+      else if (failedToday > 0) healthScore -= 10;
+      if (integrationsMissing > 3) healthScore -= 20;
+      else if (integrationsMissing > 1) healthScore -= 10;
+      if (approvalsPending > 10) healthScore -= 20;
+      else if (approvalsPending > 5) healthScore -= 10;
+      if (workflowsPublished === 0 && graphs.length > 0) healthScore -= 15;
+      if (openAlerts.filter((a: any) => a.level === "critical").length > 0) healthScore -= 20;
+
+      const systemHealth = healthScore >= 80 ? "Healthy" : healthScore >= 50 ? "Attention Needed" : "Critical";
+
+      res.json({
+        workforceStatus: activeAgents > 0 ? "Active" : "Inactive",
+        activeAgents,
+        disabledAgents,
+        integrationsConnected,
+        integrationsMissing,
+        workflowsPublished,
+        workflowsDraft,
+        actionsToday,
+        approvalsPending,
+        failedActionsToday: failedToday,
+        openAlerts: openAlerts.length,
+        systemHealth,
+        healthScore,
+      });
+    } catch (e: any) {
+      console.error("[workforce/health] error:", e);
+      res.status(500).json({ message: "Failed to fetch workforce health" });
+    }
+  });
+
+  // GET /api/workforce/readiness — onboarding readiness checklist
+  app.get("/api/workforce/readiness", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
+      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
+      const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
+      const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
+      const { db: _db2, ..._ } = { db: null };
+
+      const gmailConnected = integrations.some((i: any) => i.integrationType === "gmail" && i.status === "connected");
+      const calendarConnected = integrations.some((i: any) => i.integrationType === "google_calendar" && i.status === "connected");
+      const stripeConnected = integrations.some((i: any) => i.integrationType === "stripe" && i.status === "connected");
+      const hasPublishedWorkflow = graphs.some((g: any) => g.published);
+      const hasDraftWorkflow = graphs.some((g: any) => !g.published);
+      const wizardCompleted = !!settings?.onboardingCompleted;
+      const enabledDepts = Array.isArray(settings?.enabledDepartments) ? settings.enabledDepartments : [];
+      const commEnabled = enabledDepts.includes("communications") || enabledDepts.includes("client_communications");
+      const govMode = settings?.governanceMode ?? null;
+
+      const checklist = [
+        {
+          id: "complete_wizard",
+          title: "Complete Setup Wizard",
+          description: "Run the AI Workforce Setup Wizard to configure departments, governance, and starter workflows.",
+          status: wizardCompleted ? "complete" : "incomplete",
+          actionUrl: "/onboarding/ai-workforce",
+          priority: "critical",
+        },
+        {
+          id: "connect_gmail",
+          title: "Connect Gmail",
+          description: "Required by Relay (communications agent) for email outreach, follow-ups, and client notifications.",
+          status: gmailConnected ? "complete" : "incomplete",
+          actionUrl: "/admin/ai-workforce/settings",
+          priority: "high",
+        },
+        {
+          id: "connect_calendar",
+          title: "Connect Google Calendar",
+          description: "Required by Tempo (scheduling agent) to book, modify, and view sessions.",
+          status: calendarConnected ? "complete" : "incomplete",
+          actionUrl: "/admin/ai-workforce/settings",
+          priority: "high",
+        },
+        {
+          id: "publish_workflow",
+          title: "Publish a Workflow",
+          description: "Review your draft workflows and publish at least one to begin automated operations.",
+          status: hasPublishedWorkflow ? "complete" : hasDraftWorkflow ? "in_progress" : "incomplete",
+          actionUrl: "/admin/workflow-builder",
+          priority: "high",
+        },
+        {
+          id: "enable_communications",
+          title: "Enable Communications Department",
+          description: "Activate Relay (communications agent) to handle client outreach and follow-ups automatically.",
+          status: commEnabled ? "complete" : "incomplete",
+          actionUrl: "/admin/ai-workforce/settings",
+          priority: "medium",
+        },
+        {
+          id: "review_governance",
+          title: "Review Governance Rules",
+          description: "Confirm your governance mode and per-agent approval requirements match your risk tolerance.",
+          status: govMode ? "complete" : "incomplete",
+          actionUrl: "/admin/ai-governance",
+          priority: "medium",
+        },
+        {
+          id: "connect_stripe",
+          title: "Connect Stripe",
+          description: "Required by Ledger (finance agent) for payment tracking, revenue reporting, and billing automation.",
+          status: stripeConnected ? "complete" : "incomplete",
+          actionUrl: "/admin/ai-workforce/settings",
+          priority: "medium",
+        },
+      ];
+
+      const completed = checklist.filter(i => i.status === "complete").length;
+      const completionPercent = Math.round((completed / checklist.length) * 100);
+
+      res.json({ checklist, completionPercent, completed, total: checklist.length });
+    } catch (e: any) {
+      console.error("[workforce/readiness] error:", e);
+      res.status(500).json({ message: "Failed to fetch readiness checklist" });
+    }
+  });
+
+  // GET /api/workforce/activity — unified agent activity feed
+  app.get("/api/workforce/activity", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const limit = Math.min(parseInt((req.query.limit as string) || "50", 10), 200);
+      const status = req.query.status as string | undefined;
+      const actorType = req.query.agent as string | undefined;
+
+      const logs = await storage.getUnifiedActionLog(orgId, { limit, status, actorType }).catch(() => []);
+
+      // Enrich with human-readable agent names
+      const { AGENT_IDENTITIES } = await import("./agent-identities");
+
+      const enriched = logs.map((l: any) => {
+        const identity = AGENT_IDENTITIES[l.actorType ?? ""] ?? null;
+        return {
+          id: l.id,
+          agentType: l.actorType,
+          agentName: identity?.name ?? l.actorName ?? l.actorType ?? "System",
+          department: identity?.department ?? "System",
+          actionType: l.actionType,
+          entityType: l.entityType,
+          entityId: l.entityId,
+          status: l.status,
+          riskLevel: l.riskLevel,
+          reasoningSummary: l.reasoningSummary,
+          errorMessage: l.errorMessage,
+          workflowRunId: l.workflowRunId,
+          toolName: l.toolName,
+          confidenceScore: l.confidenceScore,
+          rollbackAvailable: l.rollbackAvailable,
+          timestamp: l.createdAt,
+          requiresApproval: false,
+          approvalStatus: null,
+        };
+      });
+
+      // Also pull pending approvals and merge
+      const { db } = await import("./db");
+      const { agentPendingActions } = await import("@shared/schema");
+      const { eq, and, gt } = await import("drizzle-orm");
+      const now = new Date();
+      const pendingApprovals = await db.select().from(agentPendingActions)
+        .where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now)))
+        .catch(() => []);
+
+      const approvalEntries = pendingApprovals.map((a: any) => {
+        const identity = AGENT_IDENTITIES[a.actionType ?? ""] ?? null;
+        return {
+          id: `approval-${a.id}`,
+          agentType: a.actionType,
+          agentName: identity?.name ?? a.actionType ?? "Agent",
+          department: identity?.department ?? "System",
+          actionType: "pending_approval",
+          entityType: null,
+          entityId: null,
+          status: "pending",
+          riskLevel: "medium",
+          reasoningSummary: JSON.stringify(a.normalizedArgs ?? {}),
+          errorMessage: null,
+          workflowRunId: null,
+          toolName: null,
+          confidenceScore: null,
+          rollbackAvailable: false,
+          timestamp: a.createdAt,
+          requiresApproval: true,
+          approvalStatus: "pending",
+          expiresAt: a.expiresAt,
+        };
+      });
+
+      const combined = [...approvalEntries, ...enriched]
+        .sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime())
+        .slice(0, limit);
+
+      res.json(combined);
+    } catch (e: any) {
+      console.error("[workforce/activity] error:", e);
+      res.status(500).json({ message: "Failed to fetch activity feed" });
+    }
+  });
+
+  // GET /api/workforce/scorecard — org-level workforce scorecard
+  app.get("/api/workforce/scorecard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const period = (req.query.period as string) || "7d";
+      const days = period === "today" ? 1 : period === "30d" ? 30 : 7;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      if (period === "today") since.setHours(0, 0, 0, 0);
+
+      const { AGENT_IDENTITIES } = await import("./agent-identities");
+      const allLogs = await storage.getUnifiedActionLog(orgId, { limit: 2000 }).catch(() => []);
+      const periodLogs = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= since);
+
+      const successful = periodLogs.filter((l: any) => l.status === "completed" || l.status === "success");
+      const failed = periodLogs.filter((l: any) => l.status === "failed" || l.status === "error");
+      const successRate = periodLogs.length > 0 ? Math.round((successful.length / periodLogs.length) * 100) : 0;
+
+      // Per-agent breakdowns
+      const agentCounts: Record<string, number> = {};
+      const agentErrors: Record<string, number> = {};
+      for (const l of periodLogs) {
+        const t = l.actorType ?? "unknown";
+        agentCounts[t] = (agentCounts[t] ?? 0) + 1;
+        if (l.status === "failed" || l.status === "error") agentErrors[t] = (agentErrors[t] ?? 0) + 1;
+      }
+      const agentEntries = Object.entries(agentCounts).sort((a, b) => b[1] - a[1]);
+      const mostActiveAgent = agentEntries[0]
+        ? (AGENT_IDENTITIES[agentEntries[0][0]]?.name ?? agentEntries[0][0])
+        : "—";
+      const leastActiveAgent = agentEntries[agentEntries.length - 1]
+        ? (AGENT_IDENTITIES[agentEntries[agentEntries.length - 1][0]]?.name ?? agentEntries[agentEntries.length - 1][0])
+        : "—";
+      const topErrorAgent = Object.entries(agentErrors).sort((a, b) => b[1] - a[1])[0];
+      const topErrorSource = topErrorAgent
+        ? (AGENT_IDENTITIES[topErrorAgent[0]]?.name ?? topErrorAgent[0])
+        : "—";
+
+      // Workflow executions from jobs
+      const jobs = await storage.getWorkflowJobs(orgId, undefined, 500).catch(() => []);
+      const periodJobs = jobs.filter((j: any) => j.createdAt && new Date(j.createdAt) >= since);
+      const workflowExecutions = periodJobs.length;
+
+      // Revenue influenced: from ai_revenue_events if available
+      let revenueInfluenced = 0;
+      try {
+        const { db } = await import("./db");
+        const { aiRevenueEvents } = await import("@shared/schema");
+        const { eq, gte } = await import("drizzle-orm");
+        const revEvents = await db.select().from(aiRevenueEvents)
+          .where(eq(aiRevenueEvents.orgId, orgId))
+          .catch(() => []);
+        revenueInfluenced = revEvents
+          .filter((e: any) => e.createdAt && new Date(e.createdAt) >= since)
+          .reduce((sum: number, e: any) => sum + (Number(e.revenueAmount) || 0), 0);
+      } catch { /* table may not exist */ }
+
+      // Approvals from agentPendingActions
+      const { db } = await import("./db");
+      const { agentPendingActions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const approvalRows = await db.select().from(agentPendingActions)
+        .where(eq(agentPendingActions.orgId, orgId))
+        .catch(() => []);
+      const periodApprovals = approvalRows.filter((a: any) => a.createdAt && new Date(a.createdAt) >= since);
+      const approvalsRequested = periodApprovals.length;
+      const approvalsApproved = periodApprovals.filter((a: any) => a.status === "completed").length;
+
+      // Agent utilization: % of known agents that had at least 1 action
+      const knownAgentTypes = Object.keys(AGENT_IDENTITIES).filter(t => t !== "system_agent");
+      const activeAgentTypes = new Set(periodLogs.map((l: any) => l.actorType));
+      const agentUtilization = knownAgentTypes.length > 0
+        ? Math.round((knownAgentTypes.filter(t => activeAgentTypes.has(t)).length / knownAgentTypes.length) * 100)
+        : 0;
+
+      res.json({
+        period,
+        totalActions: periodLogs.length,
+        successRate,
+        successfulActions: successful.length,
+        failedActions: failed.length,
+        revenueInfluenced,
+        workflowExecutions,
+        approvalsRequested,
+        approvalsApproved,
+        agentUtilization,
+        mostActiveAgent,
+        leastActiveAgent,
+        topErrorSource,
+        agentBreakdown: agentEntries.map(([type, count]) => ({
+          agentType: type,
+          agentName: AGENT_IDENTITIES[type]?.name ?? type,
+          actions: count,
+          errors: agentErrors[type] ?? 0,
+        })),
+      });
+    } catch (e: any) {
+      console.error("[workforce/scorecard] error:", e);
+      res.status(500).json({ message: "Failed to fetch scorecard" });
+    }
+  });
+
+  // GET /api/workforce/settings — get workforce settings
+  app.get("/api/workforce/settings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
+      res.json(settings ?? null);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch workforce settings" });
+    }
+  });
+
+  // PUT /api/workforce/settings — update workforce settings + re-seed governance + audit log
+  app.put("/api/workforce/settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const userId = req.user.claims?.sub ?? req.user.id ?? "unknown";
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings, orgAiWorkforceAuditLog } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [existing] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
+
+      const allowedFields = ["goals", "orgPreset", "enabledDepartments", "governanceMode", "selectedIntegrations", "selectedWorkflowTemplates"];
+      const updates: any = { updatedAt: new Date() };
+      const changes: string[] = [];
+
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          const oldVal = (existing as any)?.[field];
+          const newVal = req.body[field];
+          if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+            updates[field] = newVal;
+            changes.push(field);
+          }
+        }
+      }
+
+      if (Object.keys(updates).length <= 1) {
+        return res.json({ message: "No changes detected", settings: existing });
+      }
+
+      let updated: any;
+      if (existing) {
+        [updated] = await db.update(orgAiWorkforceSettings).set(updates).where(eq(orgAiWorkforceSettings.orgId, orgId)).returning();
+      } else {
+        [updated] = await db.insert(orgAiWorkforceSettings).values({ orgId, ...updates }).returning();
+      }
+
+      // Re-seed governance if governance mode changed
+      if (changes.includes("governanceMode") && updates.governanceMode) {
+        await storage.seedGovernancePoliciesForMode(orgId, updates.governanceMode).catch(e => console.error("[workforce/settings] governance reseed error:", e));
+      }
+
+      // Audit each changed field
+      for (const field of changes) {
+        await db.insert(orgAiWorkforceAuditLog).values({
+          orgId,
+          eventType: field === "governanceMode" ? "governance_changed"
+            : field === "enabledDepartments" ? "departments_changed"
+            : field === "selectedWorkflowTemplates" ? "templates_changed"
+            : field === "selectedIntegrations" ? "integrations_changed"
+            : "settings_updated",
+          changedBy: userId,
+          oldValue: { [field]: (existing as any)?.[field] },
+          newValue: { [field]: updates[field] },
+        }).catch(() => {});
+      }
+
+      res.json({ message: "Settings updated", changes, settings: updated });
+    } catch (e: any) {
+      console.error("[workforce/settings PUT] error:", e);
+      res.status(500).json({ message: "Failed to update workforce settings" });
+    }
+  });
+
+  // GET /api/workforce/audit-log — workforce settings audit history
+  app.get("/api/workforce/audit-log", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const limit = Math.min(parseInt((req.query.limit as string) || "50", 10), 200);
+      const { db } = await import("./db");
+      const { orgAiWorkforceAuditLog } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const rows = await db.select().from(orgAiWorkforceAuditLog)
+        .where(eq(orgAiWorkforceAuditLog.orgId, orgId))
+        .orderBy(desc(orgAiWorkforceAuditLog.createdAt))
+        .limit(limit);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch audit log" });
+    }
+  });
+
+  // GET /api/workforce/capabilities — agent capability matrix
+  app.get("/api/workforce/capabilities", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { AGENT_IDENTITIES } = await import("./agent-identities");
+      const { db } = await import("./db");
+      const { agentCapabilityPolicies, orgAiWorkforceSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const policies = await db.select().from(agentCapabilityPolicies)
+        .where(eq(agentCapabilityPolicies.orgId, orgId))
+        .catch(() => []);
+      const policyMap = new Map(policies.map((p: any) => [p.agentType, p]));
+
+      const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
+      const enabledDepts: string[] = Array.isArray(settings?.enabledDepartments) ? settings.enabledDepartments : [];
+      const governanceMode = settings?.governanceMode ?? "collaborative";
+
+      // Per-agent action counts for last 30 days
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const allLogs = await storage.getUnifiedActionLog(orgId, { limit: 2000 }).catch(() => []);
+      const last30Logs = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= thirtyDaysAgo);
+      const actionCountByAgent: Record<string, number> = {};
+      const lastActiveByAgent: Record<string, Date> = {};
+      for (const l of allLogs) {
+        const t = l.actorType ?? "";
+        actionCountByAgent[t] = (actionCountByAgent[t] ?? 0) + 1;
+        const ts = l.createdAt ? new Date(l.createdAt) : null;
+        if (ts && (!lastActiveByAgent[t] || ts > lastActiveByAgent[t])) lastActiveByAgent[t] = ts;
+      }
+
+      // Integration connections per agent (from agent-identities requiredIntegrations)
+      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
+      const connectedIntTypes = new Set(integrations.filter((i: any) => i.status === "connected").map((i: any) => i.integrationType));
+
+      // Workflow graphs attached to each agent
+      const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
+
+      const DEPT_MAP: Record<string, string> = {
+        "Executive Intelligence": "executive",
+        "Client Success": "retention",
+        "Revenue Operations": "revenue",
+        "Operations": "operations",
+        "Finance": "finance",
+        "Client Communications": "communications",
+        "Intelligence": "intelligence",
+        "Infrastructure": "infrastructure",
+      };
+
+      const matrix = Object.entries(AGENT_IDENTITIES).map(([agentType, identity]) => {
+        const policy = policyMap.get(agentType) as any;
+        const deptId = DEPT_MAP[identity.department] ?? identity.department.toLowerCase().replace(/\s+/g, "_");
+        const enabled = agentType === "system_agent" || agentType === "workflow_agent"
+          ? true
+          : enabledDepts.length === 0 || enabledDepts.includes(deptId);
+
+        const requiredInts: string[] = (identity as any).requiredIntegrations ?? [];
+        const connectedTools = requiredInts.filter(i => connectedIntTypes.has(i));
+        const last30Actions = last30Logs.filter((l: any) => l.actorType === agentType).length;
+        const lastActive = lastActiveByAgent[agentType] ?? null;
+
+        const agentWorkflows = graphs.filter((g: any) => {
+          const tags: string[] = Array.isArray(g.tags) ? g.tags : [];
+          return tags.some((t: string) => t.includes(agentType)) ||
+            (g.triggeredByAgent === agentType) ||
+            (Array.isArray(g.agentTypes) && g.agentTypes.includes(agentType));
+        }).length;
+
+        return {
+          agentType,
+          agentName: identity.name,
+          department: identity.department,
+          enabled,
+          governanceMode,
+          requiresApproval: policy?.requiresHumanApproval ?? true,
+          allowedRiskLevels: policy?.allowedRiskLevels ?? ["low"],
+          maxAutonomyLevel: policy?.maxAutonomyLevel ?? "supervised",
+          connectedTools,
+          missingTools: requiredInts.filter(i => !connectedIntTypes.has(i)),
+          workflowsAttached: agentWorkflows,
+          actionsLast30Days: last30Actions,
+          lastActive,
+        };
+      });
+
+      res.json({ matrix, governanceMode, onboardingCompleted: !!settings?.onboardingCompleted });
+    } catch (e: any) {
+      console.error("[workforce/capabilities] error:", e);
+      res.status(500).json({ message: "Failed to fetch capability matrix" });
+    }
+  });
+
+  // GET /api/workforce/recommendations — goal/preset intelligence
+  app.get("/api/workforce/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
+      const goals: string[] = Array.isArray(settings?.goals) ? settings.goals : [];
+      const orgPreset: string = settings?.orgPreset ?? "";
+
+      const recommendations: Array<{
+        id: string; type: "agent" | "workflow" | "integration";
+        title: string; description: string; reason: string; actionUrl: string; priority: "high" | "medium" | "low";
+      }> = [];
+
+      // Goal-based recommendations
+      if (goals.some(g => typeof g === "string" && (g.toLowerCase().includes("revenue") || g.toLowerCase().includes("growth")))) {
+        recommendations.push({
+          id: "rec-apex", type: "agent", title: "Activate Apex (Revenue Operations)", priority: "high",
+          description: "Apex drives lead conversion, deal progression, and revenue recovery workflows.",
+          reason: "Your Revenue Growth goal benefits most from Apex's prospecting and deal-closing capabilities.",
+          actionUrl: "/admin/ai-workforce/settings",
+        }, {
+          id: "rec-lead-recovery", type: "workflow", title: "Publish Lead Recovery Workflow", priority: "high",
+          description: "Automatically re-engages stale leads with personalized outreach sequences.",
+          reason: "Revenue growth depends on maximizing conversion from existing leads.",
+          actionUrl: "/admin/workflow-builder",
+        });
+      }
+
+      if (goals.some(g => typeof g === "string" && g.toLowerCase().includes("retention"))) {
+        recommendations.push({
+          id: "rec-pulse", type: "agent", title: "Activate Pulse (Client Success)", priority: "high",
+          description: "Pulse monitors client engagement and triggers re-engagement before churn occurs.",
+          reason: "Retention goals require proactive monitoring — Pulse is purpose-built for this.",
+          actionUrl: "/admin/ai-workforce/settings",
+        }, {
+          id: "rec-reengagement", type: "workflow", title: "Publish Re-engagement Workflow", priority: "medium",
+          description: "Sends personalized check-ins to clients who have become inactive.",
+          reason: "Early re-engagement is the most cost-effective retention strategy.",
+          actionUrl: "/admin/workflow-builder",
+        });
+      }
+
+      if (goals.some(g => typeof g === "string" && (g.toLowerCase().includes("efficiency") || g.toLowerCase().includes("automat")))) {
+        recommendations.push({
+          id: "rec-tempo", type: "agent", title: "Activate Tempo (Scheduling)", priority: "high",
+          description: "Tempo automates session booking, reschedules, and capacity management.",
+          reason: "Operational efficiency starts with eliminating manual scheduling overhead.",
+          actionUrl: "/admin/ai-workforce/settings",
+        });
+      }
+
+      // Preset-based recommendations
+      if (orgPreset.toLowerCase().includes("sports") || orgPreset.toLowerCase().includes("performance")) {
+        recommendations.push({
+          id: "rec-schedule-opt", type: "workflow", title: "Enable Scheduling Optimization", priority: "high",
+          description: "Optimize coach-to-athlete session ratios and facility utilization.",
+          reason: "Sports performance facilities thrive on scheduling efficiency.",
+          actionUrl: "/admin/workflow-builder",
+        }, {
+          id: "rec-lead-conv", type: "workflow", title: "Publish Lead Conversion Workflow", priority: "medium",
+          description: "Convert trial session inquiries to long-term memberships automatically.",
+          reason: "Trial-to-paid conversion is the primary growth lever for facilities.",
+          actionUrl: "/admin/workflow-builder",
+        });
+      }
+
+      if (orgPreset.toLowerCase().includes("team") || orgPreset.toLowerCase().includes("organization")) {
+        recommendations.push({
+          id: "rec-relay", type: "agent", title: "Activate Relay (Communications)", priority: "high",
+          description: "Relay coordinates multi-coach communications and roster management updates.",
+          reason: "Team organizations require high-volume coordinated communications.",
+          actionUrl: "/admin/ai-workforce/settings",
+        }, {
+          id: "rec-vector", type: "agent", title: "Activate Vector (Intelligence)", priority: "medium",
+          description: "Vector enriches prospect and client data to support coach coordination decisions.",
+          reason: "Data quality is critical for roster and team management workflows.",
+          actionUrl: "/admin/ai-workforce/settings",
+        });
+      }
+
+      // Default recommendations if no specific goals/preset
+      if (recommendations.length === 0) {
+        recommendations.push({
+          id: "rec-default-atlas", type: "agent", title: "Start with Atlas (Executive Intelligence)", priority: "medium",
+          description: "Atlas provides daily business briefings and top-level performance summaries.",
+          reason: "Atlas is the lowest-risk starting point — all actions are informational.",
+          actionUrl: "/admin/ai-workforce/settings",
+        }, {
+          id: "rec-default-exec-summary", type: "workflow", title: "Publish Daily Executive Summary", priority: "medium",
+          description: "Delivers a morning briefing with revenue, client, and scheduling highlights.",
+          reason: "This workflow is pre-approved and low-risk — ideal for getting started.",
+          actionUrl: "/admin/workflow-builder",
+        });
+      }
+
+      // Deduplicate
+      const seen = new Set<string>();
+      const deduped = recommendations.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
+
+      res.json({ goals, orgPreset, recommendations: deduped });
+    } catch (e: any) {
+      console.error("[workforce/recommendations] error:", e);
+      res.status(500).json({ message: "Failed to fetch recommendations" });
+    }
   });
 
   return httpServer;

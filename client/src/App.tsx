@@ -62,6 +62,9 @@ import BusinessBrainPage from "@/pages/business-brain";
 import AdminAiOperationsPage from "@/pages/admin-ai-operations";
 import AdminAiGovernancePage from "@/pages/admin-ai-governance";
 import AdminAiWorkforcePage from "@/pages/admin-ai-workforce";
+import AdminAiWorkforceSettingsPage from "@/pages/admin-ai-workforce-settings";
+import AdminAiWorkforceCapabilitiesPage from "@/pages/admin-ai-workforce-capabilities";
+import AdminAiWorkforceActivityPage from "@/pages/admin-ai-workforce-activity";
 import AdminWorkflowBuilderPage from "@/pages/admin-workflow-builder";
 import AdminWorkflowLivePage from "@/pages/admin-workflow-live";
 import AdminWorkflowHeatmapPage from "@/pages/admin-workflow-heatmap";
@@ -403,6 +406,9 @@ function AuthenticatedLayout() {
                   <Route path="/admin/autonomy-controls" component={AdminAutonomyControlsPage} />
                   <Route path="/admin/ai-governance" component={AdminAiGovernancePage} />
                   <Route path="/admin/ai-workforce" component={AdminAiWorkforcePage} />
+                  <Route path="/admin/ai-workforce/settings" component={AdminAiWorkforceSettingsPage} />
+                  <Route path="/admin/ai-workforce/capabilities" component={AdminAiWorkforceCapabilitiesPage} />
+                  <Route path="/admin/ai-workforce/activity" component={AdminAiWorkforceActivityPage} />
                   <Route path="/admin/ai-employee/:agentId" component={AdminAiEmployeeProfilePage} />
                   <Route path="/admin/recommendations" component={AdminRecommendationsPage} />
                   <Route path="/admin/workflow-builder" component={AdminWorkflowBuilderPage} />

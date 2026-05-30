@@ -1,0 +1,457 @@
+PHASE 2 — AI WORKFORCE OPERATIONS LAYER
+
+Objective
+
+Transform the AI Workforce Wizard from a configuration system into a measurable operational system.
+
+Phase 1 successfully persisted workforce settings, governance policies, department enablement, workflow provenance, and integration validation.
+
+Phase 2 should focus on making the AI workforce observable, measurable, configurable, and actionable.
+
+Do not redesign existing functionality. Extend and operationalize it.
+
+PART 1 — Replace Placeholder Agent Statistics
+
+Audit all workforce dashboard endpoints and identify any remaining placeholder, mocked, or Math.random() generated values.
+
+Specifically inspect:
+
+/api/workforce/agent-stats/:agentId
+
+Current issue:
+actionsToday and approvalsNeeded are generated using Math.random().
+
+Required:
+
+Replace all synthetic values with live calculations.
+
+Data sources should include:
+
+unified_agent_action_log
+
+integration_execution_log
+
+workflow_jobs
+
+agent_execution_locks
+
+communication_log
+
+attention_items
+
+org_activity_events
+
+For each agent return:
+
+actionsToday
+
+actionsLast7Days
+
+successfulActions
+
+failedActions
+
+successRate
+
+approvalsPending
+
+averageExecutionTime
+
+lastExecutionAt
+
+activeWorkflows
+
+errorCount
+
+Return only real values.
+
+No estimated or random metrics.
+
+PART 2 — Workforce Health Dashboard
+
+Create a workforce health layer.
+
+New endpoint:
+
+GET /api/workforce/health
+
+Return:
+
+{
+workforceStatus,
+activeAgents,
+disabledAgents,
+integrationsConnected,
+integrationsMissing,
+workflowsPublished,
+workflowsDraft,
+actionsToday,
+approvalsPending,
+systemHealth
+}
+
+System health should be:
+
+Healthy
+
+Attention Needed
+
+Critical
+
+based on:
+
+failed executions
+
+missing integrations
+
+approval backlog
+
+workflow failures
+
+Display these metrics in AI Operations.
+
+PART 3 — Workforce Settings Page
+
+Create a persistent workforce settings page.
+
+Suggested route:
+
+/admin/ai-workforce/settings
+
+Allow operators to update:
+
+enabled_departments
+
+governance_mode
+
+selected_integrations
+
+selected_workflow_templates
+
+Goals
+
+Org preset
+
+Changes should:
+
+persist immediately
+
+reseed governance policies when needed
+
+update agent visibility dynamically
+
+display audit history
+
+PART 4 — Workforce Audit Trail
+
+Create workforce audit history.
+
+New table:
+
+org_ai_workforce_audit_log
+
+Suggested fields:
+
+id
+
+org_id
+
+event_type
+
+changed_by
+
+old_value
+
+new_value
+
+created_at
+
+Log:
+
+wizard completion
+
+governance changes
+
+department changes
+
+template changes
+
+integration changes
+
+Display timeline in settings page.
+
+PART 5 — AI Workforce Readiness Checklist
+
+Create onboarding readiness engine.
+
+New endpoint:
+
+GET /api/workforce/readiness
+
+Return checklist items.
+
+Examples:
+
+Connect Gmail
+
+Connect Calendar
+
+Publish Draft Workflows
+
+Enable Communication Department
+
+Review Governance Rules
+
+Test First Agent Action
+
+Each item should include:
+
+title
+
+description
+
+status
+
+actionUrl
+
+priority
+
+completionPercent
+
+Display this immediately after wizard completion.
+
+PART 6 — Integration Setup Actions
+
+Current state:
+
+Integrations are validated but not actionable.
+
+Add setup CTAs.
+
+For each missing integration:
+
+Connect Gmail
+
+Connect Calendar
+
+Connect Stripe
+
+Connect Meta
+
+Connect Twilio
+
+Connect Slack
+
+Connect HubSpot
+
+Provide:
+
+status
+
+connectedAt
+
+requiredByAgents
+
+setupRoute
+
+Display warnings by affected agents.
+
+Example:
+
+Relay requires Gmail
+Status: Not Connected
+
+Tempo requires Google Calendar
+Status: Not Connected
+
+PART 7 — Agent Capability Matrix
+
+Create a capability matrix page.
+
+Route:
+
+/admin/ai-workforce/capabilities
+
+Display:
+
+Agent
+
+Department
+
+Enabled
+
+Governance Mode
+
+Requires Approval
+
+Allowed Risk Levels
+
+Max Autonomy Level
+
+Connected Tools
+
+Workflows Attached
+
+Actions Last 30 Days
+
+Last Active
+
+This becomes the operating view for AI workforce management.
+
+PART 8 — Goals & Preset Intelligence
+
+Phase 1 stores:
+
+goals
+
+orgPreset
+
+These are not currently used.
+
+Implement intelligence recommendations.
+
+Examples:
+
+If goal = Revenue Growth:
+
+recommend Apex
+
+recommend Lead Recovery Workflow
+
+recommend Follow-Up Automation
+
+If goal = Retention:
+
+recommend Pulse
+
+recommend Re-engagement Workflow
+
+If orgPreset = Sports Performance Facility:
+
+prioritize scheduling
+
+lead conversion
+
+attendance automation
+
+If orgPreset = Team Training Organization:
+
+prioritize roster management
+
+communications
+
+coach coordination
+
+Generate recommendations dynamically.
+
+PART 9 — Agent Activity Feed
+
+Create live workforce timeline.
+
+Route:
+
+/admin/ai-workforce/activity
+
+Show:
+
+Agent Name
+
+Action
+
+Target
+
+Outcome
+
+Duration
+
+Timestamp
+
+Source Workflow
+
+Approval Required
+
+Approval Status
+
+Feed should use:
+
+unified_agent_action_log
+
+integration_execution_log
+
+workflow_jobs
+
+This becomes the operational command center.
+
+PART 10 — Workforce Scorecard
+
+Create organization-level workforce scorecard.
+
+Metrics:
+
+Total Actions
+
+Success Rate
+
+Revenue Influenced
+
+Hours Saved
+
+Approvals Requested
+
+Approvals Approved
+
+Workflow Executions
+
+Agent Utilization
+
+Most Active Agent
+
+Least Active Agent
+
+Top Error Source
+
+Display trends:
+
+Today
+
+7 Days
+
+30 Days
+
+PART 11 — Verification Requirements
+
+Before implementation:
+
+Identify every existing source of workforce telemetry.
+
+Do not duplicate metrics already available elsewhere.
+
+Reuse existing logging infrastructure whenever possible.
+
+Avoid introducing redundant tables.
+
+PART 12 — Success Criteria
+
+At completion the AI Workforce system should:
+
+Show real operational metrics.
+
+Show real agent activity.
+
+Show real approval queues.
+
+Provide workforce configuration management.
+
+Provide workforce audit history.
+
+Provide readiness guidance.
+
+Provide integration setup guidance.
+
+Provide agent performance monitoring.
+
+Provide organization-level workforce intelligence.
+
+Eliminate all placeholder and synthetic workforce statistics.
+
+The result should feel like a true AI Workforce Operating System rather than a setup wizard.
