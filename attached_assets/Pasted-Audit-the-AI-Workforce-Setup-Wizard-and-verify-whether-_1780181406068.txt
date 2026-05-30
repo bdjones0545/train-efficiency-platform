@@ -1,0 +1,166 @@
+Audit the AI Workforce Setup Wizard and verify whether it is operational, partially operational, or mostly informational.
+
+Goal:
+Determine whether the AI Workforce Setup Wizard actually creates, configures, activates, or changes runtime behavior for AI agents inside TrainEfficiency.
+
+Please perform a complete code + database + route audit and return a structured report.
+
+Audit sections:
+
+1. Wizard UI Inventory
+- Locate the AI Workforce Setup Wizard component/page.
+- List every step in the wizard.
+- List every agent shown in the wizard.
+- Identify all buttons, forms, toggles, and CTAs.
+- Confirm what frontend state is collected.
+
+2. Frontend Action Audit
+For each wizard action:
+- What function runs?
+- What API endpoint is called?
+- What payload is sent?
+- What success/failure states exist?
+- Does Continue only advance UI state, or does it persist anything?
+
+3. Backend Route Audit
+Locate all backend routes related to:
+- AI workforce
+- agents
+- workforce setup
+- agent configuration
+- workflow setup
+- orchestration
+- AI operations
+
+For each route, document:
+- method/path
+- auth requirement
+- request body
+- database writes
+- services called
+- response shape
+
+4. Database Audit
+Inspect all tables related to agents/workflows, including but not limited to:
+- ai_agents
+- agent_configs
+- agent_assignments
+- agent_permissions
+- workflow_templates
+- workflow_instances
+- org_workflows
+- agent_execution_logs
+- integration_execution_log
+- unified_agent_action_log
+- attention_items
+
+If table names differ, identify the actual tables.
+
+For each table:
+- purpose
+- columns
+- current row counts for org-est
+- whether the wizard writes to it
+
+5. Agent Existence Audit
+For every agent presented in the wizard, verify:
+
+| Agent Name | Exists in UI | Exists in DB | Exists in backend service | Has trigger | Can execute action | Has logs | Status |
+
+Classify each agent as:
+- UI only
+- Configurable
+- Triggered automation
+- Tool-using agent
+- Autonomous operational agent
+
+6. Runtime Behavior Audit
+Determine whether completing the wizard changes anything in runtime behavior.
+
+Answer:
+- Does it activate workflows?
+- Does it create agent records?
+- Does it enable triggers?
+- Does it change permissions?
+- Does it connect integrations?
+- Does it create default configurations?
+- Does it affect the Command Center or AI Operations dashboard?
+
+7. Workflow Connection Audit
+Map every wizard agent to any workflow it should control.
+
+For each:
+- trigger event
+- decision logic
+- action taken
+- cooldown/dedup rules
+- logging
+- failure handling
+
+8. Integration Readiness Audit
+For every agent, identify required integrations:
+- Gmail
+- Google Calendar
+- SendGrid
+- Stripe
+- Meta Ads
+- TrainChat
+- OpenAI/OpenRouter
+- Twilio
+- Slack
+- CRM/HubSpot
+
+For each integration:
+- connected/not connected
+- required/optional
+- what breaks if missing
+- whether the wizard checks this before activation
+
+9. Monitoring & Scorecard Audit
+Verify whether each agent has measurable performance tracking.
+
+Check for:
+- tasks completed
+- errors
+- approval queue
+- human intervention rate
+- revenue generated
+- time saved
+- lead response time
+- booking rate
+- retention impact
+
+10. UX Truthfulness Audit
+Compare the wizard’s copy to actual system behavior.
+
+Flag any claims that imply agents are active, autonomous, specialized, or operational when the backend does not support that yet.
+
+11. Final Readiness Report
+Return a final table:
+
+| Area | Score 0-5 | Evidence | Fix Needed |
+|---|---:|---|---|
+
+Areas:
+- UI completeness
+- setup persistence
+- backend support
+- database support
+- workflow activation
+- agent execution
+- integration checks
+- logging/monitoring
+- user trust/claim accuracy
+- production readiness
+
+12. Required Final Output
+End with:
+
+A. What currently works  
+B. What is placeholder/UI-only  
+C. What is partially operational  
+D. What is fully operational  
+E. The top 10 fixes needed to make this a real AI Workforce OS  
+F. Recommended implementation order  
+
+Do not modify code yet. This is audit only.
