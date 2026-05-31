@@ -1,0 +1,399 @@
+# Scheduling System Phase 3 — Autonomous Scheduling Intelligence
+
+Phase 2 is complete and operational.
+
+Do not remove, regress, or redesign any existing functionality.
+
+Build Phase 3 as an intelligence and optimization layer that sits on top of the existing scheduling infrastructure.
+
+The goal is to transform scheduling from a calendar and registration system into an autonomous business optimization engine.
+
+---
+
+## 1. Revenue Recovery Engine
+
+Create a scheduling intelligence service that continuously analyzes session performance.
+
+Identify:
+
+- Sessions below 50% capacity
+- Sessions occurring within the next 72 hours
+- Sessions with declining registration trends
+- Sessions generating less revenue than expected
+
+Calculate:
+
+- Revenue Gap
+- Capacity Gap
+- Potential Revenue Recovery
+
+Example:
+
+High School Football Speed
+
+Capacity: 8
+Registered: 3
+Revenue: $90
+Potential Revenue: $240
+Revenue Gap: $150
+
+Generate recommendations:
+
+- Contact previous attendees
+- Send reminder campaign
+- Promote on social media
+- Merge with another session
+- Adjust schedule
+
+Display recommendations inside the Scheduling Command Center.
+
+---
+
+## 2. Demand Forecasting Engine
+
+Build a forecasting model using:
+
+- Historical registrations
+- Attendance history
+- Waitlist volume
+- Seasonal trends
+- Day-of-week performance
+- Time-of-day performance
+- Sport-specific demand
+
+Predict:
+
+- Expected Fill %
+- Expected Revenue
+- Expected Attendance
+
+Display:
+
+Confidence Score
+
+Example:
+
+Girls Soccer Speed
+
+Predicted Fill:
+92%
+
+Confidence:
+87%
+
+Expected Revenue:
+$276
+
+Store predictions for future analysis.
+
+---
+
+## 3. Capacity Optimization Engine
+
+Analyze:
+
+- Sessions consistently filling
+- Waitlisted sessions
+- Coach utilization
+- Registration demand
+
+Generate recommendations:
+
+Examples:
+
+"Monday Football Speed has averaged 100% capacity for 8 weeks."
+
+Recommendation:
+
+Add second session.
+
+Expected Monthly Revenue Increase:
++$480
+
+---
+
+## 4. Session Performance Score
+
+Create a composite score.
+
+Inputs:
+
+- Utilization
+- Revenue
+- Attendance
+- Waitlist demand
+- Retention
+- Registration velocity
+
+Score:
+
+0–100
+
+Categories:
+
+90–100 Elite
+75–89 Strong
+60–74 Moderate
+Below 60 Needs Attention
+
+Display:
+
+- Session Cards
+- Session Detail Modal
+- Scheduling Command Center
+
+---
+
+## 5. Athlete Session Recommendation Engine
+
+When athletes view scheduling:
+
+Generate:
+
+Recommended For You
+
+Based on:
+
+- Sport
+- Age
+- Skill level
+- Attendance history
+- Registration history
+- Coach preferences
+- Athlete goals
+
+Display:
+
+Top Recommended Sessions
+
+Why Recommended
+
+Examples:
+
+"Recommended because you previously attended football speed sessions."
+
+"Recommended because athletes with similar profiles attend this session."
+
+---
+
+## 6. Retention Risk Detection
+
+Analyze:
+
+- Attendance %
+- Registration frequency
+- Consecutive missed sessions
+- Engagement trends
+
+Classify:
+
+Low Risk
+Moderate Risk
+High Risk
+
+Example:
+
+Attendance dropped from 90% → 42%.
+
+Registration activity down 60%.
+
+Risk:
+High
+
+Generate:
+
+Coach Alerts
+
+Retention Recommendations
+
+---
+
+## 7. Coach Utilization Intelligence
+
+Analyze:
+
+- Available hours
+- Scheduled hours
+- Session performance
+- Revenue generated
+
+Generate:
+
+Optimization recommendations
+
+Examples:
+
+Move:
+
+Tuesday 4 PM Session
+
+To:
+
+Thursday 5 PM
+
+Expected Fill Increase:
++22%
+
+Expected Revenue Increase:
++$300/month
+
+Display in Coach Capacity Dashboard.
+
+---
+
+## 8. Automated Fill Campaign Generator
+
+Add one-click actions.
+
+For underperforming sessions:
+
+Generate campaign audience automatically.
+
+Potential audiences:
+
+- Previous attendees
+- Athletes in same sport
+- Similar age groups
+- Waitlisted athletes
+- Past leads
+
+Create campaign drafts for:
+
+- Email
+- SMS
+- Internal notifications
+
+Integrate with existing workflow system.
+
+No automatic sending yet.
+
+Phase 3 generates campaigns for approval.
+
+---
+
+## 9. Scheduling AI Copilot
+
+Add conversational scheduling intelligence.
+
+Natural language examples:
+
+"Which sessions are losing money?"
+
+"Show coaches below 60% utilization."
+
+"Which athletes have not attended in 14 days?"
+
+"Predict next month's scheduling revenue."
+
+"Which sessions should I add more capacity to?"
+
+"Show high-risk athletes."
+
+Use existing TrainChat infrastructure where appropriate.
+
+Responses should be backed by live scheduling data.
+
+---
+
+## 10. Scheduling Health Score
+
+Create an executive-level health score.
+
+Factors:
+
+- Utilization
+- Revenue
+- Attendance
+- Waitlists
+- Retention
+- Registration growth
+
+Output:
+
+0–100 score
+
+Categories:
+
+90–100 Excellent
+
+75–89 Healthy
+
+60–74 Needs Attention
+
+Below 60 Critical
+
+Display:
+
+Scheduling Command Center header
+
+Coach Capacity Dashboard
+
+Admin Overview
+
+---
+
+## 11. Opportunity Inbox
+
+Create a dedicated scheduling opportunity feed.
+
+Examples:
+
+"Add another football session."
+
+"Contact 5 waitlisted athletes."
+
+"Move Tuesday session to Thursday."
+
+"Attendance declining for Girls Soccer."
+
+"Revenue recovery opportunity: $420."
+
+Each opportunity should include:
+
+Priority
+Potential Impact
+Recommended Action
+
+One-click workflow creation.
+
+---
+
+## 12. Scheduling Intelligence Database Layer
+
+Create supporting intelligence tables.
+
+Examples:
+
+scheduling_predictions
+
+scheduling_opportunities
+
+scheduling_health_snapshots
+
+session_performance_scores
+
+retention_risk_scores
+
+coach_utilization_recommendations
+
+Track historical trends.
+
+Enable future AI learning and reporting.
+
+---
+
+## Success Criteria
+
+The scheduling system should evolve from a management tool into an autonomous scheduling intelligence platform that:
+
+- Identifies revenue opportunities
+- Forecasts demand
+- Detects retention risks
+- Optimizes coach utilization
+- Recommends new sessions
+- Recommends schedule changes
+- Creates outreach campaigns
+- Prioritizes opportunities
+- Provides executive-level scheduling intelligence
+
+while maintaining full multi-tenant isolation, role-based permissions, mobile responsiveness, and compatibility with the existing Workflow Engine, Agent Infrastructure, Revenue Intelligence, and TrainChat ecosystem.
