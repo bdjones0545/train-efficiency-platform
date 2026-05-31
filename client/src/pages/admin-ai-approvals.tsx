@@ -53,8 +53,62 @@ import {
   TrendingUp,
   User,
   Filter,
+  Sparkles,
+  BookOpen,
+  Globe,
+  Archive,
+  MessageSquare,
+  RotateCcw,
+  History,
+  Target,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const FEEDBACK_CHIPS = [
+  "Too long",
+  "Too generic",
+  "Too salesy",
+  "Weak CTA",
+  "Missing scheduling link",
+  "Wrong lead stage",
+  "Wrong tone",
+  "Missing sport context",
+  "Too much hype",
+  "Not personal enough",
+];
+
+const MESSAGE_TYPE_LABELS: Record<string, string> = {
+  intake_outreach: "Intake Outreach",
+  followup_24h: "24h Follow-up",
+  followup_72h: "72h Follow-up",
+  followup_7d: "7-Day Follow-up",
+  retention: "Retention",
+  reactivation: "Reactivation",
+  team_partnership: "Team Partnership",
+  scheduling_response: "Scheduling Response",
+  booking_confirmation: "Booking Confirmation",
+};
+
+const AUTONOMY_LEVEL_LABELS = [
+  { level: 0, label: "Manual Approval", description: "All messages require your review", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" },
+  { level: 1, label: "Suggested", description: "Agent drafts, you approve", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" },
+  { level: 2, label: "Auto-send Low Risk", description: "Sends automatically when confidence is high", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
+  { level: 3, label: "Autonomous", description: "Agent sends with monitoring", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
+];
+
+const RULE_TYPE_ICONS: Record<string, string> = {
+  do: "✅",
+  avoid: "🚫",
+  tone: "🎭",
+  cta: "👆",
+  length: "📏",
+  personalization: "👤",
+  lead_stage: "📊",
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Proposal {
   id: string;
@@ -96,24 +150,30 @@ interface AutonomySetting {
   readyForLevel3: boolean;
 }
 
-const MESSAGE_TYPE_LABELS: Record<string, string> = {
-  intake_outreach: "Intake Outreach",
-  followup_24h: "24h Follow-up",
-  followup_72h: "72h Follow-up",
-  followup_7d: "7-Day Follow-up",
-  retention: "Retention",
-  reactivation: "Reactivation",
-  team_partnership: "Team Partnership",
-  scheduling_response: "Scheduling Response",
-  booking_confirmation: "Booking Confirmation",
-};
+interface LearningRule {
+  id: string;
+  ruleType: string;
+  ruleText: string;
+  messageType: string | null;
+  appliesGlobally: boolean | null;
+  confidence: string | null;
+  status: string | null;
+}
 
-const AUTONOMY_LEVEL_LABELS = [
-  { level: 0, label: "Manual Approval", description: "All messages require your review", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" },
-  { level: 1, label: "Suggested", description: "Agent drafts, you approve", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" },
-  { level: 2, label: "Auto-send Low Risk", description: "Sends automatically when confidence is high", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
-  { level: 3, label: "Autonomous", description: "Agent sends with monitoring", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
-];
+interface LearningData {
+  messageType: string;
+  rulesCount: number;
+  doRules: { id: string; text: string; confidence: string | null; appliesGlobally: boolean | null }[];
+  avoidRules: { id: string; text: string; confidence: string | null; appliesGlobally: boolean | null }[];
+  toneRules: { id: string; text: string; confidence: string | null }[];
+  ctaRules: { id: string; text: string; confidence: string | null }[];
+  lengthRules: { id: string; text: string; confidence: string | null }[];
+  topRejectionTags: { tag: string; count: number }[];
+  repeatedMistakes: { tag: string; count: number }[];
+  reviewedCount: number;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getRiskColor(level: string) {
   if (level === "low") return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
@@ -125,6 +185,35 @@ function getMessageTypeLabel(actionType: string) {
   const raw = actionType.replace("propose_draft:", "");
   return MESSAGE_TYPE_LABELS[raw] ?? raw;
 }
+
+// ─── Feedback Chips ───────────────────────────────────────────────────────────
+
+function FeedbackChips({ selected, onToggle }: { selected: string[]; onToggle: (chip: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {FEEDBACK_CHIPS.map((chip) => {
+        const active = selected.includes(chip);
+        return (
+          <button
+            key={chip}
+            type="button"
+            onClick={() => onToggle(chip)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              active
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-muted/50 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+            }`}
+            data-testid={`chip-${chip.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            {chip}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Metric Card ──────────────────────────────────────────────────────────────
 
 function MetricCard({ label, value, sub, icon: Icon, alert }: { label: string; value: string | number; sub?: string; icon: any; alert?: boolean }) {
   return (
@@ -143,6 +232,8 @@ function MetricCard({ label, value, sub, icon: Icon, alert }: { label: string; v
   );
 }
 
+// ─── Proposal Card ────────────────────────────────────────────────────────────
+
 function ProposalCard({
   proposal,
   selected,
@@ -150,6 +241,7 @@ function ProposalCard({
   onApprove,
   onEditSend,
   onReject,
+  onRegenerate,
 }: {
   proposal: Proposal;
   selected: boolean;
@@ -157,6 +249,7 @@ function ProposalCard({
   onApprove: (p: Proposal) => void;
   onEditSend: (p: Proposal) => void;
   onReject: (p: Proposal) => void;
+  onRegenerate: (p: Proposal) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const createdAgo = proposal.createdAt
@@ -218,7 +311,7 @@ function ProposalCard({
                 <CollapsibleContent>
                   <p className="mt-2 text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
                     <AlertTriangle className="h-3 w-3" />
-                    This is a preview (first ~300 chars). Use "Edit & Send" to write the complete email.
+                    Preview only (~300 chars). Use "Edit & Send" to write the full email.
                   </p>
                 </CollapsibleContent>
               </div>
@@ -232,33 +325,19 @@ function ProposalCard({
 
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="default"
-                className="text-xs gap-1.5"
-                onClick={() => onApprove(proposal)}
-                data-testid={`button-approve-${proposal.id}`}
-              >
+              <Button size="sm" variant="default" className="text-xs gap-1.5" onClick={() => onApprove(proposal)} data-testid={`button-approve-${proposal.id}`}>
                 <Send className="h-3 w-3" />
                 Approve & Send
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs gap-1.5"
-                onClick={() => onEditSend(proposal)}
-                data-testid={`button-edit-send-${proposal.id}`}
-              >
+              <Button size="sm" variant="outline" className="text-xs gap-1.5" onClick={() => onEditSend(proposal)} data-testid={`button-edit-send-${proposal.id}`}>
                 <Pencil className="h-3 w-3" />
                 Edit & Send
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
-                onClick={() => onReject(proposal)}
-                data-testid={`button-reject-${proposal.id}`}
-              >
+              <Button size="sm" variant="outline" className="text-xs gap-1.5 text-purple-600 border-purple-300 hover:bg-purple-50 dark:text-purple-400 dark:border-purple-700 dark:hover:bg-purple-950" onClick={() => onRegenerate(proposal)} data-testid={`button-regenerate-${proposal.id}`}>
+                <Sparkles className="h-3 w-3" />
+                Regenerate
+              </Button>
+              <Button size="sm" variant="ghost" className="text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950" onClick={() => onReject(proposal)} data-testid={`button-reject-${proposal.id}`}>
                 <X className="h-3 w-3" />
                 Reject
               </Button>
@@ -270,22 +349,12 @@ function ProposalCard({
   );
 }
 
-function ApproveDialog({
-  proposal,
-  open,
-  onClose,
-  onSent,
-}: {
-  proposal: Proposal | null;
-  open: boolean;
-  onClose: () => void;
-  onSent: () => void;
-}) {
+// ─── Approve Dialog ───────────────────────────────────────────────────────────
+
+function ApproveDialog({ proposal, open, onClose, onSent }: { proposal: Proposal | null; open: boolean; onClose: () => void; onSent: () => void }) {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const { toast } = useToast();
-
-  const isEditMode = body !== (proposal?.bodyPreview ?? "");
 
   const approveMutation = useMutation({
     mutationFn: (data: { subject: string; body: string }) =>
@@ -304,21 +373,14 @@ function ApproveDialog({
     },
   });
 
-  function handleOpen() {
-    setSubject(proposal?.subject ?? "");
-    setBody(proposal?.bodyPreview ?? "");
-  }
-
+  function handleOpen() { setSubject(proposal?.subject ?? ""); setBody(proposal?.bodyPreview ?? ""); }
   if (!proposal) return null;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); else handleOpen(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Send className="h-4 w-4" />
-            Review & Send Email
-          </DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><Send className="h-4 w-4" />Review & Send Email</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="bg-muted/40 rounded-md p-3 text-sm">
@@ -327,45 +389,21 @@ function ApproveDialog({
           </div>
           <div className="p-3 rounded-md bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-sm text-orange-800 dark:text-orange-200 flex gap-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <span>The AI stored a <strong>preview only</strong> (first ~300 chars). Review and complete the email body below before sending.</span>
+            <span>The AI stored a <strong>preview only</strong>. Review and complete the body before sending.</span>
           </div>
           <div className="space-y-2">
             <Label htmlFor="approve-subject">Subject</Label>
-            <Input
-              id="approve-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              data-testid="input-approve-subject"
-            />
+            <Input id="approve-subject" value={subject} onChange={(e) => setSubject(e.target.value)} data-testid="input-approve-subject" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="approve-body">Email Body</Label>
-            <Textarea
-              id="approve-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={12}
-              className="font-mono text-sm"
-              placeholder="Complete the email body here..."
-              data-testid="input-approve-body"
-            />
+            <Textarea id="approve-body" value={body} onChange={(e) => setBody(e.target.value)} rows={12} className="font-mono text-sm" placeholder="Complete the email body here..." data-testid="input-approve-body" />
             <p className="text-xs text-muted-foreground">{body.length} characters</p>
           </div>
         </div>
         <DialogFooter className="gap-2 flex-wrap">
           <Button variant="ghost" onClick={onClose} data-testid="button-approve-cancel">Cancel</Button>
-          <Button
-            onClick={() => {
-              if (!subject.trim() || !body.trim()) {
-                toast({ title: "Subject and body are required", variant: "destructive" });
-                return;
-              }
-              approveMutation.mutate({ subject, body });
-            }}
-            disabled={approveMutation.isPending || !body.trim()}
-            className="gap-1.5"
-            data-testid="button-approve-confirm"
-          >
+          <Button onClick={() => { if (!subject.trim() || !body.trim()) { toast({ title: "Subject and body are required", variant: "destructive" }); return; } approveMutation.mutate({ subject, body }); }} disabled={approveMutation.isPending || !body.trim()} className="gap-1.5" data-testid="button-approve-confirm">
             <Send className="h-4 w-4" />
             {approveMutation.isPending ? "Sending…" : "Send Email"}
           </Button>
@@ -375,41 +413,28 @@ function ApproveDialog({
   );
 }
 
-function EditSendDialog({
-  proposal,
-  open,
-  onClose,
-  onSent,
-}: {
-  proposal: Proposal | null;
-  open: boolean;
-  onClose: () => void;
-  onSent: () => void;
-}) {
+// ─── Edit & Send Dialog ───────────────────────────────────────────────────────
+
+function EditSendDialog({ proposal, open, onClose, onSent }: { proposal: Proposal | null; open: boolean; onClose: () => void; onSent: () => void }) {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [rating, setRating] = useState("");
   const [notes, setNotes] = useState("");
+  const [coaching, setCoaching] = useState("");
+  const [chips, setChips] = useState<string[]>([]);
   const { toast } = useToast();
 
   const editSendMutation = useMutation({
-    mutationFn: (data: { subject: string; body: string; qualityRating?: number; reviewerNotes?: string }) =>
-      apiRequest("POST", `/api/ai-approvals/${proposal!.id}/edit-send`, data),
+    mutationFn: (data: any) => apiRequest("POST", `/api/ai-approvals/${proposal!.id}/edit-send`, data),
     onSuccess: () => {
       toast({ title: "Email sent", description: `Edited and sent to ${proposal?.recipientEmail}` });
       onSent();
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to send", description: err?.message ?? "Unknown error", variant: "destructive" });
-    },
+    onError: (err: any) => toast({ title: "Failed to send", description: err?.message ?? "Unknown error", variant: "destructive" }),
   });
 
-  function handleOpen() {
-    setSubject(proposal?.subject ?? "");
-    setBody(proposal?.bodyPreview ?? "");
-    setRating("");
-    setNotes("");
-  }
+  function handleOpen() { setSubject(proposal?.subject ?? ""); setBody(proposal?.bodyPreview ?? ""); setRating(""); setNotes(""); setCoaching(""); setChips([]); }
+  function toggleChip(chip: string) { setChips((prev) => prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]); }
 
   if (!proposal) return null;
 
@@ -417,10 +442,7 @@ function EditSendDialog({
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); else handleOpen(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Pencil className="h-4 w-4" />
-            Edit & Send
-          </DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><Pencil className="h-4 w-4" />Edit & Send</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="bg-muted/40 rounded-md p-3 text-sm">
@@ -436,38 +458,47 @@ function EditSendDialog({
             <Textarea id="edit-body" value={body} onChange={(e) => setBody(e.target.value)} rows={12} className="font-mono text-sm" data-testid="input-edit-body" />
             <p className="text-xs text-muted-foreground">{body.length} characters</p>
           </div>
-          <div className="border-t pt-4 space-y-3">
-            <p className="text-sm font-medium text-muted-foreground">Training feedback (optional)</p>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-rating">Quality rating for AI learning (1–5)</Label>
-              <Select value={rating} onValueChange={setRating}>
-                <SelectTrigger id="edit-rating" data-testid="select-rating">
-                  <SelectValue placeholder="Rate original draft..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <SelectItem key={n} value={String(n)}>{n} — {["Poor", "Fair", "Good", "Very Good", "Excellent"][n - 1]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+          <div className="border-t pt-4 space-y-4">
+            <p className="text-sm font-medium flex items-center gap-2"><MessageSquare className="h-4 w-4 text-muted-foreground" />Coach the AI (optional)</p>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Quick feedback</Label>
+              <FeedbackChips selected={chips} onToggle={toggleChip} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-notes">Notes for AI (what to improve)</Label>
-              <Textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="e.g. Too long, avoid hype language, add direct booking CTA..." data-testid="input-edit-notes" />
+              <Label htmlFor="edit-coaching">Tell the AI what you wanted instead</Label>
+              <Textarea
+                id="edit-coaching"
+                value={coaching}
+                onChange={(e) => setCoaching(e.target.value)}
+                rows={3}
+                placeholder="e.g. This sounds too generic. Mention the athlete's sport and make the CTA more direct."
+                data-testid="input-edit-coaching"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-rating">Quality rating (1–5)</Label>
+                <Select value={rating} onValueChange={setRating}>
+                  <SelectTrigger id="edit-rating" data-testid="select-rating"><SelectValue placeholder="Rate original..." /></SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n} — {["Poor", "Fair", "Good", "Very Good", "Excellent"][n - 1]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-notes">Additional notes</Label>
+                <Input id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Other notes..." data-testid="input-edit-notes" />
+              </div>
             </div>
           </div>
         </div>
         <DialogFooter className="gap-2 flex-wrap">
           <Button variant="ghost" onClick={onClose} data-testid="button-edit-cancel">Cancel</Button>
           <Button
-            onClick={() =>
-              editSendMutation.mutate({
-                subject,
-                body,
-                qualityRating: rating ? parseInt(rating) : undefined,
-                reviewerNotes: notes || undefined,
-              })
-            }
+            onClick={() => editSendMutation.mutate({ subject, body, qualityRating: rating ? parseInt(rating) : undefined, reviewerNotes: notes || undefined, coachingFeedbackText: coaching || undefined, feedbackTags: chips.length ? chips : undefined })}
             disabled={editSendMutation.isPending || !subject.trim() || !body.trim()}
             className="gap-1.5"
             data-testid="button-edit-confirm"
@@ -481,24 +512,17 @@ function EditSendDialog({
   );
 }
 
-function RejectDialog({
-  proposal,
-  open,
-  onClose,
-  onRejected,
-}: {
-  proposal: Proposal | null;
-  open: boolean;
-  onClose: () => void;
-  onRejected: () => void;
-}) {
+// ─── Reject Dialog ────────────────────────────────────────────────────────────
+
+function RejectDialog({ proposal, open, onClose, onRejected }: { proposal: Proposal | null; open: boolean; onClose: () => void; onRejected: () => void }) {
   const [reason, setReason] = useState("");
+  const [coaching, setCoaching] = useState("");
+  const [chips, setChips] = useState<string[]>([]);
   const [rating, setRating] = useState("");
   const { toast } = useToast();
 
   const rejectMutation = useMutation({
-    mutationFn: (data: { reason: string; qualityRating?: number }) =>
-      apiRequest("POST", `/api/ai-approvals/${proposal!.id}/reject`, data),
+    mutationFn: (data: any) => apiRequest("POST", `/api/ai-approvals/${proposal!.id}/reject`, data),
     onSuccess: () => {
       toast({ title: "Proposal rejected", description: "Feedback saved for agent learning." });
       onRejected();
@@ -506,39 +530,60 @@ function RejectDialog({
     onError: () => toast({ title: "Failed to reject", variant: "destructive" }),
   });
 
+  function toggleChip(chip: string) { setChips((prev) => prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]); }
+
+  const canSubmit = !!(reason.trim() || coaching.trim() || chips.length > 0);
+
   if (!proposal) return null;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md">
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); setReason(""); setCoaching(""); setChips([]); setRating(""); } }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-red-600">
-            <X className="h-4 w-4" />
-            Reject Email Draft
-          </DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-red-600"><X className="h-4 w-4" />Reject Email Draft</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="bg-muted/40 rounded-md p-3 text-sm">
             <p className="font-medium">{proposal.subject}</p>
             <p className="text-muted-foreground mt-1">To: {proposal.recipientEmail}</p>
           </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Quick feedback (select all that apply)</Label>
+            <FeedbackChips selected={chips} onToggle={toggleChip} />
+          </div>
+
           <div className="space-y-1.5">
-            <Label htmlFor="reject-reason">Reason (helps train the AI)</Label>
+            <Label htmlFor="reject-coaching">
+              Tell the AI what you wanted instead
+              <span className="text-muted-foreground font-normal ml-1">(required if no reason below)</span>
+            </Label>
+            <Textarea
+              id="reject-coaching"
+              value={coaching}
+              onChange={(e) => setCoaching(e.target.value)}
+              rows={3}
+              placeholder={`e.g. "This parent already filled out the form. Ask them to book instead of asking if they're interested."`}
+              data-testid="input-reject-coaching"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="reject-reason">Short rejection reason (optional if coaching above)</Label>
             <Textarea
               id="reject-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              rows={3}
-              placeholder="e.g. Wrong tone, too aggressive, lead already responded..."
+              rows={2}
+              placeholder="e.g. Wrong tone, lead already responded, not the right time..."
               data-testid="input-reject-reason"
             />
           </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="reject-rating">Quality rating (1–5)</Label>
             <Select value={rating} onValueChange={setRating}>
-              <SelectTrigger id="reject-rating" data-testid="select-reject-rating">
-                <SelectValue placeholder="Rate this draft..." />
-              </SelectTrigger>
+              <SelectTrigger id="reject-rating" data-testid="select-reject-rating"><SelectValue placeholder="Rate this draft..." /></SelectTrigger>
               <SelectContent>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <SelectItem key={n} value={String(n)}>{n} — {["Poor", "Fair", "Good", "Very Good", "Excellent"][n - 1]}</SelectItem>
@@ -546,13 +591,20 @@ function RejectDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {!canSubmit && (
+            <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Please select a feedback chip, add coaching feedback, or enter a reason.
+            </p>
+          )}
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={onClose} data-testid="button-reject-cancel">Cancel</Button>
+          <Button variant="ghost" onClick={() => { onClose(); setReason(""); setCoaching(""); setChips([]); setRating(""); }} data-testid="button-reject-cancel">Cancel</Button>
           <Button
             variant="destructive"
-            onClick={() => rejectMutation.mutate({ reason, qualityRating: rating ? parseInt(rating) : undefined })}
-            disabled={rejectMutation.isPending}
+            onClick={() => rejectMutation.mutate({ reason: reason || undefined, qualityRating: rating ? parseInt(rating) : undefined, coachingFeedbackText: coaching || undefined, feedbackTags: chips.length ? chips : undefined })}
+            disabled={rejectMutation.isPending || !canSubmit}
             data-testid="button-reject-confirm"
           >
             {rejectMutation.isPending ? "Rejecting…" : "Reject Draft"}
@@ -562,6 +614,307 @@ function RejectDialog({
     </Dialog>
   );
 }
+
+// ─── Regenerate Dialog ────────────────────────────────────────────────────────
+
+function RegenerateDialog({
+  proposal,
+  open,
+  onClose,
+  onRegenerated,
+}: {
+  proposal: Proposal | null;
+  open: boolean;
+  onClose: () => void;
+  onRegenerated: (subject: string, body: string) => void;
+}) {
+  const [feedbackText, setFeedbackText] = useState("");
+  const [chips, setChips] = useState<string[]>([]);
+  const [result, setResult] = useState<{ subject: string; body: string } | null>(null);
+  const { toast } = useToast();
+
+  function toggleChip(chip: string) {
+    setChips((prev) => prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]);
+    if (!feedbackText.includes(chip)) {
+      setFeedbackText((prev) => prev ? `${prev}. ${chip}.` : `${chip}.`);
+    }
+  }
+
+  const regenMutation = useMutation({
+    mutationFn: (data: { feedbackText: string }) =>
+      apiRequest("POST", `/api/ai-approvals/${proposal!.id}/regenerate`, data),
+    onSuccess: (data: any) => {
+      setResult({ subject: data.subject, body: data.body });
+      toast({ title: "Draft regenerated", description: "Review the new version below." });
+    },
+    onError: (err: any) => toast({ title: "Regeneration failed", description: err?.message ?? "Unknown error", variant: "destructive" }),
+  });
+
+  function handleClose() {
+    onClose();
+    setFeedbackText("");
+    setChips([]);
+    setResult(null);
+  }
+
+  if (!proposal) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-400">
+            <Sparkles className="h-4 w-4" />
+            Regenerate with Feedback
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div className="bg-muted/40 rounded-md p-3 text-sm">
+            <p><span className="font-medium">For:</span> {proposal.recipientEmail}</p>
+            <p className="mt-1 text-muted-foreground line-clamp-2"><span className="font-medium text-foreground">Original:</span> {proposal.subject}</p>
+          </div>
+
+          {!result ? (
+            <>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Quick feedback (click to add to prompt)</Label>
+                <FeedbackChips selected={chips} onToggle={toggleChip} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="regen-feedback">What should the AI change?</Label>
+                <Textarea
+                  id="regen-feedback"
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  rows={4}
+                  placeholder={`e.g. "Too generic. Mention basketball and make it shorter. Use a direct booking CTA since they already filled out the intake form."`}
+                  data-testid="input-regen-feedback"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={handleClose} data-testid="button-regen-cancel">Cancel</Button>
+                <Button
+                  onClick={() => regenMutation.mutate({ feedbackText })}
+                  disabled={regenMutation.isPending || !feedbackText.trim()}
+                  className="gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
+                  data-testid="button-regen-submit"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {regenMutation.isPending ? "Regenerating…" : "Regenerate Draft"}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-green-700 dark:text-green-400 text-sm font-medium">
+                <CheckCheck className="h-4 w-4" />
+                New draft generated — review and use the updated card to approve or edit.
+              </div>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Revised Subject</Label>
+                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md p-3 text-sm font-medium">{result.subject}</div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Revised Body</Label>
+                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md p-3 text-sm font-mono whitespace-pre-wrap">{result.body}</div>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setResult(null)} className="gap-1.5" data-testid="button-regen-try-again">
+                  <RotateCcw className="h-3 w-3" />
+                  Try again
+                </Button>
+                <Button onClick={() => { onRegenerated(result.subject, result.body); handleClose(); }} className="gap-1.5" data-testid="button-regen-use">
+                  <CheckCheck className="h-4 w-4" />
+                  Use this draft
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Learning Dashboard ───────────────────────────────────────────────────────
+
+function LearningDashboard() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [activeType, setActiveType] = useState<string | null>(null);
+
+  const { data: learningData = [] } = useQuery<LearningData[]>({
+    queryKey: ["/api/ai-approvals/learning-dashboard"],
+    enabled: open,
+  });
+
+  const updateRuleMutation = useMutation({
+    mutationFn: ({ ruleId, updates }: { ruleId: string; updates: any }) =>
+      apiRequest("PATCH", `/api/ai-approvals/learning-rules/${ruleId}`, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/ai-approvals/learning-dashboard"] });
+      toast({ title: "Rule updated" });
+    },
+    onError: () => toast({ title: "Failed to update rule", variant: "destructive" }),
+  });
+
+  const activeTypes = learningData.filter((d) => d.rulesCount > 0 || d.reviewedCount > 0);
+  const selectedData = learningData.find((d) => d.messageType === activeType) ?? activeTypes[0] ?? null;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <BookOpen className="h-4 w-4" />
+                What the AI Has Learned
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Feedback rules & coaching memory</span>
+                {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="pt-0 pb-4">
+            {activeTypes.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-medium">No learning data yet</p>
+                <p className="text-xs mt-1">Reject or edit messages with coaching feedback to start training the AI.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col md:flex-row gap-4">
+                {/* Left: message type list */}
+                <div className="md:w-48 flex-shrink-0">
+                  <p className="text-xs text-muted-foreground font-medium mb-2 uppercase tracking-wider">Message Types</p>
+                  <div className="space-y-1">
+                    {activeTypes.map((d) => (
+                      <button
+                        key={d.messageType}
+                        onClick={() => setActiveType(d.messageType)}
+                        className={`w-full text-left px-3 py-2 rounded-md text-xs transition-colors ${
+                          (activeType ?? activeTypes[0]?.messageType) === d.messageType
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-muted/50"
+                        }`}
+                        data-testid={`tab-learning-${d.messageType}`}
+                      >
+                        <span className="font-medium block">{MESSAGE_TYPE_LABELS[d.messageType] ?? d.messageType}</span>
+                        <span className="opacity-70">{d.rulesCount} rules · {d.reviewedCount} reviewed</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right: rules detail */}
+                {selectedData && (
+                  <div className="flex-1 min-w-0 space-y-4">
+                    {/* Repeated mistakes */}
+                    {selectedData.repeatedMistakes.length > 0 && (
+                      <div className="p-3 rounded-md bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800">
+                        <p className="text-xs font-medium text-orange-800 dark:text-orange-300 mb-2 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Repeated Mistakes (blocks autonomy promotion)
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedData.repeatedMistakes.map((m) => (
+                            <Badge key={m.tag} className="text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300">
+                              {m.tag} × {m.count}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Top rejection tags */}
+                    {selectedData.topRejectionTags.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">Top Rejection Tags</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedData.topRejectionTags.map((t) => (
+                            <Badge key={t.tag} variant="outline" className="text-xs">
+                              {t.tag} <span className="ml-1 text-muted-foreground">×{t.count}</span>
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rules sections */}
+                    {[
+                      { key: "doRules", label: "Do Rules", icon: "✅" },
+                      { key: "avoidRules", label: "Avoid Rules", icon: "🚫" },
+                      { key: "toneRules", label: "Tone", icon: "🎭" },
+                      { key: "ctaRules", label: "CTA Preferences", icon: "👆" },
+                      { key: "lengthRules", label: "Length", icon: "📏" },
+                    ].map(({ key, label, icon }) => {
+                      const rules = (selectedData as any)[key] as { id: string; text: string; confidence: string | null; appliesGlobally?: boolean | null }[];
+                      if (!rules?.length) return null;
+                      return (
+                        <div key={key}>
+                          <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">{icon} {label}</p>
+                          <div className="space-y-1.5">
+                            {rules.map((rule) => (
+                              <div key={rule.id} className="flex items-start gap-2 p-2.5 rounded-md bg-muted/30 border border-border/50 group">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs leading-relaxed">{rule.text}</p>
+                                  <div className="flex gap-2 mt-1">
+                                    {rule.appliesGlobally && <Badge className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 py-0">Global</Badge>}
+                                    {rule.confidence && (
+                                      <span className="text-xs text-muted-foreground">{Math.round(parseFloat(rule.confidence) * 100)}% confidence</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-1.5 text-xs text-blue-600 hover:text-blue-700"
+                                    onClick={() => updateRuleMutation.mutate({ ruleId: rule.id, updates: { appliesGlobally: !rule.appliesGlobally } })}
+                                    title={rule.appliesGlobally ? "Make type-specific" : "Make global"}
+                                    data-testid={`button-rule-global-${rule.id}`}
+                                  >
+                                    <Globe className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                                    onClick={() => updateRuleMutation.mutate({ ruleId: rule.id, updates: { status: "archived" } })}
+                                    title="Archive rule"
+                                    data-testid={`button-rule-archive-${rule.id}`}
+                                  >
+                                    <Archive className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {selectedData.rulesCount === 0 && (
+                      <p className="text-xs text-muted-foreground">No rules extracted for this message type yet. Reject or edit a message with coaching feedback to create rules.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
+// ─── Autonomy Panel ───────────────────────────────────────────────────────────
 
 function AutonomyPanel({ settings }: { settings: AutonomySetting[] }) {
   const qc = useQueryClient();
@@ -603,6 +956,7 @@ function AutonomyPanel({ settings }: { settings: AutonomySetting[] }) {
                 <p key={l.level}><span className="font-medium">Level {l.level}:</span> {l.label} — {l.description}</p>
               ))}
               <p className="mt-2 text-orange-600 dark:text-orange-400">⚠ Auto-send is never allowed for pricing, refunds, legal claims, or high-risk churn messages.</p>
+              <p className="mt-1 text-orange-600 dark:text-orange-400">⚠ Autonomy is blocked if the same feedback tag appears 3+ times for a message type.</p>
             </div>
             <div className="space-y-3">
               {settings.map((s) => {
@@ -629,9 +983,7 @@ function AutonomyPanel({ settings }: { settings: AutonomySetting[] }) {
                         onValueChange={(v) => updateMutation.mutate({ messageType: s.messageType, autonomyLevel: parseInt(v), enabled: s.enabled })}
                         disabled={updateMutation.isPending}
                       >
-                        <SelectTrigger className="w-40 text-xs" data-testid={`select-autonomy-${s.messageType}`}>
-                          <SelectValue />
-                        </SelectTrigger>
+                        <SelectTrigger className="w-40 text-xs" data-testid={`select-autonomy-${s.messageType}`}><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="0">Level 0 — Manual</SelectItem>
                           <SelectItem value="1" disabled={s.totalReviewed < 5}>Level 1 — Suggested</SelectItem>
@@ -651,6 +1003,8 @@ function AutonomyPanel({ settings }: { settings: AutonomySetting[] }) {
   );
 }
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function AdminAiApprovalsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -659,6 +1013,7 @@ export default function AdminAiApprovalsPage() {
   const [approveDialogProposal, setApproveDialogProposal] = useState<Proposal | null>(null);
   const [editSendDialogProposal, setEditSendDialogProposal] = useState<Proposal | null>(null);
   const [rejectDialogProposal, setRejectDialogProposal] = useState<Proposal | null>(null);
+  const [regenerateDialogProposal, setRegenerateDialogProposal] = useState<Proposal | null>(null);
   const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
   const [bulkRejectReason, setBulkRejectReason] = useState("");
   const [riskFilter, setRiskFilter] = useState("all");
@@ -715,29 +1070,19 @@ export default function AdminAiApprovalsPage() {
   const lowRiskProposals = proposals.filter((p) => p.riskLevel === "low");
   const selectedList = filteredByTab.filter((p) => selectedIds.has(p.id));
   const allSelected = filteredByTab.length > 0 && filteredByTab.every((p) => selectedIds.has(p.id));
+  const oldestHours = metrics?.oldestPendingHours ?? null;
 
   function toggleSelectAll() {
     if (allSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filteredByTab.forEach((p) => next.delete(p.id));
-        return next;
-      });
+      setSelectedIds((prev) => { const next = new Set(prev); filteredByTab.forEach((p) => next.delete(p.id)); return next; });
     } else {
       setSelectedIds((prev) => new Set([...prev, ...filteredByTab.map((p) => p.id)]));
     }
   }
 
   function handleSelect(id: string, checked: boolean) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+    setSelectedIds((prev) => { const next = new Set(prev); if (checked) next.add(id); else next.delete(id); return next; });
   }
-
-  const oldestHours = metrics?.oldestPendingHours ?? null;
 
   return (
     <div className="space-y-6 pb-10">
@@ -748,7 +1093,7 @@ export default function AdminAiApprovalsPage() {
             <Inbox className="h-6 w-6" />
             AI Approval Inbox
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Review, approve, and teach the AI agent what good messages look like.</p>
+          <p className="text-muted-foreground text-sm mt-1">Review, approve, and coach the AI agent. Every decision becomes a training rule.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5 flex-shrink-0" data-testid="button-refresh-approvals">
           <RefreshCw className="h-4 w-4" />
@@ -793,30 +1138,15 @@ export default function AdminAiApprovalsPage() {
         <div className="flex flex-wrap items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-3" data-testid="bulk-action-bar">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
           <div className="flex flex-wrap gap-2 ml-auto">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => bulkApproveMutation.mutate([...selectedIds])}
-              disabled={bulkApproveMutation.isPending}
-              data-testid="button-bulk-approve"
-            >
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => bulkApproveMutation.mutate([...selectedIds])} disabled={bulkApproveMutation.isPending} data-testid="button-bulk-approve">
               <Send className="h-3.5 w-3.5" />
               {bulkApproveMutation.isPending ? "Sending…" : "Approve Selected"}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-red-600"
-              onClick={() => setBulkRejectOpen(true)}
-              data-testid="button-bulk-reject"
-            >
+            <Button size="sm" variant="ghost" className="gap-1.5 text-red-600" onClick={() => setBulkRejectOpen(true)} data-testid="button-bulk-reject">
               <X className="h-3.5 w-3.5" />
               Reject Selected
             </Button>
-            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setSelectedIds(new Set())}>
-              Clear
-            </Button>
+            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setSelectedIds(new Set())}>Clear</Button>
           </div>
         </div>
       )}
@@ -851,9 +1181,7 @@ export default function AdminAiApprovalsPage() {
           <div className="flex items-center gap-2 ml-auto">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={riskFilter} onValueChange={setRiskFilter}>
-              <SelectTrigger className="w-36 text-xs" data-testid="select-risk-filter">
-                <SelectValue placeholder="Risk level" />
-              </SelectTrigger>
+              <SelectTrigger className="w-36 text-xs" data-testid="select-risk-filter"><SelectValue placeholder="Risk level" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All risks</SelectItem>
                 <SelectItem value="low">Low risk</SelectItem>
@@ -868,9 +1196,7 @@ export default function AdminAiApprovalsPage() {
           <TabsContent key={tab} value={tab} className="mt-4 space-y-3">
             {isLoading ? (
               <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-36 rounded-lg bg-muted/40 animate-pulse" />
-                ))}
+                {[1, 2, 3].map((i) => <div key={i} className="h-36 rounded-lg bg-muted/40 animate-pulse" />)}
               </div>
             ) : filteredByTab.length === 0 ? (
               <Card>
@@ -883,11 +1209,7 @@ export default function AdminAiApprovalsPage() {
             ) : (
               <>
                 <div className="flex items-center gap-2 pb-1">
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={toggleSelectAll}
-                    data-testid="checkbox-select-all"
-                  />
+                  <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} data-testid="checkbox-select-all" />
                   <span className="text-xs text-muted-foreground">Select all ({filteredByTab.length})</span>
                 </div>
                 {filteredByTab.map((p) => (
@@ -899,6 +1221,7 @@ export default function AdminAiApprovalsPage() {
                     onApprove={(p) => setApproveDialogProposal(p)}
                     onEditSend={(p) => setEditSendDialogProposal(p)}
                     onReject={(p) => setRejectDialogProposal(p)}
+                    onRegenerate={(p) => setRegenerateDialogProposal(p)}
                   />
                 ))}
               </>
@@ -906,6 +1229,9 @@ export default function AdminAiApprovalsPage() {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Learning dashboard */}
+      <LearningDashboard />
 
       {/* Autonomy panel */}
       {autonomySettings.length > 0 && <AutonomyPanel settings={autonomySettings} />}
@@ -928,6 +1254,12 @@ export default function AdminAiApprovalsPage() {
         open={!!rejectDialogProposal}
         onClose={() => setRejectDialogProposal(null)}
         onRejected={() => { setRejectDialogProposal(null); invalidateAll(); }}
+      />
+      <RegenerateDialog
+        proposal={regenerateDialogProposal}
+        open={!!regenerateDialogProposal}
+        onClose={() => setRegenerateDialogProposal(null)}
+        onRegenerated={() => { invalidateAll(); }}
       />
 
       {/* Bulk reject dialog */}

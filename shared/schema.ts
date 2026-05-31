@@ -3613,8 +3613,61 @@ export const agentMessageFeedback = pgTable("agent_message_feedback", {
   leadContextJson: jsonb("lead_context_json"),
   outcome: text("outcome"), // sent | replied | booked | ignored | bounced
   createdAt: timestamp("created_at").defaultNow(),
+  // ── Coaching feedback fields ──
+  coachingFeedbackText: text("coaching_feedback_text"),
+  feedbackTags: jsonb("feedback_tags"),           // string[]
+  extractedPreferences: jsonb("extracted_preferences"),
+  extractedAvoidRules: jsonb("extracted_avoid_rules"),
+  extractedDoRules: jsonb("extracted_do_rules"),
+  appliestoLeadType: text("applies_to_lead_type"),
+  appliestoProgram: text("applies_to_program"),
+  preferenceStrength: text("preference_strength"), // weak | medium | strong
+  shouldApplyGlobally: boolean("should_apply_globally").default(false),
 });
 export type AgentMessageFeedback = typeof agentMessageFeedback.$inferSelect;
+
+// ─── Agent Message Learning Rules ────────────────────────────────────────────
+// Durable rules extracted from human feedback; injected into future generation.
+
+export const agentMessageLearningRules = pgTable("agent_message_learning_rules", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  sourceFeedbackId: text("source_feedback_id"),
+  ruleType: text("rule_type").notNull(), // do | avoid | tone | cta | length | personalization | lead_stage
+  ruleText: text("rule_text").notNull(),
+  messageType: text("message_type"),
+  leadType: text("lead_type"),
+  program: text("program"),
+  appliesGlobally: boolean("applies_globally").default(false),
+  confidence: text("confidence").default("0.80"),
+  weight: integer("weight").default(1),
+  status: text("status").default("active"), // active | superseded | archived
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastAppliedAt: timestamp("last_applied_at"),
+  timesApplied: integer("times_applied").default(0),
+  successCount: integer("success_count").default(0),
+  rejectionCount: integer("rejection_count").default(0),
+});
+export type AgentMessageLearningRule = typeof agentMessageLearningRules.$inferSelect;
+
+// ─── Agent Message Revisions ──────────────────────────────────────────────────
+// Revision history when an admin uses "Regenerate with feedback".
+
+export const agentMessageRevisions = pgTable("agent_message_revisions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  proposalId: text("proposal_id").notNull(),
+  orgId: text("org_id").notNull(),
+  revisionNumber: integer("revision_number").notNull().default(1),
+  originalSubject: text("original_subject"),
+  originalBody: text("original_body"),
+  revisedSubject: text("revised_subject"),
+  revisedBody: text("revised_body"),
+  feedbackUsed: text("feedback_used"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: text("created_by"),
+});
+export type AgentMessageRevision = typeof agentMessageRevisions.$inferSelect;
 
 // ─── Agent Autonomy Settings ──────────────────────────────────────────────────
 // Per-org, per-message-type autonomy level controls.

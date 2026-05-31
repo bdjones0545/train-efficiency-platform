@@ -1,0 +1,311 @@
+Upgrade the TrainEfficiency AI Approval Inbox with conversational feedback.
+
+Problem:
+The current learning loop captures approve, reject, edit, and quality rating, but rejection feedback is too rigid. Admins need to be able to talk to the agent when they disapprove a message and explain what they want instead.
+
+Goal:
+When an admin rejects or edits an AI-generated message, allow them to give natural-language coaching feedback. The system should convert that feedback into reusable message rules for future drafts.
+
+⸻
+
+Part 1 — Add Conversational Feedback UI
+
+In /admin/ai-approvals, update the Reject and Edit dialogs.
+
+Add a text area labeled:
+
+“Tell the AI what you wanted instead”
+
+Placeholder examples:
+
+* “This sounds too generic. Mention the athlete’s sport and make the CTA more direct.”
+* “Do not say elite. Keep it more personal and less salesy.”
+* “This parent already filled out the form. Ask them to book instead of asking if they’re interested.”
+* “Too long. Make future 24-hour follow-ups 3 sentences max.”
+* “Use a stronger call to action with the scheduling link.”
+
+For rejected messages, require either:
+
+* rejection reason
+    OR
+* coaching feedback
+
+For edited messages, optional coaching feedback should be available.
+
+Also add quick feedback chips:
+
+* Too long
+* Too generic
+* Too salesy
+* Weak CTA
+* Missing scheduling link
+* Wrong lead stage
+* Wrong tone
+* Missing sport context
+* Too much hype
+* Not personal enough
+
+⸻
+
+Part 2 — Store Human Coaching Feedback
+
+Update agent_message_feedback.
+
+Add fields if missing:
+
+* coaching_feedback_text
+* feedback_tags JSONB
+* extracted_preferences JSONB
+* extracted_avoid_rules JSONB
+* extracted_do_rules JSONB
+* applies_to_message_type
+* applies_to_lead_type
+* applies_to_program
+* preference_strength:
+    * weak
+    * medium
+    * strong
+* should_apply_globally boolean
+
+Every approval/rejection/edit should store:
+
+* human decision
+* free-text coaching feedback
+* selected feedback tags
+* original AI message
+* edited message if applicable
+* lead context
+* message type
+* reviewer
+
+⸻
+
+Part 3 — Convert Feedback Into Durable Agent Rules
+
+Create a feedback extraction service:
+
+extractMessageLearningFromFeedback(orgId, feedbackRecordId)
+
+Input:
+
+* original message
+* edited message
+* rejection reason
+* coaching feedback text
+* feedback tags
+* lead context
+* message type
+
+Output structured learning:
+
+{
+  "do_rules": [
+    "Mention the athlete's sport when available",
+    "Use a direct scheduling CTA for completed intake leads"
+  ],
+  "avoid_rules": [
+    "Avoid generic phrases like 'reach your goals'",
+    "Avoid hype words like 'elite' unless the program is explicitly elite"
+  ],
+  "tone_preferences": [
+    "Personal, direct, coach-like, not overly salesy"
+  ],
+  "cta_preferences": [
+    "Use booking link when lead has already submitted an intake form"
+  ],
+  "length_preferences": [
+    "24-hour follow-ups should be 3 sentences max"
+  ],
+  "scope": {
+    "message_type": "followup_24h",
+    "lead_type": "athlete",
+    "program": "speed_training",
+    "global": false
+  },
+  "confidence": 0.86
+}
+
+Store this in a new table:
+
+agent_message_learning_rules
+
+Fields:
+
+* id
+* org_id
+* source_feedback_id
+* rule_type:
+    * do
+    * avoid
+    * tone
+    * cta
+    * length
+    * personalization
+    * lead_stage
+* rule_text
+* message_type
+* lead_type
+* program
+* applies_globally
+* confidence
+* weight
+* status:
+    * active
+    * superseded
+    * archived
+* created_by
+* created_at
+* last_applied_at
+* times_applied
+* success_count
+* rejection_count
+
+⸻
+
+Part 4 — Add “Regenerate With Feedback”
+
+In the approval card, add a button:
+
+“Regenerate with feedback”
+
+Flow:
+
+1. Admin enters feedback:
+    “Too generic. Mention basketball and make it shorter.”
+2. AI regenerates a new draft using:
+    * original lead context
+    * original draft
+    * admin feedback
+    * existing learning rules
+3. New draft replaces the proposed draft or creates a new revision.
+4. Store revision history.
+
+Add table if needed:
+
+agent_message_revisions
+
+Fields:
+
+* id
+* proposal_id
+* revision_number
+* original_subject
+* original_body
+* revised_subject
+* revised_body
+* feedback_used
+* created_at
+* created_by
+
+UI should show:
+
+* Version history
+* Original draft
+* Revised draft
+* Feedback used
+
+⸻
+
+Part 5 — Use Learning Rules in Future Message Generation
+
+Update all AI email generation paths so before generating a draft they call:
+
+getMessageLearningContext(orgId, messageType, leadContext)
+
+This should include:
+
+* recent approved examples
+* edited examples
+* rejected examples
+* active do rules
+* active avoid rules
+* tone preferences
+* CTA preferences
+* length preferences
+* lead-stage rules
+
+The generation prompt must include:
+
+“Follow these learned communication rules for this organization.”
+
+The agent should prioritize:
+
+1. Active rules for same message_type
+2. Active rules for same lead_type
+3. Active rules for same program
+4. Global org-level rules
+5. Approved examples
+6. Edited examples
+7. Rejected examples
+
+⸻
+
+Part 6 — Feedback-Based Autonomy
+
+Autonomy should not only depend on approval rate. It should also consider whether the agent is following learned rules.
+
+Add metrics:
+
+* rule_compliance_score
+* feedback_resolution_rate
+* repeated_mistake_count
+* average_edit_distance
+* approval_after_regeneration_rate
+
+Autonomy promotion should require:
+
+* high approval rate
+* low rejection rate
+* low repeated mistake count
+* rule compliance score >= 90%
+* at least 20 reviewed examples for that message type
+
+If the same feedback tag appears repeatedly, do not promote autonomy.
+
+Example:
+If “Too generic” appears 8 times in followup_24h, autonomy stays locked even if approval rate looks high.
+
+⸻
+
+Part 7 — Learning Dashboard
+
+In the Autonomy Progression panel, add:
+
+What the AI has learned
+
+For each message type show:
+
+* Preferred tone
+* Preferred length
+* Preferred CTA
+* Top do rules
+* Top avoid rules
+* Most common rejection reasons
+* Repeated mistakes
+* Autonomy readiness
+
+Add controls:
+
+* Edit rule
+* Disable rule
+* Make rule global
+* Apply only to this message type
+* Archive outdated rule
+
+⸻
+
+Acceptance Criteria
+
+1. Admin can reject a message and explain what they wanted instead.
+2. Admin can edit a message and add coaching feedback.
+3. Admin can select quick feedback tags.
+4. Coaching feedback is stored with the approval decision.
+5. Feedback is converted into reusable rules.
+6. Future drafts use those rules.
+7. Admin can regenerate a draft using feedback.
+8. Version history is stored.
+9. The AI can explain what it learned from the feedback.
+10. Autonomy readiness includes repeated mistake and rule compliance metrics.
+11. Message type autonomy cannot increase if the AI keeps making the same mistake.
+12. Mobile UI remains usable.
+13. Return files changed, tables added, routes added, screenshots, and a test showing one rejected message improves after regeneration.

@@ -21346,7 +21346,7 @@ Respond with this exact JSON structure:
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const { id } = req.params;
-      const { subject: overrideSubject, body: overrideBody } = req.body ?? {};
+      const { subject: overrideSubject, body: overrideBody, coachingFeedbackText, feedbackTags } = req.body ?? {};
       const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
       if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
@@ -21356,10 +21356,14 @@ Respond with this exact JSON structure:
       const body = overrideBody ?? proposal.bodyPreview ?? "";
       const { messageId, threadId } = await sendEmail({ orgId, to: proposal.recipientEmail, subject, body, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined });
       const isEdited = !!(overrideBody || overrideSubject);
-      await Promise.all([
+      const [feedbackRow] = await Promise.all([
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: isEdited ? subject : null, editedBody: isEdited ? body : null, decision: isEdited ? "edited_and_approved" : "approved", reviewedBy: userId, outcome: "sent", coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null }).returning(),
         db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
-        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: isEdited ? subject : null, editedBody: isEdited ? body : null, decision: isEdited ? "edited_and_approved" : "approved", reviewedBy: userId, outcome: "sent" }),
       ]);
+      if (feedbackRow[0]?.id && (coachingFeedbackText || (feedbackTags?.length))) {
+        const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+        extractMessageLearningFromFeedback(orgId, feedbackRow[0].id).catch(console.error);
+      }
       res.json({ ok: true, messageId, threadId });
     } catch (e: any) {
       console.error("[ai-approvals] approve error:", e);
@@ -21375,7 +21379,7 @@ Respond with this exact JSON structure:
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const { id } = req.params;
-      const { subject, body, qualityRating, reviewerNotes } = req.body ?? {};
+      const { subject, body, qualityRating, reviewerNotes, coachingFeedbackText, feedbackTags } = req.body ?? {};
       if (!subject || !body) return res.status(400).json({ message: "subject and body are required" });
       const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
@@ -21383,10 +21387,14 @@ Respond with this exact JSON structure:
       if (!proposal.recipientEmail) return res.status(400).json({ message: "No recipient email" });
       const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
       const { messageId, threadId } = await sendEmail({ orgId, to: proposal.recipientEmail, subject, body, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined });
-      await Promise.all([
+      const [fbRow] = await Promise.all([
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: subject, editedBody: body, decision: "edited_and_approved", qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, outcome: "sent", coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null }).returning(),
         db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
-        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: subject, editedBody: body, decision: "edited_and_approved", qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, outcome: "sent" }),
       ]);
+      if (fbRow[0]?.id && (coachingFeedbackText || (feedbackTags?.length))) {
+        const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+        extractMessageLearningFromFeedback(orgId, fbRow[0].id).catch(console.error);
+      }
       res.json({ ok: true, messageId, threadId });
     } catch (e: any) {
       console.error("[ai-approvals] edit-send error:", e);
@@ -21402,17 +21410,105 @@ Respond with this exact JSON structure:
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const { id } = req.params;
-      const { reason, qualityRating, reviewerNotes } = req.body ?? {};
+      const { reason, qualityRating, reviewerNotes, coachingFeedbackText, feedbackTags } = req.body ?? {};
+      if (!reason && !coachingFeedbackText && !(feedbackTags?.length)) {
+        // Accept rejection without reason — just log it
+      }
       const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
       if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
-      await Promise.all([
+      const [rejRow] = await Promise.all([
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null }).returning(),
         db.update(gmailAgentActions).set({ status: "rejected", approvedBy: userId }).where(eq(gmailAgentActions.id, id)),
-        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId }),
       ]);
+      if (rejRow[0]?.id && (coachingFeedbackText || reason || (feedbackTags?.length))) {
+        const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+        extractMessageLearningFromFeedback(orgId, rejRow[0].id).catch(console.error);
+      }
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to reject proposal" });
+    }
+  });
+
+  // ─── Regenerate draft with admin feedback ─────────────────────────────────
+
+  app.post("/api/ai-approvals/:id/regenerate", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { id } = req.params;
+      const { feedbackText } = req.body ?? {};
+      if (!feedbackText?.trim()) return res.status(400).json({ message: "feedbackText is required" });
+      const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
+      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+      const { regenerateDraftWithFeedback } = await import("./services/message-learning-service");
+      const result = await regenerateDraftWithFeedback({
+        orgId, proposalId: id,
+        originalSubject: proposal.subject ?? "",
+        originalBody: proposal.bodyPreview ?? "",
+        adminFeedback: feedbackText,
+        messageType: proposal.actionType.replace("propose_draft:", ""),
+        recipientEmail: proposal.recipientEmail ?? "",
+        userId,
+      });
+      // Patch the proposal's preview with the revised version
+      await db.update(gmailAgentActions).set({ subject: result.subject, bodyPreview: result.body.slice(0, 500) }).where(eq(gmailAgentActions.id, id));
+      res.json({ ok: true, subject: result.subject, body: result.body, revisionId: result.revisionId });
+    } catch (e: any) {
+      console.error("[ai-approvals] regenerate error:", e);
+      res.status(500).json({ message: e.message ?? "Failed to regenerate" });
+    }
+  });
+
+  // ─── Learning rules CRUD ──────────────────────────────────────────────────
+
+  app.get("/api/ai-approvals/learning-rules", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { agentMessageLearningRules } = await import("@shared/schema");
+      const rules = await db.select().from(agentMessageLearningRules)
+        .where(and(eq(agentMessageLearningRules.orgId, orgId), eq(agentMessageLearningRules.status, "active")))
+        .orderBy(desc(agentMessageLearningRules.createdAt));
+      res.json(rules);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch learning rules" });
+    }
+  });
+
+  app.patch("/api/ai-approvals/learning-rules/:ruleId", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { ruleId } = req.params;
+      const { status, appliesGlobally, ruleText } = req.body ?? {};
+      const { agentMessageLearningRules } = await import("@shared/schema");
+      const updates: Record<string, any> = {};
+      if (status !== undefined) updates.status = status;
+      if (appliesGlobally !== undefined) updates.appliesGlobally = appliesGlobally;
+      if (ruleText !== undefined) updates.ruleText = ruleText;
+      await db.update(agentMessageLearningRules).set(updates)
+        .where(and(eq(agentMessageLearningRules.id, ruleId), eq(agentMessageLearningRules.orgId, orgId)));
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to update rule" });
+    }
+  });
+
+  // ─── Learning dashboard ───────────────────────────────────────────────────
+
+  app.get("/api/ai-approvals/learning-dashboard", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { getLearningDashboard } = await import("./services/message-learning-service");
+      const data = await getLearningDashboard(orgId);
+      res.json(data);
+    } catch (e: any) {
+      console.error("[ai-approvals] learning-dashboard error:", e);
+      res.status(500).json({ message: "Failed to load learning dashboard" });
     }
   });
 
