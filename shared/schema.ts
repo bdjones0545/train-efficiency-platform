@@ -4860,3 +4860,132 @@ export const adminActionAuditLog = pgTable("admin_action_audit_log", {
 export const insertAdminActionAuditLogSchema = createInsertSchema(adminActionAuditLog).omit({ id: true, createdAt: true });
 export type AdminActionAuditLogEntry = typeof adminActionAuditLog.$inferSelect;
 export type InsertAdminActionAuditLogEntry = z.infer<typeof insertAdminActionAuditLogSchema>;
+
+// ─── Persistent Athlete Intelligence Layer (PAIL) ────────────────────────────
+// Long-term athlete memory that survives across programs, seasons, and coaches.
+
+export const athleteMemoryProfiles = pgTable("athlete_memory_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+
+  // Training Identity
+  primarySport: varchar("primary_sport"),
+  secondarySport: varchar("secondary_sport"),
+  position: varchar("position"),
+  competitionLevel: varchar("competition_level"),
+  trainingAgeYears: integer("training_age_years"),
+
+  // Athlete Preferences
+  preferredExercises: jsonb("preferred_exercises").$type<string[]>().default([]),
+  dislikedExercises: jsonb("disliked_exercises").$type<string[]>().default([]),
+  preferredSessionLengthMin: integer("preferred_session_length_min"),
+  preferredTrainingDays: jsonb("preferred_training_days").$type<string[]>().default([]),
+
+  // Movement Intelligence
+  movementRestrictions: jsonb("movement_restrictions").$type<string[]>().default([]),
+  recurringCompensations: jsonb("recurring_compensations").$type<string[]>().default([]),
+  technicalFocusAreas: jsonb("technical_focus_areas").$type<string[]>().default([]),
+  coachingCuesThatWork: jsonb("coaching_cues_that_work").$type<string[]>().default([]),
+
+  // Readiness Intelligence
+  normalReadinessRange: jsonb("normal_readiness_range").$type<{ min: number; max: number; avg: number }>(),
+  fatiguePatterns: text("fatigue_patterns"),
+  recoveryPatterns: text("recovery_patterns"),
+  stressPatterns: text("stress_patterns"),
+
+  // Adaptation Intelligence
+  exercisesThatProgressWell: jsonb("exercises_that_progress_well").$type<string[]>().default([]),
+  exercisesThatStall: jsonb("exercises_that_stall").$type<string[]>().default([]),
+  highResponseStimuli: jsonb("high_response_stimuli").$type<string[]>().default([]),
+  lowResponseStimuli: jsonb("low_response_stimuli").$type<string[]>().default([]),
+
+  // Injury Intelligence
+  historicalInjuries: jsonb("historical_injuries").$type<Array<{ area: string; date?: string; severity?: string }>>().default([]),
+  recurringPainAreas: jsonb("recurring_pain_areas").$type<string[]>().default([]),
+  movementRedFlags: jsonb("movement_red_flags").$type<string[]>().default([]),
+
+  // Coach Intelligence
+  coachNotesSummary: text("coach_notes_summary"),
+  coachingHistorySummary: text("coaching_history_summary"),
+  lastCoachNoteAnalyzedAt: timestamp("last_coach_note_analyzed_at"),
+
+  // Autonomy Trust Level (0 = manual review, 1 = suggest, 2 = auto low-risk, 3 = autonomous with monitoring)
+  trustLevel: integer("trust_level").default(0),
+  trustLevelReason: text("trust_level_reason"),
+
+  // Learning Metadata
+  memoryConfidence: integer("memory_confidence").default(0), // 0–100
+  sessionsAnalyzed: integer("sessions_analyzed").default(0),
+  lastSynthesizedAt: timestamp("last_synthesized_at"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAthleteMemoryProfileSchema = createInsertSchema(athleteMemoryProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type AthleteMemoryProfile = typeof athleteMemoryProfiles.$inferSelect;
+export type InsertAthleteMemoryProfile = z.infer<typeof insertAthleteMemoryProfileSchema>;
+
+// ─── Athlete Session Outcomes ────────────────────────────────────────────────
+// One row per completed/attempted session. Links athlete → session → program.
+
+export const athleteSessionOutcomes = pgTable("athlete_session_outcomes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  sessionId: varchar("session_id").notNull(),
+  programId: varchar("program_id"),
+
+  sessionCompleted: boolean("session_completed").default(false),
+  sessionSkipped: boolean("session_skipped").default(false),
+  sessionModified: boolean("session_modified").default(false),
+
+  prAchieved: boolean("pr_achieved").default(false),
+  exercisesWithPR: jsonb("exercises_with_pr").$type<string[]>().default([]),
+
+  readinessChange: integer("readiness_change"),   // delta from previous session check-in
+  sorenessChange: integer("soreness_change"),
+  painChange: integer("pain_change"),
+  complianceScore: integer("compliance_score"),   // 0–100 for this session
+
+  rpeAvg: integer("rpe_avg"),
+  exercisesCompleted: integer("exercises_completed").default(0),
+  exercisesTotal: integer("exercises_total").default(0),
+
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAthleteSessionOutcomeSchema = createInsertSchema(athleteSessionOutcomes).omit({ id: true, createdAt: true });
+export type AthleteSessionOutcome = typeof athleteSessionOutcomes.$inferSelect;
+export type InsertAthleteSessionOutcome = z.infer<typeof insertAthleteSessionOutcomeSchema>;
+
+// ─── Exercise Effectiveness Scores ────────────────────────────────────────────
+// Per-athlete per-exercise intelligence that drives future programming.
+
+export const exerciseEffectivenessScores = pgTable("exercise_effectiveness_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  exerciseName: varchar("exercise_name").notNull(),
+  exerciseId: varchar("exercise_id"),
+
+  timesUsed: integer("times_used").default(0),
+  timesCompleted: integer("times_completed").default(0),
+  completionRate: integer("completion_rate").default(0),     // 0–100
+  progressionRate: integer("progression_rate").default(0),  // % sessions w/ load increase
+  prRate: integer("pr_rate").default(0),                    // % sessions w/ PR
+  sorenessRate: integer("soreness_rate").default(0),        // % sessions w/ soreness
+  painRate: integer("pain_rate").default(0),                // % sessions w/ pain
+
+  effectivenessScore: integer("effectiveness_score").default(50), // 0–100
+
+  lastCalculatedAt: timestamp("last_calculated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertExerciseEffectivenessScoreSchema = createInsertSchema(exerciseEffectivenessScores).omit({ id: true, createdAt: true, updatedAt: true });
+export type ExerciseEffectivenessScore = typeof exerciseEffectivenessScores.$inferSelect;
+export type InsertExerciseEffectivenessScore = z.infer<typeof insertExerciseEffectivenessScoreSchema>;

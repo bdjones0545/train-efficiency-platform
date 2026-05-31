@@ -15,6 +15,9 @@ import {
   teamTrainingDeals,
   agentAutonomyDecisions,
   workflowRuns,
+  athleteMemoryProfiles,
+  athleteRiskFlags,
+  workoutCompletionLogs,
 } from "@shared/schema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -366,6 +369,119 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
         urgency: "medium",
       });
     }
+
+    // 6. PAIL — Athlete risk intelligence
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 3600 * 1000);
+
+      // Athletes with recent high-severity risk flags
+      const highRiskFlags = await db.select({
+        athleteUserId: athleteRiskFlags.athleteUserId,
+        severity: athleteRiskFlags.severity,
+        title: athleteRiskFlags.title,
+      })
+        .from(athleteRiskFlags)
+        .where(and(
+          eq(athleteRiskFlags.orgId, orgId),
+          gte(athleteRiskFlags.createdAt, sevenDaysAgo),
+        ))
+        .orderBy(desc(athleteRiskFlags.createdAt))
+        .limit(50)
+        .catch(() => []);
+
+      const criticalRisk = highRiskFlags.filter(f => f.severity === "critical" || f.severity === "high");
+      if (criticalRisk.length > 0) {
+        const uniqueAthletes = new Set(criticalRisk.map(f => f.athleteUserId)).size;
+        priorities.push({
+          id: `${orgId}:athlete-risk-flags`,
+          priorityScore: calcPriorityScore({ revenuePotential: 30, urgency: 90, risk: 80, confidence: 85, stageImportance: 95, safetyRisk: 85 }),
+          category: "athlete_safety",
+          action: `Review ${criticalRisk.length} high-severity athlete risk flag(s) across ${uniqueAthletes} athlete(s)`,
+          reason: `${criticalRisk.length} critical/high risk flags raised in the last 7 days — immediate coach review needed`,
+          agentSource: "PAIL Athlete Intelligence",
+          requiresApproval: true,
+          estimatedRevenueCents: 0,
+          entityType: "athlete_risk_flag",
+          urgency: "critical",
+        });
+      }
+
+      // Athletes with stalled progress (no synthesis in 14+ days but active training)
+      const staleMemoryProfiles = await db.select({
+        athleteUserId: athleteMemoryProfiles.athleteUserId,
+        sessionsAnalyzed: athleteMemoryProfiles.sessionsAnalyzed,
+        lastSynthesizedAt: athleteMemoryProfiles.lastSynthesizedAt,
+        exercisesThatStall: athleteMemoryProfiles.exercisesThatStall,
+        recurringPainAreas: athleteMemoryProfiles.recurringPainAreas,
+      })
+        .from(athleteMemoryProfiles)
+        .where(eq(athleteMemoryProfiles.orgId, orgId))
+        .limit(100)
+        .catch(() => []);
+
+      const painAthletes = staleMemoryProfiles.filter(p =>
+        (p.recurringPainAreas as string[] ?? []).length >= 2
+      );
+
+      if (painAthletes.length > 0) {
+        priorities.push({
+          id: `${orgId}:athlete-pain-risk`,
+          priorityScore: calcPriorityScore({ revenuePotential: 20, urgency: 80, risk: 75, confidence: 70, stageImportance: 85, safetyRisk: 80 }),
+          category: "athlete_safety",
+          action: `${painAthletes.length} athlete(s) have 2+ recurring pain areas — review and adapt programs`,
+          reason: `Persistent pain patterns detected in athlete memory profiles — programming adaptations recommended`,
+          agentSource: "PAIL Athlete Intelligence",
+          requiresApproval: true,
+          estimatedRevenueCents: 0,
+          entityType: "athlete_memory_profile",
+          urgency: "high",
+        });
+      }
+
+      const stallAthletes = staleMemoryProfiles.filter(p =>
+        (p.exercisesThatStall as string[] ?? []).length >= 2
+      );
+
+      if (stallAthletes.length > 0) {
+        priorities.push({
+          id: `${orgId}:athlete-stalled-progress`,
+          priorityScore: calcPriorityScore({ revenuePotential: 45, urgency: 50, risk: 30, confidence: 65, stageImportance: 70, safetyRisk: 10 }),
+          category: "athlete_development",
+          action: `${stallAthletes.length} athlete(s) have 2+ exercises with stalled progress — consider program variation`,
+          reason: `Memory profiles show repeated exercise plateau patterns — programming diversity may improve outcomes`,
+          agentSource: "PAIL Athlete Intelligence",
+          requiresApproval: false,
+          estimatedRevenueCents: 0,
+          entityType: "athlete_memory_profile",
+          urgency: "medium",
+        });
+      }
+
+      // Stale memory profiles (no synthesis in 14+ days but session data exists)
+      const needsResynthesis = staleMemoryProfiles.filter(p => {
+        if (!p.lastSynthesizedAt) return false;
+        return new Date(p.lastSynthesizedAt) < fourteenDaysAgo && (p.sessionsAnalyzed ?? 0) > 3;
+      });
+
+      if (needsResynthesis.length > 0) {
+        priorities.push({
+          id: `${orgId}:athlete-memory-stale`,
+          priorityScore: calcPriorityScore({ revenuePotential: 15, urgency: 35, risk: 10, confidence: 90, stageImportance: 50, safetyRisk: 5 }),
+          category: "athlete_development",
+          action: `Refresh athlete intelligence for ${needsResynthesis.length} athlete(s) (memory >14 days stale)`,
+          reason: `${needsResynthesis.length} athlete memory profiles have not been synthesized in 14+ days — run synthesis to keep intelligence current`,
+          agentSource: "PAIL Athlete Intelligence",
+          requiresApproval: false,
+          estimatedRevenueCents: 0,
+          entityType: "athlete_memory_profile",
+          urgency: "low",
+        });
+      }
+    } catch (err: any) {
+      console.warn("[CEO Heartbeat] PAIL athlete priorities error:", err.message);
+    }
+
   } catch (err) {
     console.error("[CEO Heartbeat] Priority build error:", err);
   }

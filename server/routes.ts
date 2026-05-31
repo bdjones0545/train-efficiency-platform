@@ -21188,6 +21188,10 @@ Respond with this exact JSON structure:
   const { registerCeoHeartbeatRoutes } = await import("./ceo-heartbeat-routes");
   await registerCeoHeartbeatRoutes(app);
 
+  // ─── Athlete Intelligence Routes (PAIL) ───────────────────────────────────
+  const { registerAthleteIntelligenceRoutes } = await import("./athlete-intelligence-routes");
+  await registerAthleteIntelligenceRoutes(app);
+
   // Ecosystem analytics
   app.get("/api/marketplace/ecosystem", async (req, res) => {
     try {

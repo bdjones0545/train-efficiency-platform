@@ -1,0 +1,390 @@
+Build Persistent Athlete Intelligence Layer (PAIL)
+
+Objective:
+
+TrainEfficiency’s communications intelligence, CEO Heartbeat, governance, outreach, learning loops, and outcome intelligence are now highly mature.
+
+The next evolution is to bring the same architecture to athlete development.
+
+Current State:
+
+Athlete Context Broker
+→ TrainChat
+→ Program Generated
+
+Desired State:
+
+Athlete Memory
+→ Context Broker
+→ TrainChat
+→ Session Execution
+→ Biofeedback
+→ Adaptation Engine
+→ Outcome Intelligence
+→ Athlete Learning
+→ Future Program Decisions
+
+TrainChat should evolve from a program generator into the central training intelligence layer.
+
+⸻
+
+Phase 1 — Persistent Athlete Memory
+
+Create:
+
+athlete_memory_profiles
+
+Purpose:
+
+Long-term athlete intelligence that survives across every workout, program, season, and coach interaction.
+
+Fields:
+
+* id
+* org_id
+* athlete_id
+
+Training Identity
+
+* primary_sport
+* secondary_sport
+* position
+* competition_level
+* training_age_years
+
+Athlete Preferences
+
+* preferred_exercises
+* disliked_exercises
+* preferred_session_length
+* preferred_training_days
+
+Movement Intelligence
+
+* movement_restrictions
+* recurring_compensations
+* technical_focus_areas
+* coaching_cues_that_work
+
+Readiness Intelligence
+
+* normal_readiness_range
+* fatigue_patterns
+* recovery_patterns
+* stress_patterns
+
+Adaptation Intelligence
+
+* exercises_that_progress_well
+* exercises_that_stall
+* high_response_stimuli
+* low_response_stimuli
+
+Injury Intelligence
+
+* historical_injuries
+* recurring_pain_areas
+* movement_red_flags
+
+Coach Intelligence
+
+* coach_notes_summary
+* coaching_history_summary
+
+Learning Metadata
+
+* memory_confidence
+* last_updated
+* last_synthesized
+
+⸻
+
+Phase 2 — Athlete Learning Engine
+
+Create:
+
+server/services/athlete-learning-engine.ts
+
+Purpose:
+
+Continuously learn from athlete behavior.
+
+Inputs:
+
+* workout execution
+* readiness logs
+* compliance
+* PRs
+* missed sessions
+* coach notes
+* pain reports
+* exercise substitutions
+
+Outputs:
+
+Updates athlete_memory_profiles.
+
+Examples:
+
+Athlete consistently misses Friday sessions
+→ Recommend removing Friday as a training day
+Athlete responds well to unilateral work
+→ Increase future exposure
+Athlete repeatedly swaps back squats
+→ Learn preference
+
+⸻
+
+Phase 3 — Session Outcome Intelligence
+
+Create:
+
+athlete_session_outcomes
+
+Track:
+
+* session_completed
+* session_skipped
+* session_modified
+* PR_achieved
+* readiness_change
+* soreness_change
+* pain_change
+* compliance_change
+
+Link:
+
+* athlete
+* session
+* program
+* exercise block
+
+Goal:
+
+Determine what training actually works.
+
+⸻
+
+Phase 4 — Exercise Effectiveness Engine
+
+Create:
+
+exercise_effectiveness_scores
+
+Fields:
+
+* athlete_id
+* exercise_id
+* times_used
+* completion_rate
+* progression_rate
+* PR_rate
+* soreness_rate
+* pain_rate
+* effectiveness_score
+
+Examples:
+
+Trap Bar Deadlift
+Effectiveness: 92
+Back Squat
+Effectiveness: 41
+
+Future programming should weight high-performing exercises.
+
+⸻
+
+Phase 5 — Coach Note Intelligence
+
+Coach notes are currently underutilized.
+
+Build:
+
+coach-note-intelligence-service.ts
+
+Every coach note should be analyzed.
+
+Extract:
+
+* movement issues
+* motivation patterns
+* confidence issues
+* technical weaknesses
+* recurring themes
+
+Update athlete memory automatically.
+
+Example:
+
+Three coach notes mention:
+"slow first step"
+Memory updated:
+Acceleration weakness detected
+
+⸻
+
+Phase 6 — Athlete Adaptation Intelligence
+
+Upgrade:
+
+program-adaptation-engine.ts
+
+Instead of only reacting to readiness:
+
+Use:
+
+* athlete memory
+* session outcomes
+* exercise effectiveness
+* coach notes
+* compliance trends
+
+Adaptations should be explainable.
+
+Store:
+
+{
+  "reason":
+  "Athlete demonstrates poor response to high-volume squatting and recurring knee soreness."
+}
+
+⸻
+
+Phase 7 — TrainChat as Persistent Intelligence Layer
+
+Upgrade TrainChat context.
+
+Current:
+
+* goals
+* sport
+* PRs
+* readiness trends
+
+Add:
+
+* athlete memory profile
+* exercise effectiveness
+* coach note intelligence
+* injury intelligence
+* adaptation history
+* preferred coaching style
+* compliance history
+* session outcome summaries
+
+TrainChat should receive a persistent athlete dossier.
+
+⸻
+
+Phase 8 — Athlete Outcome Dashboard
+
+Create:
+
+/admin/athlete-intelligence
+
+Show:
+
+Athlete Memory
+
+* preferences
+* movement intelligence
+* readiness intelligence
+* injury intelligence
+
+Training Intelligence
+
+* top performing exercises
+* worst performing exercises
+* compliance patterns
+* adaptation history
+
+Risk Intelligence
+
+* injury risk
+* burnout risk
+* compliance risk
+
+Development Intelligence
+
+* PR trajectory
+* readiness trajectory
+* performance trajectory
+
+⸻
+
+Phase 9 — CEO Heartbeat Integration
+
+CEO Heartbeat should monitor:
+
+* athletes at risk
+* stalled progress
+* injury risk
+* compliance drop
+* readiness decline
+* adaptation opportunities
+
+Examples:
+
+Athlete A
+Compliance dropped 40%
+Athlete B
+3 pain reports in 7 days
+Athlete C
+No PR improvement in 8 weeks
+
+Generate priorities.
+
+⸻
+
+Phase 10 — Athlete Autonomy Progression
+
+Create athlete-level trust scoring.
+
+As the system learns:
+
+Level 0
+Manual coach review.
+
+Level 1
+Suggest adaptations.
+
+Level 2
+Auto-adjust low-risk training variables.
+
+Level 3
+Autonomous micro-adjustments with coach monitoring.
+
+Never allow:
+
+* injury diagnosis
+* medical recommendations
+* major program rewrites
+
+without coach approval.
+
+⸻
+
+Phase 11 — Verification Audit
+
+Return:
+
+1. Tables created
+2. Services added
+3. TrainChat context expansion
+4. Athlete memory examples
+5. Exercise effectiveness examples
+6. Adaptation examples
+7. CEO Heartbeat athlete priorities
+8. Dashboard screenshots
+9. End-to-end athlete learning test
+
+Acceptance Criteria:
+
+* Athlete intelligence persists across programs.
+* TrainChat receives athlete memory.
+* Session outcomes influence future training.
+* Exercise effectiveness influences programming.
+* Coach notes become structured intelligence.
+* CEO Heartbeat sees athlete risks and opportunities.
+* Training decisions become outcome-driven.
+* Athlete learning compounds over time.

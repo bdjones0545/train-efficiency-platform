@@ -144,6 +144,7 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
     defaultOpen: true,
     items: [
       { title: "CEO Heartbeat", simplifiedTitle: "CEO Heartbeat", url: "/admin/ceo-heartbeat", icon: Brain, testId: "nav-ceo-heartbeat" },
+      { title: "Athlete Intelligence", simplifiedTitle: "Athlete AI", url: "/admin/athlete-intelligence", icon: Dumbbell, testId: "nav-athlete-intelligence" },
       { title: "Command Center", simplifiedTitle: "AI Overview", url: "/admin/ai-operations", icon: Cpu, testId: "nav-ai-operations" },
       { title: "AI Comms Center", simplifiedTitle: "AI Comms", url: "/admin/ai-approvals", icon: CheckCheck, testId: "nav-ai-approvals" },
       { title: "Outreach Opportunities", simplifiedTitle: "Outreach", url: "/admin/ai-outreach-opportunities", icon: Target, testId: "nav-ai-outreach-opportunities" },

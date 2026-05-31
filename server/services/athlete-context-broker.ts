@@ -12,6 +12,8 @@ import {
   athleteRiskFlags,
   athleteInterventionRecommendations,
   orgUsers,
+  athleteMemoryProfiles,
+  exerciseEffectivenessScores,
   type AthleteContextObject,
 } from "@shared/schema";
 import { eq, and, desc, gte, inArray, sql } from "drizzle-orm";
@@ -590,6 +592,109 @@ export function summarizeAthleteContextForPrompt(context: AthleteContextObject):
   lines.push("=== END ATHLETE CONTEXT ===");
 
   return lines.join("\n");
+}
+
+// ─── Memory-Enriched Context (Phase 7 of PAIL) ────────────────────────────────
+// Loads the persistent athlete memory profile and exercise effectiveness scores,
+// then appends them to the standard context summary for a richer TrainChat prompt.
+
+export async function buildMemoryEnrichedContextString(
+  context: AthleteContextObject,
+  athleteUserId: string,
+  orgId: string
+): Promise<string> {
+  const base = summarizeAthleteContextForPrompt(context);
+
+  let memorySection = "";
+  try {
+    const [profile] = await db.select()
+      .from(athleteMemoryProfiles)
+      .where(and(
+        eq(athleteMemoryProfiles.orgId, orgId),
+        eq(athleteMemoryProfiles.athleteUserId, athleteUserId),
+      ))
+      .limit(1)
+      .catch(() => []);
+
+    if (profile && (profile.memoryConfidence ?? 0) >= 20) {
+      const lines: string[] = ["", "=== PERSISTENT ATHLETE MEMORY (PAIL) ==="];
+
+      if (profile.preferredExercises?.length) {
+        lines.push(`Preferred exercises: ${(profile.preferredExercises as string[]).join(", ")}`);
+      }
+      if (profile.dislikedExercises?.length) {
+        lines.push(`Disliked/avoided exercises: ${(profile.dislikedExercises as string[]).join(", ")}`);
+      }
+      if (profile.movementRestrictions?.length) {
+        lines.push(`Movement restrictions: ${(profile.movementRestrictions as string[]).join(", ")}`);
+      }
+      if (profile.recurringPainAreas?.length) {
+        lines.push(`RECURRING PAIN (avoid loading): ${(profile.recurringPainAreas as string[]).join(", ")}`);
+      }
+      if (profile.movementRedFlags?.length) {
+        lines.push(`Movement red flags: ${(profile.movementRedFlags as string[]).join(", ")}`);
+      }
+      if (profile.coachingCuesThatWork?.length) {
+        lines.push(`Coaching cues that resonate: ${(profile.coachingCuesThatWork as string[]).join(", ")}`);
+      }
+      if (profile.technicalFocusAreas?.length) {
+        lines.push(`Technical focus areas: ${(profile.technicalFocusAreas as string[]).join(", ")}`);
+      }
+      if (profile.exercisesThatProgressWell?.length) {
+        lines.push(`Exercises with strong progression history: ${(profile.exercisesThatProgressWell as string[]).join(", ")}`);
+      }
+      if (profile.exercisesThatStall?.length) {
+        lines.push(`Exercises that historically stall: ${(profile.exercisesThatStall as string[]).join(", ")} — consider alternatives`);
+      }
+      if (profile.highResponseStimuli?.length) {
+        lines.push(`High-response training stimuli: ${(profile.highResponseStimuli as string[]).join(", ")}`);
+      }
+      if (profile.fatiguePatterns) {
+        lines.push(`Fatigue patterns: ${profile.fatiguePatterns}`);
+      }
+      if (profile.recoveryPatterns) {
+        lines.push(`Recovery patterns: ${profile.recoveryPatterns}`);
+      }
+      if (profile.coachNotesSummary) {
+        lines.push(`Coach notes summary: ${profile.coachNotesSummary}`);
+      }
+      if (profile.preferredTrainingDays?.length) {
+        lines.push(`Preferred training days: ${(profile.preferredTrainingDays as string[]).join(", ")}`);
+      }
+
+      // Exercise effectiveness highlights
+      const topEffective = await db.select({ exerciseName: exerciseEffectivenessScores.exerciseName, effectivenessScore: exerciseEffectivenessScores.effectivenessScore })
+        .from(exerciseEffectivenessScores)
+        .where(and(eq(exerciseEffectivenessScores.orgId, orgId), eq(exerciseEffectivenessScores.athleteUserId, athleteUserId)))
+        .orderBy(desc(exerciseEffectivenessScores.effectivenessScore))
+        .limit(5)
+        .catch(() => []);
+
+      const bottomEffective = await db.select({ exerciseName: exerciseEffectivenessScores.exerciseName, effectivenessScore: exerciseEffectivenessScores.effectivenessScore })
+        .from(exerciseEffectivenessScores)
+        .where(and(eq(exerciseEffectivenessScores.orgId, orgId), eq(exerciseEffectivenessScores.athleteUserId, athleteUserId)))
+        .orderBy(exerciseEffectivenessScores.effectivenessScore)
+        .limit(3)
+        .catch(() => []);
+
+      if (topEffective.length > 0) {
+        lines.push(`Most effective exercises for this athlete: ${topEffective.map(e => `${e.exerciseName} (${e.effectivenessScore}/100)`).join(", ")} — prioritize these`);
+      }
+      if (bottomEffective.length > 0 && bottomEffective.some(e => (e.effectivenessScore ?? 100) < 40)) {
+        const low = bottomEffective.filter(e => (e.effectivenessScore ?? 100) < 40);
+        lines.push(`Low-effectiveness exercises: ${low.map(e => `${e.exerciseName} (${e.effectivenessScore}/100)`).join(", ")} — consider substituting`);
+      }
+
+      lines.push(`Memory confidence: ${profile.memoryConfidence ?? 0}% (${profile.sessionsAnalyzed ?? 0} sessions analyzed)`);
+      lines.push("=== END PERSISTENT MEMORY ===");
+      memorySection = lines.join("\n");
+    }
+  } catch (err: any) {
+    // Memory enrichment is non-blocking
+    console.warn("[AthleteContext] Memory enrichment skipped:", err.message);
+  }
+
+  return base + memorySection;
 }
 
 // ─── Compute readiness modifiers for TrainChat payload ───────────────────────

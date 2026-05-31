@@ -154,6 +154,7 @@ import LeadCaptureProgramEditorPage from "@/pages/lead-capture-program-editor";
 import AthleteSignupPage from "@/pages/athlete-signup";
 import AdminLeadPipelinePage from "@/pages/admin-lead-pipeline";
 import AdminCeoHeartbeatPage from "@/pages/admin-ceo-heartbeat";
+import AdminAthleteIntelligencePage from "@/pages/admin-athlete-intelligence";
 
 interface SubscriptionStatus {
   status: string;
@@ -462,6 +463,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/org-recruitment" component={AdminOrgRecruitmentPage} />
                   <Route path="/admin/marketplace-proof" component={AdminMarketplaceProofPage} />
                   <Route path="/admin/ceo-heartbeat" component={AdminCeoHeartbeatPage} />
+                  <Route path="/admin/athlete-intelligence" component={AdminAthleteIntelligencePage} />
                   <Route path="/developer" component={DeveloperPortalPage} />
                   <Route path="/developer/sandbox" component={DeveloperSandboxPage} />
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />

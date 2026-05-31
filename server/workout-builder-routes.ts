@@ -32,6 +32,7 @@ import {
   getAthleteContextForAI,
   refreshAthleteContextObject,
   summarizeAthleteContextForPrompt,
+  buildMemoryEnrichedContextString,
   computeTrainChatModifiers,
 } from "./services/athlete-context-broker";
 
@@ -366,7 +367,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       if (athleteUserIds.length === 1) {
         try {
           contextObject = await getAthleteContextForAI(athleteUserIds[0], orgId);
-          contextSummary = summarizeAthleteContextForPrompt(contextObject);
+          contextSummary = await buildMemoryEnrichedContextString(contextObject, athleteUserIds[0], orgId);
           modifiers = computeTrainChatModifiers(contextObject);
         } catch (err: any) {
           console.warn("[workout-builder] Context object fetch failed (non-blocking):", err.message);
@@ -864,7 +865,7 @@ export function registerWorkoutBuilderRoutes(app: Express) {
       let modifiers: any = { readinessAdjustmentApplied: false, complianceAdjustmentApplied: false, rpeAdjustmentApplied: false, modifiersApplied: [], contextualInstructions: "" };
       try {
         contextObject = await getAthleteContextForAI(userId, orgId);
-        contextSummary = summarizeAthleteContextForPrompt(contextObject);
+        contextSummary = await buildMemoryEnrichedContextString(contextObject, userId, orgId);
         modifiers = computeTrainChatModifiers(contextObject);
       } catch (err: any) {
         console.warn("[workout-builder] Athlete self-gen context fetch failed (non-blocking):", err.message);
