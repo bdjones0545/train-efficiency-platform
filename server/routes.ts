@@ -1680,13 +1680,18 @@ export async function registerRoutes(
 
   app.get("/api/coaches", async (req: any, res) => {
     try {
-      const orgId = req.query.organizationId as string | undefined;
-      let coaches;
-      if (orgId) {
-        coaches = await storage.getCoachProfilesByOrganization(orgId);
+      let orgId: string | undefined;
+      if (req.user) {
+        // Authenticated session — always enforce session org; never allow cross-org leakage
+        const sessionOrgId = await getAdminOrgId(req);
+        if (!sessionOrgId) return res.status(403).json({ message: "Organization not found for session" });
+        orgId = sessionOrgId;
       } else {
-        coaches = await storage.getCoachProfiles();
+        // Unauthenticated (public booking page) — require organizationId query param
+        orgId = req.query.organizationId as string | undefined;
+        if (!orgId) return res.status(400).json({ message: "organizationId required" });
       }
+      const coaches = await storage.getCoachProfilesByOrganization(orgId);
       const safe = coaches.map(({ passwordHash, email, ...rest }: any) => rest);
       res.json(safe);
     } catch (error) {
@@ -1754,12 +1759,18 @@ export async function registerRoutes(
       const startDate = startDateStr ? parseISO(startDateStr) : new Date();
       const endDate = addDays(startDate, daysParam - 1);
 
-      let coaches: any[];
-      if (orgId) {
-        coaches = await storage.getCoachProfilesByOrganization(orgId);
+      let resolvedOrgId: string | undefined;
+      if (req.user) {
+        // Authenticated session — always enforce session org
+        const sessionOrgId = await getAdminOrgId(req);
+        if (!sessionOrgId) return res.status(403).json({ message: "Organization not found for session" });
+        resolvedOrgId = sessionOrgId;
       } else {
-        coaches = await storage.getCoachProfiles();
+        // Unauthenticated (public booking page) — require organizationId param
+        resolvedOrgId = orgId;
+        if (!resolvedOrgId) return res.status(400).json({ message: "organizationId required" });
       }
+      const coaches: any[] = await storage.getCoachProfilesByOrganization(resolvedOrgId);
 
       const now = new Date();
       const allSlots: {
@@ -3269,22 +3280,19 @@ export async function registerRoutes(
 
   app.get("/api/coach/payout-redemptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.claims.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
       const orgId = profile?.organizationId || null;
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+      const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+      const orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
+      const coachMap = new Map(orgCoaches.map(c => [c.id, c]));
       const allRedemptions = await storage.getAllRedemptions();
-      const coaches = await storage.getCoachProfiles();
-
-      let orgCoachIdSet: Set<string> | null = null;
-      if (orgId) {
-        const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
-        orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
-      }
 
       const result = allRedemptions
-        .filter((r: any) => !orgCoachIdSet || orgCoachIdSet.has(r.coachId))
+        .filter((r: any) => orgCoachIdSet.has(r.coachId))
         .map((r: any) => {
-          const coach = coaches.find((cp: any) => cp.id === r.coachId);
+          const coach = coachMap.get(r.coachId);
           return {
             id: r.id,
             coachId: r.coachId,
@@ -3458,17 +3466,14 @@ export async function registerRoutes(
 
   app.get("/api/coach/users", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.claims.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
       const orgId = profile?.organizationId || null;
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+      const orgUserIds = await storage.getUserIdsByOrganization(orgId);
+      const orgSet = new Set(orgUserIds);
       const allUsers = await storage.getAllUsersWithProfiles();
-      if (orgId) {
-        const orgUserIds = await storage.getUserIdsByOrganization(orgId);
-        const orgSet = new Set(orgUserIds);
-        res.json(allUsers.filter(u => orgSet.has(u.id)));
-      } else {
-        res.json(allUsers);
-      }
+      res.json(allUsers.filter(u => orgSet.has(u.id)));
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
@@ -3704,17 +3709,14 @@ export async function registerRoutes(
 
   app.get("/api/admin/users", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.claims.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
       const orgId = profile?.organizationId || null;
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+      const orgUserIds = await storage.getUserIdsByOrganization(orgId);
+      const orgSet = new Set(orgUserIds);
       const allUsers = await storage.getAllUsersWithProfiles();
-      if (orgId) {
-        const orgUserIds = await storage.getUserIdsByOrganization(orgId);
-        const orgSet = new Set(orgUserIds);
-        res.json(allUsers.filter(u => orgSet.has(u.id)));
-      } else {
-        res.json(allUsers);
-      }
+      res.json(allUsers.filter(u => orgSet.has(u.id)));
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
@@ -4086,24 +4088,21 @@ export async function registerRoutes(
 
   app.get("/api/admin/redemptions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.claims.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
       const orgId = profile?.organizationId || null;
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+      const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+      const orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
+      const coachMap = new Map(orgCoaches.map(c => [c.id, c]));
       const redemptionsList = await storage.getAllRedemptions();
-      const coaches = await storage.getCoachProfiles();
       const allBookings = await storage.getAllBookings();
       const servicesList = await storage.getServices();
 
-      let orgCoachIdSet: Set<string> | null = null;
-      if (orgId) {
-        const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
-        orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
-      }
-
       const enriched = redemptionsList
-        .filter((r: any) => !orgCoachIdSet || orgCoachIdSet.has(r.coachId))
+        .filter((r: any) => orgCoachIdSet.has(r.coachId))
         .map((r: any) => {
-          const coach = coaches.find((cp: any) => cp.id === r.coachId);
+          const coach = coachMap.get(r.coachId);
           const booking = allBookings.find((b: any) => b.id === r.bookingId);
           const service = booking ? servicesList.find((s: any) => s.id === booking.serviceId) : undefined;
           let clientName = "Unknown";
@@ -6212,16 +6211,15 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.claims.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
       const orgId = profile?.organizationId || null;
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
       const cashoutsList = await storage.getAllCashouts();
-      const coaches = orgId
-        ? await storage.getCoachProfilesByOrganization(orgId)
-        : await storage.getCoachProfiles();
+      const coaches = await storage.getCoachProfilesByOrganization(orgId);
       const coachIdSet = new Set(coaches.map((c: any) => c.id));
       const enriched = cashoutsList
-        .filter((c: any) => !orgId || coachIdSet.has(c.coachId))
+        .filter((c: any) => coachIdSet.has(c.coachId))
         .map((c: any) => {
           const coach = coaches.find((cp: any) => cp.id === c.coachId);
           return {
@@ -7087,16 +7085,22 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   app.get("/api/coach/business-plan/:coachId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const requestingUserId = req.user?.claims?.sub ?? req.user?.id;
+      const requestingProfile = await storage.getUserProfile(requestingUserId);
+      const sessionOrgId = requestingProfile?.organizationId || null;
+      if (!sessionOrgId) return res.status(403).json({ message: "Organization not found for session" });
+
       const { coachId } = req.params;
       const coach = await storage.getCoachProfile(coachId);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
+      if (coach.organizationId !== sessionOrgId) return res.status(403).json({ message: "Access denied" });
 
       const allBookings = await storage.getCoachBookings(coachId);
       const services = await storage.getServices();
       const serviceMap = new Map(services.map(s => [s.id, s]));
 
-      const coachProfiles = await storage.getCoachProfiles();
-      const coachUserIds = new Set(coachProfiles.map(cp => cp.userId));
+      const orgCoachProfiles = await storage.getCoachProfilesByOrganization(sessionOrgId);
+      const coachUserIds = new Set(orgCoachProfiles.map(cp => cp.userId));
       const thisCoachUserId = coach.userId;
 
       const allWalletTx = await storage.getAllWalletTransactions();
@@ -7520,7 +7524,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   app.post("/api/coach/team-quotes", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.claims.sub ?? req.user.id;
       const role = await getUserRole(userId);
       let createdByCoachId: string;
 
@@ -7528,8 +7532,11 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (coachProfile) {
         createdByCoachId = coachProfile.id;
       } else if (role === "ADMIN") {
-        const coaches = await storage.getCoachProfiles();
-        if (coaches.length === 0) return res.status(400).json({ message: "No coaches available" });
+        const adminProfile = await storage.getUserProfile(userId);
+        const orgId = adminProfile?.organizationId;
+        if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+        const coaches = await storage.getCoachProfilesByOrganization(orgId);
+        if (coaches.length === 0) return res.status(400).json({ message: "No coaches available in organization" });
         createdByCoachId = coaches[0].id;
       } else {
         return res.status(403).json({ message: "Coach profile not found" });
@@ -9108,7 +9115,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const userId = req.user.claims?.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
-      const orgCoaches = (await storage.getCoachProfiles()).filter(c => c.organizationId === profile.organizationId);
+      const orgCoaches = await storage.getCoachProfilesByOrganization(profile.organizationId);
       const orgServices = await storage.getServicesByOrganization(profile.organizationId);
       const orgLocations = await storage.getLocationsByOrganization(profile.organizationId);
       res.json({ coaches: orgCoaches, services: orgServices, locations: orgLocations });

@@ -883,6 +883,11 @@ export default function SchedulingPage() {
   const [rescheduleStartTime, setRescheduleStartTime] = useState("09:00");
   const [rescheduleCalendarOpen, setRescheduleCalendarOpen] = useState(false);
 
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId;
+
   const { data: bookings = [], isLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/scheduling/bookings"],
   });
@@ -892,7 +897,15 @@ export default function SchedulingPage() {
   });
   const redeemedBookingIds = useMemo(() => new Set(redemptions.map(r => r.bookingId)), [redemptions]);
 
-  const { data: coaches = [] } = useQuery<CoachWithUser[]>({ queryKey: ["/api/coaches"] });
+  const { data: coaches = [] } = useQuery<CoachWithUser[]>({
+    queryKey: ["/api/coaches", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const res = await fetch(`/api/coaches?organizationId=${orgId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch coaches");
+      return res.json();
+    },
+  });
   const { data: services = [] } = useQuery<Service[]>({ queryKey: ["/api/services"] });
   const { data: locations = [] } = useQuery<any[]>({ queryKey: ["/api/locations"] });
 
