@@ -21199,7 +21199,7 @@ Respond with this exact JSON structure:
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
-      const { type } = req.query as Record<string, string>;
+      const { type, domain } = req.query as Record<string, string>;
       const rows = await db.select().from(gmailAgentActions)
         .where(and(
           eq(gmailAgentActions.orgId, orgId),
@@ -21208,7 +21208,21 @@ Respond with this exact JSON structure:
           or(eq(gmailAgentActions.status, "proposed"), eq(gmailAgentActions.status, "pending_approval"))
         ))
         .orderBy(desc(gmailAgentActions.createdAt));
-      const filtered = type ? rows.filter((r) => r.actionType.startsWith(type)) : rows;
+      // Ensure communicationDomain is present on every row
+      const { inferCommunicationDomain } = await import("./services/message-learning-service");
+      const withDomain = rows.map((r) => ({ ...r, communicationDomain: r.communicationDomain ?? inferCommunicationDomain(r) }));
+      let filtered = type ? withDomain.filter((r) => r.actionType.startsWith(type)) : withDomain;
+      if (domain && domain !== "all") {
+        const DOMAIN_GROUPS: Record<string, string[]> = {
+          athlete: ["athlete_lead", "parent_lead"],
+          team_training: ["team_training"],
+          schools: ["school_partnership", "athletic_director", "coach_outreach"],
+          orgs: ["organization_outreach", "business_outreach", "corporate_wellness", "facility_partnership", "gym_owner"],
+          employment: ["employment_opportunity"],
+        };
+        const allowed = DOMAIN_GROUPS[domain] ?? [domain];
+        filtered = filtered.filter((r) => allowed.includes(r.communicationDomain ?? "athlete_lead"));
+      }
       res.json(filtered);
     } catch (e: any) {
       console.error("[ai-approvals] list error:", e);
@@ -21220,7 +21234,16 @@ Respond with this exact JSON structure:
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
-      const [pending, feedback] = await Promise.all([
+      const { domain } = req.query as Record<string, string>;
+      const DOMAIN_GROUPS: Record<string, string[]> = {
+        athlete: ["athlete_lead", "parent_lead"],
+        team_training: ["team_training"],
+        schools: ["school_partnership", "athletic_director", "coach_outreach"],
+        orgs: ["organization_outreach", "business_outreach", "corporate_wellness", "facility_partnership", "gym_owner"],
+        employment: ["employment_opportunity"],
+      };
+      const allowedDomains = domain && domain !== "all" ? (DOMAIN_GROUPS[domain] ?? [domain]) : null;
+      const [allPending, allFeedback] = await Promise.all([
         db.select().from(gmailAgentActions).where(and(
           eq(gmailAgentActions.orgId, orgId),
           eq(gmailAgentActions.approvalRequired, true),
@@ -21229,6 +21252,12 @@ Respond with this exact JSON structure:
         )),
         db.select().from(agentMessageFeedback).where(eq(agentMessageFeedback.orgId, orgId)),
       ]);
+      const pending = allowedDomains
+        ? allPending.filter((r) => allowedDomains.includes(r.communicationDomain ?? "athlete_lead"))
+        : allPending;
+      const feedback = allowedDomains
+        ? allFeedback.filter((f) => allowedDomains.includes((f as any).communicationDomain ?? "athlete_lead"))
+        : allFeedback;
       const lowRisk = pending.filter((r) => r.riskLevel === "low").length;
       const total = feedback.length;
       const approved = feedback.filter((f) => f.decision === "approved" || f.decision === "edited_and_approved").length;
@@ -21247,25 +21276,36 @@ Respond with this exact JSON structure:
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
-      const MESSAGE_TYPES = ["intake_outreach", "followup_24h", "followup_72h", "followup_7d", "retention", "reactivation", "team_partnership", "scheduling_response", "booking_confirmation"];
-      const [settings, feedback] = await Promise.all([
+      const { domain } = req.query as Record<string, string>;
+      const { COMMUNICATION_DOMAINS } = await import("./services/message-learning-service");
+      const [settings, feedback, allRules] = await Promise.all([
         db.select().from(agentAutonomySettings).where(eq(agentAutonomySettings.orgId, orgId)),
         db.select().from(agentMessageFeedback).where(eq(agentMessageFeedback.orgId, orgId)),
+        (async () => { try { const { agentMessageLearningRules } = await import("@shared/schema"); return await db.select().from(agentMessageLearningRules).where(and(eq(agentMessageLearningRules.orgId, orgId), eq(agentMessageLearningRules.status, "active"))); } catch { return []; } })(),
       ]);
-      const settingsByType = Object.fromEntries(settings.map((s) => [s.messageType, s]));
-      const result = MESSAGE_TYPES.map((mt) => {
-        const fb = feedback.filter((f) => f.messageType === mt);
-        const total = fb.length;
-        const approved = fb.filter((f) => f.decision === "approved" || f.decision === "edited_and_approved").length;
-        const rejected = fb.filter((f) => f.decision === "rejected").length;
-        const ratings = fb.map((f) => f.qualityRating).filter(Boolean) as number[];
+      const domainsToProcess = domain && domain !== "all" ? [domain] : Array.from(COMMUNICATION_DOMAINS);
+      const result = domainsToProcess.map((dm) => {
+        const domFeedback = feedback.filter((f) => ((f as any).communicationDomain ?? "athlete_lead") === dm);
+        const domSettings = settings.filter((s) => (s.communicationDomain ?? "athlete_lead") === dm);
+        const settingsByType = Object.fromEntries(domSettings.map((s) => [s.messageType, s]));
+        const total = domFeedback.length;
+        const approved = domFeedback.filter((f) => f.decision === "approved" || f.decision === "edited_and_approved").length;
+        const rejected = domFeedback.filter((f) => f.decision === "rejected").length;
+        const ratings = domFeedback.map((f) => f.qualityRating).filter(Boolean) as number[];
         const avgRating = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null;
         const approvalRate = total > 0 ? (approved / total) * 100 : 0;
         const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
-        const readyForLevel2 = total >= 20 && approvalRate >= 90 && rejectionRate <= 5 && (avgRating ?? 0) >= 4;
-        const readyForLevel3 = total >= 50 && approvalRate >= 95 && rejectionRate <= 3;
-        const setting = settingsByType[mt];
-        return { messageType: mt, autonomyLevel: setting?.autonomyLevel ?? 0, enabled: setting?.enabled ?? false, totalReviewed: total, approvalRate: Math.round(approvalRate), rejectionRate: Math.round(rejectionRate), avgRating: avgRating ? Math.round(avgRating * 10) / 10 : null, readyForLevel2, readyForLevel3 };
+        // Check repeated mistakes that block autonomy
+        const tagCounts: Record<string, number> = {};
+        domFeedback.forEach((f) => { ((f.feedbackTags as string[] | null) ?? []).forEach((t) => { tagCounts[t] = (tagCounts[t] ?? 0) + 1; }); });
+        const repeatedMistakes = Object.entries(tagCounts).filter(([, c]) => c >= 3).map(([t]) => t);
+        const ruleCount = (allRules as any[]).filter((r) => (r.communicationDomain ?? "athlete_lead") === dm).length;
+        const readyForLevel2 = total >= 20 && approvalRate >= 90 && rejectionRate <= 5 && repeatedMistakes.length === 0;
+        const readyForLevel3 = total >= 50 && approvalRate >= 95 && rejectionRate <= 3 && repeatedMistakes.length === 0 && ruleCount >= 3;
+        // Overall domain autonomy = min of all set message types, or 0
+        const setLevels = domSettings.map((s) => s.autonomyLevel);
+        const domainAutonomyLevel = setLevels.length > 0 ? Math.min(...setLevels) : 0;
+        return { domain: dm, domainAutonomyLevel, totalReviewed: total, approvalRate: Math.round(approvalRate), rejectionRate: Math.round(rejectionRate), avgRating: avgRating ? Math.round(avgRating * 10) / 10 : null, readyForLevel2, readyForLevel3, repeatedMistakes, ruleCount, messageTypeSettings: settingsByType };
       });
       res.json(result);
     } catch (e: any) {
@@ -21279,12 +21319,12 @@ Respond with this exact JSON structure:
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const { messageType } = req.params;
-      const { autonomyLevel, enabled } = req.body;
-      const existing = await db.select().from(agentAutonomySettings).where(and(eq(agentAutonomySettings.orgId, orgId), eq(agentAutonomySettings.messageType, messageType))).limit(1);
+      const { autonomyLevel, enabled, communicationDomain = "athlete_lead" } = req.body;
+      const existing = await db.select().from(agentAutonomySettings).where(and(eq(agentAutonomySettings.orgId, orgId), eq(agentAutonomySettings.messageType, messageType), eq(agentAutonomySettings.communicationDomain, communicationDomain))).limit(1);
       if (existing.length > 0) {
         await db.update(agentAutonomySettings).set({ autonomyLevel, enabled, updatedBy: userId, updatedAt: new Date() }).where(eq(agentAutonomySettings.id, existing[0].id));
       } else {
-        await db.insert(agentAutonomySettings).values({ orgId, messageType, autonomyLevel, enabled, updatedBy: userId });
+        await db.insert(agentAutonomySettings).values({ orgId, messageType, autonomyLevel, enabled, updatedBy: userId, communicationDomain });
       }
       res.json({ ok: true });
     } catch (e: any) {
@@ -21357,7 +21397,7 @@ Respond with this exact JSON structure:
       const { messageId, threadId } = await sendEmail({ orgId, to: proposal.recipientEmail, subject, body, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined });
       const isEdited = !!(overrideBody || overrideSubject);
       const [feedbackRow] = await Promise.all([
-        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: isEdited ? subject : null, editedBody: isEdited ? body : null, decision: isEdited ? "edited_and_approved" : "approved", reviewedBy: userId, outcome: "sent", coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null }).returning(),
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: isEdited ? subject : null, editedBody: isEdited ? body : null, decision: isEdited ? "edited_and_approved" : "approved", reviewedBy: userId, outcome: "sent", coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null, communicationDomain: proposal.communicationDomain ?? "athlete_lead" } as any).returning(),
         db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
       ]);
       if (feedbackRow[0]?.id && (coachingFeedbackText || (feedbackTags?.length))) {
@@ -21388,7 +21428,7 @@ Respond with this exact JSON structure:
       const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
       const { messageId, threadId } = await sendEmail({ orgId, to: proposal.recipientEmail, subject, body, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined });
       const [fbRow] = await Promise.all([
-        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: subject, editedBody: body, decision: "edited_and_approved", qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, outcome: "sent", coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null }).returning(),
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: subject, editedBody: body, decision: "edited_and_approved", qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, outcome: "sent", coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null, communicationDomain: proposal.communicationDomain ?? "athlete_lead" } as any).returning(),
         db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
       ]);
       if (fbRow[0]?.id && (coachingFeedbackText || (feedbackTags?.length))) {
@@ -21418,7 +21458,7 @@ Respond with this exact JSON structure:
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
       if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
       const [rejRow] = await Promise.all([
-        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null }).returning(),
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null, communicationDomain: proposal.communicationDomain ?? "athlete_lead" } as any).returning(),
         db.update(gmailAgentActions).set({ status: "rejected", approvedBy: userId }).where(eq(gmailAgentActions.id, id)),
       ]);
       if (rejRow[0]?.id && (coachingFeedbackText || reason || (feedbackTags?.length))) {

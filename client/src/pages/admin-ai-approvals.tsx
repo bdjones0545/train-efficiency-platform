@@ -1,411 +1,153 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
-  Mail,
-  CheckCheck,
-  X,
-  Pencil,
-  ChevronDown,
-  ChevronUp,
-  AlertTriangle,
-  Clock,
-  Send,
-  Inbox,
-  BarChart2,
-  Sliders,
-  RefreshCw,
-  Shield,
-  Zap,
-  TrendingUp,
-  User,
-  Filter,
-  Sparkles,
-  BookOpen,
-  Globe,
-  Archive,
-  MessageSquare,
-  RotateCcw,
-  History,
-  Target,
+  CheckCheck, X, Edit3, RefreshCw, Clock, TrendingUp, ChevronDown,
+  ChevronRight, Globe, Archive, Brain, Zap, AlertTriangle, Users,
+  Building2, GraduationCap, Briefcase, BarChart3, Mail,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Domain Configuration ─────────────────────────────────────────────────────
 
-const FEEDBACK_CHIPS = [
-  "Too long",
-  "Too generic",
-  "Too salesy",
-  "Weak CTA",
-  "Missing scheduling link",
-  "Wrong lead stage",
-  "Wrong tone",
-  "Missing sport context",
-  "Too much hype",
-  "Not personal enough",
-];
+const DOMAIN_TABS = [
+  { key: "all",          label: "All",            apiKey: "all",          icon: Mail },
+  { key: "athlete",      label: "Athlete Leads",  apiKey: "athlete",      icon: Users },
+  { key: "team_training",label: "Team Training",  apiKey: "team_training",icon: TrendingUp },
+  { key: "schools",      label: "Schools",        apiKey: "schools",      icon: GraduationCap },
+  { key: "orgs",         label: "Organizations",  apiKey: "orgs",         icon: Building2 },
+  { key: "employment",   label: "Employment",     apiKey: "employment",   icon: Briefcase },
+] as const;
 
-const MESSAGE_TYPE_LABELS: Record<string, string> = {
-  intake_outreach: "Intake Outreach",
-  followup_24h: "24h Follow-up",
-  followup_72h: "72h Follow-up",
-  followup_7d: "7-Day Follow-up",
-  retention: "Retention",
-  reactivation: "Reactivation",
-  team_partnership: "Team Partnership",
-  scheduling_response: "Scheduling Response",
-  booking_confirmation: "Booking Confirmation",
+const DOMAIN_LABELS: Record<string, string> = {
+  athlete_lead: "Athlete Lead",
+  parent_lead: "Parent Lead",
+  team_training: "Team Training",
+  school_partnership: "School Partnership",
+  athletic_director: "Athletic Director",
+  coach_outreach: "Coach Outreach",
+  organization_outreach: "Org Outreach",
+  business_outreach: "Business Outreach",
+  employment_opportunity: "Employment",
+  corporate_wellness: "Corporate Wellness",
+  facility_partnership: "Facility Partnership",
 };
 
-const AUTONOMY_LEVEL_LABELS = [
-  { level: 0, label: "Manual Approval", description: "All messages require your review", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" },
-  { level: 1, label: "Suggested", description: "Agent drafts, you approve", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" },
-  { level: 2, label: "Auto-send Low Risk", description: "Sends automatically when confidence is high", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
-  { level: 3, label: "Autonomous", description: "Agent sends with monitoring", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
-];
-
-const RULE_TYPE_ICONS: Record<string, string> = {
-  do: "✅",
-  avoid: "🚫",
-  tone: "🎭",
-  cta: "👆",
-  length: "📏",
-  personalization: "👤",
-  lead_stage: "📊",
+const DOMAIN_BADGE_CLASS: Record<string, string> = {
+  athlete_lead: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  parent_lead: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
+  team_training: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  school_partnership: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+  athletic_director: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
+  coach_outreach: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+  organization_outreach: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+  business_outreach: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  employment_opportunity: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  corporate_wellness: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
+  facility_partnership: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Proposal {
-  id: string;
-  orgId: string;
-  actionType: string;
-  recipientEmail: string | null;
-  subject: string | null;
-  bodyPreview: string | null;
-  riskLevel: string;
-  approvalRequired: boolean;
-  status: string;
-  createdByAgent: string | null;
-  leadId: string | null;
-  dealId: string | null;
-  createdAt: string | null;
-  executedAt: string | null;
-}
-
-interface Metrics {
-  pending: number;
-  lowRisk: number;
-  approvalRate: number | null;
-  totalReviewed: number;
-  approved: number;
-  rejected: number;
-  sent: number;
-  oldestPendingHours: number | null;
-}
-
-interface AutonomySetting {
-  messageType: string;
-  autonomyLevel: number;
-  enabled: boolean;
-  totalReviewed: number;
-  approvalRate: number;
-  rejectionRate: number;
-  avgRating: number | null;
-  readyForLevel2: boolean;
-  readyForLevel3: boolean;
-}
-
-interface LearningRule {
-  id: string;
-  ruleType: string;
-  ruleText: string;
-  messageType: string | null;
-  appliesGlobally: boolean | null;
-  confidence: string | null;
-  status: string | null;
-}
-
-interface LearningData {
-  messageType: string;
-  rulesCount: number;
-  doRules: { id: string; text: string; confidence: string | null; appliesGlobally: boolean | null }[];
-  avoidRules: { id: string; text: string; confidence: string | null; appliesGlobally: boolean | null }[];
-  toneRules: { id: string; text: string; confidence: string | null }[];
-  ctaRules: { id: string; text: string; confidence: string | null }[];
-  lengthRules: { id: string; text: string; confidence: string | null }[];
-  topRejectionTags: { tag: string; count: number }[];
-  repeatedMistakes: { tag: string; count: number }[];
-  reviewedCount: number;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getRiskColor(level: string) {
-  if (level === "low") return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
-  if (level === "medium") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
-  return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
-}
-
-function getMessageTypeLabel(actionType: string) {
-  const raw = actionType.replace("propose_draft:", "");
-  return MESSAGE_TYPE_LABELS[raw] ?? raw;
-}
+const DOMAIN_GROUP_TO_API: Record<string, string[]> = {
+  athlete: ["athlete_lead", "parent_lead"],
+  team_training: ["team_training"],
+  schools: ["school_partnership", "athletic_director", "coach_outreach"],
+  orgs: ["organization_outreach", "business_outreach", "corporate_wellness", "facility_partnership"],
+  employment: ["employment_opportunity"],
+};
 
 // ─── Feedback Chips ───────────────────────────────────────────────────────────
 
+const FEEDBACK_CHIPS = [
+  "Too long", "Too generic", "Too salesy", "Weak CTA", "Missing scheduling link",
+  "Wrong lead stage", "Wrong tone", "Missing sport context", "Too much hype", "Not personal enough",
+];
+
 function FeedbackChips({ selected, onToggle }: { selected: string[]; onToggle: (chip: string) => void }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {FEEDBACK_CHIPS.map((chip) => {
-        const active = selected.includes(chip);
-        return (
-          <button
-            key={chip}
-            type="button"
-            onClick={() => onToggle(chip)}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-              active
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-muted/50 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-            }`}
-            data-testid={`chip-${chip.toLowerCase().replace(/\s+/g, "-")}`}
-          >
-            {chip}
-          </button>
-        );
-      })}
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {FEEDBACK_CHIPS.map((chip) => (
+        <button
+          key={chip}
+          data-testid={`chip-${chip.toLowerCase().replace(/\s+/g, "-")}`}
+          onClick={() => onToggle(chip)}
+          className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+            selected.includes(chip)
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-muted text-muted-foreground border-border hover:border-primary"
+          }`}
+        >
+          {chip}
+        </button>
+      ))}
     </div>
   );
 }
 
-// ─── Metric Card ──────────────────────────────────────────────────────────────
+// ─── Reject Dialog ────────────────────────────────────────────────────────────
 
-function MetricCard({ label, value, sub, icon: Icon, alert }: { label: string; value: string | number; sub?: string; icon: any; alert?: boolean }) {
-  return (
-    <Card className={`${alert ? "border-orange-400 dark:border-orange-600" : ""}`}>
-      <CardContent className="pt-4 pb-3 px-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-xs text-muted-foreground truncate">{label}</p>
-            <p className={`text-2xl font-bold mt-0.5 ${alert ? "text-orange-600 dark:text-orange-400" : ""}`}>{value}</p>
-            {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-          </div>
-          <Icon className={`h-5 w-5 flex-shrink-0 mt-0.5 ${alert ? "text-orange-500" : "text-muted-foreground"}`} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Proposal Card ────────────────────────────────────────────────────────────
-
-function ProposalCard({
-  proposal,
-  selected,
-  onSelect,
-  onApprove,
-  onEditSend,
-  onReject,
-  onRegenerate,
-}: {
-  proposal: Proposal;
-  selected: boolean;
-  onSelect: (id: string, checked: boolean) => void;
-  onApprove: (p: Proposal) => void;
-  onEditSend: (p: Proposal) => void;
-  onReject: (p: Proposal) => void;
-  onRegenerate: (p: Proposal) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const createdAgo = proposal.createdAt
-    ? formatDistanceToNow(new Date(proposal.createdAt), { addSuffix: true })
-    : "unknown";
-  const isOld = proposal.createdAt
-    ? Date.now() - new Date(proposal.createdAt).getTime() > 24 * 3600 * 1000
-    : false;
-
-  return (
-    <Card
-      className={`transition-all border ${selected ? "border-primary ring-1 ring-primary/30" : ""} ${isOld ? "border-orange-300 dark:border-orange-700" : ""}`}
-      data-testid={`card-proposal-${proposal.id}`}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <Checkbox
-            checked={selected}
-            onCheckedChange={(v) => onSelect(proposal.id, !!v)}
-            className="mt-1 flex-shrink-0"
-            data-testid={`checkbox-proposal-${proposal.id}`}
-          />
-          <div className="flex-1 min-w-0">
-            {/* Header row */}
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <span className="font-semibold text-sm truncate">{proposal.recipientEmail ?? "Unknown recipient"}</span>
-              {isOld && (
-                <Badge variant="outline" className="text-orange-600 border-orange-400 text-xs flex-shrink-0">
-                  <Clock className="h-3 w-3 mr-1" /> {createdAgo}
-                </Badge>
-              )}
-              {!isOld && (
-                <span className="text-xs text-muted-foreground flex-shrink-0">{createdAgo}</span>
-              )}
-            </div>
-
-            {/* Subject */}
-            <p className="text-sm font-medium mb-2 text-foreground">{proposal.subject ?? "(no subject)"}</p>
-
-            {/* Badges */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              <Badge className={`text-xs ${getRiskColor(proposal.riskLevel)}`} data-testid={`badge-risk-${proposal.id}`}>
-                {proposal.riskLevel} risk
-              </Badge>
-              <Badge variant="outline" className="text-xs">
-                {getMessageTypeLabel(proposal.actionType)}
-              </Badge>
-              {proposal.createdByAgent && (
-                <Badge variant="outline" className="text-xs text-muted-foreground">
-                  {proposal.createdByAgent}
-                </Badge>
-              )}
-            </div>
-
-            {/* Body preview */}
-            <Collapsible open={expanded} onOpenChange={setExpanded}>
-              <div className="bg-muted/40 rounded-md p-3 text-sm text-muted-foreground leading-relaxed mb-3">
-                <p className={expanded ? "" : "line-clamp-3"}>{proposal.bodyPreview ?? "(no preview)"}</p>
-                <CollapsibleContent>
-                  <p className="mt-2 text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3" />
-                    Preview only (~300 chars). Use "Edit & Send" to write the full email.
-                  </p>
-                </CollapsibleContent>
-              </div>
-              <CollapsibleTrigger asChild>
-                <button className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 mb-3" data-testid={`button-expand-${proposal.id}`}>
-                  {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                  {expanded ? "Show less" : "Show more"}
-                </button>
-              </CollapsibleTrigger>
-            </Collapsible>
-
-            {/* Action buttons */}
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="default" className="text-xs gap-1.5" onClick={() => onApprove(proposal)} data-testid={`button-approve-${proposal.id}`}>
-                <Send className="h-3 w-3" />
-                Approve & Send
-              </Button>
-              <Button size="sm" variant="outline" className="text-xs gap-1.5" onClick={() => onEditSend(proposal)} data-testid={`button-edit-send-${proposal.id}`}>
-                <Pencil className="h-3 w-3" />
-                Edit & Send
-              </Button>
-              <Button size="sm" variant="outline" className="text-xs gap-1.5 text-purple-600 border-purple-300 hover:bg-purple-50 dark:text-purple-400 dark:border-purple-700 dark:hover:bg-purple-950" onClick={() => onRegenerate(proposal)} data-testid={`button-regenerate-${proposal.id}`}>
-                <Sparkles className="h-3 w-3" />
-                Regenerate
-              </Button>
-              <Button size="sm" variant="ghost" className="text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950" onClick={() => onReject(proposal)} data-testid={`button-reject-${proposal.id}`}>
-                <X className="h-3 w-3" />
-                Reject
-              </Button>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Approve Dialog ───────────────────────────────────────────────────────────
-
-function ApproveDialog({ proposal, open, onClose, onSent }: { proposal: Proposal | null; open: boolean; onClose: () => void; onSent: () => void }) {
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+function RejectDialog({
+  proposalId, open, onClose, onDone,
+}: { proposalId: string; open: boolean; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [coaching, setCoaching] = useState("");
+  const [chips, setChips] = useState<string[]>([]);
   const { toast } = useToast();
 
-  const approveMutation = useMutation({
-    mutationFn: (data: { subject: string; body: string }) =>
-      apiRequest("POST", `/api/ai-approvals/${proposal!.id}/approve`, data),
+  const mutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposalId}/reject`, {
+      reason, coachingFeedbackText: coaching, feedbackTags: chips,
+    }),
     onSuccess: () => {
-      toast({ title: "Email sent", description: `Sent to ${proposal?.recipientEmail}` });
-      onSent();
+      toast({ title: "Draft rejected" });
+      onDone(); onClose(); setReason(""); setCoaching(""); setChips([]);
     },
-    onError: (err: any) => {
-      const msg = err?.message ?? "Failed to send";
-      if (msg.includes("Gmail") || msg.includes("gmail")) {
-        toast({ title: "Gmail connection error", description: "Please reconnect Gmail in Settings.", variant: "destructive" });
-      } else {
-        toast({ title: "Failed to send", description: msg, variant: "destructive" });
-      }
-    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  function handleOpen() { setSubject(proposal?.subject ?? ""); setBody(proposal?.bodyPreview ?? ""); }
-  if (!proposal) return null;
+  const canSubmit = reason.trim() || coaching.trim() || chips.length > 0;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); else handleOpen(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Send className="h-4 w-4" />Review & Send Email</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div className="bg-muted/40 rounded-md p-3 text-sm">
-            <p><span className="font-medium">To:</span> {proposal.recipientEmail}</p>
-            <p className="mt-1"><span className="font-medium">Type:</span> {getMessageTypeLabel(proposal.actionType)}</p>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Reject Draft</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Reason (optional)</Label>
+            <Input data-testid="input-reject-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Brief reason…" className="mt-1" />
           </div>
-          <div className="p-3 rounded-md bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-sm text-orange-800 dark:text-orange-200 flex gap-2">
-            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <span>The AI stored a <strong>preview only</strong>. Review and complete the body before sending.</span>
+          <div>
+            <Label>Coach the AI (optional)</Label>
+            <Textarea
+              data-testid="textarea-coaching"
+              value={coaching}
+              onChange={(e) => setCoaching(e.target.value)}
+              placeholder={"What should the AI do differently?\n\nExamples:\n• \"Mention the sport next time\"\n• \"Keep it under 100 words\"\n• \"End with a scheduling link\""}
+              className="mt-1 min-h-[100px] text-sm"
+            />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="approve-subject">Subject</Label>
-            <Input id="approve-subject" value={subject} onChange={(e) => setSubject(e.target.value)} data-testid="input-approve-subject" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="approve-body">Email Body</Label>
-            <Textarea id="approve-body" value={body} onChange={(e) => setBody(e.target.value)} rows={12} className="font-mono text-sm" placeholder="Complete the email body here..." data-testid="input-approve-body" />
-            <p className="text-xs text-muted-foreground">{body.length} characters</p>
+          <div>
+            <Label className="text-xs text-muted-foreground">Quick tags (optional)</Label>
+            <FeedbackChips selected={chips} onToggle={(c) => setChips((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])} />
           </div>
         </div>
-        <DialogFooter className="gap-2 flex-wrap">
-          <Button variant="ghost" onClick={onClose} data-testid="button-approve-cancel">Cancel</Button>
-          <Button onClick={() => { if (!subject.trim() || !body.trim()) { toast({ title: "Subject and body are required", variant: "destructive" }); return; } approveMutation.mutate({ subject, body }); }} disabled={approveMutation.isPending || !body.trim()} className="gap-1.5" data-testid="button-approve-confirm">
-            <Send className="h-4 w-4" />
-            {approveMutation.isPending ? "Sending…" : "Send Email"}
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            data-testid="button-confirm-reject"
+            variant="destructive"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !canSubmit}
+          >
+            {mutation.isPending ? "Rejecting…" : "Reject"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -415,199 +157,56 @@ function ApproveDialog({ proposal, open, onClose, onSent }: { proposal: Proposal
 
 // ─── Edit & Send Dialog ───────────────────────────────────────────────────────
 
-function EditSendDialog({ proposal, open, onClose, onSent }: { proposal: Proposal | null; open: boolean; onClose: () => void; onSent: () => void }) {
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [rating, setRating] = useState("");
-  const [notes, setNotes] = useState("");
+function EditSendDialog({
+  proposal, open, onClose, onDone,
+}: { proposal: any; open: boolean; onClose: () => void; onDone: () => void }) {
+  const [subject, setSubject] = useState(proposal?.subject ?? "");
+  const [body, setBody] = useState(proposal?.bodyPreview ?? "");
   const [coaching, setCoaching] = useState("");
   const [chips, setChips] = useState<string[]>([]);
   const { toast } = useToast();
 
-  const editSendMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", `/api/ai-approvals/${proposal!.id}/edit-send`, data),
-    onSuccess: () => {
-      toast({ title: "Email sent", description: `Edited and sent to ${proposal?.recipientEmail}` });
-      onSent();
-    },
-    onError: (err: any) => toast({ title: "Failed to send", description: err?.message ?? "Unknown error", variant: "destructive" }),
+  const mutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposal.id}/edit-send`, {
+      subject, body, coachingFeedbackText: coaching, feedbackTags: chips,
+    }),
+    onSuccess: () => { toast({ title: "Sent!" }); onDone(); onClose(); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  function handleOpen() { setSubject(proposal?.subject ?? ""); setBody(proposal?.bodyPreview ?? ""); setRating(""); setNotes(""); setCoaching(""); setChips([]); }
-  function toggleChip(chip: string) { setChips((prev) => prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]); }
-
-  if (!proposal) return null;
-
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); else handleOpen(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Pencil className="h-4 w-4" />Edit & Send</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div className="bg-muted/40 rounded-md p-3 text-sm">
-            <p><span className="font-medium">To:</span> {proposal.recipientEmail}</p>
-            <p className="mt-1"><span className="font-medium">Original type:</span> {getMessageTypeLabel(proposal.actionType)}</p>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader><DialogTitle>Edit & Send</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Subject</Label>
+            <Input data-testid="input-edit-subject" value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-subject">Subject</Label>
-            <Input id="edit-subject" value={subject} onChange={(e) => setSubject(e.target.value)} data-testid="input-edit-subject" />
+          <div>
+            <Label>Body</Label>
+            <Textarea data-testid="textarea-edit-body" value={body} onChange={(e) => setBody(e.target.value)} className="mt-1 min-h-[180px] text-sm font-mono" />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-body">Email Body</Label>
-            <Textarea id="edit-body" value={body} onChange={(e) => setBody(e.target.value)} rows={12} className="font-mono text-sm" data-testid="input-edit-body" />
-            <p className="text-xs text-muted-foreground">{body.length} characters</p>
-          </div>
-
-          <div className="border-t pt-4 space-y-4">
-            <p className="text-sm font-medium flex items-center gap-2"><MessageSquare className="h-4 w-4 text-muted-foreground" />Coach the AI (optional)</p>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Quick feedback</Label>
-              <FeedbackChips selected={chips} onToggle={toggleChip} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-coaching">Tell the AI what you wanted instead</Label>
-              <Textarea
-                id="edit-coaching"
-                value={coaching}
-                onChange={(e) => setCoaching(e.target.value)}
-                rows={3}
-                placeholder="e.g. This sounds too generic. Mention the athlete's sport and make the CTA more direct."
-                data-testid="input-edit-coaching"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-rating">Quality rating (1–5)</Label>
-                <Select value={rating} onValueChange={setRating}>
-                  <SelectTrigger id="edit-rating" data-testid="select-rating"><SelectValue placeholder="Rate original..." /></SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <SelectItem key={n} value={String(n)}>{n} — {["Poor", "Fair", "Good", "Very Good", "Excellent"][n - 1]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-notes">Additional notes</Label>
-                <Input id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Other notes..." data-testid="input-edit-notes" />
-              </div>
-            </div>
-          </div>
-        </div>
-        <DialogFooter className="gap-2 flex-wrap">
-          <Button variant="ghost" onClick={onClose} data-testid="button-edit-cancel">Cancel</Button>
-          <Button
-            onClick={() => editSendMutation.mutate({ subject, body, qualityRating: rating ? parseInt(rating) : undefined, reviewerNotes: notes || undefined, coachingFeedbackText: coaching || undefined, feedbackTags: chips.length ? chips : undefined })}
-            disabled={editSendMutation.isPending || !subject.trim() || !body.trim()}
-            className="gap-1.5"
-            data-testid="button-edit-confirm"
-          >
-            <Send className="h-4 w-4" />
-            {editSendMutation.isPending ? "Sending…" : "Send Edited Email"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Reject Dialog ────────────────────────────────────────────────────────────
-
-function RejectDialog({ proposal, open, onClose, onRejected }: { proposal: Proposal | null; open: boolean; onClose: () => void; onRejected: () => void }) {
-  const [reason, setReason] = useState("");
-  const [coaching, setCoaching] = useState("");
-  const [chips, setChips] = useState<string[]>([]);
-  const [rating, setRating] = useState("");
-  const { toast } = useToast();
-
-  const rejectMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", `/api/ai-approvals/${proposal!.id}/reject`, data),
-    onSuccess: () => {
-      toast({ title: "Proposal rejected", description: "Feedback saved for agent learning." });
-      onRejected();
-    },
-    onError: () => toast({ title: "Failed to reject", variant: "destructive" }),
-  });
-
-  function toggleChip(chip: string) { setChips((prev) => prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]); }
-
-  const canSubmit = !!(reason.trim() || coaching.trim() || chips.length > 0);
-
-  if (!proposal) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); setReason(""); setCoaching(""); setChips([]); setRating(""); } }}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-red-600"><X className="h-4 w-4" />Reject Email Draft</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div className="bg-muted/40 rounded-md p-3 text-sm">
-            <p className="font-medium">{proposal.subject}</p>
-            <p className="text-muted-foreground mt-1">To: {proposal.recipientEmail}</p>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Quick feedback (select all that apply)</Label>
-            <FeedbackChips selected={chips} onToggle={toggleChip} />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="reject-coaching">
-              Tell the AI what you wanted instead
-              <span className="text-muted-foreground font-normal ml-1">(required if no reason below)</span>
-            </Label>
+          <div>
+            <Label className="text-xs text-muted-foreground">Coaching note for AI (optional)</Label>
             <Textarea
-              id="reject-coaching"
+              data-testid="textarea-edit-coaching"
               value={coaching}
               onChange={(e) => setCoaching(e.target.value)}
-              rows={3}
-              placeholder={`e.g. "This parent already filled out the form. Ask them to book instead of asking if they're interested."`}
-              data-testid="input-reject-coaching"
+              placeholder="What did you change and why?"
+              className="mt-1 min-h-[60px] text-sm"
             />
+            <FeedbackChips selected={chips} onToggle={(c) => setChips((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])} />
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="reject-reason">Short rejection reason (optional if coaching above)</Label>
-            <Textarea
-              id="reject-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={2}
-              placeholder="e.g. Wrong tone, lead already responded, not the right time..."
-              data-testid="input-reject-reason"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="reject-rating">Quality rating (1–5)</Label>
-            <Select value={rating} onValueChange={setRating}>
-              <SelectTrigger id="reject-rating" data-testid="select-reject-rating"><SelectValue placeholder="Rate this draft..." /></SelectTrigger>
-              <SelectContent>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <SelectItem key={n} value={String(n)}>{n} — {["Poor", "Fair", "Good", "Very Good", "Excellent"][n - 1]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {!canSubmit && (
-            <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" />
-              Please select a feedback chip, add coaching feedback, or enter a reason.
-            </p>
-          )}
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => { onClose(); setReason(""); setCoaching(""); setChips([]); setRating(""); }} data-testid="button-reject-cancel">Cancel</Button>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            variant="destructive"
-            onClick={() => rejectMutation.mutate({ reason: reason || undefined, qualityRating: rating ? parseInt(rating) : undefined, coachingFeedbackText: coaching || undefined, feedbackTags: chips.length ? chips : undefined })}
-            disabled={rejectMutation.isPending || !canSubmit}
-            data-testid="button-reject-confirm"
+            data-testid="button-confirm-edit-send"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !subject || !body}
           >
-            {rejectMutation.isPending ? "Rejecting…" : "Reject Draft"}
+            {mutation.isPending ? "Sending…" : "Send"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -618,281 +217,497 @@ function RejectDialog({ proposal, open, onClose, onRejected }: { proposal: Propo
 // ─── Regenerate Dialog ────────────────────────────────────────────────────────
 
 function RegenerateDialog({
-  proposal,
-  open,
-  onClose,
-  onRegenerated,
-}: {
-  proposal: Proposal | null;
-  open: boolean;
-  onClose: () => void;
-  onRegenerated: (subject: string, body: string) => void;
-}) {
-  const [feedbackText, setFeedbackText] = useState("");
+  proposal, open, onClose, onDone,
+}: { proposal: any; open: boolean; onClose: () => void; onDone: () => void }) {
+  const [feedback, setFeedback] = useState("");
   const [chips, setChips] = useState<string[]>([]);
-  const [result, setResult] = useState<{ subject: string; body: string } | null>(null);
+  const [revised, setRevised] = useState<{ subject: string; body: string } | null>(null);
   const { toast } = useToast();
 
-  function toggleChip(chip: string) {
-    setChips((prev) => prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]);
-    if (!feedbackText.includes(chip)) {
-      setFeedbackText((prev) => prev ? `${prev}. ${chip}.` : `${chip}.`);
-    }
-  }
-
   const regenMutation = useMutation({
-    mutationFn: (data: { feedbackText: string }) =>
-      apiRequest("POST", `/api/ai-approvals/${proposal!.id}/regenerate`, data),
-    onSuccess: (data: any) => {
-      setResult({ subject: data.subject, body: data.body });
-      toast({ title: "Draft regenerated", description: "Review the new version below." });
-    },
-    onError: (err: any) => toast({ title: "Regeneration failed", description: err?.message ?? "Unknown error", variant: "destructive" }),
+    mutationFn: () =>
+      apiRequest("POST", `/api/ai-approvals/${proposal.id}/regenerate`, {
+        feedbackText: [feedback, ...chips].filter(Boolean).join(". "),
+      }),
+    onSuccess: (data: any) => setRevised({ subject: data.subject, body: data.body }),
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  function handleClose() {
-    onClose();
-    setFeedbackText("");
-    setChips([]);
-    setResult(null);
-  }
+  const approveMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/ai-approvals/${proposal.id}/approve`, {
+        subject: revised?.subject, body: revised?.body,
+      }),
+    onSuccess: () => {
+      toast({ title: "Revised draft sent!" });
+      onDone(); onClose();
+      setFeedback(""); setChips([]); setRevised(null);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
-  if (!proposal) return null;
+  const handleClose = () => { onClose(); setRevised(null); setFeedback(""); setChips([]); };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-400">
-            <Sparkles className="h-4 w-4" />
-            Regenerate with Feedback
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div className="bg-muted/40 rounded-md p-3 text-sm">
-            <p><span className="font-medium">For:</span> {proposal.recipientEmail}</p>
-            <p className="mt-1 text-muted-foreground line-clamp-2"><span className="font-medium text-foreground">Original:</span> {proposal.subject}</p>
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>Regenerate with Feedback</DialogTitle></DialogHeader>
+        {!revised ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Tell the AI what to improve. It will rewrite the draft using your feedback and past learning rules.
+            </p>
+            <Textarea
+              data-testid="textarea-regen-feedback"
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="E.g. 'Make it shorter and more personal. End with a direct question.'"
+              className="min-h-[80px] text-sm"
+            />
+            <FeedbackChips selected={chips} onToggle={(c) => setChips((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c])} />
+            <DialogFooter>
+              <Button variant="outline" onClick={handleClose}>Cancel</Button>
+              <Button
+                data-testid="button-regen-submit"
+                onClick={() => regenMutation.mutate()}
+                disabled={regenMutation.isPending || (!feedback.trim() && chips.length === 0)}
+              >
+                {regenMutation.isPending
+                  ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Regenerating…</>
+                  : "Regenerate"}
+              </Button>
+            </DialogFooter>
           </div>
-
-          {!result ? (
-            <>
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Quick feedback (click to add to prompt)</Label>
-                <FeedbackChips selected={chips} onToggle={toggleChip} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="regen-feedback">What should the AI change?</Label>
-                <Textarea
-                  id="regen-feedback"
-                  value={feedbackText}
-                  onChange={(e) => setFeedbackText(e.target.value)}
-                  rows={4}
-                  placeholder={`e.g. "Too generic. Mention basketball and make it shorter. Use a direct booking CTA since they already filled out the intake form."`}
-                  data-testid="input-regen-feedback"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={handleClose} data-testid="button-regen-cancel">Cancel</Button>
-                <Button
-                  onClick={() => regenMutation.mutate({ feedbackText })}
-                  disabled={regenMutation.isPending || !feedbackText.trim()}
-                  className="gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
-                  data-testid="button-regen-submit"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {regenMutation.isPending ? "Regenerating…" : "Regenerate Draft"}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 text-green-700 dark:text-green-400 text-sm font-medium">
-                <CheckCheck className="h-4 w-4" />
-                New draft generated — review and use the updated card to approve or edit.
-              </div>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Revised Subject</Label>
-                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md p-3 text-sm font-medium">{result.subject}</div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Revised Body</Label>
-                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md p-3 text-sm font-mono whitespace-pre-wrap">{result.body}</div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Original</p>
+                <div className="rounded-md bg-muted p-3 space-y-1">
+                  <p className="text-xs font-medium">{proposal.subject}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-6">{proposal.bodyPreview}</p>
                 </div>
               </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setResult(null)} className="gap-1.5" data-testid="button-regen-try-again">
-                  <RotateCcw className="h-3 w-3" />
-                  Try again
-                </Button>
-                <Button onClick={() => { onRegenerated(result.subject, result.body); handleClose(); }} className="gap-1.5" data-testid="button-regen-use">
-                  <CheckCheck className="h-4 w-4" />
-                  Use this draft
-                </Button>
+              <div>
+                <p className="text-xs font-medium text-green-600 mb-1">Revised</p>
+                <div className="rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-3 space-y-1">
+                  <p className="text-xs font-medium">{revised.subject}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-6">{revised.body}</p>
+                </div>
               </div>
-            </>
-          )}
-        </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setRevised(null)}>Try again</Button>
+              <Button
+                data-testid="button-use-revised"
+                onClick={() => approveMutation.mutate()}
+                disabled={approveMutation.isPending}
+              >
+                {approveMutation.isPending ? "Sending…" : "Use this draft & Send"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
 }
 
-// ─── Learning Dashboard ───────────────────────────────────────────────────────
+// ─── Proposal Card ────────────────────────────────────────────────────────────
 
-function LearningDashboard() {
+function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () => void }) {
+  const [showReject, setShowReject] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showRegen, setShowRegen] = useState(false);
   const { toast } = useToast();
-  const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [activeType, setActiveType] = useState<string | null>(null);
 
-  const { data: learningData = [] } = useQuery<LearningData[]>({
-    queryKey: ["/api/ai-approvals/learning-dashboard"],
-    enabled: open,
-  });
+  const domain = proposal.communicationDomain ?? "athlete_lead";
+  const domainLabel = DOMAIN_LABELS[domain] ?? domain;
+  const domainClass = DOMAIN_BADGE_CLASS[domain] ?? "bg-gray-100 text-gray-800";
 
-  const updateRuleMutation = useMutation({
-    mutationFn: ({ ruleId, updates }: { ruleId: string; updates: any }) =>
-      apiRequest("PATCH", `/api/ai-approvals/learning-rules/${ruleId}`, updates),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/ai-approvals/learning-dashboard"] });
-      toast({ title: "Rule updated" });
+  const approveMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposal.id}/approve`, {}),
+    onSuccess: () => { toast({ title: "Sent!" }); onRefresh(); },
+    onError: (e: any) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     },
-    onError: () => toast({ title: "Failed to update rule", variant: "destructive" }),
   });
 
-  const activeTypes = learningData.filter((d) => d.rulesCount > 0 || d.reviewedCount > 0);
-  const selectedData = learningData.find((d) => d.messageType === activeType) ?? activeTypes[0] ?? null;
+  const riskColor =
+    proposal.riskLevel === "low" ? "text-green-600" :
+    proposal.riskLevel === "high" ? "text-red-600" : "text-yellow-600";
+
+  return (
+    <>
+      <Card data-testid={`card-proposal-${proposal.id}`} className="group hover:shadow-md transition-shadow">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${domainClass}`} data-testid={`badge-domain-${proposal.id}`}>
+                  {domainLabel}
+                </span>
+                <Badge variant="outline" className="text-xs">
+                  {proposal.actionType?.replace("propose_draft:", "") ?? "message"}
+                </Badge>
+                <span className={`text-xs font-medium ${riskColor}`} data-testid={`text-risk-${proposal.id}`}>
+                  {proposal.riskLevel?.toUpperCase() ?? "MEDIUM"} RISK
+                </span>
+              </div>
+              <p className="font-medium text-sm truncate" data-testid={`text-subject-${proposal.id}`}>
+                {proposal.subject ?? "(No subject)"}
+              </p>
+              <p className="text-xs text-muted-foreground">{proposal.recipientEmail}</p>
+            </div>
+            <div className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {proposal.createdAt ? new Date(proposal.createdAt).toLocaleDateString() : "—"}
+            </div>
+          </div>
+
+          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 bg-muted/30 rounded p-2" data-testid={`text-body-${proposal.id}`}>
+            {proposal.bodyPreview ?? "No content"}
+          </p>
+
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <Button
+              data-testid={`button-approve-${proposal.id}`}
+              size="sm"
+              onClick={() => approveMutation.mutate()}
+              disabled={approveMutation.isPending}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              <CheckCheck className="w-3.5 h-3.5 mr-1" />
+              {approveMutation.isPending ? "Sending…" : "Approve & Send"}
+            </Button>
+            <Button data-testid={`button-edit-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowEdit(true)}>
+              <Edit3 className="w-3.5 h-3.5 mr-1" /> Edit
+            </Button>
+            <Button data-testid={`button-regen-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowRegen(true)}>
+              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regenerate
+            </Button>
+            <Button
+              data-testid={`button-reject-${proposal.id}`}
+              size="sm" variant="ghost"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => setShowReject(true)}
+            >
+              <X className="w-3.5 h-3.5 mr-1" /> Reject
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <RejectDialog proposalId={proposal.id} open={showReject} onClose={() => setShowReject(false)} onDone={onRefresh} />
+      {showEdit && (
+        <EditSendDialog proposal={proposal} open={showEdit} onClose={() => setShowEdit(false)} onDone={onRefresh} />
+      )}
+      {showRegen && (
+        <RegenerateDialog proposal={proposal} open={showRegen} onClose={() => setShowRegen(false)} onDone={onRefresh} />
+      )}
+    </>
+  );
+}
+
+// ─── Metrics Bar ─────────────────────────────────────────────────────────────
+
+function MetricsBar({ domain }: { domain: string }) {
+  const { data: metrics } = useQuery<any>({
+    queryKey: ["/api/ai-approvals/metrics", domain],
+    queryFn: () => fetch(`/api/ai-approvals/metrics?domain=${domain}`).then((r) => r.json()),
+  });
+  if (!metrics) return null;
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {[
+        { label: "Pending",        value: metrics.pending,               icon: Clock,         color: "text-yellow-600" },
+        { label: "Approval Rate",  value: metrics.approvalRate != null ? `${metrics.approvalRate}%` : "—", icon: TrendingUp, color: "text-green-600" },
+        { label: "Total Reviewed", value: metrics.totalReviewed,         icon: CheckCheck,    color: "text-blue-600" },
+        { label: "Oldest Pending", value: metrics.oldestPendingHours != null ? `${metrics.oldestPendingHours}h` : "—", icon: AlertTriangle, color: "text-orange-600" },
+      ].map(({ label, value, icon: Icon, color }) => (
+        <Card key={label} className="p-3">
+          <div className="flex items-center gap-2">
+            <Icon className={`w-4 h-4 ${color} shrink-0`} />
+            <div>
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="text-lg font-bold" data-testid={`metric-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+                {value ?? "—"}
+              </p>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Autonomy Panel ───────────────────────────────────────────────────────────
+
+const LEVEL_LABELS = ["Manual Review", "Notify Only", "Auto-Send Low Risk", "Full Autonomy"];
+const LEVEL_COLORS = [
+  "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+];
+
+function AutonomyPanel({ activeDomainTab }: { activeDomainTab: string }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+
+  const { data: autonomyData } = useQuery<any[]>({
+    queryKey: ["/api/ai-approvals/autonomy"],
+    queryFn: () => fetch("/api/ai-approvals/autonomy").then((r) => r.json()),
+  });
+
+  const allowedDomains = activeDomainTab !== "all" ? (DOMAIN_GROUP_TO_API[activeDomainTab] ?? null) : null;
+  const displayData = (autonomyData ?? []).filter((d) => !allowedDomains || allowedDomains.includes(d.domain));
+
+  const promoteMutation = useMutation({
+    mutationFn: ({ domain, level }: { domain: string; level: number }) =>
+      apiRequest("POST", `/api/ai-approvals/autonomy/intake_outreach`, {
+        autonomyLevel: level, enabled: level > 0, communicationDomain: domain,
+      }),
+    onSuccess: () => {
+      toast({ title: "Autonomy updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals/autonomy"] });
+    },
+    onError: () => toast({ title: "Error updating autonomy", variant: "destructive" }),
+  });
+
+  if (!autonomyData?.length) return null;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <Card>
         <CollapsibleTrigger asChild>
-          <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg pb-3">
+          <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg p-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <BookOpen className="h-4 w-4" />
-                What the AI Has Learned
-              </CardTitle>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Feedback rules & coaching memory</span>
-                {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                <Zap className="w-4 h-4 text-yellow-500" />
+                <CardTitle className="text-sm">Autonomy by Domain</CardTitle>
+                <span className="text-xs text-muted-foreground ml-1">
+                  ({displayData.filter((d) => d.domainAutonomyLevel > 0).length}/{displayData.length} enabled)
+                </span>
               </div>
+              {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
             </div>
           </CardHeader>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <CardContent className="pt-0 pb-4">
-            {activeTypes.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">No learning data yet</p>
-                <p className="text-xs mt-1">Reject or edit messages with coaching feedback to start training the AI.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col md:flex-row gap-4">
-                {/* Left: message type list */}
-                <div className="md:w-48 flex-shrink-0">
-                  <p className="text-xs text-muted-foreground font-medium mb-2 uppercase tracking-wider">Message Types</p>
-                  <div className="space-y-1">
-                    {activeTypes.map((d) => (
-                      <button
-                        key={d.messageType}
-                        onClick={() => setActiveType(d.messageType)}
-                        className={`w-full text-left px-3 py-2 rounded-md text-xs transition-colors ${
-                          (activeType ?? activeTypes[0]?.messageType) === d.messageType
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted/50"
-                        }`}
-                        data-testid={`tab-learning-${d.messageType}`}
-                      >
-                        <span className="font-medium block">{MESSAGE_TYPE_LABELS[d.messageType] ?? d.messageType}</span>
-                        <span className="opacity-70">{d.rulesCount} rules · {d.reviewedCount} reviewed</span>
-                      </button>
-                    ))}
+          <CardContent className="p-4 pt-0 space-y-2">
+            {displayData.map((d) => {
+              const level = Math.min(d.domainAutonomyLevel ?? 0, 3);
+              const hasRepeated = (d.repeatedMistakes?.length ?? 0) > 0;
+              return (
+                <div key={d.domain} data-testid={`autonomy-card-${d.domain}`} className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{DOMAIN_LABELS[d.domain] ?? d.domain}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LEVEL_COLORS[level]}`}>
+                        L{level}: {LEVEL_LABELS[level]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>{d.totalReviewed} reviewed</span>
+                      <span>{d.approvalRate}% approved</span>
+                      {d.ruleCount > 0 && <span className="text-blue-600">{d.ruleCount} rules</span>}
+                    </div>
                   </div>
+
+                  {hasRepeated && (
+                    <div className="flex items-center gap-1.5 text-xs text-orange-700 bg-orange-50 dark:bg-orange-950/20 rounded px-2 py-1.5">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      Repeated mistakes block promotion: {d.repeatedMistakes.join(", ")}
+                    </div>
+                  )}
+
+                  {(d.readyForLevel2 || d.readyForLevel3) && !hasRepeated && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-green-600">
+                        Ready for Level {d.readyForLevel3 ? 3 : 2}
+                      </span>
+                      <Button
+                        size="sm" variant="outline"
+                        className="h-6 text-xs"
+                        data-testid={`button-promote-${d.domain}`}
+                        onClick={() => promoteMutation.mutate({ domain: d.domain, level: d.readyForLevel3 ? 3 : 2 })}
+                        disabled={promoteMutation.isPending}
+                      >
+                        Promote
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
+// ─── Learning Dashboard ───────────────────────────────────────────────────────
+
+function LearningDashboard({ activeDomainTab }: { activeDomainTab: string }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [activeLearningDomain, setActiveLearningDomain] = useState("athlete_lead");
+
+  const { data: dashboard } = useQuery<any[]>({
+    queryKey: ["/api/ai-approvals/learning-dashboard"],
+    enabled: open,
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (ruleId: string) =>
+      apiRequest("PATCH", `/api/ai-approvals/learning-rules/${ruleId}`, { status: "archived" }),
+    onSuccess: () => {
+      toast({ title: "Rule archived" });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals/learning-dashboard"] });
+    },
+    onError: () => toast({ title: "Error", variant: "destructive" }),
+  });
+
+  const globalMutation = useMutation({
+    mutationFn: ({ id, val }: { id: string; val: boolean }) =>
+      apiRequest("PATCH", `/api/ai-approvals/learning-rules/${id}`, { appliesGlobally: val }),
+    onSuccess: () => {
+      toast({ title: "Rule updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals/learning-dashboard"] });
+    },
+    onError: () => toast({ title: "Error", variant: "destructive" }),
+  });
+
+  const allowedApiDomains = activeDomainTab !== "all" ? (DOMAIN_GROUP_TO_API[activeDomainTab] ?? null) : null;
+  const visibleDomains = (dashboard ?? []).filter((d) => !allowedApiDomains || allowedApiDomains.includes(d.domain));
+  const activeEntry = visibleDomains.find((d) => d.domain === activeLearningDomain) ?? visibleDomains[0];
+
+  const totalRules = (dashboard ?? []).reduce((s, d) => s + (d.rulesCount ?? 0), 0);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain className="w-4 h-4 text-purple-500" />
+                <CardTitle className="text-sm">What the AI Has Learned</CardTitle>
+                {totalRules > 0 && (
+                  <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 px-2 py-0.5 rounded-full">
+                    {totalRules} rules
+                  </span>
+                )}
+              </div>
+              {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="p-4 pt-0">
+            {!dashboard ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : visibleDomains.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No learning data yet for this domain.</p>
+            ) : (
+              <div className="flex gap-4 min-h-[200px]">
+                {/* Domain sidebar nav */}
+                <div className="flex flex-col gap-1 min-w-[160px] shrink-0">
+                  {visibleDomains.map((d) => (
+                    <button
+                      key={d.domain}
+                      data-testid={`learning-nav-${d.domain}`}
+                      onClick={() => setActiveLearningDomain(d.domain)}
+                      className={`text-left text-xs px-3 py-2 rounded-md transition-colors ${
+                        activeEntry?.domain === d.domain
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      <span className="block font-medium">{d.label}</span>
+                      <span className="opacity-70">{d.rulesCount} rules · {d.reviewedCount} reviewed</span>
+                    </button>
+                  ))}
                 </div>
 
-                {/* Right: rules detail */}
-                {selectedData && (
-                  <div className="flex-1 min-w-0 space-y-4">
-                    {/* Repeated mistakes */}
-                    {selectedData.repeatedMistakes.length > 0 && (
-                      <div className="p-3 rounded-md bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800">
-                        <p className="text-xs font-medium text-orange-800 dark:text-orange-300 mb-2 flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" /> Repeated Mistakes (blocks autonomy promotion)
+                {/* Rules content */}
+                {activeEntry && (
+                  <div className="flex-1 space-y-4 min-w-0">
+                    {/* Outcome summary */}
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      <span className="text-green-600 font-medium">
+                        ✓ {(activeEntry.outcomes?.approved ?? 0) + (activeEntry.outcomes?.edited ?? 0)} approved
+                      </span>
+                      <span className="text-red-600 font-medium">
+                        ✗ {activeEntry.outcomes?.rejected ?? 0} rejected
+                      </span>
+                      <span>📧 {activeEntry.outcomes?.sent ?? 0} sent</span>
+                      {(activeEntry.outcomes?.replied ?? 0) > 0 && (
+                        <span>💬 {activeEntry.outcomes.replied} replied</span>
+                      )}
+                    </div>
+
+                    {/* Repeated mistakes warning */}
+                    {activeEntry.repeatedMistakes?.length > 0 && (
+                      <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-orange-700 dark:text-orange-400 mb-1 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" /> Repeated Mistakes — blocks autonomy promotion
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {selectedData.repeatedMistakes.map((m) => (
-                            <Badge key={m.tag} className="text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300">
-                              {m.tag} × {m.count}
-                            </Badge>
+                        <div className="flex flex-wrap gap-1">
+                          {activeEntry.repeatedMistakes.map((m: any) => (
+                            <span key={m.tag ?? m} className="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 px-2 py-0.5 rounded-full">
+                              {m.tag ?? m}{m.count ? ` ×${m.count}` : ""}
+                            </span>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* Top rejection tags */}
-                    {selectedData.topRejectionTags.length > 0 && (
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">Top Rejection Tags</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {selectedData.topRejectionTags.map((t) => (
-                            <Badge key={t.tag} variant="outline" className="text-xs">
-                              {t.tag} <span className="ml-1 text-muted-foreground">×{t.count}</span>
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Rules sections */}
+                    {/* Rule categories */}
                     {[
-                      { key: "doRules", label: "Do Rules", icon: "✅" },
-                      { key: "avoidRules", label: "Avoid Rules", icon: "🚫" },
-                      { key: "toneRules", label: "Tone", icon: "🎭" },
-                      { key: "ctaRules", label: "CTA Preferences", icon: "👆" },
-                      { key: "lengthRules", label: "Length", icon: "📏" },
-                    ].map(({ key, label, icon }) => {
-                      const rules = (selectedData as any)[key] as { id: string; text: string; confidence: string | null; appliesGlobally?: boolean | null }[];
-                      if (!rules?.length) return null;
+                      { key: "doRules",     emoji: "✅", label: "Do" },
+                      { key: "avoidRules",  emoji: "🚫", label: "Avoid" },
+                      { key: "toneRules",   emoji: "🎙",  label: "Tone" },
+                      { key: "ctaRules",    emoji: "👆", label: "CTA" },
+                      { key: "lengthRules", emoji: "📏", label: "Length" },
+                    ].map(({ key, emoji, label }) => {
+                      const rules: any[] = activeEntry[key] ?? [];
+                      if (rules.length === 0) return null;
                       return (
                         <div key={key}>
-                          <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">{icon} {label}</p>
+                          <p className="text-xs font-semibold mb-1.5">{emoji} {label}</p>
                           <div className="space-y-1.5">
-                            {rules.map((rule) => (
-                              <div key={rule.id} className="flex items-start gap-2 p-2.5 rounded-md bg-muted/30 border border-border/50 group">
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs leading-relaxed">{rule.text}</p>
-                                  <div className="flex gap-2 mt-1">
-                                    {rule.appliesGlobally && <Badge className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 py-0">Global</Badge>}
-                                    {rule.confidence && (
-                                      <span className="text-xs text-muted-foreground">{Math.round(parseFloat(rule.confidence) * 100)}% confidence</span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 px-1.5 text-xs text-blue-600 hover:text-blue-700"
-                                    onClick={() => updateRuleMutation.mutate({ ruleId: rule.id, updates: { appliesGlobally: !rule.appliesGlobally } })}
-                                    title={rule.appliesGlobally ? "Make type-specific" : "Make global"}
-                                    data-testid={`button-rule-global-${rule.id}`}
-                                  >
-                                    <Globe className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-                                    onClick={() => updateRuleMutation.mutate({ ruleId: rule.id, updates: { status: "archived" } })}
-                                    title="Archive rule"
-                                    data-testid={`button-rule-archive-${rule.id}`}
-                                  >
-                                    <Archive className="h-3 w-3" />
-                                  </Button>
-                                </div>
+                            {rules.map((r: any) => (
+                              <div
+                                key={r.id}
+                                data-testid={`rule-${r.id}`}
+                                className="flex items-start gap-2 text-xs text-muted-foreground group"
+                              >
+                                <span className="flex-1 leading-relaxed">{r.text}</span>
+                                <span className="opacity-40 shrink-0 tabular-nums">
+                                  {Math.round(parseFloat(r.confidence ?? "0.75") * 100)}%
+                                </span>
+                                <button
+                                  data-testid={`button-globe-${r.id}`}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                  title={r.appliesGlobally ? "Remove global" : "Apply globally"}
+                                  onClick={() => globalMutation.mutate({ id: r.id, val: !r.appliesGlobally })}
+                                >
+                                  <Globe className={`w-3 h-3 ${r.appliesGlobally ? "text-blue-500" : "text-muted-foreground"}`} />
+                                </button>
+                                <button
+                                  data-testid={`button-archive-${r.id}`}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                  title="Archive rule"
+                                  onClick={() => archiveMutation.mutate(r.id)}
+                                >
+                                  <Archive className="w-3 h-3 text-muted-foreground hover:text-red-500" />
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -900,8 +715,21 @@ function LearningDashboard() {
                       );
                     })}
 
-                    {selectedData.rulesCount === 0 && (
-                      <p className="text-xs text-muted-foreground">No rules extracted for this message type yet. Reject or edit a message with coaching feedback to create rules.</p>
+                    {/* Top rejection tags */}
+                    {activeEntry.topRejectionTags?.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold mb-1.5">🏷 Top Rejection Tags</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeEntry.topRejectionTags.map((t: any) => (
+                            <span
+                              key={t.tag}
+                              className="text-xs bg-muted px-2 py-0.5 rounded-full"
+                            >
+                              {t.tag} <span className="text-muted-foreground">×{t.count}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -914,387 +742,171 @@ function LearningDashboard() {
   );
 }
 
-// ─── Autonomy Panel ───────────────────────────────────────────────────────────
+// ─── Proposals Panel ──────────────────────────────────────────────────────────
 
-function AutonomyPanel({ settings }: { settings: AutonomySetting[] }) {
-  const qc = useQueryClient();
+function ProposalsPanel({ domain }: { domain: string }) {
+  const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const updateMutation = useMutation({
-    mutationFn: ({ messageType, autonomyLevel, enabled }: { messageType: string; autonomyLevel: number; enabled: boolean }) =>
-      apiRequest("POST", `/api/ai-approvals/autonomy/${messageType}`, { autonomyLevel, enabled }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/ai-approvals/autonomy"] });
-      toast({ title: "Autonomy settings updated" });
-    },
-    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
+  const { data: proposals = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/ai-approvals", domain],
+    queryFn: () => fetch(`/api/ai-approvals?domain=${domain}`).then((r) => r.json()),
   });
 
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals/metrics"] });
+  };
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: (ids: string[]) => apiRequest("POST", "/api/ai-approvals/bulk-approve", { ids }),
+    onSuccess: (data: any) => {
+      toast({ title: `Bulk approved: ${data.sent} sent` });
+      setSelected(new Set()); invalidate();
+    },
+    onError: () => toast({ title: "Error", variant: "destructive" }),
+  });
+
+  const bulkRejectMutation = useMutation({
+    mutationFn: (ids: string[]) => apiRequest("POST", "/api/ai-approvals/bulk-reject", { ids }),
+    onSuccess: () => { toast({ title: "Bulk rejected" }); setSelected(new Set()); invalidate(); },
+    onError: () => toast({ title: "Error", variant: "destructive" }),
+  });
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSelected = proposals.length > 0 && proposals.every((p) => selected.has(p.id));
+
+  if (isLoading) {
+    return <div className="text-center py-12 text-muted-foreground text-sm">Loading drafts…</div>;
+  }
+
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <Card>
-        <CollapsibleTrigger asChild>
-          <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Sliders className="h-4 w-4" />
-                Autonomy Progression Controls
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Configure per message type</span>
-                {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+    <div>
+      {proposals.length > 0 && (
+        <div className="flex items-center gap-3 mb-3 flex-wrap">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              data-testid="checkbox-select-all"
+              checked={allSelected}
+              onChange={() => allSelected ? setSelected(new Set()) : setSelected(new Set(proposals.map((p) => p.id)))}
+              className="rounded"
+            />
+            Select all ({proposals.length})
+          </label>
+          {selected.size > 0 && (
+            <>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs"
+                data-testid="button-bulk-approve"
+                onClick={() => bulkApproveMutation.mutate([...selected])}
+                disabled={bulkApproveMutation.isPending}
+              >
+                <CheckCheck className="w-3 h-3 mr-1" /> Approve {selected.size}
+              </Button>
+              <Button
+                size="sm" variant="outline"
+                className="text-red-600 border-red-200 h-7 text-xs"
+                data-testid="button-bulk-reject"
+                onClick={() => bulkRejectMutation.mutate([...selected])}
+                disabled={bulkRejectMutation.isPending}
+              >
+                <X className="w-3 h-3 mr-1" /> Reject {selected.size}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {proposals.length === 0 ? (
+        <div className="text-center py-16" data-testid="text-empty-state">
+          <CheckCheck className="w-10 h-10 text-green-500 mx-auto mb-3" />
+          <p className="text-muted-foreground font-medium">All caught up!</p>
+          <p className="text-sm text-muted-foreground mt-1">No pending AI drafts for this domain.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {proposals.map((p) => (
+            <div key={p.id} className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                data-testid={`checkbox-select-${p.id}`}
+                checked={selected.has(p.id)}
+                onChange={() => toggleSelect(p.id)}
+                className="mt-4 rounded"
+              />
+              <div className="flex-1">
+                <ProposalCard proposal={p} onRefresh={invalidate} />
               </div>
             </div>
-          </CardHeader>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <CardContent className="pt-0 pb-4">
-            <div className="text-xs text-muted-foreground mb-4 p-3 bg-muted/30 rounded-md">
-              <p className="font-medium mb-1">Autonomy levels:</p>
-              {AUTONOMY_LEVEL_LABELS.map((l) => (
-                <p key={l.level}><span className="font-medium">Level {l.level}:</span> {l.label} — {l.description}</p>
-              ))}
-              <p className="mt-2 text-orange-600 dark:text-orange-400">⚠ Auto-send is never allowed for pricing, refunds, legal claims, or high-risk churn messages.</p>
-              <p className="mt-1 text-orange-600 dark:text-orange-400">⚠ Autonomy is blocked if the same feedback tag appears 3+ times for a message type.</p>
-            </div>
-            <div className="space-y-3">
-              {settings.map((s) => {
-                const levelInfo = AUTONOMY_LEVEL_LABELS[s.autonomyLevel] ?? AUTONOMY_LEVEL_LABELS[0];
-                const canUpgrade = s.readyForLevel2 && s.autonomyLevel < 2;
-                return (
-                  <div key={s.messageType} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 border rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{MESSAGE_TYPE_LABELS[s.messageType] ?? s.messageType}</span>
-                        <Badge className={`text-xs ${levelInfo.color}`}>{levelInfo.label}</Badge>
-                        {canUpgrade && <Badge className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">Ready to upgrade</Badge>}
-                      </div>
-                      <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
-                        <span>Reviewed: {s.totalReviewed}</span>
-                        <span>Approval: {s.approvalRate}%</span>
-                        <span>Rejection: {s.rejectionRate}%</span>
-                        {s.avgRating && <span>Avg rating: {s.avgRating}/5</span>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Select
-                        value={String(s.autonomyLevel)}
-                        onValueChange={(v) => updateMutation.mutate({ messageType: s.messageType, autonomyLevel: parseInt(v), enabled: s.enabled })}
-                        disabled={updateMutation.isPending}
-                      >
-                        <SelectTrigger className="w-40 text-xs" data-testid={`select-autonomy-${s.messageType}`}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="0">Level 0 — Manual</SelectItem>
-                          <SelectItem value="1" disabled={s.totalReviewed < 5}>Level 1 — Suggested</SelectItem>
-                          <SelectItem value="2" disabled={!s.readyForLevel2}>Level 2 — Auto-send Low Risk</SelectItem>
-                          <SelectItem value="3" disabled={!s.readyForLevel3}>Level 3 — Autonomous</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </CollapsibleContent>
-      </Card>
-    </Collapsible>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminAiApprovalsPage() {
-  const { toast } = useToast();
-  const qc = useQueryClient();
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState("all");
-  const [approveDialogProposal, setApproveDialogProposal] = useState<Proposal | null>(null);
-  const [editSendDialogProposal, setEditSendDialogProposal] = useState<Proposal | null>(null);
-  const [rejectDialogProposal, setRejectDialogProposal] = useState<Proposal | null>(null);
-  const [regenerateDialogProposal, setRegenerateDialogProposal] = useState<Proposal | null>(null);
-  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
-  const [bulkRejectReason, setBulkRejectReason] = useState("");
-  const [riskFilter, setRiskFilter] = useState("all");
-
-  const { data: proposals = [], isLoading, refetch } = useQuery<Proposal[]>({
-    queryKey: ["/api/ai-approvals"],
-  });
-
-  const { data: metrics } = useQuery<Metrics>({
-    queryKey: ["/api/ai-approvals/metrics"],
-  });
-
-  const { data: autonomySettings = [] } = useQuery<AutonomySetting[]>({
-    queryKey: ["/api/ai-approvals/autonomy"],
-  });
-
-  function invalidateAll() {
-    qc.invalidateQueries({ queryKey: ["/api/ai-approvals"] });
-    qc.invalidateQueries({ queryKey: ["/api/ai-approvals/metrics"] });
-    qc.invalidateQueries({ queryKey: ["/api/ai-approvals/autonomy"] });
-    setSelectedIds(new Set());
-  }
-
-  const bulkApproveMutation = useMutation({
-    mutationFn: (ids: string[]) => apiRequest("POST", "/api/ai-approvals/bulk-approve", { ids }),
-    onSuccess: (data: any) => {
-      toast({ title: `${data.sent} email${data.sent !== 1 ? "s" : ""} sent`, description: data.failed > 0 ? `${data.failed} failed` : undefined });
-      invalidateAll();
-    },
-    onError: () => toast({ title: "Bulk approve failed", variant: "destructive" }),
-  });
-
-  const bulkRejectMutation = useMutation({
-    mutationFn: ({ ids, reason }: { ids: string[]; reason: string }) =>
-      apiRequest("POST", "/api/ai-approvals/bulk-reject", { ids, reason }),
-    onSuccess: (data: any) => {
-      toast({ title: `${data.rejected} draft${data.rejected !== 1 ? "s" : ""} rejected` });
-      setBulkRejectOpen(false);
-      setBulkRejectReason("");
-      invalidateAll();
-    },
-    onError: () => toast({ title: "Bulk reject failed", variant: "destructive" }),
-  });
-
-  const filteredByTab = useMemo(() => {
-    let list = proposals;
-    if (activeTab === "email") list = list.filter((p) => p.actionType.startsWith("propose_draft:"));
-    if (activeTab === "intake") list = list.filter((p) => p.actionType.includes("intake_outreach"));
-    if (activeTab === "followup") list = list.filter((p) => p.actionType.includes("followup"));
-    if (riskFilter !== "all") list = list.filter((p) => p.riskLevel === riskFilter);
-    return list;
-  }, [proposals, activeTab, riskFilter]);
-
-  const lowRiskProposals = proposals.filter((p) => p.riskLevel === "low");
-  const selectedList = filteredByTab.filter((p) => selectedIds.has(p.id));
-  const allSelected = filteredByTab.length > 0 && filteredByTab.every((p) => selectedIds.has(p.id));
-  const oldestHours = metrics?.oldestPendingHours ?? null;
-
-  function toggleSelectAll() {
-    if (allSelected) {
-      setSelectedIds((prev) => { const next = new Set(prev); filteredByTab.forEach((p) => next.delete(p.id)); return next; });
-    } else {
-      setSelectedIds((prev) => new Set([...prev, ...filteredByTab.map((p) => p.id)]));
-    }
-  }
-
-  function handleSelect(id: string, checked: boolean) {
-    setSelectedIds((prev) => { const next = new Set(prev); if (checked) next.add(id); else next.delete(id); return next; });
-  }
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="container max-w-4xl mx-auto py-6 px-4 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Inbox className="h-6 w-6" />
-            AI Approval Inbox
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">Review, approve, and coach the AI agent. Every decision becomes a training rule.</p>
+          <div className="flex items-center gap-2">
+            <Mail className="w-5 h-5 text-primary" />
+            <h1 className="text-2xl font-bold" data-testid="text-page-title">AI Communications Center</h1>
+          </div>
+          <p className="text-muted-foreground text-sm mt-1">
+            Review, approve, and coach AI-generated outreach across all communication domains.
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5 flex-shrink-0" data-testid="button-refresh-approvals">
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <BarChart3 className="w-4 h-4" />
+          <span>Learning enabled · {DOMAIN_TABS.length - 1} domains</span>
+        </div>
       </div>
-
-      {/* Alerts */}
-      {metrics && metrics.pending > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {metrics.pending > 0 && (
-            <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg px-3 py-2 text-sm text-orange-800 dark:text-orange-200" data-testid="alert-pending-count">
-              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-              <span><strong>{metrics.pending}</strong> AI draft{metrics.pending !== 1 ? "s" : ""} awaiting your approval</span>
-            </div>
-          )}
-          {metrics.lowRisk > 0 && (
-            <div className="flex items-center gap-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg px-3 py-2 text-sm text-green-800 dark:text-green-200">
-              <CheckCheck className="h-4 w-4 flex-shrink-0" />
-              <span><strong>{metrics.lowRisk}</strong> low-risk draft{metrics.lowRisk !== 1 ? "s" : ""} ready to send</span>
-            </div>
-          )}
-          {oldestHours !== null && oldestHours > 24 && (
-            <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2 text-sm text-red-800 dark:text-red-200">
-              <Clock className="h-4 w-4 flex-shrink-0" />
-              <span>Oldest follow-up backlog: <strong>{oldestHours}h ago</strong></span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <MetricCard label="Pending Approvals" value={metrics?.pending ?? "—"} icon={Inbox} alert={(metrics?.pending ?? 0) > 5} />
-        <MetricCard label="Low-Risk Drafts" value={metrics?.lowRisk ?? "—"} sub="ready to send" icon={Shield} />
-        <MetricCard label="Approval Rate" value={metrics?.approvalRate != null ? `${metrics.approvalRate}%` : "—"} sub={`${metrics?.totalReviewed ?? 0} reviewed`} icon={TrendingUp} />
-        <MetricCard label="Emails Sent" value={metrics?.sent ?? "—"} sub="via this inbox" icon={Send} />
-      </div>
+      <MetricsBar domain={activeTab} />
 
-      {/* Bulk action bar */}
-      {selectedIds.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-3" data-testid="bulk-action-bar">
-          <span className="text-sm font-medium">{selectedIds.size} selected</span>
-          <div className="flex flex-wrap gap-2 ml-auto">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => bulkApproveMutation.mutate([...selectedIds])} disabled={bulkApproveMutation.isPending} data-testid="button-bulk-approve">
-              <Send className="h-3.5 w-3.5" />
-              {bulkApproveMutation.isPending ? "Sending…" : "Approve Selected"}
-            </Button>
-            <Button size="sm" variant="ghost" className="gap-1.5 text-red-600" onClick={() => setBulkRejectOpen(true)} data-testid="button-bulk-reject">
-              <X className="h-3.5 w-3.5" />
-              Reject Selected
-            </Button>
-            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setSelectedIds(new Set())}>Clear</Button>
-          </div>
-        </div>
-      )}
-
-      {/* Quick bulk actions */}
-      {lowRiskProposals.length > 0 && selectedIds.size === 0 && (
-        <div className="flex items-center gap-3">
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 border-green-400 text-green-700 hover:bg-green-50 dark:text-green-300 dark:hover:bg-green-950"
-            onClick={() => bulkApproveMutation.mutate(lowRiskProposals.map((p) => p.id))}
-            disabled={bulkApproveMutation.isPending}
-            data-testid="button-approve-all-low-risk"
-          >
-            <Zap className="h-3.5 w-3.5" />
-            {bulkApproveMutation.isPending ? "Sending…" : `Approve All Low-Risk (${lowRiskProposals.length})`}
-          </Button>
-          <span className="text-xs text-muted-foreground">Sends using stored draft text</span>
-        </div>
-      )}
-
-      {/* Main content */}
+      {/* Domain Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-          <TabsList className="flex-shrink-0">
-            <TabsTrigger value="all" data-testid="tab-all">All ({proposals.length})</TabsTrigger>
-            <TabsTrigger value="intake" data-testid="tab-intake">Intake</TabsTrigger>
-            <TabsTrigger value="followup" data-testid="tab-followup">Follow-ups</TabsTrigger>
-            <TabsTrigger value="email" data-testid="tab-email">All Email</TabsTrigger>
-          </TabsList>
-          <div className="flex items-center gap-2 ml-auto">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <Select value={riskFilter} onValueChange={setRiskFilter}>
-              <SelectTrigger className="w-36 text-xs" data-testid="select-risk-filter"><SelectValue placeholder="Risk level" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All risks</SelectItem>
-                <SelectItem value="low">Low risk</SelectItem>
-                <SelectItem value="medium">Medium risk</SelectItem>
-                <SelectItem value="high">High risk</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <TabsList className="flex-wrap h-auto gap-1 p-1 w-full sm:w-auto" data-testid="tabs-domain">
+          {DOMAIN_TABS.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                data-testid={`tab-${tab.key}`}
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
 
-        {["all", "intake", "followup", "email"].map((tab) => (
-          <TabsContent key={tab} value={tab} className="mt-4 space-y-3">
-            {isLoading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => <div key={i} className="h-36 rounded-lg bg-muted/40 animate-pulse" />)}
-              </div>
-            ) : filteredByTab.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <CheckCheck className="h-10 w-10 text-green-500 mb-3" />
-                  <p className="font-medium">All caught up!</p>
-                  <p className="text-sm text-muted-foreground mt-1">No pending approvals in this category.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                <div className="flex items-center gap-2 pb-1">
-                  <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} data-testid="checkbox-select-all" />
-                  <span className="text-xs text-muted-foreground">Select all ({filteredByTab.length})</span>
-                </div>
-                {filteredByTab.map((p) => (
-                  <ProposalCard
-                    key={p.id}
-                    proposal={p}
-                    selected={selectedIds.has(p.id)}
-                    onSelect={handleSelect}
-                    onApprove={(p) => setApproveDialogProposal(p)}
-                    onEditSend={(p) => setEditSendDialogProposal(p)}
-                    onReject={(p) => setRejectDialogProposal(p)}
-                    onRegenerate={(p) => setRegenerateDialogProposal(p)}
-                  />
-                ))}
-              </>
-            )}
+        {DOMAIN_TABS.map((tab) => (
+          <TabsContent key={tab.key} value={tab.key} className="mt-4">
+            <ProposalsPanel domain={tab.apiKey} />
           </TabsContent>
         ))}
       </Tabs>
 
-      {/* Learning dashboard */}
-      <LearningDashboard />
+      {/* Autonomy Panel */}
+      <AutonomyPanel activeDomainTab={activeTab} />
 
-      {/* Autonomy panel */}
-      {autonomySettings.length > 0 && <AutonomyPanel settings={autonomySettings} />}
-
-      {/* Dialogs */}
-      <ApproveDialog
-        proposal={approveDialogProposal}
-        open={!!approveDialogProposal}
-        onClose={() => setApproveDialogProposal(null)}
-        onSent={() => { setApproveDialogProposal(null); invalidateAll(); }}
-      />
-      <EditSendDialog
-        proposal={editSendDialogProposal}
-        open={!!editSendDialogProposal}
-        onClose={() => setEditSendDialogProposal(null)}
-        onSent={() => { setEditSendDialogProposal(null); invalidateAll(); }}
-      />
-      <RejectDialog
-        proposal={rejectDialogProposal}
-        open={!!rejectDialogProposal}
-        onClose={() => setRejectDialogProposal(null)}
-        onRejected={() => { setRejectDialogProposal(null); invalidateAll(); }}
-      />
-      <RegenerateDialog
-        proposal={regenerateDialogProposal}
-        open={!!regenerateDialogProposal}
-        onClose={() => setRegenerateDialogProposal(null)}
-        onRegenerated={() => { invalidateAll(); }}
-      />
-
-      {/* Bulk reject dialog */}
-      <Dialog open={bulkRejectOpen} onOpenChange={setBulkRejectOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <X className="h-4 w-4" />
-              Reject {selectedList.length} draft{selectedList.length !== 1 ? "s" : ""}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 mt-2">
-            <Label htmlFor="bulk-reject-reason">Reason (optional, helps the AI learn)</Label>
-            <Textarea
-              id="bulk-reject-reason"
-              value={bulkRejectReason}
-              onChange={(e) => setBulkRejectReason(e.target.value)}
-              rows={3}
-              placeholder="e.g. Wrong tone for these leads, will handle manually..."
-              data-testid="input-bulk-reject-reason"
-            />
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setBulkRejectOpen(false)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => bulkRejectMutation.mutate({ ids: [...selectedIds], reason: bulkRejectReason })}
-              disabled={bulkRejectMutation.isPending}
-              data-testid="button-bulk-reject-confirm"
-            >
-              {bulkRejectMutation.isPending ? "Rejecting…" : `Reject ${selectedList.length} drafts`}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Learning Dashboard */}
+      <LearningDashboard activeDomainTab={activeTab} />
     </div>
   );
 }

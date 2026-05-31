@@ -1,0 +1,211 @@
+Extend the AI Approval Inbox and Learning System to support Team Training Leads, School Partnerships, Organization Outreach, and Employment Opportunities.
+
+Current State:
+The approval workflow, feedback loop, learning rules, and autonomy progression currently focus on athlete/parent lead communications.
+
+Goal:
+Create one unified communication learning architecture that works across all outbound communication types.
+
+⸻
+
+Part 1 — Communication Domains
+
+Add:
+
+communication_domain
+
+Values:
+
+* athlete_lead
+* parent_lead
+* team_training
+* school_partnership
+* athletic_director
+* coach_outreach
+* organization_outreach
+* business_outreach
+* employment_opportunity
+* corporate_wellness
+* facility_partnership
+
+All approvals, feedback, learning rules, revisions, and autonomy settings must include communication_domain.
+
+⸻
+
+Part 2 — AI Communications Center
+
+Rename:
+
+AI Approvals
+
+To:
+
+AI Communications Center
+
+Add tabs:
+
+* Athlete Leads
+* Team Training
+* Schools
+* Organizations
+* Employment
+* All Communications
+
+Each tab should display:
+
+* Drafts
+* Pending Approvals
+* Sent Messages
+* Replies
+* Rejections
+* Autonomy Status
+
+⸻
+
+Part 3 — Team Training Lead Learning
+
+Support:
+
+* Initial outreach
+* Follow-up
+* Discovery meeting request
+* Proposal follow-up
+* Objection handling
+* Re-engagement
+
+Allow:
+
+* Approve
+* Reject
+* Edit
+* Regenerate with feedback
+* Coaching comments
+
+Use the same learning loop already built for athlete leads.
+
+⸻
+
+Part 4 — Organization Outreach Learning
+
+Support:
+
+* Gym owners
+* Facility owners
+* Sports organizations
+* Universities
+* Recreation departments
+* Corporate wellness
+
+Track:
+
+* Role
+* Organization type
+* Industry
+* Lead source
+
+Store:
+
+* Preferred CTA
+* Preferred pitch style
+* Preferred message length
+* Common objections
+* Successful talking points
+
+⸻
+
+Part 5 — Outcome Tracking
+
+For all communication domains:
+
+Track:
+
+* Opened
+* Replied
+* Meeting booked
+* Proposal requested
+* Proposal accepted
+* Contract signed
+* Converted
+* Lost
+
+Store outcome data and connect it to learning rules.
+
+⸻
+
+Part 6 — Autonomy Progression By Domain
+
+Autonomy should be calculated independently for:
+
+* Athlete Leads
+* Team Training
+* School Partnerships
+* Organization Outreach
+* Employment
+
+Example:
+
+Athlete Leads = Level 3
+Team Training = Level 1
+School Partnerships = Level 0
+
+Do not use a global autonomy score.
+
+⸻
+
+Part 7 — Learning Dashboard Expansion
+
+Add:
+
+“What the AI Has Learned”
+
+Grouped by:
+
+* Athlete Leads
+* Team Training
+* Schools
+* Organizations
+* Employment
+
+Display:
+
+* Do Rules
+* Avoid Rules
+* Tone Preferences
+* CTA Preferences
+* Successful Patterns
+* Repeated Mistakes
+* Conversion Outcomes
+
+⸻
+
+Part 8 — Existing Data Migration
+
+Backfill existing records:
+
+Athlete intake messages:
+communication_domain = athlete_lead
+
+Parent outreach:
+communication_domain = parent_lead
+
+Team training pipeline:
+communication_domain = team_training
+
+Employment pipeline:
+communication_domain = employment_opportunity
+
+No existing learning data should be lost.
+
+⸻
+
+Acceptance Criteria
+
+1. Team training messages can be reviewed exactly like athlete lead messages.
+2. Organization outreach messages can be reviewed exactly like athlete lead messages.
+3. Every communication domain has its own learning rules.
+4. Every communication domain has its own autonomy score.
+5. Every communication domain tracks outcomes.
+6. The AI learns separately how to talk to parents, athletic directors, coaches, and business owners.
+7. Existing athlete-lead learning continues to function unchanged.
+8. Mobile UI remains fully usable.
+9. Return files changed, migrations created, routes added, screenshots, and migrated record counts.

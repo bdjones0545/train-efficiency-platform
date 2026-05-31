@@ -3584,6 +3584,7 @@ export const gmailAgentActions = pgTable("gmail_agent_actions", {
   approvedBy: text("approved_by"),
   createdAt: timestamp("created_at").defaultNow(),
   executedAt: timestamp("executed_at"),
+  communicationDomain: text("communication_domain").default("athlete_lead"),
 });
 
 export const insertGmailAgentActionSchema = createInsertSchema(gmailAgentActions).omit({ id: true, createdAt: true });
@@ -3623,6 +3624,8 @@ export const agentMessageFeedback = pgTable("agent_message_feedback", {
   appliestoProgram: text("applies_to_program"),
   preferenceStrength: text("preference_strength"), // weak | medium | strong
   shouldApplyGlobally: boolean("should_apply_globally").default(false),
+  communicationDomain: text("communication_domain").default("athlete_lead"),
+  outcomeData: jsonb("outcome_data"),
 });
 export type AgentMessageFeedback = typeof agentMessageFeedback.$inferSelect;
 
@@ -3681,6 +3684,7 @@ export const agentAutonomySettings = pgTable("agent_autonomy_settings", {
   updatedBy: text("updated_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  communicationDomain: text("communication_domain").default("athlete_lead"),
 });
 export type AgentAutonomySetting = typeof agentAutonomySettings.$inferSelect;
 
