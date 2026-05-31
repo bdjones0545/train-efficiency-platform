@@ -1,0 +1,320 @@
+AI Workforce Operational Readiness Audit — org-est
+
+Objective:
+Perform a comprehensive audit of the live AI Workforce deployment for org-est after successful onboarding completion. Determine what is operational today, what is partially implemented, what is inactive, and what business value is currently being generated.
+
+⸻
+
+Phase 1 — Workforce Configuration Audit
+
+Verify the onboarding deployment completed successfully.
+
+Report:
+
+* Organization ID
+* Workforce enabled status
+* Governance mode selected
+* Onboarding completed timestamp
+* Workforce settings record exists
+* Governance policies applied
+* Starter workflows created
+* Executive Summary workflow published
+* Total active agents
+* Total active workflows
+* Total connected integrations
+
+Return any missing configuration items.
+
+⸻
+
+Phase 2 — Agent Audit
+
+For every active agent:
+
+Examples:
+
+* Relay
+* Pulse
+* Tempo
+* Apex
+* Vector
+* Atlas
+* Any additional active agents
+
+Verify:
+
+Identity
+
+* Agent name
+* Agent type
+* Agent status
+* Enabled/disabled
+
+Intelligence
+
+* Tools available
+* Data sources accessible
+* Memory access
+* Workflow access
+* Communication access
+
+Operations
+
+* Trigger sources
+* Execution permissions
+* Approval requirements
+* Rate limits
+
+Activity
+
+* Last execution
+* Total executions
+* Success count
+* Failure count
+* Pending actions
+
+Return:
+
+Agent	Active	Tools	Triggers	Last Run	Success Rate
+
+⸻
+
+Phase 3 — Workflow Audit
+
+Audit all workflows currently assigned to org-est.
+
+Verify:
+
+Starter Workflows
+
+* Client Onboarding
+* Retention Campaign
+* Lead Qualification
+* Churn Recovery
+* Daily Executive Summary
+
+For each workflow report:
+
+* Exists
+* Draft / Published
+* Trigger configured
+* Actions configured
+* Dependencies configured
+* Agent assignments
+* Last execution
+* Success count
+* Failure count
+
+Return:
+
+Workflow	Status	Trigger	Actions	Ready	Last Run
+
+Also identify:
+
+* Orphaned workflows
+* Broken workflow graphs
+* Missing triggers
+* Missing actions
+* Missing dependencies
+
+⸻
+
+Phase 4 — Integration Audit
+
+Audit every integration available to the AI Workforce.
+
+Verify:
+
+Gmail
+
+* Connected
+* OAuth valid
+* Token refresh valid
+* Send capability
+* Draft capability
+* Read capability
+* Reply detection
+* Last successful action
+
+Additional integrations
+
+Audit all discovered integrations:
+
+* Status
+* Authentication state
+* Health
+* Accessible by agents
+* Accessible by workflows
+
+Return:
+
+Integration	Connected	Healthy	Agent Access	Notes
+
+⸻
+
+Phase 5 — Governance Audit
+
+Verify governance configuration.
+
+Audit:
+
+Permissions
+
+Can agents:
+
+* Send email automatically
+* Create deals
+* Modify CRM records
+* Create workflows
+* Execute workflows
+* Schedule appointments
+* Perform outreach
+
+Controls
+
+* Approval queues
+* Confidence thresholds
+* Rate limits
+* Daily action limits
+* Communication limits
+* Emergency pause controls
+* Audit logging
+
+Return all active governance policies.
+
+⸻
+
+Phase 6 — Operational Activity Audit
+
+Audit the last 30 days.
+
+Report:
+
+Workforce Activity
+
+* Total agent executions
+* Total workflow executions
+* Successful actions
+* Failed actions
+* Pending approvals
+
+Communication Activity
+
+* Emails generated
+* Emails drafted
+* Emails sent
+* Replies detected
+
+Revenue Activity
+
+* Opportunities created
+* Leads qualified
+* Deals created
+* Revenue opportunities identified
+
+Executive Intelligence
+
+* Summaries generated
+* Recommendations generated
+* Revenue recommendations
+* Retention recommendations
+
+⸻
+
+Phase 7 — Business Outcome Audit
+
+Determine whether the AI Workforce is creating measurable business value.
+
+Report:
+
+Revenue Impact
+
+* Revenue opportunities identified
+* Pipeline value identified
+* Follow-up opportunities identified
+* Churn risks detected
+
+Operational Impact
+
+* Time saved
+* Manual tasks automated
+* Follow-ups automated
+* Reports automated
+
+Lead Generation Impact
+
+* Leads researched
+* Leads qualified
+* Outreach recommendations generated
+
+⸻
+
+Phase 8 — Readiness Scoring
+
+Assign a readiness score.
+
+Categories:
+
+Infrastructure
+
+Score: __ / 100
+
+Intelligence
+
+Score: __ / 100
+
+Automation
+
+Score: __ / 100
+
+Governance
+
+Score: __ / 100
+
+Business Impact
+
+Score: __ / 100
+
+Overall Workforce Readiness
+
+Score: __ / 100
+
+Classification:
+
+* 0–25 = Prototype
+* 26–50 = Functional
+* 51–75 = Operational
+* 76–90 = Advanced
+* 91–100 = Autonomous Workforce
+
+⸻
+
+Executive Summary
+
+Provide:
+
+What Works Today
+
+List all operational capabilities.
+
+Partially Implemented
+
+List systems that exist but are not fully operational.
+
+Configured But Inactive
+
+List systems that are installed but not executing.
+
+Missing Components
+
+List blockers preventing higher automation.
+
+Top 10 Highest ROI Improvements
+
+Rank the next improvements by business impact.
+
+Final Recommendation
+
+Answer:
+
+“If a new TrainEfficiency customer completed onboarding today, what could the AI Workforce realistically do for them immediately?”
