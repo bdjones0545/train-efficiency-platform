@@ -1,0 +1,363 @@
+Build Outcome Intelligence Layer for AI Communications
+
+Objective:
+TrainEfficiency now has a domain-aware AI Communications Center with draft generation, approval, coaching feedback, learning rules, and domain-specific autonomy.
+
+Next goal:
+Connect AI communication behavior to real business outcomes so the system learns not only what the admin approves, but what actually creates revenue, meetings, hires, and conversions.
+
+⸻
+
+Part 1 — Add Structured Outcome Tracking
+
+Create a dedicated table:
+
+agent_communication_outcomes
+
+Fields:
+
+* id
+* org_id
+* gmail_action_id
+* feedback_id
+* communication_domain
+* message_type
+* recipient_email
+* recipient_name
+* lead_id
+* prospect_id
+* deal_id
+* applicant_id
+* sent_at
+* opened_at
+* replied_at
+* meeting_booked_at
+* proposal_requested_at
+* proposal_sent_at
+* proposal_accepted_at
+* contract_signed_at
+* hired_at
+* booked_session_at
+* converted_at
+* lost_at
+* outcome_status:
+    * sent
+    * opened
+    * replied
+    * meeting_booked
+    * proposal_requested
+    * proposal_sent
+    * proposal_accepted
+    * contract_signed
+    * hired
+    * booked_session
+    * converted
+    * lost
+    * bounced
+    * ignored
+* revenue_cents
+* outcome_source:
+    * gmail_reply
+    * calendar_event
+    * manual_update
+    * booking_created
+    * deal_stage_change
+    * applicant_status_change
+    * stripe_payment
+* metadata jsonb
+* created_at
+* updated_at
+
+⸻
+
+Part 2 — Capture Outcomes Automatically
+
+Wire outcome capture from existing platform events.
+
+Gmail
+
+When an email is sent:
+
+* create outcome row with outcome_status = sent
+
+When a reply is detected:
+
+* update outcome_status = replied
+* set replied_at
+
+Calendar
+
+When a meeting is booked from a communication:
+
+* update outcome_status = meeting_booked
+* set meeting_booked_at
+
+Booking System
+
+When athlete session is booked:
+
+* update outcome_status = booked_session
+* set booked_session_at
+* attach estimated or actual revenue
+
+Deals / Team Training
+
+When deal stage changes:
+
+* proposal_requested
+* proposal_sent
+* proposal_accepted
+* contract_signed
+* converted
+* lost
+
+Employment
+
+When applicant stage changes:
+
+* interview_requested
+* interviewed
+* offer_sent
+* hired
+* rejected
+
+⸻
+
+Part 3 — Rule Effectiveness Scoring
+
+Connect outcomes back to learning rules.
+
+Create table:
+
+agent_rule_effectiveness
+
+Fields:
+
+* id
+* org_id
+* rule_id
+* communication_domain
+* message_type
+* times_applied
+* sent_count
+* reply_count
+* meeting_count
+* proposal_count
+* conversion_count
+* hired_count
+* lost_count
+* revenue_cents
+* effectiveness_score
+* last_calculated_at
+
+Calculation:
+
+* replies increase score
+* meetings increase score more
+* conversions/contracts/hired increase score most
+* ignored/lost outcomes decrease score
+* repeated rejection decreases score
+
+Example:
+A rule that gets approvals but no replies should not keep gaining weight.
+A rule that produces meetings or revenue should gain weight.
+
+⸻
+
+Part 4 — Outcome-Weighted Learning Context
+
+Update:
+
+getMessageLearningContext(orgId, messageType, leadContext)
+
+It should now include:
+
+* approved examples
+* edited examples
+* rejected examples
+* active rules
+* avoided phrases
+* outcome-winning rules
+* outcome-losing rules
+* top converting CTA patterns
+* best-performing message lengths
+* best-performing tone patterns by domain
+
+Priority order:
+
+1. Same domain + same message type + high outcome score
+2. Same domain + high reply/meeting/conversion rate
+3. Same domain approved examples
+4. Global org rules
+5. Avoid rules and repeated mistakes
+
+⸻
+
+Part 5 — Outcome Dashboard
+
+Add a new tab inside AI Comms Center:
+
+Outcomes
+
+Show:
+
+Overall
+
+* Messages sent
+* Replies
+* Meetings booked
+* Sessions booked
+* Proposals requested
+* Contracts signed
+* Hires
+* Revenue influenced
+
+By Domain
+
+* Athlete Leads
+* Team Training
+* Schools
+* Athletic Directors
+* Organizations
+* Employment
+* Corporate Wellness
+* Facility Partnerships
+
+For each domain show:
+
+* sent
+* reply rate
+* meeting rate
+* conversion rate
+* revenue influenced
+* top winning rules
+* top losing rules
+
+⸻
+
+Part 6 — Autonomy Upgrade
+
+Autonomy promotion should now require outcome proof, not just approval proof.
+
+For each communication_domain + message_type:
+
+Level 0 — Manual Approval
+Default.
+
+Level 1 — Suggested
+Drafts only.
+
+Level 2 — Auto-send Low Risk
+Requires:
+
+* 20+ reviewed messages
+* 90% approval rate
+* rejection rate <= 5%
+* rule compliance >= 90%
+* repeated mistakes below threshold
+* reply rate above baseline OR booking/meeting outcomes present
+
+Level 3 — Autonomous With Monitoring
+Requires:
+
+* 50+ reviewed messages
+* 30+ sent messages
+* positive outcome score
+* no recent safety issues
+* admin explicitly enables it
+
+Do not promote autonomy based only on approvals.
+
+⸻
+
+Part 7 — Manual Outcome Editing
+
+Add UI controls so admins can manually mark outcomes:
+
+For each sent communication:
+
+* Mark replied
+* Mark meeting booked
+* Mark proposal requested
+* Mark proposal sent
+* Mark contract signed
+* Mark hired
+* Mark converted
+* Mark lost
+
+Every manual update should:
+
+* update agent_communication_outcomes
+* update the related lead/prospect/deal/applicant if possible
+* recalculate rule effectiveness
+
+⸻
+
+Part 8 — Employment Applicant Source
+
+Create a proper applicant source table so Employment is not dependent on teamTrainingProspects.
+
+Table:
+
+employment_applicants
+
+Fields:
+
+* id
+* org_id
+* first_name
+* last_name
+* email
+* phone
+* role_applied_for
+* experience_level
+* certifications
+* location
+* source
+* status:
+    * new
+    * contacted
+    * interview_requested
+    * interviewed
+    * offer_sent
+    * hired
+    * rejected
+* notes
+* resume_url
+* created_at
+* updated_at
+
+Update AI Outreach Opportunities so Employment pulls from employment_applicants.
+
+⸻
+
+Part 9 — Verification Audit
+
+Return:
+
+1. Tables created
+2. Routes added
+3. Event hooks wired
+4. UI pages/tabs added
+5. Outcome metrics working
+6. Rule effectiveness scoring working
+7. Autonomy now outcome-aware
+8. Employment applicants separated from teamTrainingProspects
+9. Example test:
+    * generate message
+    * approve/send
+    * mark replied or meeting booked
+    * confirm outcome row updates
+    * confirm rule effectiveness score changes
+    * confirm learning dashboard reflects outcome
+
+Acceptance Criteria:
+
+* AI can track what messages lead to replies, meetings, bookings, contracts, hires, and revenue.
+* Learning rules are weighted by outcomes, not just approval.
+* Autonomy cannot increase without outcome proof.
+* Employment outreach has a real applicant source.
+* Admins can manually mark outcomes.
+* Dashboard shows revenue-influenced communication intelligence.
+
+This is the layer that turns it from “the AI learned my tone” into “the AI learned what produces business results.”

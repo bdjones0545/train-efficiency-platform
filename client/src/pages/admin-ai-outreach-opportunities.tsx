@@ -570,6 +570,230 @@ function DomainPanel({ domainKey }: { domainKey: string }) {
 
 // ─── Domain Summary Cards (overview) ──────────────────────────────────────
 
+// ─── Employment Panel ──────────────────────────────────────────────────────
+// Uses the dedicated employment_applicants table instead of prospects.
+
+const APPLICANT_STATUS_OPTIONS = [
+  { value: "new",                label: "New" },
+  { value: "contacted",          label: "Contacted" },
+  { value: "interview_requested",label: "Interview Requested" },
+  { value: "interviewed",        label: "Interviewed" },
+  { value: "offer_sent",         label: "Offer Sent" },
+  { value: "hired",              label: "Hired" },
+  { value: "rejected",           label: "Rejected" },
+];
+
+const APPLICANT_STATUS_COLOR: Record<string, string> = {
+  new: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  contacted: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  interview_requested: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+  interviewed: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  offer_sent: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  hired: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+};
+
+function EmploymentPanel() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [generateTarget, setGenerateTarget] = useState<any | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", roleAppliedFor: "", experienceLevel: "", location: "", source: "", notes: "" });
+
+  const { data: applicants = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/employment-applicants"],
+    queryFn: () => fetch("/api/employment-applicants").then((r) => r.json()),
+  });
+
+  const { data: recentDrafts = [] } = useQuery<any[]>({
+    queryKey: ["/api/ai-outreach/recent", "employment_opportunity"],
+    queryFn: () => fetch(`/api/ai-outreach/recent?domain=employment_opportunity`).then((r) => r.json()),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/employment-applicants", data),
+    onSuccess: () => {
+      toast({ title: "Applicant added" });
+      queryClient.invalidateQueries({ queryKey: ["/api/employment-applicants"] });
+      setAddOpen(false);
+      setForm({ firstName: "", lastName: "", email: "", phone: "", roleAppliedFor: "", experienceLevel: "", location: "", source: "", notes: "" });
+    },
+    onError: () => toast({ title: "Failed to add applicant", variant: "destructive" }),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest("PATCH", `/api/employment-applicants/${id}`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employment-applicants"] });
+    },
+    onError: () => toast({ title: "Failed to update status", variant: "destructive" }),
+  });
+
+  const byStatus: Record<string, number> = {};
+  applicants.forEach((a) => { byStatus[a.status] = (byStatus[a.status] ?? 0) + 1; });
+
+  if (isLoading) return <div className="text-center py-12 text-sm text-muted-foreground">Loading applicants…</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card className="border">
+          <CardContent className="p-3">
+            <div className="text-2xl font-bold">{applicants.length}</div>
+            <div className="text-xs text-muted-foreground">Applicants</div>
+          </CardContent>
+        </Card>
+        <Card className="border">
+          <CardContent className="p-3">
+            <div className="text-2xl font-bold text-green-600">{byStatus.hired ?? 0}</div>
+            <div className="text-xs text-muted-foreground">Hired</div>
+          </CardContent>
+        </Card>
+        <Card className="border">
+          <CardContent className="p-3">
+            <div className="text-2xl font-bold text-primary">{recentDrafts.length}</div>
+            <div className="text-xs text-muted-foreground">Pending Drafts</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="outline" data-testid="button-add-applicant" onClick={() => setAddOpen(true)}>
+          <Users className="w-3.5 h-3.5 mr-1.5" />
+          Add Applicant
+        </Button>
+        {recentDrafts.length > 0 && (
+          <Button size="sm" variant="outline" asChild>
+            <a href="/admin/ai-approvals">
+              <CheckCheck className="w-3.5 h-3.5 mr-1.5" />
+              Review {recentDrafts.length} Pending Draft{recentDrafts.length !== 1 ? "s" : ""}
+            </a>
+          </Button>
+        )}
+      </div>
+
+      {/* Applicant list */}
+      {applicants.length === 0 ? (
+        <div className="text-center py-12 text-sm text-muted-foreground">
+          No applicants yet. Add applicants to start generating outreach drafts.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {applicants.map((a) => (
+            <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/40 transition-colors group border" data-testid={`row-applicant-${a.id}`}>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">{a.firstName} {a.lastName}</div>
+                <div className="text-xs text-muted-foreground">
+                  {a.email}{a.roleAppliedFor && ` · ${a.roleAppliedFor}`}{a.location && ` · ${a.location}`}
+                </div>
+                {a.experienceLevel && (
+                  <div className="text-xs text-muted-foreground">{a.experienceLevel} experience</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Select
+                  value={a.status}
+                  onValueChange={(val) => statusMutation.mutate({ id: a.id, status: val })}
+                >
+                  <SelectTrigger className="h-7 w-36 text-xs" data-testid={`select-status-${a.id}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {APPLICANT_STATUS_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                  data-testid={`button-generate-${a.id}`}
+                  onClick={() => setGenerateTarget({ ...a, prospectName: `${a.firstName} ${a.lastName}`, contactEmail: a.email, decisionMakerEmail: a.email, decisionMakerName: `${a.firstName} ${a.lastName}`, decisionMakerTitle: a.roleAppliedFor })}
+                >
+                  <Zap className="w-3 h-3 mr-1" />
+                  Generate Draft
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add applicant dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Applicant</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">First Name *</Label>
+                <Input data-testid="input-first-name" value={form.firstName} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} placeholder="Jane" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Last Name *</Label>
+                <Input data-testid="input-last-name" value={form.lastName} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} placeholder="Smith" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Email *</Label>
+              <Input data-testid="input-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="jane@example.com" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Role Applied For</Label>
+                <Input data-testid="input-role" value={form.roleAppliedFor} onChange={(e) => setForm((f) => ({ ...f, roleAppliedFor: e.target.value }))} placeholder="S&C Coach" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Experience Level</Label>
+                <Input data-testid="input-experience" value={form.experienceLevel} onChange={(e) => setForm((f) => ({ ...f, experienceLevel: e.target.value }))} placeholder="3 years" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Location</Label>
+                <Input data-testid="input-location" value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="Chicago, IL" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Source</Label>
+                <Input data-testid="input-source" value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} placeholder="Indeed, referral…" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Notes</Label>
+              <Textarea data-testid="textarea-notes" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Any notes…" className="h-16 text-sm" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button size="sm" data-testid="button-save-applicant" disabled={!form.firstName || !form.lastName || !form.email || createMutation.isPending} onClick={() => createMutation.mutate(form)}>
+              {createMutation.isPending ? "Saving…" : "Add Applicant"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate draft dialog */}
+      {generateTarget && (
+        <GenerateDraftDialog
+          open={!!generateTarget}
+          onClose={() => setGenerateTarget(null)}
+          domain="employment_opportunity"
+          prospect={generateTarget}
+          onDone={() => queryClient.invalidateQueries({ queryKey: ["/api/ai-outreach/recent", "employment_opportunity"] })}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function DomainSummaryCard({ cfg, onSelect }: { cfg: typeof OUTREACH_DOMAINS[number]; onSelect: () => void }) {
   const { data: prospects = [] } = useQuery<any[]>({
     queryKey: ["/api/ai-outreach/opportunities", cfg.key],
@@ -695,7 +919,11 @@ export default function AdminAiOutreachOpportunitiesPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <DomainPanel domainKey={d.key} />
+                {d.key === "employment_opportunity" ? (
+                  <EmploymentPanel />
+                ) : (
+                  <DomainPanel domainKey={d.key} />
+                )}
               </CardContent>
             </Card>
           </TabsContent>

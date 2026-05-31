@@ -10,11 +10,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   CheckCheck, X, Edit3, RefreshCw, Clock, TrendingUp, ChevronDown,
   ChevronRight, Globe, Archive, Brain, Zap, AlertTriangle, Users,
   Building2, GraduationCap, Briefcase, BarChart3, Mail,
+  TrendingDown, DollarSign, Award, Target, MessageSquare, CalendarCheck,
+  FileSignature, UserCheck, BarChart2,
 } from "lucide-react";
 
 // ─── Domain Configuration ─────────────────────────────────────────────────────
@@ -851,6 +854,221 @@ function ProposalsPanel({ domain }: { domain: string }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// ─── Outcomes Panel ───────────────────────────────────────────────────────────
+
+const OUTCOME_STATUS_OPTIONS = [
+  { value: "sent",               label: "Sent" },
+  { value: "opened",             label: "Opened" },
+  { value: "replied",            label: "Replied" },
+  { value: "meeting_booked",     label: "Meeting Booked" },
+  { value: "proposal_requested", label: "Proposal Requested" },
+  { value: "proposal_sent",      label: "Proposal Sent" },
+  { value: "proposal_accepted",  label: "Proposal Accepted" },
+  { value: "contract_signed",    label: "Contract Signed" },
+  { value: "hired",              label: "Hired" },
+  { value: "booked_session",     label: "Session Booked" },
+  { value: "converted",          label: "Converted" },
+  { value: "lost",               label: "Lost" },
+  { value: "bounced",            label: "Bounced" },
+  { value: "ignored",            label: "Ignored" },
+];
+
+const OUTCOME_STATUS_COLOR: Record<string, string> = {
+  sent: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  opened: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
+  replied: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  meeting_booked: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
+  proposal_requested: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
+  proposal_sent: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300",
+  proposal_accepted: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+  contract_signed: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+  hired: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
+  booked_session: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+  converted: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  lost: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+  bounced: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  ignored: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+};
+
+function OutcomesPanel({ activeDomainTab }: { activeDomainTab: string }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+
+  const { data: dashboard } = useQuery<any>({
+    queryKey: ["/api/outcomes/dashboard"],
+    queryFn: () => fetch("/api/outcomes/dashboard").then((r) => r.json()),
+    enabled: open,
+  });
+
+  const { data: sentMessages = [] } = useQuery<any[]>({
+    queryKey: ["/api/outcomes/sent", activeDomainTab],
+    queryFn: () => fetch(`/api/outcomes/sent?domain=${activeDomainTab}`).then((r) => r.json()),
+    enabled: open,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, outcomeStatus, revenueCents }: { id: string; outcomeStatus: string; revenueCents?: number }) =>
+      apiRequest("PATCH", `/api/outcomes/${id}`, { outcomeStatus, revenueCents }),
+    onSuccess: () => {
+      toast({ title: "Outcome updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/outcomes/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/outcomes/sent"] });
+    },
+    onError: () => toast({ title: "Error updating outcome", variant: "destructive" }),
+  });
+
+  const allowedDomains = activeDomainTab !== "all" ? (DOMAIN_GROUP_TO_API[activeDomainTab] ?? null) : null;
+  const overall = dashboard?.overall;
+
+  const byDomain = (dashboard?.byDomain ?? []).filter((d: any) =>
+    !allowedDomains || allowedDomains.includes(d.domain),
+  );
+
+  const displayMessages = allowedDomains
+    ? sentMessages.filter((m) => allowedDomains.includes(m.communicationDomain ?? ""))
+    : sentMessages;
+
+  const fmtRevenue = (cents: number) =>
+    cents >= 100 ? `$${Math.round(cents / 100).toLocaleString()}` : `$0`;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-green-500" />
+                <CardTitle className="text-sm">Outcome Intelligence</CardTitle>
+                {overall && (
+                  <span className="text-xs text-muted-foreground ml-1">
+                    ({overall.total} sent · {overall.replyRate}% reply rate)
+                  </span>
+                )}
+              </div>
+              {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="p-4 pt-0 space-y-5">
+
+            {/* Overall metrics */}
+            {overall && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { label: "Sent",          value: overall.total,              icon: Mail,          color: "text-blue-600" },
+                  { label: "Replied",       value: `${overall.replied} (${overall.replyRate}%)`, icon: MessageSquare,  color: "text-green-600" },
+                  { label: "Meetings",      value: overall.meetingsBooked,     icon: CalendarCheck, color: "text-emerald-600" },
+                  { label: "Contracts",     value: overall.contractsSigned,    icon: FileSignature, color: "text-purple-600" },
+                  { label: "Hires",         value: overall.hires,              icon: UserCheck,     color: "text-violet-600" },
+                  { label: "Sessions",      value: overall.sessionsBooked,     icon: Award,         color: "text-orange-600" },
+                  { label: "Proposals",     value: overall.proposalsRequested, icon: BarChart2,     color: "text-teal-600" },
+                  { label: "Revenue",       value: fmtRevenue(overall.revenueCents ?? 0), icon: DollarSign, color: "text-amber-600" },
+                ].map(({ label, value, icon: Icon, color }) => (
+                  <div key={label} className="rounded-lg border bg-muted/20 p-2.5 flex items-center gap-2">
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                    <div>
+                      <p className="text-xs text-muted-foreground leading-none">{label}</p>
+                      <p className="text-sm font-bold leading-tight mt-0.5">{value ?? 0}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* By-domain breakdown */}
+            {byDomain.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">BY DOMAIN</p>
+                <div className="space-y-1.5">
+                  {byDomain.map((d: any) => (
+                    <div key={d.domain} className="rounded-lg border p-2.5 space-y-1.5" data-testid={`outcome-domain-${d.domain}`}>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-sm font-medium">{d.label}</span>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-muted-foreground">{d.sent} sent</span>
+                          <span className="text-green-600">{d.replyRate}% replied</span>
+                          <span className="text-emerald-600">{d.meetingRate}% meetings</span>
+                          <span className="text-purple-600">{d.conversionRate}% converted</span>
+                          {d.revenueCents > 0 && <span className="text-amber-600">{fmtRevenue(d.revenueCents)}</span>}
+                        </div>
+                      </div>
+                      {(d.topWinRules.length > 0 || d.topLoseRules.length > 0) && (
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {d.topWinRules.map((r: any) => (
+                            <span key={r.id} className="flex items-center gap-1 bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-300 rounded px-1.5 py-0.5">
+                              <TrendingUp className="w-2.5 h-2.5" />{r.text.slice(0, 50)}{r.text.length > 50 ? "…" : ""}
+                            </span>
+                          ))}
+                          {d.topLoseRules.map((r: any) => (
+                            <span key={r.id} className="flex items-center gap-1 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 rounded px-1.5 py-0.5">
+                              <TrendingDown className="w-2.5 h-2.5" />{r.text.slice(0, 50)}{r.text.length > 50 ? "…" : ""}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Manual outcome editing — recent sent messages */}
+            {displayMessages.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">RECENT SENT — MARK OUTCOMES</p>
+                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                  {displayMessages.slice(0, 30).map((msg: any) => (
+                    <div
+                      key={msg.id}
+                      className="flex items-center gap-2 p-2 rounded-lg border hover:bg-muted/20 text-sm"
+                      data-testid={`outcome-row-${msg.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium truncate">{msg.recipientEmail ?? "Unknown recipient"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {DOMAIN_LABELS[msg.communicationDomain] ?? msg.communicationDomain}
+                          {msg.messageType && ` · ${msg.messageType}`}
+                          {msg.sentAt && ` · ${new Date(msg.sentAt).toLocaleDateString()}`}
+                        </div>
+                      </div>
+                      <Badge className={`text-xs shrink-0 ${OUTCOME_STATUS_COLOR[msg.outcomeStatus] ?? "bg-gray-100 text-gray-700"}`}>
+                        {msg.outcomeStatus ?? "sent"}
+                      </Badge>
+                      <Select
+                        value={msg.outcomeStatus ?? "sent"}
+                        onValueChange={(val) => updateMutation.mutate({ id: msg.id, outcomeStatus: val })}
+                      >
+                        <SelectTrigger className="h-7 w-40 text-xs shrink-0" data-testid={`select-outcome-${msg.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OUTCOME_STATUS_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!overall && (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                No outcomes tracked yet. Approve and send messages to start tracking results.
+              </p>
+            )}
+
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
 export default function AdminAiApprovalsPage() {
   const [activeTab, setActiveTab] = useState("all");
 
@@ -907,6 +1125,9 @@ export default function AdminAiApprovalsPage() {
 
       {/* Learning Dashboard */}
       <LearningDashboard activeDomainTab={activeTab} />
+
+      {/* Outcome Intelligence */}
+      <OutcomesPanel activeDomainTab={activeTab} />
     </div>
   );
 }

@@ -207,6 +207,16 @@ export async function getMessageLearningContext(
   if (ctaRules.length) sections.push(`CTA:\n${ctaRules.join("\n")}`);
   if (lengthRules.length) sections.push(`LENGTH:\n${lengthRules.join("\n")}`);
 
+  // Outcome-weighted rules: inject patterns that produce real business results
+  try {
+    const { getOutcomeWeightedRules } = await import("./outcome-intelligence-service");
+    const { winRules, loseRules } = await getOutcomeWeightedRules(orgId, domain, messageType);
+    if (winRules.length) sections.push(`OUTCOME-WINNING PATTERNS (these patterns produce replies, meetings, and revenue — prioritize them):\n${winRules.join("\n")}`);
+    if (loseRules.length) sections.push(`OUTCOME-LOSING PATTERNS (these patterns are associated with no-response or lost deals — avoid them):\n${loseRules.join("\n")}`);
+  } catch {
+    // outcome service not yet populated — skip
+  }
+
   return sections.join("\n\n");
 }
 

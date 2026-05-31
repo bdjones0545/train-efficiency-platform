@@ -21323,14 +21323,30 @@ Respond with this exact JSON structure:
         domFeedback.forEach((f) => { ((f.feedbackTags as string[] | null) ?? []).forEach((t) => { tagCounts[t] = (tagCounts[t] ?? 0) + 1; }); });
         const repeatedMistakes = Object.entries(tagCounts).filter(([, c]) => c >= 3).map(([t]) => t);
         const ruleCount = (allRules as any[]).filter((r) => (r.communicationDomain ?? "athlete_lead") === dm).length;
-        const readyForLevel2 = total >= 20 && approvalRate >= 90 && rejectionRate <= 5 && repeatedMistakes.length === 0;
-        const readyForLevel3 = total >= 50 && approvalRate >= 95 && rejectionRate <= 3 && repeatedMistakes.length === 0 && ruleCount >= 3;
+        const approvalReadyForLevel2 = total >= 20 && approvalRate >= 90 && rejectionRate <= 5 && repeatedMistakes.length === 0;
+        const approvalReadyForLevel3 = total >= 50 && approvalRate >= 95 && rejectionRate <= 3 && repeatedMistakes.length === 0 && ruleCount >= 3;
         // Overall domain autonomy = min of all set message types, or 0
         const setLevels = domSettings.map((s) => s.autonomyLevel);
         const domainAutonomyLevel = setLevels.length > 0 ? Math.min(...setLevels) : 0;
-        return { domain: dm, domainAutonomyLevel, totalReviewed: total, approvalRate: Math.round(approvalRate), rejectionRate: Math.round(rejectionRate), avgRating: avgRating ? Math.round(avgRating * 10) / 10 : null, readyForLevel2, readyForLevel3, repeatedMistakes, ruleCount, messageTypeSettings: settingsByType };
+        return { domain: dm, domainAutonomyLevel, totalReviewed: total, approvalRate: Math.round(approvalRate), rejectionRate: Math.round(rejectionRate), avgRating: avgRating ? Math.round(avgRating * 10) / 10 : null, approvalReadyForLevel2, approvalReadyForLevel3, repeatedMistakes, ruleCount, messageTypeSettings: settingsByType };
       });
-      res.json(result);
+      // Merge outcome-awareness into readiness checks (Level 2+ requires real outcome proof)
+      try {
+        const { getOutcomeAutonomyReadiness } = await import("./services/outcome-intelligence-service");
+        const outcomeReadiness = await Promise.all(result.map((r) => getOutcomeAutonomyReadiness(orgId, r.domain)));
+        const enriched = result.map((r, i) => {
+          const or = outcomeReadiness[i];
+          return {
+            ...r,
+            readyForLevel2: r.approvalReadyForLevel2 && or.readyForLevel2WithOutcomes,
+            readyForLevel3: r.approvalReadyForLevel3 && or.readyForLevel3WithOutcomes,
+            outcomeReadiness: or,
+          };
+        });
+        res.json(enriched);
+      } catch {
+        res.json(result.map((r) => ({ ...r, readyForLevel2: r.approvalReadyForLevel2, readyForLevel3: r.approvalReadyForLevel3 })));
+      }
     } catch (e: any) {
       res.status(500).json({ message: "Failed to load autonomy settings" });
     }
@@ -21372,6 +21388,8 @@ Respond with this exact JSON structure:
           db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, p.id)),
           db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "approved", reviewedBy: userId, outcome: "sent", communicationDomain: (p as any).communicationDomain ?? "athlete_lead" } as any),
         ]);
+        const { createOutcomeOnSend } = await import("./services/outcome-intelligence-service");
+        createOutcomeOnSend({ orgId, gmailActionId: p.id, communicationDomain: (p as any).communicationDomain ?? "athlete_lead", messageType: p.actionType.replace("propose_draft:", ""), recipientEmail: p.recipientEmail ?? undefined, leadId: p.leadId ?? undefined, dealId: p.dealId ?? undefined }).catch(console.error);
         return p.id;
       }));
       const sent = results.filter((r) => r.status === "fulfilled").length;
@@ -21427,6 +21445,9 @@ Respond with this exact JSON structure:
         const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
         extractMessageLearningFromFeedback(orgId, feedbackRow[0].id).catch(console.error);
       }
+      // Track outcome
+      const { createOutcomeOnSend } = await import("./services/outcome-intelligence-service");
+      createOutcomeOnSend({ orgId, gmailActionId: id, feedbackId: feedbackRow[0]?.id, communicationDomain: proposal.communicationDomain ?? "athlete_lead", messageType: proposal.actionType.replace("propose_draft:", ""), recipientEmail: proposal.recipientEmail ?? undefined, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined }).catch(console.error);
       res.json({ ok: true, messageId, threadId });
     } catch (e: any) {
       console.error("[ai-approvals] approve error:", e);
@@ -22316,6 +22337,10 @@ Respond with this exact JSON structure:
   // ─── Domain Outreach Routes ───────────────────────────────────────────────
   const { registerDomainOutreachRoutes } = await import("./domain-outreach-routes");
   await registerDomainOutreachRoutes(app);
+
+  // ─── Outcome Intelligence Routes ─────────────────────────────────────────
+  const { registerOutcomeIntelligenceRoutes } = await import("./outcome-intelligence-routes");
+  await registerOutcomeIntelligenceRoutes(app);
 
   return httpServer;
 }

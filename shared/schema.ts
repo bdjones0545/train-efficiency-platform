@@ -4681,3 +4681,90 @@ export const inAppFeedback = pgTable("in_app_feedback", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 export type InAppFeedbackItem = typeof inAppFeedback.$inferSelect;
+
+// ─── Agent Communication Outcomes ─────────────────────────────────────────────
+// Tracks real-world outcomes for every sent AI communication.
+
+export const agentCommunicationOutcomes = pgTable("agent_communication_outcomes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  gmailActionId: text("gmail_action_id"),
+  feedbackId: text("feedback_id"),
+  communicationDomain: text("communication_domain").notNull().default("athlete_lead"),
+  messageType: text("message_type"),
+  recipientEmail: text("recipient_email"),
+  recipientName: text("recipient_name"),
+  leadId: text("lead_id"),
+  prospectId: text("prospect_id"),
+  dealId: text("deal_id"),
+  applicantId: text("applicant_id"),
+  sentAt: timestamp("sent_at"),
+  openedAt: timestamp("opened_at"),
+  repliedAt: timestamp("replied_at"),
+  meetingBookedAt: timestamp("meeting_booked_at"),
+  proposalRequestedAt: timestamp("proposal_requested_at"),
+  proposalSentAt: timestamp("proposal_sent_at"),
+  proposalAcceptedAt: timestamp("proposal_accepted_at"),
+  contractSignedAt: timestamp("contract_signed_at"),
+  hiredAt: timestamp("hired_at"),
+  bookedSessionAt: timestamp("booked_session_at"),
+  convertedAt: timestamp("converted_at"),
+  lostAt: timestamp("lost_at"),
+  outcomeStatus: text("outcome_status").notNull().default("sent"),
+  revenueCents: integer("revenue_cents").default(0),
+  outcomeSource: text("outcome_source").default("manual_update"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertAgentCommunicationOutcomeSchema = createInsertSchema(agentCommunicationOutcomes).omit({ id: true, createdAt: true, updatedAt: true });
+export type AgentCommunicationOutcome = typeof agentCommunicationOutcomes.$inferSelect;
+export type InsertAgentCommunicationOutcome = z.infer<typeof insertAgentCommunicationOutcomeSchema>;
+
+// ─── Agent Rule Effectiveness ─────────────────────────────────────────────────
+// Tracks outcome-weighted performance of each learning rule.
+
+export const agentRuleEffectiveness = pgTable("agent_rule_effectiveness", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  ruleId: text("rule_id").notNull(),
+  communicationDomain: text("communication_domain").notNull().default("athlete_lead"),
+  messageType: text("message_type"),
+  timesApplied: integer("times_applied").default(0),
+  sentCount: integer("sent_count").default(0),
+  replyCount: integer("reply_count").default(0),
+  meetingCount: integer("meeting_count").default(0),
+  proposalCount: integer("proposal_count").default(0),
+  conversionCount: integer("conversion_count").default(0),
+  hiredCount: integer("hired_count").default(0),
+  lostCount: integer("lost_count").default(0),
+  revenueCents: integer("revenue_cents").default(0),
+  effectivenessScore: doublePrecision("effectiveness_score").default(0),
+  lastCalculatedAt: timestamp("last_calculated_at").defaultNow(),
+});
+export type AgentRuleEffectiveness = typeof agentRuleEffectiveness.$inferSelect;
+
+// ─── Employment Applicants ─────────────────────────────────────────────────────
+// Dedicated applicant table for the Employment communication domain.
+
+export const employmentApplicants = pgTable("employment_applicants", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  roleAppliedFor: text("role_applied_for"),
+  experienceLevel: text("experience_level"),
+  certifications: text("certifications"),
+  location: text("location"),
+  source: text("source"),
+  status: text("status").notNull().default("new"),
+  notes: text("notes"),
+  resumeUrl: text("resume_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertEmploymentApplicantSchema = createInsertSchema(employmentApplicants).omit({ id: true, createdAt: true, updatedAt: true });
+export type EmploymentApplicant = typeof employmentApplicants.$inferSelect;
+export type InsertEmploymentApplicant = z.infer<typeof insertEmploymentApplicantSchema>;
