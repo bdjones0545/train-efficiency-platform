@@ -10,7 +10,8 @@ import {
   Zap, DollarSign, Clock, Brain, Users, Shield, Globe, CheckCircle2,
   Target, Activity, Package, ChevronUp, ChevronDown, Minus, Building,
   Cpu, Trophy, AlertTriangle, Sparkles, Code2, MessageSquare,
-  GitBranch, Copy, Plus, ArrowRight, Layers,
+  GitBranch, Copy, Plus, ArrowRight, Layers, Play, RotateCcw,
+  Server, FileText, Banknote, ChevronRight, FlaskConical,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -183,6 +184,561 @@ function IndustryCard({ industry, metrics }: { industry: string; metrics: Record
   );
 }
 
+// ─── Phase 8: Adoption Tab ────────────────────────────────────────────────────
+
+function AdoptionTab() {
+  const { data: adoption } = useQuery<any>({
+    queryKey: ["/api/marketplace/adoption"],
+    queryFn: () => fetch("/api/marketplace/adoption").then(r => r.json()),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "New Installs (30d)",  value: adoption?.newInstalls ?? "—",                                    color: "text-blue-400",    icon: Package },
+          { label: "Active Installs",     value: adoption?.activeInstalls ?? "—",                                 color: "text-green-400",   icon: Layers },
+          { label: "Retention Rate",      value: adoption ? `${adoption.retentionRate}%` : "—",                   color: "text-teal-400",    icon: RotateCcw },
+          { label: "Churn (30d)",         value: adoption?.churn ?? "—",                                          color: "text-red-400",     icon: ArrowRight },
+          { label: "Usage Frequency",     value: adoption ? `${adoption.usageFrequency}×/day` : "—",              color: "text-purple-400",  icon: Activity },
+          { label: "Upgrade Rate",        value: adoption ? `${adoption.upgradeRate}%` : "—",                     color: "text-yellow-400",  icon: ChevronUp },
+          { label: "Trial Conversions",   value: adoption ? `${adoption.trialConversionRate}%` : "—",             color: "text-cyan-400",    icon: FlaskConical },
+          { label: "Active Trials",       value: adoption?.activeTrials ?? "—",                                   color: "text-indigo-400",  icon: Clock },
+        ].map(s => (
+          <Card key={s.label} className="bg-gray-900 border-gray-800">
+            <CardContent className="p-4">
+              <s.icon className={`h-4 w-4 mb-2 ${s.color}`} />
+              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
+        <Card className="bg-gray-900 border-gray-800 sm:col-span-3">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-gray-400 mb-3">Adoption Funnel</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              {[
+                { label: "Discovered",   value: (adoption?.activeInstalls ?? 0) + (adoption?.activeTrials ?? 0) + 12, color: "bg-gray-700" },
+                { label: "Trialed",      value: (adoption?.activeTrials ?? 0) + (adoption?.activeInstalls ?? 0) * 0.4,  color: "bg-indigo-700/60" },
+                { label: "Installed",    value: adoption?.activeInstalls ?? 0,                                           color: "bg-blue-700/60" },
+                { label: "Active",       value: Math.round((adoption?.activeInstalls ?? 0) * 0.8),                       color: "bg-green-700/60" },
+              ].map((stage, i, arr) => (
+                <div key={stage.label} className="flex items-center gap-2">
+                  <div className={`px-3 py-2 rounded-lg ${stage.color} text-center min-w-20`}>
+                    <p className="text-sm font-bold text-white">{Math.round(stage.value as number)}</p>
+                    <p className="text-xs text-gray-300">{stage.label}</p>
+                  </div>
+                  {i < arr.length - 1 && <ArrowRight className="h-4 w-4 text-gray-600 flex-shrink-0" />}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="bg-gray-800/40 border-gray-700/40">
+        <CardContent className="p-4 text-xs text-gray-500">
+          <strong className="text-gray-400">Adoption metrics track:</strong> How many orgs discover agents → trial → install → stay active.
+          Retention and churn rates measure ecosystem stickiness. High trial conversion confirms agents deliver real value before commitment.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Phase 8: Verification Tab ────────────────────────────────────────────────
+
+const VERIFICATION_LEVELS: Record<string, { label: string; color: string; bg: string }> = {
+  platform_approved: { label: "Platform Approved", color: "text-purple-300", bg: "bg-purple-500/10 border-purple-500/30" },
+  enterprise_ready:  { label: "Enterprise Ready",  color: "text-blue-300",   bg: "bg-blue-500/10 border-blue-500/30" },
+  certified:         { label: "Certified",          color: "text-green-300",  bg: "bg-green-500/10 border-green-500/30" },
+  secure:            { label: "Secure",             color: "text-teal-300",   bg: "bg-teal-500/10 border-teal-500/30" },
+  verified:          { label: "Verified",           color: "text-cyan-300",   bg: "bg-cyan-500/10 border-cyan-500/30" },
+  unverified:        { label: "Unverified",         color: "text-gray-400",   bg: "bg-gray-500/10 border-gray-500/30" },
+};
+
+function VerificationTab({ agents }: { agents: any[] }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [verifying, setVerifying] = useState<string | null>(null);
+
+  const { data: verifications = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/verification"],
+    queryFn: () => fetch("/api/marketplace/verification").then(r => r.json()),
+    initialData: [],
+  });
+
+  async function runVerification(agentId: string) {
+    setVerifying(agentId);
+    try {
+      await fetch(`/api/marketplace/verification/${agentId}`, { method: "POST" });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/verification"] });
+      toast({ title: "Verification complete" });
+    } catch {
+      toast({ title: "Verification failed", variant: "destructive" });
+    } finally { setVerifying(null); }
+  }
+
+  const verMap: Record<string, any> = {};
+  for (const v of verifications) verMap[v.agentId] = v;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-400">5-phase review: Security → Governance → Performance → Benchmark → Permission</p>
+        <Button size="sm" variant="outline" className="border-gray-700 text-gray-400"
+          onClick={() => agents.forEach(a => runVerification(a.agentId))}
+          disabled={!!verifying} data-testid="button-verify-all">
+          <Shield className="h-4 w-4 mr-1.5" />Verify All
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {agents.map((agent: any) => {
+          const v = verMap[agent.agentId];
+          const cfg = VERIFICATION_LEVELS[v?.verificationLevel ?? "unverified"];
+          return (
+            <Card key={agent.agentId} className="bg-gray-900 border-gray-800" data-testid={`verification-card-${agent.agentId}`}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div>
+                    <p className="font-medium text-white text-sm">{agent.agentName}</p>
+                    <Badge className={`mt-1 text-xs border ${cfg.bg} ${cfg.color}`}>{cfg.label}</Badge>
+                  </div>
+                  <Button size="sm" variant="outline" className="border-gray-700 text-gray-400 flex-shrink-0"
+                    onClick={() => runVerification(agent.agentId)}
+                    disabled={verifying === agent.agentId} data-testid={`button-verify-${agent.agentId}`}>
+                    {verifying === agent.agentId ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
+                  </Button>
+                </div>
+
+                {v ? (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-gray-500">Overall Score</span>
+                      <span className={`text-sm font-bold ${(v.overallScore ?? 0) >= 80 ? "text-green-400" : (v.overallScore ?? 0) >= 60 ? "text-yellow-400" : "text-red-400"}`}>
+                        {Math.round(v.overallScore ?? 0)}/100
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden mb-3">
+                      <div className="h-full bg-indigo-500 rounded-full transition-all"
+                        style={{ width: `${Math.min(100, v.overallScore ?? 0)}%` }} />
+                    </div>
+                    <div className="grid grid-cols-5 gap-1 text-center">
+                      {[
+                        { label: "Sec",  score: v.securityReview?.score ?? 0 },
+                        { label: "Gov",  score: v.governanceReview?.score ?? 0 },
+                        { label: "Perf", score: v.performanceReview?.score ?? 0 },
+                        { label: "Bnch", score: v.benchmarkReview?.score ?? 0 },
+                        { label: "Perm", score: v.permissionReview?.score ?? 0 },
+                      ].map(r => (
+                        <div key={r.label}>
+                          <p className={`text-xs font-bold ${r.score >= 80 ? "text-green-400" : r.score >= 60 ? "text-yellow-400" : "text-red-400"}`}>{r.score}</p>
+                          <p className="text-xs text-gray-600">{r.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-600">Not yet verified — click the shield to run verification</p>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Card className="bg-gray-800/40 border-gray-700/40">
+        <CardContent className="p-4 text-xs text-gray-500">
+          <strong className="text-gray-400">Verification levels (lowest → highest):</strong>{" "}
+          Verified → Secure → Certified → Enterprise Ready → Platform Approved.
+          Verification is based on security, governance, performance, benchmark, and permission reviews — not manual inspection.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Phase 8: Trials Tab ──────────────────────────────────────────────────────
+
+function TrialsTab({ agents }: { agents: any[] }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: trials = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/trials"],
+    queryFn: () => fetch("/api/marketplace/trials").then(r => r.json()),
+    initialData: [],
+  });
+
+  const startTrial = useMutation({
+    mutationFn: ({ agentId, days }: { agentId: string; days: number }) =>
+      apiRequest("POST", "/api/marketplace/trials/start", { agentId, trialDurationDays: days }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/trials"] });
+      toast({ title: "Trial started" });
+    },
+    onError: () => toast({ title: "Trial already exists or failed", variant: "destructive" }),
+  });
+
+  const trialMap: Record<string, any> = {};
+  for (const t of trials) trialMap[t.agentId] = t;
+
+  const statusColor: Record<string, string> = {
+    active: "text-green-400 bg-green-500/10", expired: "text-gray-400 bg-gray-500/10",
+    converted: "text-blue-400 bg-blue-500/10", cancelled: "text-red-400 bg-red-500/10",
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-400">Test agents before committing to installation — 7, 14, or 30-day trials available</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {agents.map((agent: any) => {
+          const trial = trialMap[agent.agentId];
+          const hasActiveTrial = trial?.status === "active";
+          const daysLeft = trial?.trialEnd
+            ? Math.max(0, Math.ceil((new Date(trial.trialEnd).getTime() - Date.now()) / 86400000))
+            : 0;
+
+          return (
+            <Card key={agent.agentId} className="bg-gray-900 border-gray-800" data-testid={`trial-card-${agent.agentId}`}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div>
+                    <p className="font-medium text-white text-sm">{agent.agentName}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{agent.department}</p>
+                  </div>
+                  {trial && (
+                    <Badge className={`text-xs border-none ${statusColor[trial.status ?? "active"]}`}>{trial.status}</Badge>
+                  )}
+                </div>
+
+                {trial ? (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Trial duration: {trial.trialDurationDays}d</span>
+                      {hasActiveTrial && <span className="text-green-400">{daysLeft}d remaining</span>}
+                    </div>
+                    <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${hasActiveTrial ? "bg-green-500" : "bg-gray-600"} transition-all`}
+                        style={{ width: hasActiveTrial ? `${Math.round((1 - daysLeft / trial.trialDurationDays) * 100)}%` : "100%" }} />
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Executions: {trial.usageCount ?? 0}</span>
+                      <span className="text-green-400">ROI: ${(trial.roiGenerated ?? 0).toFixed(0)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {[7, 14, 30].map(days => (
+                      <Button key={days} size="sm" variant="outline"
+                        className="border-gray-700 text-gray-300 text-xs flex-1"
+                        onClick={() => startTrial.mutate({ agentId: agent.agentId, days })}
+                        disabled={startTrial.isPending}
+                        data-testid={`button-trial-${agent.agentId}-${days}d`}>
+                        {days}d Trial
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Card className="bg-gray-800/40 border-gray-700/40">
+        <CardContent className="p-4 text-xs text-gray-500">
+          <strong className="text-gray-400">Trial system:</strong> Trial agents in your real environment before installation.
+          Usage, ROI, and executions are tracked throughout the trial. Convert to full install at any time.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Phase 8: Billing Tab ─────────────────────────────────────────────────────
+
+function BillingTab() {
+  const { data: statement } = useQuery<any>({
+    queryKey: ["/api/marketplace/billing/statement"],
+    queryFn: () => fetch("/api/marketplace/billing/statement").then(r => r.json()),
+  });
+
+  const { data: summary } = useQuery<any>({
+    queryKey: ["/api/marketplace/billing/summary"],
+    queryFn: () => fetch("/api/marketplace/billing/summary").then(r => r.json()),
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* Marketplace Revenue Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Marketplace Revenue",    value: `$${(summary?.totalGrossRevenue ?? 0).toLocaleString()}`,     color: "text-green-400",  icon: DollarSign },
+          { label: "Dev Royalties Owed",     value: `$${(summary?.totalDeveloperRoyalties ?? 0).toLocaleString()}`, color: "text-blue-400",   icon: Banknote },
+          { label: "Platform Revenue",       value: `$${(summary?.totalPlatformRevenue ?? 0).toLocaleString()}`,   color: "text-indigo-400", icon: Building },
+          { label: "Developer Rev-Share",    value: "30%",                                                          color: "text-emerald-400", icon: TrendingUp },
+        ].map(s => (
+          <Card key={s.label} className="bg-gray-900 border-gray-800">
+            <CardContent className="p-4">
+              <s.icon className={`h-4 w-4 mb-2 ${s.color}`} />
+              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* My Dev Statement */}
+      <Card className="bg-gray-900 border-gray-800">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <FileText className="h-4 w-4 text-blue-400" />
+            Developer Statement — {statement?.period ?? new Date().toISOString().substring(0, 7)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {statement?.developerId ? (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Gross Revenue",   value: `$${(statement.grossRevenue ?? 0).toFixed(2)}`,   color: "text-gray-300" },
+                  { label: "Platform Share",  value: `$${(statement.platformShare ?? 0).toFixed(2)}`,  color: "text-gray-500" },
+                  { label: "Your Royalties",  value: `$${(statement.developerShare ?? 0).toFixed(2)}`, color: "text-green-400" },
+                ].map(s => (
+                  <div key={s.label} className="text-center">
+                    <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-gray-600">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+              {statement.agentBreakdown?.length > 0 && (
+                <div className="space-y-2 mt-3">
+                  <p className="text-xs text-gray-500 font-medium">By Agent</p>
+                  {statement.agentBreakdown.map((a: any) => (
+                    <div key={a.agentId} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-400">{a.agentName}</span>
+                      <div className="flex gap-3 text-right">
+                        <span className="text-gray-600">Gross: ${a.gross.toFixed(2)}</span>
+                        <span className="text-green-400 font-medium">Royalty: ${a.royalty.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-6">
+              <Banknote className="h-10 w-10 mx-auto mb-2 text-gray-700" />
+              <p className="text-sm text-gray-500">No developer account yet</p>
+              <p className="text-xs text-gray-600 mt-1">Register on the Developer Portal to earn royalties</p>
+              <Link href="/developer">
+                <Button size="sm" className="mt-3 bg-indigo-600 hover:bg-indigo-700">Developer Portal</Button>
+              </Link>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Revenue model info */}
+      <Card className="bg-gray-800/40 border-gray-700/40">
+        <CardContent className="p-4 text-xs text-gray-500 space-y-1">
+          <strong className="text-gray-400 block">Revenue sharing model</strong>
+          <p>Every agent install, usage event, and subscription contributes to gross revenue. Platform retains 70% for infrastructure, support, and marketplace operations. Developers earn 30% as royalties.</p>
+          <p className="mt-1">Revenue sources: <span className="text-gray-400">Install</span> · <span className="text-gray-400">Usage</span> · <span className="text-gray-400">Subscription</span> · <span className="text-gray-400">Revenue Recovered</span></p>
+          <p className="mt-1 text-gray-600">Payment processing will be enabled in a future release. All royalties accrue and are fully payable when processing is activated.</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Phase 8: Bundles Tab ─────────────────────────────────────────────────────
+
+function BundlesTab() {
+  const { data: bundles = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/recommendation-bundles"],
+    queryFn: () => fetch("/api/marketplace/recommendation-bundles").then(r => r.json()),
+    initialData: [],
+  });
+
+  const { toast } = useToast();
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-400">Curated agent combinations optimized for specific industries and goals — install the full bundle for maximum ROI</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {bundles.map((bundle: any) => (
+          <Card key={bundle.id} className="bg-gray-900 border-gray-800 hover:border-indigo-800/60 transition-colors"
+            data-testid={`bundle-card-${bundle.id}`}>
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div>
+                  <p className="font-semibold text-white text-sm">{bundle.name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{bundle.description}</p>
+                </div>
+                <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/30 border flex-shrink-0 text-xs">{bundle.category}</Badge>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {bundle.agentNames?.map((name: string) => (
+                  <Badge key={name} className="bg-gray-800 text-gray-300 border-none text-xs">{name}</Badge>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3 text-xs">
+                  <div className="text-center">
+                    <p className="font-bold text-green-400">{bundle.expectedRoi}x</p>
+                    <p className="text-gray-600">Exp. ROI</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-blue-400">{bundle.confidence}%</p>
+                    <p className="text-gray-600">Confidence</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {bundle.industries?.slice(0, 2).map((ind: string) => (
+                    <span key={ind} className="text-xs text-gray-600">{ind}</span>
+                  ))}
+                </div>
+              </div>
+
+              <Button size="sm" className="w-full bg-indigo-600 hover:bg-indigo-700 text-xs"
+                onClick={() => toast({ title: `${bundle.name} — install each agent individually from the Agent Store` })}
+                data-testid={`button-install-bundle-${bundle.id}`}>
+                <Play className="h-3 w-3 mr-1.5" />Install Bundle
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="bg-gray-800/40 border-gray-700/40">
+        <CardContent className="p-4 text-xs text-gray-500">
+          <strong className="text-gray-400">Bundle recommendations</strong> are computed from benchmark data, adoption patterns, and cross-org learning events. ROI estimates are based on aggregated outcomes across all organizations using similar agent combinations.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Phase 8: Runtimes Tab ────────────────────────────────────────────────────
+
+function RuntimesTab() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: runtimes = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/runtimes"],
+    queryFn: () => fetch("/api/marketplace/runtimes").then(r => r.json()),
+    initialData: [],
+  });
+
+  const bootstrap = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/marketplace/runtimes/bootstrap", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/runtimes"] });
+      toast({ title: "Runtime isolation bootstrapped for all agents" });
+    },
+  });
+
+  const statusColor: Record<string, string> = {
+    active: "text-green-400 bg-green-500/10",
+    paused: "text-yellow-400 bg-yellow-500/10",
+    terminated: "text-red-400 bg-red-500/10",
+  };
+
+  const total = runtimes.length;
+  const active = runtimes.filter((r: any) => r.status === "active").length;
+  const totalExec = runtimes.reduce((s: number, r: any) => s + (r.executionCount ?? 0), 0);
+  const avgSuccess = total > 0 ? Math.round(runtimes.reduce((s: number, r: any) => s + (r.successRate ?? 0), 0) / total) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-400">Isolated execution environments — each agent runs independently with its own memory, tools, and analytics</p>
+        <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700"
+          onClick={() => bootstrap.mutate()} disabled={bootstrap.isPending}
+          data-testid="button-bootstrap-runtimes">
+          <Server className="h-4 w-4 mr-1.5" />
+          {bootstrap.isPending ? "Bootstrapping..." : "Bootstrap Runtimes"}
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total Runtimes",  value: total,        color: "text-indigo-400" },
+          { label: "Active",          value: active,       color: "text-green-400" },
+          { label: "Total Executions", value: totalExec,   color: "text-blue-400" },
+          { label: "Avg Success Rate", value: `${avgSuccess}%`, color: "text-teal-400" },
+        ].map(s => (
+          <Card key={s.label} className="bg-gray-900 border-gray-800">
+            <CardContent className="p-4 text-center">
+              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {runtimes.length === 0 ? (
+        <Card className="bg-gray-900 border-gray-800">
+          <CardContent className="p-10 text-center">
+            <Server className="h-12 w-12 mx-auto mb-3 text-gray-600" />
+            <p className="text-gray-400 text-sm">No runtimes initialized yet</p>
+            <p className="text-xs text-gray-600 mt-1">Click Bootstrap Runtimes to create isolated execution environments for all agents</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {runtimes.map((runtime: any) => (
+            <Card key={runtime.id} className="bg-gray-900 border-gray-800" data-testid={`runtime-row-${runtime.id}`}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gray-800 rounded-lg flex-shrink-0">
+                    <Server className="h-4 w-4 text-indigo-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-white text-sm">{runtime.agentName}</p>
+                      <Badge className={`text-xs border-none ${statusColor[runtime.status ?? "active"]}`}>{runtime.status}</Badge>
+                      <span className="text-xs text-gray-600">{runtime.isolationLevel}</span>
+                      <span className="text-xs text-gray-600">v{runtime.runtimeVersion}</span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                      <span>Executions: {runtime.executionCount ?? 0}</span>
+                      <span>Successes: {runtime.successCount ?? 0}</span>
+                      <span className="text-teal-400">Success Rate: {runtime.successRate ?? 0}%</span>
+                    </div>
+                  </div>
+                  {runtime.lastActiveAt && (
+                    <span className="text-xs text-gray-600 flex-shrink-0">
+                      {new Date(runtime.lastActiveAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Card className="bg-gray-800/40 border-gray-700/40">
+        <CardContent className="p-4 text-xs text-gray-500">
+          <strong className="text-gray-400">Runtime isolation:</strong> Each agent instance is fully sandboxed — independent memory, independent execution history, independent permissions and analytics.
+          No cross-agent data contamination is possible. Agents can be upgraded, rolled back, or terminated independently.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminAgentMarketplace() {
@@ -322,6 +878,11 @@ export default function AdminAgentMarketplace() {
               <Code2 className="h-4 w-4 mr-1.5" />Developer Portal
             </Button>
           </Link>
+          <Link href="/admin/ecosystem">
+            <Button variant="outline" size="sm" className="border-purple-700 text-purple-400 hover:bg-purple-900/20" data-testid="button-ecosystem-link">
+              <Globe className="h-4 w-4 mr-1.5" />Ecosystem
+            </Button>
+          </Link>
           <Button onClick={() => refreshBenchmarks.mutate()} disabled={refreshBenchmarks.isPending}
             className="bg-indigo-600 hover:bg-indigo-700" size="sm" data-testid="button-refresh-benchmarks">
             <RefreshCw className={`h-4 w-4 mr-1.5 ${refreshBenchmarks.isPending ? "animate-spin" : ""}`} />
@@ -382,6 +943,12 @@ export default function AdminAgentMarketplace() {
           <TabsTrigger value="reviews">Reviews</TabsTrigger>
           <TabsTrigger value="whitelabel">White Label</TabsTrigger>
           <TabsTrigger value="lifecycle">Lifecycle</TabsTrigger>
+          <TabsTrigger value="adoption">Adoption</TabsTrigger>
+          <TabsTrigger value="verification">Verification</TabsTrigger>
+          <TabsTrigger value="trials">Trials</TabsTrigger>
+          <TabsTrigger value="billing">Billing</TabsTrigger>
+          <TabsTrigger value="bundles">Bundles</TabsTrigger>
+          <TabsTrigger value="runtimes">Runtimes</TabsTrigger>
         </TabsList>
 
         {/* Agent Library */}
@@ -974,6 +1541,36 @@ export default function AdminAgentMarketplace() {
               Lifecycle analytics track install rates, upgrade rates, retention rates, and churn rates across all agents for the organization.
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Adoption Tab */}
+        <TabsContent value="adoption" className="mt-4 space-y-4">
+          <AdoptionTab />
+        </TabsContent>
+
+        {/* Verification Tab */}
+        <TabsContent value="verification" className="mt-4 space-y-4">
+          <VerificationTab agents={agents} />
+        </TabsContent>
+
+        {/* Trials Tab */}
+        <TabsContent value="trials" className="mt-4 space-y-4">
+          <TrialsTab agents={agents} />
+        </TabsContent>
+
+        {/* Billing Tab */}
+        <TabsContent value="billing" className="mt-4 space-y-4">
+          <BillingTab />
+        </TabsContent>
+
+        {/* Bundles Tab */}
+        <TabsContent value="bundles" className="mt-4 space-y-4">
+          <BundlesTab />
+        </TabsContent>
+
+        {/* Runtimes Tab */}
+        <TabsContent value="runtimes" className="mt-4 space-y-4">
+          <RuntimesTab />
         </TabsContent>
 
       </Tabs>

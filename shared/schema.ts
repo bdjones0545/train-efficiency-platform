@@ -4346,3 +4346,147 @@ export const agentLifecycleEvents = pgTable("agent_lifecycle_events", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 export type AgentLifecycleEvent = typeof agentLifecycleEvents.$inferSelect;
+
+// ─── Agent Runtimes ───────────────────────────────────────────────────────────
+// Each installed agent receives its own isolated execution environment.
+export const agentRuntimes = pgTable("agent_runtimes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id").notNull(),
+  runtimeVersion: text("runtime_version").default("1.0.0"),
+  memoryScope: jsonb("memory_scope"),          // Which memory namespaces are accessible
+  toolScope: jsonb("tool_scope"),              // Which tools/integrations are permitted
+  executionCount: integer("execution_count").default(0),
+  successCount: integer("success_count").default(0),
+  failureCount: integer("failure_count").default(0),
+  status: text("status").notNull().default("active"), // active | paused | terminated
+  lastActiveAt: timestamp("last_active_at"),
+  isolationLevel: text("isolation_level").default("standard"), // standard | strict | sandbox
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type AgentRuntime = typeof agentRuntimes.$inferSelect;
+
+// ─── Agent Memories ───────────────────────────────────────────────────────────
+// Per-agent memory store — invisible to other agents, org-scoped.
+export const agentMemories = pgTable("agent_memories", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id").notNull(),
+  learnedPreferences: jsonb("learned_preferences"),      // What this org prefers
+  successfulPatterns: jsonb("successful_patterns"),      // What has worked
+  failedPatterns: jsonb("failed_patterns"),              // What has failed
+  orgSpecificContext: jsonb("org_specific_context"),     // Org-specific knowledge
+  workflowHistory: jsonb("workflow_history"),            // Past executions summary
+  recommendationHistory: jsonb("recommendation_history"),// Past recommendations made
+  memoryVersion: integer("memory_version").default(1),
+  lastUpdatedAt: timestamp("last_updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentMemory = typeof agentMemories.$inferSelect;
+
+// ─── Developer Royalty Accounts ───────────────────────────────────────────────
+export const developerRoyaltyAccounts = pgTable("developer_royalty_accounts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  developerId: text("developer_id").notNull().unique(),
+  balance: doublePrecision("balance").default(0),        // Current unpaid balance
+  lifetimeEarned: doublePrecision("lifetime_earned").default(0),
+  lifetimePaid: doublePrecision("lifetime_paid").default(0),
+  pendingAmount: doublePrecision("pending_amount").default(0),
+  nextPayoutDate: timestamp("next_payout_date"),
+  payoutFrequency: text("payout_frequency").default("monthly"), // monthly | quarterly
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type DeveloperRoyaltyAccount = typeof developerRoyaltyAccounts.$inferSelect;
+
+// ─── Royalty Distributions ────────────────────────────────────────────────────
+export const royaltyDistributions = pgTable("royalty_distributions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  developerId: text("developer_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  revenueSource: text("revenue_source").notNull(), // install | usage | subscription | revenue_recovered
+  grossRevenue: doublePrecision("gross_revenue").default(0),
+  platformShare: doublePrecision("platform_share").default(0),
+  developerShare: doublePrecision("developer_share").default(0),
+  platformShareRate: doublePrecision("platform_share_rate").default(0.70),
+  developerShareRate: doublePrecision("developer_share_rate").default(0.30),
+  payoutStatus: text("payout_status").default("pending"), // pending | processing | paid | cancelled
+  period: text("period"),            // "2026-05"
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type RoyaltyDistribution = typeof royaltyDistributions.$inferSelect;
+
+// ─── Agent Verification Reviews ───────────────────────────────────────────────
+// Before publication: Security → Governance → Performance → Benchmark → Permission
+export const agentVerificationReviews = pgTable("agent_verification_reviews", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  securityReview: jsonb("security_review"),
+  governanceReview: jsonb("governance_review"),
+  performanceReview: jsonb("performance_review"),
+  benchmarkReview: jsonb("benchmark_review"),
+  permissionReview: jsonb("permission_review"),
+  verificationLevel: text("verification_level").default("unverified"),
+  // unverified | verified | secure | certified | enterprise_ready | platform_approved
+  overallScore: doublePrecision("overall_score").default(0),
+  reviewNotes: text("review_notes"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type AgentVerificationReview = typeof agentVerificationReviews.$inferSelect;
+
+// ─── Agent Case Studies ───────────────────────────────────────────────────────
+// Social proof — org outcomes documented per agent.
+export const agentCaseStudies = pgTable("agent_case_studies", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id").notNull(),
+  orgType: text("org_type"),
+  problem: text("problem").notNull(),
+  solution: text("solution").notNull(),
+  outcome: text("outcome").notNull(),
+  revenueImpact: doublePrecision("revenue_impact").default(0),
+  timeSaved: doublePrecision("time_saved").default(0),
+  trustScore: doublePrecision("trust_score").default(0),
+  verificationStatus: text("verification_status").default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentCaseStudy = typeof agentCaseStudies.$inferSelect;
+
+// ─── Agent Trials ─────────────────────────────────────────────────────────────
+// 7/14/30-day trials before committing to install.
+export const agentTrials = pgTable("agent_trials", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id").notNull(),
+  trialDurationDays: integer("trial_duration_days").default(14),
+  trialStart: timestamp("trial_start").defaultNow(),
+  trialEnd: timestamp("trial_end"),
+  status: text("status").notNull().default("active"),
+  // active | expired | converted | cancelled
+  usageCount: integer("usage_count").default(0),
+  roiGenerated: doublePrecision("roi_generated").default(0),
+  converted: boolean("converted").default(false),
+  convertedAt: timestamp("converted_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentTrial = typeof agentTrials.$inferSelect;
+
+// ─── Agent Upgrade Paths ──────────────────────────────────────────────────────
+// Controls how and when installed agents receive version upgrades.
+export const agentUpgradePaths = pgTable("agent_upgrade_paths", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id").notNull(),
+  currentVersion: text("current_version").default("1.0.0"),
+  availableVersion: text("available_version"),
+  releaseChannel: text("release_channel").default("stable"), // stable | beta | experimental
+  upgradeMode: text("upgrade_mode").default("manual_approval"), // auto | manual_approval
+  autoUpgrade: boolean("auto_upgrade").default(false),
+  lastUpgradedAt: timestamp("last_upgraded_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type AgentUpgradePath = typeof agentUpgradePaths.$inferSelect;

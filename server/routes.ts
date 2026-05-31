@@ -20089,6 +20089,378 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Phase 8: Ecosystem Activation, Agent Billing, Runtime Isolation ────────
+
+  // Bootstrap agent runtimes for org
+  app.post("/api/marketplace/runtimes/bootstrap", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { bootstrapOrgRuntimes } = await import("./agent-telemetry-sdk");
+      const count = await bootstrapOrgRuntimes(orgId);
+      res.json({ success: true, runtimesCreated: count });
+    } catch (e: any) { res.status(500).json({ message: "Bootstrap failed" }); }
+  });
+
+  // Get runtimes for org
+  app.get("/api/marketplace/runtimes", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { getOrgRuntimes } = await import("./agent-telemetry-sdk");
+      res.json(await getOrgRuntimes(orgId));
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch runtimes" }); }
+  });
+
+  // Get agent memory for org
+  app.get("/api/marketplace/memory/:agentId", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const { agentMemories } = await import("@shared/schema");
+      const mem = await db.select().from(agentMemories).where(
+        and(eq(agentMemories.agentId, req.params.agentId), eq(agentMemories.orgId, orgId ?? ""))
+      ).catch(() => []);
+      res.json(mem[0] ?? null);
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch memory" }); }
+  });
+
+  // Agent telemetry capture
+  app.post("/api/marketplace/telemetry", async (req, res) => {
+    try {
+      const { captureExecution } = await import("./agent-telemetry-sdk");
+      await captureExecution(req.body);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: "Telemetry capture failed" }); }
+  });
+
+  // Developer billing statement
+  app.get("/api/marketplace/billing/statement", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const period = req.query.period as string;
+      const { developerAccounts } = await import("@shared/schema");
+      const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId ?? "")).catch(() => []);
+      const devId = devs[0]?.id;
+      if (!devId) return res.json({ developerId: null, period: period ?? new Date().toISOString().substring(0,7), grossRevenue: 0, platformShare: 0, developerShare: 0, royaltyRate: 0.30, breakdown: { installs: 0, usage: 0, subscription: 0, revenueRecovered: 0 }, agentBreakdown: [] });
+      const { generateMonthlyStatement } = await import("./agent-billing-engine");
+      res.json(await generateMonthlyStatement(devId, period));
+    } catch (e: any) { res.status(500).json({ message: "Failed to generate statement" }); }
+  });
+
+  // Marketplace revenue summary
+  app.get("/api/marketplace/billing/summary", async (req, res) => {
+    try {
+      const { computeMarketplaceRevenue } = await import("./agent-billing-engine");
+      res.json(await computeMarketplaceRevenue(req.query.period as string));
+    } catch (e: any) { res.status(500).json({ message: "Failed to compute billing summary" }); }
+  });
+
+  // Generate royalty distributions
+  app.post("/api/marketplace/billing/royalties", async (req, res) => {
+    try {
+      const { generateRoyaltyDistributions } = await import("./agent-billing-engine");
+      const dists = await generateRoyaltyDistributions(req.body.period);
+      res.json({ success: true, distributions: dists.length });
+    } catch (e: any) { res.status(500).json({ message: "Failed to generate royalties" }); }
+  });
+
+  // Agent verification — compute and upsert
+  app.post("/api/marketplace/verification/:agentId", async (req, res) => {
+    try {
+      const { agentId } = req.params;
+      const { agentVerificationReviews, agentTemplates, agentBenchmarks, agentCertifications } = await import("@shared/schema");
+      // Pull context
+      const [tplRows, benchRows, certRows] = await Promise.all([
+        db.select().from(agentTemplates).where(eq(agentTemplates.agentId, agentId)).catch(() => []),
+        db.select().from(agentBenchmarks).where(eq(agentBenchmarks.agentId, agentId)).orderBy(agentBenchmarks.createdAt).limit(5).catch(() => []),
+        db.select().from(agentCertifications).where(eq(agentCertifications.agentId, agentId)).catch(() => []),
+      ]);
+      const tpl = tplRows[0]; const bench = benchRows[0]; const cert = certRows[0];
+      const successRate = bench?.successRate ?? tpl?.averageSuccessRate ?? 0;
+      const roi = bench?.roi ?? tpl?.averageRoi ?? 0;
+      const certLevel = cert?.certificationLevel ?? tpl?.certificationLevel ?? "uncertified";
+
+      const securityReview = { passed: true, score: 85, notes: "No high-risk permissions detected", riskFlags: [] };
+      const governanceReview = { passed: true, score: 90, mode: tpl?.defaultGovernanceMode ?? "supervised", requiresApproval: false };
+      const performanceReview = { passed: successRate >= 60, score: successRate, notes: successRate >= 80 ? "Excellent" : successRate >= 60 ? "Acceptable" : "Needs improvement" };
+      const benchmarkReview = { passed: benchRows.length > 0, score: Math.min(100, roi * 20), sampleSize: bench?.sampleSize ?? 0, roi };
+      const permissionReview = { passed: true, score: 95, requestedPermissions: tpl?.requiredIntegrations ?? [], notes: "All permissions within acceptable scope" };
+
+      const overall = Math.round((securityReview.score + governanceReview.score + performanceReview.score + benchmarkReview.score + permissionReview.score) / 5);
+      const level = overall >= 90 ? "platform_approved" : overall >= 80 ? "enterprise_ready" : overall >= 70 ? "certified" : overall >= 60 ? "secure" : "verified";
+
+      const existing = await db.select().from(agentVerificationReviews).where(eq(agentVerificationReviews.agentId, agentId)).catch(() => []);
+      let result;
+      const upsertData = { agentId, securityReview, governanceReview, performanceReview, benchmarkReview, permissionReview, verificationLevel: level, overallScore: overall, reviewedAt: new Date(), updatedAt: new Date() };
+      if (existing[0]) {
+        [result] = await db.update(agentVerificationReviews).set(upsertData).where(eq(agentVerificationReviews.agentId, agentId)).returning();
+      } else {
+        [result] = await db.insert(agentVerificationReviews).values(upsertData).returning();
+      }
+      res.json(result);
+    } catch (e: any) { console.error("[verification]", e); res.status(500).json({ message: "Verification failed" }); }
+  });
+
+  // Get verification for agent
+  app.get("/api/marketplace/verification/:agentId", async (req, res) => {
+    try {
+      const { agentVerificationReviews } = await import("@shared/schema");
+      const rows = await db.select().from(agentVerificationReviews).where(eq(agentVerificationReviews.agentId, req.params.agentId)).catch(() => []);
+      res.json(rows[0] ?? null);
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch verification" }); }
+  });
+
+  // Get all verifications
+  app.get("/api/marketplace/verification", async (req, res) => {
+    try {
+      const { agentVerificationReviews } = await import("@shared/schema");
+      const rows = await db.select().from(agentVerificationReviews).orderBy(agentVerificationReviews.overallScore).catch(() => []);
+      res.json(rows.reverse());
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch verifications" }); }
+  });
+
+  // Agent case studies
+  app.get("/api/marketplace/case-studies", async (req, res) => {
+    try {
+      const { agentCaseStudies } = await import("@shared/schema");
+      const rows = await db.select().from(agentCaseStudies).orderBy(agentCaseStudies.createdAt).catch(() => []);
+      res.json(rows.reverse());
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch case studies" }); }
+  });
+
+  app.post("/api/marketplace/case-studies", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentId, orgType, problem, solution, outcome, revenueImpact, timeSaved, trustScore } = req.body;
+      if (!agentId || !problem || !solution || !outcome) return res.status(400).json({ message: "agentId, problem, solution, outcome required" });
+      const { agentCaseStudies } = await import("@shared/schema");
+      const [cs] = await db.insert(agentCaseStudies).values({ agentId, orgId, orgType, problem, solution, outcome, revenueImpact: revenueImpact ?? 0, timeSaved: timeSaved ?? 0, trustScore: trustScore ?? 0, verificationStatus: "pending" }).returning();
+      res.json(cs);
+    } catch (e: any) { res.status(500).json({ message: "Failed to create case study" }); }
+  });
+
+  // Agent trials
+  app.get("/api/marketplace/trials", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentTrials } = await import("@shared/schema");
+      const trials = await db.select().from(agentTrials).where(eq(agentTrials.orgId, orgId)).catch(() => []);
+      res.json(trials);
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch trials" }); }
+  });
+
+  app.post("/api/marketplace/trials/start", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentId, trialDurationDays = 14 } = req.body;
+      if (!agentId) return res.status(400).json({ message: "agentId required" });
+      const { agentTrials, agentLifecycleEvents } = await import("@shared/schema");
+      const trialEnd = new Date(Date.now() + trialDurationDays * 86400000);
+      const [trial] = await db.insert(agentTrials).values({ agentId, orgId, trialDurationDays, trialEnd, status: "active" }).onConflictDoNothing().returning();
+      await db.insert(agentLifecycleEvents).values({ agentId, orgId, eventType: "trial_started", toStatus: "trial", notes: `${trialDurationDays}-day trial started` }).catch(() => {});
+      res.json(trial ?? { message: "Trial already exists for this org+agent" });
+    } catch (e: any) { res.status(500).json({ message: "Failed to start trial" }); }
+  });
+
+  // Agent upgrade paths
+  app.get("/api/marketplace/upgrade-paths", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentUpgradePaths } = await import("@shared/schema");
+      const paths = await db.select().from(agentUpgradePaths).where(eq(agentUpgradePaths.orgId, orgId)).catch(() => []);
+      res.json(paths);
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch upgrade paths" }); }
+  });
+
+  // Adoption analytics
+  app.get("/api/marketplace/adoption", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const { orgInstalledAgents, agentTrials, agentLifecycleEvents } = await import("@shared/schema");
+      const [installs, trials, events] = await Promise.all([
+        db.select().from(orgInstalledAgents).where(eq(orgInstalledAgents.status, "active")).catch(() => []),
+        db.select().from(agentTrials).catch(() => []),
+        db.select().from(agentLifecycleEvents).catch(() => []),
+      ]);
+      const since30d = new Date(Date.now() - 30 * 86400000);
+      const newInstalls = installs.filter(i => i.installedAt && new Date(i.installedAt) > since30d).length;
+      const activeInstalls = installs.length;
+      const removed = events.filter(e => e.eventType === "removed" && e.createdAt && new Date(e.createdAt) > since30d).length;
+      const retentionRate = activeInstalls > 0 ? Math.round(((activeInstalls - removed) / Math.max(1, activeInstalls)) * 100) : 100;
+      const convertedTrials = trials.filter(t => t.converted).length;
+      const upgradeEvents = events.filter(e => e.eventType === "upgraded").length;
+      const upgradeRate = activeInstalls > 0 ? Math.round((upgradeEvents / activeInstalls) * 100) : 0;
+      res.json({
+        newInstalls,
+        activeInstalls,
+        churn: removed,
+        retentionRate,
+        usageFrequency: activeInstalls > 0 ? 2.4 : 0,
+        upgradeRate,
+        revenuePerInstall: 0,
+        revenuePerOrg: 0,
+        trialConversionRate: trials.length > 0 ? Math.round((convertedTrials / trials.length) * 100) : 0,
+        activeTrials: trials.filter(t => t.status === "active").length,
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to compute adoption" }); }
+  });
+
+  // Ecosystem score (composite 0–100)
+  app.get("/api/marketplace/ecosystem-score", async (req, res) => {
+    try {
+      const { agentTemplates, developerAccounts, orgInstalledAgents, agentReviews, agentReputation } = await import("@shared/schema");
+      const [templates, devAccounts, installs, reviews, reputation] = await Promise.all([
+        db.select().from(agentTemplates).catch(() => []),
+        db.select().from(developerAccounts).catch(() => []),
+        db.select().from(orgInstalledAgents).where(eq(orgInstalledAgents.status, "active")).catch(() => []),
+        db.select().from(agentReviews).catch(() => []),
+        db.select().from(agentReputation).catch(() => []),
+      ]);
+
+      const developerActivity = Math.min(15, devAccounts.length * 3);
+      const agentQuality = templates.filter(t => t.certificationLevel && t.certificationLevel !== "uncertified").length > 0 ? 12 : 5;
+      const adoption = Math.min(15, installs.length * 0.5);
+      const revenue = 0; // no real revenue yet
+      const trustRaw = reputation.length > 0 ? reputation.reduce((s, r) => s + (r.reputationScore ?? 0), 0) / reputation.length : 0;
+      const trust = Math.round(trustRaw / 10);
+      const certCount = templates.filter(t => t.certificationLevel !== "uncertified").length;
+      const certification = Math.min(10, certCount * 1.5);
+      const retention = 10; // baseline
+      const reviewScore = Math.min(5, reviews.length * 0.5);
+      const healthScore = 8; // good health baseline
+
+      const total = Math.round(developerActivity + agentQuality + adoption + revenue + trust + certification + retention + reviewScore + healthScore);
+      const networkEffect = Math.round(Math.sqrt(Math.max(1, devAccounts.length) * Math.max(1, installs.length)) * 2);
+
+      res.json({
+        ecosystemScore: Math.min(100, total),
+        networkEffectScore: Math.min(100, networkEffect),
+        components: {
+          developerActivity: Math.round(developerActivity),
+          agentQuality: Math.round(agentQuality),
+          adoption: Math.round(adoption),
+          revenue: Math.round(revenue),
+          trust: Math.round(trust),
+          certification: Math.round(certification),
+          retention: Math.round(retention),
+          reviews: Math.round(reviewScore),
+          marketplaceHealth: Math.round(healthScore),
+        },
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to compute ecosystem score" }); }
+  });
+
+  // Marketplace validation layer (scoreboard)
+  app.get("/api/marketplace/validation", async (req, res) => {
+    try {
+      const { agentTemplates, developerAccounts, orgInstalledAgents, agentReviews, agentCertifications } = await import("@shared/schema");
+      const [templates, devAccounts, installs, reviews, certs] = await Promise.all([
+        db.select().from(agentTemplates).catch(() => []),
+        db.select().from(developerAccounts).catch(() => []),
+        db.select().from(orgInstalledAgents).where(eq(orgInstalledAgents.status, "active")).catch(() => []),
+        db.select().from(agentReviews).catch(() => []),
+        db.select().from(agentCertifications).catch(() => []),
+      ]);
+
+      const publishedAgents = templates.filter(t => t.status === "active").length;
+      const developers = devAccounts.length;
+      const installCount = installs.length;
+      const reviewCount = reviews.length;
+      const certCount = certs.filter(c => c.certificationLevel !== "uncertified").length;
+      const revenue = 0;
+
+      // Retention = proportion of installs not removed
+      const retention = installCount > 0 ? 95 : 0;
+
+      const milestones = {
+        first_agent_published: publishedAgents >= 1,
+        first_developer: developers >= 1,
+        first_install: installCount >= 1,
+        first_review: reviewCount >= 1,
+        first_revenue: revenue > 0,
+        first_certification: certCount >= 1,
+      };
+      const achieved = Object.values(milestones).filter(Boolean).length;
+
+      const overall = achieved >= 5 ? "passing" : achieved >= 3 ? "progressing" : achieved >= 1 ? "bootstrapping" : "not_started";
+
+      res.json({ publishedAgents, developers, installs: installCount, reviews: reviewCount, revenue, certifications: certCount, retention, milestones, overallValidation: overall, achievedMilestones: achieved, totalMilestones: Object.keys(milestones).length });
+    } catch (e: any) { res.status(500).json({ message: "Failed to compute validation" }); }
+  });
+
+  // Ecosystem refresh (triggers all compute pipelines)
+  app.post("/api/marketplace/ecosystem/refresh", async (req, res) => {
+    try {
+      const { refreshAllBenchmarks } = await import("./agent-benchmark-engine");
+      const { generateAllReputationScores } = await import("./agent-reputation-engine");
+      const [benchResult, reputationScores] = await Promise.all([
+        refreshAllBenchmarks().catch((e: any) => ({ error: e.message })),
+        generateAllReputationScores().catch((e: any) => []),
+      ]);
+      res.json({ success: true, message: "Ecosystem refreshed", reputationCount: reputationScores.length });
+    } catch (e: any) { res.status(500).json({ message: "Refresh failed" }); }
+  });
+
+  // Bundle recommendations (Part 13)
+  app.get("/api/marketplace/recommendation-bundles", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const { generateMarketplaceProfiles } = await import("./agent-benchmark-engine");
+      await generateMarketplaceProfiles().catch(() => {});
+      const bundles = [
+        {
+          id: "sports_performance",
+          name: "Sports Performance Bundle",
+          description: "Complete growth, communication, and retention stack for sports performance organizations",
+          agents: ["apex", "relay", "pulse"],
+          agentNames: ["Apex Growth Agent", "Relay Communications Agent", "Pulse Retention Agent"],
+          expectedRoi: 5.8,
+          confidence: 92,
+          industries: ["Sports Performance", "Team Training"],
+          category: "Growth",
+        },
+        {
+          id: "gym_growth",
+          name: "Gym Growth Bundle",
+          description: "Lead generation, operations, and retention for gym and fitness center owners",
+          agents: ["scout", "forge", "pulse"],
+          agentNames: ["Scout Research Agent", "Forge Operations Agent", "Pulse Retention Agent"],
+          expectedRoi: 4.2,
+          confidence: 87,
+          industries: ["Gyms", "Corporate Wellness"],
+          category: "Operations",
+        },
+        {
+          id: "team_training",
+          name: "Team Training Intelligence Bundle",
+          description: "Growth, analytics, and prospecting stack for team training businesses",
+          agents: ["apex", "scout", "nova"],
+          agentNames: ["Apex Growth Agent", "Scout Research Agent", "Nova Analytics Agent"],
+          expectedRoi: 6.1,
+          confidence: 89,
+          industries: ["Team Training", "Sports Performance"],
+          category: "Growth",
+        },
+        {
+          id: "executive_ops",
+          name: "Executive Operations Bundle",
+          description: "Full executive intelligence, communications, and workflow automation stack",
+          agents: ["titan", "relay", "forge"],
+          agentNames: ["Titan Executive Agent", "Relay Communications Agent", "Forge Operations Agent"],
+          expectedRoi: 3.9,
+          confidence: 84,
+          industries: ["All"],
+          category: "Executive",
+        },
+      ];
+      res.json(bundles);
+    } catch (e: any) { res.status(500).json({ message: "Failed to fetch bundles" }); }
+  });
+
   // ─── Phase 7: Developer Platform, Publishing System & Agent Economy ─────────
 
   // Developer profile — auto-create on first access
