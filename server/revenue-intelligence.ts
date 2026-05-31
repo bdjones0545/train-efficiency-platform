@@ -11,6 +11,7 @@ import {
   userSubscriptions,
   organizationSubscriptionPlans,
   organizations,
+  teamTrainingProspects,
 } from "@shared/schema";
 import { eq, and, inArray, gte, lte, sql, desc } from "drizzle-orm";
 import { getEligibleClientIds } from "./client-eligibility";
@@ -105,6 +106,10 @@ export interface RevenueSummary {
   timeBlockRevenues: TimeBlockRevenue[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
   timezone: string;
+  b2cRevenueCents: number;
+  b2bPipelineRevenueCents: number;
+  totalPipelineRevenueCents: number;
+  unclassifiedLeadsCount: number;
 }
 
 async function getOrgCoachIds(orgId: string): Promise<string[]> {
@@ -297,12 +302,27 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
 
   const upsellOpportunities = await computeUpsellOpportunities(orgId);
 
+  // B2B/B2C pipeline segmentation — aggregate estimated pipeline value by prospect type
+  const pipelineRows = await db.select({
+    pipelineType: teamTrainingProspects.pipelineType,
+    estimatedValue: teamTrainingProspects.estimatedValue,
+  }).from(teamTrainingProspects).where(
+    eq(teamTrainingProspects.orgId, orgId)
+  );
+
+  const activePipelineRows = pipelineRows.filter(r => r.estimatedValue !== null && r.estimatedValue !== undefined);
+  const b2cRevenueCents = last30dRevenueCents; // B2C = individual session revenue (last 30d)
+  const b2bPipelineRevenueCents = activePipelineRows
+    .filter(r => (r.pipelineType ?? "b2b") === "b2b")
+    .reduce((s, r) => s + ((r.estimatedValue ?? 0) * 100), 0);
+  const b2cPipelineCents = activePipelineRows
+    .filter(r => r.pipelineType === "b2c")
+    .reduce((s, r) => s + ((r.estimatedValue ?? 0) * 100), 0);
+  const totalPipelineRevenueCents = b2bPipelineRevenueCents + b2cPipelineCents;
+  const unclassifiedLeadsCount = pipelineRows.filter(r => !r.pipelineType).length;
+
   const totalSessions = allBookings.length;
   const revenueSessions = revenueBookings.length;
-  const nonRevenueSessions = totalSessions - revenueSessions;
-  const internalSessions = allBookings.filter(b =>
-    b.serviceCategory === "internal" || b.serviceCategory === "meeting"
-  ).length;
   const uniqueClients = new Set(revenueBookings.map(b => b.clientId)).size;
   const avgLtvCents = uniqueClients > 0 ? Math.round(totalRevenueCents / uniqueClients) : 0;
 
@@ -326,6 +346,10 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     timeBlockRevenues,
     topClients,
     timezone: orgTimezone,
+    b2cRevenueCents,
+    b2bPipelineRevenueCents,
+    totalPipelineRevenueCents,
+    unclassifiedLeadsCount,
   };
 }
 

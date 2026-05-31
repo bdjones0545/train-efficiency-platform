@@ -8772,7 +8772,35 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const summary = await computeRevenueSummary(profile.organizationId);
       res.json(summary);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      console.error("[revenue-summary] compute error:", error?.message, error?.stack?.split("\n")[1]);
+      // Return a safe zero-value payload so the frontend shows empty state ($0)
+      // rather than an error card. The _error field is for dev diagnostics only.
+      res.json({
+        generatedAt: new Date().toISOString(),
+        periodLabel: "All time",
+        totalRevenueCents: 0,
+        last30dRevenueCents: 0,
+        prior30dRevenueCents: 0,
+        revenueGrowthPct: 0,
+        mrr: 0,
+        activeSubscribers: 0,
+        avgLtvCents: 0,
+        avgRevenuePerSessionCents: 0,
+        totalSessions: 0,
+        sessionsLast30d: 0,
+        churnRiskCount: 0,
+        sessionPackageAlertCount: 0,
+        upsellOpportunityCount: 0,
+        coachRevenues: [],
+        timeBlockRevenues: [],
+        topClients: [],
+        timezone: "America/New_York",
+        b2cRevenueCents: 0,
+        b2bPipelineRevenueCents: 0,
+        totalPipelineRevenueCents: 0,
+        unclassifiedLeadsCount: 0,
+        _error: process.env.NODE_ENV === "development" ? error?.message : undefined,
+      });
     }
   });
 

@@ -125,7 +125,7 @@ export async function isEligibleClientForSignals(
     return false;
   }
 
-  const [row] = await db.execute(sql`
+  const _eligResult = await db.execute(sql`
     SELECT
       up.role AS profile_role,
       u.email,
@@ -159,7 +159,9 @@ export async function isEligibleClientForSignals(
     LEFT JOIN organizations org ON org.id = ${orgId}
     WHERE u.id = ${userId}
     LIMIT 1
-  `) as any;
+  `);
+  const _eligRows = Array.isArray(_eligResult) ? _eligResult : (_eligResult as any)?.rows ?? [];
+  const row = (_eligRows as any[])[0];
 
   if (!row) return false;
 
@@ -199,7 +201,7 @@ export async function getEligibleClientIds(
   orgId: string
 ): Promise<Set<string>> {
   const safe = orgId.replace(/'/g, "''");
-  const rows = await db.execute(sql`
+  const _batchResult = await db.execute(sql`
     SELECT up.user_id
     FROM user_profiles up
     JOIN users u ON u.id = up.user_id
@@ -207,7 +209,8 @@ export async function getEligibleClientIds(
       AND up.role = 'CLIENT'
       ${sql.raw(CLIENT_ELIGIBILITY_SQL(orgId))}
     LIMIT 500
-  `) as any[];
+  `);
+  const rows = Array.isArray(_batchResult) ? _batchResult : (_batchResult as any)?.rows ?? [];
 
-  return new Set(rows.map((r: any) => r.user_id));
+  return new Set((rows as any[]).map((r: any) => r.user_id));
 }

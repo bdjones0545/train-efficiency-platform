@@ -127,6 +127,11 @@ interface RevenueSummary {
   timeBlockRevenues: { hour: number; label: string; totalRevenueCents: number; sessionCount: number }[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
   timezone?: string;
+  b2cRevenueCents?: number;
+  b2bPipelineRevenueCents?: number;
+  totalPipelineRevenueCents?: number;
+  unclassifiedLeadsCount?: number;
+  _error?: string;
 }
 
 interface ChurnRisk {
@@ -992,6 +997,10 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     activeSubscribers: activeRevenueSummary.activeSubscribers ?? 0,
     avgRevenuePerSessionCents: activeRevenueSummary.avgRevenuePerSessionCents ?? 0,
     sessionsLast30d: activeRevenueSummary.sessionsLast30d ?? 0,
+    b2cRevenueCents: activeRevenueSummary.b2cRevenueCents ?? 0,
+    b2bPipelineRevenueCents: activeRevenueSummary.b2bPipelineRevenueCents ?? 0,
+    totalPipelineRevenueCents: activeRevenueSummary.totalPipelineRevenueCents ?? 0,
+    unclassifiedLeadsCount: activeRevenueSummary.unclassifiedLeadsCount ?? 0,
   } : null;
 
   const maxCoachRevenue = safeRevenue && safeRevenue.coachRevenues.length > 0
@@ -2124,6 +2133,33 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                       </Card>
                     ))}
                   </div>
+
+                  {(safeRevenue.b2bPipelineRevenueCents > 0 || safeRevenue.totalPipelineRevenueCents > 0) && (
+                    <div>
+                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-blue-500" />Pipeline Breakdown</h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Card className="border-0 shadow-sm" data-testid="rev-b2c">
+                          <CardContent className="p-3">
+                            <div className="text-xs text-muted-foreground mb-1">B2C Revenue (30d)</div>
+                            <div className="text-xl font-bold text-green-600">${(safeRevenue.b2cRevenueCents / 100).toLocaleString()}</div>
+                            <div className="text-xs text-muted-foreground">Individual sessions</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-0 shadow-sm" data-testid="rev-b2b-pipeline">
+                          <CardContent className="p-3">
+                            <div className="text-xs text-muted-foreground mb-1">B2B Pipeline Value</div>
+                            <div className="text-xl font-bold text-blue-600">${(safeRevenue.b2bPipelineRevenueCents / 100).toLocaleString()}</div>
+                            <div className="text-xs text-muted-foreground">Team training prospects</div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                      {safeRevenue.unclassifiedLeadsCount > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1.5" data-testid="rev-unclassified-leads">
+                          {safeRevenue.unclassifiedLeadsCount} unclassified lead{safeRevenue.unclassifiedLeadsCount !== 1 ? "s" : ""} — pipeline type not yet set
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {(safeRevenue.churnRiskCount > 0 || safeRevenue.sessionPackageAlertCount > 0 || safeRevenue.upsellOpportunityCount > 0) && (
                     <>
