@@ -283,6 +283,8 @@ app.use((req, res, next) => {
 
               const prospect = await st.createTeamTrainingProspect({
                 orgId,
+                pipelineType: "b2b",
+                leadType: "team_partnership",
                 prospectName: p.prospectName,
                 organizationType: p.organizationType,
                 sport: p.sport,
@@ -303,7 +305,7 @@ app.use((req, res, next) => {
                 contactConfidence: p.contactConfidence,
                 contactSourceUrl: p.contactSourceUrl,
                 contactQuality: p.contactQuality,
-              });
+              } as any);
               existingNames.push(p.prospectName);
               created++;
               if (gate.needsContact) needsContact++;

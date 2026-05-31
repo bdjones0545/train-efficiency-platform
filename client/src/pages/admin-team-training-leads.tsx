@@ -1400,6 +1400,13 @@ export default function AdminTeamTrainingLeadsPage() {
     queryKey: ["/api/admin/team-training/stats"],
   });
 
+  const { data: pipelineCounts } = useQuery<{
+    teamTrainingProspects: { b2b: number; b2c: number; unclassified: number; total: number };
+    athleteIntakeLeads: { total: number };
+  }>({
+    queryKey: ["/api/admin/pipeline-segment-counts"],
+  });
+
   const { data: prospects, isLoading: prospectsLoading } = useQuery<TeamTrainingProspect[]>({
     queryKey: ["/api/admin/team-training/prospects"],
   });
@@ -2176,6 +2183,42 @@ export default function AdminTeamTrainingLeadsPage() {
           </>
         )}
       </div>
+
+      {/* Pipeline segmentation debug counts */}
+      {pipelineCounts && (
+        <div className="flex flex-wrap items-center gap-2 px-1 py-1.5 rounded-md bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-xs text-muted-foreground" data-testid="pipeline-segment-counts">
+          <span className="font-semibold text-slate-600 dark:text-slate-400">Pipeline Segments:</span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium" data-testid="count-b2b">
+            B2B Partnerships: {pipelineCounts.teamTrainingProspects.b2b}
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-medium" data-testid="count-athlete-intake">
+            Athlete Intake: {pipelineCounts.athleteIntakeLeads.total}
+          </span>
+          {pipelineCounts.teamTrainingProspects.unclassified > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 font-medium" data-testid="count-unclassified">
+              Unclassified: {pipelineCounts.teamTrainingProspects.unclassified}
+            </span>
+          )}
+          {pipelineCounts.teamTrainingProspects.unclassified > 0 && (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/admin/team-training/prospects/backfill-lead-types", { method: "POST", headers: { "Content-Type": "application/json" } });
+                  const data = await res.json();
+                  queryClient.invalidateQueries({ queryKey: ["/api/admin/pipeline-segment-counts"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });
+                  console.log("[backfill-result]", data);
+                } catch (e) { console.error(e); }
+              }}
+              className="underline text-yellow-700 dark:text-yellow-400 hover:text-yellow-900 dark:hover:text-yellow-200"
+              data-testid="button-run-backfill"
+            >
+              Run backfill
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Pipeline value setting */}
       <Card className="p-3">

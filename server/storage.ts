@@ -2604,10 +2604,12 @@ export class DatabaseStorage implements IStorage {
   // ─── Team Training Prospecting Implementation ────────────────────────────
   async getTeamTrainingProspects(orgId: string, opts?: { sport?: string; outreachStatus?: string; city?: string }) {
     const { teamTrainingProspects } = await import("@shared/schema");
-    let q = db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId));
-    const results = await q.orderBy(desc(teamTrainingProspects.createdAt));
+    const results = await db.select().from(teamTrainingProspects)
+      .where(eq(teamTrainingProspects.orgId, orgId))
+      .orderBy(desc(teamTrainingProspects.createdAt));
     return results.filter((r) => {
-      // Guardrail: never show individual athlete leads in Team Training Leads
+      // Segment: only show B2B pipeline leads; exclude B2C and individual athlete records
+      if ((r as any).pipelineType === "b2c") return false;
       if (r.leadType === "individual_athlete_lead") return false;
       if (opts?.sport && r.sport?.toLowerCase() !== opts.sport.toLowerCase()) return false;
       if (opts?.outreachStatus && r.outreachStatus !== opts.outreachStatus) return false;
@@ -2731,7 +2733,8 @@ export class DatabaseStorage implements IStorage {
     weekStart.setDate(now.getDate() - 7);
 
     const [allProspects, allDrafts, weekEvents] = await Promise.all([
-      db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId)),
+      db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, orgId))
+        .then((rows) => rows.filter((r) => (r as any).pipelineType !== "b2c" && r.leadType !== "individual_athlete_lead")),
       db.select().from(teamTrainingOutreachDrafts).where(and(eq(teamTrainingOutreachDrafts.orgId, orgId), isNull(teamTrainingOutreachDrafts.sentAt))),
       db.select().from(teamTrainingOutreachEvents).where(and(eq(teamTrainingOutreachEvents.orgId, orgId), gte(teamTrainingOutreachEvents.createdAt!, weekStart))),
     ]);

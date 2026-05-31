@@ -9695,7 +9695,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
   });
 
   // Get all prospects for org
-  // Backfill: mark any lead_capture_submission-sourced records as individual_athlete_lead
+  // Backfill: classify existing records by pipeline_type and lead_type using source signals
   app.post("/api/admin/team-training/prospects/backfill-lead-types", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
@@ -9703,51 +9703,111 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const { db } = await import("./db");
       const { teamTrainingProspects } = await import("@shared/schema");
-      const { eq, and, like, or, ne } = await import("drizzle-orm");
+      const { eq } = await import("drizzle-orm");
 
-      // Find all prospects in this org that were created from lead capture (notes contain the marker)
-      // and are NOT already tagged as individual_athlete_lead
-      const allProspects = await db.select({
-        id: teamTrainingProspects.id,
-        prospectName: teamTrainingProspects.prospectName,
-        notes: teamTrainingProspects.notes,
-        leadType: teamTrainingProspects.leadType,
-      }).from(teamTrainingProspects)
+      const B2C_SIGNALS = ["lead_capture", "public_apply", "athlete_intake", "speed_sprint", "signup", "parent", "athlete", "program_application", "moved from lead capture"];
+      const B2B_SIGNALS = ["team_training", "team_partnerships", "school", "athletic_director", "club", "organization", "csv_upload", "deep_search", "recurring"];
+
+      const allProspects = await db.select().from(teamTrainingProspects)
         .where(eq(teamTrainingProspects.orgId, profile.organizationId));
 
-      const toFix = allProspects.filter(p =>
-        p.notes?.includes("Moved from Lead Capture") &&
-        p.leadType !== "individual_athlete_lead"
-      );
+      let b2bUpdated = 0, b2cUpdated = 0, unclassifiedUpdated = 0;
+      const b2cNames: string[] = [];
+      const b2bNames: string[] = [];
 
-      let updated = 0;
-      for (const p of toFix) {
-        await db.update(teamTrainingProspects)
-          .set({ leadType: "individual_athlete_lead" })
-          .where(eq(teamTrainingProspects.id, p.id));
-        updated++;
+      for (const p of allProspects) {
+        const pAny = p as any;
+        if (pAny.pipeline_type || pAny.pipelineType) continue; // already classified
+
+        const haystack = [
+          p.notes || "",
+          p.leadType || "",
+          (p as any).sourceUrl || "",
+        ].join(" ").toLowerCase();
+
+        let newPipelineType: string;
+        let newLeadType = p.leadType;
+
+        if (p.leadType === "individual_athlete_lead" || B2C_SIGNALS.some(s => haystack.includes(s))) {
+          newPipelineType = "b2c";
+          if (!newLeadType || newLeadType === "team_partnership") newLeadType = "athlete";
+          b2cUpdated++;
+          b2cNames.push(p.prospectName);
+        } else if (p.leadType === "team_partnership" || B2B_SIGNALS.some(s => haystack.includes(s))) {
+          newPipelineType = "b2b";
+          b2bUpdated++;
+          b2bNames.push(p.prospectName);
+        } else {
+          newPipelineType = "unclassified";
+          unclassifiedUpdated++;
+        }
+
+        await db.execute(
+          (await import("drizzle-orm")).sql`
+            UPDATE team_training_prospects
+            SET pipeline_type = ${newPipelineType}, lead_type = ${newLeadType}
+            WHERE id = ${p.id}
+          `
+        );
       }
 
-      // Count how many individual_athlete_lead records now exist (correctly tagged)
-      const allAfter = await db.select({
-        id: teamTrainingProspects.id,
-        prospectName: teamTrainingProspects.prospectName,
-        leadType: teamTrainingProspects.leadType,
-      }).from(teamTrainingProspects)
+      // Final counts after backfill
+      const allAfter = await db.select().from(teamTrainingProspects)
         .where(eq(teamTrainingProspects.orgId, profile.organizationId));
 
-      const individualLeads = allAfter.filter(p => p.leadType === "individual_athlete_lead");
-      const teamLeads = allAfter.filter(p => p.leadType !== "individual_athlete_lead");
+      const b2bTotal = allAfter.filter((p: any) => p.pipeline_type === "b2b" || p.pipelineType === "b2b").length;
+      const b2cTotal = allAfter.filter((p: any) => p.pipeline_type === "b2c" || p.pipelineType === "b2c").length;
+      const unclassifiedTotal = allAfter.filter((p: any) => !p.pipeline_type && !(p as any).pipelineType).length;
+
+      console.log(`[pipeline-backfill] B2B: ${b2bTotal}, B2C: ${b2cTotal}, Unclassified: ${unclassifiedTotal}`);
 
       res.json({
         success: true,
-        recordsUpdated: updated,
-        individualAthleteLeadsTotal: individualLeads.length,
-        teamTrainingLeadsTotal: teamLeads.length,
-        updatedNames: toFix.map(p => p.prospectName),
-        diagnosis: {
-          taylahInTeamTrainingLeads: teamLeads.some(p => p.prospectName?.toLowerCase().includes("taylah")),
-          taylahInIndividualLeads: individualLeads.some(p => p.prospectName?.toLowerCase().includes("taylah")),
+        recordsClassified: b2bUpdated + b2cUpdated + unclassifiedUpdated,
+        b2bUpdated,
+        b2cUpdated,
+        unclassifiedUpdated,
+        b2bTotal,
+        b2cTotal,
+        unclassifiedTotal,
+        b2cNames,
+        b2bNames,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Pipeline segment counts (debug/admin endpoint)
+  app.get("/api/admin/pipeline-segment-counts", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { teamTrainingProspects, leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [allProspects, athleteLeads] = await Promise.all([
+        db.select().from(teamTrainingProspects).where(eq(teamTrainingProspects.orgId, profile.organizationId)),
+        db.select().from(leadCaptureSubmissions).where(eq(leadCaptureSubmissions.orgId, profile.organizationId)),
+      ]);
+
+      const b2bCount = allProspects.filter((p: any) => (p.pipelineType || p.pipeline_type) === "b2b").length;
+      const b2cCount = allProspects.filter((p: any) => (p.pipelineType || p.pipeline_type) === "b2c").length;
+      const unclassifiedCount = allProspects.filter((p: any) => !(p.pipelineType || p.pipeline_type)).length;
+
+      console.log(`[pipeline-counts] teamTrainingProspects → B2B: ${b2bCount}, B2C: ${b2cCount}, Unclassified: ${unclassifiedCount} | leadCaptureSubmissions: ${athleteLeads.length}`);
+
+      res.json({
+        teamTrainingProspects: {
+          b2b: b2bCount,
+          b2c: b2cCount,
+          unclassified: unclassifiedCount,
+          total: allProspects.length,
+        },
+        athleteIntakeLeads: {
+          total: athleteLeads.length,
         },
       });
     } catch (err: any) {
@@ -9948,6 +10008,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         const now = new Date();
         const prospect = await storage.createTeamTrainingProspect({
           orgId: profile.organizationId,
+          pipelineType: "b2b",
+          leadType: "team_partnership",
           prospectName: p.prospectName,
           organizationType: p.organizationType,
           sport: p.sport,
@@ -10089,6 +10151,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         try {
           await storage.createTeamTrainingProspect({
             orgId: profile.organizationId,
+            pipelineType: "b2b",
+            leadType: (row.leadType as any) || "team_partnership",
             prospectName: name,
             organizationType: (row.organizationType || "unknown").trim(),
             sport: (row.sport || "unknown").trim(),
@@ -10102,7 +10166,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
             notes: (row.notes || "").trim(),
             outreachStatus: "New",
             contactQuality: (row.contactEmail || "").trim() ? "general" : "missing",
-          });
+          } as any);
           imported++;
         } catch (rowErr: any) {
           errors.push(`Row "${name}": ${rowErr.message}`);
@@ -10122,9 +10186,11 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const prospect = await storage.createTeamTrainingProspect({
+        pipelineType: "b2b",
+        leadType: req.body.leadType || "team_partnership",
         ...req.body,
         orgId: profile.organizationId,
-      });
+      } as any);
       res.json(prospect);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -14503,11 +14569,13 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         }).where(eq(leadCaptureSubmissions.id, submission.id));
       } catch (_) {}
 
-      // 3. Create CRM prospect entry
+      // 3. Create CRM prospect entry (B2C — athlete intake, not a B2B team partnership)
       try {
         const { teamTrainingProspects } = await import("@shared/schema");
         await db.insert(teamTrainingProspects).values({
           orgId: org.id,
+          pipelineType: "b2c",
+          leadType: "athlete",
           prospectName: athleteName + (school ? ` / ${school}` : ""),
           sport: sport || "General",
           city: school || "Unknown",
@@ -15668,6 +15736,7 @@ Respond with this exact JSON structure:
       if (!sub) return res.status(404).json({ message: "Submission not found" });
       const [prospect] = await db.insert(teamTrainingProspects).values({
         orgId: profile.organizationId,
+        pipelineType: "b2c",
         leadType: "individual_athlete_lead",
         prospectName: sub.athleteName + (sub.school ? ` / ${sub.school}` : ""),
         sport: sub.sport || "General",

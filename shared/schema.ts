@@ -740,6 +740,7 @@ export const prospectOutreachStatusEnum = pgEnum("prospect_outreach_status", [
 export const teamTrainingProspects = pgTable("team_training_prospects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull(),
+  pipelineType: varchar("pipeline_type").default("b2b"),
   leadType: varchar("lead_type").default("team_partnership"),
   prospectName: varchar("prospect_name").notNull(),
   organizationType: varchar("organization_type").default("unknown"),

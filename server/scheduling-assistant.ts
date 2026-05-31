@@ -3876,6 +3876,8 @@ Return a JSON object with exactly these keys:
           const scored = scoreProspect(p);
           const prospect = await storage.createTeamTrainingProspect({
             orgId: organizationId,
+            pipelineType: "b2b",
+            leadType: "team_partnership",
             prospectName: p.prospectName,
             organizationType: p.organizationType,
             sport: p.sport,
@@ -3890,7 +3892,7 @@ Return a JSON object with exactly these keys:
             confidenceScore: scored,
             outreachStatus: "Needs Review",
             notes: p.notes,
-          });
+          } as any);
           created.push(prospect);
         }
         await storage.logOutreachEvent({
