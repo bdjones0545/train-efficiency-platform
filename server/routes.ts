@@ -3457,6 +3457,31 @@ export async function registerRoutes(
       const bookingId = req.params.id;
 
       await storage.removeBookingParticipant(bookingId, userId);
+
+      // Waitlist automation: auto-promote first person waiting
+      try {
+        const { sql: sqlWL } = await import("drizzle-orm");
+        const wlResult = await db.execute(sqlWL`
+          SELECT * FROM session_waitlists
+          WHERE booking_id = ${bookingId}
+          ORDER BY created_at ASC
+          LIMIT 1
+        `);
+        const rows = Array.isArray(wlResult) ? wlResult : ((wlResult as any).rows || []);
+        const next = rows[0];
+        if (next) {
+          await storage.addBookingParticipant({
+            bookingId,
+            userId: next.user_id as string,
+            ...(next.participant_name ? { participantName: next.participant_name as string } : {}),
+          } as any);
+          await db.execute(sqlWL`DELETE FROM session_waitlists WHERE id = ${next.id}`);
+          console.log(`[Waitlist] Auto-promoted user ${next.user_id} to booking ${bookingId}`);
+        }
+      } catch (wlErr) {
+        console.error("[Waitlist] Auto-promotion error (non-fatal):", wlErr);
+      }
+
       res.json({ success: true });
     } catch (error) {
       console.error("Error leaving session:", error);
@@ -22448,6 +22473,10 @@ Respond with this exact JSON structure:
   // ─── Outcome Intelligence Routes ─────────────────────────────────────────
   const { registerOutcomeIntelligenceRoutes } = await import("./outcome-intelligence-routes");
   await registerOutcomeIntelligenceRoutes(app);
+
+  // ─── Scheduling Phase 2 Routes ─────────────────────────────────────────────
+  const { registerSchedulingPhase2Routes } = await import("./scheduling-phase2-routes");
+  await registerSchedulingPhase2Routes(app, isAuthenticated);
 
   return httpServer;
 }

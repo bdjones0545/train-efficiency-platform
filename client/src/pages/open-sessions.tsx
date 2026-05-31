@@ -18,14 +18,15 @@ import { Separator } from "@/components/ui/separator";
 import {
   Calendar, Clock, Filter, MapPin, Trash2, Users, UserPlus, UserMinus,
   Plus, X, ChevronLeft, ChevronRight, CalendarDays, LayoutGrid,
-  List, AlertCircle, CheckCircle2, Clock3, Dumbbell, SlidersHorizontal
+  List, AlertCircle, CheckCircle2, Clock3, Dumbbell, SlidersHorizontal,
+  TrendingUp, DollarSign
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import {
   format, parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek,
   startOfMonth, endOfMonth, addDays, addWeeks, addMonths,
   subDays, subWeeks, subMonths, isSameDay, isSameMonth,
-  eachDayOfInterval, differenceInMinutes, isToday, isBefore
+  eachDayOfInterval, differenceInMinutes, isToday, isBefore, isAfter
 } from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
@@ -200,6 +201,176 @@ function FilterPanel({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Athlete Compatibility Badge ─────────────────────────────────────────────
+
+function CompatibilityBadge({ session, userId }: { session: OpenSession; userId?: string }) {
+  const { data: profile } = useQuery<any>({
+    queryKey: ["/api/scheduling/athlete-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/athlete-profile", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!userId,
+  });
+
+  if (!userId || !profile) return null;
+  if (!session.sport && !session.ageRange && !session.skillLevel) return null;
+
+  let score = 0;
+  let total = 0;
+
+  if (session.sport && profile.sport) {
+    total++;
+    if ((profile.sport || "").toLowerCase() === session.sport.toLowerCase()) score++;
+  }
+  if (session.ageRange && profile.birthYear) {
+    const parts = session.ageRange.match(/(\d+)[–\-](\d+)/);
+    if (parts) {
+      const min = parseInt(parts[1]), max = parseInt(parts[2]);
+      const age = new Date().getFullYear() - parseInt(profile.birthYear);
+      total++;
+      if (age >= min && age <= max) score++;
+    }
+  }
+  if (session.skillLevel && profile.trainingLevel) {
+    total++;
+    if ((profile.trainingLevel || "").toLowerCase() === session.skillLevel.toLowerCase()) score++;
+  }
+
+  if (total === 0) return null;
+
+  const pct = score / total;
+  const { emoji, label, cls } = pct === 1
+    ? { emoji: "🟢", label: "Great Match", cls: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20" }
+    : pct >= 0.5
+    ? { emoji: "🟡", label: "Good Match", cls: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20" }
+    : { emoji: "🔴", label: "Low Match", cls: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20" };
+
+  return (
+    <div className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium ${cls}`} data-testid={`compatibility-badge-${session.id}`}>
+      <span>{emoji}</span>
+      <span>Compatibility: {label}</span>
+      <span className="ml-auto text-muted-foreground font-normal">({score}/{total} factors)</span>
+    </div>
+  );
+}
+
+// ─── Revenue Intelligence Panel ───────────────────────────────────────────────
+
+function RevenuePanel({ bookingId }: { bookingId: string }) {
+  const { data } = useQuery<any>({
+    queryKey: ["/api/scheduling/session-revenue", bookingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/scheduling/session-revenue/${bookingId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  if (!data) return null;
+
+  const { capacity, registered, sessionRevenueCents, maxRevenueCents, utilizationPct } = data;
+
+  return (
+    <div className="space-y-2" data-testid={`revenue-panel-${bookingId}`}>
+      <p className="text-sm font-medium flex items-center gap-1.5">
+        <TrendingUp className="h-4 w-4 text-primary" />Revenue Intelligence
+      </p>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="bg-muted/40 rounded-lg p-2">
+          <p className="text-[10px] text-muted-foreground">Actual Rev.</p>
+          <p className="font-semibold text-sm">${((sessionRevenueCents || 0) / 100).toFixed(0)}</p>
+        </div>
+        <div className="bg-muted/40 rounded-lg p-2">
+          <p className="text-[10px] text-muted-foreground">Max Possible</p>
+          <p className="font-semibold text-sm">${((maxRevenueCents || 0) / 100).toFixed(0)}</p>
+        </div>
+        <div className="bg-muted/40 rounded-lg p-2">
+          <p className="text-[10px] text-muted-foreground">Utilization</p>
+          <p className={`font-semibold text-sm ${(utilizationPct || 0) >= 80 ? "text-green-600 dark:text-green-400" : (utilizationPct || 0) >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
+            {utilizationPct || 0}%
+          </p>
+        </div>
+      </div>
+      <div className="w-full bg-muted rounded-full h-1.5">
+        <div
+          className={`h-1.5 rounded-full transition-all ${(utilizationPct || 0) >= 80 ? "bg-green-500" : (utilizationPct || 0) >= 50 ? "bg-yellow-500" : "bg-red-500"}`}
+          style={{ width: `${Math.min(100, utilizationPct || 0)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Attendance Panel (coaches only, past sessions) ───────────────────────────
+
+function AttendancePanel({ bookingId, participants, sessionId }: { bookingId: string; participants: ParticipantWithUser[] | undefined; sessionId: string }) {
+  const { toast } = useToast();
+  const [statuses, setStatuses] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+
+  const mark = async (participantId: string, userId: string, status: string) => {
+    setSaving(s => ({ ...s, [participantId]: true }));
+    try {
+      const res = await fetch(`/api/scheduling/attendance/${bookingId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ participantUserId: userId, status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setStatuses(s => ({ ...s, [participantId]: status }));
+      toast({ title: "Attendance saved" });
+    } catch {
+      toast({ title: "Error", description: "Could not save attendance", variant: "destructive" });
+    } finally {
+      setSaving(s => ({ ...s, [participantId]: false }));
+    }
+  };
+
+  if (!participants || participants.length === 0) return null;
+
+  const opts = [
+    { value: "PRESENT", label: "✓ Present", active: "bg-green-500/20 text-green-700 dark:text-green-300 ring-1 ring-green-500/30" },
+    { value: "LATE", label: "Late", active: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 ring-1 ring-yellow-500/30" },
+    { value: "ABSENT", label: "Absent", active: "bg-red-500/20 text-red-700 dark:text-red-300 ring-1 ring-red-500/30" },
+    { value: "EXCUSED", label: "Excused", active: "bg-blue-500/20 text-blue-700 dark:text-blue-300 ring-1 ring-blue-500/30" },
+  ];
+
+  return (
+    <div className="space-y-2" data-testid={`attendance-panel-${bookingId}`}>
+      <p className="text-sm font-medium flex items-center gap-1.5">
+        <CheckCircle2 className="h-4 w-4 text-primary" />Mark Attendance
+      </p>
+      <div className="space-y-2">
+        {participants.map((p: any) => {
+          const name = p.participantName || `${p.user?.firstName || ""} ${p.user?.lastName || ""}`.trim() || "Athlete";
+          const cur = statuses[p.id];
+          return (
+            <div key={p.id} className="flex items-center gap-2 flex-wrap" data-testid={`attendance-row-${p.id}`}>
+              <span className="text-xs font-medium min-w-[80px] truncate">{name}</span>
+              <div className="flex gap-1">
+                {opts.map(o => (
+                  <button
+                    key={o.value}
+                    onClick={() => mark(p.id, p.userId || (p as any).user_id || "", o.value)}
+                    disabled={saving[p.id]}
+                    className={`text-[10px] px-2 py-0.5 rounded border font-medium transition-colors ${cur === o.value ? o.active : "bg-muted/40 text-muted-foreground hover:bg-muted/70 border-transparent"}`}
+                    data-testid={`button-attendance-${p.id}-${o.value.toLowerCase()}`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -433,6 +604,8 @@ function SessionDetailModal({
                 </>
               )}
 
+              {!isCoach && <CompatibilityBadge session={session} userId={userId} />}
+
               {session.service && (
                 <>
                   <Separator />
@@ -475,6 +648,20 @@ function SessionDetailModal({
                     ))}
                   </div>
                 </div>
+              )}
+
+              {isCoach && (
+                <>
+                  <Separator />
+                  <RevenuePanel bookingId={session.id} />
+                </>
+              )}
+
+              {isCoach && isAfter(new Date(), endDate) && (
+                <>
+                  <Separator />
+                  <AttendancePanel bookingId={session.id} participants={participants} sessionId={session.id} />
+                </>
               )}
             </div>
           </ScrollArea>
@@ -696,13 +883,15 @@ function DaySessionCard({ session, onClick }: { session: OpenSession; onClick: (
 // ─── Month View ─────────────────────────────────────────────────────────────
 
 function MonthView({
-  currentDate, sessions, onDayClick, onSessionClick, selectedDay
+  currentDate, sessions, onDayClick, onSessionClick, selectedDay, isCoach, onCreateSession
 }: {
   currentDate: Date;
   sessions: OpenSession[];
   onDayClick: (date: Date) => void;
   onSessionClick: (session: OpenSession) => void;
   selectedDay: Date | null;
+  isCoach?: boolean;
+  onCreateSession?: (date: Date) => void;
 }) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -747,17 +936,28 @@ function MonthView({
               <div
                 key={di}
                 onClick={() => onDayClick(day)}
-                className={`min-h-[80px] p-1.5 border-r last:border-r-0 cursor-pointer transition-colors
+                className={`min-h-[80px] p-1.5 border-r last:border-r-0 cursor-pointer transition-colors group
                   ${!isCurrentMonth ? "bg-muted/20" : ""}
                   ${isSelected ? "bg-primary/5 ring-1 ring-inset ring-primary/30" : "hover:bg-muted/40"}
                 `}
                 data-testid={`calendar-day-${key}`}
               >
-                <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium mb-1 
-                  ${isTodayDay ? "bg-primary text-primary-foreground" : ""}
-                  ${!isCurrentMonth ? "text-muted-foreground/50" : "text-foreground"}
-                `}>
-                  {format(day, "d")}
+                <div className="flex items-center justify-between mb-1">
+                  <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium 
+                    ${isTodayDay ? "bg-primary text-primary-foreground" : ""}
+                    ${!isCurrentMonth ? "text-muted-foreground/50" : "text-foreground"}
+                  `}>
+                    {format(day, "d")}
+                  </div>
+                  {isCoach && isCurrentMonth && onCreateSession && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onCreateSession(day); }}
+                      className="opacity-0 group-hover:opacity-100 h-4 w-4 flex items-center justify-center text-muted-foreground hover:text-primary transition-all rounded"
+                      data-testid={`button-create-session-${key}`}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-0.5">
                   {daySessions.slice(0, 2).map(s => (
@@ -783,12 +983,14 @@ function MonthView({
 // ─── Week View ──────────────────────────────────────────────────────────────
 
 function WeekView({
-  currentDate, sessions, onSessionClick, onDayClick
+  currentDate, sessions, onSessionClick, onDayClick, isCoach, onCreateSession
 }: {
   currentDate: Date;
   sessions: OpenSession[];
   onSessionClick: (session: OpenSession) => void;
   onDayClick: (date: Date) => void;
+  isCoach?: boolean;
+  onCreateSession?: (date: Date) => void;
 }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -828,10 +1030,19 @@ function WeekView({
             (a, b) => new Date(a.startAt as any).getTime() - new Date(b.startAt as any).getTime()
           );
           return (
-            <div key={key} className="border-r last:border-r-0 p-1.5 space-y-1 min-h-[160px]">
+            <div key={key} className="border-r last:border-r-0 p-1.5 space-y-1 min-h-[160px] group">
               {daySessions.length === 0 ? (
-                <div className="h-full flex items-center justify-center">
+                <div className="h-full min-h-[120px] flex flex-col items-center justify-center gap-1">
                   <p className="text-[10px] text-muted-foreground/40">—</p>
+                  {isCoach && onCreateSession && (
+                    <button
+                      onClick={() => onCreateSession(day)}
+                      className="opacity-0 group-hover:opacity-100 h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-primary border border-dashed rounded transition-all"
+                      data-testid={`button-create-session-week-${key}`}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               ) : (
                 daySessions.map(s => (
@@ -849,11 +1060,13 @@ function WeekView({
 // ─── Day View ───────────────────────────────────────────────────────────────
 
 function DayView({
-  currentDate, sessions, onSessionClick
+  currentDate, sessions, onSessionClick, isCoach, onCreateSession
 }: {
   currentDate: Date;
   sessions: OpenSession[];
   onSessionClick: (session: OpenSession) => void;
+  isCoach?: boolean;
+  onCreateSession?: (date: Date) => void;
 }) {
   const daySessions = sessions
     .filter(s => isSameDay(parseISO(s.startAt as unknown as string), currentDate))
@@ -865,6 +1078,12 @@ function DayView({
         <CalendarDays className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
         <p className="text-muted-foreground font-medium">No sessions on {format(currentDate, "MMMM d")}</p>
         <p className="text-sm text-muted-foreground mt-1">Try a different day or adjust your filters</p>
+        {isCoach && onCreateSession && (
+          <Button size="sm" variant="outline" className="mt-4" onClick={() => onCreateSession(currentDate)} data-testid="button-create-session-day">
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Create Session on This Day
+          </Button>
+        )}
       </div>
     );
   }
@@ -922,6 +1141,8 @@ export default function OpenSessionsPage() {
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedSession, setSelectedSession] = useState<OpenSession | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [createSessionOpen, setCreateSessionOpen] = useState(false);
+  const [createSessionDate, setCreateSessionDate] = useState<Date | undefined>(undefined);
   const [filters, setFilters] = useState<Filters>({
     sport: "all", location: "all", ageGroup: "all",
     skillLevel: "all", availability: "all", sessionType: "all"
@@ -980,6 +1201,11 @@ export default function OpenSessionsPage() {
       setCurrentDate(date);
       setView("day");
     }
+  };
+
+  const handleCreateSession = (date: Date) => {
+    setCreateSessionDate(date);
+    setCreateSessionOpen(true);
   };
 
   if (isLoading) {
@@ -1076,6 +1302,8 @@ export default function OpenSessionsPage() {
           onDayClick={handleDayClick}
           onSessionClick={setSelectedSession}
           selectedDay={selectedDay}
+          isCoach={isCoach}
+          onCreateSession={handleCreateSession}
         />
       )}
       {view === "week" && (
@@ -1084,6 +1312,8 @@ export default function OpenSessionsPage() {
           sessions={filteredSessions}
           onSessionClick={setSelectedSession}
           onDayClick={handleDayClick}
+          isCoach={isCoach}
+          onCreateSession={handleCreateSession}
         />
       )}
       {view === "day" && (
@@ -1091,6 +1321,8 @@ export default function OpenSessionsPage() {
           currentDate={currentDate}
           sessions={filteredSessions}
           onSessionClick={setSelectedSession}
+          isCoach={isCoach}
+          onCreateSession={handleCreateSession}
         />
       )}
 
@@ -1109,6 +1341,15 @@ export default function OpenSessionsPage() {
         <p className="text-xs text-muted-foreground text-right">
           Showing {filteredSessions.length} session{filteredSessions.length !== 1 ? "s" : ""}
         </p>
+      )}
+
+      {/* Click-to-create session dialog (coaches only) */}
+      {isCoach && (
+        <AddSessionDialog
+          controlledOpen={createSessionOpen}
+          onControlledOpenChange={setCreateSessionOpen}
+          initialDate={createSessionDate}
+        />
       )}
 
       {/* Session Detail Modal */}

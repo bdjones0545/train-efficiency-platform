@@ -1,0 +1,303 @@
+import { useQuery } from "@tanstack/react-query";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Calendar, Clock, Users, DollarSign, TrendingUp, AlertCircle,
+  CheckCircle2, Clock3, BarChart3, ArrowUpRight, Activity, Flame
+} from "lucide-react";
+import { format, parseISO } from "date-fns";
+
+interface CommandCenterData {
+  todaySessions: number;
+  tomorrowSessions: number;
+  todaySessionList: any[];
+  tomorrowSessionList: any[];
+  openSessionsCount: number;
+  fullSessionsCount: number;
+  waitlistedSessionsCount: number;
+  waitlistedSessions: any[];
+  highestRevenueSessions: any[];
+  lowestUtilizationSessions: any[];
+  coachUtilization: any[];
+  weekRevenueCents: number;
+  monthRevenueCents: number;
+  weekProjectionCents: number;
+  monthProjectionCents: number;
+  totalUpcomingSessions: number;
+}
+
+function formatMoney(cents: number) {
+  return `$${(cents / 100).toFixed(0)}`;
+}
+
+function UtilBadge({ pct }: { pct: number }) {
+  const color = pct >= 80
+    ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20"
+    : pct >= 50
+    ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20"
+    : "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20";
+  return <Badge className={`text-xs ${color}`}>{pct}%</Badge>;
+}
+
+function SessionRow({ session }: { session: any }) {
+  const start = session.start_at ? new Date(session.start_at) : null;
+  const reg = parseInt(session.registered_count || 0);
+  const max = parseInt(session.max_participants || 6);
+  const isFull = reg >= max;
+
+  return (
+    <div className="flex items-center gap-3 py-2 border-b last:border-b-0" data-testid={`row-session-${session.id}`}>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{session.service_name || "Session"}</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+          {start && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{format(start, "h:mm a")}</span>}
+          {session.coach_first && <span>· Coach {session.coach_first} {session.coach_last}</span>}
+          {session.location && <span>· {session.location}</span>}
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
+          <Users className="h-3 w-3" />
+          <span>{reg}/{max}</span>
+        </div>
+        <Badge className={`text-xs mt-0.5 ${isFull ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-green-500/15 text-green-700 dark:text-green-400"}`}>
+          {isFull ? "Full" : `${max - reg} left`}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
+function RevenueSessionRow({ session }: { session: any }) {
+  const rev = parseInt(session.sessionRevenue || 0);
+  const maxRev = parseInt(session.maxRevenue || 0);
+  const pct = parseInt(session.utilizationPct || 0);
+  const start = session.start_at ? new Date(session.start_at) : null;
+
+  return (
+    <div className="flex items-center gap-3 py-2 border-b last:border-b-0">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{session.service_name || "Session"}</p>
+        {start && <p className="text-xs text-muted-foreground mt-0.5">{format(start, "EEE MMM d · h:mm a")}</p>}
+      </div>
+      <div className="text-right shrink-0 space-y-0.5">
+        <p className="text-sm font-semibold text-primary">{formatMoney(rev)}</p>
+        <div className="flex items-center gap-1 justify-end">
+          <p className="text-xs text-muted-foreground">{formatMoney(maxRev)} max</p>
+          <UtilBadge pct={pct} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AdminSchedulingCommandCenterPage() {
+  const { data, isLoading } = useQuery<CommandCenterData>({
+    queryKey: ["/api/scheduling/command-center"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/command-center", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-64" />
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24" />)}
+        </div>
+        <div className="grid md:grid-cols-2 gap-4">
+          {[1, 2].map(i => <Skeleton key={i} className="h-48" />)}
+        </div>
+      </div>
+    );
+  }
+
+  const d = data;
+  if (!d) return <div className="text-muted-foreground text-center py-12">No data available</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
+          <Flame className="h-6 w-6 text-primary" />
+          Scheduling Command Center
+        </h1>
+        <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
+      </div>
+
+      {/* Session Status Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {[
+          { label: "Today", value: d.todaySessions, icon: Calendar, color: "text-primary", sub: "sessions" },
+          { label: "Tomorrow", value: d.tomorrowSessions, icon: Calendar, color: "text-muted-foreground", sub: "sessions" },
+          { label: "Open", value: d.openSessionsCount, icon: CheckCircle2, color: "text-green-600 dark:text-green-400", sub: "need registrations" },
+          { label: "Full", value: d.fullSessionsCount, icon: Users, color: "text-orange-600 dark:text-orange-400", sub: "at capacity" },
+          { label: "Waitlisted", value: d.waitlistedSessionsCount, icon: Clock3, color: "text-blue-600 dark:text-blue-400", sub: "have waitlists" },
+        ].map(stat => (
+          <Card key={stat.label} className="p-4 text-center space-y-1" data-testid={`stat-${stat.label.toLowerCase()}`}>
+            <stat.icon className={`h-5 w-5 mx-auto ${stat.color}`} />
+            <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+            <p className="text-xs text-muted-foreground leading-tight">{stat.label}<br />{stat.sub}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Revenue Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Week Revenue", value: formatMoney(d.weekRevenueCents), sub: "actual this week", icon: DollarSign },
+          { label: "Week Projection", value: formatMoney(d.weekProjectionCents), sub: "projected at current pace", icon: TrendingUp },
+          { label: "Month Revenue", value: formatMoney(d.monthRevenueCents), sub: "actual this month", icon: DollarSign },
+          { label: "Month Projection", value: formatMoney(d.monthProjectionCents), sub: "projected at current pace", icon: ArrowUpRight },
+        ].map(card => (
+          <Card key={card.label} className="p-4" data-testid={`revenue-${card.label.toLowerCase().replace(/ /g, "-")}`}>
+            <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+              <card.icon className="h-3.5 w-3.5" />
+              <span className="text-xs">{card.label}</span>
+            </div>
+            <p className="text-xl font-bold">{card.value}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Today's Sessions */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Calendar className="h-4 w-4 text-primary" />
+            <p className="font-semibold text-sm">Today's Sessions</p>
+            <Badge variant="secondary" className="ml-auto text-xs">{d.todaySessionList.length}</Badge>
+          </div>
+          {d.todaySessionList.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No sessions today</p>
+          ) : (
+            d.todaySessionList.map(s => <SessionRow key={s.id} session={s} />)
+          )}
+        </Card>
+
+        {/* Tomorrow's Sessions */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <p className="font-semibold text-sm">Tomorrow's Sessions</p>
+            <Badge variant="secondary" className="ml-auto text-xs">{d.tomorrowSessionList.length}</Badge>
+          </div>
+          {d.tomorrowSessionList.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No sessions tomorrow</p>
+          ) : (
+            d.tomorrowSessionList.map(s => <SessionRow key={s.id} session={s} />)
+          )}
+        </Card>
+
+        {/* Waitlisted Sessions */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock3 className="h-4 w-4 text-blue-500" />
+            <p className="font-semibold text-sm">Waitlisted Sessions</p>
+            <Badge className="ml-auto text-xs bg-blue-500/15 text-blue-700 dark:text-blue-400">{d.waitlistedSessionsCount}</Badge>
+          </div>
+          {d.waitlistedSessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No sessions have waitlists</p>
+          ) : (
+            d.waitlistedSessions.map((s: any) => (
+              <div key={s.id} className="flex items-center justify-between py-2 border-b last:border-b-0">
+                <div>
+                  <p className="text-sm font-medium truncate">{s.service_name || "Session"}</p>
+                  <p className="text-xs text-muted-foreground">{s.start_at ? format(new Date(s.start_at), "MMM d · h:mm a") : ""}</p>
+                </div>
+                <Badge className="text-xs bg-blue-500/15 text-blue-700 dark:text-blue-400 shrink-0">
+                  {s.waitlistCount} waiting
+                </Badge>
+              </div>
+            ))
+          )}
+        </Card>
+
+        {/* Highest Revenue Sessions */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <DollarSign className="h-4 w-4 text-green-500" />
+            <p className="font-semibold text-sm">Highest Revenue Sessions</p>
+          </div>
+          {d.highestRevenueSessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No upcoming sessions</p>
+          ) : (
+            d.highestRevenueSessions.map((s: any) => <RevenueSessionRow key={s.id} session={s} />)
+          )}
+        </Card>
+
+        {/* Lowest Utilization */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle className="h-4 w-4 text-red-500" />
+            <p className="font-semibold text-sm">Lowest Utilization</p>
+            <span className="text-xs text-muted-foreground ml-1">(needs attention)</span>
+          </div>
+          {d.lowestUtilizationSessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No upcoming sessions</p>
+          ) : (
+            d.lowestUtilizationSessions.map((s: any) => (
+              <div key={s.id} className="flex items-center gap-3 py-2 border-b last:border-b-0">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{s.service_name || "Session"}</p>
+                  {s.start_at && <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(s.start_at), "EEE MMM d · h:mm a")}</p>}
+                </div>
+                <div className="text-right shrink-0 space-y-0.5">
+                  <UtilBadge pct={s.utilizationPct || 0} />
+                  <p className="text-xs text-muted-foreground">
+                    {parseInt(s.registered_count || 0)}/{parseInt(s.max_participants || 6)}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </Card>
+
+        {/* Coach Utilization */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="h-4 w-4 text-muted-foreground" />
+            <p className="font-semibold text-sm">Coach Utilization</p>
+            <span className="text-xs text-muted-foreground ml-1">(this week)</span>
+          </div>
+          {d.coachUtilization.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No coach data</p>
+          ) : (
+            <div className="space-y-3">
+              {d.coachUtilization.map((c: any) => {
+                const util = Math.min(100, c.utilizationPct || 0);
+                const barColor = util >= 80 ? "bg-green-500" : util >= 50 ? "bg-yellow-500" : "bg-red-500";
+                return (
+                  <div key={c.coachId} className="space-y-1" data-testid={`coach-util-${c.coachId}`}>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium truncate max-w-[140px]">{c.name || "Coach"}</span>
+                      <span className="text-muted-foreground">{c.bookedHours}h · {c.sessionCount} sessions</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-muted rounded-full h-1.5">
+                        <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${util}%` }} />
+                      </div>
+                      <span className="text-xs font-semibold w-8 text-right">{util}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <p className="text-xs text-muted-foreground text-right">Auto-refreshes every 60 seconds · {format(new Date(), "h:mm a")}</p>
+    </div>
+  );
+}

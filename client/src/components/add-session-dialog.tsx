@@ -30,11 +30,15 @@ type AddSessionDialogProps = {
   initialTime?: string;
   triggerButton?: React.ReactNode;
   coachId?: string;
+  controlledOpen?: boolean;
+  onControlledOpenChange?: (v: boolean) => void;
 };
 
-export function AddSessionDialog({ initialDate, initialTime, triggerButton, coachId }: AddSessionDialogProps = {}) {
+export function AddSessionDialog({ initialDate, initialTime, triggerButton, coachId, controlledOpen, onControlledOpenChange }: AddSessionDialogProps = {}) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = (v: boolean) => { setInternalOpen(v); onControlledOpenChange?.(v); };
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(initialDate);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [serviceId, setServiceId] = useState("");
@@ -346,14 +350,16 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
-      <DialogTrigger asChild>
-        {triggerButton || (
-          <Button data-testid="button-add-session">
-            <Plus className="h-4 w-4 mr-1" />
-            Add Session
-          </Button>
-        )}
-      </DialogTrigger>
+      {controlledOpen === undefined && (
+        <DialogTrigger asChild>
+          {triggerButton || (
+            <Button data-testid="button-add-session">
+              <Plus className="h-4 w-4 mr-1" />
+              Add Session
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         {showRepeatStep ? (
           <>

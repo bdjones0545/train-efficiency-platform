@@ -1,0 +1,334 @@
+Scheduling System Phase 2 — Sports Organization Operating System
+
+The current Month / Week / Day calendar redesign is complete and functioning. Do not remove or regress any existing functionality.
+
+Build the next layer focused on athlete matching, coach utilization, attendance tracking, recurring scheduling, and revenue intelligence.
+
+1. Enhanced Session Cards
+
+Upgrade all session displays (calendar cells, day view, week view, modal, and registration pages).
+
+Display:
+
+* Session Name
+* Coach
+* Sport
+* Age Range
+* Skill Level
+* Location
+* Spots Remaining
+* Capacity
+* Price
+
+Example:
+
+High School Football Speed
+
+Coach: Bryan Jones
+
+Sport: Football
+
+Ages: 14-18
+
+Skill: Intermediate / Advanced
+
+Location: Oscar Frazier Park
+
+4 / 6 Spots Filled
+
+$30
+
+Use compact badge styling.
+
+⸻
+
+2. Athlete Compatibility Engine
+
+Before displaying Join Session:
+
+Compare:
+
+* Athlete Age
+* Athlete Sport
+* Athlete Training Level
+
+Against session requirements.
+
+Display:
+
+🟢 Recommended
+
+🟡 Eligible
+
+🔴 Not Recommended
+
+Examples:
+
+Recommended:
+Athlete matches age, sport, and skill level.
+
+Eligible:
+Athlete fits age but different sport.
+
+Not Recommended:
+Athlete outside age range or skill requirements.
+
+Do NOT block registration initially.
+
+Only provide guidance.
+
+Future versions may enforce restrictions.
+
+⸻
+
+3. Revenue Intelligence Layer
+
+Add session economics.
+
+Every session should calculate:
+
+* Capacity
+* Registrations
+* Revenue Generated
+* Maximum Revenue
+* Utilization %
+
+Example:
+
+Capacity: 8
+
+Registered: 6
+
+Revenue: $180
+
+Potential Revenue: $240
+
+Utilization: 75%
+
+Show:
+
+* Session modal
+* Coach dashboards
+* Owner dashboards
+
+Add color coding:
+
+Green = 80%+
+
+Yellow = 50-79%
+
+Red = Below 50%
+
+⸻
+
+4. Coach Capacity Dashboard
+
+Create coach scheduling analytics.
+
+Metrics:
+
+* Weekly Available Hours
+* Weekly Scheduled Hours
+* Utilization %
+* Open Spots Across Sessions
+* Revenue Generated
+
+Example:
+
+Hunter Thaxton
+
+Available Hours: 25
+
+Booked Hours: 21
+
+Utilization: 84%
+
+Revenue: $630
+
+Open Spots: 9
+
+Allow filtering by:
+
+* Week
+* Month
+* Coach
+
+⸻
+
+5. Google Calendar Style Session Creation
+
+Current form-based creation remains.
+
+Add quick scheduling.
+
+Month View:
+Tap day → Create Session Modal
+
+Week View:
+Tap day column → Create Session Modal
+
+Day View:
+Tap empty time slot → Create Session Modal
+
+Prepopulate:
+
+* Date
+* Time
+* Location (optional)
+
+This should dramatically reduce scheduling friction.
+
+⸻
+
+6. Recurring Session Engine
+
+Add recurring schedule support.
+
+Options:
+
+* Daily
+* Weekly
+* Monthly
+
+Weekly recurrence should support:
+
+☑ Monday
+
+☑ Tuesday
+
+☑ Wednesday
+
+☑ Thursday
+
+☑ Friday
+
+☑ Saturday
+
+☑ Sunday
+
+Examples:
+
+High School Football Speed
+
+Every Monday, Wednesday, Friday
+
+6:00 PM
+
+June 1 – August 15
+
+Generate future sessions automatically.
+
+Store recurrence rules separately from individual sessions.
+
+Allow editing:
+
+* Single occurrence
+* Entire series
+
+⸻
+
+7. Waitlist Automation
+
+Current waitlist system exists.
+
+Enhance it.
+
+When a registered athlete cancels:
+
+1. Find first athlete in waitlist order.
+2. Create reservation hold.
+3. Send notification.
+4. Hold expires after configurable period (default 2 hours).
+5. If not accepted, move to next athlete.
+
+Track:
+
+* Waitlist Position
+* Promotion Status
+* Promotion History
+
+⸻
+
+8. Attendance Management
+
+After session end:
+
+Coach can mark:
+
+* Present
+* Absent
+* Late
+* Excused
+
+Store attendance records.
+
+Display:
+
+Athlete Attendance %
+
+Coach Attendance Reports
+
+Session Attendance Reports
+
+Organization Attendance Reports
+
+⸻
+
+9. Attendance Intelligence
+
+Create derived metrics.
+
+Calculate:
+
+* Consecutive Missed Sessions
+* Attendance %
+* Consistency Score
+* Retention Risk
+
+Examples:
+
+Attendance > 90% → Excellent
+
+Attendance 75-89% → Good
+
+Attendance 50-74% → At Risk
+
+Attendance < 50% → High Risk
+
+Feed this into athlete profiles and dashboards.
+
+⸻
+
+10. Scheduling Command Center
+
+Create an executive scheduling dashboard.
+
+Display:
+
+Today’s Sessions
+
+Tomorrow’s Sessions
+
+Open Sessions Needing Registrations
+
+Full Sessions
+
+Waitlisted Sessions
+
+Highest Revenue Sessions
+
+Lowest Utilization Sessions
+
+Coach Utilization
+
+Weekly Revenue Projection
+
+Monthly Revenue Projection
+
+This should become the operational heartbeat for scheduling across the organization.
+
+⸻
+
+Success Criteria:
+
+The scheduling system should evolve from a calendar into a complete sports organization operating system that manages athlete placement, session revenue, coach utilization, attendance, retention, waitlists, and scheduling intelligence while maintaining full multi-tenant isolation and mobile responsiveness.

@@ -152,6 +152,8 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
       { title: "Business Brain", simplifiedTitle: "Business Brain", url: "/admin/business-brain", icon: Brain, testId: "nav-business-brain" },
       { title: "Recommendations", simplifiedTitle: "Suggestions", url: "/admin/recommendations", icon: Zap, testId: "nav-recommendations" },
       { title: "Workflow Heatmap", simplifiedTitle: "Heatmap", url: "/admin/workflow-heatmap", icon: BarChart2, testId: "nav-workflow-heatmap" },
+      { title: "Scheduling Command Center", simplifiedTitle: "Sched. Hub", url: "/admin/scheduling-command-center", icon: CalendarDays, testId: "nav-scheduling-command-center" },
+      { title: "Coach Capacity", simplifiedTitle: "Capacity", url: "/admin/coach-capacity", icon: BarChart2, testId: "nav-coach-capacity" },
     ],
   },
   {
