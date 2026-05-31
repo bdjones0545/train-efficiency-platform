@@ -884,6 +884,13 @@ Return as JSON:
         draft = { subject: "Spots available this week!", smsBody: "Hey! A spot just opened in your session. Grab it before it's gone.", emailBody: "We have a spot available in your upcoming training session. Don't miss this opportunity — spaces fill fast!" };
       }
 
+      if (sessionId) {
+        await db.execute(sql`
+          INSERT INTO fill_campaign_drafts (org_id, booking_id, subject, body, target_count, status)
+          VALUES (${orgId}, ${sessionId}, ${draft.subject || ""}, ${draft.emailBody || draft.smsBody || ""}, ${openSpots || 0}, 'draft')
+        `).catch(() => {});
+      }
+
       res.json({
         sessionId,
         subject: draft.subject || "",
@@ -893,6 +900,309 @@ Return as JSON:
       });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to generate fill campaign", error: e.message });
+    }
+  });
+
+  // ─── Capacity Optimization ────────────────────────────────────────────────
+  app.get("/api/scheduling/capacity-optimization", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      const now = new Date();
+      const next30d = new Date(now);
+      next30d.setDate(now.getDate() + 30);
+      const thirtyDaysAgo = new Date(now);
+      thirtyDaysAgo.setDate(now.getDate() - 30);
+
+      const [oversubscribedRaw, underutilizedRaw, waitlistPressureRaw, peakHoursRaw] = await Promise.all([
+        // Sessions consistently over 90% full in past 30d
+        db.execute(sql`
+          SELECT b.id, s.name as service_name, b.max_participants,
+                 COUNT(bp.id) as registered, b.start_at,
+                 u.first_name as coach_first, u.last_name as coach_last
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
+          LEFT JOIN users u ON cp.user_id = u.id
+          LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.status IN ('CONFIRMED', 'COMPLETED')
+            AND b.start_at >= ${thirtyDaysAgo.toISOString()}
+          GROUP BY b.id, s.name, b.max_participants, b.start_at, u.first_name, u.last_name
+          HAVING COUNT(bp.id)::float / NULLIF(b.max_participants, 0) >= 0.9
+          ORDER BY b.start_at DESC
+          LIMIT 10
+        `).catch(() => ({ rows: [] })),
+        // Upcoming sessions under 30% fill
+        db.execute(sql`
+          SELECT b.id, s.name as service_name, b.max_participants,
+                 COUNT(bp.id) as registered, b.start_at,
+                 u.first_name as coach_first, u.last_name as coach_last,
+                 s.price_cents
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
+          LEFT JOIN users u ON cp.user_id = u.id
+          LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.status = 'CONFIRMED'
+            AND b.start_at > ${now.toISOString()}
+            AND b.start_at < ${next30d.toISOString()}
+          GROUP BY b.id, s.name, b.max_participants, b.start_at, u.first_name, u.last_name, s.price_cents
+          HAVING COUNT(bp.id)::float / NULLIF(b.max_participants, 0) < 0.3
+          ORDER BY b.start_at ASC
+          LIMIT 10
+        `).catch(() => ({ rows: [] })),
+        // Sessions with waitlist > 3
+        db.execute(sql`
+          SELECT wh.booking_id, COUNT(*) as waitlist_size,
+                 b.max_participants, s.name as service_name,
+                 EXTRACT(DOW FROM b.start_at) as day_of_week,
+                 EXTRACT(HOUR FROM b.start_at) as hour_of_day
+          FROM waitlist_holds wh
+          JOIN bookings b ON wh.booking_id = b.id
+          LEFT JOIN services s ON b.service_id = s.id
+          WHERE b.organization_id = ${orgId}
+            AND wh.status = 'waiting'
+          GROUP BY wh.booking_id, b.max_participants, s.name, b.start_at
+          HAVING COUNT(*) > 2
+          ORDER BY COUNT(*) DESC
+          LIMIT 5
+        `).catch(() => ({ rows: [] })),
+        // Peak demand hours
+        db.execute(sql`
+          SELECT
+            EXTRACT(DOW FROM b.start_at AT TIME ZONE 'America/New_York') as dow,
+            EXTRACT(HOUR FROM b.start_at AT TIME ZONE 'America/New_York') as hour,
+            COUNT(*) as sessions,
+            AVG(COUNT(bp.id)) OVER (PARTITION BY EXTRACT(DOW FROM b.start_at AT TIME ZONE 'America/New_York'), EXTRACT(HOUR FROM b.start_at AT TIME ZONE 'America/New_York')) as avg_registered
+          FROM bookings b
+          LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.status IN ('CONFIRMED', 'COMPLETED')
+            AND b.start_at >= ${thirtyDaysAgo.toISOString()}
+          GROUP BY EXTRACT(DOW FROM b.start_at AT TIME ZONE 'America/New_York'), EXTRACT(HOUR FROM b.start_at AT TIME ZONE 'America/New_York'), b.id
+          ORDER BY COUNT(*) DESC
+          LIMIT 15
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const oversubscribed = getRows(oversubscribedRaw);
+      const underutilized = getRows(underutilizedRaw);
+      const waitlistPressure = getRows(waitlistPressureRaw);
+      const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+      const recommendations: any[] = [];
+
+      // High demand → expand capacity or add sessions
+      if (oversubscribed.length > 0) {
+        recommendations.push({
+          type: "expand_capacity",
+          priority: "high",
+          title: `${oversubscribed.length} session${oversubscribed.length !== 1 ? "s" : ""} consistently at or near full capacity`,
+          description: "These sessions show strong demand. Consider increasing max participants or adding a second session in the same time slot.",
+          affectedSessions: oversubscribed.slice(0, 5).map((s: any) => ({
+            id: s.id,
+            name: s.service_name,
+            registered: parseInt(s.registered || 0),
+            capacity: parseInt(s.max_participants || 6),
+            coach: `${s.coach_first || ""} ${s.coach_last || ""}`.trim(),
+          })),
+          actionLabel: "Add Session",
+        });
+      }
+
+      // Low fill → cancel or merge
+      if (underutilized.length > 0) {
+        const totalLoss = underutilized.reduce((s: number, u: any) => {
+          const open = parseInt(u.max_participants || 6) - parseInt(u.registered || 0);
+          return s + open * parseInt(u.price_cents || 0);
+        }, 0);
+        recommendations.push({
+          type: "reduce_capacity",
+          priority: "medium",
+          title: `${underutilized.length} upcoming sessions are less than 30% full`,
+          description: `These sessions have significant open spots. Consider targeted outreach or merging sessions. Estimated revenue gap: $${Math.round(totalLoss / 100).toLocaleString()}.`,
+          affectedSessions: underutilized.slice(0, 5).map((s: any) => ({
+            id: s.id,
+            name: s.service_name,
+            registered: parseInt(s.registered || 0),
+            capacity: parseInt(s.max_participants || 6),
+            coach: `${s.coach_first || ""} ${s.coach_last || ""}`.trim(),
+            startAt: s.start_at,
+          })),
+          actionLabel: "Run Fill Campaign",
+        });
+      }
+
+      // Waitlist pressure → add sessions
+      waitlistPressure.forEach((w: any) => {
+        const wSize = parseInt(w.waitlist_size || 0);
+        const dow = parseInt(w.day_of_week || 0);
+        const hour = parseInt(w.hour_of_day || 0);
+        recommendations.push({
+          type: "add_session",
+          priority: "high",
+          title: `Add a ${dayNames[dow]} ${hour > 12 ? `${hour - 12}pm` : `${hour}am`} session — ${wSize} athletes waiting`,
+          description: `"${w.service_name || "Session"}" has ${wSize} people on the waitlist. Adding another session at the same time could immediately capture this demand.`,
+          actionLabel: "Create Session",
+          waitlistSize: wSize,
+          suggestedDay: dayNames[dow],
+          suggestedHour: hour,
+        });
+      });
+
+      res.json({ recommendations });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute capacity optimization", error: e.message });
+    }
+  });
+
+  // ─── Athlete Session Recommendations ──────────────────────────────────────
+  app.get("/api/scheduling/athlete-recommendations/:userId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.organizationId;
+      const { userId } = req.params;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      const now = new Date();
+      const next14d = new Date(now);
+      next14d.setDate(now.getDate() + 14);
+      const sixtyDaysAgo = new Date(now);
+      sixtyDaysAgo.setDate(now.getDate() - 60);
+
+      const [profileRaw, historyRaw, upcomingRaw] = await Promise.all([
+        db.execute(sql`
+          SELECT sport, training_level FROM athlete_scheduling_profiles
+          WHERE user_id = ${userId} AND org_id = ${orgId}
+          LIMIT 1
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT DISTINCT b.service_id, s.name, s.sport, s.skill_level
+          FROM bookings b
+          JOIN booking_participants bp ON bp.booking_id = b.id
+          JOIN services s ON b.service_id = s.id
+          WHERE bp.user_id = ${userId}
+            AND b.organization_id = ${orgId}
+            AND b.status IN ('CONFIRMED', 'COMPLETED')
+            AND b.start_at >= ${sixtyDaysAgo.toISOString()}
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
+                 s.sport, s.skill_level, s.price_cents, s.age_range,
+                 u.first_name as coach_first, u.last_name as coach_last,
+                 COUNT(bp.id) as registered_count
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
+          LEFT JOIN users u ON cp.user_id = u.id
+          LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.status = 'CONFIRMED'
+            AND b.start_at > ${now.toISOString()}
+            AND b.start_at < ${next14d.toISOString()}
+            AND NOT EXISTS (
+              SELECT 1 FROM booking_participants bp2
+              WHERE bp2.booking_id = b.id AND bp2.user_id = ${userId}
+            )
+          GROUP BY b.id, s.name, s.sport, s.skill_level, s.price_cents, s.age_range, u.first_name, u.last_name
+          HAVING COUNT(bp.id) < b.max_participants
+          ORDER BY b.start_at ASC
+          LIMIT 20
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const profile = getRows(profileRaw)[0];
+      const history = getRows(historyRaw);
+      const upcoming = getRows(upcomingRaw);
+
+      const previousSports = new Set(history.map((h: any) => (h.sport || "").toLowerCase()).filter(Boolean));
+      const previousServices = new Set(history.map((h: any) => h.service_id).filter(Boolean));
+
+      const scored = upcoming.map((s: any) => {
+        let score = 50;
+        const reasons: string[] = [];
+
+        if (profile?.sport && s.sport && profile.sport.toLowerCase() === (s.sport || "").toLowerCase()) {
+          score += 20;
+          reasons.push("Matches your sport");
+        } else if (s.sport && previousSports.has((s.sport || "").toLowerCase())) {
+          score += 15;
+          reasons.push("Sport you've trained in before");
+        }
+
+        if (profile?.training_level && s.skill_level &&
+            profile.training_level.toLowerCase() === (s.skill_level || "").toLowerCase()) {
+          score += 15;
+          reasons.push("Matches your skill level");
+        }
+
+        const max = parseInt(s.max_participants || 6);
+        const reg = parseInt(s.registered_count || 0);
+        const fillPct = max > 0 ? reg / max : 0;
+        if (fillPct < 0.5) { score += 10; reasons.push("Spots available"); }
+        if (fillPct >= 0.7) { score += 5; reasons.push("Popular session"); }
+
+        if (previousServices.has(s.service_id)) {
+          score += 10;
+          reasons.push("Session type you've attended");
+        }
+
+        return {
+          sessionId: s.id,
+          serviceName: s.service_name || "Session",
+          sport: s.sport,
+          skillLevel: s.skill_level,
+          startAt: s.start_at,
+          coach: `${s.coach_first || ""} ${s.coach_last || ""}`.trim(),
+          registered: parseInt(s.registered_count || 0),
+          capacity: max,
+          openSpots: max - parseInt(s.registered_count || 0),
+          priceCents: parseInt(s.price_cents || 0),
+          matchScore: Math.min(100, score),
+          matchReasons: reasons,
+        };
+      }).sort((a, b) => b.matchScore - a.matchScore).slice(0, 5);
+
+      res.json({
+        recommendations: scored,
+        hasProfile: !!profile,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch athlete recommendations", error: e.message });
+    }
+  });
+
+  // ─── Persist fill campaign draft ──────────────────────────────────────────
+  app.post("/api/scheduling/fill-campaign/save", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { sessionId, subject, emailBody, smsBody, targetCount } = req.body;
+      await db.execute(sql`
+        INSERT INTO fill_campaign_drafts (org_id, booking_id, subject, body, target_count, status)
+        VALUES (${orgId}, ${sessionId}, ${subject}, ${emailBody || smsBody}, ${targetCount || 0}, 'draft')
+      `).catch(() => {});
+      res.json({ saved: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to save campaign draft", error: e.message });
+    }
+  });
+
+  // ─── Snapshot health score ────────────────────────────────────────────────
+  app.post("/api/scheduling/health-score/snapshot", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { score, label, summary, breakdown } = req.body;
+      await db.execute(sql`
+        INSERT INTO scheduling_health_snapshots (org_id, score, utilization_score, revenue_score, attendance_score, retention_score, waitlist_score, label, summary)
+        VALUES (${orgId}, ${score}, ${breakdown?.utilization ?? 0}, ${breakdown?.revenue ?? 0}, ${breakdown?.attendance ?? 0}, ${breakdown?.retention ?? 0}, ${breakdown?.waitlist ?? 0}, ${label}, ${summary})
+      `).catch(() => {});
+      res.json({ saved: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to snapshot health score", error: e.message });
     }
   });
 
@@ -1006,7 +1316,18 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
 
       const answer = completion.choices[0]?.message?.content ?? "I couldn't generate a response. Please try again.";
 
-      res.json({ answer, question });
+      res.json({
+        answer,
+        question,
+        supportingData: {
+          sessionsThisWeek: contextData.sessionsThisWeek,
+          cancellationsThisWeek: contextData.cancellationsThisWeek,
+          sessions30Days: contextData.sessions30Days,
+          upcomingSessions: contextData.upcomingSessions.slice(0, 5),
+          recentClients: contextData.recentClients.slice(0, 5),
+          generatedAt: now.toISOString(),
+        },
+      });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to get copilot response", error: e.message });
     }

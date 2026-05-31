@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Calendar, Clock, Users, DollarSign, TrendingUp, AlertCircle,
   CheckCircle2, Clock3, BarChart3, ArrowUpRight, Activity, Flame,
-  Sparkles, Target, RefreshCw, ChevronRight
+  Sparkles, Target, RefreshCw, ChevronRight, Zap
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
@@ -34,6 +34,68 @@ interface CommandCenterData {
 
 function formatMoney(cents: number) {
   return `$${(cents / 100).toFixed(0)}`;
+}
+
+// ─── Top-3 Opportunity Preview Strip ─────────────────────────────────────────
+function OpportunityPreviewStrip() {
+  const { data, isLoading } = useQuery<{ opportunities: any[] }>({
+    queryKey: ["/api/scheduling/opportunities"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/opportunities", { credentials: "include" });
+      if (!res.ok) return { opportunities: [] };
+      return res.json();
+    },
+    refetchInterval: 60000,
+  });
+
+  if (isLoading) return <Skeleton className="h-16 w-full" />;
+  const top = (data?.opportunities ?? []).slice(0, 3);
+  if (top.length === 0) return null;
+
+  const typeLabel: Record<string, string> = {
+    fill_session: "Fill Session",
+    recover_cancellation: "Recover",
+    waitlist_demand: "Waitlist",
+    reactivation: "Re-engage",
+  };
+  const typeColor: Record<string, string> = {
+    fill_session: "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20",
+    recover_cancellation: "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20",
+    waitlist_demand: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20",
+    reactivation: "bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/20",
+  };
+
+  return (
+    <div className="rounded-lg border p-3 bg-primary/3" data-testid="opportunity-preview-strip">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Zap className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">Top Opportunities</span>
+          <Badge variant="secondary" className="text-xs ml-1">{data?.opportunities?.length ?? 0} total</Badge>
+        </div>
+        <Link href="/admin/scheduling-opportunity-inbox">
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+            View All <ChevronRight className="h-3 w-3" />
+          </Button>
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {top.map((opp: any, i: number) => (
+          <div key={i} className="flex items-start gap-2 p-2 rounded bg-background/80 border text-xs" data-testid={`opportunity-item-${i}`}>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{opp.title || opp.serviceName || "Opportunity"}</p>
+              {opp.revenuePotentialCents > 0 && (
+                <p className="text-green-600 dark:text-green-400 mt-0.5">+${Math.round(opp.revenuePotentialCents / 100)}</p>
+              )}
+            </div>
+            <Badge className={`text-[10px] shrink-0 ${typeColor[opp.type] || "bg-muted text-muted-foreground"}`}>
+              {typeLabel[opp.type] || opp.type}
+            </Badge>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function UtilBadge({ pct }: { pct: number }) {
@@ -309,6 +371,9 @@ export default function AdminSchedulingCommandCenterPage() {
           </Card>
         ))}
       </div>
+
+      {/* Opportunity Preview Strip */}
+      <OpportunityPreviewStrip />
 
       {/* Intelligence Row — Health Score + Revenue Recovery */}
       <div className="grid md:grid-cols-2 gap-4">

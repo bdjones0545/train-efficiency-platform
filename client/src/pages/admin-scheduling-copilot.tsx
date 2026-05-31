@@ -12,10 +12,20 @@ import {
   DollarSign, Calendar, RefreshCw, Lightbulb
 } from "lucide-react";
 
+interface SupportingData {
+  sessionsThisWeek: number;
+  cancellationsThisWeek: number;
+  sessions30Days: number;
+  upcomingSessions: { name: string; coach: string; start: string; registered: number; capacity: number }[];
+  recentClients: { name: string; lastBooking: string; totalBookings: number }[];
+  generatedAt: string;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  supportingData?: SupportingData;
 }
 
 interface HealthScore {
@@ -110,21 +120,64 @@ function HealthScoreWidget() {
   );
 }
 
+function SupportingDataPanel({ data }: { data: SupportingData }) {
+  return (
+    <div className="ml-11 mt-2 rounded-lg border bg-muted/30 p-3 text-xs space-y-2" data-testid="copilot-supporting-data">
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+        <TrendingUp className="h-3 w-3" />
+        Live Data Used
+      </p>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded bg-background border p-1.5">
+          <p className="text-base font-bold">{data.sessionsThisWeek}</p>
+          <p className="text-[10px] text-muted-foreground">Sessions/wk</p>
+        </div>
+        <div className="rounded bg-background border p-1.5">
+          <p className="text-base font-bold">{data.sessions30Days}</p>
+          <p className="text-[10px] text-muted-foreground">Last 30d</p>
+        </div>
+        <div className="rounded bg-background border p-1.5">
+          <p className="text-base font-bold">{data.cancellationsThisWeek}</p>
+          <p className="text-[10px] text-muted-foreground">Cancels/wk</p>
+        </div>
+      </div>
+      {data.upcomingSessions.length > 0 && (
+        <div>
+          <p className="text-[10px] text-muted-foreground mb-1">Upcoming ({data.upcomingSessions.length} shown)</p>
+          <div className="space-y-0.5">
+            {data.upcomingSessions.slice(0, 3).map((s, i) => (
+              <div key={i} className="flex items-center justify-between text-[10px]">
+                <span className="truncate max-w-[160px] font-medium">{s.name}</span>
+                <span className="text-muted-foreground shrink-0 ml-2">{s.registered}/{s.capacity}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
   return (
-    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`} data-testid={`message-${message.role}`}>
-      <div className={`shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${isUser ? "bg-primary text-primary-foreground" : "bg-violet-500/20 text-violet-600 dark:text-violet-400"}`}>
-        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-      </div>
-      <div className={`max-w-[80%] space-y-1 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
-        <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${isUser ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-muted rounded-tl-sm"}`}>
-          {message.content}
+    <div className="space-y-1" data-testid={`message-${message.role}`}>
+      <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+        <div className={`shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${isUser ? "bg-primary text-primary-foreground" : "bg-violet-500/20 text-violet-600 dark:text-violet-400"}`}>
+          {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
         </div>
-        <p className="text-[10px] text-muted-foreground px-1">
-          {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </p>
+        <div className={`max-w-[80%] space-y-1 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+          <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${isUser ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-muted rounded-tl-sm"}`}>
+            {message.content}
+          </div>
+          <p className="text-[10px] text-muted-foreground px-1">
+            {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
       </div>
+      {!isUser && message.supportingData && (
+        <SupportingDataPanel data={message.supportingData} />
+      )}
     </div>
   );
 }
@@ -161,6 +214,7 @@ export default function AdminSchedulingCopilotPage() {
           role: "assistant",
           content: data.answer ?? "I couldn't generate a response.",
           timestamp: new Date(),
+          supportingData: data.supportingData,
         },
       ]);
     },

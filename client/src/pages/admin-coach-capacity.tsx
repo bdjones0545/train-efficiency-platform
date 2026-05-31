@@ -10,8 +10,102 @@ import { useState } from "react";
 import {
   Clock, Users, DollarSign, TrendingUp, Calendar,
   BarChart3, Activity, ChevronUp, ChevronDown, Minus,
-  Lightbulb, AlertTriangle, CheckCircle2, AlertCircle
+  Lightbulb, AlertTriangle, CheckCircle2, AlertCircle,
+  Heart, Brain, Sparkles, TrendingDown
 } from "lucide-react";
+
+// ─── Health Score Banner ─────────────────────────────────────────────────────
+function HealthScoreBanner() {
+  const { data, isLoading } = useQuery<{ score: number; label: string; summary: string; breakdown: any }>({
+    queryKey: ["/api/scheduling/health-score"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/health-score", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: false,
+  });
+  if (isLoading) return <Skeleton className="h-16 w-full" />;
+  if (!data) return null;
+
+  const score = data.score;
+  const barColor = score >= 75 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-500";
+  const labelColor = score >= 75 ? "text-green-700 dark:text-green-400" : score >= 50 ? "text-yellow-700 dark:text-yellow-400" : "text-red-700 dark:text-red-400";
+
+  return (
+    <div className="flex items-center gap-4 p-4 rounded-lg border bg-muted/20" data-testid="health-score-banner">
+      <div className="flex items-center gap-2 shrink-0">
+        <Heart className="h-5 w-5 text-muted-foreground" />
+        <div>
+          <p className="text-xs text-muted-foreground">Schedule Health</p>
+          <p className={`text-2xl font-bold leading-none ${labelColor}`}>{score}</p>
+        </div>
+      </div>
+      <div className="flex-1 space-y-1">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold">{data.label}</p>
+        </div>
+        <div className="w-full bg-muted rounded-full h-1.5">
+          <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${score}%` }} />
+        </div>
+        {data.summary && <p className="text-xs text-muted-foreground">{data.summary}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Retention Risk Panel ────────────────────────────────────────────────────
+function RetentionRiskPanel() {
+  const { data, isLoading } = useQuery<{ atRisk: any[]; summary: any }>({
+    queryKey: ["/api/scheduling/retention-risk"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/retention-risk", { credentials: "include" });
+      if (!res.ok) return { atRisk: [], summary: {} };
+      return res.json();
+    },
+    retry: false,
+  });
+  if (isLoading) return <Skeleton className="h-32 w-full" />;
+  const atRisk = data?.atRisk ?? [];
+  const highRisk = atRisk.filter((c: any) => c.riskLevel === "high");
+  if (atRisk.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border p-4" data-testid="retention-risk-panel">
+      <div className="flex items-center gap-2 mb-3">
+        <TrendingDown className="h-4 w-4 text-red-500" />
+        <p className="font-semibold text-sm">Retention Risk</p>
+        {highRisk.length > 0 && (
+          <Badge className="text-xs bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20 ml-auto">
+            {highRisk.length} high risk
+          </Badge>
+        )}
+      </div>
+      <div className="space-y-2">
+        {atRisk.slice(0, 5).map((client: any, i: number) => (
+          <div key={i} className="flex items-center justify-between text-sm gap-2" data-testid={`retention-risk-${i}`}>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium truncate">{client.name || "Client"}</p>
+              <p className="text-xs text-muted-foreground">
+                {client.daysSinceLastBooking != null ? `${client.daysSinceLastBooking}d inactive` : "—"}
+                {client.cancellationRate != null ? ` · ${Math.round(client.cancellationRate * 100)}% cancel rate` : ""}
+              </p>
+            </div>
+            <Badge className={`text-xs shrink-0 ${
+              client.riskLevel === "high"
+                ? "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20"
+                : client.riskLevel === "medium"
+                ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20"
+                : "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20"
+            }`}>
+              {client.riskLevel}
+            </Badge>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface CoachIntelligence {
   coachId: string;
@@ -311,6 +405,12 @@ export default function AdminCoachCapacityPage() {
           )}
         </div>
       </Card>
+
+      {/* Health Score Banner */}
+      <HealthScoreBanner />
+
+      {/* Retention Risk */}
+      <RetentionRiskPanel />
 
       {/* Utilization Intelligence */}
       <UtilizationIntelligencePanel />

@@ -19,7 +19,7 @@ import {
   Calendar, Clock, Filter, MapPin, Trash2, Users, UserPlus, UserMinus,
   Plus, X, ChevronLeft, ChevronRight, CalendarDays, LayoutGrid,
   List, AlertCircle, CheckCircle2, Clock3, Dumbbell, SlidersHorizontal,
-  TrendingUp, DollarSign
+  TrendingUp, DollarSign, Sparkles, Star, Zap, Target
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import {
@@ -31,6 +31,162 @@ import {
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
 import { AddSessionDialog } from "@/components/add-session-dialog";
+
+// ─── Session Performance Badge (coaches only) ───────────────────────────────
+function SessionPerformanceBadge({ bookingId }: { bookingId: string }) {
+  const { data, isLoading } = useQuery<{ score: number; label: string; breakdown: any }>({
+    queryKey: ["/api/scheduling/session-performance", bookingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/scheduling/session-performance/${bookingId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: false,
+  });
+  if (isLoading) return <Skeleton className="h-6 w-24" />;
+  if (!data) return null;
+  const colorClass = data.score >= 75
+    ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20"
+    : data.score >= 50
+    ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20"
+    : "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20";
+  return (
+    <div className="flex items-center gap-2" data-testid="session-performance-badge">
+      <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">Performance</span>
+      <Badge className={`text-xs ${colorClass}`}>{data.label} · {data.score}</Badge>
+    </div>
+  );
+}
+
+// ─── Athlete Recommendations Panel (non-coach users) ────────────────────────
+function AthleteRecommendationsPanel({ userId, currentSessionId }: { userId?: string; currentSessionId: string }) {
+  const { data, isLoading } = useQuery<{ recommendations: any[]; hasProfile: boolean }>({
+    queryKey: ["/api/scheduling/athlete-recommendations", userId],
+    queryFn: async () => {
+      if (!userId) return { recommendations: [], hasProfile: false };
+      const res = await fetch(`/api/scheduling/athlete-recommendations/${userId}`, { credentials: "include" });
+      if (!res.ok) return { recommendations: [], hasProfile: false };
+      return res.json();
+    },
+    enabled: !!userId,
+    retry: false,
+  });
+  if (isLoading) return <Skeleton className="h-20 w-full" />;
+  if (!data || data.recommendations.length === 0) return null;
+
+  const others = data.recommendations.filter(r => r.sessionId !== currentSessionId).slice(0, 3);
+  if (others.length === 0) return null;
+
+  return (
+    <div className="space-y-2" data-testid="athlete-recommendations-panel">
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5 text-primary" />
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recommended For You</p>
+      </div>
+      <div className="space-y-2">
+        {others.map((r) => (
+          <div key={r.sessionId} className="flex items-start justify-between gap-2 p-2 rounded-md bg-primary/5 border border-primary/10">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium truncate">{r.serviceName}</p>
+              <p className="text-[10px] text-muted-foreground">{r.startAt ? format(new Date(r.startAt), "EEE MMM d · h:mm a") : ""}</p>
+              {r.matchReasons.length > 0 && (
+                <p className="text-[10px] text-primary mt-0.5">{r.matchReasons[0]}</p>
+              )}
+            </div>
+            <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20 shrink-0">
+              {r.matchScore}% match
+            </Badge>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Fill Campaign Button (coaches only, for open sessions) ──────────────────
+function CoachFillCampaignButton({ session }: { session: OpenSession }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<{ subject: string; smsBody: string; emailBody: string } | null>(null);
+  const count = session.participantCount || 0;
+  const max = session.maxParticipants || 6;
+  const openSpots = max - count;
+  if (openSpots === 0) return null;
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/scheduling/fill-campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          sessionId: session.id,
+          sessionName: session.service?.name || "Group Session",
+          startAt: session.startAt,
+          openSpots,
+          coachName: session.coach?.user ? `${session.coach.user.firstName} ${session.coach.user.lastName}` : "",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setDraft({ subject: data.subject, smsBody: data.smsBody, emailBody: data.emailBody });
+      setOpen(true);
+    },
+    onError: () => toast({ title: "Failed to generate campaign", variant: "destructive" }),
+  });
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full h-8 text-xs"
+        onClick={() => generateMutation.mutate()}
+        disabled={generateMutation.isPending}
+        data-testid={`button-fill-campaign-${session.id}`}
+      >
+        <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+        {generateMutation.isPending ? "Generating…" : `Generate Fill Campaign (${openSpots} spots)`}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI Fill Campaign Draft
+            </DialogTitle>
+          </DialogHeader>
+          {draft && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Subject</p>
+                <p className="p-2 bg-muted/50 rounded text-sm">{draft.subject}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">SMS</p>
+                <p className="p-2 bg-muted/50 rounded text-sm whitespace-pre-wrap">{draft.smsBody}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Email Body</p>
+                <p className="p-2 bg-muted/50 rounded text-sm whitespace-pre-wrap">{draft.emailBody}</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Close</Button>
+            <Button size="sm" onClick={() => { setOpen(false); toast({ title: "Campaign saved to drafts" }); }}>
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+              Saved to Drafts
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 type CalendarView = "month" | "week" | "day";
 
@@ -653,6 +809,7 @@ function SessionDetailModal({
               {isCoach && (
                 <>
                   <Separator />
+                  <SessionPerformanceBadge bookingId={session.id} />
                   <RevenuePanel bookingId={session.id} />
                 </>
               )}
@@ -663,10 +820,18 @@ function SessionDetailModal({
                   <AttendancePanel bookingId={session.id} participants={participants} sessionId={session.id} />
                 </>
               )}
+
+              {!isCoach && isAuthenticated && userId && (
+                <>
+                  <Separator />
+                  <AthleteRecommendationsPanel userId={userId} currentSessionId={session.id} />
+                </>
+              )}
             </div>
           </ScrollArea>
 
           <div className="px-6 py-4 border-t space-y-2">
+            {isCoach && <CoachFillCampaignButton session={session} />}
             {status === "Cancelled" ? (
               <Button className="w-full" disabled variant="outline">
                 <AlertCircle className="h-4 w-4 mr-1.5" />
