@@ -1,0 +1,343 @@
+Build Unified CEO Heartbeat + Agent Operating System
+
+Objective:
+TrainEfficiency currently has many working agents and background jobs, but they run as separate systems. Build a unified CEO Heartbeat layer that coordinates all agents, workflows, approvals, outcomes, and execution logs from one operating center.
+
+⸻
+
+Part 1 — Create CEO Heartbeat Service
+
+Create:
+
+server/services/ceo-heartbeat-service.ts
+
+Purpose:
+Run one central orchestration cycle that reviews the entire business state and delegates work across all agent systems.
+
+The CEO Heartbeat should coordinate:
+
+* Executive Agent
+* Retention Agent
+* Revenue Agent
+* Gmail Agent
+* Domain Outreach Service
+* AI Comms Center
+* Auto-Execution Engine
+* Outcome Intelligence Service
+* Scheduling Agent
+* Daily Operations Engine
+* TrainChat / Workout Builder signals
+* Workflow Orchestrator
+
+Run cadence:
+
+* Every 30 minutes
+* Manual trigger from admin UI
+
+⸻
+
+Part 2 — Unified Agent Operating Timeline
+
+Create one unified table:
+
+agent_operating_timeline
+
+Fields:
+
+* id
+* org_id
+* heartbeat_id
+* agent_name
+* system_name
+* action_type
+* action_status
+* priority
+* communication_domain
+* related_entity_type
+* related_entity_id
+* summary
+* decision_reason
+* requires_approval
+* approval_status
+* executed_at
+* outcome_status
+* error_message
+* metadata jsonb
+* created_at
+
+Every agent and job should write into this table.
+
+Goal:
+One timeline for:
+
+* recommendations
+* drafts created
+* approvals required
+* emails sent
+* replies detected
+* workflows executed
+* bookings created
+* revenue outcomes
+* errors
+* skipped actions
+
+⸻
+
+Part 3 — Replace Disconnected Cron Logic With Coordinated Heartbeat
+
+Do not delete existing jobs immediately.
+
+Instead:
+
+1. Keep existing crons.
+2. Add execution locks and idempotency.
+3. Route their outputs into the CEO Heartbeat timeline.
+4. Gradually let CEO Heartbeat become the central coordinator.
+
+Add lock table:
+
+agent_execution_locks
+
+Fields:
+
+* id
+* org_id
+* job_name
+* lock_key
+* acquired_at
+* expires_at
+* released_at
+* status
+
+Every recurring job must acquire a lock before running.
+
+⸻
+
+Part 4 — Add Idempotency Keys
+
+Add idempotency protection for external actions.
+
+For every email send, booking action, workflow execution, and outreach generation:
+
+* generate idempotency_key
+* check if already executed
+* skip duplicate execution
+* log skipped_duplicate in timeline
+
+Suggested key:
+
+orgId:agentName:actionType:entityId:messageType:dateBucket
+
+Acceptance:
+Server restart or duplicate cron cannot send the same email twice.
+
+⸻
+
+Part 5 — Outcome Bridge Completion
+
+Complete automatic outcome linking.
+
+When Gmail reply detected:
+
+* update agent_communication_outcomes
+* set outcome_status = replied
+* set replied_at
+* write timeline event
+
+When booking is created from lead:
+
+* update related outcome row
+* set outcome_status = booked_session
+* set booked_session_at
+* attach revenue_cents
+* write timeline event
+
+When deal stage changes:
+
+* update outcome row:
+    * proposal_requested
+    * proposal_sent
+    * proposal_accepted
+    * contract_signed
+    * converted
+    * lost
+
+When employment applicant stage changes:
+
+* update outcome row:
+    * interview_requested
+    * interviewed
+    * offer_sent
+    * hired
+    * rejected
+
+⸻
+
+Part 6 — CEO Priority Ranking
+
+The CEO Heartbeat should rank all open opportunities:
+
+* pending approvals
+* stale leads
+* at-risk clients
+* unsent drafts
+* revenue opportunities
+* failed automations
+* high-value prospects
+* overdue follow-ups
+* TrainChat/program adaptation risks
+
+Create priority score:
+
+priority_score =
+revenue_potential
+
+* urgency
+* risk
+* confidence
+* stage_importance
+
+* safety_risk
+
+Return top actions:
+
+* “Approve 23 low-risk follow-up emails”
+* “Contact 30 inactive clients”
+* “Review 5 failed automations”
+* “Generate outreach for 12 athletic directors”
+* “Follow up with leads older than 24 hours”
+
+⸻
+
+Part 7 — CEO Dashboard UI
+
+Create or update:
+
+/admin/ceo-heartbeat
+
+Show:
+
+System Status
+
+* Heartbeat running
+* Last heartbeat
+* Next heartbeat
+* Agents coordinated
+* Jobs locked
+* Errors
+
+Top Priorities
+
+Ranked action list with:
+
+* priority score
+* recommended action
+* reason
+* agent source
+* approval needed
+* estimated revenue impact
+
+Unified Timeline
+
+Filter by:
+
+* agent
+* domain
+* action type
+* status
+* outcome
+* approval state
+
+Execution Health
+
+* successful actions
+* failed actions
+* skipped duplicates
+* pending approvals
+* unresolved errors
+
+Manual Controls
+
+* Run heartbeat now
+* Pause all automation
+* Resume automation
+* Retry failed job
+* Recalculate priorities
+
+⸻
+
+Part 8 — Governance Integration
+
+CEO Heartbeat must respect:
+
+* Emergency pause
+* Domain autonomy levels
+* Daily email caps
+* First-contact approval rule
+* Sensitive language rules
+* Risk level gates
+* Time windows
+* Suppression/unsubscribe
+
+The CEO Heartbeat should never bypass the Autonomy Policy Engine.
+
+⸻
+
+Part 9 — Admin Action Audit Log
+
+Create:
+
+admin_action_audit_log
+
+Fields:
+
+* id
+* org_id
+* admin_user_id
+* action_type
+* target_table
+* target_id
+* before_state jsonb
+* after_state jsonb
+* ip_address
+* user_agent
+* created_at
+
+Log:
+
+* approvals
+* rejections
+* edits
+* sends
+* autonomy changes
+* emergency pause changes
+* workflow publishing
+* outcome manual updates
+
+⸻
+
+Part 10 — Verification Audit
+
+Return:
+
+1. Files changed
+2. Tables created
+3. Crons now locked
+4. Idempotency keys added
+5. Timeline events written
+6. Outcome bridge tests
+7. CEO dashboard screenshots
+8. Manual heartbeat test
+9. Duplicate-send prevention test
+10. Emergency pause test
+
+Acceptance Criteria:
+
+* One CEO Heartbeat coordinates all major agent systems.
+* Every agent action appears in one operating timeline.
+* No duplicate emails can be sent from cron overlap.
+* Replies/bookings/deals/hiring outcomes update communication outcomes automatically.
+* Admins can see top priorities from all agents in one dashboard.
+* Emergency pause stops future execution.
+* Admin actions are audited.
+* Existing agents still work.

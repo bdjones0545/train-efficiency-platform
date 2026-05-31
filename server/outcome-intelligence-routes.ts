@@ -8,7 +8,7 @@ import type { Express } from "express";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 import { agentCommunicationOutcomes, employmentApplicants } from "@shared/schema";
-import { isAuthenticated } from "./replitAuth";
+import { isAuthenticated } from "./replit_integrations/auth";
 
 async function getAdminOrgId(req: any): Promise<string | null> {
   const userId = req.user?.claims?.sub ?? req.user?.id;

@@ -4768,3 +4768,95 @@ export const employmentApplicants = pgTable("employment_applicants", {
 export const insertEmploymentApplicantSchema = createInsertSchema(employmentApplicants).omit({ id: true, createdAt: true, updatedAt: true });
 export type EmploymentApplicant = typeof employmentApplicants.$inferSelect;
 export type InsertEmploymentApplicant = z.infer<typeof insertEmploymentApplicantSchema>;
+
+// ─── CEO Heartbeat Runs ───────────────────────────────────────────────────────
+// Tracks every CEO Heartbeat orchestration cycle.
+
+export const ceoHeartbeatRuns = pgTable("ceo_heartbeat_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  triggeredBy: text("triggered_by").notNull().default("cron"), // cron | manual | api
+  status: text("status").notNull().default("running"), // running | completed | failed | paused
+  agentsCoordinated: integer("agents_coordinated").default(0),
+  actionsEvaluated: integer("actions_evaluated").default(0),
+  actionsAutoExecuted: integer("actions_auto_executed").default(0),
+  actionsPendingApproval: integer("actions_pending_approval").default(0),
+  prioritiesGenerated: integer("priorities_generated").default(0),
+  errorsEncountered: integer("errors_encountered").default(0),
+  durationMs: integer("duration_ms"),
+  summaryJson: jsonb("summary_json"),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+export const insertCeoHeartbeatRunSchema = createInsertSchema(ceoHeartbeatRuns).omit({ id: true, startedAt: true });
+export type CeoHeartbeatRun = typeof ceoHeartbeatRuns.$inferSelect;
+export type InsertCeoHeartbeatRun = z.infer<typeof insertCeoHeartbeatRunSchema>;
+
+// ─── Job Execution Locks ──────────────────────────────────────────────────────
+// Per-job distributed locks preventing duplicate cron execution.
+
+export const jobExecutionLocks = pgTable("job_execution_locks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  jobName: text("job_name").notNull(),
+  lockKey: text("lock_key").notNull().unique(),
+  acquiredAt: timestamp("acquired_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  releasedAt: timestamp("released_at"),
+  status: text("status").notNull().default("acquired"), // acquired | released | expired
+});
+export const insertJobExecutionLockSchema = createInsertSchema(jobExecutionLocks).omit({ id: true, acquiredAt: true });
+export type JobExecutionLock = typeof jobExecutionLocks.$inferSelect;
+
+// ─── Agent Operating Timeline ─────────────────────────────────────────────────
+// Unified single table for every agent action, recommendation, outcome,
+// approval, send, skip, error, and learning event across the entire platform.
+
+export const agentOperatingTimeline = pgTable("agent_operating_timeline", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  heartbeatId: text("heartbeat_id"),
+  agentName: text("agent_name").notNull(),
+  systemName: text("system_name"),
+  actionType: text("action_type").notNull(), // recommendation | draft_created | approval_required | email_sent | reply_detected | workflow_executed | booking_created | revenue_outcome | error | skipped_duplicate | auto_executed | learning_event | program_generated | heartbeat_cycle
+  actionStatus: text("action_status").notNull().default("pending"), // pending | completed | failed | skipped | requires_approval | approved | rejected
+  priority: integer("priority").default(50),
+  communicationDomain: text("communication_domain"),
+  relatedEntityType: text("related_entity_type"), // gmail_action | lead | prospect | booking | deal | applicant | workflow | program
+  relatedEntityId: text("related_entity_id"),
+  summary: text("summary"),
+  decisionReason: text("decision_reason"),
+  requiresApproval: boolean("requires_approval").default(false),
+  approvalStatus: text("approval_status"), // pending | approved | rejected | auto_approved
+  executedAt: timestamp("executed_at"),
+  outcomeStatus: text("outcome_status"),
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAgentOperatingTimelineSchema = createInsertSchema(agentOperatingTimeline).omit({ id: true, createdAt: true });
+export type AgentOperatingTimelineEntry = typeof agentOperatingTimeline.$inferSelect;
+export type InsertAgentOperatingTimelineEntry = z.infer<typeof insertAgentOperatingTimelineSchema>;
+
+// ─── Admin Action Audit Log ───────────────────────────────────────────────────
+// Immutable record of every human admin action in the platform.
+
+export const adminActionAuditLog = pgTable("admin_action_audit_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  adminUserId: text("admin_user_id").notNull(),
+  adminEmail: text("admin_email"),
+  actionType: text("action_type").notNull(), // approval | rejection | edit | send | autonomy_change | emergency_pause | workflow_publish | outcome_update | bulk_approve | heartbeat_trigger | settings_change
+  targetTable: text("target_table"),
+  targetId: text("target_id"),
+  beforeState: jsonb("before_state"),
+  afterState: jsonb("after_state"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAdminActionAuditLogSchema = createInsertSchema(adminActionAuditLog).omit({ id: true, createdAt: true });
+export type AdminActionAuditLogEntry = typeof adminActionAuditLog.$inferSelect;
+export type InsertAdminActionAuditLogEntry = z.infer<typeof insertAdminActionAuditLogSchema>;

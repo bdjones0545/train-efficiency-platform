@@ -21184,6 +21184,10 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── CEO Heartbeat Routes ────────────────────────────────────────────────────
+  const { registerCeoHeartbeatRoutes } = await import("./ceo-heartbeat-routes");
+  await registerCeoHeartbeatRoutes(app);
+
   // Ecosystem analytics
   app.get("/api/marketplace/ecosystem", async (req, res) => {
     try {

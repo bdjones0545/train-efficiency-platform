@@ -522,6 +522,13 @@ app.use((req, res, next) => {
   const { startWorkflowJobRunner } = await import("./workflow-job-runner");
   startWorkflowJobRunner();
 
+  // ─── CEO Heartbeat — Unified Orchestration Layer ─────────────────────────
+  // Coordinates all agents every 30 minutes. Also runs 3 minutes after startup
+  // to generate the first priority list and populate the operating timeline.
+  const { startCeoHeartbeat, runHeartbeatForAllOrgs } = await import("./services/ceo-heartbeat-service");
+  startCeoHeartbeat();
+  setTimeout(() => runHeartbeatForAllOrgs("startup").catch(() => {}), 3 * 60 * 1000);
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
