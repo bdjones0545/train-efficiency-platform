@@ -281,6 +281,35 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  // ─── Phase 10: Security Hardening ─────────────────────────────────────────
+  // Broad write-auth middleware for all Phase 4-9 routes that previously relied
+  // solely on internal orgId checks without explicit session enforcement.
+  const PHASE10_PROTECTED_WRITE_PATHS = [
+    "/api/workforce/",
+    "/api/marketplace/runtimes/bootstrap",
+    "/api/marketplace/telemetry",
+    "/api/marketplace/trials/start",
+    "/api/marketplace/ecosystem/refresh",
+    "/api/marketplace/benchmarks/refresh",
+    "/api/marketplace/case-studies",
+    "/api/marketplace/reputation/refresh",
+    "/api/marketplace/verification/",
+    "/api/developer/register",
+    "/api/developer/submit",
+    "/api/developer/submissions",
+    "/api/developer/validate",
+    "/api/beta/",
+    "/api/feedback",
+  ];
+  app.use((req: any, res: any, next: any) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
+    const needsAuth = PHASE10_PROTECTED_WRITE_PATHS.some(p => req.path.startsWith(p));
+    if (needsAuth && !req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    next();
+  });
+
   const RESET_NEUTRAL_MSG = "If an account exists for that email, a password reset link has been sent.";
   const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
   const resetRateLimitByIp = new Map<string, { count: number; resetAt: number }>();
@@ -21704,6 +21733,10 @@ Respond with this exact JSON structure:
       res.status(500).json({ message: "Failed to fetch learning events" });
     }
   });
+
+  // ─── Phase 10 Routes ──────────────────────────────────────────────────────
+  const { registerPhase10Routes } = await import("./phase10-routes");
+  await registerPhase10Routes(app);
 
   return httpServer;
 }

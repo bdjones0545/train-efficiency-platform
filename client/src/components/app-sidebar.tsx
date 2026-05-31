@@ -71,6 +71,7 @@ import {
   Wrench,
   Eye,
   Globe,
+  Rocket,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -182,6 +183,7 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
       { title: "Agent Ops Monitor", simplifiedTitle: "System Health", url: "/admin/agent-ops", icon: ShieldAlert, testId: "nav-agent-ops" },
       { title: "Trigger Audit", simplifiedTitle: "Activity Log", url: "/admin/trigger-audit", icon: Activity, testId: "nav-trigger-audit" },
       { title: "AI Governance", simplifiedTitle: "Governance", url: "/admin/ai-governance", icon: Shield, testId: "nav-ai-governance" },
+      { title: "Launch Readiness", simplifiedTitle: "Launch", url: "/admin/launch-readiness", icon: Rocket, testId: "nav-launch-readiness" },
     ],
   },
   {

@@ -4490,3 +4490,95 @@ export const agentUpgradePaths = pgTable("agent_upgrade_paths", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 export type AgentUpgradePath = typeof agentUpgradePaths.$inferSelect;
+
+// ─── Phase 10: Beta Program Infrastructure ────────────────────────────────────
+
+export const betaPrograms = pgTable("beta_programs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").default("active"),
+  startDate: timestamp("start_date").defaultNow(),
+  endDate: timestamp("end_date"),
+  targetCoaches: integer("target_coaches").default(10),
+  targetGymOwners: integer("target_gym_owners").default(10),
+  targetFacilities: integer("target_facilities").default(10),
+  targetConsultants: integer("target_consultants").default(5),
+  targetDevelopers: integer("target_developers").default(5),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type BetaProgram = typeof betaPrograms.$inferSelect;
+
+export const betaParticipants = pgTable("beta_participants", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  programId: text("program_id").notNull(),
+  orgId: text("org_id"),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  role: text("role").notNull(),
+  organization: text("organization"),
+  industry: text("industry"),
+  status: text("status").default("active"),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  agentsInstalled: integer("agents_installed").default(0),
+  reviewsSubmitted: integer("reviews_submitted").default(0),
+  feedbackScore: doublePrecision("feedback_score"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type BetaParticipant = typeof betaParticipants.$inferSelect;
+
+export const betaFeedback = pgTable("beta_feedback", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  programId: text("program_id").notNull(),
+  participantId: text("participant_id"),
+  category: text("category").notNull(),
+  rating: integer("rating"),
+  feedback: text("feedback").notNull(),
+  agentId: text("agent_id"),
+  featureArea: text("feature_area"),
+  resolved: boolean("resolved").default(false),
+  resolution: text("resolution"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type BetaFeedbackItem = typeof betaFeedback.$inferSelect;
+
+export const betaInvites = pgTable("beta_invites", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  programId: text("program_id"),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  organization: text("organization"),
+  industry: text("industry"),
+  role: text("role").notNull(),
+  inviteStatus: text("invite_status").default("pending"),
+  activationStatus: text("activation_status").default("not_activated"),
+  invitedAt: timestamp("invited_at").defaultNow(),
+  acceptedAt: timestamp("accepted_at"),
+  feedbackScore: doublePrecision("feedback_score"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type BetaInvite = typeof betaInvites.$inferSelect;
+
+export const inAppFeedback = pgTable("in_app_feedback", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id"),
+  userId: text("user_id"),
+  category: text("category").notNull(),
+  severity: text("severity").default("medium"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  status: text("status").default("open"),
+  resolution: text("resolution"),
+  agentId: text("agent_id"),
+  pageContext: text("page_context"),
+  reporter: text("reporter"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type InAppFeedbackItem = typeof inAppFeedback.$inferSelect;

@@ -1,0 +1,577 @@
+PHASE 10 — RC-2 HARDENING, BETA LAUNCH & REAL-WORLD VALIDATION
+
+Objective
+
+RC-1 proved the platform works.
+
+Phase 10 is not a feature phase.
+
+Phase 10 is a validation phase.
+
+The goal is to move TrainEfficiency from:
+
+“Technically Complete”
+
+to
+
+“Trusted by Real Organizations”
+
+Success will be measured by:
+
+Real Developers
+
+Real Organizations
+
+Real Agent Installations
+
+Real Reviews
+
+Real Revenue
+
+Real Outcomes
+
+No new major platform subsystems should be introduced unless required for production readiness.
+
+PART 1 — Security Hardening
+
+Objective:
+
+Eliminate remaining security and authorization gaps.
+
+Audit every endpoint added in Phases 4–9.
+
+Required:
+
+Apply requireRole middleware to all execution, governance, approval, billing, and marketplace administration routes.
+
+Verify:
+
+Organization Admin
+
+Coach
+
+Developer
+
+Read-only User
+
+Permissions are enforced consistently.
+
+Create:
+
+GET /api/security/audit
+
+Return:
+
+Authorization coverage
+
+Missing middleware
+
+Role mapping
+
+Security score
+
+PART 2 — Zod Validation Framework
+
+Objective:
+
+Remove unvalidated request bodies.
+
+Audit all POST, PUT, PATCH routes introduced during:
+
+Phase 4
+
+Phase 5
+
+Phase 6
+
+Phase 7
+
+Phase 8
+
+Phase 9
+
+Create schemas for:
+
+Agent definitions
+
+Execution plans
+
+Reviews
+
+Marketplace submissions
+
+Approval rules
+
+Runtime bootstrap requests
+
+Trial requests
+
+Simulation requests
+
+Developer registration
+
+Return:
+
+Validation coverage %
+
+Validation failures
+
+Schema inventory
+
+No route should accept arbitrary JSON.
+
+PART 3 — Pagination & Query Performance
+
+Objective:
+
+Prepare for scale.
+
+Audit all endpoints returning collections.
+
+Implement:
+
+limit
+
+cursor
+
+page
+
+sort
+
+filters
+
+Prioritize:
+
+reviews
+
+learning events
+
+executions
+
+activity feeds
+
+agent runtimes
+
+marketplace listings
+
+Add indexes where required.
+
+Create:
+
+GET /api/performance/query-audit
+
+Return:
+
+Slow queries
+
+Missing indexes
+
+Pagination coverage
+
+Performance score
+
+PART 4 — Stripe Revenue Integration
+
+Objective:
+
+Replace simulated marketplace revenue with real revenue events.
+
+Create:
+
+Stripe webhook handlers
+
+Populate:
+
+agentRevenueEvents
+
+royaltyDistributions
+
+developerRevenue
+
+marketplaceAnalytics
+
+Track:
+
+Install Purchases
+
+Subscriptions
+
+Usage Revenue
+
+Marketplace Revenue
+
+Developer Royalties
+
+Display:
+
+Projected Revenue
+
+Actual Revenue
+
+Separately
+
+Never combine.
+
+PART 5 — Load Testing
+
+Create:
+
+Production load test suite.
+
+Scenarios:
+
+100 organizations
+
+1,000 agents
+
+10,000 reviews
+
+100,000 executions
+
+1,000,000 activity events
+
+Measure:
+
+Latency
+
+Failure rates
+
+DB performance
+
+Memory usage
+
+API throughput
+
+Create:
+
+GET /api/performance/load-test
+
+Return:
+
+Capacity estimates
+
+Breaking points
+
+Optimization recommendations
+
+PART 6 — Real Beta Program Infrastructure
+
+Create:
+
+beta_programs
+
+beta_participants
+
+beta_feedback
+
+Track:
+
+Organizations
+
+Developers
+
+Agents Published
+
+Installs
+
+Reviews
+
+Revenue
+
+Feedback
+
+Statuses:
+
+Invited
+
+Active
+
+Completed
+
+Withdrawn
+
+PART 7 — In-App Feedback System
+
+Create:
+
+/feedback
+
+Allow:
+
+Bug Reports
+
+Feature Requests
+
+Agent Issues
+
+Marketplace Issues
+
+Governance Concerns
+
+Track:
+
+severity
+
+category
+
+status
+
+reporter
+
+resolution
+
+This becomes the beta feedback engine.
+
+PART 8 — Developer Success Dashboard
+
+Create:
+
+GET /api/developer/success
+
+Track:
+
+Installs
+
+Revenue
+
+Royalties
+
+Reviews
+
+Benchmark Rank
+
+Reputation
+
+Trust
+
+Agent Growth
+
+Recommendations
+
+Purpose:
+
+Help developers succeed.
+
+PART 9 — Marketplace Quality Monitoring
+
+Create:
+
+GET /api/marketplace/quality
+
+Track:
+
+Review authenticity
+
+Agent performance degradation
+
+Certification compliance
+
+Trust declines
+
+Adoption drops
+
+Suspicious activity
+
+Flag:
+
+Agents needing review
+
+Agents needing recertification
+
+Marketplace risks
+
+PART 10 — Beta Success Metrics
+
+Create:
+
+GET /api/platform/beta-metrics
+
+Track:
+
+Organizations Active
+
+Developers Active
+
+Published Agents
+
+Installed Agents
+
+Reviews
+
+Marketplace Revenue
+
+Developer Revenue
+
+Agent Retention
+
+Trial Conversion
+
+Execution Volume
+
+Outcome Attribution
+
+These become launch metrics.
+
+PART 11 — Launch Readiness Dashboard
+
+Route:
+
+/admin/launch-readiness
+
+Categories:
+
+Security
+
+Validation
+
+Performance
+
+Marketplace
+
+Revenue
+
+Governance
+
+Beta Adoption
+
+Developer Activity
+
+Data Quality
+
+Support Readiness
+
+Each category:
+
+0–100 score
+
+Status:
+
+Not Ready
+
+Needs Work
+
+Ready
+
+Launch Ready
+
+Return overall launch score.
+
+PART 12 — Beta Cohort Recruitment Engine
+
+Create:
+
+beta_invites
+
+Track:
+
+Name
+
+Organization
+
+Industry
+
+Role
+
+Invite Status
+
+Activation Status
+
+Feedback Score
+
+Suggested initial targets:
+
+10 coaches
+
+10 gym owners
+
+10 sports performance facilities
+
+5 consultants
+
+5 developers
+
+Purpose:
+
+Recruit first ecosystem participants.
+
+PART 13 — RC-2 Production Readiness Audit
+
+Create:
+
+POST /api/platform/rc2-audit
+
+Run:
+
+Security audit
+
+Validation audit
+
+Load audit
+
+Revenue audit
+
+Marketplace audit
+
+Governance audit
+
+Return:
+
+PASS
+
+CONDITIONAL PASS
+
+FAIL
+
+Generate:
+
+Issue list
+
+Severity ranking
+
+Fix roadmap
+
+PART 14 — Success Criteria
+
+At completion:
+
+All critical routes have authorization.
+
+All major routes have validation.
+
+Large datasets are paginated.
+
+Stripe revenue is real.
+
+Developer royalties are real.
+
+Load limits are known.
+
+Beta organizations can onboard.
+
+Feedback is collected.
+
+Marketplace quality is monitored.
+
+Launch readiness is measurable.
+
+RC-2 audit passes.
+
+PART 15 — Final Goal
+
+Transform TrainEfficiency from a technically complete platform into a launch-ready ecosystem.
+
+The primary objective is no longer building.
+
+The primary objective is proving:
+
+Developers build agents.
+
+Organizations install agents.
+
+Agents create value.
+
+Developers earn revenue.
+
+The marketplace sustains itself.
+
+This phase marks the transition from product development to ecosystem validation and beta launch.
