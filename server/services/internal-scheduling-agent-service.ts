@@ -391,6 +391,7 @@ export async function suggestSlotsForLead(opts: {
       approvalRequired: true,
       status: "proposed",
       createdByAgent: "internal_scheduling_agent",
+      communicationDomain: "athlete_lead",
     } as any)
     .returning();
 
@@ -563,6 +564,7 @@ export async function confirmBookingFromReply(opts: {
       approvalRequired: true,
       status: "proposed",
       createdByAgent: "internal_scheduling_agent",
+      communicationDomain: "athlete_lead",
     } as any)
     .returning();
 

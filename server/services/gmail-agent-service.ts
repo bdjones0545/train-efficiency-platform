@@ -702,6 +702,7 @@ export async function runLeadReplyRecovery(orgId: string): Promise<{
           approvalRequired: true,
           status: "proposed",
           createdByAgent: "lead_reply_recovery",
+          communicationDomain: dealId ? "team_training" : "athlete_lead",
         });
         actionsQueued++;
       }
@@ -733,6 +734,7 @@ async function logGmailAction(orgId: string, data: {
   createdByAgent?: string;
   approvedBy?: string;
   executedAt?: Date;
+  communicationDomain?: string;
 }): Promise<void> {
   try {
     await db.insert(gmailAgentActions).values({
@@ -753,6 +755,7 @@ async function logGmailAction(orgId: string, data: {
       createdByAgent: data.createdByAgent,
       approvedBy: data.approvedBy,
       executedAt: data.executedAt,
+      communicationDomain: data.communicationDomain ?? (data.dealId ? "team_training" : "athlete_lead"),
     });
   } catch (e) {
     console.error("[gmail-agent] log action error:", e);

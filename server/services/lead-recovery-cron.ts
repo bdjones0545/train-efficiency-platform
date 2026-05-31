@@ -212,6 +212,7 @@ export async function runLeadRecoveryCron(): Promise<RecoveryCronResult> {
             approvalRequired: true,
             status: "proposed",
             createdByAgent: "recovery_cron",
+            communicationDomain: "athlete_lead",
             result: {
               fullBody: draft.body,
               followUpStage: profile.followUpStage,

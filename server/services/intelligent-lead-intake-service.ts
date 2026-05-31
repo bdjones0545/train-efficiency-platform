@@ -509,6 +509,7 @@ export async function runIntelligentLeadIntakePipeline(data: RawIntakeData): Pro
           approvalRequired: true,
           status: "proposed",
           createdByAgent: "intelligent_intake_pipeline",
+          communicationDomain: data.parentName ? "parent_lead" : "athlete_lead",
           result: {
             fullBody: draftBody,
             aiSummary,

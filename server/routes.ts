@@ -11313,6 +11313,28 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
         sent = false;
         activityDesc = `Draft saved: "${subject || "Follow-up"}"`;
         activityType = "note_added";
+        // Mirror draft into AI Comms Center so it appears in the Team Training tab
+        const toEmail = prospect?.decisionMakerEmail || prospect?.contactEmail;
+        if (toEmail && channel === "email") {
+          try {
+            await db.insert(gmailAgentActions).values({
+              orgId: profile.organizationId,
+              actionType: "propose_draft:team_training_outreach",
+              dealId: deal.id,
+              recipientEmail: toEmail,
+              subject: subject || "Follow-up",
+              bodyPreview: message.slice(0, 500),
+              riskLevel: "low",
+              approvalRequired: true,
+              status: "proposed",
+              createdByAgent: "team_training_deal_engine",
+              communicationDomain: "team_training",
+              result: { outreachDraftId: draft.id, outreachTone, aiStrategyTag, ctaType } as any,
+            } as any);
+          } catch (e: any) {
+            console.error("[team-training/send-outreach] gmail_agent_actions mirror error:", e.message);
+          }
+        }
       } else if (channel === "email") {
         const toEmail = prospect?.decisionMakerEmail || prospect?.contactEmail;
         if (!toEmail) return res.status(400).json({ message: "No email address on file for this prospect" });
@@ -18186,6 +18208,7 @@ Respond with this exact JSON structure:
         approvalRequired: true,
         status: "proposed",
         createdByAgent: "test_mode",
+        communicationDomain: "athlete_lead",
       });
 
       console.log(`[gmail/test-sync] orgId=${orgId} — injected test payloads`);
@@ -21347,7 +21370,7 @@ Respond with this exact JSON structure:
         const { messageId, threadId } = await sendEmail({ orgId, to: p.recipientEmail, subject: p.subject ?? "(no subject)", body: p.bodyPreview ?? "", leadId: p.leadId ?? undefined, dealId: p.dealId ?? undefined });
         await Promise.all([
           db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, p.id)),
-          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "approved", reviewedBy: userId, outcome: "sent" }),
+          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "approved", reviewedBy: userId, outcome: "sent", communicationDomain: (p as any).communicationDomain ?? "athlete_lead" } as any),
         ]);
         return p.id;
       }));
@@ -21371,7 +21394,7 @@ Respond with this exact JSON structure:
       await Promise.all(proposals.map(async (p) => {
         await Promise.all([
           db.update(gmailAgentActions).set({ status: "rejected", approvedBy: userId }).where(eq(gmailAgentActions.id, p.id)),
-          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, reviewedBy: userId }),
+          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, reviewedBy: userId, communicationDomain: (p as any).communicationDomain ?? "athlete_lead" } as any),
         ]);
       }));
       res.json({ rejected: proposals.length });
