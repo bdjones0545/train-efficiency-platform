@@ -1,0 +1,394 @@
+10 HUMAN MARKETPLACE VALIDATION PROTOCOL
+
+Objective
+
+Stop validating software.
+
+Start validating humans.
+
+This test is designed to answer the only question that matters:
+
+Can people who are not Bryan Jones successfully participate in the TrainEfficiency Agent Economy?
+
+No major new infrastructure should be built.
+
+Use existing systems:
+
+* Human Validation Center
+* First 10 Dashboard
+* Activation Queue
+* Participant Tracking
+* Feedback System
+* Founder Actions
+* Revenue Countdown
+* Validation Reports
+
+PART 1 — Cohort Selection
+
+Recruit exactly 10 external participants.
+
+Group A — Agent Creators (5)
+
+Target:
+
+2 Strength Coaches
+
+1 Gym Owner
+
+1 Consultant
+
+1 Service Business Owner
+
+Requirements:
+
+No prior exposure to platform internals
+
+No access to source code
+
+No special onboarding
+
+Goal:
+
+Create and publish an agent.
+
+Group B — Agent Consumers (5)
+
+Target:
+
+2 Sports Performance Facilities
+
+1 Gym
+
+1 Coach
+
+1 Consultant
+
+Goal:
+
+Install and use an agent.
+
+PART 2 — Founder Rules
+
+Bryan may:
+
+Answer questions
+
+Fix platform bugs
+
+Observe behavior
+
+Bryan may NOT:
+
+Build agents for participants
+
+Publish agents for participants
+
+Install agents for participants
+
+Perform workflow steps for participants
+
+The platform must do the work.
+
+PART 3 — Developer Test
+
+Each creator receives:
+
+Developer account
+
+Documentation
+
+Sandbox
+
+Developer Portal
+
+Task:
+
+Create one useful agent.
+
+Examples:
+
+Lead Recovery Agent
+
+Recruiting Agent
+
+Retention Agent
+
+Parent Communication Agent
+
+Membership Recovery Agent
+
+Track:
+
+Time to first login
+
+Time to first validation
+
+Time to first submission
+
+Time to publication
+
+Questions asked
+
+Errors encountered
+
+Support requests
+
+Success Criteria:
+
+Agent submitted without founder intervention.
+
+PART 4 — Organization Test
+
+Each organization receives:
+
+Marketplace access
+
+Agent Store access
+
+Documentation
+
+Task:
+
+Install one agent.
+
+Execute one workflow.
+
+Generate one outcome.
+
+Leave one review.
+
+Track:
+
+Time to first install
+
+Time to first execution
+
+Time to first value
+
+Time to first review
+
+Confusion points
+
+Support requests
+
+Success Criteria:
+
+Organization completes installation and execution independently.
+
+PART 5 — Friction Interviews
+
+Every participant completes:
+
+What confused you most?
+
+What did you expect?
+
+What did you love?
+
+What almost made you quit?
+
+Would you use it again?
+
+Would you recommend it?
+
+Would you pay for it?
+
+Would you participate again?
+
+Store in:
+
+participant_feedback
+
+Generate:
+
+Developer Friction Report
+
+Organization Friction Report
+
+PART 6 — Validation Tasks
+
+Developer Tasks
+
+Register
+
+Create agent
+
+Validate agent
+
+Submit agent
+
+Publish agent
+
+Install own agent
+
+View analytics
+
+Consumer Tasks
+
+Browse marketplace
+
+Install agent
+
+Run workflow
+
+Generate outcome
+
+Submit review
+
+Refer another user
+
+Track completion rates.
+
+PART 7 — Human Validation Score
+
+Each participant receives:
+
+Activation Score
+
+Completion Score
+
+Satisfaction Score
+
+Recommendation Score
+
+Return Intent Score
+
+Overall Human Validation Score
+
+Scale:
+
+0–100
+
+PART 8 — Marketplace Validation Metrics
+
+Track:
+
+External Developers Invited
+
+External Developers Activated
+
+External Agents Published
+
+External Organizations Activated
+
+External Installs
+
+External Reviews
+
+External Referrals
+
+External Revenue Events
+
+External Royalty Events
+
+External Repeat Publishers
+
+External Repeat Installers
+
+No seeded data allowed.
+
+PART 9 — Success Thresholds
+
+Validation succeeds if:
+
+3+ developers publish agents
+
+3+ organizations install agents
+
+3+ reviews submitted
+
+1+ referral occurs
+
+1+ revenue event occurs
+
+1+ royalty event occurs
+
+1+ developer wants to publish again
+
+Average satisfaction > 7/10
+
+Average recommendation score > 7/10
+
+PART 10 — Failure Conditions
+
+Validation fails if:
+
+Developers cannot publish without founder help
+
+Organizations cannot install without founder help
+
+Reviews are not generated
+
+No value is produced
+
+No participant would return
+
+No participant would recommend the platform
+
+Document every failure.
+
+PART 11 — Final Validation Report
+
+Generate:
+
+Developer Success Rate
+
+Organization Success Rate
+
+Average Time To Publish
+
+Average Time To Install
+
+Average Time To Value
+
+Average Satisfaction
+
+Average Recommendation Score
+
+Top Confusion Points
+
+Top Requested Features
+
+Top Reasons For Success
+
+Top Reasons For Failure
+
+Most Valuable Agent
+
+Most Successful Organization
+
+Most Successful Developer
+
+PART 12 — The Final Question
+
+At the conclusion of the 10-human test answer:
+
+Did someone other than Bryan Jones create value on the platform?
+
+Evidence Required:
+
+Published agent
+
+Installed agent
+
+Review
+
+Outcome
+
+Revenue or royalty event
+
+Verdict Options:
+
+NOT VALIDATED
+
+PARTIALLY VALIDATED
+
+VALIDATED
+
+STRONGLY VALIDATED
+
+Do not build another major marketplace subsystem until this report is complete.
+
+The next milestone is not architecture.
+
+The next milestone is proof.

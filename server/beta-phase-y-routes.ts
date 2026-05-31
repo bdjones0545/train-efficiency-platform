@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 function rows(r: unknown): any[] { if (Array.isArray(r)) return r; const x = r as any; return Array.isArray(x?.rows) ? x.rows : []; }
 function row0(r: unknown): any { return rows(r)[0] ?? {}; }
 function n(v: unknown): number { return Number(v ?? 0); }
+function avg(arr: number[]): number | null { return arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10 : null; }
 
 const SEEDED_ORG_ID = "TrainEfficiency";
 const SEEDED_AGENT_IDS = ["growth_agent","recovery_agent","nutrition_agent","performance_agent",
@@ -36,6 +37,51 @@ const PLAYBOOK_TEMPLATES: Record<string, string[]> = {
   ],
 };
 
+// ─── Part 7: Per-participant Human Validation Score ─────────────────────────
+// Returns 5-dimension score per participant: Activation, Completion, Satisfaction, Recommendation, Return Intent
+function computeParticipantScore(p: any, fb: any | null): {
+  activationScore: number;
+  completionScore: number;
+  satisfactionScore: number | null;
+  recommendationScore: number | null;
+  returnIntentScore: number | null;
+  overallScore: number;
+} {
+  // Activation Score (0-100) — how far along the journey
+  const STATUS_SCORES: Record<string, number> = {
+    invited: 10, activated: 25, published: 55, installed: 55, reviewed: 75, generating_revenue: 100,
+  };
+  const activationScore = STATUS_SCORES[p.status] ?? 10;
+
+  // Completion Score (0-100) — % of expected milestones hit
+  const isDev = p.type === 'developer';
+  const devMilestones = [p.activated_at, p.first_publish_at, p.first_install_at, p.first_review_at, p.first_revenue_at];
+  const orgMilestones = [p.activated_at, p.first_install_at, p.first_value_at, p.first_review_at, p.first_revenue_at];
+  const milestones = isDev ? devMilestones : orgMilestones;
+  const completionScore = Math.round(milestones.filter(Boolean).length / milestones.length * 100);
+
+  // Satisfaction Score (0-100) — overall_rating × 10
+  const satisfactionScore = fb?.overall_rating != null ? n(fb.overall_rating) * 10 : null;
+
+  // Recommendation Score (0-100) — recommend boolean
+  const recommendationScore = fb != null ? (fb.recommend ? 100 : 0) : null;
+
+  // Return Intent Score (0-100) — use_again (org) or publish_another (dev)
+  const intentField = isDev ? fb?.publish_another : fb?.use_again;
+  const returnIntentScore = fb != null ? (intentField ? 100 : 0) : null;
+
+  // Overall Score — weighted avg of available scores
+  const scored: number[] = [activationScore * 0.25, completionScore * 0.25];
+  let weightUsed = 0.5;
+  if (satisfactionScore !== null)  { scored.push(satisfactionScore  * 0.25); weightUsed += 0.25; }
+  if (recommendationScore !== null){ scored.push(recommendationScore * 0.125); weightUsed += 0.125; }
+  if (returnIntentScore !== null)  { scored.push(returnIntentScore   * 0.125); weightUsed += 0.125; }
+  const rawOverall = scored.reduce((a, b) => a + b, 0) / weightUsed;
+  const overallScore = Math.round(rawOverall);
+
+  return { activationScore, completionScore, satisfactionScore, recommendationScore, returnIntentScore, overallScore };
+}
+
 export async function registerBetaPhaseYRoutes(app: Express) {
 
   // ─── Playbooks CRUD ───────────────────────────────────────────────────────
@@ -46,10 +92,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
   });
 
   app.get("/api/first10-playbooks/templates", async (_req, res) => {
-    res.json({
-      types: Object.keys(PLAYBOOK_TEMPLATES),
-      templates: PLAYBOOK_TEMPLATES,
-    });
+    res.json({ types: Object.keys(PLAYBOOK_TEMPLATES), templates: PLAYBOOK_TEMPLATES });
   });
 
   app.post("/api/first10-playbooks", async (req, res) => {
@@ -82,7 +125,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to update playbook entry" }); }
   });
 
-  // ─── Part 3: Activation Queue ─────────────────────────────────────────────
+  // ─── Activation Queue ──────────────────────────────────────────────────────
   app.get("/api/platform/activation-queue", async (_req, res) => {
     try {
       const participants = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
@@ -107,45 +150,31 @@ export async function registerBetaPhaseYRoutes(app: Express) {
       const now = Date.now();
       const queue = participants.map((p: any) => {
         const stageScore = STAGE_SCORE[p.status] ?? 10;
-        const daysSinceUpdate = p.updated_at
-          ? Math.floor((now - new Date(p.updated_at).getTime()) / 86400000)
-          : Math.floor((now - new Date(p.created_at).getTime()) / 86400000);
+        const lastActivity = p.updated_at || p.created_at;
+        const daysSinceUpdate = lastActivity
+          ? Math.floor((now - new Date(lastActivity).getTime()) / 86400000)
+          : 0;
         const stuckThreshold = STUCK_THRESHOLD_DAYS[p.status] ?? 5;
         const isStuck = daysSinceUpdate >= stuckThreshold;
         const hasFeedback = hasFb.has(p.id);
-
-        // Urgency: stuck people first, then by proximity to completion
         const urgency = isStuck ? 100 - stageScore + 50 : 100 - stageScore;
 
         return {
-          id: p.id,
-          name: p.external_name,
-          type: p.type,
-          status: p.status,
-          stageScore,
-          daysSinceUpdate,
-          isStuck,
-          hasFeedback,
-          urgency,
+          id: p.id, name: p.external_name, type: p.type, status: p.status,
+          subtype: p.subtype, stageScore, daysSinceUpdate, isStuck, hasFeedback, urgency,
           nextAction: NEXT_ACTION[p.status] ?? "Follow up",
-          organization: p.organization,
-          email: p.external_email,
+          organization: p.organization, email: p.external_email,
         };
       }).sort((a: any, b: any) => b.urgency - a.urgency);
 
-      const stuck     = queue.filter((q: any) => q.isStuck);
-      const closestToPublish  = queue.filter((q: any) => q.type === 'developer' && ['activated','invited'].includes(q.status)).slice(0, 3);
-      const closestToInstall  = queue.filter((q: any) => q.type === 'org'       && ['activated','invited'].includes(q.status)).slice(0, 3);
-      const closestToReview   = queue.filter((q: any) => q.status === 'installed').slice(0, 3);
-
       res.json({
         queue,
-        stuck: stuck.length,
-        total: participants.length,
-        closestToPublish,
-        closestToInstall,
-        closestToReview,
-        noParticipants: participants.length === 0,
+        stuck:            queue.filter((q: any) => q.isStuck).length,
+        total:            participants.length,
+        closestToPublish: queue.filter((q: any) => q.type === 'developer' && ['activated','invited'].includes(q.status)).slice(0, 3),
+        closestToInstall: queue.filter((q: any) => q.type === 'org'       && ['activated','invited'].includes(q.status)).slice(0, 3),
+        closestToReview:  queue.filter((q: any) => q.status === 'installed').slice(0, 3),
+        noParticipants:   participants.length === 0,
       });
     } catch (e) {
       console.error("[activation-queue]", e);
@@ -153,7 +182,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
     }
   });
 
-  // ─── Part 4: First Revenue Countdown ──────────────────────────────────────
+  // ─── First Revenue Countdown ───────────────────────────────────────────────
   app.get("/api/platform/first-revenue-countdown", async (_req, res) => {
     try {
       const ra = row0(await db.execute(sql`
@@ -167,88 +196,92 @@ export async function registerBetaPhaseYRoutes(app: Express) {
           (SELECT COUNT(*) FROM agent_reviews WHERE org_id != ${SEEDED_ORG_ID})                   AS ext_reviews,
           (SELECT COUNT(*) FROM ai_revenue_events WHERE org_id != ${SEEDED_ORG_ID})               AS ext_revenue,
           (SELECT COUNT(*) FROM royalty_distributions WHERE payout_status='paid'
-           AND developer_id != ${SEEDED_ORG_ID})                                                   AS ext_royalties
+           AND developer_id != ${SEEDED_ORG_ID})                                                   AS ext_royalties,
+          (SELECT COUNT(*) FROM validation_participants WHERE referral_made_at IS NOT NULL)        AS referrals
       `));
 
-      const participants = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
-      const devFeedback  = rows(await db.execute(sql`
+      const participants   = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
+      const devFeedback    = rows(await db.execute(sql`
         SELECT pf.publish_another FROM participant_feedback pf
         JOIN validation_participants vp ON vp.id = pf.participant_id WHERE vp.type='developer'
       `));
-      const publishIntent = devFeedback.filter((f: any) => f.publish_another === true).length;
+      const publishIntent  = devFeedback.filter((f: any) => f.publish_another === true).length;
 
       const steps = [
         {
-          milestone:    "First External Agent Published",
-          met:          n(ra.ext_agents) >= 1,
-          count:        n(ra.ext_agents),
-          blocker:      n(ra.ext_agents) >= 1 ? null
+          milestone: "First External Agent Published",
+          met: n(ra.ext_agents) >= 1,
+          count: n(ra.ext_agents),
+          blocker: n(ra.ext_agents) >= 1 ? null
             : n(ra.devs_activated) >= 1 ? "Developer activated — guide them through SDK publish flow"
             : n(ra.devs_invited) >= 1 ? "Developer invited but not yet activated — follow up"
             : "No external developer invited yet",
         },
         {
-          milestone:    "First External Install",
-          met:          n(ra.ext_installs) >= 1,
-          count:        n(ra.ext_installs),
-          blocker:      n(ra.ext_installs) >= 1 ? null
+          milestone: "First External Install",
+          met: n(ra.ext_installs) >= 1,
+          count: n(ra.ext_installs),
+          blocker: n(ra.ext_installs) >= 1 ? null
             : n(ra.ext_agents) >= 1 ? "Agent exists — no org has installed it yet"
             : "Blocked by: no external agent published yet",
         },
         {
-          milestone:    "First External Review",
-          met:          n(ra.ext_reviews) >= 1,
-          count:        n(ra.ext_reviews),
-          blocker:      n(ra.ext_reviews) >= 1 ? null
+          milestone: "First External Review",
+          met: n(ra.ext_reviews) >= 1,
+          count: n(ra.ext_reviews),
+          blocker: n(ra.ext_reviews) >= 1 ? null
             : n(ra.ext_installs) >= 1 ? "Agent installed — prompt org for a review"
             : "Blocked by: no external install yet",
         },
         {
-          milestone:    "First External Revenue Event",
-          met:          n(ra.ext_revenue) >= 1,
-          count:        n(ra.ext_revenue),
-          blocker:      n(ra.ext_revenue) >= 1 ? null
+          milestone: "First External Revenue Event",
+          met: n(ra.ext_revenue) >= 1,
+          count: n(ra.ext_revenue),
+          blocker: n(ra.ext_revenue) >= 1 ? null
             : n(ra.ext_installs) >= 1 ? "Agent in use — needs to generate a trackable value event"
             : "Blocked by: no external install yet",
         },
         {
-          milestone:    "First External Royalty",
-          met:          n(ra.ext_royalties) >= 1,
-          count:        n(ra.ext_royalties),
-          blocker:      n(ra.ext_royalties) >= 1 ? null
+          milestone: "First External Royalty Paid",
+          met: n(ra.ext_royalties) >= 1,
+          count: n(ra.ext_royalties),
+          blocker: n(ra.ext_royalties) >= 1 ? null
             : n(ra.ext_revenue) >= 1 ? "Revenue event recorded — royalty distribution pending"
             : "Blocked by: no external revenue event yet",
         },
         {
-          milestone:    "Developer Expresses Intent to Publish Again",
-          met:          publishIntent >= 1,
-          count:        publishIntent,
-          blocker:      publishIntent >= 1 ? null
-            : "Blocked by: no developer feedback with publish_another=true yet",
+          milestone: "First External Referral",
+          met: n(ra.referrals) >= 1,
+          count: n(ra.referrals),
+          blocker: n(ra.referrals) >= 1 ? null
+            : "No participant has referred another user yet",
+        },
+        {
+          milestone: "Developer Expresses Intent to Publish Again",
+          met: publishIntent >= 1,
+          count: publishIntent,
+          blocker: publishIntent >= 1 ? null
+            : "Collect feedback from developers — ask publish_another question",
         },
       ];
 
-      const metCount   = steps.filter(s => s.met).length;
-      const nextStep   = steps.find(s => !s.met);
-      const allMet     = metCount >= 5;
-
-      // Estimate days to next step (rough heuristic based on participant count and stage)
+      const metCount = steps.filter(s => s.met).length;
+      const nextStep = steps.find(s => !s.met);
       const hasActiveDev = participants.some((p: any) => p.type === 'developer' && p.status !== 'invited');
-      const estDays = allMet ? 0
-        : nextStep?.milestone.includes("Agent Published") ? (hasActiveDev ? 3 : 7)
-        : nextStep?.milestone.includes("Install") ? 5
-        : nextStep?.milestone.includes("Review") ? 3
-        : nextStep?.milestone.includes("Revenue") ? 7
-        : nextStep?.milestone.includes("Royalty") ? 14
+      const estDays = metCount >= steps.length ? 0
+        : nextStep?.milestone.includes("Agent Published")   ? (hasActiveDev ? 3 : 7)
+        : nextStep?.milestone.includes("Install")           ? 5
+        : nextStep?.milestone.includes("Review")            ? 3
+        : nextStep?.milestone.includes("Revenue")           ? 7
+        : nextStep?.milestone.includes("Royalty")           ? 14
+        : nextStep?.milestone.includes("Referral")          ? 7
         : 7;
 
       res.json({
-        steps,
-        metCount,
-        totalSteps: steps.length,
-        allMet,
+        steps, metCount, totalSteps: steps.length,
+        allMet: metCount >= steps.length,
         nextMilestone: nextStep?.milestone ?? "All milestones achieved",
-        nextBlocker:   nextStep?.blocker ?? null,
+        nextBlocker: nextStep?.blocker ?? null,
         estimatedDaysToNext: estDays,
         externalParticipants: participants.length,
       });
@@ -258,7 +291,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
     }
   });
 
-  // ─── Part 5: Founder Actions ──────────────────────────────────────────────
+  // ─── Founder Actions ───────────────────────────────────────────────────────
   app.get("/api/platform/founder-actions", async (_req, res) => {
     try {
       const participants = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
@@ -278,75 +311,57 @@ export async function registerBetaPhaseYRoutes(app: Express) {
 
       const actions: { priority: number; action: string; reason: string; type: string }[] = [];
 
-      // No participants at all
       if (participants.length === 0) {
-        actions.push({ priority: 1, action: "Invite your first external developer", reason: "No external participants in the system yet — this is step 1", type: "recruit" });
+        actions.push({ priority: 1, action: "Invite your first external developer", reason: "No external participants yet — this is step 1", type: "recruit" });
         actions.push({ priority: 2, action: "Invite your first external organization", reason: "Need at least one org to create an install event", type: "recruit" });
-        actions.push({ priority: 3, action: "Write 3 personalized developer outreach messages using the playbook templates", reason: "Personal outreach converts 3–5× better than cold messages", type: "outreach" });
+        actions.push({ priority: 3, action: "Write 3 personalized outreach messages using the playbook templates", reason: "Personal outreach converts 3–5× better than cold messages", type: "outreach" });
       }
 
-      // Stuck participants
       const stuck = participants.filter((p: any) => {
-        const days = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000);
+        const lastActivity = p.updated_at || p.created_at;
+        const days = Math.floor((Date.now() - new Date(lastActivity).getTime()) / 86400000);
         const thresholds: Record<string, number> = { invited: 3, activated: 5, published: 7, installed: 4 };
         return days >= (thresholds[p.status] ?? 5);
       });
       for (const p of stuck.slice(0, 3)) {
-        actions.push({ priority: 2, action: `Follow up with ${p.external_name}`, reason: `${p.type === 'developer' ? 'Developer' : 'Org'} stuck at "${p.status}" for too long${p.external_email ? ` — email: ${p.external_email}` : ""}`, type: "follow-up" });
+        actions.push({ priority: 2, action: `Follow up with ${p.external_name}`, reason: `${p.type === 'developer' ? 'Developer' : 'Org'} stuck at "${p.status}"${p.external_email ? ` — ${p.external_email}` : ""}`, type: "follow-up" });
       }
 
-      // Published but no install
       const publishedNeedInstall = participants.filter((p: any) => p.type === 'developer' && p.first_publish_at && !p.first_install_at);
       for (const p of publishedNeedInstall) {
-        actions.push({ priority: 2, action: `Get ${p.external_name}'s agent its first install`, reason: "Published an agent but no organization has installed it — personal intro to a gym owner needed", type: "activation" });
+        actions.push({ priority: 2, action: `Get ${p.external_name}'s agent its first install`, reason: "Published an agent but no org installed it — personal intro to a gym owner needed", type: "activation" });
       }
 
-      // Installed but no review
       const installedNeedReview = participants.filter((p: any) => p.type === 'org' && p.first_install_at && !p.first_review_at);
       for (const p of installedNeedReview) {
-        actions.push({ priority: 3, action: `Ask ${p.external_name} for a review`, reason: "Installed an agent but hasn't submitted a review — send a 1-sentence ask", type: "activation" });
+        actions.push({ priority: 3, action: `Ask ${p.external_name} for a review`, reason: "Installed but hasn't submitted a review — send a 1-sentence ask", type: "activation" });
       }
 
-      // No external installs despite having agents
       if (n(ra.ext_agents) >= 1 && n(ra.ext_installs) === 0) {
-        actions.push({ priority: 1, action: "Personally match the published external agent to 3 gym owners", reason: `External agent exists but has 0 installs — this is the highest-leverage action right now`, type: "activation" });
+        actions.push({ priority: 1, action: "Personally match the published external agent to 3 gym owners", reason: "External agent exists but has 0 installs — highest-leverage action right now", type: "activation" });
       }
 
-      // Insufficient developer pipeline
       const devCount = participants.filter((p: any) => p.type === 'developer').length;
-      if (devCount < 3) {
-        actions.push({ priority: 3, action: `Recruit ${3 - devCount} more developer${3 - devCount > 1 ? 's' : ''} to reach cohort target`, reason: `Currently ${devCount}/3 developers in the validation cohort`, type: "recruit" });
-      }
+      if (devCount < 5) actions.push({ priority: 3, action: `Recruit ${5 - devCount} more developer${5 - devCount > 1 ? 's' : ''}`, reason: `Currently ${devCount}/5 Group A creators in the validation cohort`, type: "recruit" });
 
-      // Insufficient org pipeline
       const orgCount = participants.filter((p: any) => p.type === 'org').length;
-      if (orgCount < 5) {
-        actions.push({ priority: 3, action: `Recruit ${5 - orgCount} more organization${5 - orgCount > 1 ? 's' : ''} to reach cohort target`, reason: `Currently ${orgCount}/5 organizations in the validation cohort`, type: "recruit" });
+      if (orgCount < 5) actions.push({ priority: 3, action: `Recruit ${5 - orgCount} more organization${5 - orgCount > 1 ? 's' : ''}`, reason: `Currently ${orgCount}/5 Group B consumers in the validation cohort`, type: "recruit" });
+
+      if (feedback.length === 0 && participants.length > 0) {
+        actions.push({ priority: 2, action: "Collect friction interview from at least one participant", reason: "No qualitative data yet — Part 5 friction interviews are required", type: "feedback" });
       }
 
-      // No feedback collected
-      const fbCount = feedback.length;
-      if (fbCount === 0 && participants.length > 0) {
-        actions.push({ priority: 2, action: "Collect feedback from at least one participant", reason: "No friction data collected — flying blind without qualitative signal", type: "feedback" });
+      if (playbooks.filter((p: any) => p.sent_at).length === 0 && participants.length > 0) {
+        actions.push({ priority: 3, action: "Log your first outreach message as sent in the Playbooks tab", reason: "Tracking effectiveness helps you see what converts", type: "tracking" });
       }
 
-      // No playbooks sent
-      const sentPlaybooks = playbooks.filter((p: any) => p.sent_at).length;
-      if (sentPlaybooks === 0 && participants.length > 0) {
-        actions.push({ priority: 3, action: "Mark your first outreach message as sent in the Playbooks tab", reason: "Tracking outreach effectiveness helps you see what converts", type: "tracking" });
-      }
-
-      // Positive signal — escalate
       if (n(ra.ext_reviews) >= 1 && n(ra.ext_installs) >= 1) {
-        actions.push({ priority: 1, action: "Screenshot this proof and share it publicly", reason: "You have external reviews + installs — this is social proof. Post it.", type: "amplify" });
+        actions.push({ priority: 1, action: "Screenshot this proof and share it publicly", reason: "External reviews + installs = social proof. Post it.", type: "amplify" });
       }
-
-      // Sort by priority, dedup, limit to 10
-      const sorted = actions.sort((a, b) => a.priority - b.priority).slice(0, 10);
 
       res.json({
-        actions: sorted,
-        totalActions: sorted.length,
+        actions: actions.sort((a, b) => a.priority - b.priority).slice(0, 10),
+        totalActions: actions.length,
         weekOf: new Date().toISOString().slice(0, 10),
         context: {
           participants: participants.length,
@@ -362,10 +377,61 @@ export async function registerBetaPhaseYRoutes(app: Express) {
     }
   });
 
-  // ─── Part 7: Phase Y Exit Criteria ────────────────────────────────────────
+  // ─── Part 7: Human Validation Scores (per participant) ────────────────────
+  app.get("/api/platform/human-validation-scores", async (_req, res) => {
+    try {
+      const participants = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
+      const allFb        = rows(await db.execute(sql`SELECT * FROM participant_feedback`));
+      const fbMap = new Map(allFb.map((f: any) => [f.participant_id, f]));
+
+      const scores = participants.map((p: any) => {
+        const fb = fbMap.get(p.id) ?? null;
+        const s  = computeParticipantScore(p, fb);
+        return {
+          id:               p.id,
+          name:             p.external_name,
+          type:             p.type,
+          subtype:          p.subtype,
+          organization:     p.organization,
+          status:           p.status,
+          hasFeedback:      fb !== null,
+          ...s,
+        };
+      });
+
+      // Aggregate stats
+      const withFb   = scores.filter(s => s.hasFeedback);
+      const avgOverall  = avg(scores.map(s => s.overallScore));
+      const avgSat      = withFb.length > 0 ? avg(withFb.map(s => s.satisfactionScore).filter((x): x is number => x !== null)) : null;
+      const avgRec      = withFb.length > 0 ? avg(withFb.map(s => s.recommendationScore).filter((x): x is number => x !== null)) : null;
+      const avgReturn   = withFb.length > 0 ? avg(withFb.map(s => s.returnIntentScore).filter((x): x is number => x !== null)) : null;
+
+      const topScorer = scores.sort((a, b) => b.overallScore - a.overallScore)[0] ?? null;
+
+      res.json({
+        scores,
+        aggregate: {
+          avgOverall,
+          avgSatisfaction:  avgSat,
+          avgRecommendation: avgRec,
+          avgReturnIntent:  avgReturn,
+          topScorer:        topScorer ? { name: topScorer.name, score: topScorer.overallScore } : null,
+          totalParticipants: participants.length,
+          withFeedback:     withFb.length,
+        },
+      });
+    } catch (e) {
+      console.error("[human-validation-scores]", e);
+      res.status(500).json({ error: "Failed to compute human validation scores" });
+    }
+  });
+
+  // ─── Part 9+12: Phase Y Scorecard (9 success thresholds + 4-tier verdict) ──
   app.get("/api/platform/phase-y-scorecard", async (_req, res) => {
     try {
       const participants = rows(await db.execute(sql`SELECT * FROM validation_participants`));
+      const allFb        = rows(await db.execute(sql`SELECT * FROM participant_feedback`));
+
       const ra = row0(await db.execute(sql`
         SELECT
           (SELECT COUNT(*) FROM agent_templates WHERE status='active'
@@ -373,33 +439,104 @@ export async function registerBetaPhaseYRoutes(app: Express) {
           (SELECT COUNT(*) FROM org_installed_agents WHERE status='active'
            AND agent_id NOT IN (${sql.raw(SEEDED_AGENT_IDS.map(id=>`'${id}'`).join(","))})) AS ext_installs,
           (SELECT COUNT(*) FROM agent_reviews WHERE org_id != ${SEEDED_ORG_ID})              AS ext_reviews,
-          (SELECT COUNT(*) FROM ai_revenue_events WHERE org_id != ${SEEDED_ORG_ID})          AS ext_revenue
+          (SELECT COUNT(*) FROM ai_revenue_events WHERE org_id != ${SEEDED_ORG_ID})          AS ext_revenue,
+          (SELECT COUNT(*) FROM royalty_distributions WHERE payout_status='paid'
+           AND developer_id != ${SEEDED_ORG_ID})                                             AS ext_royalties,
+          (SELECT COUNT(*) FROM validation_participants WHERE referral_made_at IS NOT NULL)   AS referrals
       `));
-      const publishIntent = n(row0(await db.execute(sql`
-        SELECT COUNT(*) AS c FROM participant_feedback pf
-        JOIN validation_participants vp ON vp.id = pf.participant_id
-        WHERE vp.type='developer' AND pf.publish_another = true
-      `)).c);
 
+      const publishIntent = allFb.filter((f: any) => f.publish_another === true).length;
+
+      // Avg satisfaction (>7 threshold)
+      const ratedFb      = allFb.filter((f: any) => f.overall_rating != null);
+      const avgSat       = ratedFb.length > 0 ? ratedFb.reduce((a: number, f: any) => a + n(f.overall_rating), 0) / ratedFb.length : null;
+
+      // Avg recommendation rate (>70% threshold)
+      const recFb        = allFb.filter((f: any) => f.recommend != null);
+      const avgRecPct    = recFb.length > 0 ? recFb.filter((f: any) => f.recommend).length / recFb.length * 100 : null;
+
+      // ── 9 criteria from Part 9 ──
       const criteria = [
-        { criterion: "1 external developer publishes an agent",         met: n(ra.ext_agents) >= 1,    evidence: `${n(ra.ext_agents)} external agents` },
-        { criterion: "1 external organization installs an agent",       met: n(ra.ext_installs) >= 1,  evidence: `${n(ra.ext_installs)} external installs` },
-        { criterion: "1 external review submitted",                     met: n(ra.ext_reviews) >= 1,   evidence: `${n(ra.ext_reviews)} external reviews` },
-        { criterion: "1 external value event recorded",                 met: n(ra.ext_revenue) >= 1,   evidence: `${n(ra.ext_revenue)} revenue events` },
-        { criterion: "1 developer expresses intent to publish again",   met: publishIntent >= 1,       evidence: `${publishIntent} developer(s) confirmed intent` },
+        {
+          criterion: "3+ developers publish agents",
+          met: n(ra.ext_agents) >= 3,
+          evidence: `${n(ra.ext_agents)}/3 external agents published`,
+          current: n(ra.ext_agents), target: 3,
+        },
+        {
+          criterion: "3+ organizations install agents",
+          met: n(ra.ext_installs) >= 3,
+          evidence: `${n(ra.ext_installs)}/3 external installs`,
+          current: n(ra.ext_installs), target: 3,
+        },
+        {
+          criterion: "3+ reviews submitted",
+          met: n(ra.ext_reviews) >= 3,
+          evidence: `${n(ra.ext_reviews)}/3 external reviews`,
+          current: n(ra.ext_reviews), target: 3,
+        },
+        {
+          criterion: "1+ referral occurs",
+          met: n(ra.referrals) >= 1,
+          evidence: `${n(ra.referrals)} participant referral(s) tracked`,
+          current: n(ra.referrals), target: 1,
+        },
+        {
+          criterion: "1+ revenue event occurs",
+          met: n(ra.ext_revenue) >= 1,
+          evidence: `${n(ra.ext_revenue)} external revenue events`,
+          current: n(ra.ext_revenue), target: 1,
+        },
+        {
+          criterion: "1+ royalty event occurs",
+          met: n(ra.ext_royalties) >= 1,
+          evidence: `${n(ra.ext_royalties)} royalties paid`,
+          current: n(ra.ext_royalties), target: 1,
+        },
+        {
+          criterion: "1+ developer wants to publish again",
+          met: publishIntent >= 1,
+          evidence: `${publishIntent} developer(s) confirmed intent`,
+          current: publishIntent, target: 1,
+        },
+        {
+          criterion: "Average satisfaction > 7/10",
+          met: avgSat !== null && avgSat > 7,
+          evidence: avgSat !== null ? `Avg satisfaction: ${avgSat.toFixed(1)}/10` : "No satisfaction data yet",
+          current: avgSat !== null ? Math.round(avgSat * 10) / 10 : 0, target: 7,
+        },
+        {
+          criterion: "Average recommendation rate > 70%",
+          met: avgRecPct !== null && avgRecPct > 70,
+          evidence: avgRecPct !== null ? `${Math.round(avgRecPct)}% would recommend` : "No recommendation data yet",
+          current: avgRecPct !== null ? Math.round(avgRecPct) : 0, target: 70,
+        },
       ];
 
-      const metCount  = criteria.filter(c => c.met).length;
-      const finalQuestion = metCount >= 5 ? "CONFIRMED" : "NOT YET CONFIRMED";
+      const metCount = criteria.filter(c => c.met).length;
+
+      // ── Part 12: 4-tier verdict ──
+      const verdict = metCount >= 9 ? "STRONGLY VALIDATED"
+        : metCount >= 6              ? "VALIDATED"
+        : metCount >= 3              ? "PARTIALLY VALIDATED"
+        : "NOT VALIDATED";
+
+      const verdictColor = verdict === "STRONGLY VALIDATED" ? "emerald"
+        : verdict === "VALIDATED"          ? "blue"
+        : verdict === "PARTIALLY VALIDATED" ? "yellow"
+        : "red";
 
       res.json({
         criteria,
         metCount,
-        totalCriteria: 5,
-        finalQuestion,
-        phaseComplete: metCount >= 5,
+        totalCriteria: 9,
+        verdict,
+        verdictColor,
+        phaseComplete: metCount >= 9,
         participants: participants.length,
-        progressPct: Math.round(metCount / 5 * 100),
+        progressPct: Math.round(metCount / 9 * 100),
+        // Legacy field for backwards compatibility
+        finalQuestion: metCount >= 9 ? "CONFIRMED" : "NOT YET CONFIRMED",
       });
     } catch (e) {
       console.error("[phase-y-scorecard]", e);

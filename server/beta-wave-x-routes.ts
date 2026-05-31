@@ -300,6 +300,65 @@ export async function registerBetaWaveXRoutes(app: Express) {
         slowest: m.hours.length > 0 ? Math.max(...m.hours) : null,
       }));
 
+      // ── Part 11: Final Validation Report fields ──────────────────────────────
+
+      // Developer success rate: % who published an agent
+      const devsTotal     = devs.length;
+      const devsPublished = devs.filter((d: any) => d.first_publish_at).length;
+      const devSuccessRate = devsTotal > 0 ? Math.round(devsPublished / devsTotal * 100) : null;
+
+      // Organization success rate: % who installed an agent
+      const orgsTotal     = orgs.length;
+      const orgsInstalled = orgs.filter((o: any) => o.first_install_at).length;
+      const orgSuccessRate = orgsTotal > 0 ? Math.round(orgsInstalled / orgsTotal * 100) : null;
+
+      // Most successful developer (furthest stage)
+      const DEV_STAGE_ORDER = ["invited","activated","published","installed","reviewed","generating_revenue"];
+      const mostSuccessfulDev = devs.sort((a: any, b: any) =>
+        DEV_STAGE_ORDER.indexOf(b.status) - DEV_STAGE_ORDER.indexOf(a.status)
+      )[0] ?? null;
+
+      // Most successful organization (furthest stage)
+      const mostSuccessfulOrg = orgs.sort((a: any, b: any) =>
+        DEV_STAGE_ORDER.indexOf(b.status) - DEV_STAGE_ORDER.indexOf(a.status)
+      )[0] ?? null;
+
+      // Most valuable agent (most external installs)
+      const agentInstallCounts = row0(await db.execute(sql`
+        SELECT at.agent_name, at.agent_id, COUNT(oia.id)::int AS installs,
+               COUNT(ar.id)::int AS reviews
+        FROM agent_templates at
+        LEFT JOIN org_installed_agents oia ON oia.agent_id = at.agent_id AND oia.status='active'
+        LEFT JOIN agent_reviews ar ON ar.agent_id = at.agent_id AND ar.org_id != ${SEEDED_ORG_ID}
+        WHERE at.agent_id NOT IN (${sql.raw(SEEDED_AGENT_IDS.map(id => `'${id}'`).join(","))})
+        GROUP BY at.agent_name, at.agent_id
+        ORDER BY installs DESC, reviews DESC
+        LIMIT 1
+      `));
+      const mostValuableAgent = agentInstallCounts?.agent_name
+        ? { name: agentInstallCounts.agent_name, installs: n(agentInstallCounts.installs), reviews: n(agentInstallCounts.reviews) }
+        : null;
+
+      // Top confusion points (from confused_by)
+      const confusionThemes = allFb.flatMap((f: any) => f.confused_by ? [f.confused_by] : []);
+      // Top reasons for success (from loved)
+      const successReasons = allFb.flatMap((f: any) => f.loved ? [f.loved] : []);
+      // Top reasons for failure (almost_quit + confused_by)
+      const failureReasons = allFb.flatMap((f: any) => f.almost_quit ? [f.almost_quit] : []);
+      // Top requested features (from expected)
+      const requestedFeatures = allFb.flatMap((f: any) => f.expected ? [f.expected] : []);
+
+      // Failure conditions (Part 10)
+      const failureConditions = [
+        { condition: "Developers cannot publish without founder help",     failing: devs.length > 0 && devsPublished === 0 && devsTotal > 0 },
+        { condition: "Organizations cannot install without founder help",   failing: orgs.length > 0 && orgsInstalled === 0 && orgsTotal > 0 },
+        { condition: "Reviews are not generated",                           failing: n(realActivity.real_reviews) === 0 && n(realActivity.real_installs) > 0 },
+        { condition: "No value is produced",                                failing: n(realActivity.real_revenue) === 0 && n(realActivity.real_installs) > 0 },
+        { condition: "No participant would return",                          failing: allFb.length > 0 && allFb.every((f: any) => f.use_again === false && f.publish_another === false) },
+        { condition: "No participant would recommend the platform",          failing: allFb.length > 0 && allFb.every((f: any) => f.recommend === false) },
+      ];
+      const activefailures = failureConditions.filter(f => f.failing);
+
       res.json({
         summary: {
           devsInvited:    devs.length,
@@ -307,13 +366,11 @@ export async function registerBetaWaveXRoutes(app: Express) {
           orgsInvited:    orgs.length,
           orgsActivated:  orgs.filter((o: any) => o.activated_at).length,
           feedbackCount:  allFb.length,
-          ...{
-            agentsPublished: n(realActivity.published_agents),
-            realInstalls:    n(realActivity.real_installs),
-            realReviews:     n(realActivity.real_reviews),
-            realRevenue:     n(realActivity.real_revenue),
-            realRoyalties:   n(realActivity.real_royalties),
-          },
+          agentsPublished: n(realActivity.published_agents),
+          realInstalls:    n(realActivity.real_installs),
+          realReviews:     n(realActivity.real_reviews),
+          realRevenue:     n(realActivity.real_revenue),
+          realRoyalties:   n(realActivity.real_royalties),
         },
         canSomeoneOtherThanBryanJonesParticipate: canParticipate,
         verdict,
@@ -329,6 +386,22 @@ export async function registerBetaWaveXRoutes(app: Express) {
         biggestBottleneck,
         recommendedAction,
         estimatedDaysToValidation: estimatedDays,
+        // Part 11: Final Validation Report
+        finalReport: {
+          developerSuccessRate:     devSuccessRate,
+          organizationSuccessRate:  orgSuccessRate,
+          mostSuccessfulDeveloper:  mostSuccessfulDev  ? { name: mostSuccessfulDev.external_name,  status: mostSuccessfulDev.status,  organization: mostSuccessfulDev.organization  } : null,
+          mostSuccessfulOrganization: mostSuccessfulOrg ? { name: mostSuccessfulOrg.external_name, status: mostSuccessfulOrg.status, organization: mostSuccessfulOrg.organization } : null,
+          mostValuableAgent,
+          topConfusionPoints:   confusionThemes,
+          topRequestedFeatures: requestedFeatures,
+          topReasonsForSuccess: successReasons,
+          topReasonsForFailure: failureReasons,
+        },
+        // Part 10: Failure Conditions
+        failureConditions,
+        activeFailures: activefailures,
+        hasActiveFailures: activefailures.length > 0,
       });
     } catch (e) {
       console.error("[human-validation-report]", e);
