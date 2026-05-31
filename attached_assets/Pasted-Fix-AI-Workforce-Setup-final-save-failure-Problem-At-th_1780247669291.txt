@@ -1,0 +1,64 @@
+Fix AI Workforce Setup final save failure.
+
+Problem:
+At the final AI Workforce Setup review step, clicking “Save & Continue” shows:
+“Setup failed — please try again.”
+
+Required audit:
+1. Locate the final submit handler for AI Workforce Setup.
+2. Identify the API endpoint called on Save & Continue.
+3. Log the request payload before submit in development.
+4. Check backend route logs for:
+   - status code
+   - validation error
+   - missing orgId/orgSlug
+   - missing required fields
+   - database constraint failure
+   - duplicate workflow creation error
+   - Gmail integration pending setup error
+
+Likely causes to verify:
+- Frontend payload does not match backend schema.
+- Backend expects integrations/workflows/governance fields that are missing.
+- Starter workflows already exist and duplicate insert fails.
+- Gmail integration selected but OAuth not completed.
+- Org session is not resolved correctly.
+- Save route is not using resolveOrgSession.
+- Enum mismatch: selected governance value like "balanced" or "advanced" does not match backend allowed values.
+- Database insert/update requires a field that is null.
+
+Required backend fix:
+- Use resolveOrgSession.
+- Validate payload with clear Zod/schema errors.
+- Make starter workflow creation idempotent:
+  - if workflow already exists, skip or update draft
+  - do not throw duplicate key error
+- Treat integrations like Gmail as pending setup, not failure.
+- Return a structured error response:
+  {
+    success: false,
+    code: "...",
+    message: "...",
+    details: {...}
+  }
+
+Required frontend fix:
+- Show the actual backend message instead of generic “Setup failed.”
+- Disable Save & Continue while submitting.
+- Prevent double-submit.
+- If save succeeds, navigate to the correct next page/dashboard.
+- If partial setup succeeds, show which part failed.
+
+Acceptance criteria:
+1. Save & Continue completes successfully.
+2. Starter workflows are created as drafts only once.
+3. Re-running setup does not duplicate workflows or fail.
+4. Gmail selected but not connected appears as pending setup, not an error.
+5. Error toast displays the real reason during development.
+6. Return:
+   - root cause
+   - failing endpoint
+   - failing payload
+   - server error
+   - files changed
+   - before/after behavior

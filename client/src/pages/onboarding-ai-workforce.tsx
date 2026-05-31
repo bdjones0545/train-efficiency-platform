@@ -618,7 +618,18 @@ export default function OnboardingAiWorkforcePage() {
 
       navigate("/admin/ai-workforce");
     },
-    onError: () => toast({ title: "Setup failed — please try again", variant: "destructive" }),
+    onError: (err: any) => {
+      let description = "Please try again.";
+      try {
+        const raw = err?.message ?? "";
+        const jsonPart = raw.indexOf("{") !== -1 ? raw.slice(raw.indexOf("{")) : null;
+        if (jsonPart) {
+          const parsed = JSON.parse(jsonPart);
+          description = parsed.message ?? parsed.error ?? description;
+        }
+      } catch {}
+      toast({ title: "Setup failed", description, variant: "destructive" });
+    },
   });
 
   useEffect(() => {

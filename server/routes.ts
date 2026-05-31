@@ -17047,7 +17047,7 @@ Respond with this exact JSON structure:
         verificationLog.push("governance_seed_failed");
       }
 
-      // ── 3. Create workflow graphs for selected templates ────────────────────
+      // ── 3. Create workflow graphs for selected templates (idempotent) ────────
       const { BUILT_IN_TEMPLATES } = await import("./workflow-graph-engine");
       const created: string[] = [];
       const autoPublished: string[] = [];
@@ -17055,35 +17055,47 @@ Respond with this exact JSON structure:
       // tpl-executive-summary is read-only (no external side effects) — safe to auto-publish
       const AUTO_PUBLISH_ID = "tpl-executive-summary";
 
-      if (Array.isArray(workflowTemplates)) {
+      if (Array.isArray(workflowTemplates) && workflowTemplates.length > 0) {
+        // Load existing wizard-sourced workflows once so we can skip duplicates
+        const existingGraphs = await storage.getWorkflowGraphs(orgId);
+        const existingTemplateIds = new Set(
+          existingGraphs.filter(g => g.sourceTemplateId).map(g => g.sourceTemplateId)
+        );
+
         for (const tplId of workflowTemplates) {
           const tpl = BUILT_IN_TEMPLATES.find((t: any) => t.id === tplId);
-          if (tpl) {
-            const isAutoPublish = tplId === AUTO_PUBLISH_ID && tpl.riskLevel === "low";
-            await storage.createWorkflowGraph({
-              orgId,
-              name: tpl.name,
-              description: tpl.description,
-              category: tpl.category,
-              riskLevel: tpl.riskLevel ?? "medium",
-              requiresApproval: isAutoPublish ? false : true,
-              graphDefinition: tpl.graphDefinition,
-              published: isAutoPublish,
-              lastPublishedAt: isAutoPublish ? new Date() : undefined,
-              // Wizard provenance metadata stored in tags jsonb field
-              tags: [
-                "source:ai_workforce_wizard",
-                "selected_during_onboarding:true",
-                `onboarding_governance_mode:${governanceMode ?? "collaborative"}`,
-                "recommended_next_step:review_and_publish",
-                ...(isAutoPublish ? ["auto_published_by_wizard:true"] : []),
-              ],
-              sourceTemplateId: tplId,
-              createdBy: req.user.id,
-            } as any);
+          if (!tpl) continue;
+
+          // Idempotent: skip if already created from this template
+          if (existingTemplateIds.has(tplId)) {
             created.push(tpl.name);
-            if (isAutoPublish) autoPublished.push(tpl.name);
+            continue;
           }
+
+          const isAutoPublish = tplId === AUTO_PUBLISH_ID && tpl.riskLevel === "low";
+          // Fix: pass orgId and data as separate arguments (method signature is createWorkflowGraph(orgId, data))
+          await storage.createWorkflowGraph(orgId, {
+            name: tpl.name,
+            description: tpl.description,
+            category: tpl.category,
+            riskLevel: tpl.riskLevel ?? "medium",
+            requiresApproval: isAutoPublish ? false : true,
+            graphDefinition: tpl.graphDefinition,
+            published: isAutoPublish,
+            lastPublishedAt: isAutoPublish ? new Date() : undefined,
+            // Wizard provenance metadata stored in tags jsonb field
+            tags: [
+              "source:ai_workforce_wizard",
+              "selected_during_onboarding:true",
+              `onboarding_governance_mode:${governanceMode ?? "collaborative"}`,
+              "recommended_next_step:review_and_publish",
+              ...(isAutoPublish ? ["auto_published_by_wizard:true"] : []),
+            ],
+            sourceTemplateId: tplId,
+            createdBy: req.user.id,
+          } as any);
+          created.push(tpl.name);
+          if (isAutoPublish) autoPublished.push(tpl.name);
         }
       }
       verificationLog.push("workflows_created");
