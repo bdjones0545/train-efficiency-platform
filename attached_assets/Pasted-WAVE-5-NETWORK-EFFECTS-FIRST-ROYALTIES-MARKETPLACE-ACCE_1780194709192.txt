@@ -1,0 +1,471 @@
+WAVE 5 — NETWORK EFFECTS, FIRST ROYALTIES & MARKETPLACE ACCELERATION
+
+Objective
+
+Wave 4 proved activity exists.
+
+Wave 5 proves activity compounds.
+
+The goal is to transition from:
+
+Emerging Marketplace
+
+to
+
+Active Marketplace
+
+Success is measured by:
+
+Real installs increasing
+
+Developers returning
+
+Organizations returning
+
+Reviews increasing
+
+Referrals increasing
+
+First royalties generated
+
+Repeat publishing behavior
+
+Repeat installation behavior
+
+PART 1 — Marketplace Velocity Engine
+
+Create:
+
+GET /api/platform/velocity
+
+Track:
+
+New installs per week
+
+New developers per week
+
+New organizations per week
+
+Reviews per week
+
+Revenue events per week
+
+Royalty events per week
+
+Calculate:
+
+Growth velocity
+
+Acceleration
+
+Deceleration
+
+Purpose:
+
+Measure whether activity is increasing.
+
+PART 2 — Time-To-Value Dashboard
+
+Create:
+
+GET /api/platform/time-to-value
+
+Track:
+
+Registration → First Agent
+
+Publish → First Install
+
+Install → First Execution
+
+Execution → First Outcome
+
+Outcome → First Review
+
+Review → First Referral
+
+Display:
+
+Average time
+
+Fastest time
+
+Slowest time
+
+Goal:
+
+Reduce onboarding friction.
+
+PART 3 — Repeat Publisher Program
+
+Create:
+
+developer_streaks
+
+Track:
+
+First Agent
+
+Second Agent
+
+Third Agent
+
+Consecutive Publishing Months
+
+Install Milestones
+
+Revenue Milestones
+
+Assign:
+
+Bronze Publisher
+
+Silver Publisher
+
+Gold Publisher
+
+Marketplace Builder
+
+Purpose:
+
+Encourage repeat participation.
+
+PART 4 — Repeat Installer Program
+
+Create:
+
+org_streaks
+
+Track:
+
+First Install
+
+Second Install
+
+Third Install
+
+Active Agents
+
+Reviews Submitted
+
+Referrals Made
+
+Assign:
+
+Explorer
+
+Builder
+
+Operator
+
+Marketplace Champion
+
+PART 5 — Royalty Milestone Engine
+
+Create:
+
+GET /api/platform/royalty-milestones
+
+Track:
+
+First Royalty
+
+First $10
+
+First $100
+
+First $500
+
+First $1,000
+
+First Developer Profitability
+
+Display:
+
+Agent
+
+Developer
+
+Date
+
+Evidence
+
+Purpose:
+
+Celebrate economic activity.
+
+PART 6 — Marketplace Cohorts
+
+Create:
+
+GET /api/platform/cohorts
+
+Track:
+
+Developer retention
+
+Organization retention
+
+Agent retention
+
+30-day
+
+60-day
+
+90-day
+
+Identify:
+
+Healthy cohorts
+
+At-risk cohorts
+
+Churn drivers
+
+PART 7 — Referral Flywheel Engine
+
+Upgrade referrals.
+
+Track:
+
+Developer → Developer
+
+Org → Org
+
+Developer → Org
+
+Org → Developer
+
+Installs generated
+
+Revenue generated
+
+Royalties generated
+
+Create:
+
+Referral Multiplier Score
+
+PART 8 — Marketplace Conversion Optimizer
+
+Create:
+
+GET /api/platform/conversion-optimization
+
+Identify:
+
+Highest drop-off page
+
+Highest drop-off action
+
+Most abandoned workflow
+
+Lowest converting funnel stage
+
+Recommend:
+
+Top 5 improvements
+
+Expected impact
+
+Confidence
+
+PART 9 — Community Recognition Layer
+
+Create:
+
+/community/hall-of-fame
+
+Display:
+
+First Publisher
+
+First Revenue Agent
+
+First Royalty Earner
+
+Top Developer
+
+Top Referrer
+
+Top Organization
+
+Most Trusted Agent
+
+Purpose:
+
+Create status and visibility.
+
+PART 10 — First Royalty Audit
+
+Create:
+
+GET /api/platform/royalty-proof
+
+Show:
+
+Revenue source
+
+Agent
+
+Developer
+
+Royalty calculation
+
+Distribution status
+
+Evidence
+
+Purpose:
+
+Verify economic activity.
+
+PART 11 — Marketplace Momentum Score
+
+Create:
+
+GET /api/platform/momentum
+
+Components:
+
+Growth
+
+Retention
+
+Reviews
+
+Referrals
+
+Revenue
+
+Royalties
+
+Repeat Usage
+
+Return:
+
+0–100 score
+
+Trend
+
+Stage:
+
+Stalled
+
+Emerging
+
+Growing
+
+Accelerating
+
+Self-Sustaining
+
+PART 12 — Wave 5 Scorecard
+
+Create:
+
+GET /api/platform/wave5-scorecard
+
+Track:
+
+Developers
+
+Published Agents
+
+Installs
+
+Reviews
+
+Referrals
+
+Revenue Events
+
+Royalty Events
+
+Repeat Publishers
+
+Repeat Installers
+
+Retention
+
+Momentum
+
+PART 13 — Wave 5 Exit Criteria
+
+Wave 5 passes when:
+
+≥ 10 developers registered
+
+≥ 10 agents published
+
+≥ 25 installs
+
+≥ 25 reviews
+
+≥ 10 referrals
+
+≥ 1 royalty event
+
+≥ 2 repeat publishers
+
+≥ 3 repeat installers
+
+Developer retention > 50%
+
+Organization retention > 50%
+
+Momentum Score > 50
+
+Marketplace Status = Active
+
+PART 14 — Marketplace Stage Progression
+
+Create:
+
+GET /api/platform/marketplace-stage
+
+Stages:
+
+Infrastructure
+
+Emerging
+
+Active
+
+Growing
+
+Accelerating
+
+Self-Sustaining
+
+Return:
+
+Current Stage
+
+Requirements Met
+
+Requirements Remaining
+
+Estimated Distance To Next Stage
+
+PART 15 — Final Goal
+
+Answer the next critical question:
+
+Is marketplace activity increasing on its own?
+
+At the end of Wave 5, the platform should be able to prove:
+
+People come back.
+
+People publish again.
+
+People install again.
+
+People refer others.
+
+People earn royalties.
+
+Activity compounds.
+
+That is the first signal that a true marketplace flywheel is forming.

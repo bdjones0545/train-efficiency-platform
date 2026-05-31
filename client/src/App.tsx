@@ -81,6 +81,7 @@ import AdminMarketplaceActivationPage from "@/pages/admin-marketplace-activation
 import AdminAgentEconomyPage from "@/pages/admin-agent-economy";
 import AdminEcosystemOutreachPage from "@/pages/admin-ecosystem-outreach";
 import CommunityLeaderboardsPage from "@/pages/community-leaderboards";
+import CommunityHallOfFamePage from "@/pages/community-hall-of-fame";
 import DeveloperPortalPage from "@/pages/developer-portal";
 import DeveloperSandboxPage from "@/pages/developer-sandbox";
 import MarketplaceStorePage from "@/pages/marketplace-store";
@@ -444,6 +445,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/agent-economy" component={AdminAgentEconomyPage} />
                   <Route path="/admin/ecosystem-outreach" component={AdminEcosystemOutreachPage} />
                   <Route path="/community/leaderboards" component={CommunityLeaderboardsPage} />
+                  <Route path="/community/hall-of-fame" component={CommunityHallOfFamePage} />
                   <Route path="/developer" component={DeveloperPortalPage} />
                   <Route path="/developer/sandbox" component={DeveloperSandboxPage} />
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />
