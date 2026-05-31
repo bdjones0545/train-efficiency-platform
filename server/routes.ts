@@ -17018,7 +17018,21 @@ Respond with this exact JSON structure:
   // Phase 1 hardening: persists all selections, seeds governance, validates integrations
   app.post("/api/onboarding/ai-workforce/complete", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     const { goals, orgPreset, departments, governanceMode, integrations, workflowTemplates } = req.body;
-    const orgId = req.user.orgId;
+
+    // req.user has no orgId field — must do a DB-backed lookup via getAdminOrgId
+    const orgId = await getAdminOrgId(req);
+    if (!orgId) {
+      return res.status(400).json({
+        success: false,
+        code: "ORG_NOT_FOUND",
+        phase: "save_preferences",
+        message: "Could not determine your organization. Please sign in again.",
+      });
+    }
+
+    // userId for audit / createdBy fields
+    const userId = req.user?.claims?.sub ?? req.user?.id ?? "unknown";
+
     const resolvedGovernanceMode = governanceMode ?? "collaborative";
 
     const verificationLog: string[] = [];
@@ -17104,7 +17118,7 @@ Respond with this exact JSON structure:
                 ...(isAutoPublish ? ["auto_published_by_wizard:true"] : []),
               ],
               sourceTemplateId: tplId,
-              createdBy: req.user.id,
+              createdBy: userId,
             } as any);
             created.push(tpl.name);
             if (isAutoPublish) autoPublished.push(tpl.name);
@@ -17166,7 +17180,7 @@ Respond with this exact JSON structure:
         status: "success",
         summary: `AI Workforce wizard completed — ${departments?.length ?? 0} depts, ${resolvedGovernanceMode} governance, ${created.length} workflows (${autoPublished.length} auto-published)`,
         metadata: { goals, orgPreset, departments, governanceMode: resolvedGovernanceMode, integrations, workflowsCreated: created, autoPublished, integrationWarnings, verificationLog },
-        triggeredBy: req.user.id,
+        triggeredBy: userId,
       });
     } catch { /* audit log is never blocking */ }
 
