@@ -1,0 +1,80 @@
+Fix the TrainEfficiency CRM pipeline segmentation bug.
+
+Problem:
+Athlete/B2C leads are appearing inside the Team Partnerships B2B page. In the UI, records like individual athletes / schools / track leads are showing under “Team Training Leads” and counted in the Team Partnerships dashboard.
+
+Goal:
+Team Partnerships must only show B2B organization partnership leads.
+Athlete Intake Pipeline must only show B2C athlete/parent/program application leads.
+
+Required audit:
+1. Locate the frontend page/component powering:
+   - Team Partnerships / Team Training Leads
+   - Athlete Intake Pipeline
+
+2. Locate the backend route/API query used by each page.
+
+3. Identify the table(s) being queried:
+   - lead_capture_submissions
+   - team_training_leads
+   - crm_leads
+   - partnership_leads
+   - or any shared leads table
+
+4. Confirm whether the current query is missing a pipeline filter.
+
+Required fix:
+Add explicit lead segmentation everywhere.
+
+Use fields like:
+
+pipeline_type:
+- b2b
+- b2c
+
+lead_type:
+- athlete
+- parent
+- team_partnership
+- school
+- club
+- recreation_department
+- organization
+
+Rules:
+- Team Partnerships page should only fetch:
+  pipeline_type = 'b2b'
+
+- Athlete Intake Pipeline should only fetch:
+  pipeline_type = 'b2c'
+
+- Team research / Deep Search / CSV upload from Team Partnerships should only create:
+  pipeline_type = 'b2b'
+  lead_type = 'team_partnership' or 'school' or 'organization'
+
+- Public athlete application forms should only create:
+  pipeline_type = 'b2c'
+  lead_type = 'athlete' or 'parent'
+
+Backfill:
+Create a safe migration or script to classify existing records.
+
+Suggested classification:
+- If source contains lead_capture, public_apply, athlete_intake, speed_sprint, signup, parent, athlete, program_application → b2c
+- If source contains team_training, team_partnerships, school, athletic_director, club, organization, csv_upload, deep_search → b2b
+- If uncertain → unclassified
+
+UI requirement:
+Add a small admin/debug count somewhere or console log during development:
+- B2B leads count
+- B2C leads count
+- Unclassified leads count
+
+Acceptance criteria:
+1. Team Partnerships no longer shows individual athlete leads.
+2. Athlete Intake Pipeline no longer shows schools/team partnership leads.
+3. Team dashboard count only reflects B2B records.
+4. B2C dashboard count only reflects athlete/parent intake records.
+5. Create Deal, Generate Email, Deep Search, Mark Replied, Delete, and Do Not Contact all preserve the correct pipeline_type.
+6. No existing leads are deleted.
+7. Return the root cause, files changed, exact queries updated, and before/after counts.
