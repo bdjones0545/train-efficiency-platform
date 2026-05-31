@@ -81,12 +81,12 @@ export async function recalculateExerciseEffectiveness(
     .limit(120)
     .catch(() => []);
 
-  // Load PRs achieved per exercise
+  // Load PRs achieved per exercise (uses userId field, not athleteUserId)
   const prEntries = await db.select()
     .from(prLiftEntries)
     .where(and(
       eq(prLiftEntries.orgId, orgId),
-      eq(prLiftEntries.athleteUserId, athleteUserId),
+      eq(prLiftEntries.userId, athleteUserId),
     ))
     .limit(200)
     .catch(() => []);
@@ -254,8 +254,8 @@ export async function synthesizeAthleteIntelligence(
       .where(and(eq(workoutSessionExerciseLogs.orgId, orgId), eq(workoutSessionExerciseLogs.athleteUserId, athleteUserId), gte(workoutSessionExerciseLogs.createdAt, ninetyDaysAgo)))
       .orderBy(desc(workoutSessionExerciseLogs.createdAt)).limit(300).catch(() => []),
     db.select().from(prLiftEntries)
-      .where(and(eq(prLiftEntries.orgId, orgId), eq(prLiftEntries.athleteUserId, athleteUserId)))
-      .orderBy(desc(prLiftEntries.achievedAt)).limit(50).catch(() => []),
+      .where(and(eq(prLiftEntries.orgId, orgId), eq(prLiftEntries.userId, athleteUserId)))
+      .orderBy(desc(prLiftEntries.createdAt)).limit(50).catch(() => []),
     db.select().from(athleteRiskFlags)
       .where(and(eq(athleteRiskFlags.orgId, orgId), eq(athleteRiskFlags.athleteUserId, athleteUserId)))
       .orderBy(desc(athleteRiskFlags.createdAt)).limit(20).catch(() => []),

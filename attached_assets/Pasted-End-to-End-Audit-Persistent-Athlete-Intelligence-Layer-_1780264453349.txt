@@ -1,0 +1,320 @@
+End-to-End Audit — Persistent Athlete Intelligence Layer
+
+Objective:
+Verify that PAIL is truly compounding athlete intelligence across memory, TrainChat context, session outcomes, exercise effectiveness, coach notes, CEO Heartbeat priorities, and future program generation.
+
+⸻
+
+Test Subject
+
+Choose one real athlete with:
+
+* at least 1 completed workout/session
+* at least 1 coach note if available
+* at least 1 readiness/compliance datapoint if available
+* existing PR or exercise history if available
+
+If no athlete has enough data, create a safe test athlete and seed realistic test data.
+
+⸻
+
+Phase 1 — Baseline Athlete State
+
+For the selected athlete, report:
+
+* athlete ID
+* name
+* sport
+* position
+* current program
+* recent sessions
+* readiness logs
+* coach notes
+* PR history
+* existing athlete_memory_profiles row
+* existing exercise_effectiveness_scores rows
+* existing athlete_session_outcomes rows
+
+Return baseline counts and whether memory already exists.
+
+⸻
+
+Phase 2 — Run Memory Synthesis
+
+Run:
+
+synthesizeAthleteIntelligence(orgId, athleteId)
+
+Verify:
+
+* athlete_memory_profiles row created or updated
+* movement restrictions populated
+* preferred/disliked exercises populated when evidence exists
+* recurring pain areas populated when evidence exists
+* coaching cues populated from notes
+* fatigue/recovery patterns populated
+* adaptation intelligence populated
+* memory_confidence updated
+* last_synthesized updated
+
+Return before/after memory profile diff.
+
+⸻
+
+Phase 3 — Verify Coach Note Intelligence
+
+Run:
+
+analyzeCoachNotesForAthlete(orgId, athleteId)
+
+Verify extraction of:
+
+* movement issues
+* motivation patterns
+* confidence issues
+* technical weaknesses
+* coaching cues that work
+* recurring themes
+
+Confirm those findings are written back into athlete_memory_profiles.
+
+⸻
+
+Phase 4 — Verify TrainChat Context Injection
+
+Generate or preview a TrainChat workout/program request for the athlete.
+
+Verify the prompt/context includes:
+
+* athlete memory profile
+* preferred exercises
+* avoided/disliked exercises
+* recurring pain areas
+* movement red flags
+* coach notes summary
+* top exercise effectiveness scores
+* bottom exercise effectiveness scores
+* readiness/compliance trends
+* adaptation history if available
+
+Return the exact redacted context block sent to TrainChat.
+
+Do not expose API keys or private credentials.
+
+⸻
+
+Phase 5 — Record Session Outcome
+
+Create or use a recent session and record an outcome.
+
+Use realistic values:
+
+* session_completed = true
+* RPE
+* readiness delta
+* soreness delta
+* pain delta
+* compliance score
+* PR achieved if applicable
+* modified/skipped if applicable
+
+Verify:
+
+* athlete_session_outcomes row created
+* linked to athlete
+* linked to session
+* linked to program if available
+* stored values are correct
+
+⸻
+
+Phase 6 — Recalculate Exercise Effectiveness
+
+Run:
+
+recalculateExerciseEffectiveness(orgId, athleteId)
+
+Verify:
+
+* exercise_effectiveness_scores rows created or updated
+* times_used updated
+* completion_rate updated
+* progression_rate updated
+* PR_rate updated
+* soreness/pain effect updated
+* effectiveness_score updated
+
+Return:
+
+* top 5 exercises
+* bottom 5 exercises
+* any score changes from before/after
+
+⸻
+
+Phase 7 — Re-Run Memory Synthesis
+
+Run memory synthesis again after the session outcome.
+
+Verify that the memory profile changes based on the new outcome.
+
+Examples:
+
+* exercise added to high_response_stimuli
+* exercise added to low_response_stimuli
+* recurring pain area updated
+* fatigue pattern updated
+* compliance pattern updated
+* adaptation intelligence updated
+
+Return before/after diff.
+
+⸻
+
+Phase 8 — Verify Future Program Context Changes
+
+Generate or preview a second TrainChat request after the new outcome and synthesis.
+
+Compare it to the first TrainChat context.
+
+Verify:
+
+* new session outcome appears in context
+* exercise effectiveness changes are included
+* memory profile updates are included
+* TrainChat receives materially better context than before
+
+Return context diff.
+
+⸻
+
+Phase 9 — Verify Program Adaptation Engine
+
+Run or simulate:
+
+program-adaptation-engine.ts
+
+Verify adaptation uses:
+
+* athlete memory
+* session outcome history
+* exercise effectiveness
+* coach note intelligence
+* readiness/compliance trends
+
+Return:
+
+* proposed adaptation
+* reason
+* safety guardrails
+* whether coach approval is required
+* whether program was changed or only recommended
+
+⸻
+
+Phase 10 — Verify CEO Heartbeat Integration
+
+Run:
+
+ceo-heartbeat-service.ts
+
+Verify athlete intelligence priorities appear when applicable:
+
+* critical athlete risk flags
+* recurring pain areas
+* stalled progress
+* stale memory profile
+* compliance drop
+* readiness decline
+* adaptation opportunity
+
+Confirm:
+
+* agent_operating_timeline event written
+* ceo_heartbeat_runs updated
+* priority appears on /admin/ceo-heartbeat
+* related athlete links back to /admin/athlete-intelligence
+
+⸻
+
+Phase 11 — Verify Athlete Intelligence Dashboard
+
+Open:
+
+/admin/athlete-intelligence
+
+Verify selected athlete shows:
+
+* Memory tab populated
+* Effectiveness tab populated
+* Risk & Quality tab populated
+* Autonomy tab populated
+* memory confidence badge
+* risk flag count
+* trust level
+* top/bottom exercise effectiveness
+
+Verify mobile layout if possible.
+
+⸻
+
+Phase 12 — Safety and Guardrail Audit
+
+Confirm PAIL does not:
+
+* diagnose injuries
+* give medical advice
+* overwrite coach-locked programs
+* make major program rewrites without approval
+* increase athlete autonomy without sufficient evidence
+* hide low-confidence memory as high-confidence
+
+Verify coach approval is required for:
+
+* major program changes
+* injury-sensitive modifications
+* high-risk adaptations
+
+⸻
+
+Phase 13 — Final Readiness Score
+
+Score:
+
+* Memory persistence
+* Coach note intelligence
+* TrainChat context injection
+* Session outcome tracking
+* Exercise effectiveness scoring
+* Program adaptation intelligence
+* CEO Heartbeat integration
+* Dashboard usability
+* Safety/governance
+
+Provide:
+
+* What works
+* What is partial
+* What is missing
+* What must be fixed before production use
+* Overall PAIL readiness score
+
+⸻
+
+Required Output
+
+Return:
+
+1. Test athlete used
+2. Tables touched
+3. API endpoints tested
+4. Services executed
+5. Baseline data
+6. Before/after memory diff
+7. TrainChat context proof
+8. Session outcome proof
+9. Exercise effectiveness proof
+10. CEO Heartbeat proof
+11. Dashboard proof
+12. Safety audit
+13. Final score
