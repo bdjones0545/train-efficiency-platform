@@ -13,54 +13,239 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Calendar, Clock, Filter, Mail, MapPin, Trash2, Users, UserPlus, UserMinus, Plus, X } from "lucide-react";
-import { useState } from "react";
-import { format, parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Calendar, Clock, Filter, MapPin, Trash2, Users, UserPlus, UserMinus,
+  Plus, X, ChevronLeft, ChevronRight, CalendarDays, LayoutGrid,
+  List, AlertCircle, CheckCircle2, Clock3, Dumbbell, SlidersHorizontal
+} from "lucide-react";
+import { useState, useMemo } from "react";
+import {
+  format, parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek,
+  startOfMonth, endOfMonth, addDays, addWeeks, addMonths,
+  subDays, subWeeks, subMonths, isSameDay, isSameMonth,
+  eachDayOfInterval, differenceInMinutes, isToday, isBefore
+} from "date-fns";
 import type { OpenSession, ParticipantWithUser } from "@/lib/types";
 import type { UserProfile } from "@shared/schema";
 import { AddSessionDialog } from "@/components/add-session-dialog";
 
-function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: OpenSession; userId?: string; isAuthenticated: boolean; isOwner: boolean }) {
+type CalendarView = "month" | "week" | "day";
+
+interface Filters {
+  sport: string;
+  location: string;
+  ageGroup: string;
+  skillLevel: string;
+  availability: string;
+  sessionType: string;
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+function getSessionStatus(session: OpenSession): "Open" | "Full" | "Cancelled" | "Waitlist" {
+  if (session.status === "CANCELLED") return "Cancelled";
+  const count = session.participantCount || 0;
+  const max = session.maxParticipants || 6;
+  if (count >= max) return "Full";
+  return "Open";
+}
+
+function getStatusBadge(status: string) {
+  switch (status) {
+    case "Open":
+      return <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20 text-xs">{status}</Badge>;
+    case "Full":
+      return <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20 text-xs">{status}</Badge>;
+    case "Cancelled":
+      return <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20 text-xs">{status}</Badge>;
+    case "Waitlist":
+      return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20 text-xs">{status}</Badge>;
+    default:
+      return <Badge variant="secondary" className="text-xs">{status}</Badge>;
+  }
+}
+
+function getStatusDotClass(status: string) {
+  switch (status) {
+    case "Open": return "bg-green-500";
+    case "Full": return "bg-orange-500";
+    case "Cancelled": return "bg-red-400";
+    default: return "bg-muted-foreground";
+  }
+}
+
+function sessionDuration(session: OpenSession): string {
+  try {
+    const start = parseISO(session.startAt as unknown as string);
+    const end = parseISO(session.endAt as unknown as string);
+    const mins = differenceInMinutes(end, start);
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  } catch {
+    return "";
+  }
+}
+
+// ─── Filter Panel ───────────────────────────────────────────────────────────
+
+function FilterPanel({
+  sessions, filters, setFilters, open, onToggle
+}: {
+  sessions: OpenSession[];
+  filters: Filters;
+  setFilters: (f: Filters) => void;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const sports = Array.from(new Set(sessions.map(s => s.sport).filter((x): x is string => !!x && x.trim() !== ""))).sort();
+  const locations = Array.from(new Set(sessions.map(s => s.location).filter((x): x is string => !!x && x.trim() !== ""))).sort();
+  const ageGroups = Array.from(new Set(sessions.map(s => s.ageRange).filter((x): x is string => !!x && x.trim() !== ""))).sort();
+
+  const hasActive = Object.values(filters).some(v => v !== "all");
+
+  const clear = () => setFilters({ sport: "all", location: "all", ageGroup: "all", skillLevel: "all", availability: "all", sessionType: "all" });
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onToggle}
+          className="gap-2 h-9"
+          data-testid="button-toggle-filters"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          Filters
+          {hasActive && <Badge className="h-4 w-4 p-0 flex items-center justify-center text-[10px] bg-primary text-primary-foreground rounded-full">{Object.values(filters).filter(v => v !== "all").length}</Badge>}
+        </Button>
+        {hasActive && (
+          <Button variant="ghost" size="sm" className="h-9 text-muted-foreground" onClick={clear} data-testid="button-clear-filters">
+            <X className="h-3.5 w-3.5 mr-1" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {open && (
+        <div className="mt-3 p-4 rounded-lg border bg-muted/30 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Availability</Label>
+            <Select value={filters.availability} onValueChange={v => setFilters({ ...filters, availability: v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="filter-availability"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="Open">Open</SelectItem>
+                <SelectItem value="Full">Full</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Skill Level</Label>
+            <Select value={filters.skillLevel} onValueChange={v => setFilters({ ...filters, skillLevel: v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="filter-skill-level"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Levels</SelectItem>
+                <SelectItem value="Beginner">Beginner</SelectItem>
+                <SelectItem value="Intermediate">Intermediate</SelectItem>
+                <SelectItem value="Advanced">Advanced</SelectItem>
+                <SelectItem value="All Levels">All Levels</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {sports.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Sport</Label>
+              <Select value={filters.sport} onValueChange={v => setFilters({ ...filters, sport: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="filter-sport"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sports</SelectItem>
+                  {sports.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {locations.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Location</Label>
+              <Select value={filters.location} onValueChange={v => setFilters({ ...filters, location: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="filter-location"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                  {locations.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {ageGroups.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Age Group</Label>
+              <Select value={filters.ageGroup} onValueChange={v => setFilters({ ...filters, ageGroup: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="filter-age-group"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Ages</SelectItem>
+                  {ageGroups.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Session Detail Modal ───────────────────────────────────────────────────
+
+function SessionDetailModal({
+  session, userId, isAuthenticated, isCoach, onClose
+}: {
+  session: OpenSession | null;
+  userId?: string;
+  isAuthenticated: boolean;
+  isCoach: boolean;
+  onClose: () => void;
+}) {
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [joinParticipantNames, setJoinParticipantNames] = useState<string[]>([""]);
 
-  const deleteMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("DELETE", `/api/coach/bookings/${session.id}`);
-    },
-    onSuccess: () => {
-      toast({ title: "Session Deleted", description: "The group session has been removed." });
-      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/coach/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
-    },
-    onError: (error: Error) => {
-      if (isUnauthorizedError(error)) {
-        toast({ title: "Unauthorized", description: "Please log in again.", variant: "destructive" });
-        return;
-      }
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
+  const { data: participants, isLoading: participantsLoading } = useQuery<ParticipantWithUser[]>({
+    queryKey: ["/api/bookings", session?.id, "participants"],
+    enabled: !!session,
   });
 
-  const { data: participants, isLoading: participantsLoading } = useQuery<ParticipantWithUser[]>({
-    queryKey: ["/api/bookings", session.id, "participants"],
+  const { data: waitlist } = useQuery<any[]>({
+    queryKey: ["/api/bookings", session?.id, "waitlist"],
+    enabled: !!session,
   });
 
   const hasJoined = !!(userId && participants?.some((p) => p.userId === userId));
+  const onWaitlist = !!(userId && waitlist?.some((w: any) => w.user_id === userId));
+
+  const status = session ? getSessionStatus(session) : "Open";
+  const spotsRemaining = session ? (session.maxParticipants || 6) - (session.participantCount || 0) : 0;
+  const isFull = spotsRemaining <= 0;
 
   const joinMutation = useMutation({
     mutationFn: async (data?: { participantNames?: string[] }) => {
-      const res = await apiRequest("POST", `/api/bookings/${session.id}/join`, data || {});
+      const res = await apiRequest("POST", `/api/bookings/${session!.id}/join`, data || {});
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Registered", description: "You've been added to this session." });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session.id, "participants"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session!.id, "participants"] });
       setShowJoinDialog(false);
       setJoinParticipantNames([""]);
     },
@@ -76,202 +261,289 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
 
   const leaveMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("DELETE", `/api/bookings/${session.id}/leave`);
+      await apiRequest("DELETE", `/api/bookings/${session!.id}/leave`);
     },
     onSuccess: () => {
       toast({ title: "Unregistered", description: "You've been removed from this session." });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session.id, "participants"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session!.id, "participants"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
-  const spotsRemaining = (session.maxParticipants || 6) - (session.participantCount || 0);
+  const waitlistJoinMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/bookings/${session!.id}/waitlist`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Added to Waitlist", description: "You'll be notified if a spot opens up." });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session!.id, "waitlist"] });
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Please log in", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
-  const handleAction = () => {
-    if (!isAuthenticated) {
-      window.location.href = "/";
-      return;
-    }
-    if (hasJoined) {
-      leaveMutation.mutate();
-    } else {
-      setShowJoinDialog(true);
-    }
-  };
+  const waitlistLeaveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/bookings/${session!.id}/waitlist`);
+    },
+    onSuccess: () => {
+      toast({ title: "Removed from Waitlist", description: "You've been removed from the waitlist." });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", session!.id, "waitlist"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/coach/bookings/${session!.id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Session Deleted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      setShowDeleteConfirm(false);
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const handleJoinConfirm = () => {
-    const filledNames = joinParticipantNames.filter(n => n.trim());
-    joinMutation.mutate(filledNames.length > 0 ? { participantNames: filledNames } : undefined);
+    const filled = joinParticipantNames.filter(n => n.trim());
+    joinMutation.mutate(filled.length > 0 ? { participantNames: filled } : undefined);
   };
 
-  const addJoinParticipant = () => {
-    if (joinParticipantNames.length < spotsRemaining) {
-      setJoinParticipantNames([...joinParticipantNames, ""]);
-    }
-  };
+  const isOwner = isCoach && session?.coach?.userId === userId;
 
-  const removeJoinParticipant = (index: number) => {
-    setJoinParticipantNames(joinParticipantNames.filter((_, i) => i !== index));
-  };
+  if (!session) return null;
 
-  const updateJoinParticipant = (index: number, value: string) => {
-    const updated = [...joinParticipantNames];
-    updated[index] = value;
-    setJoinParticipantNames(updated);
-  };
-
-  const isPending = joinMutation.isPending || leaveMutation.isPending;
+  const startDate = parseISO(session.startAt as unknown as string);
+  const endDate = parseISO(session.endAt as unknown as string);
+  const duration = sessionDuration(session);
 
   return (
-    <Card className="p-5" data-testid={`card-open-session-${session.id}`}>
-      <div className="space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <h3 className="font-semibold text-sm">{session.service?.name || "Group Session"}</h3>
-            <Badge variant="secondary" className="mt-1 text-xs">
-              <Users className="h-3 w-3 mr-1" />
-              {session.participantCount}/{session.maxParticipants} spots filled
-            </Badge>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {isOwner && (
+    <>
+      <Dialog open={!!session} onOpenChange={open => { if (!open) onClose(); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-0" data-testid="modal-session-detail">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <DialogTitle className="text-lg font-semibold leading-tight">
+                  {session.service?.name || "Group Session"}
+                </DialogTitle>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  {getStatusBadge(status)}
+                  {hasJoined && <Badge className="bg-primary/15 text-primary border-primary/20 text-xs">Registered</Badge>}
+                  {onWaitlist && <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 text-xs">On Waitlist</Badge>}
+                </div>
+              </div>
+              {isOwner && (
+                <Button size="icon" variant="ghost" className="shrink-0 text-destructive hover:text-destructive" onClick={() => setShowDeleteConfirm(true)} data-testid={`button-delete-session-${session.id}`}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 px-6">
+            <div className="py-4 space-y-4">
+              {session.groupDescription && (
+                <p className="text-sm text-muted-foreground leading-relaxed" data-testid={`text-group-desc-${session.id}`}>
+                  {session.groupDescription}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-start gap-2 text-sm">
+                  <Calendar className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="font-medium">{format(startDate, "EEEE, MMM d")}</p>
+                    <p className="text-muted-foreground text-xs">{format(startDate, "yyyy")}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 text-sm">
+                  <Clock className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="font-medium">{format(startDate, "h:mm a")} – {format(endDate, "h:mm a")}</p>
+                    <p className="text-muted-foreground text-xs">{duration}</p>
+                  </div>
+                </div>
+                {session.location && (
+                  <div className="flex items-start gap-2 text-sm col-span-2">
+                    <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                    <p data-testid={`text-session-location-${session.id}`}>{session.location}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {session.sport && <Badge variant="outline" className="text-xs" data-testid={`badge-sport-${session.id}`}><Dumbbell className="h-3 w-3 mr-1" />{session.sport}</Badge>}
+                {session.ageRange && <Badge variant="outline" className="text-xs" data-testid={`badge-age-range-${session.id}`}>Ages: {session.ageRange}</Badge>}
+                {session.skillLevel && <Badge variant="outline" className="text-xs" data-testid={`badge-skill-level-${session.id}`}>{session.skillLevel}</Badge>}
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Users className="h-4 w-4" />
+                    <span>Capacity</span>
+                  </div>
+                  <span className="font-medium">
+                    {session.participantCount || 0} / {session.maxParticipants || 6}
+                    {!isFull && <span className="text-muted-foreground text-xs ml-1">({spotsRemaining} left)</span>}
+                  </span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full transition-all ${isFull ? "bg-orange-500" : "bg-green-500"}`}
+                    style={{ width: `${Math.min(100, ((session.participantCount || 0) / (session.maxParticipants || 6)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {session.coach?.user && (
+                <>
+                  <Separator />
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
+                      <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                        {(session.coach.user.firstName?.[0] || "").toUpperCase()}
+                        {(session.coach.user.lastName?.[0] || "").toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-medium">Coach {session.coach.user.firstName} {session.coach.user.lastName}</p>
+                      <p className="text-xs text-muted-foreground">Lead Coach</p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {session.service && (
+                <>
+                  <Separator />
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Price</span>
+                    <span className="font-semibold text-primary" data-testid={`text-session-price-${session.id}`}>
+                      {session.service.priceCents === 0 ? "FREE" : `$${(session.service.priceCents / 100).toFixed(2)} per person`}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <Separator />
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Registered Athletes</p>
+                {participantsLoading ? (
+                  <Skeleton className="h-8 w-full" />
+                ) : !participants || participants.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No athletes registered yet — be the first!</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5" data-testid={`participants-list-${session.id}`}>
+                    {participants.map((p: any) => (
+                      <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.id}`}>
+                        {p.participantName || `${p.user?.firstName || ""} ${p.user?.lastName || ""}`.trim()}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {waitlist && waitlist.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Waitlist ({waitlist.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {waitlist.map((w: any) => (
+                      <Badge key={w.id} variant="outline" className="text-xs text-muted-foreground">
+                        {w.participant_name || `${w.first_name || ""} ${w.last_name || ""}`.trim()}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          <div className="px-6 py-4 border-t space-y-2">
+            {status === "Cancelled" ? (
+              <Button className="w-full" disabled variant="outline">
+                <AlertCircle className="h-4 w-4 mr-1.5" />
+                Session Cancelled
+              </Button>
+            ) : hasJoined ? (
               <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={deleteMutation.isPending}
-                data-testid={`button-delete-session-${session.id}`}
+                variant="outline"
+                className="w-full border-destructive/30 text-destructive hover:bg-destructive/5"
+                onClick={() => leaveMutation.mutate()}
+                disabled={leaveMutation.isPending}
+                data-testid={`button-leave-session-${session.id}`}
               >
-                <Trash2 className="h-4 w-4 text-destructive" />
+                <UserMinus className="h-4 w-4 mr-1.5" />
+                {leaveMutation.isPending ? "Unregistering…" : "Cancel Registration"}
+              </Button>
+            ) : isFull ? (
+              onWaitlist ? (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => waitlistLeaveMutation.mutate()}
+                  disabled={waitlistLeaveMutation.isPending}
+                  data-testid={`button-leave-waitlist-${session.id}`}
+                >
+                  <X className="h-4 w-4 mr-1.5" />
+                  {waitlistLeaveMutation.isPending ? "Removing…" : "Leave Waitlist"}
+                </Button>
+              ) : (
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    if (!isAuthenticated) { window.location.href = "/"; return; }
+                    waitlistJoinMutation.mutate();
+                  }}
+                  disabled={waitlistJoinMutation.isPending}
+                  data-testid={`button-join-waitlist-${session.id}`}
+                >
+                  <Clock3 className="h-4 w-4 mr-1.5" />
+                  {!isAuthenticated ? "Sign Up to Join Waitlist" : waitlistJoinMutation.isPending ? "Joining Waitlist…" : "Join Waitlist"}
+                </Button>
+              )
+            ) : (
+              <Button
+                className="w-full"
+                onClick={() => {
+                  if (!isAuthenticated) { window.location.href = "/"; return; }
+                  setShowJoinDialog(true);
+                }}
+                data-testid={`button-join-session-${session.id}`}
+              >
+                <UserPlus className="h-4 w-4 mr-1.5" />
+                {!isAuthenticated ? "Sign Up to Join" : "Join Session"}
               </Button>
             )}
-            {hasJoined ? (
-              <Badge className="bg-primary/15 text-primary text-xs" data-testid={`badge-joined-${session.id}`}>
-                Registered
-              </Badge>
-            ) : (
-              <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 text-xs">
-                Open
-              </Badge>
-            )}
           </div>
-        </div>
-
-        {session.groupDescription && (
-          <p className="text-sm leading-relaxed" data-testid={`text-group-desc-${session.id}`}>
-            {session.groupDescription}
-          </p>
-        )}
-
-        {(session.ageRange || session.skillLevel || session.sport) && (
-          <div className="flex flex-wrap gap-2">
-            {session.sport && (
-              <Badge variant="outline" className="text-xs" data-testid={`badge-sport-${session.id}`}>
-                {session.sport}
-              </Badge>
-            )}
-            {session.ageRange && (
-              <Badge variant="outline" className="text-xs" data-testid={`badge-age-range-${session.id}`}>
-                Ages: {session.ageRange}
-              </Badge>
-            )}
-            {session.skillLevel && (
-              <Badge variant="outline" className="text-xs" data-testid={`badge-skill-level-${session.id}`}>
-                {session.skillLevel}
-              </Badge>
-            )}
-          </div>
-        )}
-
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="h-3.5 w-3.5" />
-            {format(parseISO(session.startAt as unknown as string), "EEEE, MMM d, yyyy")}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            {format(parseISO(session.startAt as unknown as string), "h:mm a")} —{" "}
-            {format(parseISO(session.endAt as unknown as string), "h:mm a")}
-          </div>
-        </div>
-
-        {session.coach?.user && (
-          <div className="flex items-center gap-2">
-            <Avatar className="h-6 w-6">
-              <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
-              <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                {(session.coach.user.firstName?.[0] || "").toUpperCase()}
-                {(session.coach.user.lastName?.[0] || "").toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <span className="text-sm text-muted-foreground">
-              Coach {session.coach.user.firstName} {session.coach.user.lastName}
-            </span>
-          </div>
-        )}
-
-        {session.location && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid={`text-session-location-${session.id}`}>
-            <MapPin className="h-3.5 w-3.5" />
-            {session.location}
-          </div>
-        )}
-
-        {session.service && (
-          <p className="text-sm font-medium text-primary" data-testid={`text-session-price-${session.id}`}>
-            {session.service.name.toLowerCase().includes("team training") ? "Quoted Price" : session.service.priceCents === 0 ? "FREE" : `$${(session.service.priceCents / 100).toFixed(2)} per person`}
-          </p>
-        )}
-
-        <div className="flex flex-wrap gap-1.5" data-testid={`participants-list-${session.id}`}>
-          {participantsLoading ? (
-            <Skeleton className="h-4 w-32" />
-          ) : !participants || participants.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No athletes registered yet</p>
-          ) : (
-            participants.map((p: any) => (
-              <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.id}`}>
-                {p.participantName || `${p.user.firstName} ${p.user.lastName}`}
-              </Badge>
-            ))
-          )}
-        </div>
-
-        {hasJoined ? (
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={handleAction}
-            disabled={isPending}
-            data-testid={`button-leave-session-${session.id}`}
-          >
-            <UserMinus className="h-4 w-4 mr-1" />
-            {isPending ? "Unregistering..." : "Unregister"}
-          </Button>
-        ) : (
-          <Button
-            className="w-full"
-            onClick={handleAction}
-            disabled={isPending}
-            data-testid={`button-join-session-${session.id}`}
-          >
-            <UserPlus className="h-4 w-4 mr-1" />
-            {!isAuthenticated ? "Sign Up to Join" : isPending ? "Joining..." : "Join Session"}
-          </Button>
-        )}
-      </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Group Session</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this group session? All registered participants will be removed. This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This will remove the session and all registered participants. This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-cancel-delete-session">Cancel</AlertDialogCancel>
@@ -280,7 +552,7 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
               className="bg-destructive text-destructive-foreground"
               data-testid="button-confirm-delete-session"
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -289,76 +561,371 @@ function SessionCard({ session, userId, isAuthenticated, isOwner }: { session: O
       <Dialog open={showJoinDialog} onOpenChange={setShowJoinDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Join Group Session</DialogTitle>
+            <DialogTitle>Join — {session.service?.name || "Group Session"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Add the names of athletes you're registering for this session. You can register multiple participants (e.g., your kids).
+              Add the names of athletes you're registering. You can register multiple participants (e.g., your kids).
             </p>
             <div className="space-y-2">
               <Label data-testid="label-join-participants">Participant Names</Label>
-              {joinParticipantNames.map((name, index) => (
-                <div key={index} className="flex items-center gap-2">
+              {joinParticipantNames.map((name, i) => (
+                <div key={i} className="flex items-center gap-2">
                   <Input
-                    placeholder={`Participant ${index + 1} name`}
+                    placeholder={`Participant ${i + 1} name`}
                     value={name}
-                    onChange={(e) => updateJoinParticipant(index, e.target.value)}
-                    data-testid={`input-join-participant-${index}`}
+                    onChange={e => {
+                      const u = [...joinParticipantNames];
+                      u[i] = e.target.value;
+                      setJoinParticipantNames(u);
+                    }}
+                    data-testid={`input-join-participant-${i}`}
                   />
                   {joinParticipantNames.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeJoinParticipant(index)}
-                      data-testid={`button-remove-join-participant-${index}`}
-                    >
+                    <Button type="button" variant="ghost" size="icon" onClick={() => setJoinParticipantNames(joinParticipantNames.filter((_, j) => j !== i))} data-testid={`button-remove-join-participant-${i}`}>
                       <X className="h-4 w-4" />
                     </Button>
                   )}
                 </div>
               ))}
               {joinParticipantNames.length < spotsRemaining && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addJoinParticipant}
-                  data-testid="button-add-join-participant"
-                >
+                <Button type="button" variant="outline" size="sm" onClick={() => setJoinParticipantNames([...joinParticipantNames, ""])} data-testid="button-add-join-participant">
                   <Plus className="h-3.5 w-3.5 mr-1" />
                   Add Another Participant
                 </Button>
               )}
-              <p className="text-xs text-muted-foreground">
-                {spotsRemaining} spot{spotsRemaining !== 1 ? "s" : ""} remaining
-              </p>
+              <p className="text-xs text-muted-foreground">{spotsRemaining} spot{spotsRemaining !== 1 ? "s" : ""} remaining</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowJoinDialog(false)} data-testid="button-cancel-join">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleJoinConfirm}
-              disabled={joinMutation.isPending}
-              data-testid="button-confirm-join"
-            >
+            <Button variant="outline" onClick={() => setShowJoinDialog(false)} data-testid="button-cancel-join">Cancel</Button>
+            <Button onClick={handleJoinConfirm} disabled={joinMutation.isPending} data-testid="button-confirm-join">
               <UserPlus className="h-4 w-4 mr-1" />
-              {joinMutation.isPending ? "Joining..." : "Join Session"}
+              {joinMutation.isPending ? "Joining…" : "Confirm Registration"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+// ─── Session Chip (compact, for calendar cells) ────────────────────────────
+
+function SessionChip({ session, onClick }: { session: OpenSession; onClick: () => void }) {
+  const status = getSessionStatus(session);
+  const start = parseISO(session.startAt as unknown as string);
+  const colorClass = status === "Open"
+    ? "bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300 hover:bg-green-500/20"
+    : status === "Full"
+    ? "bg-orange-500/10 border-orange-500/30 text-orange-800 dark:text-orange-300 hover:bg-orange-500/20"
+    : status === "Cancelled"
+    ? "bg-muted/50 border-muted-foreground/20 text-muted-foreground line-through hover:bg-muted"
+    : "bg-blue-500/10 border-blue-500/30 text-blue-800 dark:text-blue-300 hover:bg-blue-500/20";
+
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left text-xs px-1.5 py-0.5 rounded border truncate transition-colors cursor-pointer ${colorClass}`}
+      data-testid={`chip-session-${session.id}`}
+    >
+      {format(start, "h:mma")} {session.service?.name || "Session"}
+    </button>
+  );
+}
+
+// ─── Day Session Card (for day & week views) ───────────────────────────────
+
+function DaySessionCard({ session, onClick }: { session: OpenSession; onClick: () => void }) {
+  const status = getSessionStatus(session);
+  const start = parseISO(session.startAt as unknown as string);
+  const end = parseISO(session.endAt as unknown as string);
+  const dur = sessionDuration(session);
+  const isFull = status === "Full";
+  const spotsLeft = (session.maxParticipants || 6) - (session.participantCount || 0);
+
+  return (
+    <Card
+      className="p-3 cursor-pointer hover:shadow-md transition-all border-l-4 group"
+      style={{ borderLeftColor: status === "Open" ? "rgb(34 197 94)" : status === "Full" ? "rgb(249 115 22)" : status === "Cancelled" ? "rgb(156 163 175)" : "rgb(59 130 246)" }}
+      onClick={onClick}
+      data-testid={`card-open-session-${session.id}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-sm truncate">{session.service?.name || "Group Session"}</p>
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground flex-wrap">
+            <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{format(start, "h:mm a")} – {format(end, "h:mm a")}</span>
+            {dur && <span className="text-muted-foreground/60">· {dur}</span>}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            {getStatusBadge(status)}
+            {session.sport && <Badge variant="outline" className="text-xs py-0">{session.sport}</Badge>}
+            {session.skillLevel && <Badge variant="outline" className="text-xs py-0">{session.skillLevel}</Badge>}
+          </div>
+        </div>
+        <div className="text-right shrink-0 space-y-1">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
+            <Users className="h-3 w-3" />
+            <span>{session.participantCount || 0}/{session.maxParticipants || 6}</span>
+          </div>
+          {!isFull && <p className="text-xs text-green-600 dark:text-green-400">{spotsLeft} left</p>}
+          {session.location && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end max-w-[100px]">
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{session.location}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      {session.coach?.user && (
+        <div className="flex items-center gap-1.5 mt-2">
+          <Avatar className="h-5 w-5">
+            <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
+            <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+              {(session.coach.user.firstName?.[0] || "").toUpperCase()}{(session.coach.user.lastName?.[0] || "").toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <span className="text-xs text-muted-foreground">Coach {session.coach.user.firstName} {session.coach.user.lastName}</span>
+        </div>
+      )}
     </Card>
   );
 }
 
+// ─── Month View ─────────────────────────────────────────────────────────────
+
+function MonthView({
+  currentDate, sessions, onDayClick, onSessionClick, selectedDay
+}: {
+  currentDate: Date;
+  sessions: OpenSession[];
+  onDayClick: (date: Date) => void;
+  onSessionClick: (session: OpenSession) => void;
+  selectedDay: Date | null;
+}) {
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd = endOfMonth(currentDate);
+  const calStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+  const calEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+
+  const days = eachDayOfInterval({ start: calStart, end: calEnd });
+  const weeks: Date[][] = [];
+  for (let i = 0; i < days.length; i += 7) {
+    weeks.push(days.slice(i, i + 7));
+  }
+
+  const sessionsByDay = useMemo(() => {
+    const map = new Map<string, OpenSession[]>();
+    sessions.forEach(s => {
+      const key = format(parseISO(s.startAt as unknown as string), "yyyy-MM-dd");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    });
+    return map;
+  }, [sessions]);
+
+  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="grid grid-cols-7 border-b bg-muted/30">
+        {dayLabels.map(d => (
+          <div key={d} className="py-2 text-center text-xs font-medium text-muted-foreground">{d}</div>
+        ))}
+      </div>
+      {weeks.map((week, wi) => (
+        <div key={wi} className="grid grid-cols-7 border-b last:border-b-0">
+          {week.map((day, di) => {
+            const key = format(day, "yyyy-MM-dd");
+            const daySessions = sessionsByDay.get(key) || [];
+            const isCurrentMonth = isSameMonth(day, currentDate);
+            const isSelected = selectedDay ? isSameDay(day, selectedDay) : false;
+            const isTodayDay = isToday(day);
+
+            return (
+              <div
+                key={di}
+                onClick={() => onDayClick(day)}
+                className={`min-h-[80px] p-1.5 border-r last:border-r-0 cursor-pointer transition-colors
+                  ${!isCurrentMonth ? "bg-muted/20" : ""}
+                  ${isSelected ? "bg-primary/5 ring-1 ring-inset ring-primary/30" : "hover:bg-muted/40"}
+                `}
+                data-testid={`calendar-day-${key}`}
+              >
+                <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium mb-1 
+                  ${isTodayDay ? "bg-primary text-primary-foreground" : ""}
+                  ${!isCurrentMonth ? "text-muted-foreground/50" : "text-foreground"}
+                `}>
+                  {format(day, "d")}
+                </div>
+                <div className="space-y-0.5">
+                  {daySessions.slice(0, 2).map(s => (
+                    <SessionChip
+                      key={s.id}
+                      session={s}
+                      onClick={e => { (e as any).stopPropagation(); onSessionClick(s); }}
+                    />
+                  ))}
+                  {daySessions.length > 2 && (
+                    <p className="text-[10px] text-muted-foreground pl-1">+{daySessions.length - 2} more</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Week View ──────────────────────────────────────────────────────────────
+
+function WeekView({
+  currentDate, sessions, onSessionClick, onDayClick
+}: {
+  currentDate: Date;
+  sessions: OpenSession[];
+  onSessionClick: (session: OpenSession) => void;
+  onDayClick: (date: Date) => void;
+}) {
+  const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  const sessionsByDay = useMemo(() => {
+    const map = new Map<string, OpenSession[]>();
+    sessions.forEach(s => {
+      const key = format(parseISO(s.startAt as unknown as string), "yyyy-MM-dd");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    });
+    return map;
+  }, [sessions]);
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="grid grid-cols-7 border-b bg-muted/30">
+        {days.map(day => (
+          <div
+            key={day.toISOString()}
+            className="py-2 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => onDayClick(day)}
+          >
+            <p className="text-xs text-muted-foreground">{format(day, "EEE")}</p>
+            <p className={`text-sm font-medium mx-auto w-7 h-7 flex items-center justify-center rounded-full
+              ${isToday(day) ? "bg-primary text-primary-foreground" : ""}
+            `}>
+              {format(day, "d")}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 min-h-[200px]">
+        {days.map(day => {
+          const key = format(day, "yyyy-MM-dd");
+          const daySessions = (sessionsByDay.get(key) || []).sort(
+            (a, b) => new Date(a.startAt as any).getTime() - new Date(b.startAt as any).getTime()
+          );
+          return (
+            <div key={key} className="border-r last:border-r-0 p-1.5 space-y-1 min-h-[160px]">
+              {daySessions.length === 0 ? (
+                <div className="h-full flex items-center justify-center">
+                  <p className="text-[10px] text-muted-foreground/40">—</p>
+                </div>
+              ) : (
+                daySessions.map(s => (
+                  <SessionChip key={s.id} session={s} onClick={() => onSessionClick(s)} />
+                ))
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Day View ───────────────────────────────────────────────────────────────
+
+function DayView({
+  currentDate, sessions, onSessionClick
+}: {
+  currentDate: Date;
+  sessions: OpenSession[];
+  onSessionClick: (session: OpenSession) => void;
+}) {
+  const daySessions = sessions
+    .filter(s => isSameDay(parseISO(s.startAt as unknown as string), currentDate))
+    .sort((a, b) => new Date(a.startAt as any).getTime() - new Date(b.startAt as any).getTime());
+
+  if (daySessions.length === 0) {
+    return (
+      <div className="rounded-lg border p-12 text-center">
+        <CalendarDays className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
+        <p className="text-muted-foreground font-medium">No sessions on {format(currentDate, "MMMM d")}</p>
+        <p className="text-sm text-muted-foreground mt-1">Try a different day or adjust your filters</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {daySessions.map(s => (
+        <DaySessionCard key={s.id} session={s} onClick={() => onSessionClick(s)} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Selected Day Panel (for month view drill-down) ─────────────────────────
+
+function SelectedDayPanel({
+  date, sessions, onSessionClick, onClose
+}: {
+  date: Date;
+  sessions: OpenSession[];
+  onSessionClick: (session: OpenSession) => void;
+  onClose: () => void;
+}) {
+  const daySessions = sessions
+    .filter(s => isSameDay(parseISO(s.startAt as unknown as string), date))
+    .sort((a, b) => new Date(a.startAt as any).getTime() - new Date(b.startAt as any).getTime());
+
+  return (
+    <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
+      <div className="flex items-center justify-between">
+        <p className="font-semibold text-sm">{format(date, "EEEE, MMMM d")}</p>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {daySessions.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-4">No sessions this day</p>
+      ) : (
+        <div className="space-y-2">
+          {daySessions.map(s => (
+            <DaySessionCard key={s.id} session={s} onClick={() => onSessionClick(s)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ──────────────────────────────────────────────────────────────
+
 export default function OpenSessionsPage() {
   const { user, isAuthenticated } = useAuth();
-  const [timeFilter, setTimeFilter] = useState("all");
-  const [skillFilter, setSkillFilter] = useState("all");
-  const [ageFilter, setAgeFilter] = useState("all");
+  const [view, setView] = useState<CalendarView>("month");
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [selectedSession, setSelectedSession] = useState<OpenSession | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<Filters>({
+    sport: "all", location: "all", ageGroup: "all",
+    skillLevel: "all", availability: "all", sessionType: "all"
+  });
 
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
@@ -367,158 +934,192 @@ export default function OpenSessionsPage() {
 
   const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
 
-  const { data: sessions, isLoading } = useQuery<OpenSession[]>({
+  const { data: sessions = [], isLoading } = useQuery<OpenSession[]>({
     queryKey: ["/api/sessions/open"],
   });
 
-  const ageOptions = Array.from(new Set(
-    (sessions || []).map(s => s.ageRange).filter((a): a is string => !!a && a.trim() !== "")
-  )).sort();
-
-  const filteredSessions = (sessions || []).filter((session) => {
-    if (timeFilter !== "all") {
-      const sessionDate = parseISO(session.startAt as unknown as string);
-      const now = new Date();
-      if (timeFilter === "today") {
-        if (!isWithinInterval(sessionDate, { start: startOfDay(now), end: endOfDay(now) })) return false;
-      } else if (timeFilter === "week") {
-        if (!isWithinInterval(sessionDate, { start: startOfWeek(now, { weekStartsOn: 0 }), end: endOfWeek(now, { weekStartsOn: 0 }) })) return false;
-      } else if (timeFilter === "month") {
-        if (!isWithinInterval(sessionDate, { start: startOfMonth(now), end: endOfMonth(now) })) return false;
+  const filteredSessions = useMemo(() => {
+    return sessions.filter(session => {
+      if (filters.availability !== "all") {
+        const status = getSessionStatus(session);
+        if (status !== filters.availability) return false;
       }
-    }
-    if (skillFilter !== "all" && session.skillLevel !== skillFilter) return false;
-    if (ageFilter !== "all" && session.ageRange !== ageFilter) return false;
-    return true;
-  });
+      if (filters.skillLevel !== "all" && session.skillLevel !== filters.skillLevel) return false;
+      if (filters.sport !== "all" && session.sport !== filters.sport) return false;
+      if (filters.location !== "all" && session.location !== filters.location) return false;
+      if (filters.ageGroup !== "all" && session.ageRange !== filters.ageGroup) return false;
+      return true;
+    });
+  }, [sessions, filters]);
 
-  const hasActiveFilters = timeFilter !== "all" || skillFilter !== "all" || ageFilter !== "all";
+  const navigate = (dir: "prev" | "next" | "today") => {
+    if (dir === "today") { setCurrentDate(new Date()); setSelectedDay(null); return; }
+    const delta = dir === "next" ? 1 : -1;
+    if (view === "month") setCurrentDate(d => delta > 0 ? addMonths(d, 1) : subMonths(d, 1));
+    else if (view === "week") setCurrentDate(d => delta > 0 ? addWeeks(d, 1) : subWeeks(d, 1));
+    else setCurrentDate(d => delta > 0 ? addDays(d, 1) : subDays(d, 1));
+    setSelectedDay(null);
+  };
+
+  const periodLabel = () => {
+    if (view === "month") return format(currentDate, "MMMM yyyy");
+    if (view === "week") {
+      const ws = startOfWeek(currentDate, { weekStartsOn: 0 });
+      const we = endOfWeek(currentDate, { weekStartsOn: 0 });
+      return isSameMonth(ws, we)
+        ? `${format(ws, "MMM d")} – ${format(we, "d, yyyy")}`
+        : `${format(ws, "MMM d")} – ${format(we, "MMM d, yyyy")}`;
+    }
+    return format(currentDate, "EEEE, MMMM d, yyyy");
+  };
+
+  const handleDayClick = (date: Date) => {
+    if (view === "month") {
+      setSelectedDay(prev => (prev && isSameDay(prev, date)) ? null : date);
+    } else {
+      setCurrentDate(date);
+      setView("day");
+    }
+  };
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-64" />
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 w-full" />)}
+      <div className="space-y-4 p-4">
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-[400px] w-full" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-serif font-bold" data-testid="text-open-sessions-title">Open Group Sessions</h1>
-          <p className="text-muted-foreground mt-1">Browse and join semi-private training sessions with other athletes</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Browse and join semi-private training sessions</p>
         </div>
         {isCoach && <AddSessionDialog />}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Time Period</Label>
-          <Select value={timeFilter} onValueChange={setTimeFilter}>
-            <SelectTrigger className="w-[130px] h-9" data-testid="filter-time-period">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Upcoming</SelectItem>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">This Week</SelectItem>
-              <SelectItem value="month">This Month</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Skill Level</Label>
-          <Select value={skillFilter} onValueChange={setSkillFilter}>
-            <SelectTrigger className="w-[130px] h-9" data-testid="filter-skill-level">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Levels</SelectItem>
-              <SelectItem value="Beginner">Beginner</SelectItem>
-              <SelectItem value="Intermediate">Intermediate</SelectItem>
-              <SelectItem value="Advanced">Advanced</SelectItem>
-              <SelectItem value="All Levels">All Levels</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {ageOptions.length > 0 && (
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Age Range</Label>
-            <Select value={ageFilter} onValueChange={setAgeFilter}>
-              <SelectTrigger className="w-[130px] h-9" data-testid="filter-age-range">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Ages</SelectItem>
-                {ageOptions.map((age) => (
-                  <SelectItem key={age} value={age}>{age}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        {hasActiveFilters && (
+      {/* Filters */}
+      <FilterPanel
+        sessions={sessions}
+        filters={filters}
+        setFilters={setFilters}
+        open={filtersOpen}
+        onToggle={() => setFiltersOpen(f => !f)}
+      />
+
+      {/* Calendar Controls */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 rounded-lg border p-0.5 bg-muted/30">
           <Button
-            variant="ghost"
+            variant={view === "month" ? "default" : "ghost"}
             size="sm"
-            className="h-9"
-            onClick={() => { setTimeFilter("all"); setSkillFilter("all"); setAgeFilter("all"); }}
-            data-testid="button-clear-filters"
+            className="h-7 text-xs gap-1.5"
+            onClick={() => { setView("month"); setSelectedDay(null); }}
+            data-testid="view-month"
           >
-            <X className="h-3.5 w-3.5 mr-1" />
-            Clear
+            <LayoutGrid className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Month</span>
           </Button>
-        )}
+          <Button
+            variant={view === "week" ? "default" : "ghost"}
+            size="sm"
+            className="h-7 text-xs gap-1.5"
+            onClick={() => { setView("week"); setSelectedDay(null); }}
+            data-testid="view-week"
+          >
+            <CalendarDays className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Week</span>
+          </Button>
+          <Button
+            variant={view === "day" ? "default" : "ghost"}
+            size="sm"
+            className="h-7 text-xs gap-1.5"
+            onClick={() => { setView("day"); setSelectedDay(null); }}
+            data-testid="view-day"
+          >
+            <List className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Day</span>
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigate("prev")} data-testid="button-prev-period">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 px-3 text-xs font-medium" onClick={() => navigate("today")} data-testid="button-today">
+            Today
+          </Button>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigate("next")} data-testid="button-next-period">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <p className="font-semibold text-sm" data-testid="text-period-label">{periodLabel()}</p>
+
+        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Open</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />Full</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-muted-foreground inline-block" />Cancelled</span>
+        </div>
       </div>
 
-      {filteredSessions.length === 0 ? (
-        <Card className="p-8 text-center">
-          <Users className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-          {hasActiveFilters ? (
-            <>
-              <p className="text-muted-foreground">No sessions match your filters</p>
-              <p className="text-sm text-muted-foreground mt-1">Try adjusting your filters to see more sessions</p>
-            </>
-          ) : (
-            <>
-              <p className="text-muted-foreground">No open group sessions available right now</p>
-              <p className="text-sm text-muted-foreground mt-1">Check back later or browse coaches for 1-on-1 sessions</p>
-            </>
-          )}
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredSessions.map((session) => (
-            <SessionCard
-              key={session.id}
-              session={session}
-              userId={user?.id}
-              isAuthenticated={isAuthenticated}
-              isOwner={isCoach && session.coach?.userId === user?.id}
-            />
-          ))}
-        </div>
+      {/* Calendar Body */}
+      {view === "month" && (
+        <MonthView
+          currentDate={currentDate}
+          sessions={filteredSessions}
+          onDayClick={handleDayClick}
+          onSessionClick={setSelectedSession}
+          selectedDay={selectedDay}
+        />
+      )}
+      {view === "week" && (
+        <WeekView
+          currentDate={currentDate}
+          sessions={filteredSessions}
+          onSessionClick={setSelectedSession}
+          onDayClick={handleDayClick}
+        />
+      )}
+      {view === "day" && (
+        <DayView
+          currentDate={currentDate}
+          sessions={filteredSessions}
+          onSessionClick={setSelectedSession}
+        />
       )}
 
-      {!isCoach && (
-        <Card className="p-6 text-center space-y-3" data-testid="card-group-inquiry">
-          <Users className="h-7 w-7 mx-auto text-primary" />
-          <h3 className="font-semibold">Want to Start a Group Session?</h3>
-          <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            Gather your teammates, training partners, or friends and train together at a lower per-person cost. Reach out to get started.
-          </p>
-          <Button
-            asChild
-            data-testid="button-inquire-group"
-          >
-            <a href="mailto:Bryan.jones@efficiencystrengthtraining.com?subject=Group%20Training%20Inquiry&body=Hi%2C%20I%27m%20interested%20in%20starting%20a%20group%20training%20session.%20Please%20let%20me%20know%20about%20availability%20and%20pricing.">
-              <Mail className="h-4 w-4 mr-2" />
-              Inquire About Group Training
-            </a>
-          </Button>
-        </Card>
+      {/* Selected Day Drill-down (month view) */}
+      {view === "month" && selectedDay && (
+        <SelectedDayPanel
+          date={selectedDay}
+          sessions={filteredSessions}
+          onSessionClick={setSelectedSession}
+          onClose={() => setSelectedDay(null)}
+        />
+      )}
+
+      {/* Total count */}
+      {filteredSessions.length > 0 && (
+        <p className="text-xs text-muted-foreground text-right">
+          Showing {filteredSessions.length} session{filteredSessions.length !== 1 ? "s" : ""}
+        </p>
+      )}
+
+      {/* Session Detail Modal */}
+      {selectedSession && (
+        <SessionDetailModal
+          session={selectedSession}
+          userId={user?.id}
+          isAuthenticated={isAuthenticated}
+          isCoach={isCoach}
+          onClose={() => setSelectedSession(null)}
+        />
       )}
     </div>
   );

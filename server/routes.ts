@@ -3464,6 +3464,98 @@ export async function registerRoutes(
     }
   });
 
+  // ===== SESSION WAITLIST (group sessions) =====
+  const initSessionWaitlistsTable = async () => {
+    const { db: dbRef } = await import("./db");
+    const { sql: sqlRef } = await import("drizzle-orm");
+    await dbRef.execute(sqlRef`
+      CREATE TABLE IF NOT EXISTS session_waitlists (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        booking_id VARCHAR NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        participant_name VARCHAR,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(booking_id, user_id)
+      )
+    `);
+  };
+
+  app.get("/api/bookings/:id/waitlist", async (req: any, res) => {
+    try {
+      await initSessionWaitlistsTable();
+      const { db: dbRef } = await import("./db");
+      const { sql: sqlRef } = await import("drizzle-orm");
+      const result = await dbRef.execute(sqlRef`
+        SELECT sw.*, u.first_name, u.last_name, u.profile_image_url
+        FROM session_waitlists sw
+        LEFT JOIN users u ON sw.user_id = u.id
+        WHERE sw.booking_id = ${req.params.id}
+        ORDER BY sw.created_at ASC
+      `);
+      const rows = Array.isArray(result) ? result : ((result as any).rows || []);
+      res.json(rows);
+    } catch (error) {
+      console.error("Error fetching session waitlist:", error);
+      res.status(500).json({ message: "Failed to fetch waitlist" });
+    }
+  });
+
+  app.post("/api/bookings/:id/waitlist", isAuthenticated, async (req: any, res) => {
+    try {
+      await initSessionWaitlistsTable();
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const bookingId = req.params.id;
+      const { participantName } = req.body;
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ message: "Session not found" });
+      if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
+        return res.status(400).json({ message: "This session is no longer available" });
+      }
+
+      const { db: dbRef } = await import("./db");
+      const { sql: sqlRef } = await import("drizzle-orm");
+
+      const existing = await dbRef.execute(sqlRef`
+        SELECT id FROM session_waitlists WHERE booking_id = ${bookingId} AND user_id = ${userId}
+      `);
+      const existingRows = Array.isArray(existing) ? existing : ((existing as any).rows || []);
+      if (existingRows.length > 0) {
+        return res.status(409).json({ message: "You are already on the waitlist" });
+      }
+
+      const result = await dbRef.execute(sqlRef`
+        INSERT INTO session_waitlists (booking_id, user_id, participant_name)
+        VALUES (${bookingId}, ${userId}, ${participantName || null})
+        RETURNING *
+      `);
+      const rows = Array.isArray(result) ? result : ((result as any).rows || []);
+      res.json(rows[0] || { success: true });
+    } catch (error) {
+      console.error("Error joining session waitlist:", error);
+      res.status(500).json({ message: "Failed to join waitlist" });
+    }
+  });
+
+  app.delete("/api/bookings/:id/waitlist", isAuthenticated, async (req: any, res) => {
+    try {
+      await initSessionWaitlistsTable();
+      const userId = req.user.claims?.sub ?? req.user.id;
+      const bookingId = req.params.id;
+
+      const { db: dbRef } = await import("./db");
+      const { sql: sqlRef } = await import("drizzle-orm");
+
+      await dbRef.execute(sqlRef`
+        DELETE FROM session_waitlists WHERE booking_id = ${bookingId} AND user_id = ${userId}
+      `);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error leaving session waitlist:", error);
+      res.status(500).json({ message: "Failed to leave waitlist" });
+    }
+  });
+
   app.get("/api/coach/users", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub ?? req.user.id;
