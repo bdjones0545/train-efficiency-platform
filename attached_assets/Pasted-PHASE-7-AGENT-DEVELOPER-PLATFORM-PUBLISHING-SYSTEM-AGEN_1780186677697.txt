@@ -1,0 +1,556 @@
+PHASE 7 — AGENT DEVELOPER PLATFORM, PUBLISHING SYSTEM & AGENT ECONOMY
+
+Objective
+
+Phase 1–6 created:
+
+* Workforce OS
+* Operations Layer
+* Performance Layer
+* Intelligence Layer
+* Autonomous Execution Layer
+* Marketplace Foundation
+
+Phase 7 transforms TrainEfficiency from a platform with agents into a platform where others can build, publish, distribute, benchmark, monetize, and evolve agents.
+
+The goal is:
+
+Organizations use agents
+↓
+Developers build agents
+↓
+Marketplace distributes agents
+↓
+Benchmarks rank agents
+↓
+Revenue rewards developers
+↓
+More developers build agents
+
+This creates the Agent Economy.
+
+PART 1 — Agent SDK
+
+Create:
+
+server/agent-sdk/
+
+Purpose:
+
+Allow developers to create agents without modifying core platform code.
+
+Agent definition should support:
+
+name
+
+description
+
+department
+
+capabilities
+
+required_integrations
+
+supported_industries
+
+risk_level
+
+default_governance_mode
+
+required_permissions
+
+execution_types
+
+benchmark_categories
+
+version
+
+Developer-defined agent example:
+
+Football Recruiting Agent
+
+Lead Recovery Agent
+
+Gym Retention Agent
+
+Coach Hiring Agent
+
+Sponsorship Outreach Agent
+
+Agents should be installable from metadata.
+
+PART 2 — Agent Publishing System
+
+Create:
+
+agent_submissions
+
+Fields:
+
+id
+
+developer_id
+
+agent_template_id
+
+submission_status
+
+review_notes
+
+submitted_at
+
+approved_at
+
+published_at
+
+Statuses:
+
+Draft
+
+Submitted
+
+Under Review
+
+Approved
+
+Rejected
+
+Published
+
+Developer workflow:
+
+Build
+↓
+Submit
+↓
+Review
+↓
+Publish
+
+PART 3 — Developer Portal
+
+Route:
+
+/developer
+
+Sections:
+
+My Agents
+
+Submissions
+
+Analytics
+
+Revenue
+
+Versions
+
+Documentation
+
+Certification Status
+
+Benchmark Performance
+
+Trust Score
+
+This becomes the home for agent creators.
+
+PART 4 — Agent Revenue Sharing
+
+Create:
+
+developer_accounts
+
+agent_revenue_events
+
+developer_payouts
+
+Track:
+
+Installations
+
+Usage
+
+Revenue Attribution
+
+Royalties
+
+Payouts
+
+Metrics:
+
+Monthly Revenue
+
+Lifetime Revenue
+
+Installs
+
+Active Organizations
+
+ROI Produced
+
+Suggested payout model:
+
+Developer receives percentage of subscription or installation revenue.
+
+Infrastructure only.
+
+No payment processing required yet.
+
+PART 5 — Agent Review System
+
+Create:
+
+agent_reviews
+
+Fields:
+
+agent_id
+
+org_id
+
+rating
+
+review
+
+outcome_score
+
+trust_score
+
+roi_score
+
+created_at
+
+Review categories:
+
+Ease of Use
+
+Business Impact
+
+Trustworthiness
+
+ROI
+
+Reliability
+
+Support
+
+Display:
+
+Average Rating
+
+Review Count
+
+Review Distribution
+
+Verified Usage
+
+This begins the “Glassdoor layer.”
+
+PART 6 — Agent Certification Pipeline
+
+Upgrade certifications.
+
+Create review workflow:
+
+Submitted Agent
+↓
+Benchmark Testing
+↓
+Governance Review
+↓
+Performance Validation
+↓
+Certification
+
+Certification tiers:
+
+Certified
+
+Verified
+
+High Performer
+
+Elite Performer
+
+Platform Recommended
+
+Display publicly.
+
+PART 7 — Agent Testing Sandbox
+
+Route:
+
+/developer/sandbox
+
+Purpose:
+
+Test agent behavior before publishing.
+
+Features:
+
+Run simulations
+
+Test workflows
+
+Validate permissions
+
+Validate integrations
+
+Preview execution plans
+
+View risk analysis
+
+View trust projections
+
+No live actions.
+
+PART 8 — Agent Benchmark Marketplace
+
+Create:
+
+GET /api/marketplace/benchmarks/public
+
+Public benchmark cards.
+
+Display:
+
+Success Rate
+
+ROI
+
+Revenue Impact
+
+Time Saved
+
+Trust Score
+
+Industry Performance
+
+Adoption Rate
+
+Benchmark Confidence
+
+This becomes the comparison layer.
+
+PART 9 — Agent Store
+
+Create:
+
+/marketplace/store
+
+Categories:
+
+Growth
+
+Retention
+
+Scheduling
+
+Communications
+
+Research
+
+Operations
+
+Executive
+
+Recruiting
+
+Hiring
+
+Sales
+
+Each agent page includes:
+
+Description
+
+Capabilities
+
+Reviews
+
+Benchmarks
+
+Certifications
+
+Version History
+
+Install Count
+
+Industry Fit
+
+Expected ROI
+
+Install Button
+
+PART 10 — Agent API Permissions Layer
+
+Create:
+
+agent_permissions
+
+Allow agent builders to request:
+
+CRM Access
+
+Email Access
+
+Calendar Access
+
+Billing Access
+
+Lead Access
+
+Reporting Access
+
+Approval requirements based on risk.
+
+Organizations explicitly grant permissions.
+
+PART 11 — Agent Lifecycle Management
+
+Create:
+
+Agent Installed
+
+Agent Active
+
+Agent Upgraded
+
+Agent Deprecated
+
+Agent Archived
+
+Agent Removed
+
+Track:
+
+Install counts
+
+Upgrade rates
+
+Retention rates
+
+Churn rates
+
+Lifecycle analytics
+
+PART 12 — Agent Ecosystem Analytics
+
+Create:
+
+GET /api/marketplace/ecosystem
+
+Track:
+
+Total Agents
+
+Published Agents
+
+Developers
+
+Organizations Using Agents
+
+Total Installs
+
+Top Revenue Agents
+
+Top Rated Agents
+
+Most Installed Agents
+
+Fastest Growing Agents
+
+Marketplace Revenue
+
+This becomes the ecosystem dashboard.
+
+PART 13 — White Label Agent Creation
+
+Allow organizations to clone agents.
+
+Workflow:
+
+Install Agent
+↓
+Customize Rules
+↓
+Customize Branding
+↓
+Publish Private Version
+
+Examples:
+
+EST Lead Recovery Agent
+
+EST Recruiting Agent
+
+EST Athlete Retention Agent
+
+Private agents remain organization-owned.
+
+PART 14 — Agent Reputation Engine
+
+Create:
+
+agent_reputation
+
+Inputs:
+
+Reviews
+
+ROI
+
+Trust
+
+Benchmark Stability
+
+Forecast Accuracy
+
+Certification Level
+
+Adoption
+
+Generate:
+
+Reputation Score (0–100)
+
+Marketplace Rank
+
+Trust Tier
+
+Recommendation Score
+
+This becomes the foundation of the future Glassdoor-style rankings.
+
+PART 15 — Success Criteria
+
+At completion:
+
+Developers can build agents.
+
+Developers can publish agents.
+
+Organizations can install agents.
+
+Agents can be benchmarked.
+
+Agents can be reviewed.
+
+Agents can be certified.
+
+Agents can earn revenue.
+
+Organizations can compare agents.
+
+Marketplace rankings exist.
+
+Agent reputation exists.
+
+The platform supports a real agent economy.
+
+Final Goal
+
+Transform TrainEfficiency from an Agent Marketplace Foundation into a full Agent Developer Platform where organizations, coaches, consultants, and developers can create, distribute, benchmark, monetize, and improve AI workers.
+
+This is the phase where the original vision of a “Glassdoor for Agents” becomes a living ecosystem powered by real performance data, trust scores, certifications, benchmarks, reviews, and economic incentives.

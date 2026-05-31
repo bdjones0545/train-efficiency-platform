@@ -20089,6 +20089,321 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Phase 7: Developer Platform, Publishing System & Agent Economy ─────────
+
+  // Developer profile — auto-create on first access
+  app.get("/api/developer/profile", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { developerAccounts } = await import("@shared/schema");
+      const existing = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
+      if (existing[0]) return res.json(existing[0]);
+      // Auto-create developer profile
+      const [created] = await db.insert(developerAccounts).values({
+        orgId, displayName: "My Organization", status: "active", revenueShareRate: 0.30,
+      }).returning();
+      res.json(created);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch developer profile" });
+    }
+  });
+
+  // Register developer account
+  app.post("/api/developer/register", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { displayName, email, bio } = req.body;
+      if (!displayName) return res.status(400).json({ message: "displayName required" });
+      const { developerAccounts } = await import("@shared/schema");
+      const existing = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
+      if (existing[0]) {
+        const [updated] = await db.update(developerAccounts).set({ displayName, email, bio, updatedAt: new Date() }).where(eq(developerAccounts.orgId, orgId)).returning();
+        return res.json(updated);
+      }
+      const [created] = await db.insert(developerAccounts).values({ orgId, displayName, email, bio, status: "active", revenueShareRate: 0.30 }).returning();
+      res.json(created);
+    } catch (e: any) {
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  // List developer submissions
+  app.get("/api/developer/submissions", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentSubmissions, developerAccounts } = await import("@shared/schema");
+      const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
+      const devId = devs[0]?.id;
+      if (!devId) return res.json([]);
+      const subs = await db.select().from(agentSubmissions).where(eq(agentSubmissions.developerId, devId)).orderBy(agentSubmissions.createdAt).catch(() => []);
+      res.json(subs.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch submissions" });
+    }
+  });
+
+  // Submit agent definition
+  app.post("/api/developer/submit", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const def = req.body;
+      const { developerAccounts } = await import("@shared/schema");
+      const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
+      let devId = devs[0]?.id;
+      if (!devId) {
+        const [newDev] = await db.insert(developerAccounts).values({ orgId, displayName: "My Organization", status: "active", revenueShareRate: 0.30 }).returning();
+        devId = newDev.id;
+      }
+      const { createDeveloperSubmission } = await import("./agent-sdk/index");
+      const result = await createDeveloperSubmission(devId, def);
+      res.json(result);
+    } catch (e: any) {
+      console.error("[developer/submit]", e);
+      res.status(500).json({ message: "Submission failed", error: e.message });
+    }
+  });
+
+  // Validate agent definition (sandbox)
+  app.post("/api/developer/validate", async (req, res) => {
+    try {
+      const { validateAgentDefinition } = await import("./agent-sdk/index");
+      const result = validateAgentDefinition(req.body);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: "Validation failed" });
+    }
+  });
+
+  // Developer analytics
+  app.get("/api/developer/analytics", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { developerAccounts, agentSubmissions, agentReviews: agentReviewsTable } = await import("@shared/schema");
+      const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
+      const devId = devs[0]?.id;
+      if (!devId) return res.json({ orgsUsing: 0, totalInstalls: 0, avgRating: 0, totalReviews: 0, published: 0 });
+      const subs = await db.select().from(agentSubmissions).where(eq(agentSubmissions.developerId, devId)).catch(() => []);
+      const publishedAgentIds = subs.filter(s => s.submissionStatus === "published").map(s => s.agentTemplateId).filter(Boolean);
+      const reviews = publishedAgentIds.length > 0
+        ? await db.select().from(agentReviewsTable).catch(() => [])
+        : [];
+      const relevantReviews = reviews.filter(r => publishedAgentIds.includes(r.agentId));
+      const avgRating = relevantReviews.length > 0 ? relevantReviews.reduce((s, r) => s + (r.rating ?? 0), 0) / relevantReviews.length : 0;
+      res.json({
+        orgsUsing: new Set(relevantReviews.map(r => r.orgId)).size,
+        totalInstalls: devs[0]?.totalInstalls ?? 0,
+        avgRating: Math.round(avgRating * 10) / 10,
+        totalReviews: relevantReviews.length,
+        published: subs.filter(s => s.submissionStatus === "published").length,
+        avgBenchmarkScore: 0,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch analytics" });
+    }
+  });
+
+  // Developer revenue
+  app.get("/api/developer/revenue", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { developerAccounts, agentRevenueEvents: agentRevTable, developerPayouts } = await import("@shared/schema");
+      const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
+      const devId = devs[0]?.id;
+      if (!devId) return res.json({ monthlyRevenue: 0, lifetimeRevenue: 0, pendingRoyalties: 0, paidOut: 0, activeInstalls: 0 });
+      const [events, payouts] = await Promise.all([
+        db.select().from(agentRevTable).where(eq(agentRevTable.developerId, devId)).catch(() => []),
+        db.select().from(developerPayouts).where(eq(developerPayouts.developerId, devId)).catch(() => []),
+      ]);
+      const since30d = new Date(Date.now() - 30 * 86400000);
+      const monthlyRevents = events.filter(e => new Date(e.createdAt) > since30d);
+      const monthlyRevenue = monthlyRevents.reduce((s, e) => s + (e.royaltyAmount ?? 0), 0);
+      const lifetimeRevenue = events.reduce((s, e) => s + (e.royaltyAmount ?? 0), 0);
+      const paidOut = payouts.filter(p => p.status === "paid").reduce((s, p) => s + (p.amount ?? 0), 0);
+      res.json({
+        monthlyRevenue: Math.round(monthlyRevenue),
+        lifetimeRevenue: Math.round(lifetimeRevenue),
+        pendingRoyalties: Math.round(lifetimeRevenue - paidOut),
+        paidOut: Math.round(paidOut),
+        activeInstalls: devs[0]?.totalInstalls ?? 0,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch revenue" });
+    }
+  });
+
+  // Review submission — PATCH submission status (admin review)
+  app.patch("/api/developer/submissions/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, reviewNotes } = req.body;
+      const { agentSubmissions } = await import("@shared/schema");
+      const updateData: any = { submissionStatus: status, reviewNotes, updatedAt: new Date() };
+      if (status === "approved") updateData.approvedAt = new Date();
+      if (status === "published") updateData.publishedAt = new Date();
+      const [updated] = await db.update(agentSubmissions).set(updateData).where(eq(agentSubmissions.id, id)).returning();
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to update submission" });
+    }
+  });
+
+  // Submit agent review
+  app.post("/api/marketplace/reviews", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentId, rating, review, outcomeScore, trustScore, roiScore, easeOfUse, businessImpact, reliability } = req.body;
+      if (!agentId || !rating) return res.status(400).json({ message: "agentId and rating required" });
+      const { agentReviews } = await import("@shared/schema");
+      const existing = await db.select().from(agentReviews).where(
+        and(eq(agentReviews.agentId, agentId), eq(agentReviews.orgId, orgId))
+      ).catch(() => []);
+      let result;
+      if (existing.length > 0) {
+        [result] = await db.update(agentReviews).set({ rating, review, outcomeScore, trustScore, roiScore, easeOfUse, businessImpact, reliability }).where(and(eq(agentReviews.agentId, agentId), eq(agentReviews.orgId, orgId))).returning();
+      } else {
+        [result] = await db.insert(agentReviews).values({ agentId, orgId, rating, review, outcomeScore: outcomeScore ?? 0, trustScore: trustScore ?? 0, roiScore: roiScore ?? 0, easeOfUse: easeOfUse ?? 3, businessImpact: businessImpact ?? 3, reliability: reliability ?? 3, verifiedUsage: true }).returning();
+      }
+      res.json(result);
+    } catch (e: any) {
+      console.error("[marketplace/reviews POST]", e);
+      res.status(500).json({ message: "Failed to submit review" });
+    }
+  });
+
+  // Get all reviews (or by agentId query param)
+  app.get("/api/marketplace/reviews", async (req, res) => {
+    try {
+      const { agentReviews } = await import("@shared/schema");
+      const { agentId } = req.query;
+      let query = db.select().from(agentReviews);
+      if (agentId) query = query.where(eq(agentReviews.agentId, agentId as string)) as any;
+      const reviews = await query.orderBy(agentReviews.createdAt).catch(() => []);
+      res.json(reviews.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch reviews" });
+    }
+  });
+
+  // Get reviews for specific agent
+  app.get("/api/marketplace/reviews/:agentId", async (req, res) => {
+    try {
+      const { agentReviews } = await import("@shared/schema");
+      const reviews = await db.select().from(agentReviews).where(eq(agentReviews.agentId, req.params.agentId)).orderBy(agentReviews.createdAt).catch(() => []);
+      res.json(reviews.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch agent reviews" });
+    }
+  });
+
+  // Get all reputation scores
+  app.get("/api/marketplace/reputation", async (req, res) => {
+    try {
+      const { getAllReputationRecords } = await import("./agent-reputation-engine");
+      const scores = await getAllReputationRecords();
+      res.json(scores);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch reputation scores" });
+    }
+  });
+
+  // Refresh all reputation scores
+  app.post("/api/marketplace/reputation/refresh", async (req, res) => {
+    try {
+      const { generateAllReputationScores } = await import("./agent-reputation-engine");
+      const scores = await generateAllReputationScores();
+      res.json({ success: true, count: scores.length });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to refresh reputation" });
+    }
+  });
+
+  // Ecosystem analytics
+  app.get("/api/marketplace/ecosystem", async (req, res) => {
+    try {
+      const { computeEcosystemAnalytics } = await import("./agent-reputation-engine");
+      const analytics = await computeEcosystemAnalytics();
+      res.json(analytics);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute ecosystem analytics" });
+    }
+  });
+
+  // Public benchmark cards
+  app.get("/api/marketplace/benchmarks/public", async (req, res) => {
+    try {
+      const { generateMarketplaceProfiles } = await import("./agent-benchmark-engine");
+      const profiles = await generateMarketplaceProfiles();
+      res.json(profiles.map(p => ({
+        agentId: p.agentId,
+        agentName: p.agentName,
+        certificationLevel: p.certificationLevel,
+        benchmarkScore: p.benchmarkScore,
+        averageRoi: p.averageRoi,
+        averageSuccessRate: p.averageSuccessRate,
+        averageHoursSaved: p.averageHoursSaved,
+        averageTrustScore: p.averageTrustScore,
+        sampleSize: p.sampleSize,
+      })));
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch public benchmarks" });
+    }
+  });
+
+  // White label clone
+  app.post("/api/marketplace/clone", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { sourceAgentId, customName, customDescription, customCapabilities, customRules, branding } = req.body;
+      if (!sourceAgentId || !customName) return res.status(400).json({ message: "sourceAgentId and customName required" });
+      const { whiteLabelAgents, agentLifecycleEvents } = await import("@shared/schema");
+      const [clone] = await db.insert(whiteLabelAgents).values({
+        orgId, sourceAgentId, customName, customDescription, customCapabilities, customRules, branding: branding ?? {}, status: "active",
+      }).returning();
+      await db.insert(agentLifecycleEvents).values({
+        agentId: sourceAgentId, orgId, eventType: "cloned", toStatus: "active", notes: `White-label clone created: ${customName}`,
+      }).catch(() => {});
+      res.json(clone);
+    } catch (e: any) {
+      res.status(500).json({ message: "Clone failed" });
+    }
+  });
+
+  // Lifecycle events for org
+  app.get("/api/marketplace/lifecycle", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentLifecycleEvents } = await import("@shared/schema");
+      const events = await db.select().from(agentLifecycleEvents).where(eq(agentLifecycleEvents.orgId, orgId)).orderBy(agentLifecycleEvents.createdAt).catch(() => []);
+      res.json(events.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch lifecycle events" });
+    }
+  });
+
+  // White label agents for org
+  app.get("/api/marketplace/white-label", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { whiteLabelAgents } = await import("@shared/schema");
+      const agents = await db.select().from(whiteLabelAgents).where(
+        and(eq(whiteLabelAgents.orgId, orgId), eq(whiteLabelAgents.status, "active"))
+      ).catch(() => []);
+      res.json(agents);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch white-label agents" });
+    }
+  });
+
   // ─── Phase 6: Agent Marketplace, Benchmarking & Multi-Org Intelligence ──────
 
   // GET all marketplace agents (profiles)

@@ -9,7 +9,8 @@ import {
   Store, ArrowLeft, RefreshCw, Star, Award, TrendingUp, BarChart3,
   Zap, DollarSign, Clock, Brain, Users, Shield, Globe, CheckCircle2,
   Target, Activity, Package, ChevronUp, ChevronDown, Minus, Building,
-  Cpu, Trophy, AlertTriangle, Sparkles,
+  Cpu, Trophy, AlertTriangle, Sparkles, Code2, MessageSquare,
+  GitBranch, Copy, Plus, ArrowRight, Layers,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -228,6 +229,40 @@ export default function AdminAgentMarketplace() {
     queryFn: () => fetch("/api/marketplace/health").then(r => r.json()),
   });
 
+  const { data: ecosystem } = useQuery<any>({
+    queryKey: ["/api/marketplace/ecosystem"],
+    queryFn: () => fetch("/api/marketplace/ecosystem").then(r => r.json()),
+    enabled: tab === "ecosystem",
+  });
+
+  const { data: allReviews = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/reviews"],
+    queryFn: () => fetch("/api/marketplace/reviews").then(r => r.json()),
+    enabled: tab === "reviews",
+    initialData: [],
+  });
+
+  const { data: reputation = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/reputation"],
+    queryFn: () => fetch("/api/marketplace/reputation").then(r => r.json()),
+    enabled: tab === "reviews",
+    initialData: [],
+  });
+
+  const { data: whiteLabelAgents = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/white-label"],
+    queryFn: () => fetch("/api/marketplace/white-label").then(r => r.json()),
+    enabled: tab === "whitelabel",
+    initialData: [],
+  });
+
+  const { data: lifecycleEvents = [] } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/lifecycle"],
+    queryFn: () => fetch("/api/marketplace/lifecycle").then(r => r.json()),
+    enabled: tab === "lifecycle",
+    initialData: [],
+  });
+
   const refreshBenchmarks = useMutation({
     mutationFn: () => apiRequest("POST", "/api/marketplace/benchmarks/refresh", {}),
     onSuccess: () => {
@@ -276,11 +311,23 @@ export default function AdminAgentMarketplace() {
             </p>
           </div>
         </div>
-        <Button onClick={() => refreshBenchmarks.mutate()} disabled={refreshBenchmarks.isPending}
-          className="bg-indigo-600 hover:bg-indigo-700" size="sm" data-testid="button-refresh-benchmarks">
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${refreshBenchmarks.isPending ? "animate-spin" : ""}`} />
-          {refreshBenchmarks.isPending ? "Refreshing..." : "Refresh Benchmarks"}
-        </Button>
+        <div className="flex gap-2">
+          <Link href="/marketplace/store">
+            <Button variant="outline" size="sm" className="border-indigo-700 text-indigo-400 hover:bg-indigo-900/20" data-testid="button-store-link">
+              <Store className="h-4 w-4 mr-1.5" />Store
+            </Button>
+          </Link>
+          <Link href="/developer">
+            <Button variant="outline" size="sm" className="border-emerald-700 text-emerald-400 hover:bg-emerald-900/20" data-testid="button-developer-link">
+              <Code2 className="h-4 w-4 mr-1.5" />Developer Portal
+            </Button>
+          </Link>
+          <Button onClick={() => refreshBenchmarks.mutate()} disabled={refreshBenchmarks.isPending}
+            className="bg-indigo-600 hover:bg-indigo-700" size="sm" data-testid="button-refresh-benchmarks">
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${refreshBenchmarks.isPending ? "animate-spin" : ""}`} />
+            {refreshBenchmarks.isPending ? "Refreshing..." : "Refresh Benchmarks"}
+          </Button>
+        </div>
       </div>
 
       {/* Stats Strip */}
@@ -331,6 +378,10 @@ export default function AdminAgentMarketplace() {
           <TabsTrigger value="versions">Versions</TabsTrigger>
           <TabsTrigger value="analytics">Installation Analytics</TabsTrigger>
           <TabsTrigger value="health">Marketplace Health</TabsTrigger>
+          <TabsTrigger value="ecosystem">Ecosystem</TabsTrigger>
+          <TabsTrigger value="reviews">Reviews</TabsTrigger>
+          <TabsTrigger value="whitelabel">White Label</TabsTrigger>
+          <TabsTrigger value="lifecycle">Lifecycle</TabsTrigger>
         </TabsList>
 
         {/* Agent Library */}
@@ -658,6 +709,273 @@ export default function AdminAgentMarketplace() {
             </>
           )}
         </TabsContent>
+
+        {/* Ecosystem Tab */}
+        <TabsContent value="ecosystem" className="mt-4 space-y-4">
+          {!ecosystem ? (
+            <div className="h-40 bg-gray-800 rounded-xl animate-pulse" />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: "Total Agents",      value: ecosystem.totalAgents,      color: "text-indigo-400",  icon: Cpu },
+                  { label: "Published",         value: ecosystem.publishedAgents,  color: "text-green-400",   icon: CheckCircle2 },
+                  { label: "Developers",        value: ecosystem.developers,       color: "text-emerald-400", icon: Code2 },
+                  { label: "Total Installs",    value: ecosystem.totalInstalls,    color: "text-blue-400",    icon: Package },
+                  { label: "Reviews",           value: ecosystem.totalReviews,     color: "text-yellow-400",  icon: MessageSquare },
+                  { label: "Avg Rating",        value: ecosystem.avgRating > 0 ? `${ecosystem.avgRating}★` : "—", color: "text-yellow-300", icon: Star },
+                  { label: "Marketplace Rev.",  value: `$${ecosystem.marketplaceRevenue?.toLocaleString() ?? 0}`, color: "text-green-400", icon: DollarSign },
+                  { label: "Pending Review",    value: ecosystem.pendingSubmissions ?? 0, color: "text-orange-400", icon: Clock },
+                ].map(s => (
+                  <Card key={s.label} className="bg-gray-900 border-gray-800">
+                    <CardContent className="p-4">
+                      <s.icon className={`h-4 w-4 mb-2 ${s.color}`} />
+                      <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {ecosystem.certificationBreakdown && (
+                  <Card className="bg-gray-900 border-gray-800">
+                    <CardHeader className="pb-2"><CardTitle className="text-sm">Certification Breakdown</CardTitle></CardHeader>
+                    <CardContent className="space-y-2">
+                      {Object.entries(ecosystem.certificationBreakdown).map(([level, count]: [string, any]) => (
+                        <div key={level} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-400 capitalize">{level.replace(/_/g, " ")}</span>
+                          <span className="font-medium text-white">{count}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {ecosystem.topReputationAgents?.length > 0 && (
+                  <Card className="bg-gray-900 border-gray-800">
+                    <CardHeader className="pb-2"><CardTitle className="text-sm">Top Reputation Agents</CardTitle></CardHeader>
+                    <CardContent className="space-y-2">
+                      {ecosystem.topReputationAgents.map((a: any, i: number) => (
+                        <div key={a.agentId} className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-500 w-4">#{i + 1}</span>
+                            <span className="text-gray-300">{a.agentName}</span>
+                            <span className="text-gray-600">{a.trustTier}</span>
+                          </div>
+                          <span className="font-bold text-white">{a.reputationScore}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+
+              <Card className="bg-gray-800/40 border-gray-700/40">
+                <CardContent className="p-4 text-xs text-gray-500">
+                  <strong className="text-gray-400">Agent Economy vision:</strong> Organizations use agents → Developers build agents → Marketplace distributes → Benchmarks rank → Revenue rewards developers → More developers build. This ecosystem panel tracks the health of that entire cycle.
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
+
+        {/* Reviews Tab (Glassdoor Layer) */}
+        <TabsContent value="reviews" className="mt-4 space-y-3">
+          {reputation.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {reputation.slice(0, 4).map((r: any) => (
+                <Card key={r.agentId} className="bg-gray-900 border-gray-800">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-sm font-medium text-white mb-1">{r.agentName}</p>
+                    <div className="flex justify-center gap-0.5 mb-1">
+                      {[1,2,3,4,5].map(i => (
+                        <Star key={i} className={`h-3 w-3 ${i <= Math.round(r.avgRating ?? 0) ? "text-yellow-400 fill-yellow-400" : "text-gray-700"}`} />
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500">{r.reviewCount} reviews · {r.trustTier}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {allReviews.length === 0 ? (
+            <Card className="bg-gray-900 border-gray-800">
+              <CardContent className="p-10 text-center">
+                <MessageSquare className="h-12 w-12 mx-auto mb-3 text-gray-600" />
+                <p className="text-gray-400 text-sm">No reviews submitted yet</p>
+                <p className="text-xs text-gray-600 mt-1">Visit the Agent Store to review agents after using them</p>
+                <Link href="/marketplace/store">
+                  <Button size="sm" className="mt-3 bg-indigo-600 hover:bg-indigo-700">
+                    <Store className="h-4 w-4 mr-1.5" />Open Store
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {allReviews.map((review: any) => (
+                <Card key={review.id} className="bg-gray-900 border-gray-800">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-sm font-medium text-white">
+                            {reputation.find((r: any) => r.agentId === review.agentId)?.agentName ?? review.agentId}
+                          </p>
+                          {review.verifiedUsage && (
+                            <Badge className="text-xs bg-green-500/10 text-green-400 border-green-500/30 border h-4 px-1">Verified</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-0.5 mb-1">
+                          {[1,2,3,4,5].map(i => (
+                            <Star key={i} className={`h-3 w-3 ${i <= Math.round(review.rating) ? "text-yellow-400 fill-yellow-400" : "text-gray-700"}`} />
+                          ))}
+                          <span className="text-xs text-gray-500 ml-1">{review.rating}/5</span>
+                        </div>
+                        {review.review && <p className="text-xs text-gray-400 mt-1">{review.review}</p>}
+                        <div className="flex gap-3 mt-2 text-xs text-gray-600">
+                          <span>Ease: {review.easeOfUse}/5</span>
+                          <span>Impact: {review.businessImpact}/5</span>
+                          <span>Reliability: {review.reliability}/5</span>
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-600 flex-shrink-0">{new Date(review.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <Card className="bg-gray-800/40 border-gray-700/40">
+            <CardContent className="p-4 text-xs text-gray-500">
+              <strong className="text-gray-400">Glassdoor layer:</strong> Every verified review contributes to agent reputation scores, certification eligibility, and marketplace rankings. Reviews are weighted by verified usage and recency.
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* White Label Tab */}
+        <TabsContent value="whitelabel" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-400">Clone platform agents with your organization's branding and custom rules</p>
+            <Link href="/marketplace/store">
+              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700">
+                <Copy className="h-4 w-4 mr-1.5" />Clone from Store
+              </Button>
+            </Link>
+          </div>
+
+          {whiteLabelAgents.length === 0 ? (
+            <Card className="bg-gray-900 border-gray-800">
+              <CardContent className="p-10 text-center">
+                <Layers className="h-12 w-12 mx-auto mb-3 text-gray-600" />
+                <p className="text-gray-400 text-sm">No white-label agents created yet</p>
+                <p className="text-xs text-gray-600 mt-1">Install an agent from the store, then clone it with your branding and custom rules</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {whiteLabelAgents.map((agent: any) => (
+                <Card key={agent.id} className="bg-gray-900 border-gray-800">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-indigo-500/10 rounded-lg flex-shrink-0">
+                        <Copy className="h-5 w-5 text-indigo-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-white text-sm">{agent.customName}</p>
+                        {agent.customDescription && <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{agent.customDescription}</p>}
+                        <div className="flex items-center gap-2 mt-2 text-xs">
+                          <span className="text-gray-600">Source: {agent.sourceAgentId}</span>
+                          <Badge className={`text-xs border ${agent.status === "active" ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-gray-500/10 text-gray-400 border-gray-500/30"}`}>
+                            {agent.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <Card className="bg-gray-800/40 border-gray-700/40">
+            <CardContent className="p-4 space-y-2 text-xs text-gray-500">
+              <strong className="text-gray-400 block">White-label workflow:</strong>
+              <div className="flex items-center gap-2 flex-wrap">
+                {["Install Agent", "Customize Rules", "Customize Branding", "Publish Private Version"].map((step, i, arr) => (
+                  <div key={step} className="flex items-center gap-1">
+                    <span className="text-gray-400">{step}</span>
+                    {i < arr.length - 1 && <ArrowRight className="h-3 w-3 text-gray-600" />}
+                  </div>
+                ))}
+              </div>
+              <p>Private white-label agents remain organization-owned and are not visible to other organizations on the marketplace.</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Lifecycle Tab */}
+        <TabsContent value="lifecycle" className="mt-4 space-y-4">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {["installed", "active", "upgraded", "deprecated", "archived", "removed"].map(state => {
+              const count = lifecycleEvents.filter((e: any) => e.toStatus === state || e.eventType === state).length;
+              const colors: Record<string, string> = {
+                installed: "text-blue-400", active: "text-green-400", upgraded: "text-cyan-400",
+                deprecated: "text-yellow-400", archived: "text-orange-400", removed: "text-red-400",
+              };
+              return (
+                <Card key={state} className="bg-gray-900 border-gray-800">
+                  <CardContent className="p-3 text-center">
+                    <p className={`text-lg font-bold ${colors[state] ?? "text-gray-400"}`}>{count}</p>
+                    <p className="text-xs text-gray-500 capitalize">{state}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {lifecycleEvents.length === 0 ? (
+            <Card className="bg-gray-900 border-gray-800">
+              <CardContent className="p-10 text-center">
+                <GitBranch className="h-12 w-12 mx-auto mb-3 text-gray-600" />
+                <p className="text-gray-400 text-sm">No lifecycle events recorded yet</p>
+                <p className="text-xs text-gray-600 mt-1">Events are recorded automatically when agents are installed, upgraded, deprecated, or removed</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {lifecycleEvents.slice(0, 20).map((event: any) => {
+                const eventColors: Record<string, string> = {
+                  installed: "text-blue-400 bg-blue-500/10", active: "text-green-400 bg-green-500/10",
+                  upgraded: "text-cyan-400 bg-cyan-500/10", deprecated: "text-yellow-400 bg-yellow-500/10",
+                  archived: "text-orange-400 bg-orange-500/10", removed: "text-red-400 bg-red-500/10",
+                  cloned: "text-indigo-400 bg-indigo-500/10", submitted: "text-purple-400 bg-purple-500/10",
+                };
+                const colorClass = eventColors[event.eventType] ?? "text-gray-400 bg-gray-500/10";
+                return (
+                  <div key={event.id} className="flex items-center gap-3 p-2 bg-gray-900 rounded-lg border border-gray-800"
+                    data-testid={`lifecycle-event-${event.id}`}>
+                    <Badge className={`text-xs border-none flex-shrink-0 ${colorClass}`}>{event.eventType}</Badge>
+                    <span className="text-xs text-gray-300 flex-1">{event.agentId}</span>
+                    {event.notes && <span className="text-xs text-gray-500 hidden sm:block truncate max-w-xs">{event.notes}</span>}
+                    <span className="text-xs text-gray-600 flex-shrink-0">{new Date(event.createdAt).toLocaleDateString()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <Card className="bg-gray-800/40 border-gray-700/40">
+            <CardContent className="p-4 text-xs text-gray-500">
+              <strong className="text-gray-400">Lifecycle states:</strong> Installed → Active → Upgraded → Deprecated → Archived → Removed.
+              Lifecycle analytics track install rates, upgrade rates, retention rates, and churn rates across all agents for the organization.
+            </CardContent>
+          </Card>
+        </TabsContent>
+
       </Tabs>
 
       {/* Trust Layer strip */}

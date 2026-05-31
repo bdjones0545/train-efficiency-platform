@@ -4186,3 +4186,163 @@ export const crossOrgLearningEvents = pgTable("cross_org_learning_events", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 export type CrossOrgLearningEvent = typeof crossOrgLearningEvents.$inferSelect;
+
+// ─── Developer Accounts ───────────────────────────────────────────────────────
+// Developer registration for agent builders. Linked to platform user or org.
+export const developerAccounts = pgTable("developer_accounts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id"),
+  orgId: text("org_id"),
+  displayName: text("display_name").notNull(),
+  email: text("email"),
+  bio: text("bio"),
+  status: text("status").notNull().default("active"), // active | suspended | pending
+  totalInstalls: integer("total_installs").default(0),
+  totalRevenue: doublePrecision("total_revenue").default(0),
+  lifetimeRevenue: doublePrecision("lifetime_revenue").default(0),
+  agentsPublished: integer("agents_published").default(0),
+  revenueShareRate: doublePrecision("revenue_share_rate").default(0.30),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type DeveloperAccount = typeof developerAccounts.$inferSelect;
+
+// ─── Agent Submissions ────────────────────────────────────────────────────────
+// Developer workflow: Draft → Submitted → Under Review → Approved → Rejected → Published
+export const agentSubmissions = pgTable("agent_submissions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  developerId: text("developer_id").notNull(),
+  agentTemplateId: text("agent_template_id"),
+  agentDefinition: jsonb("agent_definition"),
+  submissionStatus: text("submission_status").notNull().default("draft"),
+  reviewNotes: text("review_notes"),
+  benchmarkResults: jsonb("benchmark_results"),
+  governanceReview: jsonb("governance_review"),
+  submittedAt: timestamp("submitted_at"),
+  reviewedAt: timestamp("reviewed_at"),
+  approvedAt: timestamp("approved_at"),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type AgentSubmission = typeof agentSubmissions.$inferSelect;
+
+// ─── Agent Revenue Events ─────────────────────────────────────────────────────
+// Tracks revenue generated per agent for developer royalty attribution.
+export const agentRevenueEvents = pgTable("agent_revenue_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  developerId: text("developer_id"),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id").notNull(),
+  eventType: text("event_type").notNull(), // installation | usage | subscription | revenue_recovered
+  amount: doublePrecision("amount").default(0),
+  royaltyAmount: doublePrecision("royalty_amount").default(0),
+  attribution: jsonb("attribution"),
+  period: text("period"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentRevenueEvent = typeof agentRevenueEvents.$inferSelect;
+
+// ─── Developer Payouts ────────────────────────────────────────────────────────
+// Payout records — infrastructure only. No payment processing yet.
+export const developerPayouts = pgTable("developer_payouts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  developerId: text("developer_id").notNull(),
+  amount: doublePrecision("amount").notNull().default(0),
+  currency: text("currency").default("USD"),
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  status: text("status").notNull().default("pending"), // pending | processing | paid | failed
+  breakdown: jsonb("breakdown"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type DeveloperPayout = typeof developerPayouts.$inferSelect;
+
+// ─── Agent Reviews ─────────────────────────────────────────────────────────────
+// Org-submitted agent reviews — the Glassdoor layer.
+export const agentReviews = pgTable("agent_reviews", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id").notNull(),
+  rating: doublePrecision("rating").notNull(), // 1.0–5.0
+  review: text("review"),
+  outcomeScore: doublePrecision("outcome_score").default(0), // 0–10
+  trustScore: doublePrecision("trust_score").default(0),     // 0–10
+  roiScore: doublePrecision("roi_score").default(0),         // 0–10
+  easeOfUse: integer("ease_of_use").default(3),              // 1–5
+  businessImpact: integer("business_impact").default(3),     // 1–5
+  reliability: integer("reliability").default(3),            // 1–5
+  verifiedUsage: boolean("verified_usage").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentReview = typeof agentReviews.$inferSelect;
+
+// ─── Agent Permissions ────────────────────────────────────────────────────────
+// Agents declare required permissions; orgs explicitly grant them.
+export const agentPermissions = pgTable("agent_permissions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id"),
+  permissionType: text("permission_type").notNull(),
+  // crm_access | email_access | calendar_access | billing_access | lead_access | reporting_access
+  granted: boolean("granted").default(false),
+  grantedAt: timestamp("granted_at"),
+  riskLevel: text("risk_level").default("low"),
+  requiresApproval: boolean("requires_approval").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentPermission = typeof agentPermissions.$inferSelect;
+
+// ─── Agent Reputation ─────────────────────────────────────────────────────────
+// Composite reputation score from all quality signals.
+export const agentReputation = pgTable("agent_reputation", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull().unique(),
+  reputationScore: doublePrecision("reputation_score").default(0), // 0–100
+  marketplaceRank: integer("marketplace_rank").default(0),
+  trustTier: text("trust_tier").default("New to Market"),
+  recommendationScore: doublePrecision("recommendation_score").default(0),
+  avgRating: doublePrecision("avg_rating").default(0),
+  reviewCount: integer("review_count").default(0),
+  roiContribution: doublePrecision("roi_contribution").default(0),
+  trustContribution: doublePrecision("trust_contribution").default(0),
+  certificationContribution: doublePrecision("certification_contribution").default(0),
+  adoptionContribution: doublePrecision("adoption_contribution").default(0),
+  benchmarkStabilityContribution: doublePrecision("benchmark_stability_contribution").default(0),
+  computedAt: timestamp("computed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentReputationRecord = typeof agentReputation.$inferSelect;
+
+// ─── White Label Agents ───────────────────────────────────────────────────────
+// Org-cloned private agents with custom branding and rules.
+export const whiteLabelAgents = pgTable("white_label_agents", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  sourceAgentId: text("source_agent_id").notNull(),
+  customName: text("custom_name").notNull(),
+  customDescription: text("custom_description"),
+  customCapabilities: jsonb("custom_capabilities"),
+  customRules: jsonb("custom_rules"),
+  branding: jsonb("branding"),
+  status: text("status").notNull().default("active"),
+  installCount: integer("install_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type WhiteLabelAgent = typeof whiteLabelAgents.$inferSelect;
+
+// ─── Agent Lifecycle Events ───────────────────────────────────────────────────
+// Tracks full lifecycle: installed | active | upgraded | deprecated | archived | removed
+export const agentLifecycleEvents = pgTable("agent_lifecycle_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull(),
+  orgId: text("org_id"),
+  eventType: text("event_type").notNull(),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status"),
+  notes: text("notes"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentLifecycleEvent = typeof agentLifecycleEvents.$inferSelect;
