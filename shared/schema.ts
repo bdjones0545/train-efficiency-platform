@@ -4057,17 +4057,132 @@ export const workflowOptimizationRecs = pgTable("workflow_optimization_recs", {
 export type WorkflowOptimizationRec = typeof workflowOptimizationRecs.$inferSelect;
 
 // ─── Agent Templates (Marketplace Foundation) ────────────────────────────────
-// Internal only — groundwork for future installable agent marketplace.
+// Expanded Phase 6: full marketplace-ready profiles.
 export const agentTemplates = pgTable("agent_templates", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id").notNull().unique(), // maps to AGENT_IDENTITIES key
   agentName: text("agent_name").notNull(),
+  description: text("description"),
   department: text("department"),
   capabilities: jsonb("capabilities"),
   requiredIntegrations: jsonb("required_integrations"),
+  supportedIndustries: jsonb("supported_industries"),
   benchmarkMetrics: jsonb("benchmark_metrics"),
-  averageRoi: doublePrecision("average_roi"),
-  averageSuccessRate: doublePrecision("average_success_rate"),
+  averageRoi: doublePrecision("average_roi").default(0),
+  averageSuccessRate: doublePrecision("average_success_rate").default(0),
+  averageHoursSaved: doublePrecision("average_hours_saved").default(0),
+  averageTrustScore: doublePrecision("average_trust_score").default(0),
+  averageRevenueInfluenced: doublePrecision("average_revenue_influenced").default(0),
+  benchmarkScore: doublePrecision("benchmark_score").default(0),
+  certificationLevel: text("certification_level").default("uncertified"),
   installationCount: integer("installation_count").default(0),
+  version: text("version").default("1.0.0"),
+  maintainer: text("maintainer").default("TrainEfficiency"),
+  status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 export type AgentTemplate = typeof agentTemplates.$inferSelect;
+
+// ─── Agent Benchmarks ──────────────────────────────────────────────────────────
+// Rolling benchmark snapshots. Never stores org-identifying data.
+export const agentBenchmarks = pgTable("agent_benchmarks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentTemplateId: text("agent_template_id"),
+  agentId: text("agent_id"),
+  benchmarkType: text("benchmark_type").notNull(), // platform | industry | organization
+  industry: text("industry"),
+  sampleSize: integer("sample_size").default(0),
+  successRate: doublePrecision("success_rate").default(0),
+  revenueInfluence: doublePrecision("revenue_influence").default(0),
+  hoursSaved: doublePrecision("hours_saved").default(0),
+  roi: doublePrecision("roi").default(0),
+  trustScore: doublePrecision("trust_score").default(0),
+  forecastAccuracy: doublePrecision("forecast_accuracy").default(0),
+  recommendationAccuracy: doublePrecision("recommendation_accuracy").default(0),
+  opportunityConversion: doublePrecision("opportunity_conversion").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentBenchmark = typeof agentBenchmarks.$inferSelect;
+
+// ─── Installed Agents ─────────────────────────────────────────────────────────
+// Tracks agent installations per org with governance policy assignment.
+export const orgInstalledAgents = pgTable("org_installed_agents", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentTemplateId: text("agent_template_id"),
+  agentId: text("agent_id").notNull(),
+  status: text("status").notNull().default("active"), // active | paused | uninstalled
+  configuration: jsonb("configuration"),
+  governancePolicy: jsonb("governance_policy"),
+  performanceMetrics: jsonb("performance_metrics"),
+  installedAt: timestamp("installed_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type OrgInstalledAgent = typeof orgInstalledAgents.$inferSelect;
+
+// ─── Agent Certifications ─────────────────────────────────────────────────────
+// Certification levels: uncertified | certified | high_performer | elite_performer | platform_recommended
+export const agentCertifications = pgTable("agent_certifications", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentTemplateId: text("agent_template_id"),
+  agentId: text("agent_id").notNull(),
+  certificationLevel: text("certification_level").notNull(),
+  roiScore: doublePrecision("roi_score").default(0),
+  trustScore: doublePrecision("trust_score").default(0),
+  successRateScore: doublePrecision("success_rate_score").default(0),
+  sampleSize: integer("sample_size").default(0),
+  forecastAccuracyScore: doublePrecision("forecast_accuracy_score").default(0),
+  opportunityConversionScore: doublePrecision("opportunity_conversion_score").default(0),
+  achievedAt: timestamp("achieved_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentCertification = typeof agentCertifications.$inferSelect;
+
+// ─── Industry Benchmarks ──────────────────────────────────────────────────────
+// Industry-level benchmarks anonymized across orgs by industry type.
+export const industryBenchmarks = pgTable("industry_benchmarks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  industry: text("industry").notNull(),
+  metricName: text("metric_name").notNull(),
+  metricValue: doublePrecision("metric_value").default(0),
+  sampleSize: integer("sample_size").default(0),
+  period: text("period").notNull().default("30d"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type IndustryBenchmark = typeof industryBenchmarks.$inferSelect;
+
+// ─── Agent Versions ───────────────────────────────────────────────────────────
+// Version history with rollback support — prepares agents to become products.
+export const agentVersions = pgTable("agent_versions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentTemplateId: text("agent_template_id"),
+  agentId: text("agent_id").notNull(),
+  version: text("version").notNull(),
+  releaseNotes: text("release_notes"),
+  benchmarkChanges: jsonb("benchmark_changes"),
+  roiDelta: doublePrecision("roi_delta").default(0),
+  trustDelta: doublePrecision("trust_delta").default(0),
+  performanceChanges: jsonb("performance_changes"),
+  status: text("status").notNull().default("stable"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentVersion = typeof agentVersions.$inferSelect;
+
+// ─── Cross-Org Learning Events ────────────────────────────────────────────────
+// Anonymized cross-org learning signals for benchmark improvement.
+// No organization-specific data stored or exposed.
+export const crossOrgLearningEvents = pgTable("cross_org_learning_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  agentId: text("agent_id"),
+  eventType: text("event_type").notNull(),
+  outcome: text("outcome"),
+  score: doublePrecision("score").default(0),
+  industry: text("industry"),
+  benchmarkData: jsonb("benchmark_data"),
+  patternTags: jsonb("pattern_tags"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type CrossOrgLearningEvent = typeof crossOrgLearningEvents.$inferSelect;

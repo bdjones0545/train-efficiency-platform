@@ -20089,6 +20089,209 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Phase 6: Agent Marketplace, Benchmarking & Multi-Org Intelligence ──────
+
+  // GET all marketplace agents (profiles)
+  app.get("/api/marketplace/agents", async (req, res) => {
+    try {
+      const { generateMarketplaceProfiles, seedAgentTemplates } = await import("./agent-benchmark-engine");
+      await seedAgentTemplates();
+      const profiles = await generateMarketplaceProfiles();
+      res.json(profiles);
+    } catch (e: any) {
+      console.error("[marketplace/agents] error:", e);
+      res.status(500).json({ message: "Failed to fetch marketplace agents" });
+    }
+  });
+
+  // GET single agent profile
+  app.get("/api/marketplace/agents/:agentId", async (req, res) => {
+    try {
+      const { generateMarketplaceProfiles } = await import("./agent-benchmark-engine");
+      const profiles = await generateMarketplaceProfiles();
+      const profile = profiles.find(p => p.agentId === req.params.agentId);
+      if (!profile) return res.status(404).json({ message: "Agent not found" });
+      res.json(profile);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch agent profile" });
+    }
+  });
+
+  // GET agent comparison
+  app.get("/api/marketplace/compare", async (req, res) => {
+    try {
+      const { a, b } = req.query as { a: string; b: string };
+      if (!a || !b) return res.status(400).json({ message: "a and b agent IDs required" });
+      const { generateMarketplaceProfiles } = await import("./agent-benchmark-engine");
+      const profiles = await generateMarketplaceProfiles();
+      const agentA = profiles.find(p => p.agentId === a);
+      const agentB = profiles.find(p => p.agentId === b);
+      if (!agentA || !agentB) return res.status(404).json({ message: "One or both agents not found" });
+      res.json({
+        agentA,
+        agentB,
+        comparison: {
+          roi:         { a: agentA.averageRoi, b: agentB.averageRoi, winner: agentA.averageRoi >= agentB.averageRoi ? "a" : "b" },
+          successRate: { a: agentA.averageSuccessRate, b: agentB.averageSuccessRate, winner: agentA.averageSuccessRate >= agentB.averageSuccessRate ? "a" : "b" },
+          revenue:     { a: agentA.averageRevenueInfluenced, b: agentB.averageRevenueInfluenced, winner: agentA.averageRevenueInfluenced >= agentB.averageRevenueInfluenced ? "a" : "b" },
+          timeSaved:   { a: agentA.averageHoursSaved, b: agentB.averageHoursSaved, winner: agentA.averageHoursSaved >= agentB.averageHoursSaved ? "a" : "b" },
+          trust:       { a: agentA.averageTrustScore, b: agentB.averageTrustScore, winner: agentA.averageTrustScore >= agentB.averageTrustScore ? "a" : "b" },
+          benchmark:   { a: agentA.benchmarkScore, b: agentB.benchmarkScore, winner: agentA.benchmarkScore >= agentB.benchmarkScore ? "a" : "b" },
+        },
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Comparison failed" });
+    }
+  });
+
+  // GET agent discovery recommendations for org
+  app.get("/api/marketplace/recommendations", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { discoverAgentsForOrg } = await import("./agent-benchmark-engine");
+      const recs = await discoverAgentsForOrg(orgId);
+      res.json(recs);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to generate recommendations" });
+    }
+  });
+
+  // GET marketplace analytics
+  app.get("/api/marketplace/analytics", async (req, res) => {
+    try {
+      const { computeMarketplaceAnalytics } = await import("./agent-benchmark-engine");
+      const analytics = await computeMarketplaceAnalytics();
+      res.json(analytics);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute marketplace analytics" });
+    }
+  });
+
+  // GET agent rankings
+  app.get("/api/marketplace/rankings", async (req, res) => {
+    try {
+      const { computeRankings } = await import("./agent-benchmark-engine");
+      const rankings = await computeRankings();
+      res.json(rankings);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute rankings" });
+    }
+  });
+
+  // GET marketplace trust layer
+  app.get("/api/marketplace/trust", async (req, res) => {
+    try {
+      const { computeMarketplaceTrust } = await import("./agent-benchmark-engine");
+      const trust = await computeMarketplaceTrust();
+      res.json(trust);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute marketplace trust" });
+    }
+  });
+
+  // GET industry benchmarks
+  app.get("/api/marketplace/industry", async (req, res) => {
+    try {
+      const { computeIndustryBenchmarks } = await import("./agent-benchmark-engine");
+      const benchmarks = await computeIndustryBenchmarks();
+      res.json(benchmarks);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute industry benchmarks" });
+    }
+  });
+
+  // GET marketplace health
+  app.get("/api/marketplace/health", async (req, res) => {
+    try {
+      const { computeMarketplaceHealth, seedAgentTemplates } = await import("./agent-benchmark-engine");
+      await seedAgentTemplates();
+      const health = await computeMarketplaceHealth();
+      res.json(health);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute marketplace health" });
+    }
+  });
+
+  // POST install agent to org
+  app.post("/api/marketplace/install", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { agentId, configuration, governancePolicy } = req.body;
+      if (!agentId) return res.status(400).json({ message: "agentId required" });
+      const { orgInstalledAgents, agentTemplates: agentTemplatesTable } = await import("@shared/schema");
+      // Check template exists
+      const templates = await db.select().from(agentTemplatesTable).where(eq(agentTemplatesTable.agentId, agentId)).catch(() => []);
+      if (templates.length === 0) {
+        const { seedAgentTemplates } = await import("./agent-benchmark-engine");
+        await seedAgentTemplates();
+      }
+      // Upsert installation (unique on org_id + agent_id)
+      const existing = await db.select().from(orgInstalledAgents).where(
+        and(eq(orgInstalledAgents.orgId, orgId), eq(orgInstalledAgents.agentId, agentId))
+      ).catch(() => []);
+      let installed;
+      if (existing.length > 0) {
+        [installed] = await db.update(orgInstalledAgents).set({
+          status: "active", configuration, governancePolicy, updatedAt: new Date(),
+        }).where(and(eq(orgInstalledAgents.orgId, orgId), eq(orgInstalledAgents.agentId, agentId))).returning();
+      } else {
+        [installed] = await db.insert(orgInstalledAgents).values({
+          orgId, agentId, status: "active", configuration: configuration ?? {}, governancePolicy: governancePolicy ?? {},
+        }).returning();
+        // Bump install count
+        await db.update(agentTemplatesTable).set({
+          installationCount: require("drizzle-orm").sql`${agentTemplatesTable.installationCount} + 1`,
+        }).where(eq(agentTemplatesTable.agentId, agentId)).catch(() => {});
+      }
+      res.json(installed);
+    } catch (e: any) {
+      console.error("[marketplace/install] error:", e);
+      res.status(500).json({ message: "Installation failed" });
+    }
+  });
+
+  // GET installed agents for org
+  app.get("/api/marketplace/installed", async (req, res) => {
+    try {
+      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const { orgInstalledAgents } = await import("@shared/schema");
+      const installed = await db.select().from(orgInstalledAgents).where(
+        and(eq(orgInstalledAgents.orgId, orgId), eq(orgInstalledAgents.status, "active"))
+      ).catch(() => []);
+      res.json(installed);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch installed agents" });
+    }
+  });
+
+  // GET agent versions
+  app.get("/api/marketplace/versions", async (req, res) => {
+    try {
+      const { agentVersions } = await import("@shared/schema");
+      const { seedAgentVersions } = await import("./agent-benchmark-engine");
+      await seedAgentVersions();
+      const versions = await db.select().from(agentVersions).orderBy(agentVersions.createdAt).catch(() => []);
+      res.json(versions.reverse());
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch versions" });
+    }
+  });
+
+  // POST refresh all benchmarks (full pipeline)
+  app.post("/api/marketplace/benchmarks/refresh", async (req, res) => {
+    try {
+      const { refreshAllBenchmarks } = await import("./agent-benchmark-engine");
+      await refreshAllBenchmarks();
+      res.json({ success: true, message: "Benchmark refresh complete" });
+    } catch (e: any) {
+      console.error("[marketplace/benchmarks/refresh] error:", e);
+      res.status(500).json({ message: "Benchmark refresh failed", error: e.message });
+    }
+  });
+
   // ─── Phase 5: Autonomous Execution & Closed-Loop Optimization ───────────────
 
   // List execution plans

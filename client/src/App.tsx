@@ -71,6 +71,7 @@ import AdminAiWorkforceOptimizationPage from "@/pages/admin-ai-workforce-optimiz
 import AdminAiWorkforceApprovalsPage from "@/pages/admin-ai-workforce-approvals";
 import AdminAiWorkforceExecutionsPage from "@/pages/admin-ai-workforce-executions";
 import AdminAiWorkforceSimulatorPage from "@/pages/admin-ai-workforce-simulator";
+import AdminAgentMarketplacePage from "@/pages/admin-agent-marketplace";
 import AdminWorkflowBuilderPage from "@/pages/admin-workflow-builder";
 import AdminWorkflowLivePage from "@/pages/admin-workflow-live";
 import AdminWorkflowHeatmapPage from "@/pages/admin-workflow-heatmap";
@@ -421,6 +422,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/ai-workforce/approvals" component={AdminAiWorkforceApprovalsPage} />
                   <Route path="/admin/ai-workforce/executions" component={AdminAiWorkforceExecutionsPage} />
                   <Route path="/admin/ai-workforce/simulator" component={AdminAiWorkforceSimulatorPage} />
+                  <Route path="/admin/agent-marketplace" component={AdminAgentMarketplacePage} />
                   <Route path="/admin/ai-employee/:agentId" component={AdminAiEmployeeProfilePage} />
                   <Route path="/admin/recommendations" component={AdminRecommendationsPage} />
                   <Route path="/admin/workflow-builder" component={AdminWorkflowBuilderPage} />

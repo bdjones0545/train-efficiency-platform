@@ -17,7 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Users, Plug, Activity, ShieldCheck, TrendingUp, CheckCircle,
   XCircle, AlertTriangle, Clock, RefreshCw, Link2, Link2Off,
-  Cpu, Globe, Mail, Calendar, Hash, Search, Zap, BarChart3,
+  Cpu, Globe, Mail, Calendar, Hash, Search, Zap, BarChart3, Store,
   CircleDot, Brain, Play, Pause, GitBranch, ArrowRight, Eye,
   Settings, Target, ListChecks, HeartPulse, Trophy, DollarSign,
 } from "lucide-react";
@@ -823,6 +823,11 @@ export default function AdminAiWorkforcePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Link href="/admin/agent-marketplace">
+            <Button variant="outline" size="sm" className="border-indigo-700 text-indigo-400 hover:bg-indigo-900/30" data-testid="button-marketplace-link">
+              <Store className="h-4 w-4 mr-1.5" />Marketplace
+            </Button>
+          </Link>
           <Link href="/admin/ai-workforce/executions">
             <Button variant="outline" size="sm" className="border-cyan-700 text-cyan-400 hover:bg-cyan-900/30" data-testid="button-executions-link">
               <Zap className="h-4 w-4 mr-1.5" />Execute

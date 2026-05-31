@@ -1,0 +1,545 @@
+PHASE 6 — AGENT MARKETPLACE, BENCHMARKING & MULTI-ORGANIZATION INTELLIGENCE
+
+Objective
+
+Phase 1: Configuration
+
+Phase 2: Operations
+
+Phase 3: Performance
+
+Phase 4: Intelligence
+
+Phase 5: Controlled Autonomy
+
+Phase 6 introduces the first true agent economy layer.
+
+The goal is to transform the workforce system from:
+
+“My agents”
+
+into
+
+“The best agents.”
+
+Agents should become measurable, benchmarked, installable, comparable, and eventually tradable across organizations.
+
+This is the foundation for the future “Glassdoor for Agents” vision.
+
+No public marketplace yet.
+
+Build marketplace infrastructure first.
+
+PART 1 — Agent Benchmarking Engine
+
+Create:
+
+server/agent-benchmark-engine.ts
+
+Purpose:
+
+Aggregate anonymized performance across organizations.
+
+Track:
+
+Success Rate
+
+Revenue Influence
+
+Revenue Recovered
+
+Time Saved
+
+Trust Score
+
+Execution Success
+
+Recommendation Accuracy
+
+Forecast Accuracy
+
+Workflow Success
+
+Opportunity Conversion
+
+Compute:
+
+Organization Benchmark
+
+Agent Benchmark
+
+Industry Benchmark
+
+Platform Benchmark
+
+Every benchmark must be anonymized.
+
+No org data leakage.
+
+PART 2 — Agent Benchmark Database
+
+Create:
+
+agent_benchmarks
+
+Fields:
+
+id
+
+agent_template_id
+
+benchmark_type
+
+sample_size
+
+success_rate
+
+revenue_influence
+
+hours_saved
+
+roi
+
+trust_score
+
+forecast_accuracy
+
+recommendation_accuracy
+
+created_at
+
+Store rolling benchmark snapshots.
+
+PART 3 — Agent Marketplace Profiles
+
+Expand agent_templates.
+
+Add:
+
+description
+
+capabilities
+
+required_integrations
+
+supported_industries
+
+installation_count
+
+average_roi
+
+average_success_rate
+
+average_hours_saved
+
+average_trust_score
+
+benchmark_score
+
+version
+
+maintainer
+
+status
+
+Generate marketplace-ready profiles.
+
+Example:
+
+Apex Growth Agent
+
+Average ROI:
+4.8x
+
+Average Revenue Recovered:
+$2,300/month
+
+Success Rate:
+91%
+
+Organizations:
+143
+
+Benchmark Score:
+94
+
+PART 4 — Installable Agent Framework
+
+Create:
+
+org_installed_agents
+
+Purpose:
+
+Allow organizations to install agents from templates.
+
+Installation process:
+
+Select Agent
+
+Review Capabilities
+
+Review Required Integrations
+
+Review Governance Requirements
+
+Install
+
+Generate Configuration
+
+Assign Policies
+
+Enable Monitoring
+
+Enable Attribution
+
+Enable Intelligence
+
+Enable Execution
+
+Everything should inherit existing governance.
+
+PART 5 — Agent Certification System
+
+Create:
+
+agent_certifications
+
+Levels:
+
+Certified
+
+High Performer
+
+Elite Performer
+
+Platform Recommended
+
+Requirements based on:
+
+ROI
+
+Trust Score
+
+Success Rate
+
+Sample Size
+
+Forecast Accuracy
+
+Opportunity Conversion
+
+Certification becomes a trust signal.
+
+PART 6 — Agent Comparison Engine
+
+Create:
+
+GET /api/marketplace/compare
+
+Compare:
+
+ROI
+
+Trust
+
+Revenue Impact
+
+Time Savings
+
+Success Rate
+
+Forecast Accuracy
+
+Industries
+
+Integrations
+
+Organizations Using
+
+This becomes future buyer decision support.
+
+PART 7 — Industry Intelligence Layer
+
+Create:
+
+industry_benchmarks
+
+Track:
+
+Sports Performance
+
+Gyms
+
+Private Coaching
+
+Team Training
+
+Rehabilitation
+
+Corporate Wellness
+
+Compare:
+
+Revenue trends
+
+Retention
+
+Lead conversion
+
+Scheduling utilization
+
+Workforce adoption
+
+Organizations should see:
+
+“Compared to similar businesses.”
+
+PART 8 — Agent Discovery Engine
+
+Create:
+
+GET /api/marketplace/recommendations
+
+Recommend agents based on:
+
+Goals
+
+Org Type
+
+Current Workforce
+
+Missing Capabilities
+
+Revenue Opportunities
+
+Trust Profile
+
+Example:
+
+Your organization lacks retention automation.
+
+Recommended:
+Pulse Retention Agent
+
+Expected ROI:
+3.2x
+
+Confidence:
+91%
+
+PART 9 — Marketplace Analytics
+
+Create:
+
+GET /api/marketplace/analytics
+
+Track:
+
+Installations
+
+Uninstalls
+
+Usage
+
+Success
+
+ROI
+
+Certification Rates
+
+Industry Adoption
+
+Top Performing Agents
+
+Most Trusted Agents
+
+Fastest Growing Agents
+
+PART 10 — Agent Versioning System
+
+Create:
+
+agent_versions
+
+Track:
+
+Version
+
+Release Notes
+
+Benchmark Changes
+
+ROI Changes
+
+Trust Changes
+
+Performance Changes
+
+Support:
+
+Rollback
+
+Upgrade Approval
+
+Version Comparison
+
+This prepares agents to become products.
+
+PART 11 — Marketplace Admin Center
+
+Route:
+
+/admin/agent-marketplace
+
+Sections:
+
+Agent Library
+
+Benchmarks
+
+Certifications
+
+Industry Intelligence
+
+Agent Rankings
+
+Version Management
+
+Installation Analytics
+
+Marketplace Health
+
+This is internal only.
+
+No public exposure yet.
+
+PART 12 — Agent Rankings
+
+Create:
+
+GET /api/marketplace/rankings
+
+Rank agents by:
+
+ROI
+
+Revenue Influence
+
+Time Saved
+
+Trust
+
+Forecast Accuracy
+
+Industry Performance
+
+Overall Benchmark Score
+
+Display:
+
+Top Agents
+
+Fastest Growing
+
+Most Trusted
+
+Best ROI
+
+Most Installed
+
+PART 13 — Marketplace Trust Layer
+
+Create:
+
+GET /api/marketplace/trust
+
+For every agent:
+
+Trust Score
+
+Certification Level
+
+Benchmark Confidence
+
+Sample Size
+
+Performance Stability
+
+Adoption Trend
+
+This becomes the foundation for future public reviews.
+
+PART 14 — Multi-Organization Learning
+
+Create:
+
+cross_org_learning_events
+
+Store:
+
+Anonymized learning signals
+
+Benchmark data
+
+Optimization patterns
+
+Success patterns
+
+Failure patterns
+
+Purpose:
+
+Improve benchmarks
+
+Improve recommendations
+
+Improve certification quality
+
+No organization-specific data exposed.
+
+PART 15 — Success Criteria
+
+At completion:
+
+Agents become benchmarked.
+
+Agents become installable.
+
+Agents become comparable.
+
+Agents become certifiable.
+
+Organizations can discover agents.
+
+Organizations can compare agents.
+
+Organizations can benchmark performance.
+
+Platform can identify top-performing agents.
+
+Platform can prepare for a future public marketplace.
+
+Final Goal
+
+Transform TrainEfficiency from an Autonomous Workforce Platform into the infrastructure layer for an AI Agent Economy.
+
+The system should now possess the foundational architecture necessary for:
+
+Agent Stores
+
+Agent Rankings
+
+Agent Certification
+
+Agent Benchmarks
+
+Agent Discovery
+
+Agent Installation
+
+Cross-Organization Intelligence
+
+Future Public Marketplace
+
+This is the phase where the original “Glassdoor for Agents” concept begins to emerge naturally from the infrastructure you’ve spent the last five phases building.
