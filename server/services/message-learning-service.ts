@@ -26,6 +26,7 @@ export const COMMUNICATION_DOMAINS = [
   "employment_opportunity",
   "corporate_wellness",
   "facility_partnership",
+  "gym_owner",
 ] as const;
 
 export type CommunicationDomain = typeof COMMUNICATION_DOMAINS[number];
@@ -42,6 +43,7 @@ export const DOMAIN_LABELS: Record<string, string> = {
   employment_opportunity: "Employment",
   corporate_wellness: "Corporate Wellness",
   facility_partnership: "Facility Partnerships",
+  gym_owner: "Gym Owners",
 };
 
 export function inferCommunicationDomain(row: {

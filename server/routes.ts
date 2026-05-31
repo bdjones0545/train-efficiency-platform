@@ -22313,5 +22313,9 @@ Respond with this exact JSON structure:
   const { registerBetaPhaseYRoutes } = await import("./beta-phase-y-routes");
   await registerBetaPhaseYRoutes(app);
 
+  // ─── Domain Outreach Routes ───────────────────────────────────────────────
+  const { registerDomainOutreachRoutes } = await import("./domain-outreach-routes");
+  await registerDomainOutreachRoutes(app);
+
   return httpServer;
 }

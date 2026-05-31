@@ -145,6 +145,7 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
     items: [
       { title: "Command Center", simplifiedTitle: "AI Overview", url: "/admin/ai-operations", icon: Cpu, testId: "nav-ai-operations" },
       { title: "AI Comms Center", simplifiedTitle: "AI Comms", url: "/admin/ai-approvals", icon: CheckCheck, testId: "nav-ai-approvals" },
+      { title: "Outreach Opportunities", simplifiedTitle: "Outreach", url: "/admin/ai-outreach-opportunities", icon: Target, testId: "nav-ai-outreach-opportunities" },
       { title: "Attention Inbox", simplifiedTitle: "Attention", url: "/admin/attention", icon: Inbox, testId: "nav-attention-inbox" },
       { title: "Business Brain", simplifiedTitle: "Business Brain", url: "/admin/business-brain", icon: Brain, testId: "nav-business-brain" },
       { title: "Recommendations", simplifiedTitle: "Suggestions", url: "/admin/recommendations", icon: Zap, testId: "nav-recommendations" },

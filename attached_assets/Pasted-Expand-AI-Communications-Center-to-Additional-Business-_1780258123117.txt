@@ -1,0 +1,379 @@
+Expand AI Communications Center to Additional Business Domains
+
+Objective:
+TrainEfficiency’s AI Communications Center, approval system, learning loop, autonomy progression, and coaching feedback architecture are now operational for Athlete Leads and Team Training.
+
+Expand the platform to support the remaining business communication domains using the same architecture.
+
+Important:
+Do NOT build a separate system.
+All new domains must use the existing:
+
+* gmail_agent_actions
+* AI Comms Center
+* Approval workflow
+* Coaching feedback
+* Learning rules
+* Learning dashboard
+* Autonomy progression
+* Outcome tracking
+
+⸻
+
+Phase 1 — Add Remaining Communication Domains
+
+Add support for:
+
+* school_partnership
+* athletic_director
+* coach_outreach
+* organization_outreach
+* business_outreach
+* corporate_wellness
+* facility_partnership
+* gym_owner
+* employment_opportunity
+
+These domains already exist in the schema.
+
+Verify:
+
+* Domain tabs display correctly
+* Learning dashboard supports them
+* Autonomy scoring supports them
+* Outcome tracking supports them
+
+Return any missing enum mappings.
+
+⸻
+
+Phase 2 — Create Domain-Specific Draft Generators
+
+Build generation services for each domain.
+
+Athletic Director Outreach
+
+Message types:
+
+* initial_outreach
+* followup_7d
+* meeting_request
+* proposal_followup
+* relationship_nurture
+
+Context:
+
+* school
+* district
+* sport offerings
+* enrollment size
+* previous contact history
+
+Goal:
+
+Book a discovery meeting.
+
+⸻
+
+School Partnership Outreach
+
+Message types:
+
+* introduction
+* strength_program_offer
+* summer_program_offer
+* performance_services
+* followup
+
+Goal:
+
+Start partnership conversation.
+
+⸻
+
+Organization Outreach
+
+Targets:
+
+* sports organizations
+* clubs
+* travel teams
+* recreation departments
+
+Message types:
+
+* introduction
+* partnership
+* program_offer
+* followup
+
+Goal:
+
+Schedule meeting.
+
+⸻
+
+Business Outreach
+
+Targets:
+
+* local businesses
+* sponsors
+* strategic partners
+
+Message types:
+
+* introduction
+* partnership
+* sponsorship
+* followup
+
+Goal:
+
+Business relationship.
+
+⸻
+
+Employment Opportunities
+
+Targets:
+
+* coaching applicants
+* performance coaches
+* interns
+
+Message types:
+
+* application_received
+* interview_request
+* followup
+* offer
+* onboarding
+
+Goal:
+
+Recruitment automation.
+
+⸻
+
+Corporate Wellness
+
+Targets:
+
+* HR departments
+* business owners
+* wellness directors
+
+Message types:
+
+* introduction
+* wellness_program_offer
+* demo_request
+* followup
+
+Goal:
+
+Book sales call.
+
+⸻
+
+Facility Partnership
+
+Targets:
+
+* gym owners
+* facility owners
+* sports complexes
+
+Message types:
+
+* introduction
+* rental_partnership
+* shared_services
+* followup
+
+Goal:
+
+Partnership discussion.
+
+⸻
+
+Phase 3 — AI Comms Center Integration
+
+Every generator must:
+
+1. Generate draft
+2. Create gmail_agent_actions record
+3. Set communicationDomain correctly
+4. Set messageType correctly
+5. Set approval_required = true
+6. Assign risk level
+7. Appear in correct AI Comms Center tab
+
+Acceptance:
+
+Draft must appear immediately after generation.
+
+⸻
+
+Phase 4 — Domain-Specific Learning
+
+Each domain maintains independent learning.
+
+Examples:
+
+Athlete Leads:
+
+* Parent communication
+* Booking CTAs
+* Follow-up style
+
+Athletic Directors:
+
+* Concise communication
+* Outcome-driven messaging
+* School language
+
+Employment:
+
+* Hiring tone
+* Interview process
+* Applicant communication
+
+Organization Outreach:
+
+* Partnership positioning
+* ROI language
+* Relationship-building
+
+Do not share learning rules between unrelated domains.
+
+⸻
+
+Phase 5 — Outcome Tracking
+
+Add outcome support for all domains.
+
+Track:
+
+* opened
+* replied
+* meeting_booked
+* proposal_requested
+* proposal_sent
+* proposal_accepted
+* contract_signed
+* hired
+* converted
+* lost
+
+Store in outcome_data.
+
+⸻
+
+Phase 6 — Autonomy Progression
+
+Every domain starts at:
+
+Level 0
+Manual Approval Required
+
+No auto-send initially.
+
+Promotion requires:
+
+* 20+ reviewed examples
+* 90% approval rate
+* low repeated mistakes
+* high rule compliance
+* admin approval
+
+Autonomy must remain domain-specific.
+
+Example:
+
+Athlete Leads = Level 3
+
+Team Training = Level 1
+
+Athletic Director = Level 0
+
+Employment = Level 0
+
+⸻
+
+Phase 7 — Outreach Command Center
+
+Add a new dashboard section:
+
+“AI Outreach Opportunities”
+
+Show:
+
+* Athletic Directors available
+* Schools available
+* Organizations available
+* Employment candidates
+* Businesses available
+
+Actions:
+
+* Generate outreach draft
+* Save draft
+* Send to AI Comms Center
+* Bulk generate drafts
+
+Do NOT auto-send.
+
+All generated communications must flow through the approval and learning system.
+
+⸻
+
+Phase 8 — Verification Audit
+
+After build completion return:
+
+Domains Created
+
+List all active domains.
+
+Generators Created
+
+List every outreach generator.
+
+AI Comms Center Coverage
+
+Confirm drafts appear in proper tabs.
+
+Learning Coverage
+
+Confirm feedback and coaching loops work.
+
+Autonomy Coverage
+
+Confirm independent autonomy scoring.
+
+Outcome Coverage
+
+Confirm outcome tracking.
+
+Missing Dependencies
+
+List anything preventing deployment.
+
+Readiness Score
+
+Rate each domain:
+
+* Athlete Leads
+* Team Training
+* Athletic Directors
+* Schools
+* Organizations
+* Employment
+* Corporate Wellness
+* Facility Partnerships
+
+Provide a deployment readiness score for each.
+
+This keeps everything inside the same learning architecture and turns TrainEfficiency into a true multi-domain communication intelligence platform rather than just an athlete lead follow-up system.

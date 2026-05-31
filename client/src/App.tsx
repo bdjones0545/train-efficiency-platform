@@ -99,6 +99,7 @@ import AdminRecommendationsPage from "@/pages/admin-recommendations";
 import AdminAiEmployeeProfilePage from "@/pages/admin-ai-employee-profile";
 import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import AdminAiApprovalsPage from "@/pages/admin-ai-approvals";
+import AdminAiOutreachOpportunitiesPage from "@/pages/admin-ai-outreach-opportunities";
 import AdminGmailConversationsPage from "@/pages/admin-gmail-conversations";
 import AdminAgentToolsPage from "@/pages/admin-agent-tools";
 import AdminWorkflowsPage from "@/pages/admin-workflows";
@@ -418,6 +419,7 @@ function AuthenticatedLayout() {
                   <Route path="/command-center" component={BusinessCommandCenterPage} />
                   <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/ai-approvals" component={AdminAiApprovalsPage} />
+                  <Route path="/admin/ai-outreach-opportunities" component={AdminAiOutreachOpportunitiesPage} />
                   <Route path="/admin/gmail-conversations" component={AdminGmailConversationsPage} />
                   <Route path="/admin/agent-tools" component={AdminAgentToolsPage} />
                   <Route path="/admin/workflows" component={AdminWorkflowsPage} />
