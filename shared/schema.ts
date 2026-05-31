@@ -3590,6 +3590,47 @@ export const insertGmailAgentActionSchema = createInsertSchema(gmailAgentActions
 export type GmailAgentAction = typeof gmailAgentActions.$inferSelect;
 export type InsertGmailAgentAction = z.infer<typeof insertGmailAgentActionSchema>;
 
+// ─── Agent Message Feedback ───────────────────────────────────────────────────
+// Every human review decision becomes training data for agent improvement.
+
+export const agentMessageFeedback = pgTable("agent_message_feedback", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  proposalId: text("proposal_id").notNull(),
+  leadId: text("lead_id"),
+  agentName: text("agent_name"),
+  messageType: text("message_type"),
+  originalSubject: text("original_subject"),
+  originalBody: text("original_body"),
+  editedSubject: text("edited_subject"),
+  editedBody: text("edited_body"),
+  decision: text("decision").notNull(), // approved | edited_and_approved | rejected
+  rejectionReason: text("rejection_reason"),
+  qualityRating: integer("quality_rating"),
+  reviewerNotes: text("reviewer_notes"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at").defaultNow(),
+  leadContextJson: jsonb("lead_context_json"),
+  outcome: text("outcome"), // sent | replied | booked | ignored | bounced
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type AgentMessageFeedback = typeof agentMessageFeedback.$inferSelect;
+
+// ─── Agent Autonomy Settings ──────────────────────────────────────────────────
+// Per-org, per-message-type autonomy level controls.
+
+export const agentAutonomySettings = pgTable("agent_autonomy_settings", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  messageType: text("message_type").notNull(),
+  autonomyLevel: integer("autonomy_level").notNull().default(0),
+  enabled: boolean("enabled").notNull().default(false),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type AgentAutonomySetting = typeof agentAutonomySettings.$inferSelect;
+
 // ─── Lead Intelligence Profiles ───────────────────────────────────────────────
 // Stores AI-generated context, lead scoring, and pipeline state for every
 // athlete lead captured via a landing page / application form.

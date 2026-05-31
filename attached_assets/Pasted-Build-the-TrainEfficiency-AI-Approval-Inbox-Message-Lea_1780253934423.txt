@@ -1,0 +1,280 @@
+Build the TrainEfficiency AI Approval Inbox + Message Learning Loop.
+
+Problem:
+AI agents are generating email drafts for leads, but there is currently no UI to view, approve, reject, edit, or send them. Production has a backlog of proposed emails with approval_required = true.
+
+Goal:
+Create an Approval Inbox where admins can review AI-generated messages and teach the agent what good and bad messages look like over time. The system should gradually become more autonomous for low-risk lead messages after enough positive approvals.
+
+⸻
+
+Part 1 — Approval Inbox UI
+
+Create a new admin page:
+
+Route:
+/admin/ai-approvals
+
+Navigation label:
+AI Approvals
+
+Show all pending proposed actions where:
+
+* status = ‘proposed’ OR status = ‘pending_approval’
+* approval_required = true
+* executed_at IS NULL
+
+Group by action type:
+
+* Email drafts
+* SMS drafts
+* CRM updates
+* Workflow actions
+
+For email drafts, show:
+
+* Lead/client name
+* Email recipient
+* Subject
+* Full email body
+* Draft type:
+    * intake_outreach
+    * followup_24h
+    * retention
+    * reactivation
+    * team_partnership
+* Risk level
+* Confidence score
+* Created date
+* Source agent
+* Related lead/program/session if available
+
+Actions:
+
+* Approve & Send
+* Edit & Send
+* Reject
+* Approve Selected
+* Reject Selected
+* Approve All Low-Risk
+* View Lead Context
+
+Mobile requirement:
+The inbox must be fully usable on mobile.
+
+⸻
+
+Part 2 — Backend Approval Actions
+
+Create API endpoints:
+
+GET /api/ai-approvals
+Returns pending approvals for the current org.
+
+POST /api/ai-approvals/:id/approve
+Approves and executes the action.
+
+POST /api/ai-approvals/:id/edit-send
+Updates the draft content, records the edit, then executes.
+
+POST /api/ai-approvals/:id/reject
+Rejects the action and stores the rejection reason.
+
+POST /api/ai-approvals/bulk-approve
+Approves selected low-risk items.
+
+POST /api/ai-approvals/bulk-reject
+Rejects selected items.
+
+All routes must:
+
+* Resolve orgId server-side
+* Use the current authenticated user as reviewedBy
+* Write to unified_agent_action_log
+* Update proposal status
+* Prevent double execution
+* Respect Gmail connection status
+* Return structured errors
+
+⸻
+
+Part 3 — Message Feedback / Learning System
+
+Every human review should become training data.
+
+Create or use a table like:
+
+agent_message_feedback
+
+Fields:
+
+* id
+* org_id
+* proposal_id
+* lead_id
+* agent_name
+* message_type
+* original_subject
+* original_body
+* edited_subject
+* edited_body
+* decision:
+    * approved
+    * edited_and_approved
+    * rejected
+* rejection_reason
+* quality_rating optional 1–5
+* reviewer_notes
+* reviewed_by
+* reviewed_at
+* lead_context_json
+* outcome:
+    * sent
+    * replied
+    * booked
+    * ignored
+    * bounced
+
+When a user edits a message before sending, save a diff:
+
+* what the AI wrote
+* what the human changed
+* what pattern should be learned
+
+⸻
+
+Part 4 — Agent Learning Rules
+
+Before generating future messages, the agent should retrieve prior feedback for:
+
+* same org
+* same message_type
+* same lead type
+* similar program
+* similar risk level
+
+Use this feedback to improve future drafts.
+
+Examples:
+
+If Bryan repeatedly shortens emails:
+
+* Generate shorter emails.
+
+If Bryan removes hype language:
+
+* Avoid hype language.
+
+If Bryan approves direct booking CTAs:
+
+* Use stronger booking CTAs.
+
+If Bryan rejects certain wording:
+
+* Avoid that wording.
+
+Add a prompt context builder:
+
+getMessageFeedbackContext(orgId, messageType, leadContext)
+
+It should return:
+
+* approved examples
+* edited examples
+* rejected phrases
+* preferred tone
+* preferred CTA style
+* common human edits
+
+⸻
+
+Part 5 — Autonomy Progression
+
+Add an autonomy readiness score by message type.
+
+For each message_type calculate:
+
+* approval rate
+* edit rate
+* rejection rate
+* reply rate
+* booking/conversion rate
+* number of reviewed examples
+
+Autonomy rules:
+
+Level 0 — Manual Approval Required
+Default for all message types.
+
+Level 1 — Suggested
+Agent drafts, human approves.
+
+Level 2 — Auto-send Low Risk
+Allowed only when:
+
+* at least 20 reviewed messages of that type
+* approval rate >= 90%
+* rejection rate <= 5%
+* average quality rating >= 4
+* no recent safety issues
+
+Level 3 — Autonomous With Monitoring
+Allowed only when:
+
+* at least 50 reviewed messages
+* strong outcome data
+* admin explicitly enables autonomy for that message type
+
+Create UI controls:
+
+* Manual approval
+* Auto-send low-risk only
+* Autonomous with monitoring
+
+Never auto-send:
+
+* pricing discounts
+* refund messages
+* legal/medical claims
+* angry client responses
+* high-risk churn messages
+* messages with low confidence
+
+⸻
+
+Part 6 — Approval Inbox Metrics
+
+Add dashboard cards:
+
+* Pending approvals
+* Low-risk drafts
+* Average approval rate
+* Messages sent
+* Replies received
+* Bookings influenced
+* Autonomy readiness by message type
+
+Add alerts:
+
+* “23 AI drafts awaiting approval”
+* “5 low-risk intake emails ready to send”
+* “Lead follow-up backlog older than 24 hours”
+
+⸻
+
+Part 7 — Acceptance Criteria
+
+1. Admin can view all pending AI-generated emails.
+2. Admin can approve and send one email.
+3. Admin can edit and send one email.
+4. Admin can reject one email with a reason.
+5. Admin can bulk approve low-risk emails.
+6. All decisions are saved as feedback.
+7. Future drafts use prior approval/edit/rejection history.
+8. Message types earn autonomy only after enough approved examples.
+9. Auto-send can be enabled per message type, not globally.
+10. No action executes twice.
+11. Gmail connection errors are shown clearly.
+12. The system logs every approval, rejection, edit, and send.
+13. Mobile UI works cleanly.
+14. Return files changed, tables added, routes added, and before/after screenshots.

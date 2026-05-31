@@ -23,9 +23,12 @@ import {
   athleticBookings,
   orgSessions,
   orgUsers,
+  gmailAgentActions,
+  agentMessageFeedback,
+  agentAutonomySettings,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql, or, lt, gt, ne } from "drizzle-orm";
+import { eq, and, sql, or, lt, gt, ne, isNull, desc, inArray } from "drizzle-orm";
 import { users } from "@shared/models/auth";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
@@ -21187,6 +21190,229 @@ Respond with this exact JSON structure:
       })));
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch public benchmarks" });
+    }
+  });
+
+  // ─── AI Approval Inbox ────────────────────────────────────────────────────────
+
+  app.get("/api/ai-approvals", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { type } = req.query as Record<string, string>;
+      const rows = await db.select().from(gmailAgentActions)
+        .where(and(
+          eq(gmailAgentActions.orgId, orgId),
+          eq(gmailAgentActions.approvalRequired, true),
+          isNull(gmailAgentActions.executedAt),
+          or(eq(gmailAgentActions.status, "proposed"), eq(gmailAgentActions.status, "pending_approval"))
+        ))
+        .orderBy(desc(gmailAgentActions.createdAt));
+      const filtered = type ? rows.filter((r) => r.actionType.startsWith(type)) : rows;
+      res.json(filtered);
+    } catch (e: any) {
+      console.error("[ai-approvals] list error:", e);
+      res.status(500).json({ message: "Failed to load approvals" });
+    }
+  });
+
+  app.get("/api/ai-approvals/metrics", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const [pending, feedback] = await Promise.all([
+        db.select().from(gmailAgentActions).where(and(
+          eq(gmailAgentActions.orgId, orgId),
+          eq(gmailAgentActions.approvalRequired, true),
+          isNull(gmailAgentActions.executedAt),
+          or(eq(gmailAgentActions.status, "proposed"), eq(gmailAgentActions.status, "pending_approval"))
+        )),
+        db.select().from(agentMessageFeedback).where(eq(agentMessageFeedback.orgId, orgId)),
+      ]);
+      const lowRisk = pending.filter((r) => r.riskLevel === "low").length;
+      const total = feedback.length;
+      const approved = feedback.filter((f) => f.decision === "approved" || f.decision === "edited_and_approved").length;
+      const rejected = feedback.filter((f) => f.decision === "rejected").length;
+      const sent = feedback.filter((f) => f.outcome === "sent" || f.outcome === "replied" || f.outcome === "booked").length;
+      const approvalRate = total > 0 ? Math.round((approved / total) * 100) : null;
+      const oldestPending = pending.length > 0 ? pending.reduce((a, b) => (a.createdAt! < b.createdAt! ? a : b)) : null;
+      const oldestHours = oldestPending?.createdAt ? Math.round((Date.now() - new Date(oldestPending.createdAt).getTime()) / 3600000) : null;
+      res.json({ pending: pending.length, lowRisk, approvalRate, totalReviewed: total, approved, rejected, sent, oldestPendingHours: oldestHours });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to load metrics" });
+    }
+  });
+
+  app.get("/api/ai-approvals/autonomy", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const MESSAGE_TYPES = ["intake_outreach", "followup_24h", "followup_72h", "followup_7d", "retention", "reactivation", "team_partnership", "scheduling_response", "booking_confirmation"];
+      const [settings, feedback] = await Promise.all([
+        db.select().from(agentAutonomySettings).where(eq(agentAutonomySettings.orgId, orgId)),
+        db.select().from(agentMessageFeedback).where(eq(agentMessageFeedback.orgId, orgId)),
+      ]);
+      const settingsByType = Object.fromEntries(settings.map((s) => [s.messageType, s]));
+      const result = MESSAGE_TYPES.map((mt) => {
+        const fb = feedback.filter((f) => f.messageType === mt);
+        const total = fb.length;
+        const approved = fb.filter((f) => f.decision === "approved" || f.decision === "edited_and_approved").length;
+        const rejected = fb.filter((f) => f.decision === "rejected").length;
+        const ratings = fb.map((f) => f.qualityRating).filter(Boolean) as number[];
+        const avgRating = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null;
+        const approvalRate = total > 0 ? (approved / total) * 100 : 0;
+        const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
+        const readyForLevel2 = total >= 20 && approvalRate >= 90 && rejectionRate <= 5 && (avgRating ?? 0) >= 4;
+        const readyForLevel3 = total >= 50 && approvalRate >= 95 && rejectionRate <= 3;
+        const setting = settingsByType[mt];
+        return { messageType: mt, autonomyLevel: setting?.autonomyLevel ?? 0, enabled: setting?.enabled ?? false, totalReviewed: total, approvalRate: Math.round(approvalRate), rejectionRate: Math.round(rejectionRate), avgRating: avgRating ? Math.round(avgRating * 10) / 10 : null, readyForLevel2, readyForLevel3 };
+      });
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to load autonomy settings" });
+    }
+  });
+
+  app.post("/api/ai-approvals/autonomy/:messageType", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { messageType } = req.params;
+      const { autonomyLevel, enabled } = req.body;
+      const existing = await db.select().from(agentAutonomySettings).where(and(eq(agentAutonomySettings.orgId, orgId), eq(agentAutonomySettings.messageType, messageType))).limit(1);
+      if (existing.length > 0) {
+        await db.update(agentAutonomySettings).set({ autonomyLevel, enabled, updatedBy: userId, updatedAt: new Date() }).where(eq(agentAutonomySettings.id, existing[0].id));
+      } else {
+        await db.insert(agentAutonomySettings).values({ orgId, messageType, autonomyLevel, enabled, updatedBy: userId });
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to update autonomy" });
+    }
+  });
+
+  app.post("/api/ai-approvals/bulk-approve", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { ids } = req.body as { ids: string[] };
+      if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: "ids required" });
+      const proposals = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.orgId, orgId), inArray(gmailAgentActions.id, ids)));
+      const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
+      const results = await Promise.allSettled(proposals.map(async (p) => {
+        if (p.executedAt) throw new Error("Already executed");
+        if (!p.recipientEmail) throw new Error("No recipient");
+        const { messageId, threadId } = await sendEmail({ orgId, to: p.recipientEmail, subject: p.subject ?? "(no subject)", body: p.bodyPreview ?? "", leadId: p.leadId ?? undefined, dealId: p.dealId ?? undefined });
+        await Promise.all([
+          db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, p.id)),
+          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "approved", reviewedBy: userId, outcome: "sent" }),
+        ]);
+        return p.id;
+      }));
+      const sent = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const errors = (results.filter((r): r is PromiseRejectedResult => r.status === "rejected")).map((r) => r.reason?.message ?? "Unknown error");
+      res.json({ sent, failed, errors });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to bulk approve" });
+    }
+  });
+
+  app.post("/api/ai-approvals/bulk-reject", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { ids, reason } = req.body as { ids: string[]; reason?: string };
+      if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: "ids required" });
+      const proposals = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.orgId, orgId), inArray(gmailAgentActions.id, ids)));
+      await Promise.all(proposals.map(async (p) => {
+        await Promise.all([
+          db.update(gmailAgentActions).set({ status: "rejected", approvedBy: userId }).where(eq(gmailAgentActions.id, p.id)),
+          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, reviewedBy: userId }),
+        ]);
+      }));
+      res.json({ rejected: proposals.length });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to bulk reject" });
+    }
+  });
+
+  app.post("/api/ai-approvals/:id/approve", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { id } = req.params;
+      const { subject: overrideSubject, body: overrideBody } = req.body ?? {};
+      const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
+      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+      if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
+      if (!proposal.recipientEmail) return res.status(400).json({ message: "No recipient email" });
+      const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
+      const subject = overrideSubject ?? proposal.subject ?? "(no subject)";
+      const body = overrideBody ?? proposal.bodyPreview ?? "";
+      const { messageId, threadId } = await sendEmail({ orgId, to: proposal.recipientEmail, subject, body, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined });
+      const isEdited = !!(overrideBody || overrideSubject);
+      await Promise.all([
+        db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: isEdited ? subject : null, editedBody: isEdited ? body : null, decision: isEdited ? "edited_and_approved" : "approved", reviewedBy: userId, outcome: "sent" }),
+      ]);
+      res.json({ ok: true, messageId, threadId });
+    } catch (e: any) {
+      console.error("[ai-approvals] approve error:", e);
+      const isGmailErr = e?.message?.toLowerCase().includes("gmail") || e?.message?.toLowerCase().includes("oauth") || e?.message?.toLowerCase().includes("token") || e?.message?.toLowerCase().includes("credentials");
+      if (isGmailErr) return res.status(503).json({ message: "Gmail connection error — please reconnect Gmail in Settings.", gmailError: true });
+      res.status(500).json({ message: e.message ?? "Failed to approve and send" });
+    }
+  });
+
+  app.post("/api/ai-approvals/:id/edit-send", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { id } = req.params;
+      const { subject, body, qualityRating, reviewerNotes } = req.body ?? {};
+      if (!subject || !body) return res.status(400).json({ message: "subject and body are required" });
+      const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
+      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+      if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
+      if (!proposal.recipientEmail) return res.status(400).json({ message: "No recipient email" });
+      const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
+      const { messageId, threadId } = await sendEmail({ orgId, to: proposal.recipientEmail, subject, body, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined });
+      await Promise.all([
+        db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: subject, editedBody: body, decision: "edited_and_approved", qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId, outcome: "sent" }),
+      ]);
+      res.json({ ok: true, messageId, threadId });
+    } catch (e: any) {
+      console.error("[ai-approvals] edit-send error:", e);
+      const isGmailErr = e?.message?.toLowerCase().includes("gmail") || e?.message?.toLowerCase().includes("oauth") || e?.message?.toLowerCase().includes("token");
+      if (isGmailErr) return res.status(503).json({ message: "Gmail connection error — please reconnect Gmail in Settings.", gmailError: true });
+      res.status(500).json({ message: e.message ?? "Failed to edit and send" });
+    }
+  });
+
+  app.post("/api/ai-approvals/:id/reject", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { id } = req.params;
+      const { reason, qualityRating, reviewerNotes } = req.body ?? {};
+      const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
+      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+      if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
+      await Promise.all([
+        db.update(gmailAgentActions).set({ status: "rejected", approvedBy: userId }).where(eq(gmailAgentActions.id, id)),
+        db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, qualityRating: qualityRating ?? null, reviewerNotes: reviewerNotes ?? null, reviewedBy: userId }),
+      ]);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to reject proposal" });
     }
   });
 

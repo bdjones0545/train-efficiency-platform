@@ -73,6 +73,7 @@ import {
   Globe,
   Rocket,
   UserCheck,
+  CheckCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -143,6 +144,7 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
     defaultOpen: true,
     items: [
       { title: "Command Center", simplifiedTitle: "AI Overview", url: "/admin/ai-operations", icon: Cpu, testId: "nav-ai-operations" },
+      { title: "AI Approvals", simplifiedTitle: "Approvals", url: "/admin/ai-approvals", icon: CheckCheck, testId: "nav-ai-approvals" },
       { title: "Attention Inbox", simplifiedTitle: "Attention", url: "/admin/attention", icon: Inbox, testId: "nav-attention-inbox" },
       { title: "Business Brain", simplifiedTitle: "Business Brain", url: "/admin/business-brain", icon: Brain, testId: "nav-business-brain" },
       { title: "Recommendations", simplifiedTitle: "Suggestions", url: "/admin/recommendations", icon: Zap, testId: "nav-recommendations" },
