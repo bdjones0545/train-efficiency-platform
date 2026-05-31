@@ -8805,6 +8805,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         upsellOpportunityCount: 0,
         coachRevenues: [],
         timeBlockRevenues: [],
+        scheduledRevenueByTimeBlock: [],
+        redeemedRevenueByTimeBlockLast30d: [],
         topClients: [],
         topClientsByScheduledRevenue: [],
         topClientsByRedeemedRevenue: [],

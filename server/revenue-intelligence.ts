@@ -104,6 +104,8 @@ export interface RevenueSummary {
   upsellOpportunityCount: number;
   coachRevenues: CoachRevenue[];
   timeBlockRevenues: TimeBlockRevenue[];
+  scheduledRevenueByTimeBlock: { hour: number; label: string; scheduledRevenueCents: number; scheduledSessionCount: number }[];
+  redeemedRevenueByTimeBlockLast30d: { hour: number; label: string; redeemedRevenueCents: number; redeemedSessionCount: number }[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
   topClientsByScheduledRevenue: { clientId: string; clientName: string; scheduledRevenueCents: number; scheduledSessionCount: number }[];
   topClientsByRedeemedRevenue: { clientId: string; clientName: string; redeemedRevenueCents: number; redeemedSessionCount: number }[];
@@ -242,25 +244,64 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
 
   // Revenue by time block (hour of day) — grouped in org's local timezone
   // Only eligible real clients are included — excludes coach/admin/walk-in bookings
-  const eligibleLast30d = last30d.filter(b => eligibleClientIds.has(b.clientId));
-  const hourMap = new Map<number, { revenue: number; sessions: number }>();
-  for (const b of eligibleLast30d) {
-    const zonedDate = toZonedTime(new Date(b.startAt), orgTimezone);
-    const hour = zonedDate.getHours();
-    if (!hourMap.has(hour)) hourMap.set(hour, { revenue: 0, sessions: 0 });
-    hourMap.get(hour)!.revenue += b.priceCents ?? 0;
-    hourMap.get(hour)!.sessions++;
-  }
+  const hourLabel = (h: number) =>
+    h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`;
 
-  const timeBlockRevenues: TimeBlockRevenue[] = Array.from(hourMap.entries())
+  // Scheduled: CONFIRMED sessions starting in the future (pipeline view)
+  const eligibleScheduledFuture = allBookings.filter(
+    b => eligibleClientIds.has(b.clientId) &&
+      b.status === "CONFIRMED" &&
+      new Date(b.startAt) >= now &&
+      (b.priceCents ?? 0) > 0
+  );
+  const scheduledHourMap = new Map<number, { revenue: number; sessions: number }>();
+  for (const b of eligibleScheduledFuture) {
+    const h = toZonedTime(new Date(b.startAt), orgTimezone).getHours();
+    if (!scheduledHourMap.has(h)) scheduledHourMap.set(h, { revenue: 0, sessions: 0 });
+    scheduledHourMap.get(h)!.revenue += b.priceCents ?? 0;
+    scheduledHourMap.get(h)!.sessions++;
+  }
+  const scheduledRevenueByTimeBlock = Array.from(scheduledHourMap.entries())
     .map(([hour, data]) => ({
       hour,
-      label: hour === 0 ? "12 AM" : hour < 12 ? `${hour} AM` : hour === 12 ? "12 PM" : `${hour - 12} PM`,
-      totalRevenueCents: data.revenue,
-      sessionCount: data.sessions,
-      avgRevenueCents: data.sessions > 0 ? Math.round(data.revenue / data.sessions) : 0,
+      label: hourLabel(hour),
+      scheduledRevenueCents: data.revenue,
+      scheduledSessionCount: data.sessions,
     }))
     .sort((a, b) => a.hour - b.hour);
+
+  // Redeemed last 30d: COMPLETED sessions within the last 30 days (earned/delivered revenue)
+  const eligibleRedeemedLast30d = allBookings.filter(
+    b => eligibleClientIds.has(b.clientId) &&
+      b.status === "COMPLETED" &&
+      new Date(b.startAt) >= thirtyDaysAgo &&
+      new Date(b.startAt) < now &&
+      (b.priceCents ?? 0) > 0
+  );
+  const redeemedHourMap = new Map<number, { revenue: number; sessions: number }>();
+  for (const b of eligibleRedeemedLast30d) {
+    const h = toZonedTime(new Date(b.startAt), orgTimezone).getHours();
+    if (!redeemedHourMap.has(h)) redeemedHourMap.set(h, { revenue: 0, sessions: 0 });
+    redeemedHourMap.get(h)!.revenue += b.priceCents ?? 0;
+    redeemedHourMap.get(h)!.sessions++;
+  }
+  const redeemedRevenueByTimeBlockLast30d = Array.from(redeemedHourMap.entries())
+    .map(([hour, data]) => ({
+      hour,
+      label: hourLabel(hour),
+      redeemedRevenueCents: data.revenue,
+      redeemedSessionCount: data.sessions,
+    }))
+    .sort((a, b) => a.hour - b.hour);
+
+  // Backward-compat alias for scheduling assistant — maps redeemed shape onto TimeBlockRevenue
+  const timeBlockRevenues: TimeBlockRevenue[] = redeemedRevenueByTimeBlockLast30d.map(tb => ({
+    hour: tb.hour,
+    label: tb.label,
+    totalRevenueCents: tb.redeemedRevenueCents,
+    sessionCount: tb.redeemedSessionCount,
+    avgRevenueCents: tb.redeemedSessionCount > 0 ? Math.round(tb.redeemedRevenueCents / tb.redeemedSessionCount) : 0,
+  }));
 
   // Top clients — eligibility-filtered, split into scheduled vs redeemed
   // Excludes coaches, admins, staff, walk-ins, test users, internal aliases, and org owner
@@ -387,6 +428,8 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     upsellOpportunityCount: upsellOpportunities.length,
     coachRevenues,
     timeBlockRevenues,
+    scheduledRevenueByTimeBlock,
+    redeemedRevenueByTimeBlockLast30d,
     topClients,
     topClientsByScheduledRevenue,
     topClientsByRedeemedRevenue,

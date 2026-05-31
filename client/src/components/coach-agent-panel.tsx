@@ -125,6 +125,8 @@ interface RevenueSummary {
   upsellOpportunityCount: number;
   coachRevenues: { coachId: string; coachName: string; totalRevenueCents: number; sessionCount: number; avgRevenuePerSessionCents: number; activeClients: number }[];
   timeBlockRevenues: { hour: number; label: string; totalRevenueCents: number; sessionCount: number }[];
+  scheduledRevenueByTimeBlock?: { hour: number; label: string; scheduledRevenueCents: number; scheduledSessionCount: number }[];
+  redeemedRevenueByTimeBlockLast30d?: { hour: number; label: string; redeemedRevenueCents: number; redeemedSessionCount: number }[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
   topClientsByScheduledRevenue?: { clientId: string; clientName: string; scheduledRevenueCents: number; scheduledSessionCount: number }[];
   topClientsByRedeemedRevenue?: { clientId: string; clientName: string; redeemedRevenueCents: number; redeemedSessionCount: number }[];
@@ -1007,6 +1009,8 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     revenueSummaryDegraded: activeRevenueSummary.revenueSummaryDegraded ?? false,
     topClientsByScheduledRevenue: activeRevenueSummary.topClientsByScheduledRevenue ?? [],
     topClientsByRedeemedRevenue: activeRevenueSummary.topClientsByRedeemedRevenue ?? [],
+    scheduledRevenueByTimeBlock: activeRevenueSummary.scheduledRevenueByTimeBlock ?? [],
+    redeemedRevenueByTimeBlockLast30d: activeRevenueSummary.redeemedRevenueByTimeBlockLast30d ?? [],
   } : null;
 
   const maxCoachRevenue = safeRevenue && safeRevenue.coachRevenues.length > 0
@@ -2260,21 +2264,67 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     )}
                   </div>
 
-                  {safeRevenue.timeBlockRevenues.length > 0 && (
-                    <div>
-                      <h3 className="font-semibold text-sm mb-1 flex items-center gap-1.5"><Clock className="h-4 w-4 text-purple-500" />Revenue by Time Block (Last 30d)</h3>
-                      {safeRevenue.timezone && (
-                        <p className="text-xs text-muted-foreground mb-2" data-testid="time-block-timezone-label">Times shown in org timezone: {safeRevenue.timezone}</p>
-                      )}
+                  <div>
+                    <h3 className="font-semibold text-sm mb-1 flex items-center gap-1.5"><Clock className="h-4 w-4 text-blue-400" />Scheduled Revenue by Time Block</h3>
+                    {safeRevenue.timezone && (
+                      <p className="text-xs text-muted-foreground mb-2" data-testid="scheduled-time-block-timezone-label">Times in org timezone: {safeRevenue.timezone}</p>
+                    )}
+                    {safeRevenue.scheduledRevenueByTimeBlock.length > 0 ? (
                       <Card>
                         <CardContent className="p-4 space-y-2">
-                          {safeRevenue.timeBlockRevenues
-                            .sort((a, b) => a.hour - b.hour)
-                            .map(tb => <TimeBlockBar key={tb.hour} block={tb} maxRevenue={maxTimeBlockRevenue} />)}
+                          {(() => {
+                            const maxRev = Math.max(...safeRevenue.scheduledRevenueByTimeBlock.map(t => t.scheduledRevenueCents), 1);
+                            return safeRevenue.scheduledRevenueByTimeBlock.map(tb => {
+                              const pct = (tb.scheduledRevenueCents / maxRev) * 100;
+                              return (
+                                <div key={tb.hour} className="flex items-center gap-2" data-testid={`scheduled-time-block-${tb.hour}`}>
+                                  <span className="text-xs text-muted-foreground w-10 shrink-0 text-right">{tb.label}</span>
+                                  <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${pct >= 70 ? "bg-blue-500" : "bg-blue-300"}`} style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <span className="text-xs font-mono text-muted-foreground w-12 text-right shrink-0">${(tb.scheduledRevenueCents / 100).toFixed(0)}</span>
+                                  <span className="text-xs text-muted-foreground shrink-0">{tb.scheduledSessionCount} scheduled</span>
+                                </div>
+                              );
+                            });
+                          })()}
                         </CardContent>
                       </Card>
-                    </div>
-                  )}
+                    ) : (
+                      <Card><CardContent className="p-3 text-xs text-muted-foreground">No upcoming scheduled sessions.</CardContent></Card>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-sm mb-1 flex items-center gap-1.5"><Clock className="h-4 w-4 text-green-500" />Redeemed Revenue by Time Block (Last 30d)</h3>
+                    {safeRevenue.timezone && (
+                      <p className="text-xs text-muted-foreground mb-2" data-testid="redeemed-time-block-timezone-label">Times in org timezone: {safeRevenue.timezone}</p>
+                    )}
+                    {safeRevenue.redeemedRevenueByTimeBlockLast30d.length > 0 ? (
+                      <Card>
+                        <CardContent className="p-4 space-y-2">
+                          {(() => {
+                            const maxRev = Math.max(...safeRevenue.redeemedRevenueByTimeBlockLast30d.map(t => t.redeemedRevenueCents), 1);
+                            return safeRevenue.redeemedRevenueByTimeBlockLast30d.map(tb => {
+                              const pct = (tb.redeemedRevenueCents / maxRev) * 100;
+                              return (
+                                <div key={tb.hour} className="flex items-center gap-2" data-testid={`redeemed-time-block-${tb.hour}`}>
+                                  <span className="text-xs text-muted-foreground w-10 shrink-0 text-right">{tb.label}</span>
+                                  <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${pct >= 70 ? "bg-green-500" : "bg-green-300"}`} style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <span className="text-xs font-mono text-muted-foreground w-12 text-right shrink-0">${(tb.redeemedRevenueCents / 100).toFixed(0)}</span>
+                                  <span className="text-xs text-muted-foreground shrink-0">{tb.redeemedSessionCount} redeemed</span>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card data-testid="no-redeemed-time-blocks"><CardContent className="p-3 text-xs text-muted-foreground">No redeemed sessions in the last 30 days.</CardContent></Card>
+                    )}
+                  </div>
 
                   <div id="churn-section">
                     <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 text-red-500" />Retention Risks</h3>
