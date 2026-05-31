@@ -157,6 +157,8 @@ import AdminCeoHeartbeatPage from "@/pages/admin-ceo-heartbeat";
 import AdminAthleteIntelligencePage from "@/pages/admin-athlete-intelligence";
 import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
 import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-center";
+import AdminSchedulingOpportunityInboxPage from "@/pages/admin-scheduling-opportunity-inbox";
+import AdminSchedulingCopilotPage from "@/pages/admin-scheduling-copilot";
 
 interface SubscriptionStatus {
   status: string;
@@ -468,6 +470,8 @@ function AuthenticatedLayout() {
                   <Route path="/admin/athlete-intelligence" component={AdminAthleteIntelligencePage} />
                   <Route path="/admin/coach-capacity" component={AdminCoachCapacityPage} />
                   <Route path="/admin/scheduling-command-center" component={AdminSchedulingCommandCenterPage} />
+                  <Route path="/admin/scheduling-opportunity-inbox" component={AdminSchedulingOpportunityInboxPage} />
+                  <Route path="/admin/scheduling-copilot" component={AdminSchedulingCopilotPage} />
                   <Route path="/developer" component={DeveloperPortalPage} />
                   <Route path="/developer/sandbox" component={DeveloperSandboxPage} />
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />

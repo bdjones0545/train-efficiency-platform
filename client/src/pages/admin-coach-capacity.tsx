@@ -9,8 +9,102 @@ import { Progress } from "@/components/ui/progress";
 import { useState } from "react";
 import {
   Clock, Users, DollarSign, TrendingUp, Calendar,
-  BarChart3, Activity, ChevronUp, ChevronDown, Minus
+  BarChart3, Activity, ChevronUp, ChevronDown, Minus,
+  Lightbulb, AlertTriangle, CheckCircle2, AlertCircle
 } from "lucide-react";
+
+interface CoachIntelligence {
+  coachId: string;
+  name: string;
+  sessionsThisWeek: number;
+  sessions30Days: number;
+  revenue30DayCents: number;
+  avgSessionsPerWeek: number;
+  status: "optimal" | "underutilized" | "overloaded" | "inactive";
+  recommendations: string[];
+}
+
+function statusIcon(status: string) {
+  switch (status) {
+    case "optimal": return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    case "overloaded": return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+    case "underutilized": return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+    default: return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
+  }
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case "optimal": return <Badge className="text-xs bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20">Optimal</Badge>;
+    case "overloaded": return <Badge className="text-xs bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20">Overloaded</Badge>;
+    case "underutilized": return <Badge className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">Underutilized</Badge>;
+    default: return <Badge variant="secondary" className="text-xs">Inactive</Badge>;
+  }
+}
+
+function UtilizationIntelligencePanel() {
+  const { data, isLoading } = useQuery<{ coaches: CoachIntelligence[] }>({
+    queryKey: ["/api/scheduling/utilization-intelligence"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/utilization-intelligence", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  if (isLoading) return <Skeleton className="h-48" />;
+  if (!data || data.coaches.length === 0) return null;
+
+  const needsAttention = data.coaches.filter(c => c.status !== "optimal");
+  if (needsAttention.length === 0) {
+    return (
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Lightbulb className="h-4 w-4 text-primary" />
+          <p className="font-semibold text-sm">Utilization Intelligence</p>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
+          <CheckCircle2 className="h-4 w-4" />
+          All coaches are optimally utilized — no action needed.
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-4" data-testid="panel-utilization-intelligence">
+      <div className="flex items-center gap-2 mb-4">
+        <Lightbulb className="h-4 w-4 text-primary" />
+        <p className="font-semibold text-sm">Utilization Intelligence</p>
+        <Badge variant="secondary" className="ml-auto text-xs">{needsAttention.length} coach{needsAttention.length !== 1 ? "es" : ""} need attention</Badge>
+      </div>
+      <div className="space-y-4">
+        {needsAttention.map(coach => (
+          <div key={coach.coachId} className="space-y-2" data-testid={`intelligence-${coach.coachId}`}>
+            <div className="flex items-center gap-2">
+              {statusIcon(coach.status)}
+              <span className="font-medium text-sm">{coach.name}</span>
+              {statusBadge(coach.status)}
+              <span className="text-xs text-muted-foreground ml-auto">
+                {coach.sessionsThisWeek} sessions/wk
+              </span>
+            </div>
+            {coach.recommendations.length > 0 && (
+              <ul className="ml-6 space-y-1">
+                {coach.recommendations.map((r, i) => (
+                  <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                    <span className="text-primary mt-0.5">→</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 interface CoachCapacity {
   coachId: string;
@@ -217,6 +311,9 @@ export default function AdminCoachCapacityPage() {
           )}
         </div>
       </Card>
+
+      {/* Utilization Intelligence */}
+      <UtilizationIntelligencePanel />
 
       {/* Coach Cards */}
       {isLoading ? (

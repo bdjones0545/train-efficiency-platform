@@ -154,6 +154,8 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
       { title: "Workflow Heatmap", simplifiedTitle: "Heatmap", url: "/admin/workflow-heatmap", icon: BarChart2, testId: "nav-workflow-heatmap" },
       { title: "Scheduling Command Center", simplifiedTitle: "Sched. Hub", url: "/admin/scheduling-command-center", icon: CalendarDays, testId: "nav-scheduling-command-center" },
       { title: "Coach Capacity", simplifiedTitle: "Capacity", url: "/admin/coach-capacity", icon: BarChart2, testId: "nav-coach-capacity" },
+      { title: "Opportunity Inbox", simplifiedTitle: "Opportunities", url: "/admin/scheduling-opportunity-inbox", icon: Inbox, testId: "nav-scheduling-opportunity-inbox" },
+      { title: "Scheduling Copilot", simplifiedTitle: "AI Copilot", url: "/admin/scheduling-copilot", icon: Sparkles, testId: "nav-scheduling-copilot" },
     ],
   },
   {

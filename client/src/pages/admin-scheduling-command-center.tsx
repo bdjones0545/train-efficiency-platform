@@ -4,11 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
   Calendar, Clock, Users, DollarSign, TrendingUp, AlertCircle,
-  CheckCircle2, Clock3, BarChart3, ArrowUpRight, Activity, Flame
+  CheckCircle2, Clock3, BarChart3, ArrowUpRight, Activity, Flame,
+  Sparkles, Target, RefreshCw, ChevronRight
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { Link } from "wouter";
 
 interface CommandCenterData {
   todaySessions: number;
@@ -94,6 +97,144 @@ function RevenueSessionRow({ session }: { session: any }) {
   );
 }
 
+interface HealthScore {
+  score: number;
+  label: string;
+  summary: string;
+  breakdown: { utilization: number; revenue: number; attendance: number; retention: number; waitlist: number };
+  metrics: { avgUtilization: number; revenueCapturePct: number; cancelRate: number; waitlistCount: number; activeSessionsThisWeek: number };
+}
+
+interface RevenueRecovery {
+  summary: { totalLostRevenueCents: number; totalRecoverableRevenueCents: number; sessionsWithGaps: number };
+  gaps: { sessionId: string; serviceName: string; startAt: string; openSpots: number; lostRevenueCents: number; utilizationPct: number }[];
+}
+
+function HealthScorePanel() {
+  const { data, isLoading } = useQuery<HealthScore>({
+    queryKey: ["/api/scheduling/health-score"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/health-score", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    refetchInterval: 120_000,
+  });
+
+  if (isLoading) return <Skeleton className="h-36" />;
+  if (!data) return null;
+
+  const scoreColor = data.score >= 90 ? "text-green-600 dark:text-green-400" :
+                     data.score >= 75 ? "text-blue-600 dark:text-blue-400" :
+                     data.score >= 60 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400";
+  const badgeClass = data.score >= 90 ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20" :
+                     data.score >= 75 ? "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20" :
+                     data.score >= 60 ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20" :
+                     "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20";
+
+  const factors = [
+    { label: "Util", value: data.breakdown.utilization },
+    { label: "Rev", value: data.breakdown.revenue },
+    { label: "Attend", value: data.breakdown.attendance },
+    { label: "Retain", value: data.breakdown.retention },
+    { label: "WL", value: data.breakdown.waitlist },
+  ];
+
+  return (
+    <Card className="p-4 space-y-3" data-testid="panel-health-score">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <p className="font-semibold text-sm">Scheduling Health Score</p>
+        </div>
+        <Link href="/admin/scheduling-copilot">
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+            AI Copilot <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </Link>
+      </div>
+      <div className="flex items-center gap-4">
+        <div>
+          <span className={`text-4xl font-bold ${scoreColor}`}>{data.score}</span>
+          <span className="text-sm text-muted-foreground ml-1">/ 100</span>
+        </div>
+        <div className="flex-1 space-y-1">
+          <Badge className={`text-xs ${badgeClass}`}>{data.label}</Badge>
+          <p className="text-xs text-muted-foreground leading-relaxed">{data.summary}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-5 gap-1.5">
+        {factors.map(f => {
+          const barColor = f.value >= 80 ? "bg-green-500" : f.value >= 60 ? "bg-yellow-500" : "bg-red-500";
+          return (
+            <div key={f.label} className="space-y-0.5">
+              <div className="bg-muted rounded-full h-1.5">
+                <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${f.value}%` }} />
+              </div>
+              <p className="text-[10px] text-muted-foreground text-center">{f.label} {f.value}</p>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function RevenueRecoveryPanel() {
+  const { data, isLoading } = useQuery<RevenueRecovery>({
+    queryKey: ["/api/scheduling/revenue-recovery"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/revenue-recovery", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  if (isLoading) return <Skeleton className="h-36" />;
+  if (!data || data.gaps.length === 0) return null;
+
+  const { totalLostRevenueCents, totalRecoverableRevenueCents, sessionsWithGaps } = data.summary;
+
+  return (
+    <Card className="p-4 space-y-3" data-testid="panel-revenue-recovery">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Target className="h-4 w-4 text-orange-500" />
+          <p className="font-semibold text-sm">Revenue Recovery</p>
+        </div>
+        <Link href="/admin/scheduling-opportunity-inbox">
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+            See All <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-center">
+        <div className="bg-muted/40 rounded-lg p-2.5">
+          <p className="text-[10px] text-muted-foreground">Revenue Gap</p>
+          <p className="text-lg font-bold text-red-600 dark:text-red-400">${Math.round(totalLostRevenueCents / 100).toLocaleString()}</p>
+          <p className="text-[10px] text-muted-foreground">{sessionsWithGaps} sessions</p>
+        </div>
+        <div className="bg-muted/40 rounded-lg p-2.5">
+          <p className="text-[10px] text-muted-foreground">Recoverable (est.)</p>
+          <p className="text-lg font-bold text-green-600 dark:text-green-400">${Math.round(totalRecoverableRevenueCents / 100).toLocaleString()}</p>
+          <p className="text-[10px] text-muted-foreground">with outreach</p>
+        </div>
+      </div>
+      {data.gaps.slice(0, 3).map(g => (
+        <div key={g.sessionId} className="flex items-center gap-2 py-1.5 border-b last:border-b-0 text-sm">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium truncate text-xs">{g.serviceName}</p>
+            <p className="text-[10px] text-muted-foreground">{g.openSpots} open spots · {g.utilizationPct}% full</p>
+          </div>
+          <span className="text-xs font-semibold text-red-600 dark:text-red-400 shrink-0">
+            -${Math.round(g.lostRevenueCents / 100)}
+          </span>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 export default function AdminSchedulingCommandCenterPage() {
   const { data, isLoading } = useQuery<CommandCenterData>({
     queryKey: ["/api/scheduling/command-center"],
@@ -167,6 +308,12 @@ export default function AdminSchedulingCommandCenterPage() {
             <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
           </Card>
         ))}
+      </div>
+
+      {/* Intelligence Row — Health Score + Revenue Recovery */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <HealthScorePanel />
+        <RevenueRecoveryPanel />
       </div>
 
       {/* Main Content Grid */}

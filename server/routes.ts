@@ -22478,5 +22478,9 @@ Respond with this exact JSON structure:
   const { registerSchedulingPhase2Routes } = await import("./scheduling-phase2-routes");
   await registerSchedulingPhase2Routes(app, isAuthenticated);
 
+  // ─── Scheduling Phase 3 — Intelligence Routes ──────────────────────────────
+  const { registerSchedulingIntelligenceRoutes } = await import("./scheduling-intelligence-routes");
+  await registerSchedulingIntelligenceRoutes(app, isAuthenticated);
+
   return httpServer;
 }
