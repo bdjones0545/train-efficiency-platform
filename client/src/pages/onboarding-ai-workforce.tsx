@@ -619,16 +619,20 @@ export default function OnboardingAiWorkforcePage() {
       navigate("/admin/ai-workforce");
     },
     onError: (err: any) => {
+      let title = "Setup failed";
       let description = "Please try again.";
       try {
         const raw = err?.message ?? "";
         const jsonPart = raw.indexOf("{") !== -1 ? raw.slice(raw.indexOf("{")) : null;
         if (jsonPart) {
           const parsed = JSON.parse(jsonPart);
-          description = parsed.message ?? parsed.error ?? description;
+          const msg = parsed.message ?? parsed.error;
+          if (msg) description = msg;
+          if (parsed.phase) title = `Setup failed (${parsed.phase})`;
+          if (parsed.details && parsed.details !== msg) description += ` — ${parsed.details}`;
         }
       } catch {}
-      toast({ title: "Setup failed", description, variant: "destructive" });
+      toast({ title, description, variant: "destructive" });
     },
   });
 

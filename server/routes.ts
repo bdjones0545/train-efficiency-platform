@@ -17017,90 +17017,114 @@ Respond with this exact JSON structure:
   // POST /api/onboarding/ai-workforce/complete — complete the setup wizard
   // Phase 1 hardening: persists all selections, seeds governance, validates integrations
   app.post("/api/onboarding/ai-workforce/complete", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    const { goals, orgPreset, departments, governanceMode, integrations, workflowTemplates } = req.body;
+    const orgId = req.user.orgId;
+    const resolvedGovernanceMode = governanceMode ?? "collaborative";
+
+    const verificationLog: string[] = [];
+    const integrationWarnings: string[] = [];
+    const created: string[] = [];
+    const autoPublished: string[] = [];
+
+    // ── Phase 1 (CRITICAL): Persist wizard preferences ──────────────────────
     try {
-      const { goals, orgPreset, departments, governanceMode, integrations, workflowTemplates } = req.body;
-      const orgId = req.user.orgId;
-      const { logUnifiedAction } = await import("./unified-action-logger");
-
-      const verificationLog: string[] = [];
-      const integrationWarnings: string[] = [];
-
-      // ── 1. Persist all wizard selections ────────────────────────────────────
+      console.log("[onboarding/complete] phase:start", { phase: "save_preferences", orgId });
       await storage.upsertAiWorkforceSettings(orgId, {
         goals: Array.isArray(goals) ? goals : [],
         orgPreset: orgPreset ?? null,
         enabledDepartments: Array.isArray(departments) ? departments : [],
-        governanceMode: governanceMode ?? "collaborative",
+        governanceMode: resolvedGovernanceMode,
         selectedIntegrations: Array.isArray(integrations) ? integrations : [],
         selectedWorkflowTemplates: Array.isArray(workflowTemplates) ? workflowTemplates : [],
         onboardingCompleted: true,
         onboardingCompletedAt: new Date(),
       });
       verificationLog.push("settings_saved");
+      console.log("[onboarding/complete] phase:success", { phase: "save_preferences", orgId });
+    } catch (e: any) {
+      console.error("[onboarding/complete] phase:error", { phase: "save_preferences", orgId, message: e.message, stack: e.stack });
+      return res.status(500).json({
+        success: false,
+        code: "PREFERENCES_SAVE_FAILED",
+        phase: "save_preferences",
+        message: "Could not save workforce preferences",
+        details: e.message,
+      });
+    }
 
-      // ── 2. Immediately seed governance policies (do not wait for page visit) ─
-      try {
-        await storage.seedGovernancePoliciesForMode(orgId, governanceMode ?? "collaborative");
-        verificationLog.push("governance_seeded");
-      } catch (govErr: any) {
-        console.error("[onboarding/complete] governance seeding error:", govErr);
-        verificationLog.push("governance_seed_failed");
-      }
+    // ── Phase 2 (non-critical): Seed governance policies ────────────────────
+    try {
+      console.log("[onboarding/complete] phase:start", { phase: "seed_governance", orgId, governanceMode: resolvedGovernanceMode });
+      await storage.seedGovernancePoliciesForMode(orgId, resolvedGovernanceMode);
+      verificationLog.push("governance_seeded");
+      console.log("[onboarding/complete] phase:success", { phase: "seed_governance", orgId });
+    } catch (e: any) {
+      console.error("[onboarding/complete] phase:error", { phase: "seed_governance", orgId, message: e.message, stack: e.stack });
+      verificationLog.push("governance_seed_failed");
+      // Non-critical — governance defaults exist; continue
+    }
 
-      // ── 3. Create workflow graphs for selected templates (idempotent) ────────
+    // ── Phase 3 (non-critical): Create starter workflow drafts ──────────────
+    try {
+      console.log("[onboarding/complete] phase:start", { phase: "create_workflows", orgId, count: workflowTemplates?.length ?? 0 });
       const { BUILT_IN_TEMPLATES } = await import("./workflow-graph-engine");
-      const created: string[] = [];
-      const autoPublished: string[] = [];
-
-      // tpl-executive-summary is read-only (no external side effects) — safe to auto-publish
       const AUTO_PUBLISH_ID = "tpl-executive-summary";
 
       if (Array.isArray(workflowTemplates) && workflowTemplates.length > 0) {
-        // Load existing wizard-sourced workflows once so we can skip duplicates
         const existingGraphs = await storage.getWorkflowGraphs(orgId);
         const existingTemplateIds = new Set(
           existingGraphs.filter(g => g.sourceTemplateId).map(g => g.sourceTemplateId)
         );
 
         for (const tplId of workflowTemplates) {
-          const tpl = BUILT_IN_TEMPLATES.find((t: any) => t.id === tplId);
-          if (!tpl) continue;
+          try {
+            const tpl = BUILT_IN_TEMPLATES.find((t: any) => t.id === tplId);
+            if (!tpl) continue;
 
-          // Idempotent: skip if already created from this template
-          if (existingTemplateIds.has(tplId)) {
+            if (existingTemplateIds.has(tplId)) {
+              created.push(tpl.name);
+              continue;
+            }
+
+            const isAutoPublish = tplId === AUTO_PUBLISH_ID && tpl.riskLevel === "low";
+            await storage.createWorkflowGraph(orgId, {
+              name: tpl.name,
+              description: tpl.description,
+              category: tpl.category,
+              riskLevel: tpl.riskLevel ?? "medium",
+              requiresApproval: !isAutoPublish,
+              graphDefinition: tpl.graphDefinition,
+              published: isAutoPublish,
+              lastPublishedAt: isAutoPublish ? new Date() : undefined,
+              tags: [
+                "source:ai_workforce_wizard",
+                "selected_during_onboarding:true",
+                `onboarding_governance_mode:${resolvedGovernanceMode}`,
+                "recommended_next_step:review_and_publish",
+                ...(isAutoPublish ? ["auto_published_by_wizard:true"] : []),
+              ],
+              sourceTemplateId: tplId,
+              createdBy: req.user.id,
+            } as any);
             created.push(tpl.name);
-            continue;
+            if (isAutoPublish) autoPublished.push(tpl.name);
+          } catch (tplErr: any) {
+            console.error("[onboarding/complete] phase:error", { phase: "create_workflows", tplId, orgId, message: tplErr.message });
+            // Skip failed template — do not abort the whole save
           }
-
-          const isAutoPublish = tplId === AUTO_PUBLISH_ID && tpl.riskLevel === "low";
-          // Fix: pass orgId and data as separate arguments (method signature is createWorkflowGraph(orgId, data))
-          await storage.createWorkflowGraph(orgId, {
-            name: tpl.name,
-            description: tpl.description,
-            category: tpl.category,
-            riskLevel: tpl.riskLevel ?? "medium",
-            requiresApproval: isAutoPublish ? false : true,
-            graphDefinition: tpl.graphDefinition,
-            published: isAutoPublish,
-            lastPublishedAt: isAutoPublish ? new Date() : undefined,
-            // Wizard provenance metadata stored in tags jsonb field
-            tags: [
-              "source:ai_workforce_wizard",
-              "selected_during_onboarding:true",
-              `onboarding_governance_mode:${governanceMode ?? "collaborative"}`,
-              "recommended_next_step:review_and_publish",
-              ...(isAutoPublish ? ["auto_published_by_wizard:true"] : []),
-            ],
-            sourceTemplateId: tplId,
-            createdBy: req.user.id,
-          } as any);
-          created.push(tpl.name);
-          if (isAutoPublish) autoPublished.push(tpl.name);
         }
       }
       verificationLog.push("workflows_created");
+      console.log("[onboarding/complete] phase:success", { phase: "create_workflows", orgId, created: created.length });
+    } catch (e: any) {
+      console.error("[onboarding/complete] phase:error", { phase: "create_workflows", orgId, message: e.message, stack: e.stack });
+      verificationLog.push("workflow_creation_failed");
+      // Non-critical — workflows are optional drafts; continue
+    }
 
-      // ── 4. Integration status validation (warn but do not block) ──────────
+    // ── Phase 4 (non-critical): Integration status check ────────────────────
+    try {
+      console.log("[onboarding/complete] phase:start", { phase: "check_integrations", orgId });
       const INTEGRATION_LABELS: Record<string, string> = {
         gmail: "Gmail",
         google_calendar: "Google Calendar",
@@ -17111,55 +17135,49 @@ Respond with this exact JSON structure:
       if (Array.isArray(integrations) && integrations.length > 0) {
         const connectedIntegrations = await storage.getExternalIntegrations(orgId);
         const connectedTypes = new Set(
-          connectedIntegrations
-            .filter(i => i.status === "connected")
-            .map(i => i.integrationType)
+          connectedIntegrations.filter(i => i.status === "connected").map(i => i.integrationType)
         );
         for (const intType of integrations) {
           if (!connectedTypes.has(intType)) {
-            const label = INTEGRATION_LABELS[intType] ?? intType;
-            integrationWarnings.push(`${label} selected but not connected — configure it in Integration settings`);
+            integrationWarnings.push(`${INTEGRATION_LABELS[intType] ?? intType} selected but not connected — configure it in Integration settings`);
           }
         }
       }
-      if (integrationWarnings.length > 0) {
-        verificationLog.push("integration_warnings_generated");
-      }
-
-      // ── 5. Verification audit log ──────────────────────────────────────────
-      try {
-        await logUnifiedAction({
-          orgId,
-          agentType: "system_agent",
-          actionType: "onboarding_completed",
-          status: "success",
-          summary: `AI Workforce wizard completed — ${departments?.length ?? 0} depts enabled, ${governanceMode} governance seeded, ${created.length} workflows created (${autoPublished.length} auto-published)`,
-          metadata: {
-            goals,
-            orgPreset,
-            departments,
-            governanceMode,
-            integrations,
-            workflowsCreated: created,
-            autoPublished,
-            integrationWarnings,
-            verificationLog,
-          },
-          triggeredBy: req.user.id,
-        });
-      } catch {}
-
-      res.json({
-        success: true,
-        workflowsCreated: created,
-        autoPublished,
-        integrationWarnings,
-        verificationLog,
-      });
+      if (integrationWarnings.length > 0) verificationLog.push("integration_warnings_generated");
+      console.log("[onboarding/complete] phase:success", { phase: "check_integrations", orgId, warnings: integrationWarnings.length });
     } catch (e: any) {
-      console.error("[onboarding/complete] error:", e);
-      res.status(500).json({ message: "Onboarding completion failed" });
+      console.error("[onboarding/complete] phase:error", { phase: "check_integrations", orgId, message: e.message });
+      verificationLog.push("integration_check_failed");
+      // Non-critical — treat all selected integrations as pending
+      if (Array.isArray(integrations)) {
+        for (const intType of integrations) {
+          integrationWarnings.push(`${intType} — pending setup (configure in Integration settings)`);
+        }
+      }
     }
+
+    // ── Phase 5 (non-critical): Audit log ───────────────────────────────────
+    try {
+      const { logUnifiedAction } = await import("./unified-action-logger");
+      await logUnifiedAction({
+        orgId,
+        agentType: "system_agent",
+        actionType: "onboarding_completed",
+        status: "success",
+        summary: `AI Workforce wizard completed — ${departments?.length ?? 0} depts, ${resolvedGovernanceMode} governance, ${created.length} workflows (${autoPublished.length} auto-published)`,
+        metadata: { goals, orgPreset, departments, governanceMode: resolvedGovernanceMode, integrations, workflowsCreated: created, autoPublished, integrationWarnings, verificationLog },
+        triggeredBy: req.user.id,
+      });
+    } catch { /* audit log is never blocking */ }
+
+    console.log("[onboarding/complete] complete", { orgId, verificationLog });
+    return res.json({
+      success: true,
+      workflowsCreated: created,
+      autoPublished,
+      integrationWarnings,
+      verificationLog,
+    });
   });
 
   // GET /api/recommendations — generate operator recommendations

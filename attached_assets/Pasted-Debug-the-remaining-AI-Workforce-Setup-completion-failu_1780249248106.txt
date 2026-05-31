@@ -1,0 +1,80 @@
+Debug the remaining AI Workforce Setup completion failure.
+
+Problem:
+POST /api/onboarding/ai-workforce/complete still fails, but the frontend now shows:
+Setup failed
+Onboarding completion failed
+
+This means the backend is catching an error and returning the generic message instead of the real internal cause.
+
+Required audit:
+1. Open POST /api/onboarding/ai-workforce/complete in server/routes.ts.
+2. Find every catch block and every place returning:
+   "Onboarding completion failed"
+3. Add structured logging around each save phase:
+   - save preferences
+   - save departments
+   - save governance mode
+   - save integrations
+   - create starter workflows
+   - mark onboarding complete
+   - navigate response
+
+Add logs like:
+
+console.log("[onboarding/complete] phase:start", { phase: "create_workflows", orgId });
+console.log("[onboarding/complete] phase:success", { phase: "create_workflows", orgId });
+console.error("[onboarding/complete] phase:error", { phase: "create_workflows", orgId, message: err.message, stack: err.stack });
+
+Likely remaining causes:
+- onboarding completion update references a missing column
+- org profile update fails
+- workflow graph insert succeeds but workflow node/edge insert fails
+- starter workflow template has missing required field
+- governance enum mismatch
+- Gmail pending integration insert fails
+- duplicate workflow template skip works, but later graph metadata update fails
+- route returns success false after partial save
+
+Required fix:
+Make the route phase-safe.
+
+Wrap each phase separately:
+- Preferences save
+- Governance save
+- Integration pending setup
+- Workflow draft creation
+- Completion flag update
+
+If a non-critical phase fails:
+- Gmail pending setup should not fail onboarding
+- duplicate workflow should not fail onboarding
+- missing optional starter workflow should not fail onboarding
+
+Critical phases only:
+- org session missing
+- preferences cannot save
+- onboarding completion cannot be marked
+
+Return structured errors:
+{
+  success: false,
+  code: "WORKFLOW_TEMPLATE_CREATE_FAILED",
+  message: "Starter workflow creation failed",
+  phase: "create_workflows",
+  details: "actual error message"
+}
+
+Frontend:
+Show:
+Setup failed
+{message}
+and in development include:
+phase + code
+
+Acceptance criteria:
+1. The next failed attempt reveals the exact failing phase.
+2. Save & Continue succeeds if only optional workflows/integrations fail.
+3. Onboarding completion is marked if preferences and governance save correctly.
+4. No duplicate workflows are created.
+5. Return the exact failing phase, root cause, and files changed.
