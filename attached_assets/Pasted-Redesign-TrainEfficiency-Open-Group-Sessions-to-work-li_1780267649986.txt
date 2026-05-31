@@ -1,0 +1,83 @@
+Redesign TrainEfficiency Open Group Sessions to work like a calendar-based session marketplace.
+
+Current issue:
+The Open Group Sessions page is just a filterable card list. It should function more like the Scheduling section so athletes/parents can browse sessions by day, week, or month and easily join available semi-private/group sessions.
+
+Required UX:
+1. Add calendar-style views:
+   - Day
+   - Week
+   - Month
+
+2. Users should be able to:
+   - Tap a date/time on the calendar to create or request a new open group session if they have permission
+   - Tap an existing semi-private/group session to view details
+   - Join/register themselves or their athlete if spots are available
+
+3. Each session card/calendar item should clearly show:
+   - Sport
+   - Location
+   - Age group
+   - Skill level
+   - Session type
+   - Coach
+   - Date/time
+   - Duration
+   - Spots filled / capacity
+   - Price if applicable
+   - Status: Open, Full, Cancelled, Waitlist
+
+4. Session detail modal should include:
+   - Full description
+   - Sport
+   - Location
+   - Age range
+   - Skill level
+   - Coach
+   - Capacity
+   - Registered athletes
+   - Join button
+   - Waitlist button if full
+   - Cancel/remove registration if already joined
+
+5. Filtering should include:
+   - Time period
+   - Sport
+   - Location
+   - Age group
+   - Skill level
+   - Coach
+   - Session type
+   - Availability status
+
+6. Calendar behavior:
+   - Day view: show sessions by time block
+   - Week view: show sessions grouped by day
+   - Month view: show session count badges on dates
+   - Tapping a date in month view opens that day’s sessions
+   - Mobile should use compact cards under the calendar
+
+7. Data rules:
+   - Only show sessions for the current org
+   - Do not leak sessions across organizations
+   - Only show public/open group sessions on this page
+   - Exclude private 1-on-1 bookings unless explicitly marked public
+   - Respect capacity limits
+   - Prevent duplicate registration by the same athlete/user
+
+8. Backend requirements:
+   - All queries must be scoped by authenticated or public orgId
+   - Registration endpoint must verify session belongs to current org
+   - Registration endpoint must verify capacity before adding user
+   - Registration endpoint must support waitlist if full
+   - Session creation must require coach/admin permission
+
+9. Mobile design:
+   - Fix dropdown overflow issues
+   - Make filters collapsible on mobile
+   - Keep session cards readable
+   - Avoid floating chat button covering session actions
+   - Calendar controls should fit within screen width
+
+Goal:
+Turn Open Group Sessions into the athlete/parent-facing session marketplace for TrainEfficiency, while preserving the same scheduling logic and tenant isolation used in the main Scheduling system.
