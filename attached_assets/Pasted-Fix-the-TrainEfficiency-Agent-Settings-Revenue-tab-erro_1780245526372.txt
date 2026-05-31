@@ -1,0 +1,63 @@
+Fix the TrainEfficiency Agent Settings → Revenue tab error.
+
+Problem:
+On mobile, Agent Settings shows “Revenue Intelligence Active,” but the Revenue tab displays:
+“Revenue data unavailable. Please refresh or check server logs.”
+
+Required audit:
+1. Locate the frontend component for:
+   Agent → Settings → Revenue tab
+
+2. Identify the API endpoint it calls for revenue data.
+
+3. Check browser/network behavior:
+   - endpoint URL
+   - response status
+   - response body
+   - whether orgId/orgSlug is missing
+   - whether auth/session headers are missing
+
+4. Check backend logs for the failing endpoint.
+
+Likely causes to verify:
+- Revenue endpoint requires orgId but frontend is not passing it
+- Endpoint only supports admin auth, not coach/org session auth
+- Route is missing resolveOrgSession middleware
+- Revenue query crashes when no records exist
+- Revenue query references outdated lead fields after CRM segmentation fix
+- Endpoint expects B2C lead data but now must separate B2B/B2C
+- Response shape changed but frontend still expects old keys
+
+Required fix:
+Make the Revenue tab resilient and org-scoped.
+
+Backend:
+- Use resolveOrgSession for the route.
+- Resolve orgId from authenticated org session, not only params.
+- Return a safe default payload instead of 500 when there is no revenue data.
+- Segment revenue by pipeline_type:
+  - b2c_revenue
+  - b2b_pipeline_revenue
+  - total_pipeline_revenue
+- Include unclassified leads separately.
+- Do not let null values crash calculations.
+
+Frontend:
+- Show loading state while fetching.
+- Show empty state only when request succeeds with no data.
+- Show real error state only for actual API failure.
+- Log the exact error in development.
+- Do not hide the entire Revenue tab if one subsection fails.
+
+Acceptance criteria:
+1. Revenue tab loads without “Revenue data unavailable.”
+2. If no revenue data exists, it shows $0 / empty state instead of an error.
+3. Revenue data is scoped to the current organization.
+4. B2B and B2C revenue are not mixed.
+5. Works on mobile and desktop.
+6. Return:
+   - root cause
+   - failing endpoint
+   - files changed
+   - before/after response payload
+   - screenshots or console proof that Revenue tab loads.
