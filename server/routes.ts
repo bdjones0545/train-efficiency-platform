@@ -21762,5 +21762,9 @@ Respond with this exact JSON structure:
   const { registerBetaWave6Routes } = await import("./beta-wave6-routes");
   await registerBetaWave6Routes(app);
 
+  // ─── Beta Wave X Routes ───────────────────────────────────────────────────
+  const { registerBetaWaveXRoutes } = await import("./beta-wave-x-routes");
+  await registerBetaWaveXRoutes(app);
+
   return httpServer;
 }

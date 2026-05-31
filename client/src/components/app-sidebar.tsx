@@ -72,6 +72,7 @@ import {
   Eye,
   Globe,
   Rocket,
+  UserCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -194,6 +195,7 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
       { title: "Developer Recruitment",  simplifiedTitle: "Dev Recruit", url: "/admin/developer-recruitment",     icon: Users,    testId: "nav-developer-recruitment" },
       { title: "Org Recruitment",        simplifiedTitle: "Org Recruit", url: "/admin/org-recruitment",           icon: Building2,testId: "nav-org-recruitment" },
       { title: "Marketplace Proof",      simplifiedTitle: "Proof",       url: "/admin/marketplace-proof",         icon: Shield,   testId: "nav-marketplace-proof" },
+      { title: "Human Validation",       simplifiedTitle: "Validation",  url: "/admin/human-validation",          icon: UserCheck,testId: "nav-human-validation" },
     ],
   },
   {
