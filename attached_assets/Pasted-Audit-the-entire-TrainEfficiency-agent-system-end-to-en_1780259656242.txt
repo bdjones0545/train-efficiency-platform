@@ -1,0 +1,226 @@
+Audit the entire TrainEfficiency agent system end-to-end.
+
+I want a complete architecture audit focused on:
+
+1. CEO / Heartbeat Architecture
+- Identify whether there is a central CEO agent, orchestration brain, heartbeat runner, or scheduler.
+- Show where it lives in the codebase.
+- Explain what triggers it.
+- Explain what it decides.
+- Explain whether it delegates work to other agents or services.
+- Identify any missing central coordination layer.
+
+2. Agent Inventory
+Create a table of every agent-like system, including:
+- Agent/service name
+- File path
+- Purpose
+- Domain it serves
+- Trigger source
+- Inputs
+- Outputs
+- Tables read
+- Tables written
+- External tools used
+- Whether it runs automatically, manually, or after approval
+
+Include anything that functions like an agent even if it is named as a service, runner, workflow, recommendation engine, approval system, outreach generator, attention signal, business brain, automation worker, or AI runtime.
+
+3. Agent Roles
+For each agent, explain its role in plain English:
+- What job does it perform?
+- What business decision does it support?
+- What human role would this replace or assist?
+- What does it need permission to do?
+- What should it never be allowed to do?
+
+4. Tool Access Audit
+For each agent, identify what tools it can access:
+- Gmail
+- SendGrid
+- SMS/Twilio
+- Google Calendar
+- Meta/CAPI
+- Stripe
+- TrainChat API
+- OpenAI/OpenRouter
+- Database queries
+- Scraping/external APIs
+- Any internal platform APIs
+
+Show whether tool use is direct, through a wrapper, through an approval queue, or not actually wired yet.
+
+5. TrainChat API Usage
+This is the most important section.
+
+Find every place TrainEfficiency uses the TrainChat API.
+
+For each usage, explain:
+- File path
+- Function/method name
+- Which TrainChat endpoint or client method is called
+- What data TrainEfficiency sends to TrainChat
+- What TrainChat returns
+- Whether the result is stored in TrainEfficiency
+- Whether the result is shown to a coach/admin/athlete
+- Whether the call is stateless or uses persistent context
+- Whether org-level or app-level API credentials are used
+- Whether failure fallback exists
+- Whether output validation exists
+
+Specifically audit:
+- Workout Builder
+- Program generation
+- Program editing
+- Session generation
+- Exercise swaps
+- Explain program
+- Athlete context passing
+- PR data passing
+- Readiness data passing
+- Compliance/adherence data passing
+- Coach notes passing
+- Any agent that uses TrainChat indirectly
+
+6. Approval + Autonomy Architecture
+Audit how agents move from:
+- Draft
+- Approval required
+- Approved send/action
+- Outcome tracking
+- Learning
+- Increased autonomy
+
+Explain:
+- Which tables control approvals
+- Which routes approve actions
+- Which actions require human approval
+- Which can run automatically
+- How autonomy readiness is calculated
+- Whether outcome proof is required
+- Whether each domain has separate autonomy rules
+
+7. Outcome Intelligence Loop
+Audit the full feedback loop:
+- Message/action created
+- Message/action approved
+- Message/action executed
+- Outcome row created
+- Manual or automatic outcome updated
+- Rule effectiveness recalculated
+- Autonomy readiness updated
+- Future agent behavior improved
+
+Identify where this loop is complete and where it is incomplete.
+
+8. Domain Agent Architecture
+Audit all domains:
+- athlete_lead
+- parent_lead
+- team_training
+- school_partnership
+- athletic_director
+- coach_outreach
+- organization_outreach
+- business_outreach
+- employment_opportunity
+- corporate_wellness
+- facility_partnership
+- gym_owner
+
+For each domain:
+- Does it have generators?
+- Does it have rules?
+- Does it have approval tracking?
+- Does it have outcome tracking?
+- Does it have autonomy readiness?
+- Does it have its own data table?
+- Does it have UI visibility?
+- Does it accidentally share the wrong table with another domain?
+
+9. Heartbeat / Job Queue / Runner Audit
+Audit:
+- Workflow job queue
+- Agent execution locks
+- Rate limits
+- Dead letter handling
+- Retry logic
+- Cooldowns
+- Idempotency
+- Emergency pause
+- Execution logging
+- Unified action logging
+- Integration execution logging
+
+Explain what runs continuously, what only runs on admin page load, and what requires manual triggering.
+
+10. UI Surface Audit
+Identify where agent intelligence appears in the UI:
+- Command Center
+- AI Communications Center
+- AI Outreach Opportunities
+- Workflow Orchestrator
+- Workflow Logs
+- Attention Inbox
+- Business Brain
+- Agent Ops Monitor
+- Learning Dashboard
+- Outcome Intelligence panel
+- Workout Builder
+- Athlete Intelligence
+- Education Builder
+
+For each page:
+- What agent data is shown?
+- What actions can the admin take?
+- What routes are called?
+- What is missing?
+
+11. Security / Governance Audit
+Audit:
+- Org scoping
+- Role permissions
+- Approval gates
+- Emergency pause
+- External send protection
+- API key handling
+- TrainChat credential handling
+- Gmail OAuth/API handling
+- Rate limiting
+- Audit logs
+- Whether one org can accidentally see another org’s agent data
+
+12. Architecture Diagram
+Create a text-based architecture diagram showing:
+
+CEO / Heartbeat
+   → Domain Agents
+   → Tool Layer
+   → Approval Queue
+   → Execution Layer
+   → Outcome Intelligence
+   → Rule Effectiveness
+   → Autonomy Readiness
+   → Future Agent Decisions
+
+Also create a second diagram specifically for:
+
+TrainEfficiency → TrainChat API → Generated Program/Session/Edit → Stored Output → Coach UI → Athlete Execution → Readiness/Compliance Feedback
+
+13. Gaps and Recommendations
+End with:
+- What is fully built
+- What is partially built
+- What is only UI / not wired
+- What is missing
+- What is duplicated
+- What is risky
+- What should be built next
+
+Most importantly, answer this clearly:
+
+“Does TrainEfficiency currently have a true CEO/heartbeat agent architecture, or does it have multiple disconnected agent services?”
+
+And:
+
+“Which agents currently use the TrainChat API, how do they use it, and what would be required for TrainChat to become the intelligence layer for all training-related agents?”
