@@ -1,0 +1,207 @@
+PHASE Y — FIRST 10 EXTERNAL USERS OPERATING PLAN
+
+Objective
+
+Stop building.
+
+Start validating.
+
+The goal is to achieve the first confirmed external marketplace loop.
+
+Success means:
+
+A non-founder developer publishes an agent.
+
+A non-founder organization installs an agent.
+
+A non-founder user leaves a review.
+
+A non-founder user generates measurable value.
+
+A non-founder developer wants to publish another agent.
+
+PART 1 — First 10 User Dashboard
+
+Create:
+
+/admin/first-10
+
+Track:
+
+User Name
+
+Role
+
+Invited Date
+
+Activated Date
+
+Agent Published
+
+Agent Installed
+
+Review Submitted
+
+Value Generated
+
+Follow-Up Date
+
+Status
+
+Display:
+
+First 10 Progress Tracker
+
+Overall Completion %
+
+The Final Question Status
+
+PART 2 — Outreach Playbooks
+
+Create:
+
+first10_playbooks
+
+Templates:
+
+Coach Outreach
+
+Gym Owner Outreach
+
+Consultant Outreach
+
+Developer Outreach
+
+Agency Outreach
+
+Track:
+
+Sent
+
+Opened
+
+Responded
+
+Activated
+
+Purpose:
+
+Measure outreach effectiveness.
+
+PART 3 — Human Activation Queue
+
+Create:
+
+GET /api/platform/activation-queue
+
+Rank:
+
+Who needs follow-up
+
+Who is stuck
+
+Who is closest to publishing
+
+Who is closest to installing
+
+Who is closest to reviewing
+
+Goal:
+
+Ensure no participant gets lost.
+
+PART 4 — First Revenue Countdown
+
+Create:
+
+GET /api/platform/first-revenue-countdown
+
+Track:
+
+Remaining steps until:
+
+First External Agent
+
+First External Install
+
+First External Review
+
+First External Revenue Event
+
+First External Royalty
+
+Display blockers clearly.
+
+PART 5 — Founder Action Engine
+
+Create:
+
+GET /api/platform/founder-actions
+
+Return:
+
+Top 10 actions Bryan should take this week to maximize activation.
+
+Examples:
+
+Contact John Smith — published agent but no install.
+
+Follow up with Sarah Jones — installed but no review.
+
+Recruit 2 more developers to hit cohort target.
+
+Purpose:
+
+Turn platform data into founder execution.
+
+PART 6 — Human Validation Verdict
+
+Upgrade:
+
+GET /api/platform/human-validation-report
+
+Add:
+
+Probability of validation
+
+Closest participant to success
+
+Largest bottleneck
+
+Recommended next action
+
+Estimated days to first validation
+
+PART 7 — Exit Criteria
+
+Phase completes when:
+
+1 external developer publishes an agent
+
+1 external organization installs an agent
+
+1 external review is submitted
+
+1 external value event is recorded
+
+1 external developer expresses intent to publish again
+
+Final Question Status:
+
+CONFIRMED
+
+PART 8 — Final Goal
+
+Do not build another marketplace feature until:
+
+The Final Question changes from:
+
+“Not Yet Confirmed”
+
+to
+
+“Confirmed”
+
+The next milestone is not software.
+
+The next milestone is evidence.

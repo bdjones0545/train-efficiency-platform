@@ -257,6 +257,34 @@ export async function registerBetaWaveXRoutes(app: Express) {
       // Summary question: Can someone other than Bryan Jones participate?
       const canParticipate = n(realActivity.published_agents) >= 1 || n(realActivity.real_installs) >= 1;
 
+      // Part 6 upgrades — probability, closest, bottleneck, recommendation, estimated days
+      const closestParticipant = allPart
+        .map((p: any) => {
+          const ORDER: Record<string, number> = { invited:0, activated:1, published:2, installed:3, reviewed:4, generating_revenue:5 };
+          return { name: p.external_name, type: p.type, status: p.status, score: ORDER[p.status] ?? 0 };
+        })
+        .sort((a: any, b: any) => b.score - a.score)[0] ?? null;
+
+      const metPct  = Math.round(metCount / criteria.length * 100);
+      const probability = metPct >= 100 ? "100%" : metPct >= 60 ? `${metPct}% — strong signal` : metPct >= 20 ? `${metPct}% — early stage` : `${metPct}% — not yet started`;
+
+      const biggestBottleneck = criteria.find((c: any) => !c.met)?.criterion ?? "All criteria met";
+
+      const recommendedAction = !criteria[0].met ? "Guide an external developer through their first agent publish"
+        : !criteria[1].met ? "Personally match the published agent to a gym owner for install"
+        : !criteria[2].met ? "Send a 1-sentence ask for a review to the org that installed"
+        : !criteria[3].met ? "Ensure the installed agent is being used and track a value event"
+        : !criteria[4].met ? "Ask the developer: 'Would you publish another agent?'"
+        : "Amplify — share the proof publicly";
+
+      const hasActiveDev = allPart.some((p: any) => p.type === 'developer' && p.status !== 'invited');
+      const estimatedDays = metCount >= 5 ? 0
+        : !criteria[0].met ? (hasActiveDev ? 3 : 14)
+        : !criteria[1].met ? 5
+        : !criteria[2].met ? 3
+        : !criteria[3].met ? 7
+        : 7;
+
       // Time-to metrics
       const timeMetrics = [
         { metric: "Time to First Publish",  hours: devs.filter((d: any) => d.invited_at && d.first_publish_at).map((d: any) => Math.floor((new Date(d.first_publish_at).getTime() - new Date(d.invited_at).getTime()) / 3600000)) },
@@ -295,6 +323,12 @@ export async function registerBetaWaveXRoutes(app: Express) {
         timeMetrics,
         participants: allPart,
         generatedAt: new Date().toISOString(),
+        // Part 6 additions
+        probability,
+        closestParticipant,
+        biggestBottleneck,
+        recommendedAction,
+        estimatedDaysToValidation: estimatedDays,
       });
     } catch (e) {
       console.error("[human-validation-report]", e);

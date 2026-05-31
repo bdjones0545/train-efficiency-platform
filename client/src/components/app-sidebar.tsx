@@ -196,6 +196,7 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
       { title: "Org Recruitment",        simplifiedTitle: "Org Recruit", url: "/admin/org-recruitment",           icon: Building2,testId: "nav-org-recruitment" },
       { title: "Marketplace Proof",      simplifiedTitle: "Proof",       url: "/admin/marketplace-proof",         icon: Shield,   testId: "nav-marketplace-proof" },
       { title: "Human Validation",       simplifiedTitle: "Validation",  url: "/admin/human-validation",          icon: UserCheck,testId: "nav-human-validation" },
+      { title: "First 10 Users",         simplifiedTitle: "First 10",    url: "/admin/first-10",                  icon: Target,   testId: "nav-first-10" },
     ],
   },
   {

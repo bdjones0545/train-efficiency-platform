@@ -84,6 +84,7 @@ import CommunityLeaderboardsPage from "@/pages/community-leaderboards";
 import CommunityHallOfFamePage from "@/pages/community-hall-of-fame";
 import AdminDeveloperRecruitmentPage from "@/pages/admin-developer-recruitment";
 import AdminHumanValidationPage from "@/pages/admin-human-validation";
+import AdminFirst10Page from "@/pages/admin-first-10";
 import AdminOrgRecruitmentPage from "@/pages/admin-org-recruitment";
 import AdminMarketplaceProofPage from "@/pages/admin-marketplace-proof";
 import DeveloperPortalPage from "@/pages/developer-portal";
@@ -452,6 +453,7 @@ function AuthenticatedLayout() {
                   <Route path="/community/hall-of-fame" component={CommunityHallOfFamePage} />
                   <Route path="/admin/developer-recruitment" component={AdminDeveloperRecruitmentPage} />
                   <Route path="/admin/human-validation" component={AdminHumanValidationPage} />
+                  <Route path="/admin/first-10" component={AdminFirst10Page} />
                   <Route path="/admin/org-recruitment" component={AdminOrgRecruitmentPage} />
                   <Route path="/admin/marketplace-proof" component={AdminMarketplaceProofPage} />
                   <Route path="/developer" component={DeveloperPortalPage} />
