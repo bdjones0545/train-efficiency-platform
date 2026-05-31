@@ -188,6 +188,8 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
       { title: "Community",              simplifiedTitle: "Community",   url: "/community",                       icon: Globe,    testId: "nav-community" },
       { title: "Marketplace Activation", simplifiedTitle: "Activation",  url: "/admin/marketplace-activation",    icon: Rocket,   testId: "nav-marketplace-activation" },
       { title: "Agent Economy",          simplifiedTitle: "Economy",     url: "/admin/agent-economy",             icon: Activity, testId: "nav-agent-economy" },
+      { title: "Ecosystem Outreach",     simplifiedTitle: "Outreach",    url: "/admin/ecosystem-outreach",        icon: Globe,    testId: "nav-ecosystem-outreach" },
+      { title: "Community Leaderboards", simplifiedTitle: "Leaderboards",url: "/community/leaderboards",          icon: Trophy,   testId: "nav-community-leaderboards" },
     ],
   },
   {
