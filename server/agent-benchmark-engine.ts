@@ -154,7 +154,7 @@ export async function seedAgentTemplates(): Promise<void> {
       const def = AGENT_TEMPLATE_DEFS[agentId];
       return {
         agentId,
-        agentName: (identity as any).agentName ?? agentId,
+        agentName: identity.name ?? agentId,
         description: def?.description ?? "",
         department: def?.department ?? (identity as any).department ?? "Operations",
         capabilities: def?.capabilities ?? [],
@@ -176,6 +176,15 @@ export async function seedAgentTemplates(): Promise<void> {
 
   if (toInsert.length > 0) {
     await db.insert(agentTemplates).values(toInsert).catch(() => {});
+  }
+
+  // Repair any templates where agentName was stored as agentId (missing identity.name lookup)
+  for (const [agentId, identity] of Object.entries(AGENT_IDENTITIES)) {
+    const correctName = identity.name ?? agentId;
+    await db.update(agentTemplates)
+      .set({ agentName: correctName })
+      .where(and(eq(agentTemplates.agentId, agentId), eq(agentTemplates.agentName, agentId)))
+      .catch(() => {});
   }
 }
 
@@ -567,14 +576,14 @@ export async function computeMarketplaceAnalytics(): Promise<Record<string, any>
   const topInstalled = [...agentInstallCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([agentId, count]) => ({ agentId, agentName: AGENT_IDENTITIES[agentId]?.agentName ?? agentId, count }));
+    .map(([agentId, count]) => ({ agentId, agentName: AGENT_IDENTITIES[agentId]?.name ?? agentId, count }));
 
   const topPerforming = benchmarkRows
     .filter(b => b.benchmarkType === "platform" && (b.successRate ?? 0) > 0)
     .slice(0, 5)
     .map(b => ({
       agentId: b.agentId,
-      agentName: AGENT_IDENTITIES[b.agentId ?? ""]?.agentName ?? b.agentId,
+      agentName: AGENT_IDENTITIES[b.agentId ?? ""]?.name ?? b.agentId,
       successRate: Math.round((b.successRate ?? 0) * 100),
       roi: Math.round((b.roi ?? 0) * 10) / 10,
     }));

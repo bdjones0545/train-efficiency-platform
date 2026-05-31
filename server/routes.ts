@@ -20480,7 +20480,7 @@ Respond with this exact JSON structure:
 
       const testOrgId = "e2e-test-org";
       const testDevId = "e2e-test-dev";
-      const agentId = "apex";
+      const agentId = "growth_agent";
 
       // Step 1: Developer account
       try {
@@ -20494,9 +20494,9 @@ Respond with this exact JSON structure:
       // Step 2: Agent definition validated
       try {
         const { validateAgentDefinition } = await import("./agent-sdk/index");
-        const def = { agentId, agentName: "Apex Growth Agent", description: "Drives revenue growth", department: "Growth", version: "1.0.0", capabilities: ["Lead Generation"], executionTypes: ["analysis", "outreach"], requiredIntegrations: [], supportedIndustries: ["sports_performance"], riskLevel: "medium" as const, defaultGovernanceMode: "supervised" as const, requiredPermissions: [] };
+        const def = { agentId, name: "Growth Agent E2E Test", description: "End-to-end test agent for validating the full lifecycle pipeline of the AI Workforce platform", department: "Growth", version: "1.0.0", capabilities: ["Lead Generation", "Revenue Attribution"], executionTypes: ["lead_followup", "scheduling"], requiredIntegrations: [], supportedIndustries: ["sports_performance"], riskLevel: "medium" as const, defaultGovernanceMode: "collaborative" as const, requiredPermissions: [] };
         const result = validateAgentDefinition(def);
-        result.isValid ? pass(2, "Agent definition validated", `Risk score: ${result.riskScore}, Auto-approve: ${result.autoApproveEligible}`) : fail(2, "Agent definition validated", result.errors.join(", "));
+        result.valid ? pass(2, "Agent definition validated", `Risk score: ${result.riskAssessment?.score}, Auto-approve eligible: ${result.riskAssessment?.approved}`) : fail(2, "Agent definition validated", result.errors.join(", "));
       } catch (e: any) { fail(2, "Agent definition validated", e.message); }
 
       // Step 3: Agent submitted
@@ -20593,9 +20593,9 @@ Respond with this exact JSON structure:
 
       // Step 15: Reputation updated
       try {
-        const { computeReputationScore } = await import("./agent-reputation-engine");
-        const score = await computeReputationScore(agentId);
-        score && score.reputationScore > 0 ? pass(15, "Reputation updated", `Score: ${score.reputationScore}/100, tier: ${score.trustTier}`) : skip(15, "Reputation updated", "Score computed as 0 — may need benchmark data");
+        const { computeAgentReputation } = await import("./agent-reputation-engine");
+        const score = await computeAgentReputation(agentId);
+        score && score.reputationScore > 0 ? pass(15, "Reputation updated", `Score: ${score.reputationScore}/100, tier: ${score.trustTier}`) : skip(15, "Reputation updated", `Score: ${score?.reputationScore ?? 0} — needs benchmark data for full scoring`);
       } catch (e: any) { fail(15, "Reputation updated", e.message); }
 
       // Step 16: Benchmark refresh includes agent
@@ -20795,6 +20795,9 @@ Respond with this exact JSON structure:
       const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const def = req.body;
+      if (!def?.name?.trim()) return res.status(400).json({ message: "Agent name is required" });
+      if (!def?.description?.trim()) return res.status(400).json({ message: "Agent description is required" });
+      if (!def?.executionTypes?.length) return res.status(400).json({ message: "At least one executionType is required" });
       const { developerAccounts } = await import("@shared/schema");
       const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
       let devId = devs[0]?.id;
@@ -21060,6 +21063,20 @@ Respond with this exact JSON structure:
     } catch (e: any) {
       console.error("[marketplace/agents] error:", e);
       res.status(500).json({ message: "Failed to fetch marketplace agents" });
+    }
+  });
+
+  // GET agent reviews — must be registered BEFORE /:agentId to avoid wildcard capture
+  app.get("/api/marketplace/agents/:agentId/reviews", async (req, res) => {
+    try {
+      const { agentReviews: agentReviewsTable } = await import("@shared/schema");
+      const reviews = await db.select().from(agentReviewsTable)
+        .where(eq(agentReviewsTable.agentId, req.params.agentId))
+        .orderBy(agentReviewsTable.createdAt)
+        .catch(() => []);
+      res.json(reviews);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch reviews" });
     }
   });
 

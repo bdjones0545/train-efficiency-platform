@@ -1,0 +1,482 @@
+RC-1 END-TO-END PLATFORM VALIDATION TEST
+
+Objective
+
+Run a complete end-to-end test of the TrainEfficiency AI Workforce + Agent Marketplace system.
+
+The goal is to verify that the platform can support the full lifecycle:
+
+Developer creates agent
+↓
+Agent is validated
+↓
+Agent is submitted
+↓
+Agent is approved/published
+↓
+Organization installs agent
+↓
+Runtime is created
+↓
+Permissions/governance are applied
+↓
+Agent is simulated
+↓
+Execution plan is created
+↓
+Execution is approved
+↓
+Execution runs
+↓
+Outcome is attributed
+↓
+Review is submitted
+↓
+Reputation updates
+↓
+Royalty event is created
+↓
+Marketplace/ecosystem metrics update
+
+This is a production-readiness validation test.
+
+Do not add new product features unless required to make the test pass.
+
+PART 1 — Run Existing E2E Test
+
+Run:
+
+POST /api/marketplace/e2e-test
+
+Document all 25 steps.
+
+For each step return:
+
+Step name
+
+Pass/fail
+
+Endpoint used
+
+Records created
+
+Records updated
+
+Errors
+
+Evidence
+
+PART 2 — Manual Lifecycle Test
+
+Create a real test scenario using org-est.
+
+Scenario:
+
+Developer:
+Efficiency Strength Training
+
+Agent:
+EST Lead Recovery Agent
+
+Purpose:
+Recover stale speed training leads and route them into scheduling.
+
+Agent definition should include:
+
+name:
+EST Lead Recovery Agent
+
+department:
+growth
+
+capabilities:
+Lead follow-up
+Lead recovery
+Booking nudges
+Revenue attribution
+Communication tracking
+
+required integrations:
+Gmail or SendGrid
+Google Calendar
+Scheduling
+Lead Capture
+
+risk level:
+medium
+
+default governance mode:
+collaborative
+
+required permissions:
+leads
+email
+calendar
+reporting
+
+supported industries:
+Sports Performance
+Gyms
+Private Coaching
+
+PART 3 — Developer Flow
+
+Test:
+
+GET /api/developer/profile
+
+POST /api/developer/register
+
+POST /api/developer/validate
+
+POST /api/developer/submit
+
+GET /api/developer/submissions
+
+Expected:
+
+Developer account exists
+
+Agent validates successfully
+
+Submission is created
+
+Submission appears in developer portal
+
+Validation warnings are acceptable
+
+Validation errors are not acceptable
+
+PART 4 — Admin Review Flow
+
+Test:
+
+PATCH /api/developer/submissions/:id
+
+Run statuses:
+
+Under Review
+
+Approved
+
+Published
+
+Expected:
+
+Agent template exists
+
+Submission status updates correctly
+
+Agent appears in marketplace/store
+
+Lifecycle event is recorded
+
+PART 5 — Marketplace Install Flow
+
+Test:
+
+GET /api/marketplace/agents
+
+GET /api/marketplace/agents/:agentId
+
+POST /api/marketplace/install
+
+GET /api/marketplace/installed
+
+Expected:
+
+Agent appears in marketplace
+
+Install succeeds using session org only
+
+org_installed_agents row exists
+
+Install count increments
+
+Lifecycle event is recorded
+
+No orgId query fallback is used
+
+PART 6 — Runtime & Memory Flow
+
+Test:
+
+POST /api/marketplace/runtimes/bootstrap
+
+Verify:
+
+agent_runtimes row exists
+
+agent_memories row exists or can be initialized
+
+runtime belongs only to req.user.orgId
+
+agent has isolated memory scope
+
+No cross-org data exposure
+
+PART 7 — Governance & Permissions Flow
+
+Test:
+
+GET /api/workforce/approval-rules
+
+GET /api/workforce/trust
+
+POST /api/workforce/simulate
+
+Expected:
+
+Approval rules auto-seed if missing
+
+Medium-risk action requires approval unless explicit rule allows otherwise
+
+Financial actions always supervised
+
+Simulation returns:
+
+projected revenue
+
+time saved
+
+risk score
+
+governance result
+
+execution steps
+
+warnings
+
+PART 8 — Execution Flow
+
+Test:
+
+POST /api/workforce/executions
+
+PATCH /api/workforce/executions/:id
+
+POST /api/workforce/executions/:id/run
+
+GET /api/workforce/executions
+
+Expected:
+
+Execution plan created
+
+Status lifecycle works:
+
+Draft/Awaiting Approval
+Approved
+Executing
+Completed or Failed
+
+Audit trail is written
+
+Learning event is written
+
+Actual value is recorded only after execution
+
+No execution route allows unauthorized non-admin/high-risk access
+
+PART 9 — Outcome Attribution Flow
+
+Test:
+
+GET /api/workforce/revenue-attribution
+
+GET /api/workforce/roi
+
+GET /api/workforce/outcomes/:id if an outcome exists
+
+Expected:
+
+Outcome appears only if supported by evidence
+
+Projected values are not treated as actual values
+
+Revenue attribution references real source records
+
+ROI dashboard separates projected vs actual
+
+PART 10 — Review & Reputation Flow
+
+Test:
+
+POST /api/marketplace/reviews
+
+GET /api/marketplace/reviews/:agentId
+
+POST /api/marketplace/reputation/refresh
+
+GET /api/marketplace/reputation
+
+Expected:
+
+Review is saved
+
+Review is tied to installed agent/org
+
+Duplicate org+agent reviews upsert instead of duplicate
+
+Reputation score recalculates
+
+Marketplace rank updates
+
+PART 11 — Billing & Royalty Flow
+
+Test:
+
+GET /api/developer/revenue
+
+POST /api/marketplace/billing/royalties
+
+Expected:
+
+Non-admin users cannot trigger royalty generation
+
+Admin users can trigger royalty generation
+
+Unique royalty index prevents duplicate payouts
+
+If agentRevenueEvents are missing, report this as expected open issue
+
+No fake payout claim should display as real paid revenue
+
+PART 12 — Marketplace & Ecosystem Metrics
+
+Test:
+
+GET /api/marketplace/ecosystem
+
+GET /api/marketplace/analytics
+
+GET /api/marketplace/adoption
+
+GET /api/marketplace/validation
+
+GET /api/marketplace/ecosystem-score
+
+Expected:
+
+Developer count updates
+
+Published agent count updates
+
+Install count updates
+
+Review count updates
+
+Reputation count updates
+
+Marketplace health reflects actual data
+
+Metrics distinguish simulated/projected values from actual values
+
+PART 13 — Production Readiness Dashboard
+
+Test:
+
+GET /api/marketplace/production-readiness
+
+Open:
+
+/admin/production-readiness
+
+Expected:
+
+Readiness score displays
+
+Issue tracker includes remaining issues
+
+Database coverage table loads
+
+E2E runner displays step results
+
+Known open issues remain visible:
+
+agentRevenueEvents population needs Stripe webhook integration
+
+Workforce execution routes need requireRole middleware
+
+Phase 4–8 POST bodies need Zod validation
+
+Large collection endpoints need pagination
+
+PART 14 — Security Regression Test
+
+Attempt requests with:
+
+No session
+
+Wrong orgId in query string
+
+Non-admin user on admin-only billing endpoint
+
+Invalid payload bodies
+
+Expected:
+
+No session → 401
+
+Wrong orgId query ignored
+
+Admin-only route → 403 for non-admin
+
+Invalid body → error response, not server crash
+
+PART 15 — Final Report
+
+Return a structured RC-1 Validation Report:
+
+A. Overall result:
+PASS / PARTIAL PASS / FAIL
+
+B. Step table:
+
+| Step | Area | Result | Evidence | Fix Needed |
+
+C. Records created:
+
+List all rows created by table.
+
+D. Security results:
+
+Cross-org isolation
+
+Role enforcement
+
+Input validation
+
+Billing protection
+
+E. Truthfulness results:
+
+Projected vs actual ROI
+
+Revenue claims
+
+Benchmark claims
+
+Royalty claims
+
+F. Remaining blockers before beta
+
+Rank each blocker:
+
+Critical
+
+High
+
+Medium
+
+Low
+
+G. Recommended next fixes in order
+
+Do not hide failures.
+
+Do not mark projected/simulated values as actual.
+
+Do not create fake success data just to pass the test.
+
+The goal is trustworthy validation, not a perfect score.

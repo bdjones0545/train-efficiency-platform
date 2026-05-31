@@ -18,6 +18,9 @@ import {
   agentTemplates,
   agentLifecycleEvents,
   crossOrgLearningEvents,
+  agentSubmissions,
+  developerAccounts,
+  agentRevenueEvents,
 } from "@shared/schema";
 import { eq, and, gte, desc, sql } from "drizzle-orm";
 import { AGENT_IDENTITIES } from "./agent-identities";
@@ -214,7 +217,7 @@ export async function getAllReputationRecords(): Promise<ReputationScore[]> {
 
   return records.map(r => ({
     agentId: r.agentId,
-    agentName: AGENT_IDENTITIES[r.agentId]?.agentName ?? r.agentId,
+    agentName: AGENT_IDENTITIES[r.agentId]?.name ?? r.agentId,
     reputationScore: r.reputationScore ?? 0,
     marketplaceRank: r.marketplaceRank ?? 0,
     trustTier: r.trustTier ?? "New to Market",
@@ -273,12 +276,12 @@ export async function computeEcosystemAnalytics(): Promise<Record<string, any>> 
     pendingSubmissions: submissions.filter(s => s.submissionStatus === "submitted" || s.submissionStatus === "under_review").length,
     topRatedAgents: topRated.map(r => ({
       agentId: r.agentId,
-      agentName: AGENT_IDENTITIES[r.agentId]?.agentName ?? r.agentId,
+      agentName: AGENT_IDENTITIES[r.agentId]?.name ?? r.agentId,
       rating: r.rating,
     })),
     topReputationAgents: topReputation.map(r => ({
       agentId: r.agentId,
-      agentName: AGENT_IDENTITIES[r.agentId]?.agentName ?? r.agentId,
+      agentName: AGENT_IDENTITIES[r.agentId]?.name ?? r.agentId,
       reputationScore: r.reputationScore,
       trustTier: r.trustTier,
     })),
