@@ -336,6 +336,11 @@ export default function AdminEcosystem() {
             <Code2 className="h-4 w-4 mr-1.5" />Developer Portal
           </Button>
         </Link>
+        <Link href="/admin/production-readiness">
+          <Button variant="outline" size="sm" className="border-indigo-700 text-indigo-400">
+            <Shield className="h-4 w-4 mr-1.5" />Production Readiness
+          </Button>
+        </Link>
       </div>
     </div>
   );

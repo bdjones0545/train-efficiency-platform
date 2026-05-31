@@ -73,6 +73,7 @@ import AdminAiWorkforceExecutionsPage from "@/pages/admin-ai-workforce-execution
 import AdminAiWorkforceSimulatorPage from "@/pages/admin-ai-workforce-simulator";
 import AdminAgentMarketplacePage from "@/pages/admin-agent-marketplace";
 import AdminEcosystemPage from "@/pages/admin-ecosystem";
+import AdminProductionReadinessPage from "@/pages/admin-production-readiness";
 import DeveloperPortalPage from "@/pages/developer-portal";
 import DeveloperSandboxPage from "@/pages/developer-sandbox";
 import MarketplaceStorePage from "@/pages/marketplace-store";
@@ -428,6 +429,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/ai-workforce/simulator" component={AdminAiWorkforceSimulatorPage} />
                   <Route path="/admin/agent-marketplace" component={AdminAgentMarketplacePage} />
                   <Route path="/admin/ecosystem" component={AdminEcosystemPage} />
+                  <Route path="/admin/production-readiness" component={AdminProductionReadinessPage} />
                   <Route path="/developer" component={DeveloperPortalPage} />
                   <Route path="/developer/sandbox" component={DeveloperSandboxPage} />
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />

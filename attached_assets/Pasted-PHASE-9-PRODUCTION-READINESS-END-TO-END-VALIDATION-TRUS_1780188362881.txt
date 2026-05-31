@@ -1,0 +1,439 @@
+PHASE 9 — PRODUCTION READINESS, END-TO-END VALIDATION & TRUST HARDENING AUDIT
+
+Objective
+
+Phase 1–8 built the platform architecture.
+
+Phase 9 is not a feature expansion phase.
+
+Phase 9 is a production readiness phase.
+
+The goal is to verify that the entire AI Workforce + Agent Marketplace + Developer Economy loop works end-to-end, safely, accurately, and without broken assumptions.
+
+Do not add major new features unless required to fix critical gaps.
+
+Focus on audit, validation, hardening, bug fixes, data consistency, trust, and production readiness.
+
+CORE QUESTION
+
+Does the full ecosystem actually work from start to finish?
+
+Developer creates agent
+↓
+Agent validates in sandbox
+↓
+Agent is submitted
+↓
+Agent is approved/published
+↓
+Organization discovers it
+↓
+Organization trials it
+↓
+Organization installs it
+↓
+Runtime is created
+↓
+Permissions are granted
+↓
+Agent executes governed action
+↓
+Telemetry is captured
+↓
+Outcome is attributed
+↓
+Review is submitted
+↓
+Benchmark updates
+↓
+Reputation updates
+↓
+Royalty is calculated
+↓
+Ecosystem score improves
+
+PART 1 — End-to-End Flow Test
+
+Create a complete seeded test scenario using a fictional agent.
+
+Example:
+
+Agent:
+Football Recruiting Agent
+
+Developer:
+Test Developer Org
+
+Buyer Organization:
+Test Sports Performance Facility
+
+Validate the full lifecycle:
+
+1. Developer account created
+2. Agent definition validated
+3. Agent submitted
+4. Agent approved
+5. Agent published
+6. Agent appears in marketplace store
+7. Buyer starts trial
+8. Buyer installs agent
+9. Runtime is created
+10. Agent permissions are requested
+11. Permissions are granted
+12. Execution plan is created
+13. Governance rules evaluated
+14. Approval is requested if required
+15. Execution is approved
+16. Execution runs
+17. Telemetry is captured
+18. Outcome is recorded
+19. Revenue/time savings attribution is created
+20. Review is submitted
+21. Reputation score updates
+22. Benchmark refresh includes the agent
+23. Royalty distribution is calculated
+24. Developer statement reflects earnings
+25. Ecosystem score changes
+
+Return pass/fail for each step.
+
+PART 2 — Route Contract Audit
+
+Audit every route added in Phases 1–8.
+
+For each route:
+
+* Method
+* Path
+* Auth requirement
+* Request schema
+* Response schema
+* Database reads
+* Database writes
+* Error states
+* Missing validation
+* Duplicate logic
+* Security risk
+* Runtime risk
+
+Create a route contract table.
+
+Flag routes that:
+
+* accept unvalidated input
+* trust client-side org IDs
+* expose cross-org data
+* return sensitive information
+* write without audit logs
+* mutate data without permission checks
+
+PART 3 — Database Integrity Audit
+
+Audit all tables added in Phases 1–8.
+
+Check:
+
+* Primary keys
+* Foreign keys
+* Unique constraints
+* Indexes
+* Cascade behavior
+* org_id scoping
+* timestamps
+* nullable fields
+* JSONB validation assumptions
+* duplicate records
+* orphaned records
+
+Specifically verify:
+
+* agent_templates
+* org_installed_agents
+* agent_runtimes
+* agent_memories
+* org_ai_execution_plans
+* org_ai_workforce_outcomes
+* org_ai_opportunities
+* agent_reviews
+* agent_reputation
+* agent_benchmarks
+* developer_accounts
+* royalty_distributions
+* agent_trials
+* agent_permissions
+
+Return required migrations.
+
+PART 4 — Cross-Organization Data Isolation Audit
+
+This is critical.
+
+Verify no organization can see another organization’s:
+
+* leads
+* bookings
+* clients
+* agent runtime memory
+* agent execution plans
+* outcomes
+* reviews before intended publication
+* revenue events
+* developer payouts
+* marketplace installs
+* private white-label agents
+
+All org-scoped queries must enforce org_id from authenticated session, not request body.
+
+Flag and fix all violations.
+
+PART 5 — Security & Permission Audit
+
+Verify:
+
+* Admin-only routes are protected
+* Developer-only routes are protected
+* Org owner routes are protected
+* Marketplace public routes expose only safe data
+* Billing/royalty data is developer-scoped
+* Agent permissions require explicit grant
+* High-risk actions require approval
+* Financial actions remain supervised-only
+* No agent can bypass governance
+
+Return a permission matrix:
+
+Route
+
+Allowed Roles
+
+Denied Roles
+
+Current Status
+
+Fix Needed
+
+PART 6 — Governance Enforcement Audit
+
+Test every execution path.
+
+Verify:
+
+* risk_level is evaluated
+* governance_mode is respected
+* approval rules are respected
+* Ledger/finance actions are always supervised
+* high-risk actions cannot auto-execute
+* rejected actions cannot run
+* expired trials cannot execute
+* uninstalled agents cannot execute
+* missing permissions block execution
+* missing integrations block execution
+
+Return all bypass risks.
+
+PART 7 — Telemetry & Attribution Accuracy Audit
+
+Verify every execution produces:
+
+* action log
+* telemetry event
+* runtime counter update
+* learning event
+* outcome record when applicable
+* attribution evidence when revenue/time savings is claimed
+* audit trail entry
+
+Flag any fake/simulated values that are displayed as real.
+
+If simulation is used, label clearly as projected.
+
+No synthetic metrics should appear in production dashboards without disclosure.
+
+PART 8 — Billing & Royalty Accuracy Audit
+
+Test:
+
+* revenue event created
+* royalty split computed correctly
+* developer share matches configured rev share
+* platform share matches remainder
+* duplicate royalty generation is prevented
+* monthly statement matches distributions
+* pending balance matches unpaid distributions
+* paid distributions are excluded from pending
+* negative or zero revenue is handled correctly
+
+Return billing risk report.
+
+PART 9 — Marketplace Trust Audit
+
+Verify:
+
+* reviews require verified usage or are labeled unverified
+* reputation scores are recomputed correctly
+* benchmark sample sizes are shown
+* low sample size is labeled
+* certifications require real thresholds
+* verification levels are not inflated
+* marketplace cards do not overclaim ROI
+* public benchmark endpoint is anonymized
+
+Trust copy should be conservative.
+
+PART 10 — Performance & Scalability Audit
+
+Check:
+
+* N+1 queries
+* expensive joins
+* benchmark refresh cost
+* reputation refresh cost
+* dashboard load time
+* endpoint caching opportunities
+* missing indexes
+* pagination requirements
+* long-running requests
+* timeout risks
+
+Return performance fixes.
+
+PART 11 — UI/UX Truthfulness Audit
+
+Review all user-facing copy.
+
+Flag phrases like:
+
+* guaranteed ROI
+* autonomous execution
+* verified performance
+* revenue generated
+* agent earned
+* trusted
+* enterprise ready
+
+unless fully supported by evidence.
+
+Rewrite misleading copy to:
+
+* projected
+* estimated
+* attributed
+* benchmarked
+* verified sample
+* requires approval
+* pending validation
+
+PART 12 — Error Handling & Empty State Audit
+
+Verify every new page handles:
+
+* no agents
+* no reviews
+* no revenue
+* no installs
+* no benchmarks
+* no developer account
+* missing integrations
+* failed fetch
+* unauthorized user
+* expired trial
+* rejected submission
+* no permissions granted
+
+No page should crash on empty data.
+
+PART 13 — Seed Data & Demo Mode Audit
+
+Identify all seeded/demo values.
+
+Classify:
+
+* safe default
+* demo-only
+* should be hidden in production
+* should be removed
+* should be clearly labeled
+
+Add production guardrails so demo metrics do not appear as real customer performance.
+
+PART 14 — Logging & Observability Audit
+
+Verify logs exist for:
+
+* agent submissions
+* approvals/rejections
+* installs/uninstalls
+* trial starts/ends
+* execution plans
+* action execution
+* permission grants
+* review submissions
+* benchmark refreshes
+* royalty generation
+* verification reviews
+* memory updates
+
+Add missing audit logs.
+
+PART 15 — Production Readiness Score
+
+Create final report with scores 0–5:
+
+* End-to-end lifecycle
+* Data isolation
+* Security
+* Governance enforcement
+* Billing accuracy
+* Marketplace trust
+* Telemetry accuracy
+* Attribution accuracy
+* Performance
+* UX truthfulness
+* Error handling
+* Production readiness
+
+PART 16 — Required Final Output
+
+Return:
+
+A. Executive Summary
+
+B. End-to-End Flow Pass/Fail Table
+
+C. Critical Bugs
+
+D. Security Risks
+
+E. Data Isolation Risks
+
+F. Governance Bypass Risks
+
+G. Billing/Royalty Risks
+
+H. Trust & Copy Risks
+
+I. Performance Risks
+
+J. Required Fixes Before Production
+
+K. Recommended Fix Order
+
+L. Final Production Readiness Score
+
+Implementation Rule:
+
+If critical issues are found, fix them only after listing them.
+
+Prioritize fixes in this order:
+
+1. Cross-org data leakage
+2. Governance bypass
+3. Billing/royalty errors
+4. Misleading trust/ROI claims
+5. Route validation gaps
+6. Performance/indexing
+7. Empty states and UX polish
+
+Final Goal
+
+Confirm whether TrainEfficiency’s AI Workforce + Agent Marketplace + Developer Economy is production-ready, and harden the system so it can be safely tested with real organizations, real agents, real reviews, real executions, and real revenue attribution.

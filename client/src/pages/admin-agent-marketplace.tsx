@@ -62,15 +62,15 @@ function AgentCard({ agent, onInstall, installing }: { agent: any; onInstall: (a
 
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div className="bg-gray-800 rounded p-2 text-center">
-            <p className="text-xs text-gray-500">Avg ROI</p>
-            <p className="text-sm font-bold text-green-400">{agent.averageRoi > 0 ? `${agent.averageRoi}x` : "—"}</p>
+            <p className="text-xs text-gray-500">Projected ROI</p>
+            <p className="text-sm font-bold text-green-400">{agent.averageRoi > 0 ? `~${agent.averageRoi}x` : "—"}</p>
           </div>
           <div className="bg-gray-800 rounded p-2 text-center">
             <p className="text-xs text-gray-500">Success Rate</p>
             <p className="text-sm font-bold text-blue-400">{agent.averageSuccessRate > 0 ? `${agent.averageSuccessRate}%` : "—"}</p>
           </div>
           <div className="bg-gray-800 rounded p-2 text-center">
-            <p className="text-xs text-gray-500">Revenue/mo</p>
+            <p className="text-xs text-gray-500">Est. Revenue Influence/mo</p>
             <p className="text-sm font-bold text-purple-400">{agent.averageRevenueInfluenced > 0 ? `$${agent.averageRevenueInfluenced.toLocaleString()}` : "—"}</p>
           </div>
           <div className="bg-gray-800 rounded p-2 text-center">
@@ -429,7 +429,7 @@ function TrialsTab({ agents }: { agents: any[] }) {
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-gray-600">Executions: {trial.usageCount ?? 0}</span>
-                      <span className="text-green-400">ROI: ${(trial.roiGenerated ?? 0).toFixed(0)}</span>
+                      <span className="text-green-400">Proj. ROI: ${(trial.roiGenerated ?? 0).toFixed(0)}</span>
                     </div>
                   </div>
                 ) : (
@@ -992,7 +992,7 @@ export default function AdminAgentMarketplace() {
                       <div key={agent.agentId} className="space-y-1">
                         <div className="flex justify-between text-xs">
                           <span className="text-gray-300">{agent.agentName}</span>
-                          <span className="text-blue-400">{agent.averageSuccessRate}% success · {agent.averageRoi > 0 ? `${agent.averageRoi}x ROI` : "no ROI data"}</span>
+                          <span className="text-blue-400">{agent.averageSuccessRate}% success · {agent.averageRoi > 0 ? `~${agent.averageRoi}x proj. ROI` : "no ROI data yet"}</span>
                         </div>
                         <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
                           <div className="h-full bg-gradient-to-r from-blue-600 to-purple-600 rounded-full"
@@ -1059,7 +1059,7 @@ export default function AdminAgentMarketplace() {
                     <CertBadge level={agent.certificationLevel} />
                     <span className="text-xs text-gray-500">Sample: {agent.sampleSize} actions</span>
                     <span className="text-xs text-gray-500">Score: {agent.benchmarkScore}/100</span>
-                    {agent.averageRoi > 0 && <span className="text-xs text-green-400">ROI: {agent.averageRoi}x</span>}
+                    {agent.averageRoi > 0 && <span className="text-xs text-green-400">~{agent.averageRoi}x proj. ROI</span>}
                   </div>
                 </CardContent>
               </Card>
@@ -1217,7 +1217,7 @@ export default function AdminAgentMarketplace() {
                     ) : analytics.topPerforming.map((a: any, i: number) => (
                       <div key={i} className="flex justify-between text-xs items-center">
                         <span className="text-gray-300">{a.agentName}</span>
-                        <span className="text-green-400 font-medium">{a.successRate}% · {a.roi}x ROI</span>
+                        <span className="text-green-400 font-medium">{a.successRate}% · ~{a.roi}x proj. ROI</span>
                       </div>
                     ))}
                   </CardContent>

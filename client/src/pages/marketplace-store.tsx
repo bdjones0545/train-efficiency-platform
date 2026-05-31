@@ -94,8 +94,8 @@ function AgentStorePage({ agent, reviews, reputation, onInstall, installing, onR
         {/* Stats */}
         <div className="grid grid-cols-3 gap-2 mt-3 mb-3">
           <div className="bg-gray-800 rounded p-2 text-center">
-            <p className="text-xs text-gray-500">ROI</p>
-            <p className="text-sm font-bold text-green-400">{agent.averageRoi > 0 ? `${agent.averageRoi}x` : "—"}</p>
+            <p className="text-xs text-gray-500">Proj. ROI</p>
+            <p className="text-sm font-bold text-green-400">{agent.averageRoi > 0 ? `~${agent.averageRoi}x` : "—"}</p>
           </div>
           <div className="bg-gray-800 rounded p-2 text-center">
             <p className="text-xs text-gray-500">Success</p>
