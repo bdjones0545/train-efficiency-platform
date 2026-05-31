@@ -636,7 +636,7 @@ export default function OnboardingAiWorkforcePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/30 flex flex-col" data-testid="page-onboarding-wizard">
       {/* Top progress bar */}
-      <div className="fixed top-0 left-0 right-0 z-10 bg-background/90 backdrop-blur border-b">
+      <div className="fixed top-14 sm:top-0 left-0 right-0 z-40 bg-background/90 backdrop-blur border-b">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-4">
           <div className="flex items-center gap-2 shrink-0">
             <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center">
@@ -667,7 +667,7 @@ export default function OnboardingAiWorkforcePage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 pt-28 pb-[calc(6rem+env(safe-area-inset-bottom))]">
+      <div className="flex-1 pt-16 sm:pt-28 pb-[calc(6rem+env(safe-area-inset-bottom))]">
         <div className="max-w-3xl mx-auto px-4">
           {step.id === "welcome" && <StepWelcome />}
           {step.id === "goals" && <StepGoals selected={state.goals} onToggle={toggleGoal} />}

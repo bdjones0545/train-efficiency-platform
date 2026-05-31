@@ -1,0 +1,81 @@
+FIX — AI WORKFORCE WIZARD MOBILE HEADER OVERLAP
+
+Issue
+
+The AI Workforce Setup Wizard still has a mobile layout issue.
+
+The fixed top app header is covering the top portion of the wizard content on mobile. The step indicator/pills at the top are partially hidden behind the header.
+
+Affected route:
+
+/onboarding/ai-workforce
+
+Affected file:
+
+client/src/pages/onboarding-ai-workforce.tsx
+
+Observed problem:
+
+The previous mobile fix reduced the hero sizing and added safe-area padding for the bottom bar, but the page still does not account correctly for the fixed top header height on mobile.
+
+Root cause to verify:
+
+The scroll content currently uses a fixed top padding like:
+
+pt-28
+
+This may not match the actual mobile header height + safe-area inset. The wizard content starts too high relative to the fixed header.
+
+Tasks:
+
+1. Audit the fixed top header height on mobile.
+
+Check:
+
+* mobile header height
+* iOS safe-area top inset
+* step pill container position
+* scroll container top padding
+* whether the header is fixed/sticky
+* whether the wizard page is nested under a layout that already adds top padding
+
+2. Fix mobile top offset.
+
+For mobile only, ensure the wizard content starts below the fixed header and safe area.
+
+Use a responsive pattern such as:
+
+pt-[calc(7rem+env(safe-area-inset-top))] sm:pt-28
+
+or adjust to the actual measured header height.
+
+If the app layout already includes safe-area top padding, do not double-count it.
+
+3. Ensure step pills are fully visible.
+
+Acceptance criteria:
+
+* The green active step pill is fully visible on mobile.
+* No step pill is clipped behind the header.
+* The hero icon/title begins below the step indicator.
+* The page can scroll normally.
+* Bottom fixed nav remains safe-area corrected.
+* No desktop/tablet regression.
+
+4. Test viewports:
+
+* 390px iPhone
+* 430px iPhone Pro Max
+* 768px tablet
+* desktop
+
+5. Return:
+
+* measured mobile header height
+* root cause
+* exact class/layout changes
+* mobile verification
+* desktop regression check
+
+Do not redesign the wizard.
+This is a top-header overlap fix only.
