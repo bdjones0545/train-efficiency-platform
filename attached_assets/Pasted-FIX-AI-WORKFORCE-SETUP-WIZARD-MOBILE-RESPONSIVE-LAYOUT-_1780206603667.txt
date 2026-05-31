@@ -1,0 +1,114 @@
+FIX — AI WORKFORCE SETUP WIZARD MOBILE RESPONSIVE LAYOUT
+
+Issue
+
+On mobile screens, the AI Workforce Setup Wizard route does not fit cleanly in the viewport.
+
+Affected route:
+
+/onboarding/ai-workforce
+
+Affected file:
+
+client/src/pages/onboarding-ai-workforce.tsx
+
+Observed problem:
+
+The hero section starts too low, the icon/title/spacing are too large for mobile, and the fixed bottom Continue/Back bar reduces available vertical space. On iPhone-sized screens, the top section feels clipped and oversized.
+
+Goal
+
+Fix mobile responsiveness only.
+
+Do not redesign the wizard.
+
+Do not change the desktop/tablet layout unless necessary.
+
+Tasks
+
+1. Audit the page structure
+
+Inspect:
+
+* root wrapper height
+* mobile top padding
+* hero icon size
+* title size
+* description line-height and spacing
+* feature card spacing
+* fixed bottom navigation height
+* safe-area handling
+* scroll container behavior
+* horizontal overflow
+
+2. Fix mobile spacing
+
+For small screens only:
+
+* reduce top padding
+* reduce hero icon size
+* reduce title font size
+* reduce subtitle spacing
+* reduce vertical gaps between hero, description, and cards
+* reduce card padding
+* reduce icon/card spacing if needed
+
+3. Fix bottom bar overlap
+
+Ensure the scrollable content has enough bottom padding so content is never hidden behind the fixed Back/Continue bar.
+
+Use a mobile-safe value such as:
+
+pb-[calc(96px+env(safe-area-inset-bottom))]
+
+or the equivalent Tailwind/CSS pattern already used in the project.
+
+4. Ensure proper scrolling
+
+The page should:
+
+* use a scrollable content container
+* not horizontally overflow
+* allow users to reach every card and wizard step
+* keep the Back/Continue controls fixed and usable
+* respect iOS Safari safe areas
+
+5. Suggested responsive pattern
+
+Use mobile-first classes such as:
+
+* pt-4 sm:pt-8 md:pt-12
+* h-20 w-20 sm:h-28 sm:w-28
+* text-3xl sm:text-4xl md:text-5xl
+* gap-4 sm:gap-6
+* p-4 sm:p-6
+
+Only apply the exact classes if they match the existing component structure.
+
+6. Test required viewports
+
+Verify visually at:
+
+* 390px width iPhone
+* 430px width iPhone Pro Max
+* 768px tablet
+* desktop
+
+7. Return audit report
+
+Return:
+
+* root cause
+* file changed
+* exact layout/classes changed
+* mobile verification results
+* desktop regression check
+* confirmation that the fixed footer no longer overlaps content
+
+Acceptance criteria
+
+* The wizard hero fits cleanly on iPhone-sized screens.
+* The content can scroll above the fixed bottom bar.
+* No content is hidden behind the Continue button.
+* No horizontal overflow.
+* Desktop layout remains visually unchanged.

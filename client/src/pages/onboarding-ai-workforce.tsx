@@ -121,33 +121,33 @@ const WORKFLOW_TEMPLATES = [
 
 function StepWelcome() {
   return (
-    <div className="text-center space-y-6 max-w-2xl mx-auto py-4">
-      <div className="relative mx-auto w-20 h-20">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg">
-          <Brain className="h-10 w-10 text-white" />
+    <div className="text-center space-y-4 sm:space-y-6 max-w-2xl mx-auto py-2 sm:py-4">
+      <div className="relative mx-auto w-16 h-16 sm:w-20 sm:h-20">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg">
+          <Brain className="h-8 w-8 sm:h-10 sm:w-10 text-white" />
         </div>
-        <span className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-green-500 flex items-center justify-center">
-          <CheckCircle className="h-3.5 w-3.5 text-white" />
+        <span className="absolute -bottom-1 -right-1 h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-green-500 flex items-center justify-center">
+          <CheckCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-white" />
         </span>
       </div>
 
       <div>
-        <h2 className="text-2xl font-bold">Set up your AI Workforce preferences</h2>
-        <p className="text-muted-foreground mt-2 text-base leading-relaxed">
+        <h2 className="text-xl sm:text-2xl font-bold">Set up your AI Workforce preferences</h2>
+        <p className="text-muted-foreground mt-1.5 sm:mt-2 text-sm sm:text-base leading-relaxed">
           TrainEfficiency comes with a team of specialized AI agents — each designed to handle
           a specific part of running your coaching business.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-left">
         {[
           { icon: Users, title: "Specialized Agents", desc: "Each AI agent has a specific role — like email, scheduling, or lead research" },
           { icon: Shield, title: "Governance Protected", desc: "You decide what AI can do autonomously and what requires your approval first" },
           { icon: Zap, title: "Always Explainable", desc: "Every AI action is logged, explainable, and governed by your organization's approval settings" },
         ].map(item => (
-          <div key={item.title} className="rounded-xl border p-4 bg-card space-y-2">
-            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <item.icon className="h-4 w-4 text-primary" />
+          <div key={item.title} className="rounded-xl border p-3 sm:p-4 bg-card space-y-1.5 sm:space-y-2">
+            <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <item.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
             </div>
             <p className="text-sm font-semibold">{item.title}</p>
             <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
@@ -667,7 +667,7 @@ export default function OnboardingAiWorkforcePage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 pt-28 pb-24">
+      <div className="flex-1 pt-28 pb-[calc(6rem+env(safe-area-inset-bottom))]">
         <div className="max-w-3xl mx-auto px-4">
           {step.id === "welcome" && <StepWelcome />}
           {step.id === "goals" && <StepGoals selected={state.goals} onToggle={toggleGoal} />}
@@ -681,7 +681,7 @@ export default function OnboardingAiWorkforcePage() {
       </div>
 
       {/* Bottom nav */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background/90 backdrop-blur border-t">
+      <div className="fixed bottom-0 left-0 right-0 bg-background/90 backdrop-blur border-t pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <Button
             variant="ghost"
