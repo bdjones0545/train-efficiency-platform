@@ -1,0 +1,106 @@
+Fix the TrainEfficiency Scheduling coach/user filter multi-tenant leak.
+
+Issue:
+On the Scheduling page, the assignment/filter dropdown is showing people from other organizations. The selector must only return users belonging to the currently authenticated organization.
+
+Required Fix:
+1. Audit the Scheduling page coach/user filter data source.
+2. Find the API endpoint/query that returns users for:
+   - Scheduling coach filter
+   - New Booking owner/coach selector
+   - Availability manager selectors
+   - Session ownership selectors
+   - Any reused scheduling-related dropdowns
+3. Ensure every query is scoped by the authenticated orgId.
+
+Correct Behavior:
+The dropdown should only show active users belonging to the current organization.
+
+Allowed:
+✓ Admins
+✓ Coaches
+✓ Staff
+✓ Sales
+✓ Operations
+✓ Any active org user that can own bookings, availability, leads, workflows, tasks, or agent actions
+
+Not Allowed:
+✗ Users from other organizations
+✗ Global user lists
+✗ Cross-org data leakage
+
+Backend Enforcement:
+Do NOT rely on frontend filtering.
+
+Every query must be tenant-scoped on the backend.
+
+Example:
+
+const session = await resolveOrgSession(req);
+const orgId = session.orgId;
+
+const users = await db
+  .select()
+  .from(orgUsers)
+  .where(
+    and(
+      eq(orgUsers.orgId, orgId),
+      eq(orgUsers.status, 'active')
+    )
+  )
+  .orderBy(orgUsers.firstName, orgUsers.lastName);
+
+If role restrictions exist for specific workflows, apply them after org filtering.
+
+Audit Additional Areas:
+Search the codebase for any user/coach selectors and ensure they are org-scoped:
+
+- Scheduling dashboard
+- New booking modal
+- Availability manager
+- Capacity planner
+- Revenue by coach/user reports
+- Lead assignment dropdowns
+- Outreach Center
+- Team Training assignments
+- Workflow Builder assignee selectors
+- Task assignment selectors
+- Agent assignment selectors
+- AI workforce tools
+- Notifications ownership
+- Athlete ownership/assignment
+- Program ownership selectors
+
+Security Requirement:
+No endpoint should ever return users belonging to another organization regardless of UI state.
+
+Validation:
+1. Log in as org-est.
+2. Open Scheduling.
+3. Open the user/coach filter.
+4. Confirm only active org-est users appear.
+5. Log into a different test organization.
+6. Confirm only that organization's users appear.
+7. Verify bookings, availability, assignments, and reporting still function correctly.
+8. Verify no cross-org users can be selected anywhere in the platform.
+
+Regression Test:
+Create two orgs:
+
+Org A
+- Bryan Jones
+- Hunter Thaxton
+
+Org B
+- Test Coach 1
+- Test Coach 2
+
+Query all scheduling/user selector endpoints as Org A.
+
+Expected:
+✓ Bryan Jones
+✓ Hunter Thaxton
+✗ Test Coach 1
+✗ Test Coach 2
+
+Treat this as a high-priority tenant isolation and data security fix affecting the entire platform, not just the Scheduling page.
