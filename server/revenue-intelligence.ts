@@ -110,6 +110,7 @@ export interface RevenueSummary {
   b2bPipelineRevenueCents: number;
   totalPipelineRevenueCents: number;
   unclassifiedLeadsCount: number;
+  revenueSummaryDegraded: boolean;
 }
 
 async function getOrgCoachIds(orgId: string): Promise<string[]> {
@@ -350,6 +351,7 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     b2bPipelineRevenueCents,
     totalPipelineRevenueCents,
     unclassifiedLeadsCount,
+    revenueSummaryDegraded: false,
   };
 }
 

@@ -131,6 +131,7 @@ interface RevenueSummary {
   b2bPipelineRevenueCents?: number;
   totalPipelineRevenueCents?: number;
   unclassifiedLeadsCount?: number;
+  revenueSummaryDegraded?: boolean;
   _error?: string;
 }
 
@@ -1001,6 +1002,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     b2bPipelineRevenueCents: activeRevenueSummary.b2bPipelineRevenueCents ?? 0,
     totalPipelineRevenueCents: activeRevenueSummary.totalPipelineRevenueCents ?? 0,
     unclassifiedLeadsCount: activeRevenueSummary.unclassifiedLeadsCount ?? 0,
+    revenueSummaryDegraded: activeRevenueSummary.revenueSummaryDegraded ?? false,
   } : null;
 
   const maxCoachRevenue = safeRevenue && safeRevenue.coachRevenues.length > 0
@@ -2118,6 +2120,14 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                 </Card>
               ) : safeRevenue ? (
                 <>
+                  {import.meta.env.DEV && safeRevenue.revenueSummaryDegraded && (
+                    <div className="rounded-lg border border-yellow-300 bg-yellow-50/70 dark:border-yellow-700 dark:bg-yellow-950/20 px-3 py-2 flex items-start gap-2" data-testid="revenue-degraded-warning">
+                      <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-yellow-700 dark:text-yellow-400">
+                        <span className="font-semibold">Dev:</span> Revenue summary loaded in fallback mode — compute failed. Check server logs for the full error.
+                      </p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {[
                       { label: "Last 30d Revenue", value: `$${(safeRevenue.last30dRevenueCents / 100).toLocaleString()}`, sub: safeRevenue.revenueGrowthPct >= 0 ? `+${safeRevenue.revenueGrowthPct.toFixed(1)}% vs prior 30d` : `${safeRevenue.revenueGrowthPct.toFixed(1)}% vs prior 30d`, id: "rev-last30", color: "text-green-600", subColor: safeRevenue.revenueGrowthPct >= 0 ? "text-green-500" : "text-red-500" },

@@ -8764,17 +8764,29 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   // ===== REVENUE INTELLIGENCE =====
   app.get("/api/scheduling/revenue-summary", isAuthenticated, requireRole("ADMIN", "COACH", "STAFF"), async (req: any, res) => {
+    let orgId: string | undefined;
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      orgId = profile.organizationId;
       const { computeRevenueSummary } = await import("./revenue-intelligence");
-      const summary = await computeRevenueSummary(profile.organizationId);
+      const summary = await computeRevenueSummary(orgId);
       res.json(summary);
     } catch (error: any) {
-      console.error("[revenue-summary] compute error:", error?.message, error?.stack?.split("\n")[1]);
-      // Return a safe zero-value payload so the frontend shows empty state ($0)
-      // rather than an error card. The _error field is for dev diagnostics only.
+      // Structured error log — always emitted regardless of NODE_ENV so production
+      // errors are visible in server logs. Never swallowed silently.
+      console.error(JSON.stringify({
+        level: "error",
+        route: "GET /api/scheduling/revenue-summary",
+        orgId: orgId ?? "unknown",
+        message: error?.message ?? "unknown error",
+        stack: error?.stack ?? null,
+        timestamp: new Date().toISOString(),
+      }));
+      // Return a safe zero-value 200 payload (revenueSummaryDegraded: true) so the
+      // frontend shows an empty state instead of an error card. Real errors are
+      // distinguishable from genuine zero-data by checking revenueSummaryDegraded.
       res.json({
         generatedAt: new Date().toISOString(),
         periodLabel: "All time",
@@ -8799,6 +8811,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         b2bPipelineRevenueCents: 0,
         totalPipelineRevenueCents: 0,
         unclassifiedLeadsCount: 0,
+        revenueSummaryDegraded: true,
         _error: process.env.NODE_ENV === "development" ? error?.message : undefined,
       });
     }
