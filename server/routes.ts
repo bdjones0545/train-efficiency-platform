@@ -8806,6 +8806,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         coachRevenues: [],
         timeBlockRevenues: [],
         topClients: [],
+        topClientsByScheduledRevenue: [],
+        topClientsByRedeemedRevenue: [],
         timezone: "America/New_York",
         b2cRevenueCents: 0,
         b2bPipelineRevenueCents: 0,

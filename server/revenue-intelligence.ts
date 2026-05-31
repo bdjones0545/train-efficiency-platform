@@ -105,6 +105,8 @@ export interface RevenueSummary {
   coachRevenues: CoachRevenue[];
   timeBlockRevenues: TimeBlockRevenue[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
+  topClientsByScheduledRevenue: { clientId: string; clientName: string; scheduledRevenueCents: number; scheduledSessionCount: number }[];
+  topClientsByRedeemedRevenue: { clientId: string; clientName: string; redeemedRevenueCents: number; redeemedSessionCount: number }[];
   timezone: string;
   b2cRevenueCents: number;
   b2bPipelineRevenueCents: number;
@@ -260,40 +262,80 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     }))
     .sort((a, b) => a.hour - b.hour);
 
-  // Top clients by revenue — eligibility-filtered
+  // Top clients — eligibility-filtered, split into scheduled vs redeemed
   // Excludes coaches, admins, staff, walk-ins, test users, internal aliases, and org owner
   const eligibleClientBookings = allBookings.filter(b => eligibleClientIds.has(b.clientId));
   const ineligibleCount = allBookings.filter(b => !eligibleClientIds.has(b.clientId)).length;
   console.log(`[RevIntel][${orgId}] topClients eligibility audit: total_booking_rows=${allBookings.length}, eligible_rows=${eligibleClientBookings.length}, excluded_rows=${ineligibleCount}`);
 
-  const clientRevenueMap = new Map<string, number>();
-  const clientSessionMap = new Map<string, number>();
-  for (const b of eligibleClientBookings) {
-    clientRevenueMap.set(b.clientId, (clientRevenueMap.get(b.clientId) ?? 0) + (b.priceCents ?? 0));
-    clientSessionMap.set(b.clientId, (clientSessionMap.get(b.clientId) ?? 0) + 1);
+  // Scheduled: CONFIRMED sessions starting in the future (pipeline/upcoming value)
+  const scheduledBookings = eligibleClientBookings.filter(
+    b => b.status === "CONFIRMED" && new Date(b.startAt) >= now && (b.priceCents ?? 0) > 0
+  );
+  // Redeemed: COMPLETED sessions (earned/delivered revenue only)
+  const redeemedBookings = eligibleClientBookings.filter(
+    b => b.status === "COMPLETED" && (b.priceCents ?? 0) > 0
+  );
+
+  // Build per-client maps for each category
+  const scheduledRevenueMap = new Map<string, number>();
+  const scheduledSessionMap = new Map<string, number>();
+  for (const b of scheduledBookings) {
+    scheduledRevenueMap.set(b.clientId, (scheduledRevenueMap.get(b.clientId) ?? 0) + (b.priceCents ?? 0));
+    scheduledSessionMap.set(b.clientId, (scheduledSessionMap.get(b.clientId) ?? 0) + 1);
+  }
+  const redeemedRevenueMap = new Map<string, number>();
+  const redeemedSessionMap = new Map<string, number>();
+  for (const b of redeemedBookings) {
+    redeemedRevenueMap.set(b.clientId, (redeemedRevenueMap.get(b.clientId) ?? 0) + (b.priceCents ?? 0));
+    redeemedSessionMap.set(b.clientId, (redeemedSessionMap.get(b.clientId) ?? 0) + 1);
   }
 
-  const topClientIds = Array.from(clientRevenueMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([id]) => id);
+  // Collect all unique client IDs across both lists for a single user lookup
+  const allTopClientIds = Array.from(new Set([
+    ...Array.from(scheduledRevenueMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id),
+    ...Array.from(redeemedRevenueMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => id),
+  ]));
 
-  const topClientUsers = topClientIds.length > 0
-    ? await db.select().from(users).where(inArray(users.id, topClientIds))
+  const topClientUsers = allTopClientIds.length > 0
+    ? await db.select().from(users).where(inArray(users.id, allTopClientIds))
     : [];
   const topClientMap = new Map(topClientUsers.map(u => [u.id, u]));
 
-  const topClients = topClientIds.map(id => {
+  const getName = (id: string) => {
     const u = topClientMap.get(id);
-    return {
-      clientId: id,
-      clientName: u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : id,
-      totalRevenueCents: clientRevenueMap.get(id) ?? 0,
-      sessionCount: clientSessionMap.get(id) ?? 0,
-    };
-  });
+    return u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || id : id;
+  };
 
-  console.log(`[RevIntel][${orgId}] topClients after eligibility filter: ${topClients.map(c => `${c.clientName}=$${(c.totalRevenueCents / 100).toFixed(0)}`).join(", ") || "(none)"}`);
+  const topClientsByScheduledRevenue = Array.from(scheduledRevenueMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([id, cents]) => ({
+      clientId: id,
+      clientName: getName(id),
+      scheduledRevenueCents: cents,
+      scheduledSessionCount: scheduledSessionMap.get(id) ?? 0,
+    }));
+
+  const topClientsByRedeemedRevenue = Array.from(redeemedRevenueMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([id, cents]) => ({
+      clientId: id,
+      clientName: getName(id),
+      redeemedRevenueCents: cents,
+      redeemedSessionCount: redeemedSessionMap.get(id) ?? 0,
+    }));
+
+  // Backward-compat alias used by scheduling assistant — points to scheduled (upcoming pipeline)
+  const topClients = topClientsByScheduledRevenue.map(c => ({
+    clientId: c.clientId,
+    clientName: c.clientName,
+    totalRevenueCents: c.scheduledRevenueCents,
+    sessionCount: c.scheduledSessionCount,
+  }));
+
+  console.log(`[RevIntel][${orgId}] topClients scheduled=${topClientsByScheduledRevenue.length} redeemed=${topClientsByRedeemedRevenue.length}`);;
 
   // Churn risk count and session package alerts
   const [churnRisks, packageAlerts] = await Promise.all([
@@ -346,6 +388,8 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     coachRevenues,
     timeBlockRevenues,
     topClients,
+    topClientsByScheduledRevenue,
+    topClientsByRedeemedRevenue,
     timezone: orgTimezone,
     b2cRevenueCents,
     b2bPipelineRevenueCents,

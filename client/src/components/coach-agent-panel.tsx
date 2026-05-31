@@ -126,6 +126,8 @@ interface RevenueSummary {
   coachRevenues: { coachId: string; coachName: string; totalRevenueCents: number; sessionCount: number; avgRevenuePerSessionCents: number; activeClients: number }[];
   timeBlockRevenues: { hour: number; label: string; totalRevenueCents: number; sessionCount: number }[];
   topClients: { clientId: string; clientName: string; totalRevenueCents: number; sessionCount: number }[];
+  topClientsByScheduledRevenue?: { clientId: string; clientName: string; scheduledRevenueCents: number; scheduledSessionCount: number }[];
+  topClientsByRedeemedRevenue?: { clientId: string; clientName: string; redeemedRevenueCents: number; redeemedSessionCount: number }[];
   timezone?: string;
   b2cRevenueCents?: number;
   b2bPipelineRevenueCents?: number;
@@ -1003,6 +1005,8 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     totalPipelineRevenueCents: activeRevenueSummary.totalPipelineRevenueCents ?? 0,
     unclassifiedLeadsCount: activeRevenueSummary.unclassifiedLeadsCount ?? 0,
     revenueSummaryDegraded: activeRevenueSummary.revenueSummaryDegraded ?? false,
+    topClientsByScheduledRevenue: activeRevenueSummary.topClientsByScheduledRevenue ?? [],
+    topClientsByRedeemedRevenue: activeRevenueSummary.topClientsByRedeemedRevenue ?? [],
   } : null;
 
   const maxCoachRevenue = safeRevenue && safeRevenue.coachRevenues.length > 0
@@ -2208,27 +2212,53 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
                     </div>
                   )}
 
-                  {safeRevenue.topClients.length > 0 && (
-                    <div>
-                      <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Users className="h-4 w-4 text-blue-500" />Top Clients by Revenue</h3>
+                  <div>
+                    <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Users className="h-4 w-4 text-blue-400" />Top Clients by Scheduled Revenue</h3>
+                    {safeRevenue.topClientsByScheduledRevenue.length > 0 ? (
                       <div className="space-y-2">
-                        {safeRevenue.topClients.map((c, i) => (
-                          <Card key={c.clientId} data-testid={`top-client-${i}`}>
+                        {safeRevenue.topClientsByScheduledRevenue.map((c, i) => (
+                          <Card key={c.clientId} data-testid={`top-client-scheduled-${i}`}>
                             <CardContent className="p-3 flex items-center justify-between gap-3">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="text-xs font-mono text-muted-foreground w-5 shrink-0">#{i + 1}</span>
                                 <span className="text-sm font-medium truncate">{c.clientName}</span>
                               </div>
                               <div className="flex items-center gap-3 shrink-0">
-                                <span className="text-xs text-muted-foreground">{c.sessionCount} sessions</span>
-                                <span className="text-sm font-semibold text-green-600">${(c.totalRevenueCents / 100).toLocaleString()}</span>
+                                <span className="text-xs text-muted-foreground">{c.scheduledSessionCount} scheduled</span>
+                                <span className="text-sm font-semibold text-blue-500">${(c.scheduledRevenueCents / 100).toLocaleString()}</span>
                               </div>
                             </CardContent>
                           </Card>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <Card><CardContent className="p-3 text-xs text-muted-foreground">No upcoming scheduled sessions.</CardContent></Card>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Users className="h-4 w-4 text-green-500" />Top Clients by Redeemed Revenue</h3>
+                    {safeRevenue.topClientsByRedeemedRevenue.length > 0 ? (
+                      <div className="space-y-2">
+                        {safeRevenue.topClientsByRedeemedRevenue.map((c, i) => (
+                          <Card key={c.clientId} data-testid={`top-client-redeemed-${i}`}>
+                            <CardContent className="p-3 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-mono text-muted-foreground w-5 shrink-0">#{i + 1}</span>
+                                <span className="text-sm font-medium truncate">{c.clientName}</span>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="text-xs text-muted-foreground">{c.redeemedSessionCount} redeemed</span>
+                                <span className="text-sm font-semibold text-green-600">${(c.redeemedRevenueCents / 100).toLocaleString()}</span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <Card data-testid="no-redeemed-sessions"><CardContent className="p-3 text-xs text-muted-foreground">No redeemed sessions yet.</CardContent></Card>
+                    )}
+                  </div>
 
                   {safeRevenue.timeBlockRevenues.length > 0 && (
                     <div>
