@@ -251,10 +251,10 @@ export async function registerSchedulingIntelligenceRoutes(
       const velocityFactor = reg >= maxP * 0.8 ? 100 : reg >= maxP * 0.5 ? 70 : reg >= maxP * 0.3 ? 50 : 30;
 
       const score = Math.round(
-        utilizationFactor * 0.30 +
+        utilizationFactor * 0.35 +
         revenueFactor * 0.25 +
         attendanceFactor * 0.20 +
-        waitlistFactor * 0.15 +
+        waitlistFactor * 0.10 +
         velocityFactor * 0.10
       );
 
@@ -452,6 +452,17 @@ export async function registerSchedulingIntelligenceRoutes(
         return (order[a.priority] ?? 2) - (order[b.priority] ?? 2);
       });
 
+      // Persist top opportunities as a snapshot
+      await Promise.all(
+        opportunities.slice(0, 10).map(o =>
+          db.execute(sql`
+            INSERT INTO scheduling_opportunities (org_id, type, priority, title, description, estimated_value_cents, action_label, action_data, status)
+            VALUES (${orgId}, ${o.type}, ${o.priority}, ${o.title}, ${o.description || ""}, ${o.estimatedValueCents || 0}, ${o.actionLabel || ""}, ${JSON.stringify({ sessionId: o.sessionId, clientId: o.clientId })}, 'open')
+            ON CONFLICT DO NOTHING
+          `).catch(() => {})
+        )
+      );
+
       res.json({
         opportunities,
         counts: {
@@ -473,17 +484,38 @@ export async function registerSchedulingIntelligenceRoutes(
     }
   });
 
-  // ─── Revenue Recovery ─────────────────────────────────────────────────────
+  // ─── Revenue Recovery (72h focus + AI recommendations) ────────────────────
   app.get("/api/scheduling/revenue-recovery", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
+      const next72h = new Date(now.getTime() + 72 * 3600000);
       const next30d = new Date(now);
       next30d.setDate(now.getDate() + 30);
 
-      const [sessionsRaw, cancelledRaw] = await Promise.all([
+      const [urgentRaw, sessionsRaw, cancelledRaw, orgRaw] = await Promise.all([
+        // Critical: sessions under 50% in next 72h
+        db.execute(sql`
+          SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
+                 s.price_cents, COUNT(bp.id) as registered_count,
+                 u.first_name as coach_first, u.last_name as coach_last
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
+          LEFT JOIN users u ON cp.user_id = u.id
+          LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.status = 'CONFIRMED'
+            AND b.start_at > ${now.toISOString()}
+            AND b.start_at < ${next72h.toISOString()}
+          GROUP BY b.id, s.name, s.price_cents, u.first_name, u.last_name
+          HAVING COUNT(bp.id)::float / NULLIF(b.max_participants, 0) < 0.5
+          ORDER BY b.start_at ASC
+          LIMIT 5
+        `).catch(() => ({ rows: [] })),
+        // All upcoming sessions with gaps
         db.execute(sql`
           SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
                  s.price_cents, COUNT(bp.id) as registered_count
@@ -508,10 +540,15 @@ export async function registerSchedulingIntelligenceRoutes(
           ORDER BY b.start_at ASC
           LIMIT 10
         `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT name FROM organizations WHERE id = ${orgId} LIMIT 1
+        `).catch(() => ({ rows: [] })),
       ]);
 
+      const urgent = getRows(urgentRaw);
       const sessions = getRows(sessionsRaw);
       const cancelled = getRows(cancelledRaw);
+      const orgName = getRows(orgRaw)[0]?.name || "your studio";
 
       let totalLostRevenue = 0;
       let totalRecoverableRevenue = 0;
@@ -525,6 +562,7 @@ export async function registerSchedulingIntelligenceRoutes(
         totalLostRevenue += lost;
         const recoverable = Math.round(lost * 0.6);
         totalRecoverableRevenue += recoverable;
+        const hoursUntil = (new Date(s.start_at).getTime() - now.getTime()) / 3600000;
         return {
           sessionId: s.id,
           serviceName: s.service_name || "Session",
@@ -536,8 +574,14 @@ export async function registerSchedulingIntelligenceRoutes(
           lostRevenueCents: lost,
           recoverableRevenueCents: recoverable,
           utilizationPct: max > 0 ? Math.round((reg / max) * 100) : 0,
+          isUrgent: hoursUntil <= 72,
+          urgencyLabel: hoursUntil <= 24 ? "Today" : hoursUntil <= 48 ? "Tomorrow" : hoursUntil <= 72 ? "Next 72h" : null,
         };
-      }).filter(g => g.openSpots > 0).sort((a, b) => b.lostRevenueCents - a.lostRevenueCents);
+      }).filter(g => g.openSpots > 0).sort((a, b) => {
+        if (a.isUrgent && !b.isUrgent) return -1;
+        if (!a.isUrgent && b.isUrgent) return 1;
+        return b.lostRevenueCents - a.lostRevenueCents;
+      });
 
       const cancelledGaps = cancelled.map((s: any) => {
         const max = parseInt(s.max_participants || 6);
@@ -553,15 +597,49 @@ export async function registerSchedulingIntelligenceRoutes(
         };
       });
 
+      // AI recommendations for urgent (72h) sessions
+      let urgentRecommendations: any[] = [];
+      if (urgent.length > 0) {
+        try {
+          const urgentList = urgent.map((s: any) => {
+            const max = parseInt(s.max_participants || 6);
+            const reg = parseInt(s.registered_count || 0);
+            return `- "${s.service_name || "Session"}" at ${new Date(s.start_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} — ${reg}/${max} registered (${max - reg} open spots), Coach ${s.coach_first || ""} ${s.coach_last || ""}`.trim();
+          }).join("\n");
+
+          const aiRes = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{
+              role: "user",
+              content: `You are a scheduling revenue specialist for a strength and conditioning gym called "${orgName}". The following group training sessions are under 50% full and start within the next 72 hours:\n\n${urgentList}\n\nProvide 3-5 specific, actionable recovery recommendations to fill these sessions. Each recommendation should be a concrete action (e.g., "Text the waitlist...", "Offer a 24-hour early-bird discount...", "Post a flash offer on social media..."). Return a JSON array of objects: [{ "action": "...", "rationale": "...", "impact": "high|medium|low" }]`,
+            }],
+            response_format: { type: "json_object" },
+            max_tokens: 400,
+          });
+          const content = aiRes.choices[0]?.message?.content ?? "{}";
+          const parsed = JSON.parse(content);
+          urgentRecommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations
+            : Array.isArray(parsed) ? parsed : [];
+        } catch {
+          urgentRecommendations = [
+            { action: "Text everyone on your waitlist immediately about open spots", rationale: "Fastest way to fill seats in under 72h", impact: "high" },
+            { action: "Post a flash discount offer on social media (10-20% off)", rationale: "Creates urgency and attracts price-sensitive prospects", impact: "high" },
+            { action: "Email inactive clients who previously attended this session type", rationale: "Familiar sessions have higher conversion rates", impact: "medium" },
+          ];
+        }
+      }
+
       res.json({
         summary: {
           totalLostRevenueCents: totalLostRevenue,
           totalRecoverableRevenueCents: totalRecoverableRevenue,
           sessionsWithGaps: gaps.length,
           cancelledSessions: cancelledGaps.length,
+          urgentSessions: urgent.length,
         },
         gaps: gaps.slice(0, 10),
         cancelled: cancelledGaps,
+        urgentRecommendations,
       });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch revenue recovery", error: e.message });
@@ -646,6 +724,7 @@ export async function registerSchedulingIntelligenceRoutes(
         .sort((a, b) => b.riskScore - a.riskScore);
 
       res.json({
+        atRisk: riskProfiles,
         clients: riskProfiles,
         summary: {
           highRisk: riskProfiles.filter(c => c.riskLevel === "high").length,
@@ -659,7 +738,95 @@ export async function registerSchedulingIntelligenceRoutes(
     }
   });
 
-  // ─── Demand Forecast ──────────────────────────────────────────────────────
+  // ─── Demand Forecast (per-session) ───────────────────────────────────────
+  app.get("/api/scheduling/demand-forecast/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any).user?.organizationId;
+      const { bookingId } = req.params;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+      const [bookingRaw, historicalRaw] = await Promise.all([
+        db.execute(sql`
+          SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
+                 s.price_cents, s.id as service_id,
+                 COUNT(bp.id) as registered_count
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+          WHERE b.id = ${bookingId} AND b.organization_id = ${orgId}
+          GROUP BY b.id, s.name, s.price_cents, s.id
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT AVG(sub.fill_pct) as avg_fill_pct, COUNT(*) as sample_size,
+                 AVG(sub.registered) as avg_registered,
+                 MAX(sub.fill_pct) as max_fill_pct, MIN(sub.fill_pct) as min_fill_pct
+          FROM (
+            SELECT b2.id,
+                   COUNT(bp2.id)::float / NULLIF(b2.max_participants, 0) as fill_pct,
+                   COUNT(bp2.id) as registered
+            FROM bookings b2
+            LEFT JOIN booking_participants bp2 ON bp2.booking_id = b2.id
+            WHERE b2.organization_id = ${orgId}
+              AND b2.service_id = (SELECT service_id FROM bookings WHERE id = ${bookingId} LIMIT 1)
+              AND b2.status IN ('CONFIRMED', 'COMPLETED')
+              AND b2.start_at >= ${ninetyDaysAgo.toISOString()}
+              AND b2.id != ${bookingId}
+            GROUP BY b2.id, b2.max_participants
+          ) sub
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const booking = getRows(bookingRaw)[0];
+      if (!booking) return res.status(404).json({ message: "Session not found" });
+
+      const historical = getRows(historicalRaw)[0];
+      const max = parseInt(booking.max_participants || 6);
+      const currentReg = parseInt(booking.registered_count || 0);
+      const price = parseInt(booking.price_cents || 0);
+
+      const avgFillPct = parseFloat(historical?.avg_fill_pct || 0) * 100;
+      const sampleSize = parseInt(historical?.sample_size || 0);
+      const maxFillPct = parseFloat(historical?.max_fill_pct || 0) * 100;
+
+      // Confidence based on sample size
+      const confidence = sampleSize >= 10 ? "high" : sampleSize >= 5 ? "medium" : "low";
+      const confidenceScore = Math.min(100, sampleSize * 10);
+
+      // Predicted fill based on historical avg (or current if no history)
+      const predictedFillPct = sampleSize > 0 ? Math.round(avgFillPct) : Math.round((currentReg / max) * 100);
+      const predictedRegistered = Math.round((predictedFillPct / 100) * max);
+      const predictedRevenueCents = predictedRegistered * price;
+      const maxRevenueCents = Math.round((maxFillPct / 100) * max) * price;
+
+      res.json({
+        bookingId,
+        serviceName: booking.service_name || "Session",
+        startAt: booking.start_at,
+        currentRegistered: currentReg,
+        capacity: max,
+        predictedFillPct,
+        predictedRegistered,
+        predictedRevenueCents,
+        maxRevenueCents,
+        historicalAvgFillPct: Math.round(avgFillPct),
+        sampleSize,
+        confidence,
+        confidenceScore,
+        insight: predictedFillPct >= 80
+          ? "Strong historical demand — this session typically fills well."
+          : predictedFillPct >= 50
+          ? "Moderate demand — some outreach may improve fill rate."
+          : "Below-average fill rate historically — proactive filling recommended.",
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute session demand forecast", error: e.message });
+    }
+  });
+
+  // ─── Demand Forecast (org-level) ──────────────────────────────────────────
   app.get("/api/scheduling/demand-forecast", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
@@ -1063,8 +1230,17 @@ Return as JSON:
   app.get("/api/scheduling/athlete-recommendations/:userId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
+      const authUserId = (req as any).user?.id;
+      const authRole = (req as any).user?.role;
       const { userId } = req.params;
       if (!orgId) return res.status(403).json({ message: "No org" });
+
+      // IDOR guard: non-admin/coach users can only query their own recommendations
+      const isPrivileged = authRole === "ADMIN" || authRole === "COACH" || authRole === "STAFF";
+      const targetUserId = isPrivileged ? userId : authUserId;
+      if (!isPrivileged && userId !== authUserId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
 
       const now = new Date();
       const next14d = new Date(now);
@@ -1075,7 +1251,7 @@ Return as JSON:
       const [profileRaw, historyRaw, upcomingRaw] = await Promise.all([
         db.execute(sql`
           SELECT sport, training_level FROM athlete_scheduling_profiles
-          WHERE user_id = ${userId} AND org_id = ${orgId}
+          WHERE user_id = ${targetUserId} AND org_id = ${orgId}
           LIMIT 1
         `).catch(() => ({ rows: [] })),
         db.execute(sql`
@@ -1083,7 +1259,7 @@ Return as JSON:
           FROM bookings b
           JOIN booking_participants bp ON bp.booking_id = b.id
           JOIN services s ON b.service_id = s.id
-          WHERE bp.user_id = ${userId}
+          WHERE bp.user_id = ${targetUserId}
             AND b.organization_id = ${orgId}
             AND b.status IN ('CONFIRMED', 'COMPLETED')
             AND b.start_at >= ${sixtyDaysAgo.toISOString()}
@@ -1104,7 +1280,7 @@ Return as JSON:
             AND b.start_at < ${next14d.toISOString()}
             AND NOT EXISTS (
               SELECT 1 FROM booking_participants bp2
-              WHERE bp2.booking_id = b.id AND bp2.user_id = ${userId}
+              WHERE bp2.booking_id = b.id AND bp2.user_id = ${targetUserId}
             )
           GROUP BY b.id, s.name, s.sport, s.skill_level, s.price_cents, s.age_range, u.first_name, u.last_name
           HAVING COUNT(bp.id) < b.max_participants

@@ -107,6 +107,31 @@ function UtilBadge({ pct }: { pct: number }) {
   return <Badge className={`text-xs ${color}`}>{pct}%</Badge>;
 }
 
+function SessionPerformanceScore({ bookingId }: { bookingId: string }) {
+  const { data } = useQuery<{ score: number; label: string } | null>({
+    queryKey: ["/api/scheduling/session-performance", bookingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/scheduling/session-performance/${bookingId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: false,
+    staleTime: 300000,
+  });
+  if (!data) return null;
+  const color = data.score >= 75
+    ? "bg-green-500/15 text-green-700 dark:text-green-400"
+    : data.score >= 50
+    ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400"
+    : "bg-red-500/15 text-red-700 dark:text-red-400";
+  return (
+    <div className="flex items-center gap-1 mt-0.5">
+      <Zap className="h-2.5 w-2.5 text-muted-foreground" />
+      <Badge className={`text-[10px] py-0 h-4 ${color}`}>{data.label} · {data.score}</Badge>
+    </div>
+  );
+}
+
 function SessionRow({ session }: { session: any }) {
   const start = session.start_at ? new Date(session.start_at) : null;
   const reg = parseInt(session.registered_count || 0);
@@ -122,6 +147,7 @@ function SessionRow({ session }: { session: any }) {
           {session.coach_first && <span>· Coach {session.coach_first} {session.coach_last}</span>}
           {session.location && <span>· {session.location}</span>}
         </div>
+        {session.id && <SessionPerformanceScore bookingId={session.id} />}
       </div>
       <div className="text-right shrink-0">
         <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">

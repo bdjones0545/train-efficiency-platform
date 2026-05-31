@@ -104,6 +104,77 @@ function AthleteRecommendationsPanel({ userId, currentSessionId }: { userId?: st
   );
 }
 
+// ─── Recommended For You strip (top of page, athletes only) ──────────────────
+function RecommendedForYouStrip({
+  userId, sessions, onSessionClick
+}: { userId: string; sessions: OpenSession[]; onSessionClick: (s: OpenSession) => void }) {
+  const { data, isLoading } = useQuery<{ recommendations: any[] }>({
+    queryKey: ["/api/scheduling/athlete-recommendations", userId],
+    queryFn: async () => {
+      const res = await fetch(`/api/scheduling/athlete-recommendations/${userId}`, { credentials: "include" });
+      if (!res.ok) return { recommendations: [] };
+      return res.json();
+    },
+    enabled: !!userId,
+    retry: false,
+    staleTime: 300000,
+  });
+
+  const sessionMap = new Map(sessions.map(s => [s.id, s]));
+
+  if (isLoading) return (
+    <div className="space-y-2" data-testid="recommended-for-you-strip">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <p className="text-sm font-semibold">Recommended For You</p>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-56 shrink-0 rounded-lg" />)}
+      </div>
+    </div>
+  );
+
+  const recs = (data?.recommendations || []).slice(0, 5);
+  if (recs.length === 0) return null;
+
+  return (
+    <div className="space-y-2" data-testid="recommended-for-you-strip">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <p className="text-sm font-semibold">Recommended For You</p>
+        <Badge variant="secondary" className="text-xs ml-auto">Based on your training history</Badge>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2">
+        {recs.map((r: any) => {
+          const session = sessionMap.get(r.sessionId);
+          return (
+            <button
+              key={r.sessionId}
+              onClick={() => session && onSessionClick(session)}
+              disabled={!session}
+              className="shrink-0 w-52 rounded-lg border bg-card p-3 text-left shadow-sm hover:shadow-md hover:border-primary/40 transition-all disabled:opacity-50 cursor-pointer"
+              data-testid={`rec-session-${r.sessionId}`}
+            >
+              <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                <p className="text-sm font-medium truncate leading-tight">{r.serviceName}</p>
+                <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20 shrink-0 h-4 px-1">
+                  {r.matchScore}%
+                </Badge>
+              </div>
+              <p className="text-[11px] text-muted-foreground mb-1">
+                {r.startAt ? format(new Date(r.startAt), "EEE MMM d · h:mm a") : ""}
+              </p>
+              {r.matchReasons?.length > 0 && (
+                <p className="text-[10px] text-primary truncate">{r.matchReasons[0]}</p>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Fill Campaign Button (coaches only, for open sessions) ──────────────────
 function CoachFillCampaignButton({ session }: { session: OpenSession }) {
   const { toast } = useToast();
@@ -1319,6 +1390,7 @@ export default function OpenSessionsPage() {
   });
 
   const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
+  const userId = user?.id;
 
   const { data: sessions = [], isLoading } = useQuery<OpenSession[]>({
     queryKey: ["/api/sessions/open"],
@@ -1393,6 +1465,9 @@ export default function OpenSessionsPage() {
         </div>
         {isCoach && <AddSessionDialog />}
       </div>
+
+      {/* Recommended For You (non-coach athletes only) */}
+      {!isCoach && userId && <RecommendedForYouStrip userId={userId} sessions={sessions} onSessionClick={setSelectedSession} />}
 
       {/* Filters */}
       <FilterPanel

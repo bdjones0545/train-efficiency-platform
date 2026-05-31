@@ -245,9 +245,10 @@ function UtilizationTrend({ pct }: { pct: number }) {
   return <ChevronDown className="h-4 w-4 text-red-500" />;
 }
 
-function CoachCard({ coach }: { coach: CoachCapacity }) {
+function CoachCard({ coach, intelligence }: { coach: CoachCapacity; intelligence?: CoachIntelligence }) {
   const name = `${coach.firstName || ""} ${coach.lastName || ""}`.trim() || "Coach";
   const initials = `${(coach.firstName || "")[0] || ""}${(coach.lastName || "")[0] || ""}`.toUpperCase();
+  const hasRecs = intelligence && intelligence.status !== "optimal" && intelligence.recommendations.length > 0;
 
   return (
     <Card className="p-5 space-y-4" data-testid={`card-coach-capacity-${coach.coachId}`}>
@@ -262,7 +263,10 @@ function CoachCard({ coach }: { coach: CoachCapacity }) {
             <p className="text-xs text-muted-foreground">{coach.sessionCount} session{coach.sessionCount !== 1 ? "s" : ""} scheduled</p>
           </div>
         </div>
-        <UtilizationTrend pct={coach.utilizationPct} />
+        <div className="flex items-center gap-2">
+          {intelligence && statusBadge(intelligence.status)}
+          <UtilizationTrend pct={coach.utilizationPct} />
+        </div>
       </div>
 
       <UtilizationBar pct={coach.utilizationPct} />
@@ -287,6 +291,23 @@ function CoachCard({ coach }: { coach: CoachCapacity }) {
           </p>
         </div>
       </div>
+
+      {hasRecs && (
+        <div className="border-t pt-3 space-y-1.5" data-testid={`coach-recommendations-${coach.coachId}`}>
+          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+            <Lightbulb className="h-3 w-3 text-primary" />
+            Recommendations
+          </p>
+          <ul className="space-y-1">
+            {intelligence!.recommendations.slice(0, 3).map((r, i) => (
+              <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                <span className="text-primary mt-0.5 shrink-0">→</span>
+                <span>{r}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Card>
   );
 }
@@ -303,6 +324,20 @@ export default function AdminCoachCapacityPage() {
       return res.json();
     },
   });
+
+  const { data: intelligenceData } = useQuery<{ coaches: CoachIntelligence[] }>({
+    queryKey: ["/api/scheduling/utilization-intelligence"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling/utilization-intelligence", { credentials: "include" });
+      if (!res.ok) return { coaches: [] };
+      return res.json();
+    },
+    retry: false,
+  });
+
+  const intelligenceByName = new Map<string, CoachIntelligence>(
+    (intelligenceData?.coaches || []).map(c => [c.name.toLowerCase(), c])
+  );
 
   const coaches = data?.coaches || [];
 
@@ -427,7 +462,11 @@ export default function AdminCoachCapacityPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sorted.map(coach => <CoachCard key={coach.coachId} coach={coach} />)}
+          {sorted.map(coach => {
+            const fullName = `${coach.firstName || ""} ${coach.lastName || ""}`.trim().toLowerCase();
+            const intel = intelligenceByName.get(fullName);
+            return <CoachCard key={coach.coachId} coach={coach} intelligence={intel} />;
+          })}
         </div>
       )}
 
