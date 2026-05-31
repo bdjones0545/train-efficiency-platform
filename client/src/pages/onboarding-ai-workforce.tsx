@@ -8,7 +8,7 @@
  * All selections feed into governance settings + recommended workflow templates.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -620,6 +620,10 @@ export default function OnboardingAiWorkforcePage() {
     },
     onError: () => toast({ title: "Setup failed — please try again", variant: "destructive" }),
   });
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [stepIdx]);
 
   const pct = Math.round(((stepIdx + 1) / STEPS.length) * 100);
   const step = STEPS[stepIdx];
