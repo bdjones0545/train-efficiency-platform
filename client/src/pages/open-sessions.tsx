@@ -436,9 +436,9 @@ function FilterPanel({
 
 function CompatibilityBadge({ session, userId }: { session: OpenSession; userId?: string }) {
   const { data: profile } = useQuery<any>({
-    queryKey: ["/api/scheduling-intelligence/athlete-profile"],
+    queryKey: ["/api/scheduling/athlete-profile"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/athlete-profile", { credentials: "include" });
+      const res = await fetch("/api/scheduling/athlete-profile", { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
@@ -491,9 +491,9 @@ function CompatibilityBadge({ session, userId }: { session: OpenSession; userId?
 
 function RevenuePanel({ bookingId }: { bookingId: string }) {
   const { data } = useQuery<any>({
-    queryKey: ["/api/scheduling-intelligence/session-revenue", bookingId],
+    queryKey: ["/api/scheduling/session-revenue", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/session-revenue/${bookingId}`, { credentials: "include" });
+      const res = await fetch(`/api/scheduling/session-revenue/${bookingId}`, { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
@@ -544,7 +544,7 @@ function AttendancePanel({ bookingId, participants, sessionId }: { bookingId: st
   const mark = async (participantId: string, userId: string, status: string) => {
     setSaving(s => ({ ...s, [participantId]: true }));
     try {
-      const res = await fetch(`/api/scheduling-intelligence/attendance/${bookingId}`, {
+      const res = await fetch(`/api/scheduling/attendance/${bookingId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

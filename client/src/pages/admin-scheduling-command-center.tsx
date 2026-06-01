@@ -325,9 +325,9 @@ function RevenueRecoveryPanel() {
 
 export default function AdminSchedulingCommandCenterPage() {
   const { data, isLoading } = useQuery<CommandCenterData>({
-    queryKey: ["/api/scheduling-intelligence/command-center"],
+    queryKey: ["/api/scheduling/command-center"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/command-center", { credentials: "include" });
+      const res = await fetch("/api/scheduling/command-center", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },

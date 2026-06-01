@@ -13,6 +13,14 @@ export async function registerSchedulingIntelligenceRoutes(
   app: Express,
   isAuthenticated: any
 ) {
+  // Inline role guard: admin/coach/staff-only intelligence endpoints
+  const privilegedOnly = (req: Request, res: Response, next: Function) => {
+    const role = (req as any).user?.role;
+    if (!["ADMIN", "COACH", "STAFF"].includes(role)) {
+      return res.status(403).json({ message: "Insufficient permissions — requires admin, coach, or staff role" });
+    }
+    next();
+  };
   // ─── Ensure tables exist ──────────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS scheduling_health_snapshots (
@@ -90,7 +98,7 @@ export async function registerSchedulingIntelligenceRoutes(
   `).catch(() => {});
 
   // ─── Health Score ─────────────────────────────────────────────────────────
-  app.get("/api/scheduling-intelligence/health-score", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/health-score", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -209,7 +217,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Session Performance Score ────────────────────────────────────────────
-  app.get("/api/scheduling-intelligence/session-performance/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/session-performance/:bookingId", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       const { bookingId } = req.params;
@@ -285,7 +293,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Opportunity Inbox ────────────────────────────────────────────────────
-  app.get("/api/scheduling-intelligence/opportunities", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/opportunities", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -557,7 +565,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Revenue Recovery (72h focus + AI recommendations) ────────────────────
-  app.get("/api/scheduling-intelligence/revenue-recovery", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/revenue-recovery", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -719,7 +727,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Retention Risk ───────────────────────────────────────────────────────
-  app.get("/api/scheduling-intelligence/retention-risk", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/retention-risk", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -811,7 +819,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Demand Forecast (per-session) ───────────────────────────────────────
-  app.get("/api/scheduling-intelligence/demand-forecast/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/demand-forecast/:bookingId", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       const { bookingId } = req.params;
@@ -899,7 +907,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Demand Forecast (org-level) ──────────────────────────────────────────
-  app.get("/api/scheduling-intelligence/demand-forecast", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/demand-forecast", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -995,7 +1003,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Utilization Intelligence (coach recommendations) ─────────────────────
-  app.get("/api/scheduling-intelligence/utilization-intelligence", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/utilization-intelligence", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1077,7 +1085,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Fill Campaign Generator (AI) ─────────────────────────────────────────
-  app.post("/api/scheduling-intelligence/fill-campaign/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/fill-campaign/:bookingId", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1145,7 +1153,7 @@ Return as JSON:
   });
 
   // ─── Capacity Optimization ────────────────────────────────────────────────
-  app.get("/api/scheduling-intelligence/capacity-optimization", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/capacity-optimization", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1422,7 +1430,7 @@ Return as JSON:
   });
 
   // ─── Persist fill campaign draft ──────────────────────────────────────────
-  app.post("/api/scheduling-intelligence/fill-campaign/save", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/fill-campaign/save", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1438,7 +1446,7 @@ Return as JSON:
   });
 
   // ─── Snapshot health score ────────────────────────────────────────────────
-  app.post("/api/scheduling-intelligence/health-score/snapshot", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/health-score/snapshot", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1454,7 +1462,7 @@ Return as JSON:
   });
 
   // ─── AI Scheduling Copilot ────────────────────────────────────────────────
-  app.post("/api/scheduling-intelligence/copilot", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/copilot", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1578,5 +1586,20 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
     } catch (e: any) {
       res.status(500).json({ message: "Failed to get copilot response", error: e.message });
     }
+  });
+
+  // ─── Contract Alias Routes ─────────────────────────────────────────────────
+  // These aliases ensure the API contract names are supported alongside the
+  // implementation names, without duplicating handler logic.
+
+  // performance-score is the contract name for session-performance
+  app.get("/api/scheduling-intelligence/performance-score/:bookingId", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    req.url = req.url.replace("/performance-score/", "/session-performance/");
+    res.redirect(307, `/api/scheduling-intelligence/session-performance/${req.params.bookingId}`);
+  });
+
+  // coach-utilization-intelligence is the contract name for utilization-intelligence
+  app.get("/api/scheduling-intelligence/coach-utilization-intelligence", isAuthenticated, privilegedOnly, (req: Request, res: Response) => {
+    res.redirect(307, "/api/scheduling-intelligence/utilization-intelligence" + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""));
   });
 }

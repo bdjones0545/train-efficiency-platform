@@ -688,49 +688,49 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     : (clientContextPrompts ?? CLIENT_QUICK_ACTIONS);
 
   const { data: digest, isLoading: digestLoading, refetch: refetchDigest } = useQuery<OpsDigest>({
-    queryKey: ["/api/scheduling-intelligence/operations-digest"],
+    queryKey: ["/api/scheduling/operations-digest"],
     enabled: isAuthenticated && isStaff,
     staleTime: 60 * 1000,
   });
 
   const { data: revenueSummary, isLoading: revenueLoading, isError: revenueError, refetch: refetchRevenue } = useQuery<RevenueSummary>({
-    queryKey: ["/api/scheduling-intelligence/revenue-summary"],
+    queryKey: ["/api/scheduling/revenue-summary"],
     enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: churnRisks, isLoading: churnLoading } = useQuery<ChurnRisk[]>({
-    queryKey: ["/api/scheduling-intelligence/churn-risks"],
+    queryKey: ["/api/scheduling/churn-risks"],
     enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: upsellOpps, isLoading: upsellLoading } = useQuery<UpsellOpportunity[]>({
-    queryKey: ["/api/scheduling-intelligence/upsell-opportunities"],
+    queryKey: ["/api/scheduling/upsell-opportunities"],
     enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: packageAlerts, isLoading: packagesLoading } = useQuery<SessionPackageAlert[]>({
-    queryKey: ["/api/scheduling-intelligence/session-packages"],
+    queryKey: ["/api/scheduling/session-packages"],
     enabled: isAuthenticated && isStaff && activeTab === "revenue",
     staleTime: 60 * 1000,
   });
 
   const { data: waitlist, isLoading: waitlistLoading, refetch: refetchWaitlist } = useQuery<WaitlistEntry[]>({
-    queryKey: ["/api/scheduling-intelligence/waitlist"],
+    queryKey: ["/api/scheduling/waitlist"],
     enabled: isAuthenticated && isStaff,
     staleTime: 30 * 1000,
   });
 
   const { data: actionLog } = useQuery<any[]>({
-    queryKey: ["/api/scheduling-intelligence/agent-action-log"],
+    queryKey: ["/api/scheduling/agent-action-log"],
     enabled: isAuthenticated && isStaff && activeTab === "ops",
     staleTime: 30 * 1000,
   });
 
   const { data: automationData } = useQuery<{ level: number }>({
-    queryKey: ["/api/scheduling-intelligence/automation-level"],
+    queryKey: ["/api/scheduling/automation-level"],
     enabled: isAuthenticated && isStaff,
     staleTime: 60 * 1000,
   });
@@ -744,7 +744,7 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
     activePipelineCount: number;
     estimatedPipelineValueCents: number;
   }>({
-    queryKey: ["/api/scheduling-intelligence/team-pipeline-summary"],
+    queryKey: ["/api/scheduling/team-pipeline-summary"],
     enabled: isAuthenticated && isStaff,
     staleTime: 60 * 1000,
   });
@@ -753,29 +753,29 @@ export function CoachSchedulingAgentPanel({ mode, context, onClose }: CoachSched
 
   useEffect(() => {
     if (!isAuthenticated && !authLoading) {
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/operations-digest"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/revenue-summary"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/churn-risks"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/upsell-opportunities"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/session-packages"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/waitlist"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/agent-action-log"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/automation-level"] });
-      qc.removeQueries({ queryKey: ["/api/scheduling-intelligence/team-pipeline-summary"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/operations-digest"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/revenue-summary"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/churn-risks"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/upsell-opportunities"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/session-packages"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/waitlist"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/agent-action-log"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/automation-level"] });
+      qc.removeQueries({ queryKey: ["/api/scheduling/team-pipeline-summary"] });
     }
   }, [isAuthenticated, authLoading]);
 
   const removeFromWaitlist = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/scheduling-intelligence/waitlist/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/scheduling-intelligence/waitlist"] }); toast({ title: "Removed from waitlist" }); },
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/scheduling/waitlist/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/scheduling/waitlist"] }); toast({ title: "Removed from waitlist" }); },
   });
 
   const saveAutomationLevel = async (level: number) => {
     setSavingLevel(true);
     try {
-      await apiRequest("PATCH", "/api/scheduling-intelligence/automation-level", { level });
+      await apiRequest("PATCH", "/api/scheduling/automation-level", { level });
       setAutomationLevel(level);
-      qc.invalidateQueries({ queryKey: ["/api/scheduling-intelligence/automation-level"] });
+      qc.invalidateQueries({ queryKey: ["/api/scheduling/automation-level"] });
       toast({ title: "Automation level updated" });
     } catch { toast({ title: "Failed to save", variant: "destructive" }); }
     finally { setSavingLevel(false); }

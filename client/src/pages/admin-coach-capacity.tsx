@@ -317,9 +317,9 @@ export default function AdminCoachCapacityPage() {
   const [sortBy, setSortBy] = useState<"utilization" | "revenue" | "hours" | "name">("utilization");
 
   const { data, isLoading } = useQuery<CapacityResponse>({
-    queryKey: ["/api/scheduling-intelligence/coach-capacity", period],
+    queryKey: ["/api/scheduling/coach-capacity", period],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/coach-capacity?period=${period}`, { credentials: "include" });
+      const res = await fetch(`/api/scheduling/coach-capacity?period=${period}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
