@@ -90,7 +90,7 @@ export async function registerSchedulingIntelligenceRoutes(
   `).catch(() => {});
 
   // ─── Health Score ─────────────────────────────────────────────────────────
-  app.get("/api/scheduling/health-score", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/health-score", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -171,17 +171,17 @@ export async function registerSchedulingIntelligenceRoutes(
         waitlistScore * 0.10
       );
 
-      const label = overallScore >= 90 ? "Elite" :
-                    overallScore >= 75 ? "Strong" :
-                    overallScore >= 60 ? "Moderate" : "Needs Attention";
+      const label = overallScore >= 90 ? "Excellent" :
+                    overallScore >= 75 ? "Healthy" :
+                    overallScore >= 60 ? "Needs Attention" : "Critical";
 
       const summary = overallScore >= 90
         ? "Your scheduling operation is running at peak performance."
         : overallScore >= 75
-        ? "Strong performance with minor opportunities to optimize."
+        ? "Healthy performance with minor opportunities to optimize."
         : overallScore >= 60
-        ? "Moderate health — several opportunities to improve fill rates and revenue."
-        : "Scheduling needs attention — low utilization and revenue gaps detected.";
+        ? "Needs attention — several opportunities to improve fill rates and revenue."
+        : "Critical — low utilization and significant revenue gaps detected. Immediate action recommended.";
 
       res.json({
         score: overallScore,
@@ -209,7 +209,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Session Performance Score ────────────────────────────────────────────
-  app.get("/api/scheduling/session-performance/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/session-performance/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       const { bookingId } = req.params;
@@ -258,7 +258,7 @@ export async function registerSchedulingIntelligenceRoutes(
         velocityFactor * 0.10
       );
 
-      const label = score >= 90 ? "Elite" : score >= 75 ? "Strong" : score >= 60 ? "Moderate" : "Needs Attention";
+      const label = score >= 90 ? "Excellent" : score >= 75 ? "Healthy" : score >= 60 ? "Needs Attention" : "Critical";
       const labelColor = score >= 90 ? "green" : score >= 75 ? "blue" : score >= 60 ? "yellow" : "red";
 
       res.json({
@@ -285,7 +285,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Opportunity Inbox ────────────────────────────────────────────────────
-  app.get("/api/scheduling/opportunities", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/opportunities", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -372,6 +372,7 @@ export async function registerSchedulingIntelligenceRoutes(
 
       const opportunities: any[] = [];
 
+      // ── Revenue category: fill sessions & recover cancellations ──
       lowFill.forEach((s: any) => {
         const max = parseInt(s.max_participants || 6);
         const reg = parseInt(s.registered_count || 0);
@@ -379,11 +380,17 @@ export async function registerSchedulingIntelligenceRoutes(
         const openSpots = max - reg;
         const estimatedValue = openSpots * price;
         const start = new Date(s.start_at);
-        const daysUntil = Math.ceil((start.getTime() - now.getTime()) / 86400000);
+        const hoursUntil = (start.getTime() - now.getTime()) / 3600000;
+        const daysUntil = Math.ceil(hoursUntil / 24);
+        const fillPct = max > 0 ? (reg / max) : 0;
+        // Critical: < 24h away AND under 20% fill
+        const isCritical = hoursUntil <= 24 && fillPct < 0.2;
+        const priority = isCritical ? "critical" : hoursUntil <= 48 ? "high" : daysUntil <= 5 ? "medium" : "low";
         opportunities.push({
           id: `fill-${s.id}`,
           type: "fill_session",
-          priority: daysUntil <= 2 ? "high" : daysUntil <= 5 ? "medium" : "low",
+          category: "revenue",
+          priority,
           title: `Fill ${openSpots} open spot${openSpots !== 1 ? "s" : ""} in ${s.service_name || "session"}`,
           description: `${reg}/${max} registered · ${daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `in ${daysUntil} days`} · Coach ${s.coach_first || ""} ${s.coach_last || ""}`,
           estimatedValueCents: estimatedValue,
@@ -400,13 +407,16 @@ export async function registerSchedulingIntelligenceRoutes(
         const max = parseInt(s.max_participants || 6);
         const price = parseInt(s.price_cents || 0);
         const start = new Date(s.start_at);
-        const daysUntil = Math.ceil((start.getTime() - now.getTime()) / 86400000);
+        const hoursUntil = (start.getTime() - now.getTime()) / 3600000;
+        const daysUntil = Math.ceil(hoursUntil / 24);
+        const isCritical = hoursUntil <= 24;
         opportunities.push({
           id: `cancel-${s.id}`,
           type: "recover_cancellation",
-          priority: "high",
+          category: "revenue",
+          priority: isCritical ? "critical" : "high",
           title: `Recover cancelled ${s.service_name || "session"}`,
-          description: `Slot opened up ${daysUntil === 0 ? "today" : `in ${daysUntil} day${daysUntil !== 1 ? "s" : ""}`} — consider backfilling from waitlist or inactive clients`,
+          description: `Slot opened up ${daysUntil === 0 ? "today" : `in ${daysUntil} day${daysUntil !== 1 ? "s" : ""}`} — backfill from waitlist or inactive clients`,
           estimatedValueCents: max * price,
           actionLabel: "Find Replacement",
           sessionId: s.id,
@@ -414,6 +424,7 @@ export async function registerSchedulingIntelligenceRoutes(
         });
       });
 
+      // ── Capacity category: waitlist demand ──
       waitlistSessions.forEach((s: any) => {
         const wCount = parseInt(s.waitlist_count || 0);
         const max = parseInt(s.max_participants || 6);
@@ -421,7 +432,8 @@ export async function registerSchedulingIntelligenceRoutes(
         opportunities.push({
           id: `waitlist-${s.booking_id}`,
           type: "waitlist_demand",
-          priority: wCount >= 3 ? "high" : "medium",
+          category: "capacity",
+          priority: wCount >= 5 ? "critical" : wCount >= 3 ? "high" : "medium",
           title: `${wCount} athlete${wCount !== 1 ? "s" : ""} waiting for ${s.service_name || "session"}`,
           description: `Session is at ${reg}/${max} capacity with active demand — consider adding another session`,
           estimatedValueCents: 0,
@@ -431,13 +443,15 @@ export async function registerSchedulingIntelligenceRoutes(
         });
       });
 
+      // ── Retention category: inactive clients ──
       inactive.forEach((client: any) => {
         const lastBooking = new Date(client.last_booking);
         const daysInactive = Math.floor((now.getTime() - lastBooking.getTime()) / 86400000);
         opportunities.push({
           id: `reactivate-${client.id}`,
           type: "reactivation",
-          priority: daysInactive >= 60 ? "high" : "medium",
+          category: "retention",
+          priority: daysInactive >= 90 ? "critical" : daysInactive >= 60 ? "high" : "medium",
           title: `Reactivate ${client.first_name || ""} ${client.last_name || ""}`,
           description: `${daysInactive} days since last booking · ${client.total_bookings} total sessions`,
           estimatedValueCents: 7000,
@@ -447,10 +461,67 @@ export async function registerSchedulingIntelligenceRoutes(
         });
       });
 
-      opportunities.sort((a, b) => {
-        const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
-        return (order[a.priority] ?? 2) - (order[b.priority] ?? 2);
-      });
+      // ── Coach category: utilization-derived opportunities (from utilization-intelligence data) ──
+      try {
+        const coachUtilRaw = await db.execute(sql`
+          SELECT cp.id, cp.user_id, u.first_name, u.last_name,
+                 COUNT(DISTINCT b.id) as session_count_week
+          FROM coach_profiles cp
+          LEFT JOIN users u ON cp.user_id = u.id
+          LEFT JOIN bookings b ON b.coach_id = cp.id
+            AND b.start_at >= ${new Date(now.getTime() - 7 * 86400000).toISOString()}
+            AND b.start_at <= ${new Date(now.getTime() + 7 * 86400000).toISOString()}
+            AND b.status IN ('CONFIRMED', 'COMPLETED')
+          WHERE cp.organization_id = ${orgId}
+          GROUP BY cp.id, cp.user_id, u.first_name, u.last_name
+        `).catch(() => ({ rows: [] }));
+
+        const coachUtil = getRows(coachUtilRaw);
+        coachUtil.forEach((c: any) => {
+          const sessions = parseInt(c.session_count_week || 0);
+          const name = `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Coach";
+          if (sessions === 0) {
+            opportunities.push({
+              id: `coach-inactive-${c.id}`,
+              type: "coach_underutilized",
+              category: "coach",
+              priority: "high",
+              title: `Coach ${name} has no sessions this week`,
+              description: "Inactive coach — consider scheduling sessions to maximize revenue capacity",
+              estimatedValueCents: 0,
+              actionLabel: "Schedule Sessions",
+              coachId: c.id,
+            });
+          } else if (sessions <= 2) {
+            opportunities.push({
+              id: `coach-low-${c.id}`,
+              type: "coach_underutilized",
+              category: "coach",
+              priority: "medium",
+              title: `Coach ${name} is underutilized (${sessions} session${sessions !== 1 ? "s" : ""}/week)`,
+              description: "Low session count — increasing to 4-6 sessions/week can significantly boost revenue",
+              estimatedValueCents: 0,
+              actionLabel: "Add Sessions",
+              coachId: c.id,
+            });
+          } else if (sessions >= 10) {
+            opportunities.push({
+              id: `coach-overloaded-${c.id}`,
+              type: "coach_overloaded",
+              category: "coach",
+              priority: "high",
+              title: `Coach ${name} may be overloaded (${sessions} sessions/week)`,
+              description: "High session volume — review workload to prevent burnout and maintain quality",
+              estimatedValueCents: 0,
+              actionLabel: "Review Schedule",
+              coachId: c.id,
+            });
+          }
+        });
+      } catch { /* non-critical */ }
+
+      const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+      opportunities.sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
 
       // Persist top opportunities as a snapshot
       await Promise.all(
@@ -467,14 +538,15 @@ export async function registerSchedulingIntelligenceRoutes(
         opportunities,
         counts: {
           total: opportunities.length,
+          critical: opportunities.filter(o => o.priority === "critical").length,
           high: opportunities.filter(o => o.priority === "high").length,
           medium: opportunities.filter(o => o.priority === "medium").length,
           low: opportunities.filter(o => o.priority === "low").length,
-          byType: {
-            fill_session: opportunities.filter(o => o.type === "fill_session").length,
-            recover_cancellation: opportunities.filter(o => o.type === "recover_cancellation").length,
-            waitlist_demand: opportunities.filter(o => o.type === "waitlist_demand").length,
-            reactivation: opportunities.filter(o => o.type === "reactivation").length,
+          byCategory: {
+            revenue: opportunities.filter(o => o.category === "revenue").length,
+            capacity: opportunities.filter(o => o.category === "capacity").length,
+            retention: opportunities.filter(o => o.category === "retention").length,
+            coach: opportunities.filter(o => o.category === "coach").length,
           },
         },
         estimatedTotalValueCents: opportunities.reduce((s, o) => s + (o.estimatedValueCents || 0), 0),
@@ -485,7 +557,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Revenue Recovery (72h focus + AI recommendations) ────────────────────
-  app.get("/api/scheduling/revenue-recovery", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/revenue-recovery", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -647,7 +719,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Retention Risk ───────────────────────────────────────────────────────
-  app.get("/api/scheduling/retention-risk", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/retention-risk", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -739,7 +811,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Demand Forecast (per-session) ───────────────────────────────────────
-  app.get("/api/scheduling/demand-forecast/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/demand-forecast/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       const { bookingId } = req.params;
@@ -827,7 +899,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Demand Forecast (org-level) ──────────────────────────────────────────
-  app.get("/api/scheduling/demand-forecast", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/demand-forecast", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -923,7 +995,7 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Utilization Intelligence (coach recommendations) ─────────────────────
-  app.get("/api/scheduling/utilization-intelligence", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/utilization-intelligence", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1005,12 +1077,14 @@ export async function registerSchedulingIntelligenceRoutes(
   });
 
   // ─── Fill Campaign Generator (AI) ─────────────────────────────────────────
-  app.post("/api/scheduling/fill-campaign", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/fill-campaign/:bookingId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
-      const { sessionId, sessionName, startAt, openSpots, coachName, orgName } = req.body;
+      const { bookingId } = req.params;
+      const { sessionName, startAt, openSpots, coachName, orgName } = req.body;
+      const sessionId = bookingId || req.body.sessionId;
 
       const start = startAt ? new Date(startAt) : new Date();
       const dateStr = start.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
@@ -1071,7 +1145,7 @@ Return as JSON:
   });
 
   // ─── Capacity Optimization ────────────────────────────────────────────────
-  app.get("/api/scheduling/capacity-optimization", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/scheduling-intelligence/capacity-optimization", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1226,21 +1300,18 @@ Return as JSON:
     }
   });
 
-  // ─── Athlete Session Recommendations ──────────────────────────────────────
-  app.get("/api/scheduling/athlete-recommendations/:userId", isAuthenticated, async (req: Request, res: Response) => {
+  // ─── Athlete Session Recommendations (auth-scoped) ────────────────────────
+  app.get("/api/scheduling-intelligence/athlete-recommendations", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       const authUserId = (req as any).user?.id;
       const authRole = (req as any).user?.role;
-      const { userId } = req.params;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
-      // IDOR guard: non-admin/coach users can only query their own recommendations
+      // Auth-scoped: default to the authenticated user; privileged roles may override with ?userId=
       const isPrivileged = authRole === "ADMIN" || authRole === "COACH" || authRole === "STAFF";
-      const targetUserId = isPrivileged ? userId : authUserId;
-      if (!isPrivileged && userId !== authUserId) {
-        return res.status(403).json({ message: "Forbidden" });
-      }
+      const requestedUserId = req.query.userId as string | undefined;
+      const targetUserId = isPrivileged && requestedUserId ? requestedUserId : authUserId;
 
       const now = new Date();
       const next14d = new Date(now);
@@ -1351,7 +1422,7 @@ Return as JSON:
   });
 
   // ─── Persist fill campaign draft ──────────────────────────────────────────
-  app.post("/api/scheduling/fill-campaign/save", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/fill-campaign/save", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1367,7 +1438,7 @@ Return as JSON:
   });
 
   // ─── Snapshot health score ────────────────────────────────────────────────
-  app.post("/api/scheduling/health-score/snapshot", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/health-score/snapshot", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1383,7 +1454,7 @@ Return as JSON:
   });
 
   // ─── AI Scheduling Copilot ────────────────────────────────────────────────
-  app.post("/api/scheduling/copilot", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/scheduling-intelligence/copilot", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = (req as any).user?.organizationId;
       if (!orgId) return res.status(403).json({ message: "No org" });

@@ -889,7 +889,7 @@ export default function SchedulingPage() {
   const orgId = profile?.organizationId;
 
   const { data: bookings = [], isLoading } = useQuery<BookingWithDetails[]>({
-    queryKey: ["/api/scheduling/bookings"],
+    queryKey: ["/api/scheduling-intelligence/bookings"],
   });
 
   const { data: redemptions = [] } = useQuery<{ id: string; bookingId: string; redeemedAt: string | null; amountCents: number }[]>({
@@ -912,9 +912,9 @@ export default function SchedulingPage() {
   // ── Mutations ──
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("PATCH", `/api/scheduling/bookings/${id}/status`, { status }),
+      apiRequest("PATCH", `/api/scheduling-intelligence/bookings/${id}/status`, { status }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduling-intelligence/bookings"] });
       toast({ title: "Booking updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -922,9 +922,9 @@ export default function SchedulingPage() {
 
   const rescheduleMutation = useMutation({
     mutationFn: ({ id, startAt, endAt }: { id: string; startAt: string; endAt: string }) =>
-      apiRequest("PATCH", `/api/scheduling/bookings/${id}`, { startAt, endAt }),
+      apiRequest("PATCH", `/api/scheduling-intelligence/bookings/${id}`, { startAt, endAt }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduling-intelligence/bookings"] });
       setRescheduleBooking(null);
       setRescheduleDate(undefined);
       setRescheduleStartTime("09:00");
@@ -934,9 +934,9 @@ export default function SchedulingPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/scheduling/bookings", data),
+    mutationFn: (data: any) => apiRequest("POST", "/api/scheduling-intelligence/bookings", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduling-intelligence/bookings"] });
       setCreateOpen(false);
       setCreateFormKey(k => k + 1);
       toast({ title: "Session scheduled", description: "The session has been added to the schedule." });

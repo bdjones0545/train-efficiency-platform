@@ -56,19 +56,19 @@ export default function AdminDashboardPage() {
   const { data: allCashouts } = useQuery<CashoutWithCoach[]>({ queryKey: ["/api/admin/cashouts"] });
 
   const { data: revQuality, isLoading: revQualityLoading } = useQuery<any>({
-    queryKey: ["/api/scheduling/revenue-quality"],
+    queryKey: ["/api/scheduling-intelligence/revenue-quality"],
   });
   const { data: sessionMix, isLoading: sessionMixLoading } = useQuery<any>({
-    queryKey: ["/api/scheduling/session-mix"],
+    queryKey: ["/api/scheduling-intelligence/session-mix"],
   });
   const { data: coachProfitability, isLoading: coachProfLoading } = useQuery<any>({
-    queryKey: ["/api/scheduling/coach-profitability"],
+    queryKey: ["/api/scheduling-intelligence/coach-profitability"],
   });
   const { data: revPressure, isLoading: revPressureLoading } = useQuery<any>({
-    queryKey: ["/api/scheduling/revenue-pressure"],
+    queryKey: ["/api/scheduling-intelligence/revenue-pressure"],
   });
   const { data: lostRevenue, isLoading: lostRevenueLoading } = useQuery<any>({
-    queryKey: ["/api/scheduling/lost-revenue"],
+    queryKey: ["/api/scheduling-intelligence/lost-revenue"],
   });
 
   const [newServiceName, setNewServiceName] = useState("");

@@ -49,7 +49,7 @@ export function CoachAgentLauncher() {
   const isStaff = userRole === "COACH" || userRole === "ADMIN" || userRole === "STAFF";
 
   const { data: digest } = useQuery<OpsDigest>({
-    queryKey: ["/api/scheduling/operations-digest"],
+    queryKey: ["/api/scheduling-intelligence/operations-digest"],
     enabled: isStaff,
     staleTime: 5 * 60 * 1000,
     refetchInterval: 10 * 60 * 1000,

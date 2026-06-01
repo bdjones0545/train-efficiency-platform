@@ -9,15 +9,16 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   Inbox, TrendingUp, Users, AlertCircle, DollarSign,
   Clock, RefreshCw, ChevronRight, Zap, UserCheck,
-  BarChart3, Target, Calendar
+  BarChart3, Target, Calendar, User
 } from "lucide-react";
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 
 interface Opportunity {
   id: string;
-  type: "fill_session" | "recover_cancellation" | "waitlist_demand" | "reactivation";
-  priority: "high" | "medium" | "low";
+  type: string;
+  category: "revenue" | "capacity" | "retention" | "coach";
+  priority: "critical" | "high" | "medium" | "low";
   title: string;
   description: string;
   estimatedValueCents: number;
@@ -25,6 +26,7 @@ interface Opportunity {
   sessionId?: string;
   sessionStart?: string;
   clientId?: string;
+  coachId?: string;
   openSpots?: number;
   registered?: number;
   capacity?: number;
@@ -36,10 +38,16 @@ interface OpportunityData {
   opportunities: Opportunity[];
   counts: {
     total: number;
+    critical: number;
     high: number;
     medium: number;
     low: number;
-    byType: Record<string, number>;
+    byCategory: {
+      revenue: number;
+      capacity: number;
+      retention: number;
+      coach: number;
+    };
   };
   estimatedTotalValueCents: number;
 }
@@ -53,29 +61,30 @@ interface CampaignDraft {
 
 function priorityBadge(priority: string) {
   switch (priority) {
+    case "critical": return <Badge className="text-xs bg-red-700/15 text-red-800 dark:text-red-300 border-red-700/30">Critical</Badge>;
     case "high": return <Badge className="text-xs bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20">High</Badge>;
     case "medium": return <Badge className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">Medium</Badge>;
     default: return <Badge className="text-xs bg-muted text-muted-foreground">Low</Badge>;
   }
 }
 
-function typeIcon(type: string) {
-  switch (type) {
-    case "fill_session": return <Target className="h-4 w-4 text-blue-500" />;
-    case "recover_cancellation": return <RefreshCw className="h-4 w-4 text-red-500" />;
-    case "waitlist_demand": return <Users className="h-4 w-4 text-purple-500" />;
-    case "reactivation": return <UserCheck className="h-4 w-4 text-green-500" />;
+function categoryIcon(category: string) {
+  switch (category) {
+    case "revenue": return <DollarSign className="h-4 w-4 text-green-500" />;
+    case "capacity": return <BarChart3 className="h-4 w-4 text-purple-500" />;
+    case "retention": return <UserCheck className="h-4 w-4 text-blue-500" />;
+    case "coach": return <User className="h-4 w-4 text-orange-500" />;
     default: return <Zap className="h-4 w-4 text-muted-foreground" />;
   }
 }
 
-function typeLabel(type: string) {
-  switch (type) {
-    case "fill_session": return "Fill Session";
-    case "recover_cancellation": return "Recover Cancellation";
-    case "waitlist_demand": return "Waitlist Demand";
-    case "reactivation": return "Client Reactivation";
-    default: return type;
+function categoryLabel(category: string) {
+  switch (category) {
+    case "revenue": return "Revenue";
+    case "capacity": return "Capacity";
+    case "retention": return "Retention";
+    case "coach": return "Coach";
+    default: return category;
   }
 }
 
@@ -91,8 +100,8 @@ function FillCampaignDialog({
 
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/scheduling/fill-campaign", {
-        sessionId: opportunity.sessionId,
+      const bookingId = opportunity.sessionId || "unknown";
+      const res = await apiRequest("POST", `/api/scheduling-intelligence/fill-campaign/${bookingId}`, {
         sessionName: opportunity.title.replace(/^Fill \d+ open spot[s]? in /, ""),
         startAt: opportunity.sessionStart,
         openSpots: opportunity.openSpots,
@@ -191,13 +200,15 @@ function OpportunityCard({
     ? `$${Math.round(opp.estimatedValueCents / 100).toLocaleString()}`
     : null;
 
+  const isCritical = opp.priority === "critical";
+
   return (
     <Card
-      className="p-4 space-y-3 hover:shadow-md transition-shadow"
+      className={`p-4 space-y-3 hover:shadow-md transition-shadow ${isCritical ? "border-red-500/40 bg-red-500/5" : ""}`}
       data-testid={`card-opportunity-${opp.id}`}
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 p-1.5 rounded-md bg-muted">{typeIcon(opp.type)}</div>
+        <div className="mt-0.5 p-1.5 rounded-md bg-muted">{categoryIcon(opp.category)}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm">{opp.title}</p>
@@ -208,7 +219,7 @@ function OpportunityCard({
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
-        <Badge variant="outline" className="text-xs">{typeLabel(opp.type)}</Badge>
+        <Badge variant="outline" className="text-xs">{categoryLabel(opp.category)}</Badge>
         {valueDisplay && (
           <div className="flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
             <DollarSign className="h-3 w-3" />
@@ -221,7 +232,7 @@ function OpportunityCard({
             {format(parseISO(opp.sessionStart), "MMM d")}
           </span>
         )}
-        {opp.daysInactive && (
+        {opp.daysInactive != null && (
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <Clock className="h-3 w-3" />
             {opp.daysInactive}d inactive
@@ -229,7 +240,7 @@ function OpportunityCard({
         )}
         <Button
           size="sm"
-          variant="outline"
+          variant={isCritical ? "default" : "outline"}
           className="ml-auto h-7 text-xs"
           onClick={() => onAction(opp)}
           data-testid={`button-opportunity-action-${opp.id}`}
@@ -244,13 +255,13 @@ function OpportunityCard({
 
 export default function AdminSchedulingOpportunityInboxPage() {
   const [activeOpp, setActiveOpp] = useState<Opportunity | null>(null);
-  const [filterType, setFilterType] = useState<string>("all");
+  const [activeCategory, setActiveCategory] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
 
   const { data, isLoading, refetch } = useQuery<OpportunityData>({
-    queryKey: ["/api/scheduling/opportunities"],
+    queryKey: ["/api/scheduling-intelligence/opportunities"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/opportunities", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/opportunities", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -258,19 +269,28 @@ export default function AdminSchedulingOpportunityInboxPage() {
   });
 
   const handleAction = (opp: Opportunity) => {
-    if (opp.type === "fill_session") {
+    if (opp.category === "revenue" && opp.type === "fill_session") {
       setActiveOpp(opp);
     }
   };
 
   const opportunities = data?.opportunities ?? [];
   const filtered = opportunities.filter(o => {
-    if (filterType !== "all" && o.type !== filterType) return false;
+    if (activeCategory !== "all" && o.category !== activeCategory) return false;
     if (filterPriority !== "all" && o.priority !== filterPriority) return false;
     return true;
   });
 
   const totalValue = data?.estimatedTotalValueCents ?? 0;
+  const criticalCount = data?.counts.critical ?? 0;
+
+  const categoryTabs = [
+    { key: "all", label: "All", count: data?.counts.total ?? 0, icon: Inbox },
+    { key: "revenue", label: "Revenue", count: data?.counts.byCategory?.revenue ?? 0, icon: DollarSign },
+    { key: "capacity", label: "Capacity", count: data?.counts.byCategory?.capacity ?? 0, icon: BarChart3 },
+    { key: "retention", label: "Retention", count: data?.counts.byCategory?.retention ?? 0, icon: Users },
+    { key: "coach", label: "Coach", count: data?.counts.byCategory?.coach ?? 0, icon: User },
+  ];
 
   return (
     <div className="space-y-6">
@@ -280,9 +300,14 @@ export default function AdminSchedulingOpportunityInboxPage() {
           <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
             <Inbox className="h-6 w-6 text-primary" />
             Opportunity Inbox
+            {criticalCount > 0 && (
+              <Badge className="text-xs bg-red-700/15 text-red-800 dark:text-red-300 border-red-700/30 ml-1">
+                {criticalCount} Critical
+              </Badge>
+            )}
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            AI-detected scheduling opportunities ranked by revenue impact
+            AI-detected scheduling opportunities ranked by priority and revenue impact
           </p>
         </div>
         <Button
@@ -306,9 +331,9 @@ export default function AdminSchedulingOpportunityInboxPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: "Total Opportunities", value: data?.counts.total ?? 0, icon: Inbox, color: "text-primary" },
-            { label: "High Priority", value: data?.counts.high ?? 0, icon: AlertCircle, color: "text-red-600 dark:text-red-400" },
+            { label: "Critical + High", value: (data?.counts.critical ?? 0) + (data?.counts.high ?? 0), icon: AlertCircle, color: "text-red-600 dark:text-red-400" },
             { label: "Est. Revenue Gap", value: `$${Math.round(totalValue / 100).toLocaleString()}`, icon: DollarSign, color: "text-green-600 dark:text-green-400" },
-            { label: "Sessions to Fill", value: data?.counts.byType.fill_session ?? 0, icon: Target, color: "text-blue-600 dark:text-blue-400" },
+            { label: "Revenue Opps", value: data?.counts.byCategory?.revenue ?? 0, icon: Target, color: "text-blue-600 dark:text-blue-400" },
           ].map(stat => (
             <Card key={stat.label} className="p-4">
               <div className="flex items-center gap-2 text-muted-foreground mb-1">
@@ -321,45 +346,41 @@ export default function AdminSchedulingOpportunityInboxPage() {
         </div>
       )}
 
-      {/* Type breakdown */}
+      {/* Category Tabs */}
       {data && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground font-medium">Filter:</span>
-          {[
-            { key: "all", label: `All (${data.counts.total})` },
-            { key: "fill_session", label: `Fill Session (${data.counts.byType.fill_session ?? 0})` },
-            { key: "recover_cancellation", label: `Cancellations (${data.counts.byType.recover_cancellation ?? 0})` },
-            { key: "waitlist_demand", label: `Waitlist (${data.counts.byType.waitlist_demand ?? 0})` },
-            { key: "reactivation", label: `Reactivation (${data.counts.byType.reactivation ?? 0})` },
-          ].map(f => (
-            <button
-              key={f.key}
-              onClick={() => setFilterType(f.key)}
-              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                filterType === f.key
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
-              }`}
-              data-testid={`filter-type-${f.key}`}
-            >
-              {f.label}
-            </button>
-          ))}
-          <div className="ml-auto flex gap-1">
-            {["all", "high", "medium", "low"].map(p => (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            {categoryTabs.map(tab => (
               <button
-                key={p}
-                onClick={() => setFilterPriority(p)}
-                className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors ${
-                  filterPriority === p
+                key={tab.key}
+                onClick={() => setActiveCategory(tab.key)}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                  activeCategory === tab.key
                     ? "bg-primary text-primary-foreground border-primary"
                     : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
                 }`}
-                data-testid={`filter-priority-${p}`}
+                data-testid={`filter-category-${tab.key}`}
               >
-                {p === "all" ? "All Priority" : p.charAt(0).toUpperCase() + p.slice(1)}
+                <tab.icon className="h-3 w-3" />
+                {tab.label} ({tab.count})
               </button>
             ))}
+            <div className="ml-auto flex gap-1">
+              {["all", "critical", "high", "medium", "low"].map(p => (
+                <button
+                  key={p}
+                  onClick={() => setFilterPriority(p)}
+                  className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors ${
+                    filterPriority === p
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
+                  }`}
+                  data-testid={`filter-priority-${p}`}
+                >
+                  {p === "all" ? "All Priority" : p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -374,7 +395,7 @@ export default function AdminSchedulingOpportunityInboxPage() {
           <Inbox className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
           <p className="font-medium">No opportunities found</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {filterType !== "all" || filterPriority !== "all"
+            {activeCategory !== "all" || filterPriority !== "all"
               ? "Try clearing filters."
               : "Your scheduling is looking great — no gaps detected right now."}
           </p>
@@ -391,7 +412,7 @@ export default function AdminSchedulingOpportunityInboxPage() {
         Auto-refreshes every 2 minutes · Showing {filtered.length} of {opportunities.length} opportunities
       </p>
 
-      {activeOpp && activeOpp.type === "fill_session" && (
+      {activeOpp && (
         <FillCampaignDialog opportunity={activeOpp} onClose={() => setActiveOpp(null)} />
       )}
     </div>

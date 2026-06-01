@@ -39,9 +39,9 @@ function formatMoney(cents: number) {
 // ─── Top-3 Opportunity Preview Strip ─────────────────────────────────────────
 function OpportunityPreviewStrip() {
   const { data, isLoading } = useQuery<{ opportunities: any[] }>({
-    queryKey: ["/api/scheduling/opportunities"],
+    queryKey: ["/api/scheduling-intelligence/opportunities"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/opportunities", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/opportunities", { credentials: "include" });
       if (!res.ok) return { opportunities: [] };
       return res.json();
     },
@@ -109,9 +109,9 @@ function UtilBadge({ pct }: { pct: number }) {
 
 function SessionPerformanceScore({ bookingId }: { bookingId: string }) {
   const { data } = useQuery<{ score: number; label: string } | null>({
-    queryKey: ["/api/scheduling/session-performance", bookingId],
+    queryKey: ["/api/scheduling-intelligence/session-performance", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling/session-performance/${bookingId}`, { credentials: "include" });
+      const res = await fetch(`/api/scheduling-intelligence/session-performance/${bookingId}`, { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
@@ -200,9 +200,9 @@ interface RevenueRecovery {
 
 function HealthScorePanel() {
   const { data, isLoading } = useQuery<HealthScore>({
-    queryKey: ["/api/scheduling/health-score"],
+    queryKey: ["/api/scheduling-intelligence/health-score"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/health-score", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/health-score", { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -270,9 +270,9 @@ function HealthScorePanel() {
 
 function RevenueRecoveryPanel() {
   const { data, isLoading } = useQuery<RevenueRecovery>({
-    queryKey: ["/api/scheduling/revenue-recovery"],
+    queryKey: ["/api/scheduling-intelligence/revenue-recovery"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/revenue-recovery", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/revenue-recovery", { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -325,9 +325,9 @@ function RevenueRecoveryPanel() {
 
 export default function AdminSchedulingCommandCenterPage() {
   const { data, isLoading } = useQuery<CommandCenterData>({
-    queryKey: ["/api/scheduling/command-center"],
+    queryKey: ["/api/scheduling-intelligence/command-center"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/command-center", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/command-center", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },

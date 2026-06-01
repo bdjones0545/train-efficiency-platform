@@ -60,9 +60,9 @@ const SUGGESTED_QUESTIONS = [
 
 function HealthScoreWidget() {
   const { data, isLoading } = useQuery<HealthScore>({
-    queryKey: ["/api/scheduling/health-score"],
+    queryKey: ["/api/scheduling-intelligence/health-score"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/health-score", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/health-score", { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -201,7 +201,7 @@ export default function AdminSchedulingCopilotPage() {
   const askMutation = useMutation({
     mutationFn: async (question: string) => {
       const history = messages.slice(1).map(m => ({ role: m.role, content: m.content }));
-      const res = await apiRequest("POST", "/api/scheduling/copilot", {
+      const res = await apiRequest("POST", "/api/scheduling-intelligence/copilot", {
         question,
         conversationHistory: history,
       });

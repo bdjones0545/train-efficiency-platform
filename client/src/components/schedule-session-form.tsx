@@ -201,7 +201,7 @@ export function ScheduleSessionForm({
         if (resolvedCoachId) params.set("coachId", resolvedCoachId);
         if (excludeBookingId) params.set("excludeBookingId", excludeBookingId);
 
-        const res = await fetch(`/api/scheduling/check-availability?${params}`, {
+        const res = await fetch(`/api/scheduling-intelligence/check-availability?${params}`, {
           credentials: "include",
         });
         if (!res.ok) {

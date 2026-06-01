@@ -17,9 +17,9 @@ import {
 // ─── Health Score Banner ─────────────────────────────────────────────────────
 function HealthScoreBanner() {
   const { data, isLoading } = useQuery<{ score: number; label: string; summary: string; breakdown: any }>({
-    queryKey: ["/api/scheduling/health-score"],
+    queryKey: ["/api/scheduling-intelligence/health-score"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/health-score", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/health-score", { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
@@ -57,9 +57,9 @@ function HealthScoreBanner() {
 // ─── Retention Risk Panel ────────────────────────────────────────────────────
 function RetentionRiskPanel() {
   const { data, isLoading } = useQuery<{ atRisk: any[]; summary: any }>({
-    queryKey: ["/api/scheduling/retention-risk"],
+    queryKey: ["/api/scheduling-intelligence/retention-risk"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/retention-risk", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/retention-risk", { credentials: "include" });
       if (!res.ok) return { atRisk: [], summary: {} };
       return res.json();
     },
@@ -138,9 +138,9 @@ function statusBadge(status: string) {
 
 function UtilizationIntelligencePanel() {
   const { data, isLoading } = useQuery<{ coaches: CoachIntelligence[] }>({
-    queryKey: ["/api/scheduling/utilization-intelligence"],
+    queryKey: ["/api/scheduling-intelligence/utilization-intelligence"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/utilization-intelligence", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/utilization-intelligence", { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -317,18 +317,18 @@ export default function AdminCoachCapacityPage() {
   const [sortBy, setSortBy] = useState<"utilization" | "revenue" | "hours" | "name">("utilization");
 
   const { data, isLoading } = useQuery<CapacityResponse>({
-    queryKey: ["/api/scheduling/coach-capacity", period],
+    queryKey: ["/api/scheduling-intelligence/coach-capacity", period],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling/coach-capacity?period=${period}`, { credentials: "include" });
+      const res = await fetch(`/api/scheduling-intelligence/coach-capacity?period=${period}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
   });
 
   const { data: intelligenceData } = useQuery<{ coaches: CoachIntelligence[] }>({
-    queryKey: ["/api/scheduling/utilization-intelligence"],
+    queryKey: ["/api/scheduling-intelligence/utilization-intelligence"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/utilization-intelligence", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/utilization-intelligence", { credentials: "include" });
       if (!res.ok) return { coaches: [] };
       return res.json();
     },
