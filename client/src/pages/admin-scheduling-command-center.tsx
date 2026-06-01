@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import {
   Calendar, Clock, Users, DollarSign, TrendingUp, AlertCircle,
   CheckCircle2, Clock3, BarChart3, ArrowUpRight, Activity, Flame,
-  Sparkles, Target, RefreshCw, ChevronRight, Zap
+  Sparkles, Target, RefreshCw, ChevronRight, Zap, ChevronDown, Lightbulb
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
+import { useState } from "react";
 
 interface CommandCenterData {
   todaySessions: number;
@@ -132,6 +133,35 @@ function SessionPerformanceScore({ bookingId }: { bookingId: string }) {
   );
 }
 
+function DemandForecastBadge({ bookingId }: { bookingId: string }) {
+  const { data } = useQuery<{ predictedFillPct: number; predictedRevenueCents: number; confidence: string } | null>({
+    queryKey: ["/api/scheduling-intelligence/demand-forecast", bookingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/scheduling-intelligence/demand-forecast/${bookingId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    retry: false,
+    staleTime: 600000,
+  });
+  if (!data) return null;
+  const pct = data.predictedFillPct;
+  const rev = data.predictedRevenueCents > 0 ? `$${Math.round(data.predictedRevenueCents / 100)}` : null;
+  const confColor = data.confidence === "high" ? "text-green-600 dark:text-green-400"
+    : data.confidence === "medium" ? "text-yellow-600 dark:text-yellow-400"
+    : "text-muted-foreground";
+  return (
+    <div className="flex items-center gap-1 mt-0.5" data-testid={`demand-forecast-${bookingId}`}>
+      <TrendingUp className="h-2.5 w-2.5 text-muted-foreground" />
+      <span className="text-[10px] text-muted-foreground">
+        Forecast: <span className="font-medium">{pct}% fill</span>
+        {rev && <span> · {rev} exp.</span>}
+        {" · "}<span className={`${confColor}`}>{data.confidence} confidence</span>
+      </span>
+    </div>
+  );
+}
+
 function SessionRow({ session }: { session: any }) {
   const start = session.start_at ? new Date(session.start_at) : null;
   const reg = parseInt(session.registered_count || 0);
@@ -148,6 +178,7 @@ function SessionRow({ session }: { session: any }) {
           {session.location && <span>· {session.location}</span>}
         </div>
         {session.id && <SessionPerformanceScore bookingId={session.id} />}
+        {session.id && <DemandForecastBadge bookingId={session.id} />}
       </div>
       <div className="text-right shrink-0">
         <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
@@ -193,9 +224,70 @@ interface HealthScore {
   metrics: { avgUtilization: number; revenueCapturePct: number; cancelRate: number; waitlistCount: number; activeSessionsThisWeek: number };
 }
 
+interface RevenueRecoveryGap {
+  sessionId: string;
+  serviceName: string;
+  startAt: string;
+  openSpots: number;
+  lostRevenueCents: number;
+  utilizationPct: number;
+  isUrgent?: boolean;
+  urgencyLabel?: string | null;
+  recommendations?: { action: string; rationale: string; impact: string }[];
+}
+
 interface RevenueRecovery {
-  summary: { totalLostRevenueCents: number; totalRecoverableRevenueCents: number; sessionsWithGaps: number };
-  gaps: { sessionId: string; serviceName: string; startAt: string; openSpots: number; lostRevenueCents: number; utilizationPct: number }[];
+  summary: { totalLostRevenueCents: number; totalRecoverableRevenueCents: number; sessionsWithGaps: number; urgentSessions: number };
+  gaps: RevenueRecoveryGap[];
+}
+
+function RevenueRecoveryGapCard({ gap }: { gap: RevenueRecoveryGap }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasRecs = gap.recommendations && gap.recommendations.length > 0;
+  const impactColor = (impact: string) =>
+    impact === "high" ? "text-red-700 dark:text-red-400" :
+    impact === "medium" ? "text-yellow-700 dark:text-yellow-400" : "text-muted-foreground";
+
+  return (
+    <div className={`py-2 border-b last:border-b-0 ${gap.isUrgent ? "bg-red-500/5 -mx-1 px-1 rounded" : ""}`}>
+      <div className="flex items-center gap-2 text-sm">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="font-medium truncate text-xs">{gap.serviceName}</p>
+            {gap.urgencyLabel && (
+              <Badge className="text-[10px] bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20 h-4 px-1">{gap.urgencyLabel}</Badge>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground">{gap.openSpots} open spots · {gap.utilizationPct}% full</p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-xs font-semibold text-red-600 dark:text-red-400">-${Math.round(gap.lostRevenueCents / 100)}</span>
+          {hasRecs && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+              data-testid={`btn-expand-recs-${gap.sessionId}`}
+            >
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+            </button>
+          )}
+        </div>
+      </div>
+      {expanded && hasRecs && (
+        <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-primary/20">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <Lightbulb className="h-3 w-3" />AI Recommendations
+          </p>
+          {gap.recommendations!.map((rec, i) => (
+            <div key={i} className="space-y-0.5">
+              <p className="text-[11px] font-medium">{rec.action}</p>
+              <p className="text-[10px] text-muted-foreground">{rec.rationale} · <span className={impactColor(rec.impact)}>{rec.impact} impact</span></p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function HealthScorePanel() {
@@ -281,7 +373,7 @@ function RevenueRecoveryPanel() {
   if (isLoading) return <Skeleton className="h-36" />;
   if (!data || data.gaps.length === 0) return null;
 
-  const { totalLostRevenueCents, totalRecoverableRevenueCents, sessionsWithGaps } = data.summary;
+  const { totalLostRevenueCents, totalRecoverableRevenueCents, sessionsWithGaps, urgentSessions } = data.summary;
 
   return (
     <Card className="p-4 space-y-3" data-testid="panel-revenue-recovery">
@@ -289,6 +381,9 @@ function RevenueRecoveryPanel() {
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-orange-500" />
           <p className="font-semibold text-sm">Revenue Recovery</p>
+          {urgentSessions > 0 && (
+            <Badge className="text-[10px] bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20 h-4 px-1.5">{urgentSessions} urgent</Badge>
+          )}
         </div>
         <Link href="/admin/scheduling-opportunity-inbox">
           <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
@@ -308,17 +403,16 @@ function RevenueRecoveryPanel() {
           <p className="text-[10px] text-muted-foreground">with outreach</p>
         </div>
       </div>
-      {data.gaps.slice(0, 3).map(g => (
-        <div key={g.sessionId} className="flex items-center gap-2 py-1.5 border-b last:border-b-0 text-sm">
-          <div className="flex-1 min-w-0">
-            <p className="font-medium truncate text-xs">{g.serviceName}</p>
-            <p className="text-[10px] text-muted-foreground">{g.openSpots} open spots · {g.utilizationPct}% full</p>
-          </div>
-          <span className="text-xs font-semibold text-red-600 dark:text-red-400 shrink-0">
-            -${Math.round(g.lostRevenueCents / 100)}
-          </span>
-        </div>
-      ))}
+      <div>
+        {data.gaps.slice(0, 5).map(g => (
+          <RevenueRecoveryGapCard key={g.sessionId} gap={g} />
+        ))}
+        {urgentSessions > 0 && (
+          <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+            <Lightbulb className="h-3 w-3" />Click the expand arrow on urgent sessions to see AI recovery actions
+          </p>
+        )}
+      </div>
     </Card>
   );
 }

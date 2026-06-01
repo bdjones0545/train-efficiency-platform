@@ -88,7 +88,7 @@ function RetentionRiskPanel() {
               <p className="text-sm font-medium truncate">{client.name || "Client"}</p>
               <p className="text-xs text-muted-foreground">
                 {client.daysSinceLastBooking != null ? `${client.daysSinceLastBooking}d inactive` : "—"}
-                {client.cancellationRate != null ? ` · ${Math.round(client.cancellationRate * 100)}% cancel rate` : ""}
+                {client.cancellationRate != null ? ` · ${Math.round(client.cancellationRate)}% cancel rate` : ""}
               </p>
             </div>
             <Badge className={`text-xs shrink-0 ${

@@ -677,35 +677,52 @@ export async function registerSchedulingIntelligenceRoutes(
         };
       });
 
-      // AI recommendations for urgent (72h) sessions
-      let urgentRecommendations: any[] = [];
+      // AI per-session recommendations for urgent (72h) sessions
+      let gapsWithRecs = gaps.slice(0, 10);
       if (urgent.length > 0) {
         try {
           const urgentList = urgent.map((s: any) => {
             const max = parseInt(s.max_participants || 6);
             const reg = parseInt(s.registered_count || 0);
-            return `- "${s.service_name || "Session"}" at ${new Date(s.start_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} — ${reg}/${max} registered (${max - reg} open spots), Coach ${s.coach_first || ""} ${s.coach_last || ""}`.trim();
-          }).join("\n");
+            return {
+              id: s.id,
+              label: `"${s.service_name || "Session"}" at ${new Date(s.start_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} — ${reg}/${max} registered (${max - reg} open spots)`,
+            };
+          });
 
           const aiRes = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{
               role: "user",
-              content: `You are a scheduling revenue specialist for a strength and conditioning gym called "${orgName}". The following group training sessions are under 50% full and start within the next 72 hours:\n\n${urgentList}\n\nProvide 3-5 specific, actionable recovery recommendations to fill these sessions. Each recommendation should be a concrete action (e.g., "Text the waitlist...", "Offer a 24-hour early-bird discount...", "Post a flash offer on social media..."). Return a JSON array of objects: [{ "action": "...", "rationale": "...", "impact": "high|medium|low" }]`,
+              content: `You are a scheduling revenue specialist for "${orgName}". Generate 3-5 prioritized, specific recovery actions for EACH of these under-filled sessions (each starting within 72h):\n\n${urgentList.map(u => u.label).join("\n")}\n\nReturn JSON:\n{\n  "sessions": [\n    { "sessionIndex": 0, "recommendations": [{ "action": "...", "rationale": "...", "impact": "high|medium|low" }] },\n    ...\n  ]\n}`,
             }],
             response_format: { type: "json_object" },
-            max_tokens: 400,
+            max_tokens: 700,
           });
           const content = aiRes.choices[0]?.message?.content ?? "{}";
           const parsed = JSON.parse(content);
-          urgentRecommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations
-            : Array.isArray(parsed) ? parsed : [];
+          const sessionRecs: any[] = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+
+          // Merge per-session recommendations into gaps
+          gapsWithRecs = gapsWithRecs.map(g => {
+            const idx = urgent.findIndex((u: any) => u.id === g.sessionId);
+            if (idx === -1) return g;
+            const sessRec = sessionRecs.find((sr: any) => sr.sessionIndex === idx);
+            return { ...g, recommendations: sessRec?.recommendations ?? [] };
+          });
         } catch {
-          urgentRecommendations = [
-            { action: "Text everyone on your waitlist immediately about open spots", rationale: "Fastest way to fill seats in under 72h", impact: "high" },
-            { action: "Post a flash discount offer on social media (10-20% off)", rationale: "Creates urgency and attracts price-sensitive prospects", impact: "high" },
-            { action: "Email inactive clients who previously attended this session type", rationale: "Familiar sessions have higher conversion rates", impact: "medium" },
-          ];
+          // Fallback: attach generic recommendations to urgent gaps
+          gapsWithRecs = gapsWithRecs.map(g => {
+            if (!g.isUrgent) return g;
+            return {
+              ...g,
+              recommendations: [
+                { action: "Text waitlist contacts about this open session immediately", rationale: "Fastest fill path within 72h", impact: "high" },
+                { action: "Post a flash offer on social media with session details", rationale: "Creates urgency and attracts price-sensitive prospects", impact: "high" },
+                { action: "Email inactive clients who attended this session type before", rationale: "Familiar sessions have higher conversion rates", impact: "medium" },
+              ],
+            };
+          });
         }
       }
 
@@ -717,9 +734,8 @@ export async function registerSchedulingIntelligenceRoutes(
           cancelledSessions: cancelledGaps.length,
           urgentSessions: urgent.length,
         },
-        gaps: gaps.slice(0, 10),
+        gaps: gapsWithRecs,
         cancelled: cancelledGaps,
-        urgentRecommendations,
       });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch revenue recovery", error: e.message });

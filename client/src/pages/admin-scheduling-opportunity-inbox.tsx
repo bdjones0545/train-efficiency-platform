@@ -271,6 +271,21 @@ export default function AdminSchedulingOpportunityInboxPage() {
   const handleAction = (opp: Opportunity) => {
     if (opp.category === "revenue" && opp.type === "fill_session") {
       setActiveOpp(opp);
+    } else if (opp.category === "revenue" && opp.type === "recover_cancellation") {
+      // Navigate to scheduling for cancellation recovery
+      window.location.href = "/admin/scheduling-command-center";
+    } else if (opp.category === "capacity" && opp.type === "waitlist_demand") {
+      // Navigate to open sessions to add another session
+      window.location.href = "/open-sessions";
+    } else if (opp.category === "retention" && opp.type === "reactivation") {
+      // Navigate to AI comms center for outreach drafts
+      window.location.href = "/admin/ai-outreach-opportunities";
+    } else if (opp.category === "coach") {
+      // Navigate to coach capacity page
+      window.location.href = "/admin/coach-capacity";
+    } else {
+      // Fallback: navigate to command center
+      window.location.href = "/admin/scheduling-command-center";
     }
   };
 
