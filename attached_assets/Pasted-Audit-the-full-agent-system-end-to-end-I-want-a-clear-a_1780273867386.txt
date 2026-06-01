@@ -1,0 +1,192 @@
+Audit the full agent system end-to-end.
+
+I want a clear architecture map showing every agent, what it does, what tools it has access to, what data it reads/writes, how it is triggered, and whether it uses TrainChat.
+
+Audit sections:
+
+1. CEO / Heartbeat Layer
+- What process triggers the agents?
+- Cron schedule
+- Main orchestrator file
+- Which agents are called
+- What happens if one agent fails?
+- Are there duplicate/unconnected heartbeats?
+
+2. Agent Inventory
+For every agent, document:
+
+- Agent name
+- File path
+- Primary role
+- Trigger source
+- Inputs
+- Outputs
+- Database tables read
+- Database tables written
+- External APIs used
+- Internal services used
+- Whether it uses TrainChat API
+- Whether it creates workflows/jobs
+- Whether it sends messages
+- Whether it requires human approval
+- Failure handling
+- Logging
+
+3. Tool Access Matrix
+Create a table:
+
+Agent | Tools | Permissions | External APIs | Can Send? | Can Create Jobs? | Uses TrainChat?
+
+Include:
+
+- Gmail
+- SendGrid
+- Google Calendar
+- Stripe
+- TrainChat API
+- Workflow Engine
+- Job Queue
+- Athlete Intelligence / PAIL
+- Scheduling Intelligence
+- Revenue Intelligence
+- Lead Capture
+- Team Training Prospects
+- Employment Applicants
+- Outcome Tracking
+
+4. TrainChat API Usage Audit
+Specifically identify:
+
+- Which agents call TrainChat
+- Which functions are used
+- What payload is sent
+- What context is included
+- Whether PAIL data is included
+- Whether athlete readiness data is included
+- Whether coach notes are included
+- Whether org isolation is enforced
+- Whether fallback logic exists if TrainChat fails
+- Whether outputs are validated before saving
+
+5. Agent-by-Agent Functional Audit
+For each agent, answer:
+
+- What decision does this agent make?
+- What action can it take?
+- What is fully autonomous?
+- What requires approval?
+- What data proves the action happened?
+- What outcome is tracked afterward?
+
+6. Messaging / Outreach Audit
+Map the complete path:
+
+Lead / athlete / session / opportunity detected
+→ agent recommendation
+→ workflow job created
+→ message drafted
+→ approval required or not
+→ send mechanism
+→ outcome row created
+→ reply/meeting/conversion tracked
+→ rule effectiveness updated
+
+Verify that agents cannot silently send messages unless explicitly allowed.
+
+7. Scheduling Intelligence Agents
+Audit whether these are standalone agents or service endpoints:
+
+- Revenue Recovery
+- Demand Forecast
+- Capacity Optimization
+- Retention Risk
+- Coach Utilization
+- Fill Campaign Generator
+- Scheduling Copilot
+- Opportunity Inbox
+
+For each one, document whether it is:
+- Passive analytics
+- Recommendation engine
+- Draft generator
+- Autonomous executor
+
+8. Revenue Intelligence Agents
+Audit:
+
+- Revenue opportunity detection
+- Low-utilization sessions
+- Open capacity
+- Lead value scoring
+- Follow-up recommendations
+- Projected revenue calculations
+- Revenue recovery workflow creation
+
+Confirm formulas and source tables.
+
+9. Client Success / Retention Agents
+Audit:
+
+- Missed sessions
+- Attendance decline
+- Readiness decline
+- Pain flags
+- Churn risk
+- At-risk athletes
+- Coach alerts
+- Recommended interventions
+
+10. Growth / Lead Agents
+Audit:
+
+- Individual leads
+- Team training leads
+- Employment applicants
+- Abandoned applications
+- High-intent leads
+- Follow-up sequences
+- Lead scoring
+- Outreach generation
+- Outcome tracking
+
+Confirm individual leads and team training leads are fully separated.
+
+11. Workflow Engine Integration
+For every agent, identify whether it:
+
+- Creates workflow_jobs
+- Uses agent_execution_locks
+- Respects org_execution_rate_limits
+- Writes to workflow logs
+- Has retry behavior
+- Has dead-letter behavior
+- Prevents duplicate actions
+
+12. Security / Isolation Audit
+Verify:
+
+- Every agent is org-scoped
+- No global fallback queries
+- No cross-org reads
+- No cross-org writes
+- Admin-only routes are protected
+- Coach routes are role-limited
+- Client routes cannot access admin intelligence
+- External API credentials are org-scoped or intentionally platform-level
+
+13. Output Required
+Return:
+
+A. Executive architecture diagram in text form  
+B. Complete agent inventory table  
+C. Tool access matrix  
+D. TrainChat usage matrix  
+E. Risk list ranked High / Medium / Low  
+F. Missing tools or missing permissions  
+G. Duplicate or overlapping agents  
+H. Recommended cleanup  
+I. Recommended next implementation prompt  
+
+Most important question to answer:
+
+Which agents actually do work, which agents only recommend work, which agents can create jobs, and which agents use TrainChat?
