@@ -503,6 +503,36 @@ describe("P3: Gmail Agent Approval", async () => {
     assert.equal(after, before + 1, "createOutcomeOnSend must create exactly one outcome row");
     await db.execute(sql`DELETE FROM gmail_agent_actions WHERE id = ${action.id}`);
   });
+
+  it("P3-9: edit-send route calls checkHumanApprovedSendGuards before sending (source check)", async () => {
+    const src = readFileSync("server/routes.ts", "utf-8");
+    const editSendIdx = src.indexOf("api/ai-approvals/:id/edit-send");
+    assert.ok(editSendIdx !== -1, "edit-send route must exist");
+    const section = src.slice(editSendIdx, editSendIdx + 3000);
+    assert.ok(section.includes("checkHumanApprovedSendGuards"), "edit-send must call checkHumanApprovedSendGuards");
+    assert.ok(section.includes("sendGuard.blocked") || section.includes("editSendGuard.blocked"), "edit-send must check .blocked flag");
+  });
+
+  it("P3-10: edit-send route blocks items with status=blocked (source check)", async () => {
+    const src = readFileSync("server/routes.ts", "utf-8");
+    const editSendIdx = src.indexOf("api/ai-approvals/:id/edit-send");
+    const section = src.slice(editSendIdx, editSendIdx + 3000);
+    assert.ok(
+      section.includes('"blocked"') || section.includes("'blocked'"),
+      "edit-send must reject proposals with status=blocked"
+    );
+  });
+
+  it("P3-11: bulk-approve skips items with status=blocked (source check)", async () => {
+    const src = readFileSync("server/routes.ts", "utf-8");
+    const bulkIdx = src.indexOf("api/ai-approvals/bulk-approve");
+    assert.ok(bulkIdx !== -1, "bulk-approve route must exist");
+    const section = src.slice(bulkIdx, bulkIdx + 2500);
+    assert.ok(
+      section.includes('"blocked"') || section.includes("'blocked'"),
+      "bulk-approve must guard against blocked status"
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -21592,6 +21592,7 @@ Respond with this exact JSON structure:
       const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
       const results = await Promise.allSettled(proposals.map(async (p) => {
         if (p.executedAt) throw new Error("Already executed");
+        if ((p.status as string) === "blocked") throw new Error("Blocked by governance policy — cannot approve");
         if (!p.recipientEmail) throw new Error("No recipient");
         const { checkHumanApprovedSendGuards: _guard } = await import("./services/send-guard-service");
         const _guardResult = await _guard(orgId, p.recipientEmail);
@@ -21686,7 +21687,13 @@ Respond with this exact JSON structure:
       const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
       if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
+      if (proposal.status === "blocked") return res.status(422).json({ message: "Cannot send a blocked action — blocked by governance policy" });
       if (!proposal.recipientEmail) return res.status(400).json({ message: "No recipient email" });
+      const { checkHumanApprovedSendGuards } = await import("./services/send-guard-service");
+      const editSendGuard = await checkHumanApprovedSendGuards(orgId, proposal.recipientEmail);
+      if (editSendGuard.blocked) {
+        return res.status(editSendGuard.blockType === "emergency_pause" ? 503 : 422).json({ message: editSendGuard.reason, blockType: editSendGuard.blockType });
+      }
       const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
       const { messageId, threadId } = await sendEmail({ orgId, to: proposal.recipientEmail, subject, body, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined });
       const [fbRow] = await Promise.all([

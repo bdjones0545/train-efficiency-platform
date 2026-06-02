@@ -879,7 +879,8 @@ function ProposalsPanel({ domain }: { domain: string }) {
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const allSelected = proposals.length > 0 && proposals.every((p) => selected.has(p.id));
+  const selectableProposals = proposals.filter((p) => p.status !== "blocked");
+  const allSelected = selectableProposals.length > 0 && selectableProposals.every((p) => selected.has(p.id));
 
   if (isLoading) {
     return <div className="text-center py-12 text-muted-foreground text-sm">Loading drafts…</div>;
@@ -894,10 +895,10 @@ function ProposalsPanel({ domain }: { domain: string }) {
               type="checkbox"
               data-testid="checkbox-select-all"
               checked={allSelected}
-              onChange={() => allSelected ? setSelected(new Set()) : setSelected(new Set(proposals.map((p) => p.id)))}
+              onChange={() => allSelected ? setSelected(new Set()) : setSelected(new Set(selectableProposals.map((p) => p.id)))}
               className="rounded"
             />
-            Select all ({proposals.length})
+            Select all ({selectableProposals.length})
           </label>
           {selected.size > 0 && (
             <>
@@ -941,15 +942,19 @@ function ProposalsPanel({ domain }: { domain: string }) {
           return p.status !== "blocked" && r.autoExecuteEligible !== true;
         });
 
-        const renderGroup = (items: any[]) => items.map((p) => (
+        const renderGroup = (items: any[], selectable = true) => items.map((p) => (
           <div key={p.id} className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              data-testid={`checkbox-select-${p.id}`}
-              checked={selected.has(p.id)}
-              onChange={() => toggleSelect(p.id)}
-              className="mt-4 rounded"
-            />
+            {selectable ? (
+              <input
+                type="checkbox"
+                data-testid={`checkbox-select-${p.id}`}
+                checked={selected.has(p.id)}
+                onChange={() => toggleSelect(p.id)}
+                className="mt-4 rounded"
+              />
+            ) : (
+              <div className="w-4 mt-4 shrink-0" />
+            )}
             <div className="flex-1">
               <ProposalCard proposal={p} onRefresh={invalidate} />
             </div>
@@ -1001,7 +1006,7 @@ function ProposalsPanel({ domain }: { domain: string }) {
                     — Blocked by governance policy.
                   </span>
                 </div>
-                <div className="space-y-3">{renderGroup(blockedGroup)}</div>
+                <div className="space-y-3">{renderGroup(blockedGroup, false)}</div>
               </div>
             )}
           </div>
