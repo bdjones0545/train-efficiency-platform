@@ -730,3 +730,155 @@ describe("CROSS: Dead-Letter and Daily Cap", async () => {
     assert.ok(typeof summary.resolved === "number", "Summary must have resolved field");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2b — ActionExecutor Option B: email auto_execute → approval queue
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("P2b: ActionExecutor — email auto_execute deferred to approval queue", async () => {
+  const AE_ORG = `ae-${TS}`;
+
+  before(async () => { await cleanupOrg(AE_ORG); });
+  after(async () => { await cleanupOrg(AE_ORG); });
+
+  it("AE-1: runActionExecutorCycle is exported", async () => {
+    const mod = await import("../services/agent-action-executor.js");
+    assert.ok(typeof mod.runActionExecutorCycle === "function", "Must export runActionExecutorCycle");
+    assert.ok(typeof mod.startActionExecutor === "function", "Must export startActionExecutor");
+    assert.ok(typeof mod.stopActionExecutor === "function", "Must export stopActionExecutor");
+  });
+
+  it("AE-2: executedAt is NEVER set in the auto_execute branch (source check)", async () => {
+    const src = readFileSync("server/services/agent-action-executor.ts", "utf-8");
+    // Find the auto_execute_deferred branch
+    const deferredIdx = src.indexOf("auto_execute_deferred");
+    assert.ok(deferredIdx !== -1, "auto_execute_deferred branch must exist");
+    // Within that branch: executedAt must NOT appear as a set value
+    const branchSection = src.slice(deferredIdx, deferredIdx + 800);
+    assert.ok(
+      !branchSection.includes("executedAt: new Date()") && !branchSection.includes("executedAt: decision"),
+      "executedAt must not be set in the auto_execute_deferred branch"
+    );
+  });
+
+  it("AE-3: blocked branch sets errorMessage and does NOT set executedAt (source check)", async () => {
+    const src = readFileSync("server/services/agent-action-executor.ts", "utf-8");
+    const blockedIdx = src.indexOf("Branch: BLOCKED");
+    assert.ok(blockedIdx !== -1, "BLOCKED branch comment must exist");
+    const section = src.slice(blockedIdx, blockedIdx + 600);
+    assert.ok(section.includes("errorMessage"), "Blocked branch must set errorMessage");
+    assert.ok(
+      !section.includes("executedAt: new Date()"),
+      "executedAt must not be set in the blocked branch"
+    );
+  });
+
+  it("AE-4: auto_execute email branch sets approvalRequired=true and stores metadata", async () => {
+    const src = readFileSync("server/services/agent-action-executor.ts", "utf-8");
+    // Anchor on the branch comment to avoid hitting early type-union occurrences
+    const branchIdx = src.indexOf("Branch: AUTO_EXECUTE");
+    assert.ok(branchIdx !== -1, "Branch: AUTO_EXECUTE comment must exist");
+    const section = src.slice(branchIdx, branchIdx + 1200);
+    assert.ok(section.includes("approvalRequired: true"), "Deferred branch must set approvalRequired=true");
+    assert.ok(section.includes("autoExecuteEligible: true"), "Must store autoExecuteEligible=true in result");
+    assert.ok(section.includes("email_auto_send_disabled"), "Must store autoExecuteDeferredReason in result");
+  });
+
+  it("AE-5: auto_execute email branch routes to awaiting_approval (status check)", async () => {
+    const src = readFileSync("server/services/agent-action-executor.ts", "utf-8");
+    const branchIdx = src.indexOf("Branch: AUTO_EXECUTE");
+    assert.ok(branchIdx !== -1, "Branch: AUTO_EXECUTE comment must exist");
+    const section = src.slice(branchIdx, branchIdx + 1000);
+    assert.ok(
+      section.includes('"awaiting_approval"') || section.includes("'awaiting_approval'"),
+      "Deferred email action must be routed to awaiting_approval status"
+    );
+  });
+
+  it("AE-6: timeline is logged for all three outcome branches (source check)", async () => {
+    const src = readFileSync("server/services/agent-action-executor.ts", "utf-8");
+    assert.ok(src.includes("logTimeline"), "ActionExecutor must call logTimeline");
+    const blockedIdx = src.indexOf("Branch: BLOCKED");
+    const autoExecIdx = src.indexOf("Branch: AUTO_EXECUTE");
+    const approvalIdx = src.indexOf("Branch: APPROVAL_REQUIRED");
+    assert.ok(
+      blockedIdx !== -1 && autoExecIdx !== -1 && approvalIdx !== -1,
+      "All 3 branch comments must exist in source"
+    );
+    assert.ok(
+      src.slice(blockedIdx, blockedIdx + 1000).includes("logTimeline"),
+      "Blocked branch must call logTimeline"
+    );
+    assert.ok(
+      src.slice(autoExecIdx, autoExecIdx + 1200).includes("logTimeline"),
+      "Auto_execute deferred branch must call logTimeline"
+    );
+    assert.ok(
+      src.slice(approvalIdx, approvalIdx + 1000).includes("logTimeline"),
+      "Approval branch must call logTimeline"
+    );
+  });
+
+  it("AE-7: trigger event is logged for all three outcome branches (source check)", async () => {
+    const src = readFileSync("server/services/agent-action-executor.ts", "utf-8");
+    // Count logTrigger calls — should appear 3 times (once per branch)
+    const matches = src.match(/logTrigger\(/g) ?? [];
+    assert.ok(matches.length >= 3, `ActionExecutor must call logTrigger in all 3 branches (found ${matches.length})`);
+  });
+
+  it("AE-8: cycle runs without error and returns stats shape for org with no proposed actions", async () => {
+    const { runActionExecutorCycle } = await import("../services/agent-action-executor.js");
+    const stats = await runActionExecutorCycle();
+    assert.ok(typeof stats.evaluated === "number", "stats.evaluated must be a number");
+    assert.ok(typeof stats.awaitingApproval === "number", "stats.awaitingApproval must be a number");
+    assert.ok(typeof stats.autoEligibleDeferred === "number", "stats.autoEligibleDeferred must be a number");
+    assert.ok(typeof stats.blocked === "number", "stats.blocked must be a number");
+    assert.ok(typeof stats.errors === "number", "stats.errors must be a number");
+  });
+
+  it("AE-9: proposed email action is moved to awaiting_approval by the cycle (DB round-trip)", async () => {
+    // Insert a proposed email action
+    const [action] = await db.insert(gmailAgentActions).values({
+      orgId: AE_ORG,
+      actionType: "outreach_email",
+      recipientEmail: TEST_EMAIL,
+      subject: "AE-9 test draft",
+      bodyPreview: "Proposed email for ActionExecutor test",
+      riskLevel: "low",
+      approvalRequired: true,
+      status: "proposed",
+      communicationDomain: "team_training",
+      createdByAgent: "audit_test",
+    }).returning();
+
+    const { runActionExecutorCycle } = await import("../services/agent-action-executor.js");
+    await runActionExecutorCycle();
+
+    // Re-read from DB
+    const rows = await db.execute(
+      sql`SELECT status, approval_required, executed_at, result FROM gmail_agent_actions WHERE id = ${action.id}`
+    );
+    const data = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+    const updated = data[0];
+
+    assert.ok(updated !== undefined, "Action must still exist in DB");
+    assert.notEqual(updated.status, "proposed", "Action must no longer be proposed");
+    assert.notEqual(updated.status, "auto_executed", "Action must NOT be auto_executed");
+    assert.notEqual(updated.status, "executed", "Action must NOT be executed");
+    assert.equal(updated.executed_at, null, "executedAt must remain null — no email was sent");
+
+    if (updated.status === "awaiting_approval") {
+      assert.equal(updated.approval_required, true, "approvalRequired must be true");
+    }
+
+    await db.execute(sql`DELETE FROM gmail_agent_actions WHERE id = ${action.id}`);
+  });
+
+  it("AE-10: isEmailAction detection — recipientEmail present is treated as email action (source check)", async () => {
+    const src = readFileSync("server/services/agent-action-executor.ts", "utf-8");
+    const fnIdx = src.indexOf("function isEmailAction");
+    assert.ok(fnIdx !== -1, "isEmailAction must be defined");
+    const section = src.slice(fnIdx, fnIdx + 400);
+    assert.ok(section.includes("recipientEmail"), "isEmailAction must check recipientEmail");
+  });
+});

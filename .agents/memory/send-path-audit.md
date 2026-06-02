@@ -31,7 +31,21 @@ The `displayName` column in `workflow_runs` is `varchar("display_name")` (nullab
 - `getDeadLetterJobs({ orgId?, status?, limit? })` — takes an opts object, NOT a plain string
 - `markJobResolved(jobId)` — single string argument only
 
+## ActionExecutor Option B — email auto_execute deferred
+`server/services/agent-action-executor.ts` rewrote to implement 3 explicit branches:
+- **blocked** → status=blocked, errorMessage, timeline + trigger log, no executedAt
+- **auto_execute + email** → status=awaiting_approval, approvalRequired=true, result={autoExecuteEligible:true, autoExecuteDeferredReason:"email_auto_send_disabled"}, timeline + trigger log, no executedAt
+- **approval_required** (and auto_execute non-email) → status=awaiting_approval, timeline + trigger log, no executedAt
+
+**Safety invariant:** `executedAt` is NEVER set in any branch unless a real send occurs. True auto-execute reserved for future non-email action types.
+
+Cycle stats now include `autoEligibleDeferred` counter. Log message updated to report it.
+`writeTimeline` imported from `ceo-heartbeat-service`; `logTriggerEvent` from `trigger-logger`.
+
+## Prior ActionExecutor SQL bug
+`gmailAgentActions.created_at` → `gmailAgentActions.createdAt` (Drizzle camelCase). Was causing syntax error every 5 min. Fixed with `gt(gmailAgentActions.createdAt, sql\`NOW() - INTERVAL '24 hours'\`)`.
+
 ## Test file
-`server/tests/send-path-audit.test.ts` — 48 tests across 8 describe blocks (SG, PL, P1–P5, CROSS). All 48 pass alongside prior 24/24 governance tests.
+`server/tests/send-path-audit.test.ts` — 58 tests across 9 describe blocks (SG, PL, P1–P5, P2b, CROSS). All 58 pass alongside prior 24/24 governance tests.
 
 **Why:** Durable reference for anyone extending or re-running the audit.
