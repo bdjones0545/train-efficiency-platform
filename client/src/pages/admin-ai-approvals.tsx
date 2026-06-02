@@ -17,7 +17,7 @@ import {
   ChevronRight, Globe, Archive, Brain, Zap, AlertTriangle, Users,
   Building2, GraduationCap, Briefcase, BarChart3, Mail,
   TrendingDown, DollarSign, Award, Target, MessageSquare, CalendarCheck,
-  FileSignature, UserCheck, BarChart2,
+  FileSignature, UserCheck, BarChart2, ShieldCheck, Send, Ban,
 } from "lucide-react";
 
 // ─── Domain Configuration ─────────────────────────────────────────────────────
@@ -328,9 +328,13 @@ function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () =>
   const domainLabel = DOMAIN_LABELS[domain] ?? domain;
   const domainClass = DOMAIN_BADGE_CLASS[domain] ?? "bg-gray-100 text-gray-800";
 
+  const resultData = (proposal.result && typeof proposal.result === "object") ? proposal.result as any : {};
+  const isAutoEligible = resultData.autoExecuteEligible === true;
+  const isBlocked = proposal.status === "blocked";
+
   const approveMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposal.id}/approve`, {}),
-    onSuccess: () => { toast({ title: "Sent!" }); onRefresh(); },
+    onSuccess: () => { toast({ title: isAutoEligible ? "Sent!" : "Sent!" }); onRefresh(); },
     onError: (e: any) => {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     },
@@ -340,10 +344,41 @@ function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () =>
     proposal.riskLevel === "low" ? "text-green-600" :
     proposal.riskLevel === "high" ? "text-red-600" : "text-yellow-600";
 
+  const cardBorder = isAutoEligible
+    ? "border-green-200 dark:border-green-800 ring-1 ring-green-200 dark:ring-green-800"
+    : isBlocked
+    ? "border-red-200 dark:border-red-900 opacity-75"
+    : "";
+
   return (
     <>
-      <Card data-testid={`card-proposal-${proposal.id}`} className="group hover:shadow-md transition-shadow">
+      <Card data-testid={`card-proposal-${proposal.id}`} className={`group hover:shadow-md transition-shadow ${cardBorder}`}>
         <CardContent className="p-4 space-y-3">
+          {/* Auto-eligible badge */}
+          {isAutoEligible && (
+            <div
+              data-testid={`badge-auto-eligible-${proposal.id}`}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 w-fit"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
+              <span className="text-xs font-semibold text-green-700 dark:text-green-300">Policy Approved</span>
+              <span className="text-xs text-green-600 dark:text-green-400">· Passed Governance Checks</span>
+            </div>
+          )}
+          {/* Blocked badge */}
+          {isBlocked && (
+            <div
+              data-testid={`badge-blocked-${proposal.id}`}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 w-fit"
+            >
+              <Ban className="w-3.5 h-3.5 text-red-500" />
+              <span className="text-xs font-semibold text-red-700 dark:text-red-400">Blocked by Policy</span>
+              {proposal.errorMessage && (
+                <span className="text-xs text-red-500 dark:text-red-400 ml-1">· {proposal.errorMessage}</span>
+              )}
+            </div>
+          )}
+
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -372,32 +407,67 @@ function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () =>
             {proposal.bodyPreview ?? "No content"}
           </p>
 
-          <div className="flex items-center gap-2 flex-wrap pt-1">
-            <Button
-              data-testid={`button-approve-${proposal.id}`}
-              size="sm"
-              onClick={() => approveMutation.mutate()}
-              disabled={approveMutation.isPending}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              <CheckCheck className="w-3.5 h-3.5 mr-1" />
-              {approveMutation.isPending ? "Sending…" : "Approve & Send"}
-            </Button>
-            <Button data-testid={`button-edit-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowEdit(true)}>
-              <Edit3 className="w-3.5 h-3.5 mr-1" /> Edit
-            </Button>
-            <Button data-testid={`button-regen-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowRegen(true)}>
-              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regenerate
-            </Button>
-            <Button
-              data-testid={`button-reject-${proposal.id}`}
-              size="sm" variant="ghost"
-              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-              onClick={() => setShowReject(true)}
-            >
-              <X className="w-3.5 h-3.5 mr-1" /> Reject
-            </Button>
-          </div>
+          {!isBlocked && (
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              {isAutoEligible ? (
+                <>
+                  <Button
+                    data-testid={`button-send-now-${proposal.id}`}
+                    size="sm"
+                    onClick={() => approveMutation.mutate()}
+                    disabled={approveMutation.isPending}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    <Send className="w-3.5 h-3.5 mr-1" />
+                    {approveMutation.isPending ? "Sending…" : "Send Now"}
+                  </Button>
+                  <Button
+                    data-testid={`button-review-first-${proposal.id}`}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowEdit(true)}
+                  >
+                    <Edit3 className="w-3.5 h-3.5 mr-1" /> Review First
+                  </Button>
+                  <Button
+                    data-testid={`button-reject-${proposal.id}`}
+                    size="sm" variant="ghost"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => setShowReject(true)}
+                  >
+                    <X className="w-3.5 h-3.5 mr-1" /> Reject
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    data-testid={`button-approve-${proposal.id}`}
+                    size="sm"
+                    onClick={() => approveMutation.mutate()}
+                    disabled={approveMutation.isPending}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5 mr-1" />
+                    {approveMutation.isPending ? "Sending…" : "Approve & Send"}
+                  </Button>
+                  <Button data-testid={`button-edit-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowEdit(true)}>
+                    <Edit3 className="w-3.5 h-3.5 mr-1" /> Edit
+                  </Button>
+                  <Button data-testid={`button-regen-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowRegen(true)}>
+                    <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regenerate
+                  </Button>
+                  <Button
+                    data-testid={`button-reject-${proposal.id}`}
+                    size="sm" variant="ghost"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => setShowReject(true)}
+                  >
+                    <X className="w-3.5 h-3.5 mr-1" /> Reject
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -421,26 +491,44 @@ function MetricsBar({ domain }: { domain: string }) {
   });
   if (!metrics) return null;
 
+  const autoEligibleCount = metrics.autoEligible ?? 0;
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {[
-        { label: "Pending",        value: metrics.pending,               icon: Clock,         color: "text-yellow-600" },
-        { label: "Approval Rate",  value: metrics.approvalRate != null ? `${metrics.approvalRate}%` : "—", icon: TrendingUp, color: "text-green-600" },
-        { label: "Total Reviewed", value: metrics.totalReviewed,         icon: CheckCheck,    color: "text-blue-600" },
-        { label: "Oldest Pending", value: metrics.oldestPendingHours != null ? `${metrics.oldestPendingHours}h` : "—", icon: AlertTriangle, color: "text-orange-600" },
-      ].map(({ label, value, icon: Icon, color }) => (
-        <Card key={label} className="p-3">
-          <div className="flex items-center gap-2">
-            <Icon className={`w-4 h-4 ${color} shrink-0`} />
-            <div>
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="text-lg font-bold" data-testid={`metric-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-                {value ?? "—"}
-              </p>
+    <div className="space-y-3">
+      {autoEligibleCount > 0 && (
+        <div
+          data-testid="banner-auto-eligible"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-sm text-green-800 dark:text-green-300"
+        >
+          <ShieldCheck className="w-4 h-4 shrink-0 text-green-600" />
+          <span>
+            <span className="font-semibold">{autoEligibleCount} draft{autoEligibleCount !== 1 ? "s" : ""}</span>
+            {" "}already passed governance checks. Review is optional.{" "}
+            <span className="text-green-600 font-medium">Click Send Now to deliver.</span>
+          </span>
+        </div>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {[
+          { label: "Auto-Eligible",  value: metrics.autoEligible ?? 0,  icon: ShieldCheck,   color: "text-green-600",  card: "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10" },
+          { label: "Pending",        value: metrics.pending,               icon: Clock,         color: "text-yellow-600", card: "" },
+          { label: "Approval Rate",  value: metrics.approvalRate != null ? `${metrics.approvalRate}%` : "—", icon: TrendingUp, color: "text-blue-600", card: "" },
+          { label: "Total Reviewed", value: metrics.totalReviewed,         icon: CheckCheck,    color: "text-blue-600",   card: "" },
+          { label: "Oldest Pending", value: metrics.oldestPendingHours != null ? `${metrics.oldestPendingHours}h` : "—", icon: AlertTriangle, color: "text-orange-600", card: "" },
+        ].map(({ label, value, icon: Icon, color, card }) => (
+          <Card key={label} className={`p-3 ${card}`}>
+            <div className="flex items-center gap-2">
+              <Icon className={`w-4 h-4 ${color} shrink-0`} />
+              <div>
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="text-lg font-bold" data-testid={`metric-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+                  {value ?? "—"}
+                </p>
+              </div>
             </div>
-          </div>
-        </Card>
-      ))}
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -634,6 +722,18 @@ function LearningDashboard({ activeDomainTab }: { activeDomainTab: string }) {
                     >
                       <span className="block font-medium">{d.label}</span>
                       <span className="opacity-70">{d.rulesCount} rules · {d.reviewedCount} reviewed</span>
+                      {d.autoEligibleRate != null && (
+                        <span
+                          data-testid={`auto-eligible-rate-${d.domain}`}
+                          className={`block mt-0.5 font-semibold ${
+                            activeEntry?.domain === d.domain
+                              ? "text-green-200"
+                              : "text-green-600 dark:text-green-400"
+                          }`}
+                        >
+                          {d.autoEligibleRate}% Auto-Eligible
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -830,24 +930,83 @@ function ProposalsPanel({ domain }: { domain: string }) {
           <p className="text-muted-foreground font-medium">All caught up!</p>
           <p className="text-sm text-muted-foreground mt-1">No pending AI drafts for this domain.</p>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {proposals.map((p) => (
-            <div key={p.id} className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                data-testid={`checkbox-select-${p.id}`}
-                checked={selected.has(p.id)}
-                onChange={() => toggleSelect(p.id)}
-                className="mt-4 rounded"
-              />
-              <div className="flex-1">
-                <ProposalCard proposal={p} onRefresh={invalidate} />
-              </div>
+      ) : (() => {
+        const autoEligibleGroup = proposals.filter((p) => {
+          const r = (p.result && typeof p.result === "object") ? p.result as any : {};
+          return r.autoExecuteEligible === true;
+        });
+        const blockedGroup = proposals.filter((p) => p.status === "blocked");
+        const awaitingGroup = proposals.filter((p) => {
+          const r = (p.result && typeof p.result === "object") ? p.result as any : {};
+          return p.status !== "blocked" && r.autoExecuteEligible !== true;
+        });
+
+        const renderGroup = (items: any[]) => items.map((p) => (
+          <div key={p.id} className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              data-testid={`checkbox-select-${p.id}`}
+              checked={selected.has(p.id)}
+              onChange={() => toggleSelect(p.id)}
+              className="mt-4 rounded"
+            />
+            <div className="flex-1">
+              <ProposalCard proposal={p} onRefresh={invalidate} />
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ));
+
+        return (
+          <div className="space-y-6">
+            {autoEligibleGroup.length > 0 && (
+              <div data-testid="section-auto-eligible">
+                <div className="flex items-center gap-2 mb-3">
+                  <ShieldCheck className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-semibold text-green-700 dark:text-green-400">
+                    Auto-Eligible ({autoEligibleGroup.length})
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    — Passed all governance checks. Ready to send with one click.
+                  </span>
+                </div>
+                <div className="space-y-3">{renderGroup(autoEligibleGroup)}</div>
+              </div>
+            )}
+
+            {awaitingGroup.length > 0 && (
+              <div data-testid="section-awaiting-review">
+                {autoEligibleGroup.length > 0 && <div className="border-t my-2" />}
+                <div className="flex items-center gap-2 mb-3">
+                  <Clock className="w-4 h-4 text-yellow-600" />
+                  <span className="text-sm font-semibold text-foreground">
+                    Awaiting Review ({awaitingGroup.length})
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    — Requires human review before sending.
+                  </span>
+                </div>
+                <div className="space-y-3">{renderGroup(awaitingGroup)}</div>
+              </div>
+            )}
+
+            {blockedGroup.length > 0 && (
+              <div data-testid="section-blocked">
+                {(autoEligibleGroup.length > 0 || awaitingGroup.length > 0) && <div className="border-t my-2" />}
+                <div className="flex items-center gap-2 mb-3">
+                  <Ban className="w-4 h-4 text-red-500" />
+                  <span className="text-sm font-semibold text-red-600 dark:text-red-400">
+                    Blocked ({blockedGroup.length})
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    — Blocked by governance policy.
+                  </span>
+                </div>
+                <div className="space-y-3">{renderGroup(blockedGroup)}</div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

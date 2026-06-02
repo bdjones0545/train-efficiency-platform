@@ -292,17 +292,28 @@ Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
 // ─── Learning dashboard — grouped by domain ────────────────────────────────────
 
 export async function getLearningDashboard(orgId: string) {
-  const [rules, feedback] = await Promise.all([
+  const { gmailAgentActions } = await import("@shared/schema");
+  const [rules, feedback, pendingActions] = await Promise.all([
     db.select().from(agentMessageLearningRules)
       .where(and(eq(agentMessageLearningRules.orgId, orgId), eq(agentMessageLearningRules.status, "active")))
       .orderBy(desc(agentMessageLearningRules.confidence)),
     db.select().from(agentMessageFeedback)
       .where(eq(agentMessageFeedback.orgId, orgId)),
+    db.select({ communicationDomain: gmailAgentActions.communicationDomain, result: gmailAgentActions.result })
+      .from(gmailAgentActions)
+      .where(eq(gmailAgentActions.orgId, orgId))
+      .catch(() => [] as any[]),
   ]);
 
   return COMMUNICATION_DOMAINS.map((domain) => {
     const domainRules = rules.filter((r) => (r.communicationDomain ?? "athlete_lead") === domain || r.appliesGlobally);
     const domainFeedback = feedback.filter((f) => ((f as any).communicationDomain ?? "athlete_lead") === domain);
+    const domainActions = (pendingActions as any[]).filter((a) => (a.communicationDomain ?? "athlete_lead") === domain);
+    const autoEligibleCount = domainActions.filter((a) => {
+      const res = (a.result && typeof a.result === "object") ? a.result : {};
+      return (res as any).autoExecuteEligible === true;
+    }).length;
+    const autoEligibleRate = domainActions.length > 0 ? Math.round((autoEligibleCount / domainActions.length) * 100) : null;
 
     const tags: Record<string, number> = {};
     domainFeedback.forEach((f) => {
@@ -332,6 +343,9 @@ export async function getLearningDashboard(orgId: string) {
       label: DOMAIN_LABELS[domain] ?? domain,
       rulesCount: domainRules.length,
       reviewedCount: domainFeedback.length,
+      autoEligibleCount,
+      autoEligibleRate,
+      totalDrafts: domainActions.length,
       doRules: domainRules.filter((r) => r.ruleType === "do").map((r) => ({ id: r.id, text: r.ruleText, confidence: r.confidence, appliesGlobally: r.appliesGlobally, messageType: r.messageType })),
       avoidRules: domainRules.filter((r) => r.ruleType === "avoid").map((r) => ({ id: r.id, text: r.ruleText, confidence: r.confidence, appliesGlobally: r.appliesGlobally, messageType: r.messageType })),
       toneRules: domainRules.filter((r) => r.ruleType === "tone").map((r) => ({ id: r.id, text: r.ruleText, confidence: r.confidence })),

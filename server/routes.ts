@@ -21424,7 +21424,12 @@ Respond with this exact JSON structure:
           eq(gmailAgentActions.orgId, orgId),
           eq(gmailAgentActions.approvalRequired, true),
           isNull(gmailAgentActions.executedAt),
-          or(eq(gmailAgentActions.status, "proposed"), eq(gmailAgentActions.status, "pending_approval"))
+          or(
+            eq(gmailAgentActions.status, "proposed"),
+            eq(gmailAgentActions.status, "pending_approval"),
+            eq(gmailAgentActions.status, "awaiting_approval"),
+            eq(gmailAgentActions.status, "blocked"),
+          )
         ))
         .orderBy(desc(gmailAgentActions.createdAt));
       // Ensure communicationDomain is present on every row
@@ -21467,7 +21472,12 @@ Respond with this exact JSON structure:
           eq(gmailAgentActions.orgId, orgId),
           eq(gmailAgentActions.approvalRequired, true),
           isNull(gmailAgentActions.executedAt),
-          or(eq(gmailAgentActions.status, "proposed"), eq(gmailAgentActions.status, "pending_approval"))
+          or(
+            eq(gmailAgentActions.status, "proposed"),
+            eq(gmailAgentActions.status, "pending_approval"),
+            eq(gmailAgentActions.status, "awaiting_approval"),
+            eq(gmailAgentActions.status, "blocked"),
+          )
         )),
         db.select().from(agentMessageFeedback).where(eq(agentMessageFeedback.orgId, orgId)),
       ]);
@@ -21478,6 +21488,10 @@ Respond with this exact JSON structure:
         ? allFeedback.filter((f) => allowedDomains.includes((f as any).communicationDomain ?? "athlete_lead"))
         : allFeedback;
       const lowRisk = pending.filter((r) => r.riskLevel === "low").length;
+      const autoEligible = pending.filter((r) => {
+        const res = (r.result && typeof r.result === "object") ? r.result as any : {};
+        return res.autoExecuteEligible === true;
+      }).length;
       const total = feedback.length;
       const approved = feedback.filter((f) => f.decision === "approved" || f.decision === "edited_and_approved").length;
       const rejected = feedback.filter((f) => f.decision === "rejected").length;
@@ -21485,7 +21499,7 @@ Respond with this exact JSON structure:
       const approvalRate = total > 0 ? Math.round((approved / total) * 100) : null;
       const oldestPending = pending.length > 0 ? pending.reduce((a, b) => (a.createdAt! < b.createdAt! ? a : b)) : null;
       const oldestHours = oldestPending?.createdAt ? Math.round((Date.now() - new Date(oldestPending.createdAt).getTime()) / 3600000) : null;
-      res.json({ pending: pending.length, lowRisk, approvalRate, totalReviewed: total, approved, rejected, sent, oldestPendingHours: oldestHours });
+      res.json({ pending: pending.length, lowRisk, autoEligible, approvalRate, totalReviewed: total, approved, rejected, sent, oldestPendingHours: oldestHours });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to load metrics" });
     }

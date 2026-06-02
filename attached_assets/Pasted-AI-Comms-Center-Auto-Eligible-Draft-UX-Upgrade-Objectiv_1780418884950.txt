@@ -1,0 +1,203 @@
+AI Comms Center — Auto-Eligible Draft UX Upgrade
+
+Objective:
+
+Now that ActionExecutor correctly routes policy-approved emails into the approval queue instead of silently dropping them, make those drafts visually distinct from drafts that still require full review.
+
+Problem
+
+Today all pending drafts look identical.
+
+The user cannot quickly tell the difference between:
+
+* Drafts that passed all governance checks and are safe to send
+* Drafts that still require full human review
+
+This creates unnecessary friction and hides one of the most valuable outputs of the autonomy engine.
+
+⸻
+
+Auto-Eligible Badge
+
+When:
+
+result.autoExecuteEligible === true
+
+Display:
+
+🟢 Policy Approved
+Needs Send Confirmation
+
+or
+
+🟢 Auto-Eligible
+Passed Governance Checks
+
+Badge color:
+
+* Green
+* High contrast
+* Always visible on card header
+
+⸻
+
+Draft Priority Grouping
+
+Add three sections:
+
+Auto-Eligible
+
+Criteria:
+
+result.autoExecuteEligible === true
+
+Description:
+
+Passed all governance checks.
+Ready to send with one click.
+
+⸻
+
+Awaiting Review
+
+Criteria:
+
+approvalRequired === true
+&& !result.autoExecuteEligible
+
+Description:
+
+Requires human review before sending.
+
+⸻
+
+Blocked
+
+Criteria:
+
+status === "blocked"
+
+Description:
+
+Blocked by governance policy.
+
+Show block reason.
+
+⸻
+
+One-Click Send
+
+For Auto-Eligible drafts:
+
+Replace:
+
+Approve
+Edit
+Reject
+
+With:
+
+Send Now
+Review First
+
+Send Now:
+
+* executes existing approval/send path
+* creates outcome row
+* writes timeline event
+* writes audit log
+* preserves all existing governance protections
+
+No additional review required.
+
+⸻
+
+Metrics Card
+
+Add new KPI:
+
+Auto-Eligible Drafts
+
+Example:
+
+12
+Passed Governance
+
+Placed next to:
+
+* Pending
+* Low Risk
+* Approval Rate
+* Emails Sent
+
+⸻
+
+Queue Summary Banner
+
+Example:
+
+12 drafts already passed governance checks.
+Review is optional. Click Send Now to deliver.
+
+Only display if count > 0.
+
+⸻
+
+Learning Dashboard Integration
+
+For each domain:
+
+Show:
+
+Auto-Eligible Rate
+
+Formula:
+
+autoEligibleDrafts / totalDrafts
+
+Example:
+
+Athlete Leads
+92% Auto-Eligible
+Team Training
+48% Auto-Eligible
+Athletic Directors
+21% Auto-Eligible
+
+This becomes a leading indicator of trust and future autonomy readiness.
+
+⸻
+
+Future-Proofing
+
+Store:
+
+result.autoExecuteEligible
+result.autoExecuteDeferredReason
+
+as first-class fields in UI models.
+
+Future phase:
+
+If autonomy level reaches threshold:
+
+Level 0 → Approval Required
+Level 1 → Send Confirmation
+Level 2 → Auto Send
+Level 3 → Autonomous
+
+The UI should already be prepared for that progression.
+
+⸻
+
+Acceptance Criteria
+
+* Auto-eligible drafts are visually distinct
+* Green governance-approved badge visible
+* Auto-eligible section appears at top of queue
+* One-click Send Now action available
+* KPI card shows count
+* Domain dashboards show Auto-Eligible Rate
+* Existing approval workflow unchanged
+* Existing outcome tracking unchanged
+* Existing audit logging unchanged
