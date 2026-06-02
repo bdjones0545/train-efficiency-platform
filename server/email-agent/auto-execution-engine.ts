@@ -86,6 +86,12 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
 
   const followUp = prospectFollowUps[0];
 
+  // Double-send guard — bail if the follow-up was already sent (e.g. race condition)
+  if (followUp.status === "sent" || followUp.status === "cancelled") {
+    console.warn(`[Auto-Execute] follow-up ${followUp.id} already in status "${followUp.status}" — skipping`);
+    return null;
+  }
+
   const prospect = await storage.getTeamTrainingProspect(followUp.prospectId);
   if (!prospect?.contactEmail) return null;
   if (prospect.outreachStatus === "Do Not Contact" || prospect.outreachStatus === "Replied") return null;

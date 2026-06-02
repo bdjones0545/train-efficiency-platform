@@ -6070,8 +6070,16 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (draft.status !== "approved") return res.status(400).json({ error: "Only approved drafts can be sent. Draft must first be approved." });
       if (!draft.relatedClientId) return res.status(400).json({ error: "No client linked to this draft" });
 
+      // Pre-send safety guard (emergency pause + daily cap) — runs before email resolution
+      const { checkEmergencyPause: _chkPause } = await import("./services/send-guard-service");
+      const _pauseCheck = await _chkPause(orgId);
+      if (_pauseCheck.blocked) {
+        return res.status(503).json({ error: _pauseCheck.reason, blockType: "emergency_pause" });
+      }
+
       let sendResult: Record<string, any> = { channel: draft.channel, sentAt: new Date().toISOString() };
       let sendError: string | undefined;
+      let _toEmail: string | undefined;
 
       if (draft.channel === "email") {
         // Attempt SendGrid if configured
@@ -6081,6 +6089,11 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
             const clientProfile = await storage.getUserProfile(draft.relatedClientId);
             const toEmail = clientProfile?.email;
             if (!toEmail) throw new Error("No email address on file for client");
+            _toEmail = toEmail;
+            // Suppression check now that we have the email address
+            const { checkHumanApprovedSendGuards: _grd } = await import("./services/send-guard-service");
+            const _grdRes = await _grd(orgId, toEmail);
+            if (_grdRes.blocked) throw new Error(`Send blocked: ${_grdRes.reason}`);
             const sgMail = await import("@sendgrid/mail");
             sgMail.default.setApiKey(sgKey);
             const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@trainefficiency.com";
@@ -6112,6 +6125,23 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
       const updated = await storage.updateOutreachDraft(draft.id, { status: "sent", sentBy: userId, sentAt: new Date(), sendResult });
       await storage.createOutreachEvent({ outreachDraftId: draft.id, actorId: userId, eventType: "sent", previousStatus: "approved", newStatus: "sent", metadata: sendResult });
+
+      // Outcome row for attribution (fire-and-forget)
+      if (_toEmail) {
+        try {
+          const [_mirrorAct] = await db.insert(gmailAgentActions).values({
+            orgId, actionType: "outreach_email", recipientEmail: _toEmail,
+            subject: draft.subject ?? "(no subject)", bodyPreview: (draft.content ?? "").slice(0, 300),
+            riskLevel: "low", approvalRequired: true, status: "executed",
+            communicationDomain: "athlete_lead", createdByAgent: "manual_send",
+            approvedBy: userId, executedAt: new Date(),
+          }).returning();
+          if (_mirrorAct?.id) {
+            const { createOutcomeOnSend: _cos } = await import("./services/outcome-intelligence-service");
+            _cos({ orgId, gmailActionId: _mirrorAct.id, communicationDomain: "athlete_lead", messageType: "outreach_email", recipientEmail: _toEmail }).catch(() => {});
+          }
+        } catch {}
+      }
 
       // If linked to a workflow, advance to contacted
       if (draft.workflowId) {
@@ -10847,6 +10877,11 @@ Refine this email following the instruction above. Preserve the core message and
       if (optedOut) {
         return res.status(400).json({ message: "This prospect has opted out." });
       }
+      const { checkEmergencyPause } = await import("./services/send-guard-service");
+      const pauseCheck = await checkEmergencyPause(profile.organizationId);
+      if (pauseCheck.blocked) {
+        return res.status(503).json({ message: pauseCheck.reason, blockType: "emergency_pause" });
+      }
       if (!draft.body || draft.body.trim().length === 0) {
         return res.status(400).json({ message: "Email body is empty." });
       }
@@ -10900,6 +10935,35 @@ Refine this email following the instruction above. Preserve the core message and
         eventType: "sent",
         description: `Outreach email sent to ${prospect.contactEmail}`,
       });
+
+      // Outcome row for attribution (fire-and-forget)
+      try {
+        const [mirrorAction] = await db.insert(gmailAgentActions).values({
+          orgId: profile.organizationId,
+          actionType: "outreach_email",
+          recipientEmail: prospect.contactEmail,
+          subject: draft.subject ?? "(no subject)",
+          bodyPreview: (draft.body ?? "").slice(0, 300),
+          riskLevel: "low",
+          approvalRequired: true,
+          status: "executed",
+          communicationDomain: "team_training",
+          createdByAgent: "manual_send",
+          approvedBy: userId,
+          executedAt: manualSentAt,
+        }).returning();
+        if (mirrorAction?.id) {
+          const { createOutcomeOnSend } = await import("./services/outcome-intelligence-service");
+          createOutcomeOnSend({
+            orgId: profile.organizationId,
+            gmailActionId: mirrorAction.id,
+            communicationDomain: "team_training",
+            messageType: "outreach_email",
+            recipientEmail: prospect.contactEmail,
+            prospectId: prospect.id,
+          }).catch(() => {});
+        }
+      } catch {}
 
       // Schedule follow-up sequence
       try {
@@ -21515,6 +21579,9 @@ Respond with this exact JSON structure:
       const results = await Promise.allSettled(proposals.map(async (p) => {
         if (p.executedAt) throw new Error("Already executed");
         if (!p.recipientEmail) throw new Error("No recipient");
+        const { checkHumanApprovedSendGuards: _guard } = await import("./services/send-guard-service");
+        const _guardResult = await _guard(orgId, p.recipientEmail);
+        if (_guardResult.blocked) throw new Error(`Send blocked: ${_guardResult.reason}`);
         const { messageId, threadId } = await sendEmail({ orgId, to: p.recipientEmail, subject: p.subject ?? "(no subject)", body: p.bodyPreview ?? "", leadId: p.leadId ?? undefined, dealId: p.dealId ?? undefined });
         await Promise.all([
           db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, p.id)),
@@ -21564,6 +21631,11 @@ Respond with this exact JSON structure:
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
       if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
       if (!proposal.recipientEmail) return res.status(400).json({ message: "No recipient email" });
+      const { checkHumanApprovedSendGuards } = await import("./services/send-guard-service");
+      const sendGuard = await checkHumanApprovedSendGuards(orgId, proposal.recipientEmail);
+      if (sendGuard.blocked) {
+        return res.status(sendGuard.blockType === "emergency_pause" ? 503 : 422).json({ message: sendGuard.reason, blockType: sendGuard.blockType });
+      }
       const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
       const subject = overrideSubject ?? proposal.subject ?? "(no subject)";
       const body = overrideBody ?? proposal.bodyPreview ?? "";
