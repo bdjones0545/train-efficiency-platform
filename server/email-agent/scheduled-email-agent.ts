@@ -404,7 +404,15 @@ export async function runEmailAgentForOrg(orgId: string, triggerSource: "cron_8_
   return result;
 }
 
+let dailyJobRunning = false;
+
 async function runDailyJobForAllOrgs(): Promise<void> {
+  // Global guard (Priority 3): prevent overlapping runs if 8:30 window spans multiple ticks
+  if (dailyJobRunning) {
+    console.log(`[Email Agent Cron] daily job still running — skipping duplicate tick`);
+    return;
+  }
+  dailyJobRunning = true;
   console.log(`[Email Agent Cron] running daily job for all orgs`);
   try {
     const orgs = await storage.getAllOrganizations();
@@ -425,6 +433,8 @@ async function runDailyJobForAllOrgs(): Promise<void> {
     }
   } catch (err: any) {
     console.error(`[Email Agent Cron] error in daily job runner:`, err.message);
+  } finally {
+    dailyJobRunning = false;
   }
 }
 

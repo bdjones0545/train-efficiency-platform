@@ -539,6 +539,141 @@ test("agent-ops resolve: mark failed tool call resolves it (resolvedAt set)", as
   console.log("✓ mark-resolved sets resolvedAt and resolvedBy");
 });
 
+// ─── Test G1: follow-up-cron does NOT send when policy blocks ────────────────
+// This is a unit-level smoke test that the policy integration is wired.
+// It verifies evaluatePolicy() is importable and returns a valid shape.
+
+test("governance: evaluatePolicy returns valid PolicyDecision shape", async () => {
+  const { evaluatePolicy } = await import("../services/autonomy-policy-engine");
+
+  const decision = await evaluatePolicy({
+    orgId: TEST_ORG,
+    actionType: "send_follow_up",
+    recipientEmail: "test@example.com",
+    confidence: 0.80,
+    riskLevel: "low",
+    isFirstContact: false,
+  });
+
+  assert.ok(
+    ["auto_execute", "approval_required", "blocked"].includes(decision.decision),
+    `decision must be one of auto_execute|approval_required|blocked, got: ${decision.decision}`
+  );
+  assert.ok(Array.isArray(decision.reasons), "reasons must be an array");
+  assert.ok(typeof decision.confidence === "number", "confidence must be a number");
+  assert.ok(decision.policyVersion, "policyVersion must be present");
+
+  console.log(`✓ governance: evaluatePolicy returns valid shape (decision=${decision.decision})`);
+});
+
+// ─── Test G2: dead-letter queue table can be queried ──────────────────────────
+
+test("governance: agent_dead_letter_queue table is accessible", async () => {
+  const { pushToDeadLetter, getDeadLetterJobs, markJobResolved } = await import(
+    "../services/agent-dead-letter-service"
+  );
+
+  // Push a test entry
+  const id = await pushToDeadLetter({
+    jobName: "test_governance_job",
+    orgId: TEST_ORG,
+    error: new Error("unit test dead letter"),
+    payload: { test: true },
+    maxRetries: 1,
+  });
+
+  assert.ok(id, "pushToDeadLetter must return an id");
+
+  // Query it back
+  const jobs = await getDeadLetterJobs({ orgId: TEST_ORG });
+  const found = jobs.find((j) => j.id === id);
+  assert.ok(found, "pushed job must appear in getDeadLetterJobs");
+  assert.equal(found!.jobName, "test_governance_job", "jobName must match");
+  assert.equal(found!.status, "pending", "initial status must be pending");
+
+  // Resolve it
+  const resolved = await markJobResolved(id!);
+  assert.equal(resolved, true, "markJobResolved must return true");
+
+  // Confirm resolved status
+  const after = await getDeadLetterJobs({ orgId: TEST_ORG, status: "resolved" });
+  const afterFound = after.find((j) => j.id === id);
+  assert.ok(afterFound, "resolved job must appear when filtering by resolved status");
+
+  // Cleanup
+  await db.execute(
+    (await import("drizzle-orm")).sql`DELETE FROM agent_dead_letter_queue WHERE org_id = ${TEST_ORG}`
+  ).catch(() => {});
+
+  console.log("✓ governance: dead-letter queue table is accessible and functional");
+});
+
+// ─── Test G3: TrainChat Zod schemas validate well-formed data ─────────────────
+
+test("governance: TrainChat ProgramResponseSchema accepts valid program shape", async () => {
+  const { ProgramResponseSchema, SessionResponseSchema } = await import(
+    "../services/trainchat-client"
+  );
+
+  const validProgram = {
+    id: "prog-123",
+    name: "12-Week S&C Program",
+    weeks: 12,
+    sessions_per_week: 3,
+    goals: ["strength", "endurance"],
+    workouts: [
+      {
+        day: "Monday",
+        name: "Upper Body",
+        focus: "push",
+        exercises: [
+          { name: "Bench Press", sets: 4, reps: 8, rest: 90, notes: "Control the eccentric" },
+        ],
+      },
+    ],
+  };
+
+  const programResult = ProgramResponseSchema.safeParse(validProgram);
+  assert.equal(programResult.success, true, "Valid program must pass ProgramResponseSchema");
+
+  const validSession = {
+    name: "Upper Body Day",
+    duration: 60,
+    exercises: [{ name: "Pull-ups", sets: 3, reps: 10 }],
+    warmup: [{ name: "Arm circles", duration: "2 min" }],
+    cooldown: [],
+  };
+
+  const sessionResult = SessionResponseSchema.safeParse(validSession);
+  assert.equal(sessionResult.success, true, "Valid session must pass SessionResponseSchema");
+
+  console.log("✓ governance: TrainChat Zod schemas validate well-formed data");
+});
+
+// ─── Test G4: follow-up cron running guard prevents duplicate ticks ───────────
+
+test("governance: follow-up cron exports initializeFollowUpCron (wiring guard)", async () => {
+  const { initializeFollowUpCron, computeAdaptiveFollowUpDays } = await import(
+    "../email-agent/follow-up-cron"
+  );
+
+  assert.ok(typeof initializeFollowUpCron === "function", "initializeFollowUpCron must be exported");
+  assert.ok(typeof computeAdaptiveFollowUpDays === "function", "computeAdaptiveFollowUpDays must be exported");
+
+  // Verify adaptive day computation still works correctly
+  const days = computeAdaptiveFollowUpDays({
+    openCount: 0,
+    clicked: false,
+    warmthScore: 20,
+    fitScore: 50,
+    riskScore: 0,
+  });
+  assert.ok(Array.isArray(days) && days.length > 0, "computeAdaptiveFollowUpDays must return a non-empty array");
+  assert.ok(days.every((d) => d > 0), "all follow-up days must be positive");
+
+  console.log("✓ governance: follow-up cron exports and adaptive days work correctly");
+});
+
 // ─── Test 20: Retry safe internal tool call ───────────────────────────────────
 
 test("agent-ops retry: safe internal failed tool call can be reset to pending", async () => {

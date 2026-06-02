@@ -336,8 +336,24 @@ export function startBusinessBrainCron() {
   const tick = async () => {
     try {
       const { organizations } = await import("@shared/schema");
+      const { acquireJobLock, releaseJobLock } = await import(
+        "../services/ceo-heartbeat-service"
+      );
       const orgs = await db.select({ id: organizations.id }).from(organizations);
+
       for (const org of orgs) {
+        // Per-org lock (Priority 3): prevents re-entry on server restart within the same hour
+        const { acquired, lockKey } = await acquireJobLock(
+          org.id,
+          "business_brain_cron",
+          55 // 55-minute TTL — matches the hourly interval with a small buffer
+        ).catch(() => ({ acquired: true, lockKey: "" }));
+
+        if (!acquired) {
+          console.log(`[BusinessBrain] Lock held for org ${org.id} — skipping duplicate run`);
+          continue;
+        }
+
         try {
           const lastBrief = await db
             .select({ createdAt: executiveBriefs.createdAt })
@@ -346,12 +362,16 @@ export function startBusinessBrainCron() {
             .orderBy(desc(executiveBriefs.createdAt))
             .limit(1);
           const lastRun = lastBrief[0]?.createdAt;
-          const hoursAgo = lastRun ? (Date.now() - lastRun.getTime()) / (1000 * 60 * 60) : 999;
+          const hoursAgo = lastRun
+            ? (Date.now() - lastRun.getTime()) / (1000 * 60 * 60)
+            : 999;
           if (hoursAgo >= 20) {
             await runOrchestrator(org.id, "cron");
           }
         } catch (e: any) {
           console.error(`[BusinessBrain] Error for org ${org.id}:`, e.message);
+        } finally {
+          if (lockKey) await releaseJobLock(lockKey).catch(() => {});
         }
       }
     } catch (e: any) {

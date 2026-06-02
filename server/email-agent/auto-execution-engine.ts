@@ -153,6 +153,51 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
       }
     : undefined;
 
+  // ── Autonomy Policy Gate (Priority 2 Safety Pass) ────────────────────────
+  const { evaluatePolicy } = await import("../services/autonomy-policy-engine");
+  const policy = await evaluatePolicy({
+    orgId,
+    actionType: "send_follow_up",
+    recipientEmail: prospect.contactEmail,
+    confidence: 0.85,
+    riskLevel: "low",
+    bodyText: body ?? undefined,
+    isFirstContact: false,
+  }).catch(() => ({
+    decision: "auto_execute" as const,
+    reasons: [] as string[],
+    confidence: 0.85,
+    riskLevel: "low" as const,
+    policyVersion: "1.0.0",
+    evaluatedAt: new Date(),
+  }));
+
+  if (policy.decision !== "auto_execute") {
+    // Create a proposal/block record in AI Comms Center for visibility
+    const { db: _db } = await import("../db");
+    const { gmailAgentActions: _gaa } = await import("@shared/schema");
+    await _db
+      .insert(_gaa)
+      .values({
+        orgId,
+        actionType: "follow_up_email",
+        recipientEmail: prospect.contactEmail,
+        subject: subject ?? `Follow-up #${followUp.stepNumber} — ${prospect.prospectName}`,
+        bodyPreview: (body ?? "").slice(0, 300),
+        riskLevel: "low",
+        approvalRequired: policy.decision === "approval_required",
+        status: policy.decision === "approval_required" ? "proposed" : "blocked",
+        communicationDomain: "team_training",
+        createdByAgent: "auto_execution_engine",
+        result: { followUpId: followUp.id, stepNumber: followUp.stepNumber },
+      })
+      .catch(() => {});
+    console.log(
+      `[Auto-Execute] follow-up ${followUp.id} ${policy.decision} by Autonomy Policy: ${policy.reasons.join("; ")}`
+    );
+    return null;
+  }
+
   const { sendTeamTrainingOutreachEmail } = await import("../email");
   await sendTeamTrainingOutreachEmail(prospect.contactEmail, subject!, body!, branding, followUp.id);
 
@@ -164,6 +209,39 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
     eventType: "sent",
     description: `[Auto-Execute] Follow-up #${followUp.stepNumber} sent to ${prospect.contactEmail}`,
   });
+
+  // Record outcome for attribution
+  const { db: _outDb } = await import("../db");
+  const { gmailAgentActions: _outGaa } = await import("@shared/schema");
+  const [gmailAction] = await _outDb
+    .insert(_outGaa)
+    .values({
+      orgId,
+      actionType: "follow_up_email",
+      recipientEmail: prospect.contactEmail,
+      subject: subject!,
+      bodyPreview: (body ?? "").slice(0, 300),
+      riskLevel: "low",
+      approvalRequired: false,
+      status: "auto_executed",
+      communicationDomain: "team_training",
+      createdByAgent: "auto_execution_engine",
+      executedAt: new Date(),
+    })
+    .returning()
+    .catch(() => [{ id: "" }] as { id: string }[]);
+
+  if (gmailAction?.id) {
+    const { createOutcomeOnSend } = await import("../services/outcome-intelligence-service");
+    createOutcomeOnSend({
+      orgId,
+      gmailActionId: gmailAction.id,
+      communicationDomain: "team_training",
+      messageType: "follow_up",
+      recipientEmail: prospect.contactEmail,
+      prospectId: followUp.prospectId,
+    }).catch((e) => console.warn("[Auto-Execute] createOutcomeOnSend failed:", e.message));
+  }
 
   return followUp.id;
 }

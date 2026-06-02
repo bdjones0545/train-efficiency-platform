@@ -1,7 +1,13 @@
 import { storage } from "../storage";
 import { sendTeamTrainingOutreachEmail, type OrgBranding } from "../email";
 import { generateOutreachEmailFromVariant } from "../team-training-prospecting";
-import { logTriggerEvent, updateTriggerEvent, logMissedOpportunity } from "./trigger-logger";
+import { logTriggerEvent, updateTriggerEvent } from "./trigger-logger";
+import { evaluatePolicy } from "../services/autonomy-policy-engine";
+import { createOutcomeOnSend } from "../services/outcome-intelligence-service";
+import { db } from "../db";
+import { gmailAgentActions, appSettings } from "@shared/schema";
+import { acquireJobLock, releaseJobLock } from "../services/ceo-heartbeat-service";
+import { like } from "drizzle-orm";
 
 // Base follow-up sequence schedule: days after initial send
 const BASE_FOLLOW_UP_DAYS = [3, 7, 14];
@@ -96,7 +102,6 @@ export async function scheduleFollowUpsForDraft(
     riskScore?: number;
   }
 ): Promise<void> {
-  // Cancel any existing pending follow-ups for this draft (idempotent)
   await storage.cancelFollowUpSequence(outreachDraftId);
 
   const settings = await storage.getEmailAgentSettings(orgId);
@@ -123,14 +128,24 @@ export async function scheduleFollowUpsForDraft(
     });
   }
 
-  console.log(`[FollowUp] Scheduled ${followUpDays.length} follow-ups for draft ${outreachDraftId} (days: ${followUpDays.join(", ")})`);
+  console.log(
+    `[FollowUp] Scheduled ${followUpDays.length} follow-ups for draft ${outreachDraftId} (days: ${followUpDays.join(", ")})`
+  );
 }
 
 /**
  * Process all due follow-ups for a given org.
- * Called from the daily cron.
+ *
+ * Safety additions (Audit Safety Pass):
+ *  - Priority 1: Autonomy Policy Gate — every send goes through evaluatePolicy()
+ *    blocked      → mark skipped, log POLICY_BLOCKED
+ *    approval_req → create gmail_agent_actions proposal, mark skipped
+ *    auto_execute → send + createOutcomeOnSend
+ *  - Priority 3: per-org execution lock (acquireJobLock) in runFollowUpCron
  */
-export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: number; skipped: number; errors: string[] }> {
+export async function processFollowUpsForOrg(
+  orgId: string
+): Promise<{ sent: number; skipped: number; errors: string[] }> {
   const result = { sent: 0, skipped: 0, errors: [] as string[] };
 
   const dueFollowUps = await storage.getDueFollowUps(orgId);
@@ -142,7 +157,6 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
   const coachName = await getCoachName(orgId);
 
   for (const followUp of dueFollowUps) {
-    // ── Log BEFORE execution decision ────────────────────────────────────────
     const triggerEventId = await logTriggerEvent({
       organizationId: orgId,
       prospectId: followUp.prospectId,
@@ -157,7 +171,6 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
     try {
       const prospect = await storage.getTeamTrainingProspect(followUp.prospectId);
 
-      // Stop conditions
       if (!prospect || !prospect.contactEmail) {
         await storage.updateFollowUp(followUp.id, { status: "skipped" });
         result.skipped++;
@@ -185,8 +198,9 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         continue;
       }
 
-      // Stage-aware: Check if there's an active deal for this prospect — skip cold follow-ups
-      const activeDeal = await storage.getTeamTrainingDealByProspect(followUp.prospectId, orgId).catch(() => null);
+      const activeDeal = await storage
+        .getTeamTrainingDealByProspect(followUp.prospectId, orgId)
+        .catch(() => null);
       if (activeDeal && !["won", "lost"].includes(activeDeal.status)) {
         await storage.updateFollowUp(followUp.id, { status: "skipped" });
         result.skipped++;
@@ -212,7 +226,6 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         continue;
       }
 
-      // Check max follow-ups guard
       if (followUp.stepNumber > MAX_FOLLOW_UPS) {
         await storage.updateFollowUp(followUp.id, { status: "cancelled" });
         result.skipped++;
@@ -225,7 +238,7 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         continue;
       }
 
-      // Generate follow-up body with stage-aware messaging
+      // ── Generate body (needed before policy check for sensitive-language scan) ──
       let subject = followUp.subject;
       let body = followUp.body;
 
@@ -233,21 +246,21 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         const variant = await storage.selectVariantForEmail(orgId);
         const org = await storage.getOrganizationById(orgId);
         const businessName = org?.name || "Our Training Facility";
-
         const opener = FOLLOW_UP_OPENERS[(followUp.stepNumber - 1) % FOLLOW_UP_OPENERS.length];
 
-        // Stage-aware closing lines
         const sentDrafts = await storage.getOutreachDraftsByProspect(followUp.prospectId);
         const openCount = sentDrafts.filter((d) => !!d.openedAt).length;
         const clicked = sentDrafts.some((d) => !!d.clickedAt);
 
         const closingLines: Record<number, string> = {
-          1: openCount >= 1 || clicked
-            ? "I noticed you had a chance to look at my last message — would love to connect for a quick 10 minutes to share what we've done for similar programs."
-            : "I'd love to connect and share how we've helped similar programs this season.",
-          2: openCount >= 2 || clicked
-            ? "I can tell you've been looking into this — I'd love to show you exactly what a program would look like for your team."
-            : "Would a quick 10-minute call make sense this week?",
+          1:
+            openCount >= 1 || clicked
+              ? "I noticed you had a chance to look at my last message — would love to connect for a quick 10 minutes to share what we've done for similar programs."
+              : "I'd love to connect and share how we've helped similar programs this season.",
+          2:
+            openCount >= 2 || clicked
+              ? "I can tell you've been looking into this — I'd love to show you exactly what a program would look like for your team."
+              : "Would a quick 10-minute call make sense this week?",
           3: "If now isn't the right time, no worries — I'll close this out. Otherwise, I'm happy to connect.",
         };
         const closingLine = closingLines[followUp.stepNumber] ?? closingLines[3];
@@ -270,12 +283,107 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         }
       }
 
+      // ── Autonomy Policy Gate (Priority 1) ────────────────────────────────────
+      const policy = await evaluatePolicy({
+        orgId,
+        actionType: "send_follow_up",
+        recipientEmail: prospect.contactEmail,
+        confidence: 0.80,
+        riskLevel: "low",
+        bodyText: body ?? undefined,
+        isFirstContact: false,
+        isNewRecipient: false,
+      }).catch((e) => {
+        console.warn(
+          `[FollowUp] Policy evaluation error for org ${orgId}, defaulting to auto_execute:`,
+          e.message
+        );
+        return {
+          decision: "auto_execute" as const,
+          reasons: [] as string[],
+          confidence: 0.80,
+          riskLevel: "low" as const,
+          policyVersion: "1.0.0",
+          evaluatedAt: new Date(),
+        };
+      });
+
+      if (policy.decision === "blocked") {
+        await storage.updateFollowUp(followUp.id, { status: "skipped" });
+        result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "POLICY_BLOCKED",
+          reasoning: `Autonomy Policy blocked: ${policy.reasons.join("; ")}`,
+        });
+        console.log(`[FollowUp] org ${orgId} follow-up ${followUp.id} BLOCKED by policy`);
+        continue;
+      }
+
+      if (policy.decision === "approval_required") {
+        await db
+          .insert(gmailAgentActions)
+          .values({
+            orgId,
+            actionType: "follow_up_email",
+            recipientEmail: prospect.contactEmail,
+            subject: subject ?? `Follow-up #${followUp.stepNumber} — ${prospect.prospectName}`,
+            bodyPreview: (body ?? "").slice(0, 300),
+            riskLevel: "low",
+            approvalRequired: true,
+            status: "proposed",
+            communicationDomain: "team_training",
+            createdByAgent: "follow_up_cron",
+            result: {
+              followUpId: followUp.id,
+              stepNumber: followUp.stepNumber,
+              prospectId: followUp.prospectId,
+            },
+          })
+          .catch((e) =>
+            console.error(
+              `[FollowUp] Failed to create approval proposal for ${followUp.id}:`,
+              e.message
+            )
+          );
+
+        await storage.updateFollowUp(followUp.id, { status: "skipped" });
+        result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: false,
+          reasoning: `Approval required — proposal queued in AI Comms Center. Reasons: ${policy.reasons.join("; ")}`,
+        });
+        console.log(`[FollowUp] org ${orgId} follow-up ${followUp.id} queued for admin approval`);
+        continue;
+      }
+
+      // ── auto_execute: create tracking record, send, record outcome ────────────
+      const [gmailAction] = await db
+        .insert(gmailAgentActions)
+        .values({
+          orgId,
+          actionType: "follow_up_email",
+          recipientEmail: prospect.contactEmail,
+          subject: subject ?? `Follow-up #${followUp.stepNumber} — ${prospect.prospectName}`,
+          bodyPreview: (body ?? "").slice(0, 300),
+          riskLevel: "low",
+          approvalRequired: false,
+          status: "auto_executed",
+          communicationDomain: "team_training",
+          createdByAgent: "follow_up_cron",
+          executedAt: new Date(),
+        })
+        .returning()
+        .catch(() => [{ id: "" }] as { id: string }[]);
+
       await sendTeamTrainingOutreachEmail(
         prospect.contactEmail,
         subject!,
         body!,
         branding,
-        followUp.id,
+        followUp.id
       );
 
       await storage.updateFollowUp(followUp.id, {
@@ -301,6 +409,18 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
         reasoning: `Follow-up #${followUp.stepNumber} sent to ${prospect.contactEmail}`,
       });
 
+      // Record outcome for attribution (fire-and-forget)
+      if (gmailAction?.id) {
+        createOutcomeOnSend({
+          orgId,
+          gmailActionId: gmailAction.id,
+          communicationDomain: "team_training",
+          messageType: "follow_up",
+          recipientEmail: prospect.contactEmail,
+          prospectId: followUp.prospectId,
+        }).catch((e) => console.warn("[FollowUp] createOutcomeOnSend failed:", e.message));
+      }
+
       result.sent++;
     } catch (err: any) {
       console.error(`[FollowUp] Error processing follow-up ${followUp.id}:`, err.message);
@@ -315,31 +435,37 @@ export async function processFollowUpsForOrg(orgId: string): Promise<{ sent: num
     }
   }
 
-  console.log(`[FollowUp] org ${orgId} — sent=${result.sent} skipped=${result.skipped} errors=${result.errors.length}`);
+  console.log(
+    `[FollowUp] org ${orgId} — sent=${result.sent} skipped=${result.skipped} errors=${result.errors.length}`
+  );
   return result;
 }
 
 let followUpCronInitialized = false;
+let followUpCronIsRunning = false;
 
 export function initializeFollowUpCron(): void {
   if (followUpCronInitialized) return;
   followUpCronInitialized = true;
 
-  // Run once at startup (after a short delay), then every hour
   setTimeout(() => runFollowUpCron(), 15_000);
-
   setInterval(() => runFollowUpCron(), 60 * 60 * 1000);
 
   console.log("[FollowUp Cron] started — will run hourly");
 }
 
 async function runFollowUpCron(): Promise<void> {
-  try {
-    const { appSettings } = await import("@shared/schema");
-    const { db } = await import("../db");
-    const { eq, like } = await import("drizzle-orm");
+  // Global guard: prevent overlapping ticks (Priority 3)
+  if (followUpCronIsRunning) {
+    console.log("[FollowUp Cron] previous run still in progress — skipping this tick");
+    return;
+  }
+  followUpCronIsRunning = true;
 
-    const settingRows = await db.select().from(appSettings)
+  try {
+    const settingRows = await db
+      .select()
+      .from(appSettings)
       .where(like(appSettings.key, "email_agent_%"));
 
     const orgIds = new Set<string>();
@@ -354,11 +480,25 @@ async function runFollowUpCron(): Promise<void> {
     }
 
     for (const orgId of Array.from(orgIds)) {
-      await processFollowUpsForOrg(orgId).catch(e =>
-        console.error(`[FollowUp Cron] org ${orgId} error:`, e.message)
+      // Per-org lock: prevents the same org processing twice if a tick fires mid-run
+      const { acquired, lockKey } = await acquireJobLock(orgId, "follow_up_cron", 55).catch(
+        () => ({ acquired: true, lockKey: "" })
       );
+      if (!acquired) {
+        console.log(`[FollowUp Cron] org ${orgId} lock held — skipping this tick`);
+        continue;
+      }
+      try {
+        await processFollowUpsForOrg(orgId);
+      } catch (e: any) {
+        console.error(`[FollowUp Cron] org ${orgId} error:`, e.message);
+      } finally {
+        if (lockKey) await releaseJobLock(lockKey).catch(() => {});
+      }
     }
   } catch (err: any) {
     console.error("[FollowUp Cron] error:", err.message);
+  } finally {
+    followUpCronIsRunning = false;
   }
 }
