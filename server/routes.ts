@@ -677,6 +677,223 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/admin/billing/reconcile-stripe-payment
+  // Manual single-payment repair: fetch a specific Stripe object, verify payment, resolve account, credit if apply=true
+  app.post("/api/admin/billing/reconcile-stripe-payment", adminRepairAuth, async (req: any, res) => {
+    try {
+      const { stripePaymentIntentId, checkoutSessionId, invoiceId, dryRun = true, apply = false } = req.body || {};
+
+      if (!stripePaymentIntentId && !checkoutSessionId && !invoiceId) {
+        return res.status(400).json({ message: "Provide stripePaymentIntentId, checkoutSessionId, or invoiceId" });
+      }
+
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+
+      let resolvedPaymentIntentId: string | null = null;
+      let resolvedCustomerId: string | null = null;
+      let resolvedCustomerEmail: string | null = null;
+      let resolvedAmountCents: number = 0;
+      let resolvedCurrency: string = "usd";
+      let resolvedStatus: string = "";
+      let resolvedMetadata: Record<string, string> = {};
+      let sourceObject: string = "";
+      let sourceId: string = "";
+
+      // ── Resolve from PaymentIntent ────────────────────────────────────────
+      if (stripePaymentIntentId) {
+        sourceObject = "payment_intent";
+        sourceId = stripePaymentIntentId;
+        const pi = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+        resolvedStatus = pi.status;
+        resolvedAmountCents = pi.amount_received || pi.amount;
+        resolvedCurrency = pi.currency;
+        resolvedPaymentIntentId = pi.id;
+        resolvedCustomerId = typeof pi.customer === "string" ? pi.customer : pi.customer?.id || null;
+        resolvedMetadata = (pi.metadata as Record<string, string>) || {};
+        if (pi.receipt_email) resolvedCustomerEmail = pi.receipt_email;
+      }
+
+      // ── Resolve from Checkout Session ─────────────────────────────────────
+      if (checkoutSessionId) {
+        sourceObject = "checkout_session";
+        sourceId = checkoutSessionId;
+        const session = await stripe.checkout.sessions.retrieve(checkoutSessionId);
+        resolvedStatus = session.payment_status || session.status || "";
+        resolvedAmountCents = session.amount_total || 0;
+        resolvedCurrency = session.currency || "usd";
+        resolvedPaymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || null;
+        resolvedCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id || null;
+        resolvedCustomerEmail = session.customer_details?.email || null;
+        resolvedMetadata = (session.metadata as Record<string, string>) || {};
+      }
+
+      // ── Resolve from Invoice ──────────────────────────────────────────────
+      if (invoiceId) {
+        sourceObject = "invoice";
+        sourceId = invoiceId;
+        const invoice = await stripe.invoices.retrieve(invoiceId);
+        resolvedStatus = invoice.status || "";
+        resolvedAmountCents = invoice.amount_paid;
+        resolvedCurrency = invoice.currency;
+        resolvedPaymentIntentId = typeof invoice.payment_intent === "string" ? invoice.payment_intent : invoice.payment_intent?.id || null;
+        resolvedCustomerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id || null;
+        resolvedCustomerEmail = invoice.customer_email || null;
+        resolvedMetadata = (invoice.metadata as Record<string, string>) || {};
+      }
+
+      // ── Verify payment succeeded ──────────────────────────────────────────
+      const paymentSucceeded = resolvedStatus === "succeeded" || resolvedStatus === "paid" || resolvedStatus === "complete";
+      if (!paymentSucceeded) {
+        return res.json({
+          sourceObject,
+          sourceId,
+          status: resolvedStatus,
+          paymentSucceeded: false,
+          message: `Payment status is '${resolvedStatus}' — not credited`,
+          dryRun,
+          action: "no_action",
+        });
+      }
+
+      // ── Lookup customer email if missing ──────────────────────────────────
+      if (!resolvedCustomerEmail && resolvedCustomerId) {
+        try {
+          const customer = await stripe.customers.retrieve(resolvedCustomerId);
+          if (customer && !("deleted" in customer)) {
+            resolvedCustomerEmail = (customer as any).email || null;
+          }
+        } catch {}
+      }
+
+      // ── Check if already credited ─────────────────────────────────────────
+      let alreadyCredited = false;
+      let existingTxId: string | null = null;
+      if (resolvedPaymentIntentId) {
+        const existing = await storage.getWalletTransactionByStripePaymentIntentId(resolvedPaymentIntentId);
+        if (existing) {
+          alreadyCredited = true;
+          existingTxId = existing.id;
+        }
+      }
+
+      // ── Resolve org/user from metadata or email ───────────────────────────
+      const metaUserId = resolvedMetadata.userId || null;
+      const metaOrgId = resolvedMetadata.orgId || resolvedMetadata.organizationId || null;
+      let matchedUser: { id: string; email: string | null } | null = null;
+
+      if (metaUserId) {
+        const u = await storage.getUser(metaUserId);
+        if (u) matchedUser = { id: u.id, email: u.email };
+      }
+      if (!matchedUser && resolvedCustomerId) {
+        const u = await storage.getUserByStripeCustomerId(resolvedCustomerId);
+        if (u) matchedUser = { id: u.id, email: u.email };
+      }
+      if (!matchedUser && resolvedCustomerEmail) {
+        const u = await storage.getUserByEmail(resolvedCustomerEmail);
+        if (u) matchedUser = { id: u.id, email: u.email };
+      }
+
+      const report = {
+        sourceObject,
+        sourceId,
+        stripePaymentIntentId: resolvedPaymentIntentId,
+        customerId: resolvedCustomerId,
+        customerEmail: resolvedCustomerEmail,
+        amountCents: resolvedAmountCents,
+        currency: resolvedCurrency,
+        metadata: resolvedMetadata,
+        paymentSucceeded,
+        alreadyCredited,
+        existingTxId,
+        matchedUserId: matchedUser?.id || null,
+        matchedUserEmail: matchedUser?.email || null,
+        metaOrgId,
+        dryRun: dryRun && !apply,
+        action: "pending" as string,
+        creditedTxId: null as string | null,
+        error: null as string | null,
+      };
+
+      if (alreadyCredited) {
+        report.action = "already_credited";
+        return res.json({ ...report, message: "Payment already credited — no action needed (idempotent)" });
+      }
+
+      if (!matchedUser) {
+        report.action = "no_user_match";
+        return res.json({ ...report, message: "Could not resolve a user account for this payment — manual intervention needed" });
+      }
+
+      // ── Apply credit if requested ─────────────────────────────────────────
+      if (apply === true && dryRun !== true) {
+        try {
+          const tx = await storage.creditWallet(
+            matchedUser.id,
+            resolvedAmountCents,
+            `Manual repair — $${(resolvedAmountCents / 100).toFixed(2)} (${sourceObject}: ${sourceId})`,
+            checkoutSessionId || undefined,
+            resolvedPaymentIntentId || undefined,
+            undefined,
+            resolvedCurrency || "usd",
+            "succeeded"
+          );
+          report.action = "credited";
+          report.creditedTxId = tx.id;
+          console.log(`[Stripe Repair] Credited userId: ${matchedUser.id} (${matchedUser.email}), $${(resolvedAmountCents / 100).toFixed(2)}, ${sourceObject}: ${sourceId}`);
+          return res.json({ ...report, message: "Payment credited successfully" });
+        } catch (creditErr: any) {
+          report.action = "credit_failed";
+          report.error = creditErr.message;
+          return res.status(500).json({ ...report, message: `Credit failed: ${creditErr.message}` });
+        }
+      }
+
+      report.action = "dry_run";
+      return res.json({ ...report, message: `Dry run — would credit $${(resolvedAmountCents / 100).toFixed(2)} to userId: ${matchedUser.id} (${matchedUser.email}). Pass apply:true and dryRun:false to execute.` });
+
+    } catch (err: any) {
+      console.error("Reconcile stripe payment error:", err);
+      res.status(500).json({ message: err.message || "Reconcile failed" });
+    }
+  });
+
+  // GET /api/admin/billing/webhook-events — query the stripe_webhook_events audit log
+  app.get("/api/admin/billing/webhook-events", adminRepairAuth, async (req: any, res) => {
+    try {
+      const { stripeWebhookEvents } = await import("@shared/schema");
+      const { desc, eq, and, gte } = await import("drizzle-orm");
+      const { db } = await import("./db");
+
+      const limit = Math.min(parseInt((req.query.limit as string) || "50", 10), 200);
+      const status = req.query.status as string | undefined;
+      const eventType = req.query.eventType as string | undefined;
+      const since = req.query.since ? new Date(req.query.since as string) : null;
+
+      let query: any = db.select().from(stripeWebhookEvents).orderBy(desc(stripeWebhookEvents.receivedAt)).limit(limit);
+
+      const rows = await query.catch(() => []);
+      const filtered = rows.filter((r: any) => {
+        if (status && r.processedStatus !== status) return false;
+        if (eventType && r.eventType !== eventType) return false;
+        if (since && r.receivedAt < since) return false;
+        return true;
+      });
+
+      const summary = {
+        total: filtered.length,
+        succeeded: filtered.filter((r: any) => r.processedStatus === "succeeded").length,
+        failed: filtered.filter((r: any) => r.processedStatus === "failed").length,
+        processing: filtered.filter((r: any) => r.processedStatus === "processing").length,
+      };
+
+      res.json({ summary, events: filtered });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to fetch webhook events" });
+    }
+  });
+
   app.post("/api/admin/backfill-org-prefs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const result = await storage.backfillUserOrgPreferences();

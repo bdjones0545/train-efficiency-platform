@@ -1,11 +1,133 @@
 import Stripe from 'stripe';
 import { getStripeSync, getUncachableStripeClient } from './stripeClient';
 import { storage } from './storage';
-import { organizationSubscriptionPlans, financialEventFailures } from '@shared/schema';
+import { organizationSubscriptionPlans, financialEventFailures, stripeWebhookEvents, userSubscriptions } from '@shared/schema';
 import { sendTeamQuoteEmail, sendSubscriptionExpiredEmail, type OrgBranding } from './email';
 import { db } from './db';
+import { eq, and } from 'drizzle-orm';
 
 const LOG_PREFIX = '[Stripe Wallet Sync]';
+
+// ── Structured webhook event logging ─────────────────────────────────────────
+function logWebhookEvent(params: {
+  eventId: string;
+  eventType: string;
+  livemode: boolean;
+  orgId?: string | null;
+  userId?: string | null;
+  paymentIntentId?: string | null;
+  subscriptionId?: string | null;
+  customerId?: string | null;
+  amountCents?: number | null;
+  credited?: boolean;
+  error?: string | null;
+}) {
+  console.log(JSON.stringify({
+    system: 'stripe_webhook',
+    eventId: params.eventId,
+    eventType: params.eventType,
+    livemode: params.livemode,
+    orgId: params.orgId ?? null,
+    userId: params.userId ?? null,
+    paymentIntentId: params.paymentIntentId ?? null,
+    subscriptionId: params.subscriptionId ?? null,
+    customerId: params.customerId ?? null,
+    amount: params.amountCents ?? null,
+    credited: params.credited ?? null,
+    error: params.error ?? null,
+    ts: new Date().toISOString(),
+  }));
+}
+
+// ── Event-level idempotency: check and insert stripe_webhook_events ───────────
+async function checkAndInsertWebhookEvent(params: {
+  stripeEventId: string;
+  eventType: string;
+  livemode: boolean;
+  customerId?: string | null;
+  paymentIntentId?: string | null;
+  subscriptionId?: string | null;
+  orgId?: string | null;
+  userId?: string | null;
+  amountCents?: number | null;
+  metadata?: Record<string, any> | null;
+}): Promise<{ alreadyProcessed: boolean; rowId: string }> {
+  const existing = await db
+    .select()
+    .from(stripeWebhookEvents)
+    .where(eq(stripeWebhookEvents.stripeEventId, params.stripeEventId))
+    .limit(1)
+    .catch(() => []);
+
+  if (existing.length > 0) {
+    return { alreadyProcessed: true, rowId: existing[0].id };
+  }
+
+  const [inserted] = await db.insert(stripeWebhookEvents).values({
+    stripeEventId: params.stripeEventId,
+    eventType: params.eventType,
+    livemode: params.livemode,
+    processedStatus: 'processing',
+    customerId: params.customerId ?? null,
+    paymentIntentId: params.paymentIntentId ?? null,
+    subscriptionId: params.subscriptionId ?? null,
+    orgId: params.orgId ?? null,
+    userId: params.userId ?? null,
+    amountCents: params.amountCents ?? null,
+    metadata: params.metadata ?? null,
+  }).returning().catch(async () => {
+    // Race condition: another request just inserted — treat as already processed
+    const row = await db.select().from(stripeWebhookEvents)
+      .where(eq(stripeWebhookEvents.stripeEventId, params.stripeEventId))
+      .limit(1).catch(() => []);
+    return row.length > 0 ? row : [];
+  });
+
+  if (!inserted) {
+    return { alreadyProcessed: true, rowId: '' };
+  }
+
+  return { alreadyProcessed: false, rowId: inserted.id };
+}
+
+async function markWebhookEventDone(rowId: string, status: 'succeeded' | 'failed', error?: string) {
+  if (!rowId) return;
+  await db.update(stripeWebhookEvents)
+    .set({ processedStatus: status, processingError: error ?? null, processedAt: new Date() })
+    .where(eq(stripeWebhookEvents.id, rowId))
+    .catch(() => {});
+}
+
+// ── Write a dead-letter entry for a failed credit ────────────────────────────
+async function writeDeadLetterForFailedCredit(params: {
+  eventId: string;
+  eventType: string;
+  livemode: boolean;
+  customerId?: string | null;
+  paymentIntentId?: string | null;
+  amountCents?: number;
+  error: string;
+}) {
+  try {
+    await db.insert(financialEventFailures).values({
+      sourceType: 'stripe_webhook',
+      eventType: params.eventType,
+      payload: {
+        stripeEventId: params.eventId,
+        stripeCustomerId: params.customerId,
+        paymentIntentId: params.paymentIntentId,
+        amountCents: params.amountCents,
+        livemode: params.livemode,
+      },
+      failureMessage: `[${params.eventId}] Credit failed: ${params.error}`,
+      status: 'pending',
+      maxAttempts: 3,
+    });
+    console.warn(`[Stripe Webhook] Dead-letter entry written for event ${params.eventId}: ${params.error}`);
+  } catch (err) {
+    console.error('[Stripe Webhook] Failed to write dead-letter entry:', err);
+  }
+}
 
 async function getOrgStripeForQuote(organizationId: string | null): Promise<Stripe> {
   if (organizationId) {
@@ -143,83 +265,192 @@ export class WebhookHandlers {
     const sync = await getStripeSync();
     await sync.processWebhook(payload, signature);
 
+    let event: any;
     try {
-      const event = JSON.parse(payload.toString());
+      event = JSON.parse(payload.toString());
+    } catch (parseErr) {
+      console.error('[Stripe Webhook] Failed to parse event payload:', parseErr);
+      return;
+    }
 
-      if (event.type === 'invoice.paid') {
-        const invoice = event.data?.object;
+    const eventId: string = event.id || 'unknown';
+    const eventType: string = event.type || 'unknown';
+    const livemode: boolean = event.livemode === true;
+    const obj = event.data?.object;
+
+    // ── Live/test mode mismatch detection ────────────────────────────────────
+    const isProduction = process.env.REPLIT_DEPLOYMENT === '1';
+    if (isProduction && !livemode) {
+      console.warn(`[Stripe Webhook] LIVE/TEST MISMATCH — received test event ${eventId} (${eventType}) in production environment. Ignoring.`);
+      logWebhookEvent({ eventId, eventType, livemode, error: 'live/test mode mismatch — test event in production' });
+      return;
+    }
+
+    // ── Event-level idempotency ───────────────────────────────────────────────
+    const customerId = typeof obj?.customer === 'string' ? obj.customer : obj?.customer?.id || null;
+    const paymentIntentId = typeof obj?.payment_intent === 'string' ? obj.payment_intent : obj?.payment_intent?.id || obj?.id && eventType.startsWith('payment_intent') ? obj.id : null;
+    const subscriptionId = typeof obj?.subscription === 'string' ? obj.subscription : obj?.subscription?.id || eventType.startsWith('customer.subscription') ? obj?.id : null;
+    const orgIdFromMeta = obj?.metadata?.orgId || obj?.metadata?.organizationId || null;
+    const userIdFromMeta = obj?.metadata?.userId || null;
+    const amountCentsFromObj = obj?.amount_received || obj?.amount_paid || obj?.amount || null;
+
+    const { alreadyProcessed, rowId } = await checkAndInsertWebhookEvent({
+      stripeEventId: eventId,
+      eventType,
+      livemode,
+      customerId,
+      paymentIntentId,
+      subscriptionId,
+      orgId: orgIdFromMeta,
+      userId: userIdFromMeta,
+      amountCents: amountCentsFromObj,
+      metadata: event.data?.object?.metadata || null,
+    });
+
+    if (alreadyProcessed) {
+      console.log(`[Stripe Webhook] Duplicate event skipped — eventId: ${eventId}, type: ${eventType}`);
+      return;
+    }
+
+    try {
+      if (eventType === 'invoice.paid') {
+        const invoice = obj;
         if (invoice?.id) {
           await WebhookHandlers.handleInvoicePaid(invoice.id);
         }
         if (invoice?.subscription) {
           await WebhookHandlers.handleSubscriptionRenewal(invoice.subscription, invoice.period_start, invoice.period_end);
         }
+        logWebhookEvent({ eventId, eventType, livemode, subscriptionId: invoice?.subscription, customerId, credited: true });
       }
 
-      if (event.type === 'invoice.payment_succeeded') {
-        const invoice = event.data?.object;
+      if (eventType === 'invoice.payment_succeeded') {
+        const invoice = obj;
         if (invoice?.id) {
           await WebhookHandlers.handleInvoicePaid(invoice.id);
         }
         if (invoice?.subscription) {
           await WebhookHandlers.handleSubscriptionRenewal(invoice.subscription, invoice.period_start, invoice.period_end);
         }
+        logWebhookEvent({ eventId, eventType, livemode, subscriptionId: invoice?.subscription, customerId, credited: true });
       }
 
-      if (event.type === 'customer.subscription.created' ||
-          event.type === 'customer.subscription.updated' ||
-          event.type === 'customer.subscription.deleted') {
-        await WebhookHandlers.handleSubscriptionEvent(event.data?.object);
+      if (eventType === 'customer.subscription.created' ||
+          eventType === 'customer.subscription.updated' ||
+          eventType === 'customer.subscription.deleted') {
+        await WebhookHandlers.handleSubscriptionEvent(obj);
+        logWebhookEvent({ eventId, eventType, livemode, subscriptionId: obj?.id, customerId, orgId: orgIdFromMeta, credited: true });
       }
 
-      if (event.type === 'checkout.session.completed') {
-        const session = event.data?.object;
+      if (eventType === 'checkout.session.completed') {
+        const session = obj;
 
+        // ── Subscription checkout ─────────────────────────────────────────────
         if (session?.mode === 'subscription' && session?.subscription) {
-          const orgId = session.metadata?.orgId;
-          if (orgId) {
+          const orgId = session.metadata?.orgId || session.metadata?.organizationId;
+          const sessionUserId = session.metadata?.userId;
+          const sessionPlanId = session.metadata?.planId;
+          const stripeSubId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+
+          let subStatus = 'active';
+          let periodStart: Date | null = null;
+          let periodEnd: Date | null = null;
+          let sessionsRemaining: number | null = null;
+
+          try {
             const stripe = await getUncachableStripeClient();
-            const subscription = await stripe.subscriptions.retrieve(session.subscription);
-            await storage.updateOrganization(orgId, {
-              stripeSubscriptionId: subscription.id,
-              subscriptionStatus: subscription.status as any,
-              trialEndsAt: subscription.trial_end ? new Date(subscription.trial_end * 1000) : null,
-              subscriptionCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
-            });
-            console.log(`Subscription ${subscription.id} linked to org ${orgId} (status: ${subscription.status})`);
+            const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
+            subStatus = stripeSub.status;
+            periodStart = new Date(stripeSub.current_period_start * 1000);
+            periodEnd = new Date(stripeSub.current_period_end * 1000);
+
+            // Update org-level subscription record
+            if (orgId) {
+              await storage.updateOrganization(orgId, {
+                stripeSubscriptionId: stripeSub.id,
+                subscriptionStatus: stripeSub.status as any,
+                trialEndsAt: stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000) : null,
+                subscriptionCurrentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+              });
+              console.log(`[Stripe Webhook] Subscription ${stripeSub.id} linked to org ${orgId} (status: ${stripeSub.status})`);
+            }
+
+            // ── FIX: Activate the user subscription record ──────────────────
+            // The /api/wallet/subscribe route creates a userSubscription with status:'pending'.
+            // Without this, subscriptions stay pending forever unless client hits verify-subscription.
+            if (sessionUserId && sessionPlanId) {
+              const userSub = await storage.getUserSubscriptionByCheckoutSession(session.id).catch(() => undefined);
+              if (userSub && userSub.status === 'pending') {
+                // Calculate sessions to allocate
+                const plan = await storage.getOrganizationSubscriptionPlan(sessionPlanId).catch(() => null);
+                if (plan) {
+                  const spw = plan.sessionsPerWeek || 1;
+                  const intervalWeeks = plan.interval === 'year' ? 52 * (plan.intervalCount || 1)
+                    : plan.interval === 'month' ? 4 * (plan.intervalCount || 1)
+                    : (plan.intervalCount || 1);
+                  sessionsRemaining = spw * intervalWeeks;
+                }
+                await storage.updateUserSubscription(userSub.id, {
+                  stripeSubscriptionId: stripeSubId,
+                  status: subStatus,
+                  currentPeriodStart: periodStart,
+                  currentPeriodEnd: periodEnd,
+                  ...(sessionsRemaining !== null ? { sessionsRemaining } : {}),
+                });
+                console.log(`[Stripe Webhook] User subscription ${userSub.id} activated (${subStatus}) for userId ${sessionUserId} via checkout.session.completed`);
+              }
+            }
+          } catch (subErr: any) {
+            console.error('[Stripe Webhook] Error processing subscription checkout:', subErr.message);
+            await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId, error: subErr.message });
+            await markWebhookEventDone(rowId, 'failed', subErr.message);
+            logWebhookEvent({ eventId, eventType, livemode, subscriptionId: stripeSubId, orgId, userId: sessionUserId, credited: false, error: subErr.message });
+            return;
           }
+
+          logWebhookEvent({ eventId, eventType, livemode, subscriptionId: stripeSubId, orgId, userId: sessionUserId, credited: true });
         }
 
+        // ── One-time wallet deposit ───────────────────────────────────────────
         if (session?.mode === 'payment' && session?.payment_status === 'paid') {
           const metaType = session.metadata?.type;
           const metaUserId = session.metadata?.userId;
           const amountCents = parseInt(session.metadata?.amountCents || '0', 10);
           const sessionId = session.id;
+          const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id || null;
 
           if (metaType === 'wallet_deposit' && metaUserId && amountCents > 0) {
             const existingBySession = await storage.getWalletTransactionByStripeSessionId(sessionId);
             if (existingBySession) {
               console.log(`${LOG_PREFIX} skipped duplicate — checkoutSessionId ${sessionId} already credited`);
-            } else {
-              const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id || null;
-              if (paymentIntentId) {
-                const existingByPI = await storage.getWalletTransactionByStripePaymentIntentId(paymentIntentId);
-                if (existingByPI) {
-                  console.log(`${LOG_PREFIX} skipped duplicate — paymentIntentId ${paymentIntentId} already credited`);
-                } else {
+              logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: true });
+            } else if (piId) {
+              const existingByPI = await storage.getWalletTransactionByStripePaymentIntentId(piId);
+              if (existingByPI) {
+                console.log(`${LOG_PREFIX} skipped duplicate — paymentIntentId ${piId} already credited`);
+                logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: true });
+              } else {
+                try {
                   const priorBalance = await storage.getUserBalance(metaUserId);
                   await storage.creditWallet(
                     metaUserId,
                     amountCents,
                     `Added $${(amountCents / 100).toFixed(2)} via Stripe (webhook)`,
                     sessionId,
-                    paymentIntentId,
+                    piId,
                     undefined,
                     session.currency || 'usd',
                     'succeeded'
                   );
                   const newBalance = await storage.getUserBalance(metaUserId);
-                  console.log(`${LOG_PREFIX} wallet deposit credited via checkout.session.completed — userId: ${metaUserId}, amount: $${(amountCents / 100).toFixed(2)}, prior balance: $${(priorBalance / 100).toFixed(2)}, new balance: $${(newBalance / 100).toFixed(2)}`);
+                  console.log(`${LOG_PREFIX} wallet deposit credited — userId: ${metaUserId}, amount: $${(amountCents / 100).toFixed(2)}, prior: $${(priorBalance / 100).toFixed(2)}, new: $${(newBalance / 100).toFixed(2)}`);
+                  logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: true });
+                } catch (creditErr: any) {
+                  console.error(`${LOG_PREFIX} wallet credit failed:`, creditErr.message);
+                  await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId, paymentIntentId: piId, amountCents, error: creditErr.message });
+                  logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: false, error: creditErr.message });
+                  await markWebhookEventDone(rowId, 'failed', creditErr.message);
+                  return;
                 }
               }
             }
@@ -227,28 +458,33 @@ export class WebhookHandlers {
         }
       }
 
-      if (event.type === 'payment_intent.succeeded') {
-        const pi = event.data?.object;
-        if (!pi?.id) return;
+      if (eventType === 'payment_intent.succeeded') {
+        const pi = obj;
+        if (!pi?.id) {
+          await markWebhookEventDone(rowId, 'succeeded');
+          return;
+        }
 
         const isWalletDeposit = pi.metadata?.type === 'wallet_deposit';
         if (isWalletDeposit) {
           console.log(`${LOG_PREFIX} payment_intent.succeeded for wallet_deposit — skipping direct credit (handled via checkout.session.completed)`);
+          logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: pi.id, credited: null as any });
+          await markWebhookEventDone(rowId, 'succeeded');
           return;
         }
 
-        const amountCents = pi.amount_received || pi.amount || 0;
+        const piAmountCents = pi.amount_received || pi.amount || 0;
         const currency = pi.currency || 'usd';
-        const stripeCustomerId = typeof pi.customer === 'string' ? pi.customer : pi.customer?.id || null;
+        const piCustomerId = typeof pi.customer === 'string' ? pi.customer : pi.customer?.id || null;
         const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : pi.latest_charge?.id || null;
 
         let customerEmail: string | null = null;
         let customerName: string | null = null;
 
-        if (stripeCustomerId) {
+        if (piCustomerId) {
           try {
             const stripe = await getUncachableStripeClient();
-            const customer = await stripe.customers.retrieve(stripeCustomerId);
+            const customer = await stripe.customers.retrieve(piCustomerId);
             if (customer && !('deleted' in customer)) {
               customerEmail = customer.email || null;
               customerName = customer.name || null;
@@ -260,72 +496,98 @@ export class WebhookHandlers {
           customerEmail = pi.receipt_email;
         }
 
-        await processWalletCredit({
-          stripePaymentIntentId: pi.id,
-          stripeChargeId: chargeId,
-          stripeCustomerId,
-          customerEmail,
-          customerName,
-          amountCents,
-          currency,
-          description: `Stripe payment $${(amountCents / 100).toFixed(2)} (paymentIntent: ${pi.id})`,
-          eventType: event.type,
-        });
+        try {
+          await processWalletCredit({
+            stripePaymentIntentId: pi.id,
+            stripeChargeId: chargeId,
+            stripeCustomerId: piCustomerId,
+            customerEmail,
+            customerName,
+            amountCents: piAmountCents,
+            currency,
+            description: `Stripe payment $${(piAmountCents / 100).toFixed(2)} (paymentIntent: ${pi.id})`,
+            eventType,
+          });
+          logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: pi.id, customerId: piCustomerId, amountCents: piAmountCents, credited: true });
+        } catch (creditErr: any) {
+          await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId: piCustomerId, paymentIntentId: pi.id, amountCents: piAmountCents, error: creditErr.message });
+          logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: pi.id, customerId: piCustomerId, amountCents: piAmountCents, credited: false, error: creditErr.message });
+          await markWebhookEventDone(rowId, 'failed', creditErr.message);
+          return;
+        }
       }
 
-      if (event.type === 'charge.succeeded') {
-        const charge = event.data?.object;
-        if (!charge?.id) return;
+      if (eventType === 'charge.succeeded') {
+        const charge = obj;
+        if (!charge?.id) {
+          await markWebhookEventDone(rowId, 'succeeded');
+          return;
+        }
 
         const isWalletDeposit = charge.metadata?.type === 'wallet_deposit';
         if (isWalletDeposit) {
           console.log(`${LOG_PREFIX} charge.succeeded for wallet_deposit — skipping direct credit (handled via checkout.session.completed)`);
+          logWebhookEvent({ eventId, eventType, livemode, credited: null as any });
+          await markWebhookEventDone(rowId, 'succeeded');
           return;
         }
 
-        const paymentIntentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id || null;
+        const chargePiId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id || null;
 
-        if (paymentIntentId) {
-          const existing = await storage.getWalletTransactionByStripePaymentIntentId(paymentIntentId);
+        if (chargePiId) {
+          const existing = await storage.getWalletTransactionByStripePaymentIntentId(chargePiId);
           if (existing) {
-            console.log(`${LOG_PREFIX} skipped duplicate charge.succeeded — paymentIntentId ${paymentIntentId} already credited`);
+            console.log(`${LOG_PREFIX} skipped duplicate charge.succeeded — paymentIntentId ${chargePiId} already credited`);
+            logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: chargePiId, credited: true });
+            await markWebhookEventDone(rowId, 'succeeded');
             return;
           }
         }
 
-        const amountCents = charge.amount || 0;
-        const currency = charge.currency || 'usd';
-        const stripeCustomerId = typeof charge.customer === 'string' ? charge.customer : charge.customer?.id || null;
+        const chargeAmountCents = charge.amount || 0;
+        const chargeCurrency = charge.currency || 'usd';
+        const chargeCustomerId = typeof charge.customer === 'string' ? charge.customer : charge.customer?.id || null;
 
-        let customerEmail: string | null = charge.billing_details?.email || charge.receipt_email || null;
-        let customerName: string | null = charge.billing_details?.name || null;
+        let chargeCustomerEmail: string | null = charge.billing_details?.email || charge.receipt_email || null;
+        let chargeCustomerName: string | null = charge.billing_details?.name || null;
 
-        if (!customerEmail && stripeCustomerId) {
+        if (!chargeCustomerEmail && chargeCustomerId) {
           try {
             const stripe = await getUncachableStripeClient();
-            const customer = await stripe.customers.retrieve(stripeCustomerId);
+            const customer = await stripe.customers.retrieve(chargeCustomerId);
             if (customer && !('deleted' in customer)) {
-              customerEmail = (customer as Stripe.Customer).email || null;
-              customerName = customerName || (customer as Stripe.Customer).name || null;
+              chargeCustomerEmail = (customer as Stripe.Customer).email || null;
+              chargeCustomerName = chargeCustomerName || (customer as Stripe.Customer).name || null;
             }
           } catch {}
         }
 
-        await processWalletCredit({
-          stripePaymentIntentId: paymentIntentId,
-          stripeChargeId: charge.id,
-          stripeCustomerId,
-          customerEmail,
-          customerName,
-          amountCents,
-          currency,
-          description: `Stripe charge $${(amountCents / 100).toFixed(2)} (chargeId: ${charge.id})`,
-          eventType: event.type,
-        });
+        try {
+          await processWalletCredit({
+            stripePaymentIntentId: chargePiId,
+            stripeChargeId: charge.id,
+            stripeCustomerId: chargeCustomerId,
+            customerEmail: chargeCustomerEmail,
+            customerName: chargeCustomerName,
+            amountCents: chargeAmountCents,
+            currency: chargeCurrency,
+            description: `Stripe charge $${(chargeAmountCents / 100).toFixed(2)} (chargeId: ${charge.id})`,
+            eventType,
+          });
+          logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: chargePiId, customerId: chargeCustomerId, amountCents: chargeAmountCents, credited: true });
+        } catch (creditErr: any) {
+          await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId: chargeCustomerId, paymentIntentId: chargePiId, amountCents: chargeAmountCents, error: creditErr.message });
+          logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: chargePiId, customerId: chargeCustomerId, amountCents: chargeAmountCents, credited: false, error: creditErr.message });
+          await markWebhookEventDone(rowId, 'failed', creditErr.message);
+          return;
+        }
       }
 
-    } catch (err) {
-      console.error('Error processing custom webhook logic:', err);
+      await markWebhookEventDone(rowId, 'succeeded');
+    } catch (err: any) {
+      console.error('[Stripe Webhook] Error processing custom webhook logic:', err);
+      await markWebhookEventDone(rowId, 'failed', err.message || String(err));
+      logWebhookEvent({ eventId, eventType, livemode, error: err.message || String(err) });
     }
   }
 

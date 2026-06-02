@@ -4991,3 +4991,26 @@ export const exerciseEffectivenessScores = pgTable("exercise_effectiveness_score
 export const insertExerciseEffectivenessScoreSchema = createInsertSchema(exerciseEffectivenessScores).omit({ id: true, createdAt: true, updatedAt: true });
 export type ExerciseEffectivenessScore = typeof exerciseEffectivenessScores.$inferSelect;
 export type InsertExerciseEffectivenessScore = z.infer<typeof insertExerciseEffectivenessScoreSchema>;
+
+// ── Stripe Webhook Events (idempotency + audit log) ───────────────────────────
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  stripeEventId: varchar("stripe_event_id").notNull().unique(),
+  eventType: varchar("event_type").notNull(),
+  livemode: boolean("livemode").notNull().default(false),
+  processedStatus: varchar("processed_status").notNull().default("pending"),
+  processingError: text("processing_error"),
+  customerId: varchar("customer_id"),
+  paymentIntentId: varchar("payment_intent_id"),
+  subscriptionId: varchar("subscription_id"),
+  orgId: varchar("org_id"),
+  userId: varchar("user_id"),
+  amountCents: integer("amount_cents"),
+  metadata: jsonb("metadata"),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+});
+
+export const insertStripeWebhookEventSchema = createInsertSchema(stripeWebhookEvents).omit({ id: true, receivedAt: true });
+export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
+export type InsertStripeWebhookEvent = z.infer<typeof insertStripeWebhookEventSchema>;
