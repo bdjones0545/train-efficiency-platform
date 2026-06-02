@@ -16,7 +16,7 @@
 
 import { db } from "../db";
 import { gmailAgentActions, agentAutonomyDecisions, leadIntelligenceProfiles } from "@shared/schema";
-import { eq, and, sql, isNull } from "drizzle-orm";
+import { eq, and, sql, gt } from "drizzle-orm";
 import { evaluatePolicy } from "./autonomy-policy-engine";
 
 let executorRunning = false;
@@ -40,7 +40,7 @@ export async function runActionExecutorCycle(): Promise<{
     .where(
       and(
         eq(gmailAgentActions.status, "proposed"),
-        sql`${gmailAgentActions.created_at} > NOW() - INTERVAL '24 hours'`
+        gt(gmailAgentActions.createdAt, sql`NOW() - INTERVAL '24 hours'`)
       )
     )
     .limit(50);
