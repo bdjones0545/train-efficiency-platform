@@ -97,6 +97,7 @@ export async function logActionAsEvent(
     actionType: string;
     actionSource: "auto_executed" | "manual";
     prospectId?: string;
+    dealId?: string;
     prospectName?: string;
     sport?: string;
     executionLogId?: string;
@@ -104,12 +105,14 @@ export async function logActionAsEvent(
     attributionRole?: "primary" | "assist";
     attributionChainId?: string;
     chainPosition?: number;
+    creditedValue?: number;
   }
 ): Promise<void> {
   try {
     await storage.createAiRevenueEvent({
       orgId,
       prospectId: data.prospectId,
+      dealId: data.dealId,
       executionLogId: data.executionLogId,
       actionType: data.actionType,
       actionSource: data.actionSource,
@@ -121,6 +124,7 @@ export async function logActionAsEvent(
       attributionRole: data.attributionRole ?? "primary",
       attributionChainId: data.attributionChainId,
       chainPosition: data.chainPosition ?? 0,
+      creditedValue: data.creditedValue ?? 0,
     });
   } catch (err: any) {
     console.warn("[RevenueEngine] logActionAsEvent failed:", err.message);
@@ -163,6 +167,14 @@ export async function logMultiTouchAttributionChain(
 
     const primaryEvent = prospectEvents[prospectEvents.length - 1];
     const assistEvents = prospectEvents.slice(0, -1);
+    const totalTouches = prospectEvents.length;
+
+    // Equal-split credit: each touch earns an equal share of the deal value.
+    // outcomeValue on the primary event retains the full deal value for reference;
+    // creditedValue on every event holds the fractional share to prevent double-counting.
+    const equalShare = Math.round(wonValue / totalTouches);
+    // Remainder goes to the primary touch so shares sum exactly to wonValue
+    const primaryCredit = wonValue - equalShare * assistEvents.length;
 
     const now = new Date();
     const createdAt = new Date(primaryEvent.createdAt);
@@ -172,19 +184,21 @@ export async function logMultiTouchAttributionChain(
     await storage.updateAiRevenueEvent(primaryEvent.id, {
       outcomeStatus: "won",
       outcomeValue: wonValue,
+      creditedValue: primaryCredit,
       outcomeSource: source,
       outcomeTimestamp: now,
       timeToOutcomeHours: diffHours,
       attributionRole: "primary",
       attributionChainId: chainId,
-      chainPosition: prospectEvents.length,
+      chainPosition: totalTouches,
     });
 
-    // Mark assist events
+    // Mark assist events with their equal share
     for (let i = 0; i < assistEvents.length; i++) {
       await storage.updateAiRevenueEvent(assistEvents[i].id, {
         outcomeStatus: "won",
-        outcomeValue: 0,
+        outcomeValue: wonValue,
+        creditedValue: equalShare,
         outcomeSource: source,
         outcomeTimestamp: now,
         timeToOutcomeHours: null,

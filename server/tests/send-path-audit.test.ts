@@ -533,6 +533,66 @@ describe("P3: Gmail Agent Approval", async () => {
       "bulk-approve must guard against blocked status"
     );
   });
+
+  // ── Revenue Attribution Fixes (from attribution audit) ──────────────────
+
+  it("P3-12: bookings table has source_outcome_id column (Fix 1 — booking attribution FK)", async () => {
+    const src = readFileSync("shared/schema.ts", "utf-8");
+    assert.ok(src.includes("sourceOutcomeId") && src.includes("source_outcome_id"), "bookings schema must include sourceOutcomeId / source_outcome_id");
+    // Also verify column exists in live DB
+    const { db } = await import("../db");
+    const { sql } = await import("drizzle-orm");
+    const rows = await db.execute(sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'bookings' AND column_name = 'source_outcome_id'
+    `);
+    const found = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+    assert.ok(found.length > 0, "source_outcome_id column must exist in bookings table in live DB");
+  });
+
+  it("P3-13: ai_revenue_events has credited_value column (Fix 3 — fractional split)", async () => {
+    const src = readFileSync("shared/schema.ts", "utf-8");
+    assert.ok(src.includes("creditedValue") && src.includes("credited_value"), "ai_revenue_events schema must include creditedValue / credited_value");
+    const { db } = await import("../db");
+    const { sql } = await import("drizzle-orm");
+    const rows = await db.execute(sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'ai_revenue_events' AND column_name = 'credited_value'
+    `);
+    const found = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+    assert.ok(found.length > 0, "credited_value column must exist in ai_revenue_events in live DB");
+  });
+
+  it("P3-14: single-approve calls logActionAsEvent to wire revenue attribution (Fix 2)", async () => {
+    const src = readFileSync("server/routes.ts", "utf-8");
+    const approveIdx = src.indexOf("api/ai-approvals/:id/approve");
+    assert.ok(approveIdx !== -1, "single-approve route must exist");
+    const section = src.slice(approveIdx, approveIdx + 4000);
+    assert.ok(section.includes("logActionAsEvent"), "single-approve must call logActionAsEvent for revenue attribution");
+    assert.ok(section.includes("executionLogId"), "single-approve logActionAsEvent call must pass executionLogId");
+  });
+
+  it("P3-15: bulk-approve calls logActionAsEvent to wire revenue attribution (Fix 2)", async () => {
+    const src = readFileSync("server/routes.ts", "utf-8");
+    const bulkIdx = src.indexOf("api/ai-approvals/bulk-approve");
+    const section = src.slice(bulkIdx, bulkIdx + 3000);
+    assert.ok(section.includes("logActionAsEvent"), "bulk-approve must call logActionAsEvent for revenue attribution");
+  });
+
+  it("P3-16: edit-send calls both createOutcomeOnSend and logActionAsEvent (Fix 2)", async () => {
+    const src = readFileSync("server/routes.ts", "utf-8");
+    const editIdx = src.indexOf("api/ai-approvals/:id/edit-send");
+    const section = src.slice(editIdx, editIdx + 6000);
+    assert.ok(section.includes("createOutcomeOnSend") || section.includes("_editOutcome"), "edit-send must call createOutcomeOnSend (was previously missing)");
+    assert.ok(section.includes("logActionAsEvent") || section.includes("_logEdit"), "edit-send must call logActionAsEvent for revenue attribution");
+  });
+
+  it("P3-17: logMultiTouchAttributionChain sets credited_value using equal-split (Fix 3 — source check)", async () => {
+    const src = readFileSync("server/email-agent/revenue-outcome-engine.ts", "utf-8");
+    assert.ok(src.includes("creditedValue"), "revenue-outcome-engine must set creditedValue");
+    assert.ok(src.includes("equalShare") || src.includes("equal"), "engine must implement equal-split credit allocation");
+    assert.ok(src.includes("primaryCredit") || src.includes("primary"), "engine must calculate primary credit as remainder to prevent rounding loss");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

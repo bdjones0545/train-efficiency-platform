@@ -21604,6 +21604,8 @@ Respond with this exact JSON structure:
         ]);
         const { createOutcomeOnSend } = await import("./services/outcome-intelligence-service");
         createOutcomeOnSend({ orgId, gmailActionId: p.id, communicationDomain: (p as any).communicationDomain ?? "athlete_lead", messageType: p.actionType.replace("propose_draft:", ""), recipientEmail: p.recipientEmail ?? undefined, leadId: p.leadId ?? undefined, dealId: p.dealId ?? undefined }).catch(console.error);
+        const { logActionAsEvent: _logBulk } = await import("./email-agent/revenue-outcome-engine");
+        _logBulk(orgId, { actionType: "outreach_email", actionSource: "manual", prospectId: p.leadId ?? undefined, dealId: p.dealId ?? undefined, executionLogId: p.id, outcomeSource: (p as any).communicationDomain ?? "athlete_lead" }).catch(console.error);
         return p.id;
       }));
       const sent = results.filter((r) => r.status === "fulfilled").length;
@@ -21667,6 +21669,9 @@ Respond with this exact JSON structure:
       // Track outcome
       const { createOutcomeOnSend } = await import("./services/outcome-intelligence-service");
       createOutcomeOnSend({ orgId, gmailActionId: id, feedbackId: feedbackRow[0]?.id, communicationDomain: proposal.communicationDomain ?? "athlete_lead", messageType: proposal.actionType.replace("propose_draft:", ""), recipientEmail: proposal.recipientEmail ?? undefined, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined }).catch(console.error);
+      // Fix 2: wire execution into ai_revenue_events so CEO Heartbeat can attribute by agent/message
+      const { logActionAsEvent: _logApprove } = await import("./email-agent/revenue-outcome-engine");
+      _logApprove(orgId, { actionType: "outreach_email", actionSource: "manual", prospectId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined, executionLogId: id, outcomeSource: proposal.communicationDomain ?? "athlete_lead" }).catch(console.error);
       res.json({ ok: true, messageId, threadId });
     } catch (e: any) {
       console.error("[ai-approvals] approve error:", e);
@@ -21704,6 +21709,11 @@ Respond with this exact JSON structure:
         const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
         extractMessageLearningFromFeedback(orgId, fbRow[0].id).catch(console.error);
       }
+      // Track outcome + wire into ai_revenue_events (edit-send previously had neither)
+      const { createOutcomeOnSend: _editOutcome } = await import("./services/outcome-intelligence-service");
+      _editOutcome({ orgId, gmailActionId: id, feedbackId: fbRow[0]?.id, communicationDomain: proposal.communicationDomain ?? "athlete_lead", messageType: proposal.actionType.replace("propose_draft:", ""), recipientEmail: proposal.recipientEmail ?? undefined, leadId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined }).catch(console.error);
+      const { logActionAsEvent: _logEdit } = await import("./email-agent/revenue-outcome-engine");
+      _logEdit(orgId, { actionType: "outreach_email", actionSource: "manual", prospectId: proposal.leadId ?? undefined, dealId: proposal.dealId ?? undefined, executionLogId: id, outcomeSource: proposal.communicationDomain ?? "athlete_lead" }).catch(console.error);
       res.json({ ok: true, messageId, threadId });
     } catch (e: any) {
       console.error("[ai-approvals] edit-send error:", e);

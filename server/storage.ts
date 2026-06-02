@@ -545,7 +545,7 @@ export interface IStorage {
   ensureUserOrgPreferences(userId: string, orgId: string): Promise<UserOrgPreferences>;
   backfillUserOrgPreferences(): Promise<{ created: number; skipped: number }>;
   createAiRevenueEvent(data: import("@shared/schema").InsertAiRevenueEvent): Promise<import("@shared/schema").AiRevenueEvent>;
-  updateAiRevenueEvent(id: string, data: { outcomeStatus?: string; outcomeValue?: number; outcomeSource?: string; outcomeTimestamp?: Date; timeToOutcomeHours?: number | null; attributionRole?: string; attributionChainId?: string; chainPosition?: number }): Promise<void>;
+  updateAiRevenueEvent(id: string, data: { outcomeStatus?: string; outcomeValue?: number; creditedValue?: number; outcomeSource?: string; outcomeTimestamp?: Date; timeToOutcomeHours?: number | null; attributionRole?: string; attributionChainId?: string; chainPosition?: number }): Promise<void>;
   findRecentAiEventForProspect(orgId: string, prospectId: string, windowHours?: number): Promise<import("@shared/schema").AiRevenueEvent | null>;
   getAiRevenueStats(orgId: string): Promise<{
     today: { revenue: number; actions: number; wonActions: number; engagedActions: number; avgPerAction: number };
@@ -3297,7 +3297,7 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async updateAiRevenueEvent(id: string, updates: { outcomeStatus?: string; outcomeValue?: number; outcomeSource?: string; outcomeTimestamp?: Date; timeToOutcomeHours?: number | null; attributionRole?: string; attributionChainId?: string; chainPosition?: number }) {
+  async updateAiRevenueEvent(id: string, updates: { outcomeStatus?: string; outcomeValue?: number; creditedValue?: number; outcomeSource?: string; outcomeTimestamp?: Date; timeToOutcomeHours?: number | null; attributionRole?: string; attributionChainId?: string; chainPosition?: number }) {
     const { aiRevenueEvents } = await import("@shared/schema");
     await db.update(aiRevenueEvents).set(updates as any).where(eq(aiRevenueEvents.id, id));
   }

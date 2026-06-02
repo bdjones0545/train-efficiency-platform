@@ -252,6 +252,7 @@ export const bookings = pgTable("bookings", {
   clientReminderSentAt: timestamp("client_reminder_sent_at"),
   coachReminderSentAt: timestamp("coach_reminder_sent_at"),
   googleCalendarEventId: varchar("google_calendar_event_id"),
+  sourceOutcomeId: varchar("source_outcome_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1076,6 +1077,7 @@ export const aiRevenueEvents = pgTable("ai_revenue_events", {
   attributionRole: varchar("attribution_role").default("primary"),
   attributionChainId: varchar("attribution_chain_id"),
   chainPosition: integer("chain_position").default(0),
+  creditedValue: integer("credited_value").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
