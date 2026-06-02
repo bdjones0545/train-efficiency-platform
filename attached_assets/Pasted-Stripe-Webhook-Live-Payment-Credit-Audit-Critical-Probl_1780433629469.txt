@@ -1,0 +1,372 @@
+Stripe Webhook Live Payment Credit Audit — Critical
+
+Problem:
+Stripe is successfully taking live payments, but TrainEfficiency is not crediting the accounts/users/orgs that paid.
+
+This is a production-critical billing fulfillment bug.
+
+Objective:
+Audit the full live Stripe payment flow from checkout/payment → webhook receipt → event verification → database update → account credit/subscription activation.
+
+⸻
+
+Phase 1 — Identify Payment Flow
+
+Audit all Stripe-related files and routes.
+
+Find:
+
+* Stripe checkout/session creation route
+* Stripe payment intent creation route
+* Stripe webhook route
+* Stripe customer creation logic
+* Subscription/payment fulfillment logic
+* Account crediting logic
+
+Search for:
+
+* stripe.webhooks.constructEvent
+* checkout.session.completed
+* payment_intent.succeeded
+* invoice.payment_succeeded
+* customer.subscription.created
+* customer.subscription.updated
+* customer.subscription.deleted
+* STRIPE_WEBHOOK_SECRET
+* stripeCustomerId
+* paymentIntentId
+* subscriptionId
+
+Return every file involved.
+
+⸻
+
+Phase 2 — Verify Live Webhook Configuration
+
+Check:
+
+1. Is the live Stripe webhook URL configured correctly in Stripe Dashboard?
+2. Is it pointing to the live app domain, not dev/staging?
+3. Is the webhook route publicly reachable?
+4. Is the route using raw body parsing?
+5. Is STRIPE_WEBHOOK_SECRET the live webhook signing secret?
+6. Are test and live secrets mixed?
+7. Are webhook events returning HTTP 200 or failing?
+
+Required:
+Log webhook receipt with:
+
+* event id
+* event type
+* livemode
+* created timestamp
+* customer id
+* payment intent id
+* subscription id
+* metadata
+* processing result
+
+⸻
+
+Phase 3 — Raw Body / Signature Verification
+
+Stripe webhooks require raw request body.
+
+Audit Express middleware order.
+
+Confirm:
+
+* webhook route is registered before express.json()
+    OR
+* webhook uses express.raw({ type: 'application/json' })
+
+If current route uses parsed JSON body before signature verification, Stripe signature verification will fail and fulfillment will never run.
+
+Return:
+
+* current middleware order
+* whether raw body is correct
+* fix if needed
+
+⸻
+
+Phase 4 — Event Type Coverage
+
+Audit which events are handled.
+
+Required handling:
+
+One-time payments
+
+checkout.session.completed
+
+* verify payment_status = paid
+* read metadata
+* identify org/user/customer
+* credit account
+
+payment_intent.succeeded
+
+* fallback fulfillment if checkout session was missed
+
+Subscriptions
+
+checkout.session.completed
+
+* subscription checkout completed
+
+invoice.payment_succeeded
+
+* recurring subscription payment succeeded
+* activate/extend subscription
+
+customer.subscription.created
+
+* create subscription record
+
+customer.subscription.updated
+
+* sync plan/status/current_period_end
+
+customer.subscription.deleted
+
+* mark subscription canceled
+
+Return missing event handlers.
+
+⸻
+
+Phase 5 — Metadata Audit
+
+The most likely failure:
+Stripe payment succeeds but webhook cannot map payment back to account.
+
+Audit checkout/session creation.
+
+Verify metadata includes enough identifiers:
+
+Required metadata:
+
+* orgId
+* userId
+* accountType
+* productType
+* planId
+* creditAmount or tokenAmount if applicable
+* environment: live | test
+
+For subscriptions:
+
+* orgId
+* userId
+* planId
+* priceId
+* subscriptionTier
+
+For one-time credits:
+
+* orgId
+* userId
+* creditAmount
+* purchaseType
+
+If metadata is missing, webhook cannot credit the correct account.
+
+Return examples of actual session metadata being created.
+
+⸻
+
+Phase 6 — Account Credit Logic
+
+Find the exact table that should be updated after payment.
+
+Possible tables:
+
+* org_subscriptions
+* user_subscriptions
+* org_billing
+* account_credits
+* purchased_credits
+* trainchat_tokens
+* org_ai_credits
+* payment_transactions
+* billing_events
+
+Verify:
+
+* Which table is credited?
+* Which field increments?
+* Does it update org or user?
+* Does it use Stripe customer ID or metadata orgId/userId?
+* Does it handle duplicate webhook delivery idempotently?
+
+Required:
+After successful live payment, database should show:
+
+* payment record exists
+* account credited
+* subscription active if subscription
+* webhook event logged
+* Stripe IDs stored
+
+⸻
+
+Phase 7 — Idempotency
+
+Stripe may send webhook events more than once.
+
+Create or verify table:
+
+stripe_webhook_events
+
+Fields:
+
+* id
+* stripe_event_id unique
+* event_type
+* livemode
+* processed_status
+* processing_error
+* customer_id
+* payment_intent_id
+* subscription_id
+* metadata jsonb
+* received_at
+* processed_at
+
+Before processing:
+
+* check if event id already processed
+* if processed, return 200 without double-crediting
+
+Acceptance:
+No duplicate crediting if Stripe retries.
+
+⸻
+
+Phase 8 — Live Payment Reconciliation
+
+Create a reconciliation script/admin endpoint.
+
+Purpose:
+Find live Stripe payments that succeeded but were not credited.
+
+Input:
+
+* Stripe live mode
+* since date
+
+Process:
+
+1. Fetch recent successful Checkout Sessions / PaymentIntents / Invoices from Stripe.
+2. Compare against local DB payment records.
+3. Identify missing credits.
+4. Produce report:
+    * Stripe payment id
+    * customer email
+    * amount
+    * metadata
+    * local account matched?
+    * credited?
+    * recommended fix
+
+Optional safe repair:
+
+* dryRun=true default
+* apply=true only when explicitly triggered by admin
+
+⸻
+
+Phase 9 — Manual Repair Tool
+
+Build an admin-only repair endpoint:
+
+POST /api/admin/billing/reconcile-stripe-payment
+
+Payload:
+
+* stripePaymentIntentId OR checkoutSessionId OR invoiceId
+* dryRun boolean
+* apply boolean
+
+Behavior:
+
+* fetch Stripe object
+* verify payment succeeded
+* resolve org/user from metadata or customer email
+* show what would be credited
+* if apply=true, credit account and log repair
+
+Must be idempotent.
+
+⸻
+
+Phase 10 — Logging and Alerts
+
+Add structured logs:
+
+{
+  "system": "stripe_webhook",
+  "eventId": "evt_...",
+  "eventType": "checkout.session.completed",
+  "livemode": true,
+  "orgId": "...",
+  "userId": "...",
+  "paymentIntentId": "...",
+  "amount": 4900,
+  "credited": true,
+  "error": null
+}
+
+Add alert condition:
+
+If Stripe payment succeeds but credit fails:
+
+* write to dead-letter queue
+* create admin alert
+* show in CEO Heartbeat priorities
+
+⸻
+
+Phase 11 — Tests
+
+Create tests for:
+
+1. valid webhook signature
+2. invalid webhook signature rejected
+3. checkout.session.completed credits account
+4. invoice.payment_succeeded activates subscription
+5. duplicate webhook does not double-credit
+6. missing metadata logs failure and dead-letter
+7. live/test mode mismatch detected
+8. reconciliation finds uncredited payment
+9. repair endpoint credits once only
+10. raw body middleware works
+
+⸻
+
+Phase 12 — Required Output
+
+Return:
+
+* root cause
+* failing Stripe event type
+* failing webhook status codes
+* exact table that was not being credited
+* files changed
+* middleware order fix if applicable
+* event handlers added
+* metadata fields added
+* reconciliation report
+* any live payments found uncredited
+* repair actions taken or dry-run report
+* tests passed
+
+Acceptance Criteria:
+
+* Live Stripe payments credit the correct account.
+* Live subscriptions activate the correct org/user.
+* Webhook signature verification works.
+* Duplicate webhook events do not double-credit.
+* Missing metadata is logged clearly.
+* Uncredited historical payments can be found and repaired safely.
