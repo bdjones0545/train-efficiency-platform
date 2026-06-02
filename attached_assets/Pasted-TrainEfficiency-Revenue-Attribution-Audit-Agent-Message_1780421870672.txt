@@ -1,0 +1,362 @@
+TrainEfficiency Revenue Attribution Audit
+
+Agent → Message → Outcome → Revenue Chain Verification
+
+Objective:
+
+The communications system has passed governance, safety, autonomy, and learning audits.
+
+The next validation is business attribution.
+
+We need to prove that TrainEfficiency can accurately trace revenue back to:
+
+* Agent
+* Workflow
+* Domain
+* Message
+* Learning Rule
+* Human Approval Decision
+
+and ultimately determine:
+
+What generated revenue and why?
+
+⸻
+
+Phase 1 — Attribution Architecture Map
+
+Inventory every table involved in the revenue attribution chain.
+
+Expected tables:
+
+* gmail_agent_actions
+* agent_communication_outcomes
+* agent_rule_effectiveness
+* agent_message_feedback
+* agent_message_learning_rules
+* ai_revenue_events
+* workforce_attribution_engine outputs
+* team_training_deals
+* bookings
+* lead_form_submissions
+* lead_intelligence_profiles
+
+Return:
+
+For each table:
+
+* Primary key
+* Foreign keys
+* Org isolation
+* Revenue fields
+* Attribution fields
+* Outcome fields
+
+Create:
+
+Agent
+  ↓
+Message
+  ↓
+Outcome
+  ↓
+Booking
+  ↓
+Revenue Event
+  ↓
+Attribution
+
+data flow diagram.
+
+⸻
+
+Phase 2 — End-to-End Message Attribution Test
+
+Find a real sent communication.
+
+Trace:
+
+gmail_agent_actions.id
+
+through:
+
+agent_communication_outcomes
+
+through:
+
+booking / deal / conversion
+
+through:
+
+ai_revenue_events
+
+Verify:
+
+Can a single message be connected to revenue?
+
+Return:
+
+* message id
+* outcome id
+* revenue event id
+* attributed value
+
+⸻
+
+Phase 3 — Reply Attribution Audit
+
+For every outcome with:
+
+status = 'replied'
+
+Verify:
+
+* originating message exists
+* domain exists
+* action exists
+* workflow exists (if applicable)
+
+Calculate:
+
+Reply Attribution Completeness %
+
+Formula:
+
+Replies with valid parent action ÷ total replies
+
+⸻
+
+Phase 4 — Booking Attribution Audit
+
+For every outcome with:
+
+status = 'booked'
+
+Verify:
+
+* booking record exists
+* booking belongs to same org
+* booking date occurs after communication
+* booking is linked to originating action
+
+Calculate:
+
+Booking Attribution Completeness %
+
+⸻
+
+Phase 5 — Revenue Attribution Audit
+
+Inspect:
+
+ai_revenue_events
+
+Verify:
+
+* every revenue event has source
+* every revenue event has org
+* every revenue event has timestamp
+* every revenue event has value
+
+Classify:
+
+Revenue Source:
+
+* athlete lead
+* parent lead
+* team training
+* school partnership
+* athletic director
+* organization outreach
+* employment
+* corporate wellness
+* facility partnership
+* gym owner
+
+Return revenue by source.
+
+⸻
+
+Phase 6 — Multi-Touch Attribution Audit
+
+Scenario:
+
+Message A
+→ Follow-up B
+→ Follow-up C
+→ Booking
+→ Revenue
+
+Verify:
+
+How revenue is credited.
+
+Current model likely:
+
+* first touch
+* last touch
+* equal split
+* weighted
+
+Return actual implementation.
+
+Identify:
+
+* over-credit risk
+* duplicate credit risk
+* missing credit risk
+
+⸻
+
+Phase 7 — Rule Effectiveness Audit
+
+Inspect:
+
+agent_rule_effectiveness
+
+Verify:
+
+Can revenue be tied back to:
+
+* rule
+* domain
+* message type
+
+Example:
+
+“mention athlete sport”
+
+↓
+
+higher reply rate
+
+↓
+
+higher booking rate
+
+↓
+
+higher revenue
+
+Return:
+
+Top 20 revenue-generating rules.
+
+⸻
+
+Phase 8 — Human vs AI Contribution Audit
+
+For every converted communication:
+
+Determine:
+
+* AI generated unchanged
+* AI generated + human approved
+* AI generated + edited
+* human written
+
+Calculate:
+
+Revenue by contribution type
+
+This determines:
+
+How much revenue came from:
+
+* pure AI
+* AI + human collaboration
+* human only
+
+⸻
+
+Phase 9 — Autonomy Readiness Audit
+
+For each domain:
+
+* approval rate
+* reply rate
+* booking rate
+* revenue generated
+* revenue per send
+* revenue per reply
+
+Calculate:
+
+Autonomy ROI Score
+
+Domains should be ranked:
+
+1. Safest to automate
+2. Highest revenue impact
+3. Lowest risk
+
+⸻
+
+Phase 10 — Attribution Integrity Audit
+
+Attempt to find:
+
+* orphan outcomes
+* orphan revenue events
+* orphan bookings
+* duplicate attribution
+* revenue events with no originating action
+* actions with revenue but no outcome
+* outcomes with booking but no revenue event
+
+Return:
+
+Integrity score.
+
+⸻
+
+Phase 11 — CEO Heartbeat Revenue Intelligence Audit
+
+Verify CEO Heartbeat can answer:
+
+* Which agent generated the most revenue?
+* Which workflow generated the most revenue?
+* Which domain generated the most revenue?
+* Which rule generated the most revenue?
+* Which communication generated the most revenue?
+* Which coach generated the most revenue?
+* Which athlete generated the most revenue?
+
+Determine whether these answers exist today or require additional joins.
+
+⸻
+
+Phase 12 — Final Verdict
+
+Score:
+
+Category	Score
+Message Attribution	/100
+Reply Attribution	/100
+Booking Attribution	/100
+Revenue Attribution	/100
+Rule Attribution	/100
+Human/AI Attribution	/100
+Multi-Touch Accuracy	/100
+Data Integrity	/100
+
+Overall:
+
+Revenue Attribution Readiness Score
+
+Classify:
+
+* Prototype
+* Operational
+* Revenue Intelligent
+* Autonomous Revenue System
+
+Acceptance Criteria:
+
+The system must be able to prove exactly:
+
+Which message,
+generated which outcome,
+which created which booking,
+which produced which revenue,
+and which agent/rule deserves credit.
