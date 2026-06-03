@@ -1036,6 +1036,39 @@ function QuickAccess({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WorkforceCta — org-state-aware entry point for the AI Workforce wizard/editor
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function WorkforceCta({ onNavClick }: { onNavClick: () => void }) {
+  const { data: settings, isLoading } = useQuery<any | null>({
+    queryKey: ["/api/workforce/settings"],
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const isConfigured = !isLoading && settings != null;
+  const href = isConfigured ? "/admin/ai-workforce/settings" : "/onboarding/ai-workforce";
+  const label = isConfigured ? "Edit AI Workforce" : "AI Workforce Setup Wizard";
+  const subtitle = isConfigured ? "View agents, rules & automation" : "Configure agents & automation rules";
+
+  return (
+    <Link href={href} onClick={onNavClick}>
+      <div
+        className="mx-2 mb-2 flex items-center gap-2.5 px-3 py-2.5 rounded-md border border-violet-200/60 dark:border-violet-800/40 bg-gradient-to-r from-violet-50/80 to-purple-50/80 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
+        data-testid={isConfigured ? "cta-workforce-edit" : "cta-workforce-setup-wizard"}
+      >
+        <div className="h-6 w-6 rounded bg-violet-100 dark:bg-violet-800/50 flex items-center justify-center flex-shrink-0">
+          <Zap className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight">{label}</p>
+          <p className="text-[10px] text-violet-500 dark:text-violet-400 leading-tight mt-0.5">{subtitle}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // WorkspaceModeToggle
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1445,21 +1478,8 @@ export function AppSidebar() {
                   <WorkspaceModeToggle mode={workspaceMode} onChange={setWorkspaceMode} />
                 </div>
 
-                {/* AI Workforce Setup Wizard CTA */}
-                <Link href="/onboarding/ai-workforce" onClick={handleNavClick}>
-                  <div
-                    className="mx-2 mb-2 flex items-center gap-2.5 px-3 py-2.5 rounded-md border border-violet-200/60 dark:border-violet-800/40 bg-gradient-to-r from-violet-50/80 to-purple-50/80 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
-                    data-testid="cta-workforce-setup-wizard"
-                  >
-                    <div className="h-6 w-6 rounded bg-violet-100 dark:bg-violet-800/50 flex items-center justify-center flex-shrink-0">
-                      <Zap className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight">AI Workforce Setup Wizard</p>
-                      <p className="text-[10px] text-violet-500 dark:text-violet-400 leading-tight mt-0.5">Configure agents &amp; automation rules</p>
-                    </div>
-                  </div>
-                </Link>
+                {/* AI Workforce CTA — state-aware */}
+                <WorkforceCta onNavClick={handleNavClick} />
               </>
             )}
 

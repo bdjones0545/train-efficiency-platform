@@ -17463,6 +17463,16 @@ Respond with this exact JSON structure:
     // userId for audit / createdBy fields
     const userId = req.user?.claims?.sub ?? req.user?.id ?? "unknown";
 
+    // ── Backend guard: detect first-time vs update ───────────────────────────
+    let isFirstTimeSetup = true;
+    try {
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings: settingsTable } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [existing] = await db.select({ id: settingsTable.id }).from(settingsTable).where(eq(settingsTable.orgId, orgId)).catch(() => []);
+      isFirstTimeSetup = !existing;
+    } catch { /* non-critical */ }
+
     const resolvedGovernanceMode = governanceMode ?? "collaborative";
 
     const verificationLog: string[] = [];
@@ -17614,9 +17624,10 @@ Respond with this exact JSON structure:
       });
     } catch { /* audit log is never blocking */ }
 
-    console.log("[onboarding/complete] complete", { orgId, verificationLog });
+    console.log("[onboarding/complete] complete", { orgId, verificationLog, isFirstTimeSetup });
     return res.json({
       success: true,
+      isFirstTimeSetup,
       workflowsCreated: created,
       autoPublished,
       integrationWarnings,

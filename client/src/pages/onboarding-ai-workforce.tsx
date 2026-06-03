@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -551,11 +551,41 @@ const STEPS = [
 
 // ─── Main Wizard ──────────────────────────────────────────────────────────────
 
+// Maps the internal governance mode stored in DB back to wizard option IDs
+function internalModeToWizardId(internalMode: string): string {
+  if (internalMode === "supervised") return "conservative";
+  if (internalMode === "autonomous") return "advanced";
+  return "balanced"; // default: "collaborative" → "balanced"
+}
+
 export default function OnboardingAiWorkforcePage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [stepIdx, setStepIdx] = useState(0);
   const [state, setState] = useState<WizardState>(INITIAL_STATE);
+  const [preloaded, setPreloaded] = useState(false);
+
+  // Fetch existing configuration — null means first-time setup
+  const { data: existingSettings, isLoading: settingsLoading } = useQuery<any | null>({
+    queryKey: ["/api/workforce/settings"],
+    staleTime: 0,
+  });
+
+  const isEditMode = !settingsLoading && existingSettings != null;
+
+  // Preload wizard state from existing settings (runs once when data arrives)
+  useEffect(() => {
+    if (preloaded || settingsLoading || !existingSettings) return;
+    setState({
+      goals: Array.isArray(existingSettings.goals) ? existingSettings.goals : [],
+      orgPreset: existingSettings.orgPreset ?? "",
+      departments: Array.isArray(existingSettings.enabledDepartments) ? existingSettings.enabledDepartments : ["communications"],
+      governanceMode: internalModeToWizardId(existingSettings.governanceMode ?? "collaborative"),
+      integrations: Array.isArray(existingSettings.selectedIntegrations) ? existingSettings.selectedIntegrations : [],
+      workflows: Array.isArray(existingSettings.selectedWorkflowTemplates) ? existingSettings.selectedWorkflowTemplates : [],
+    });
+    setPreloaded(true);
+  }, [existingSettings, settingsLoading, preloaded]);
 
   const toggleGoal = (id: string) => setState(s => ({
     ...s, goals: s.goals.includes(id) ? s.goals.filter(x => x !== id) : [...s.goals, id],
@@ -589,6 +619,7 @@ export default function OnboardingAiWorkforcePage() {
       integrationWarnings: string[];
       verificationLog: string[];
     }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workforce/settings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/workforce/agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/workflow-graphs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/governance/settings"] });
@@ -601,7 +632,7 @@ export default function OnboardingAiWorkforcePage() {
         ? ` Daily Executive Summary was auto-published.`
         : "";
       toast({
-        title: "AI Workforce setup saved.",
+        title: isEditMode ? "AI Workforce updated." : "AI Workforce setup saved.",
         description: `${workflowMsg}${autoMsg} Governance rules applied.`,
       });
 
@@ -661,7 +692,7 @@ export default function OnboardingAiWorkforcePage() {
             <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center">
               <Brain className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
-            <span className="text-sm font-semibold">AI Workforce Setup</span>
+            <span className="text-sm font-semibold">{isEditMode ? "Edit AI Workforce" : "AI Workforce Setup"}</span>
           </div>
           <Progress value={pct} className="flex-1 h-1.5" />
           <span className="text-xs text-muted-foreground shrink-0">{stepIdx + 1} / {STEPS.length}</span>
@@ -717,7 +748,7 @@ export default function OnboardingAiWorkforcePage() {
           <div className="flex items-center gap-2">
             {!isFirst && (
               <Button variant="ghost" size="sm" onClick={() => navigate("/admin/ai-workforce")} className="text-xs text-muted-foreground">
-                Skip setup
+                {isEditMode ? "Cancel" : "Skip setup"}
               </Button>
             )}
             {isLast ? (
@@ -728,7 +759,7 @@ export default function OnboardingAiWorkforcePage() {
                 disabled={launchMutation.isPending}
                 data-testid="button-launch-workforce"
               >
-                {launchMutation.isPending ? "Saving…" : (<><Zap className="h-4 w-4" />Save & Continue</>)}
+                {launchMutation.isPending ? "Saving…" : (<><Zap className="h-4 w-4" />{isEditMode ? "Save Changes" : "Save & Continue"}</>)}
               </Button>
             ) : (
               <Button

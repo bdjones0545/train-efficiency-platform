@@ -562,6 +562,40 @@ const NAV_GROUPS = [
   },
 ];
 
+// ─── WorkforceCta — org-state-aware entry point ───────────────────────────────
+
+function WorkforceCta() {
+  const { data: settings, isLoading } = useQuery<any | null>({
+    queryKey: ["/api/workforce/settings"],
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const isConfigured = !isLoading && settings != null;
+  const href = isConfigured ? "/admin/ai-workforce/settings" : "/onboarding/ai-workforce";
+  const label = isConfigured ? "Edit AI Workforce" : "AI Workforce Setup Wizard";
+  const subtitle = isConfigured
+    ? "View agents, rules & automation"
+    : "Configure and deploy your AI workforce — agents, roles, and automation rules.";
+
+  return (
+    <Link href={href}>
+      <div
+        className="flex items-center gap-4 px-5 py-4 rounded-xl border border-violet-200 dark:border-violet-800/50 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
+        data-testid={isConfigured ? "cta-workforce-edit" : "cta-workforce-setup-wizard"}
+      >
+        <div className="h-10 w-10 rounded-lg bg-violet-100 dark:bg-violet-800/40 flex items-center justify-center flex-shrink-0">
+          <Zap className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-violet-900 dark:text-violet-200 text-sm">{label}</p>
+          <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5">{subtitle}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 text-violet-500 flex-shrink-0" />
+      </div>
+    </Link>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminAiOperationsPage() {
@@ -605,22 +639,8 @@ export default function AdminAiOperationsPage() {
       {/* Executive Scorecard */}
       <AiOpsScorecard />
 
-      {/* Workforce Setup Wizard CTA */}
-      <Link href="/onboarding/ai-workforce">
-        <div
-          className="flex items-center gap-4 px-5 py-4 rounded-xl border border-violet-200 dark:border-violet-800/50 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
-          data-testid="cta-workforce-setup-wizard"
-        >
-          <div className="h-10 w-10 rounded-lg bg-violet-100 dark:bg-violet-800/40 flex items-center justify-center flex-shrink-0">
-            <Zap className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-violet-900 dark:text-violet-200 text-sm">AI Workforce Setup Wizard</p>
-            <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5">Configure and deploy your AI workforce — agents, roles, and automation rules.</p>
-          </div>
-          <ChevronRight className="h-4 w-4 text-violet-500 flex-shrink-0" />
-        </div>
-      </Link>
+      {/* Workforce CTA — state-aware */}
+      <WorkforceCta />
 
       {/* AI Area Navigation */}
       <div>
