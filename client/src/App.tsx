@@ -83,6 +83,7 @@ import AdminAiWorkforceSimulatorPage from "@/pages/admin-ai-workforce-simulator"
 import AdminAgentMarketplacePage from "@/pages/admin-agent-marketplace";
 import AdminIntegrationsPage from "@/pages/admin-integrations";
 import AdminWorkforceOsPage from "@/pages/admin-workforce-os";
+import AdminUnifiedCommandPage from "@/pages/admin-unified-command";
 import AdminProductionReadinessPage from "@/pages/admin-production-readiness";
 import AdminLaunchReadinessPage from "@/pages/admin-launch-readiness";
 import AdminEcosystemHealthPage from "@/pages/admin-ecosystem-health";
@@ -473,6 +474,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/ecosystem" component={AdminEcosystemPage} />
                   <Route path="/admin/integrations" component={AdminIntegrationsPage} />
                   <Route path="/admin/workforce-os" component={AdminWorkforceOsPage} />
+                  <Route path="/admin/command-center" component={AdminUnifiedCommandPage} />
                   <Route path="/admin/production-readiness" component={AdminProductionReadinessPage} />
                   <Route path="/admin/launch-readiness" component={AdminLaunchReadinessPage} />
                   <Route path="/admin/ecosystem-health" component={AdminEcosystemHealthPage} />

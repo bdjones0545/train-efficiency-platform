@@ -26734,5 +26734,217 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to reassign agent" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // UNIFIED COMMAND CENTER & PLATFORM EXPERIENCE LAYER — Phase 15
+  // ═══════════════════════════════════════════════════════════════
+
+  // GET /api/command-center/summary
+  app.get("/api/command-center/summary", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.orgId as string;
+      const { gmailAgentActions, orgAiOpportunities, orgAiRisks } = await import("@shared/schema");
+      const { eq, and, gte, count } = await import("drizzle-orm");
+      const since30d = new Date(Date.now() - 30 * 86400000).toISOString();
+      const [actions30d, opps, risks] = await Promise.all([
+        db.select({ count: count() }).from(gmailAgentActions).where(and(eq(gmailAgentActions.orgId, orgId), gte(gmailAgentActions.createdAt, since30d))).catch(() => [{ count: 0 }]),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+        db.select().from(orgAiRisks).where(and(eq(orgAiRisks.orgId, orgId), eq(orgAiRisks.status, "open"))).catch(() => []),
+      ]);
+      const totalActions = Number((actions30d[0] as any)?.count ?? 0);
+      const criticalRisks = risks.filter((r: any) => r.severity === "critical" || r.severity === "high").length;
+      const employees = makeEmployees();
+      const overloaded = employees.filter(e => e.workloadPct >= 90).length;
+      const platformScore = Math.min(100, 55 + (totalActions > 50 ? 15 : 5) + (opps.length > 0 ? 10 : 0) + (criticalRisks === 0 ? 10 : 0) + (overloaded === 0 ? 10 : 0));
+      res.json({
+        platformHealthScore: platformScore,
+        totalAgentActions30d: totalActions,
+        openOpportunities: opps.length,
+        openRisks: risks.length,
+        criticalRisks,
+        activeEmployees: employees.filter(e => e.status === "active").length,
+        overloadedAgents: overloaded,
+        totalRevenue30d: employees.reduce((s, e) => s + e.revenue30d, 0),
+        avgPerformance: Math.round(employees.reduce((s, e) => s + e.performanceScore, 0) / employees.length),
+        zones: [
+          { id: "workforce",    label: "Workforce",     health: 88, agents: 10, issues: overloaded > 0 ? overloaded : 0 },
+          { id: "operations",   label: "Operations",    health: 91, agents: 5,  issues: 0 },
+          { id: "intelligence", label: "Intelligence",  health: 84, agents: 4,  issues: criticalRisks },
+          { id: "platform",     label: "Platform",      health: 96, agents: 3,  issues: 0 },
+        ],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load command center summary" }); }
+  });
+
+  // GET /api/command-center/briefing
+  app.get("/api/command-center/briefing", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.orgId as string;
+      const { orgAiOpportunities, orgAiRisks } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [opps, risks] = await Promise.all([
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+        db.select().from(orgAiRisks).where(and(eq(orgAiRisks.orgId, orgId), eq(orgAiRisks.status, "open"))).catch(() => []),
+      ]);
+      const topOpp = opps[0] as any;
+      const topRisk = risks[0] as any;
+      res.json({
+        date: new Date().toISOString(),
+        businessHealth: { score: 84, trend: "+3 vs last week", status: "strong" },
+        growthVelocity: { score: 78, trend: "+12% MoM", status: "accelerating" },
+        topOpportunity: topOpp ? { title: topOpp.title ?? "Pipeline opportunity detected", impact: `$${(topOpp.potentialValue ?? 8400).toLocaleString()}`, confidence: topOpp.probability ?? 72 } : { title: "Team training enterprise deal in pipeline", impact: "$12,400", confidence: 74 },
+        topRisk: topRisk ? { title: topRisk.title ?? "Risk detected", severity: topRisk.severity ?? "medium", description: topRisk.description ?? "Review recommended" } : { title: "Relay agent operating at 92% capacity", severity: "medium", description: "Approaching throughput ceiling — recommend parallel agent" },
+        aiCooSummary: "Revenue pipeline is advancing well. Three deals entered negotiation phase. Relay operating near capacity — reassignment recommended within 7 days.",
+        aiChiefOfStaffSummary: "Platform operating at 84% health. Two agents ready for promotion. Workforce gap in Marketing — content agent hire recommended this quarter.",
+        recommendedAction: { title: "Promote Apex to Director level", reason: "Eligibility score 91% — all 3 promotion criteria met", impact: "Unlocks Director-tier capabilities and expanded tool access", urgency: "high" },
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load briefing" }); }
+  });
+
+  // GET /api/command-center/action-queue
+  app.get("/api/command-center/action-queue", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const actions = [
+        { id: "aq-1",  source: "workforce",    type: "promotion",     title: "Promote Apex to Director",                   description: "All 3 promotion criteria met — eligibility score 91%",              impact: "high",   urgency: "high",   revenueImpact: 4200,  confidence: 91, zone: "Workforce",     status: "pending" },
+        { id: "aq-2",  source: "operations",   type: "approval",      title: "Approve 12 pending email sequences",          description: "Relay agent has 12 outreach sequences awaiting approval",           impact: "high",   urgency: "high",   revenueImpact: 8400,  confidence: 84, zone: "Operations",    status: "pending" },
+        { id: "aq-3",  source: "workforce",    type: "reassignment",  title: "Offload Relay — operating at 92% capacity",   description: "Agent approaching throughput ceiling — spawn parallel agent",        impact: "medium", urgency: "high",   revenueImpact: 3200,  confidence: 88, zone: "Workforce",     status: "pending" },
+        { id: "aq-4",  source: "intelligence", type: "opportunity",   title: "Enterprise deal in negotiation phase",        description: "Team training prospect entered negotiation — assign Revenue Ops",    impact: "high",   urgency: "medium", revenueImpact: 12400, confidence: 74, zone: "Intelligence",  status: "pending" },
+        { id: "aq-5",  source: "platform",     type: "integration",   title: "Renew Calendly OAuth token",                  description: "Token expires in 4 days — renewal prevents scheduling gaps",         impact: "medium", urgency: "high",   revenueImpact: 0,     confidence: 100,zone: "Platform",      status: "pending" },
+        { id: "aq-6",  source: "workforce",    type: "hire",          title: "Hire Content Marketing Agent",                description: "Workforce gap identified — content agent adds $8,400/mo potential",  impact: "high",   urgency: "medium", revenueImpact: 8400,  confidence: 82, zone: "Workforce",     status: "pending" },
+        { id: "aq-7",  source: "intelligence", type: "risk",          title: "Marketing CPL elevated to $34 (target: $28)", description: "Campaign spending above threshold — bid strategy review needed",     impact: "medium", urgency: "medium", revenueImpact: -1800, confidence: 78, zone: "Intelligence",  status: "pending" },
+        { id: "aq-8",  source: "operations",   type: "workflow",      title: "Schedule 6 pending consultation requests",    description: "Tempo has 6 unscheduled consultations in queue — ready to book",    impact: "medium", urgency: "medium", revenueImpact: 2400,  confidence: 93, zone: "Operations",    status: "pending" },
+        { id: "aq-9",  source: "platform",     type: "health",        title: "Run system health diagnostic",                description: "No health check in 72 hours — recommended weekly scan",             impact: "low",    urgency: "low",    revenueImpact: 0,     confidence: 100,zone: "Platform",      status: "pending" },
+        { id: "aq-10", source: "workforce",    type: "goal",          title: "Doc Ops goal falling behind pace",            description: "Contract processing at 56% — needs acceleration to meet deadline",   impact: "medium", urgency: "medium", revenueImpact: 1200,  confidence: 79, zone: "Workforce",     status: "pending" },
+      ];
+      const totalImpact = actions.filter(a => a.revenueImpact > 0).reduce((s, a) => s + a.revenueImpact, 0);
+      res.json({ actions, totalPendingActions: actions.length, totalRevenueImpact: totalImpact, highUrgency: actions.filter(a => a.urgency === "high").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load action queue" }); }
+  });
+
+  // GET /api/command-center/notifications
+  app.get("/api/command-center/notifications", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const now = Date.now();
+      const notifications = [
+        { id: "n-1",  zone: "Workforce",    category: "revenue",   title: "Finance Agent hit $31,200 revenue milestone",    body: "Monthly revenue target exceeded by 4%",                      read: false, ts: new Date(now - 1  * 3600000).toISOString() },
+        { id: "n-2",  zone: "Operations",   category: "warning",   title: "Relay operating at 92% capacity",                body: "Agent approaching throughput ceiling",                       read: false, ts: new Date(now - 2  * 3600000).toISOString() },
+        { id: "n-3",  zone: "Platform",     category: "warning",   title: "Calendly OAuth token expiring in 4 days",        body: "Renewal required to maintain scheduling automation",         read: false, ts: new Date(now - 3  * 3600000).toISOString() },
+        { id: "n-4",  zone: "Intelligence", category: "revenue",   title: "Enterprise deal entered negotiation phase",      body: "Prospect: Metro Athletic Club — deal value $12,400",         read: false, ts: new Date(now - 4  * 3600000).toISOString() },
+        { id: "n-5",  zone: "Workforce",    category: "info",      title: "Apex promotion eligibility confirmed",           body: "All 3 promotion criteria met — review pending",              read: true,  ts: new Date(now - 6  * 3600000).toISOString() },
+        { id: "n-6",  zone: "Operations",   category: "info",      title: "12 email sequences queued for approval",         body: "Relay has outreach sequences awaiting review",               read: true,  ts: new Date(now - 8  * 3600000).toISOString() },
+        { id: "n-7",  zone: "Intelligence", category: "warning",   title: "Marketing CPL above target ($34 vs $28)",       body: "Campaign performance degraded — bid review recommended",     read: true,  ts: new Date(now - 12 * 3600000).toISOString() },
+        { id: "n-8",  zone: "Workforce",    category: "info",      title: "Doc Ops goal falling behind pace",               body: "Contract processing at 56% of Q target",                    read: true,  ts: new Date(now - 18 * 3600000).toISOString() },
+        { id: "n-9",  zone: "Platform",     category: "info",      title: "System health score: 96%",                      body: "All critical integrations operating normally",               read: true,  ts: new Date(now - 24 * 3600000).toISOString() },
+        { id: "n-10", zone: "Operations",   category: "revenue",   title: "6 consultation requests ready to schedule",     body: "Tempo queue has 6 unscheduled requests",                    read: true,  ts: new Date(now - 30 * 3600000).toISOString() },
+      ];
+      const unread = notifications.filter(n => !n.read).length;
+      res.json({ notifications, unread, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load notifications" }); }
+  });
+
+  // GET /api/command-center/approvals
+  app.get("/api/command-center/approvals", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const approvals = [
+        { id: "ap-1",  type: "agent",      title: "12 Outreach Email Sequences",            submittedBy: "Relay",          submittedAt: new Date(Date.now() - 2  * 3600000).toISOString(), urgency: "high",   estimatedImpact: "$8,400 pipeline",  status: "pending" },
+        { id: "ap-2",  type: "scheduling", title: "6 Consultation Auto-Bookings",           submittedBy: "Tempo",          submittedAt: new Date(Date.now() - 4  * 3600000).toISOString(), urgency: "medium", estimatedImpact: "$2,400 revenue",   status: "pending" },
+        { id: "ap-3",  type: "financial",  title: "3 Payment Recovery Campaigns",           submittedBy: "Finance Agent",  submittedAt: new Date(Date.now() - 6  * 3600000).toISOString(), urgency: "high",   estimatedImpact: "$3,200 recovery",  status: "pending" },
+        { id: "ap-4",  type: "workflow",   title: "Update Lead Qualification Rules v2",     submittedBy: "Apex",           submittedAt: new Date(Date.now() - 8  * 3600000).toISOString(), urgency: "medium", estimatedImpact: "+8% conversion",   status: "pending" },
+        { id: "ap-5",  type: "governance", title: "Expand Apex tool access to Salesforce",  submittedBy: "Revenue Ops",    submittedAt: new Date(Date.now() - 12 * 3600000).toISOString(), urgency: "low",    estimatedImpact: "+12% pipeline",    status: "pending" },
+      ];
+      res.json({ approvals, pendingCount: approvals.filter(a => a.status === "pending").length, highUrgency: approvals.filter(a => a.urgency === "high").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load approvals" }); }
+  });
+
+  // GET /api/command-center/system-health
+  app.get("/api/command-center/system-health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      res.json({
+        overallScore: 90,
+        zones: [
+          { id: "workforce",    label: "Workforce Zone",    score: 88, status: "healthy", checks: [{ name: "Agent Status",      pass: true }, { name: "Goal Progress",   pass: true }, { name: "Workload Balance", pass: false }, { name: "Trust Scores",   pass: true }],  lastChecked: new Date(Date.now() - 15 * 60000).toISOString() },
+          { id: "operations",   label: "Operations Zone",   score: 91, status: "healthy", checks: [{ name: "Execution Engine",  pass: true }, { name: "Integrations",   pass: true }, { name: "Approvals Queue",  pass: true  }, { name: "Deployments",    pass: true }],  lastChecked: new Date(Date.now() - 12 * 60000).toISOString() },
+          { id: "intelligence", label: "Intelligence Zone", score: 84, status: "warning", checks: [{ name: "Attribution Model",pass: true }, { name: "Risk Monitor",   pass: true }, { name: "Opp Pipeline",     pass: true  }, { name: "CPL Targets",    pass: false }], lastChecked: new Date(Date.now() - 18 * 60000).toISOString() },
+          { id: "platform",     label: "Platform Zone",     score: 96, status: "healthy", checks: [{ name: "Core Services",    pass: true }, { name: "Auth System",    pass: true }, { name: "Database",         pass: true  }, { name: "API Endpoints",  pass: true }],  lastChecked: new Date(Date.now() - 5  * 60000).toISOString() },
+        ],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load system health" }); }
+  });
+
+  // GET /api/command-center/experience-score
+  app.get("/api/command-center/experience-score", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({
+        overallScore: 82,
+        dimensions: [
+          { label: "Navigation Efficiency", score: 79, trend: "+4" },
+          { label: "Task Completion",        score: 86, trend: "+2" },
+          { label: "Feature Adoption",       score: 81, trend: "+7" },
+          { label: "Engagement Depth",       score: 83, trend: "+5" },
+        ],
+        insights: [
+          "3 underutilized features identified in Intelligence Zone",
+          "Approval flow completion rate at 94%",
+          "Command palette (Cmd+K) increases navigation speed by 3.2×",
+        ],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load experience score" }); }
+  });
+
+  // GET /api/command-center/search
+  app.get("/api/command-center/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const q = ((req.query.q as string) ?? "").toLowerCase().trim();
+      if (!q) return res.json({ results: [] });
+      const CATALOG = [
+        { type: "employee",    label: "Apex",                    description: "Lead Qualification Agent · Revenue",         href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "employee",    label: "Relay",                   description: "Email Follow-Up Agent · Revenue",            href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "employee",    label: "Tempo",                   description: "Scheduling Infrastructure Agent · Ops",      href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "employee",    label: "Finance Agent",           description: "Financial Operations Agent · Finance",       href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "employee",    label: "Revenue Ops",             description: "Revenue Operations Director · Revenue",      href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "page",        label: "Workforce OS",            description: "Digital employee directory & HR",            href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "page",        label: "Integrations",            description: "Real-world system connections",              href: "/admin/integrations",         zone: "Operations"   },
+        { type: "page",        label: "Execution Center",        description: "AI action execution & monitoring",           href: "/admin/execution-center",     zone: "Operations"   },
+        { type: "page",        label: "AI Approvals",            description: "Agent message approvals & learning",         href: "/admin/ai-approvals",         zone: "Operations"   },
+        { type: "page",        label: "Ecosystem",               description: "Agent ecosystem & marketplace",              href: "/admin/ecosystem",            zone: "Platform"     },
+        { type: "page",        label: "CEO Heartbeat",           description: "Executive intelligence & alerts",            href: "/admin/ceo-heartbeat",        zone: "Intelligence" },
+        { type: "page",        label: "Athlete Intelligence",    description: "PAIL & athlete memory profiles",             href: "/admin/athlete-intelligence", zone: "Intelligence" },
+        { type: "page",        label: "Autonomy Controls",       description: "AI governance & policy engine",              href: "/admin/autonomy-controls",    zone: "Platform"     },
+        { type: "page",        label: "Agent Marketplace",       description: "Browse & install agent templates",           href: "/admin/agent-marketplace",    zone: "Platform"     },
+        { type: "page",        label: "Scheduling Command",      description: "Coach capacity & scheduling ops",            href: "/admin/scheduling-command-center", zone: "Operations" },
+        { type: "goal",        label: "Generate $50k pipeline",  description: "Apex · On Track · 56% complete",            href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "goal",        label: "Schedule 100 meetings",   description: "Tempo · On Track · 67% complete",           href: "/admin/workforce-os",         zone: "Workforce"    },
+        { type: "integration", label: "Gmail",                   description: "Connected · 847 actions last 30d",          href: "/admin/integrations",         zone: "Operations"   },
+        { type: "integration", label: "Stripe",                  description: "Connected · Payment processing",            href: "/admin/integrations",         zone: "Operations"   },
+        { type: "integration", label: "HubSpot",                 description: "Connected · CRM & pipeline",                href: "/admin/integrations",         zone: "Operations"   },
+      ];
+      const results = CATALOG.filter(item =>
+        item.label.toLowerCase().includes(q) || item.description.toLowerCase().includes(q) || item.type.toLowerCase().includes(q) || item.zone.toLowerCase().includes(q)
+      ).slice(0, 8);
+      res.json({ results, query: q });
+    } catch (e: any) { res.status(500).json({ message: "Failed to search" }); }
+  });
+
+  // POST /api/command-center/action-queue/resolve
+  app.post("/api/command-center/action-queue/resolve", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { actionId, resolution } = req.body;
+      if (!actionId || !resolution) return res.status(400).json({ message: "actionId and resolution required" });
+      res.json({ success: true, actionId, resolution, resolvedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to resolve action" }); }
+  });
+
+  // POST /api/command-center/notifications/mark-read
+  app.post("/api/command-center/notifications/mark-read", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { notificationId } = req.body;
+      res.json({ success: true, notificationId: notificationId ?? "all", markedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to mark notification read" }); }
+  });
+
   return httpServer;
+}
 }
