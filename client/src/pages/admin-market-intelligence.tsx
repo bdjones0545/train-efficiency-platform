@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, Globe, TrendingUp, Users, Shield, Star, Zap, ChevronRight,
+  ArrowLeft, Globe, TrendingUp, Users, Shield, Star, Zap, ChevronRight, Network,
   Building2, MapPin, Heart, AlertTriangle, CheckCircle, ArrowUp, Minus,
   Search, Handshake, Lightbulb, BarChart3, Trophy, Target, Briefcase,
   Activity, RefreshCw, ArrowDown, Eye, Award,
@@ -1011,6 +1011,20 @@ export default function AdminMarketIntelligencePage() {
         {activeTab === "growth"        && <GrowthEngineTab />}
         {activeTab === "advantage"     && <AdvantageTab />}
       </div>
+
+      {/* Forward navigation → Network Intelligence */}
+      <Link href="/admin/network-intelligence">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5 hover:from-primary/10 hover:to-violet-500/10 transition-colors cursor-pointer group" data-testid="nav-network-intelligence">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Network className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Network Intelligence</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Benchmark against the platform network, discover best practices, replicate top-performer strategies, and generate AI-powered strategic plans.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
     </div>
   );
 }
