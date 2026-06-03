@@ -479,6 +479,20 @@ export default function AdminIntegrationsPage() {
         {activeTab === "registry"      && <ToolRegistryTab />}
         {activeTab === "audit"         && <ExecutionAuditTab />}
       </div>
+
+      {/* Forward navigation → Workforce OS */}
+      <Link href="/admin/workforce-os">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5 hover:from-primary/10 hover:to-violet-500/10 transition-colors cursor-pointer group" data-testid="nav-workforce-os">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Users className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Digital Employees &amp; Agent Workforce OS</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Manage AI agents as persistent digital employees — org chart, performance reviews, OKRs, promotions, training, compensation ROI, and workforce planning.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
     </div>
   );
 }

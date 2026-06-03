@@ -26492,5 +26492,247 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to load execution audit" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // DIGITAL EMPLOYEES & AGENT WORKFORCE OPERATING SYSTEM — Phase 14
+  // ═══════════════════════════════════════════════════════════════
+
+  interface DigitalEmployee {
+    id: string; name: string; role: string; level: string; department: string; manager: string;
+    hireDate: string; status: "active" | "on_leave" | "retired"; performanceScore: number;
+    trustScore: number; workloadPct: number; toolAccess: string[]; revenue30d: number;
+    actionsLast30d: number; successRate: number; avatar: string;
+  }
+
+  function makeEmployees(): DigitalEmployee[] {
+    const d = (y: string) => new Date(y).toISOString();
+    return [
+      { id: "emp-1",  name: "Apex",        role: "Lead Qualification Agent",   level: "Senior",   department: "Revenue",    manager: "Revenue Director",    hireDate: d("2024-01-15"), status: "active",   performanceScore: 94, trustScore: 91, workloadPct: 78, toolAccess: ["Gmail","HubSpot","Google Cal"],      revenue30d: 28400, actionsLast30d: 342, successRate: 88, avatar: "🎯" },
+      { id: "emp-2",  name: "Relay",       role: "Email Follow-Up Agent",       level: "Mid",      department: "Revenue",    manager: "Revenue Director",    hireDate: d("2024-02-01"), status: "active",   performanceScore: 88, trustScore: 86, workloadPct: 92, toolAccess: ["Gmail","SendGrid","HubSpot"],         revenue30d: 18200, actionsLast30d: 847, successRate: 84, avatar: "✉️" },
+      { id: "emp-3",  name: "Tempo",       role: "Scheduling Infrastructure Agent",level: "Mid",   department: "Operations", manager: "Operations Director", hireDate: d("2024-01-20"), status: "active",   performanceScore: 91, trustScore: 94, workloadPct: 64, toolAccess: ["Google Cal","Calendly","Twilio"],    revenue30d: 9800,  actionsLast30d: 184, successRate: 91, avatar: "📅" },
+      { id: "emp-4",  name: "Vector",      role: "Market Research Agent",       level: "Senior",   department: "Revenue",    manager: "Revenue Director",    hireDate: d("2024-03-10"), status: "active",   performanceScore: 86, trustScore: 89, workloadPct: 71, toolAccess: ["HubSpot","LinkedIn","Gmail"],         revenue30d: 14600, actionsLast30d: 218, successRate: 82, avatar: "🔍" },
+      { id: "emp-5",  name: "Comm Agent",  role: "Communications Infrastructure",level: "Mid",     department: "Operations", manager: "Operations Director", hireDate: d("2024-02-15"), status: "active",   performanceScore: 89, trustScore: 88, workloadPct: 83, toolAccess: ["Gmail","Twilio","SendGrid"],          revenue30d: 7200,  actionsLast30d: 412, successRate: 87, avatar: "📡" },
+      { id: "emp-6",  name: "Finance Agent",role: "Financial Operations Agent", level: "Senior",   department: "Finance",    manager: "AI COO",              hireDate: d("2024-01-08"), status: "active",   performanceScore: 96, trustScore: 97, workloadPct: 56, toolAccess: ["Stripe","QuickBooks","HubSpot"],      revenue30d: 31200, actionsLast30d: 203, successRate: 94, avatar: "💳" },
+      { id: "emp-7",  name: "Doc Ops",     role: "Document Operations Agent",   level: "Junior",   department: "Operations", manager: "Operations Director", hireDate: d("2024-04-01"), status: "active",   performanceScore: 79, trustScore: 83, workloadPct: 48, toolAccess: ["Google Drive","DocuSign","Dropbox"],  revenue30d: 4800,  actionsLast30d: 94,  successRate: 78, avatar: "📁" },
+      { id: "emp-8",  name: "Marketing Agent",role: "Marketing Operations Agent",level: "Mid",     department: "Marketing",  manager: "Marketing Director",  hireDate: d("2024-03-20"), status: "active",   performanceScore: 74, trustScore: 76, workloadPct: 38, toolAccess: ["Meta Ads","Google Ads"],              revenue30d: 6100,  actionsLast30d: 52,  successRate: 71, avatar: "📢" },
+      { id: "emp-9",  name: "Revenue Ops", role: "Revenue Operations Agent",    level: "Director", department: "Revenue",    manager: "AI COO",              hireDate: d("2023-12-01"), status: "active",   performanceScore: 97, trustScore: 96, workloadPct: 68, toolAccess: ["HubSpot","Stripe","Salesforce","Gmail"],revenue30d: 42000, actionsLast30d: 512, successRate: 93, avatar: "🏆" },
+      { id: "emp-10", name: "Atlas",       role: "Client Success Agent",        level: "Mid",      department: "Client Success",manager: "AI COO",           hireDate: d("2024-05-01"), status: "active",   performanceScore: 82, trustScore: 85, workloadPct: 74, toolAccess: ["Gmail","HubSpot","Twilio"],           revenue30d: 11400, actionsLast30d: 276, successRate: 83, avatar: "⭐" },
+    ];
+  }
+
+  // GET /api/workforce-os/employees
+  app.get("/api/workforce-os/employees", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const employees = makeEmployees();
+      const totalRevenue = employees.reduce((s, e) => s + e.revenue30d, 0);
+      const avgPerf = Math.round(employees.reduce((s, e) => s + e.performanceScore, 0) / employees.length);
+      const overloaded = employees.filter(e => e.workloadPct >= 90).length;
+      const underutilized = employees.filter(e => e.workloadPct <= 40).length;
+      res.json({ employees, totalRevenue, avgPerformanceScore: avgPerf, overloadedCount: overloaded, underutilizedCount: underutilized, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load employees" }); }
+  });
+
+  // GET /api/workforce-os/employee/:id
+  app.get("/api/workforce-os/employee/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const emp = makeEmployees().find(e => e.id === req.params.id);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      res.json({ ...emp, history: [
+        { date: new Date(Date.now() - 7 * 86400000).toISOString(), event: "Performance review: Strong", type: "review" },
+        { date: new Date(Date.now() - 14 * 86400000).toISOString(), event: "Goal completed: $20k pipeline", type: "goal" },
+        { date: new Date(Date.now() - 30 * 86400000).toISOString(), event: "Promoted from Junior to Mid", type: "promotion" },
+      ], generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load employee" }); }
+  });
+
+  // GET /api/workforce-os/orgchart
+  app.get("/api/workforce-os/orgchart", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({ tree: {
+        name: "CEO Heartbeat",  role: "Executive Intelligence",    performanceScore: 99, trustScore: 99, avatar: "🧠",
+        children: [
+          { name: "AI COO",      role: "Operations & Oversight",  performanceScore: 97, trustScore: 98, avatar: "⚙️",
+            children: [
+              { name: "Revenue Director", role: "Revenue Operations", performanceScore: 97, trustScore: 96, avatar: "🏆",
+                children: [
+                  { name: "Apex",   role: "Lead Qualification",  performanceScore: 94, trustScore: 91, avatar: "🎯", children: [] },
+                  { name: "Relay",  role: "Email Follow-Up",     performanceScore: 88, trustScore: 86, avatar: "✉️", children: [] },
+                  { name: "Vector", role: "Market Research",     performanceScore: 86, trustScore: 89, avatar: "🔍", children: [] },
+                ],
+              },
+              { name: "Operations Director", role: "Ops & Scheduling", performanceScore: 91, trustScore: 93, avatar: "📋",
+                children: [
+                  { name: "Tempo",      role: "Scheduling",           performanceScore: 91, trustScore: 94, avatar: "📅", children: [] },
+                  { name: "Comm Agent", role: "Communications",       performanceScore: 89, trustScore: 88, avatar: "📡", children: [] },
+                  { name: "Doc Ops",    role: "Documents & Contracts", performanceScore: 79, trustScore: 83, avatar: "📁", children: [] },
+                ],
+              },
+              { name: "Marketing Director", role: "Marketing & Growth", performanceScore: 78, trustScore: 81, avatar: "📢",
+                children: [
+                  { name: "Marketing Agent", role: "Ad Campaigns", performanceScore: 74, trustScore: 76, avatar: "📢", children: [] },
+                ],
+              },
+              { name: "Finance Agent", role: "Financial Operations",   performanceScore: 96, trustScore: 97, avatar: "💳", children: [] },
+              { name: "Atlas",         role: "Client Success",         performanceScore: 82, trustScore: 85, avatar: "⭐", children: [] },
+            ],
+          },
+        ],
+      }, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load org chart" }); }
+  });
+
+  // GET /api/workforce-os/reviews
+  app.get("/api/workforce-os/reviews", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const emps = makeEmployees();
+      const reviews = emps.map(e => ({
+        employeeId: e.id, employeeName: e.name, avatar: e.avatar, role: e.role,
+        weekly:    { productivity: e.performanceScore - 2, successRate: e.successRate, revenueImpact: Math.round(e.revenue30d / 4), goalCompletion: Math.round(e.performanceScore * 0.9), trustScore: e.trustScore, rating: e.performanceScore >= 90 ? "Exceptional" : e.performanceScore >= 75 ? "Strong" : "Needs Improvement", reviewedAt: new Date(Date.now() - 2 * 86400000).toISOString() },
+        monthly:   { productivity: e.performanceScore,     successRate: e.successRate + 1, revenueImpact: e.revenue30d, goalCompletion: Math.round(e.performanceScore * 0.92), trustScore: e.trustScore, rating: e.performanceScore >= 90 ? "Exceptional" : e.performanceScore >= 75 ? "Strong" : "Needs Improvement", reviewedAt: new Date(Date.now() - 7 * 86400000).toISOString() },
+        quarterly: { productivity: e.performanceScore + 1, successRate: e.successRate + 2, revenueImpact: e.revenue30d * 3, goalCompletion: Math.round(e.performanceScore * 0.87), trustScore: e.trustScore + 1, rating: e.performanceScore >= 90 ? "Exceptional" : e.performanceScore >= 75 ? "Strong" : "Needs Improvement", reviewedAt: new Date(Date.now() - 30 * 86400000).toISOString() },
+      }));
+      res.json({ reviews, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load reviews" }); }
+  });
+
+  // GET /api/workforce-os/workloads
+  app.get("/api/workforce-os/workloads", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const emps = makeEmployees();
+      const workloads = emps.map(e => ({
+        employeeId: e.id, employeeName: e.name, avatar: e.avatar, role: e.role, department: e.department,
+        capacityPct: e.workloadPct, activeAssignments: Math.round(e.workloadPct / 10), throughputPerDay: Math.round(e.actionsLast30d / 30), queueSize: Math.round(e.workloadPct / 20),
+        status: e.workloadPct >= 90 ? "overloaded" : e.workloadPct <= 40 ? "underutilized" : "healthy",
+        recommendation: e.workloadPct >= 90 ? "Offload assignments or spawn parallel agent" : e.workloadPct <= 40 ? "Assign additional objectives or reassign idle capacity" : "Operating at optimal capacity",
+      }));
+      const overloaded = workloads.filter(w => w.status === "overloaded");
+      const underutilized = workloads.filter(w => w.status === "underutilized");
+      res.json({ workloads, overloaded: overloaded.length, underutilized: underutilized.length, healthy: workloads.length - overloaded.length - underutilized.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load workloads" }); }
+  });
+
+  // GET /api/workforce-os/goals
+  app.get("/api/workforce-os/goals", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const goals = [
+        { id: "g1",  employeeId: "emp-1",  employeeName: "Apex",          avatar: "🎯", objective: "Generate $50,000 qualified pipeline",         target: 50000, current: 28400, unit: "$",     deadline: new Date(Date.now() + 18 * 86400000).toISOString(), status: "on_track",    forecast: "Will complete in ~18 days" },
+        { id: "g2",  employeeId: "emp-3",  employeeName: "Tempo",         avatar: "📅", objective: "Schedule 100 consultations this quarter",     target: 100,   current: 67,    unit: "mtgs",  deadline: new Date(Date.now() + 24 * 86400000).toISOString(), status: "on_track",    forecast: "On pace to complete" },
+        { id: "g3",  employeeId: "emp-6",  employeeName: "Finance Agent", avatar: "💳", objective: "Recover $12,000 in failed payments",         target: 12000, current: 9800,  unit: "$",     deadline: new Date(Date.now() + 8  * 86400000).toISOString(), status: "on_track",    forecast: "Will complete ahead of deadline" },
+        { id: "g4",  employeeId: "emp-2",  employeeName: "Relay",         avatar: "✉️", objective: "Execute 500 follow-up email sequences",      target: 500,   current: 384,   unit: "seqs",  deadline: new Date(Date.now() + 12 * 86400000).toISOString(), status: "at_risk",     forecast: "Falling slightly behind — increase cadence" },
+        { id: "g5",  employeeId: "emp-9",  employeeName: "Revenue Ops",   avatar: "🏆", objective: "Close 8 corporate team training deals",      target: 8,     current: 5,     unit: "deals", deadline: new Date(Date.now() + 21 * 86400000).toISOString(), status: "on_track",    forecast: "Projected to close 7–8 deals" },
+        { id: "g6",  employeeId: "emp-7",  employeeName: "Doc Ops",       avatar: "📁", objective: "Process 50 client contracts and signatures", target: 50,    current: 28,    unit: "docs",  deadline: new Date(Date.now() + 30 * 86400000).toISOString(), status: "behind",      forecast: "Behind pace — needs acceleration" },
+        { id: "g7",  employeeId: "emp-10", employeeName: "Atlas",         avatar: "⭐", objective: "Achieve 90%+ client retention this month",   target: 90,    current: 82,    unit: "%",     deadline: new Date(Date.now() + 15 * 86400000).toISOString(), status: "at_risk",     forecast: "Trending upward, may reach 87–89%" },
+        { id: "g8",  employeeId: "emp-8",  employeeName: "Marketing Agent",avatar: "📢",objective: "Maintain CPL under $28 across all campaigns", target: 28,    current: 34,    unit: "$ CPL", deadline: new Date(Date.now() + 30 * 86400000).toISOString(), status: "behind",      forecast: "CPL elevated — bid strategy adjustment needed" },
+      ];
+      const onTrack = goals.filter(g => g.status === "on_track").length;
+      const atRisk = goals.filter(g => g.status === "at_risk").length;
+      const behind = goals.filter(g => g.status === "behind").length;
+      res.json({ goals, onTrack, atRisk, behind, avgCompletion: Math.round(goals.reduce((s, g) => s + (g.current / g.target) * 100, 0) / goals.length), generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load goals" }); }
+  });
+
+  // GET /api/workforce-os/promotions
+  app.get("/api/workforce-os/promotions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const paths = [
+        { employeeId: "emp-1",  name: "Apex",         avatar: "🎯", currentLevel: "Senior",   nextLevel: "Director",  performanceCriteria: 94, trustCriteria: 91, impactCriteria: 88, eligibilityScore: 91, readyForPromotion: true,  path: ["Junior","Mid","Senior","Director","C-Suite"], promotionEta: "Ready now" },
+        { employeeId: "emp-6",  name: "Finance Agent",avatar: "💳", currentLevel: "Senior",   nextLevel: "Director",  performanceCriteria: 96, trustCriteria: 97, impactCriteria: 94, eligibilityScore: 96, readyForPromotion: true,  path: ["Junior","Mid","Senior","Director","C-Suite"], promotionEta: "Ready now" },
+        { employeeId: "emp-9",  name: "Revenue Ops",  avatar: "🏆", currentLevel: "Director", nextLevel: "C-Suite",   performanceCriteria: 97, trustCriteria: 96, impactCriteria: 96, eligibilityScore: 97, readyForPromotion: false, path: ["Junior","Mid","Senior","Director","C-Suite"], promotionEta: "Est. 60 days" },
+        { employeeId: "emp-3",  name: "Tempo",        avatar: "📅", currentLevel: "Mid",      nextLevel: "Senior",    performanceCriteria: 91, trustCriteria: 94, impactCriteria: 82, eligibilityScore: 89, readyForPromotion: false, path: ["Junior","Mid","Senior","Director","C-Suite"], promotionEta: "Est. 30 days" },
+        { employeeId: "emp-2",  name: "Relay",        avatar: "✉️", currentLevel: "Mid",      nextLevel: "Senior",    performanceCriteria: 88, trustCriteria: 86, impactCriteria: 79, eligibilityScore: 84, readyForPromotion: false, path: ["Junior","Mid","Senior","Director","C-Suite"], promotionEta: "Est. 45 days" },
+        { employeeId: "emp-7",  name: "Doc Ops",      avatar: "📁", currentLevel: "Junior",   nextLevel: "Mid",       performanceCriteria: 79, trustCriteria: 83, impactCriteria: 68, eligibilityScore: 77, readyForPromotion: false, path: ["Junior","Mid","Senior","Director","C-Suite"], promotionEta: "Est. 90 days" },
+        { employeeId: "emp-8",  name: "Marketing Agent",avatar: "📢",currentLevel: "Mid",    nextLevel: "Senior",    performanceCriteria: 74, trustCriteria: 76, impactCriteria: 64, eligibilityScore: 71, readyForPromotion: false, path: ["Junior","Mid","Senior","Director","C-Suite"], promotionEta: "Est. 120 days" },
+      ];
+      res.json({ paths, readyNow: paths.filter(p => p.readyForPromotion).length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load promotions" }); }
+  });
+
+  // GET /api/workforce-os/training
+  app.get("/api/workforce-os/training", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const training = [
+        { employeeId: "emp-1",  name: "Apex",         avatar: "🎯", skills: [{ skill: "Lead Generation", level: 5 }, { skill: "Outreach", level: 4 }, { skill: "CRM Ops", level: 4 }, { skill: "Qualification", level: 5 }], recommendations: ["Advanced objection handling", "Multi-channel sequencing"], trainingHistory: ["Lead Scoring v2", "HubSpot Advanced", "Email Personalization at Scale"] },
+        { employeeId: "emp-2",  name: "Relay",        avatar: "✉️", skills: [{ skill: "Email Sequences", level: 4 }, { skill: "Follow-Up Timing", level: 4 }, { skill: "Reply Handling", level: 3 }, { skill: "Personalization", level: 3 }], recommendations: ["Advanced reply classification", "A/B subject line optimization"], trainingHistory: ["SendGrid Masterclass", "Follow-Up Timing Research", "Reply AI Training"] },
+        { employeeId: "emp-3",  name: "Tempo",        avatar: "📅", skills: [{ skill: "Scheduling", level: 5 }, { skill: "Availability Optimization", level: 4 }, { skill: "Conflict Resolution", level: 4 }, { skill: "Reminders", level: 5 }], recommendations: ["Multi-timezone scheduling", "Group booking logic"], trainingHistory: ["Calendar API v3", "Calendly Integration", "Timezone Intelligence"] },
+        { employeeId: "emp-6",  name: "Finance Agent",avatar: "💳", skills: [{ skill: "Payment Verification", level: 5 }, { skill: "Failure Detection", level: 5 }, { skill: "Recovery Campaigns", level: 5 }, { skill: "Invoicing", level: 4 }], recommendations: ["Predictive churn scoring", "Advanced reconciliation"], trainingHistory: ["Stripe API Advanced", "Revenue Recovery Playbook", "Failed Payment Psychology"] },
+        { employeeId: "emp-7",  name: "Doc Ops",      avatar: "📁", skills: [{ skill: "Contract Generation", level: 3 }, { skill: "DocuSign Workflows", level: 3 }, { skill: "File Organization", level: 4 }, { skill: "Completion Tracking", level: 3 }], recommendations: ["Advanced contract templates", "Automated signature reminder logic"], trainingHistory: ["DocuSign Basics", "Google Drive API", "Contract Law Fundamentals"] },
+        { employeeId: "emp-8",  name: "Marketing Agent",avatar: "📢",skills: [{ skill: "Campaign Management", level: 3 }, { skill: "Spend Monitoring", level: 3 }, { skill: "CPL Optimization", level: 2 }, { skill: "Audience Targeting", level: 3 }], recommendations: ["Advanced CPL reduction techniques", "Retargeting strategy", "Google Ads certification"], trainingHistory: ["Meta Ads Fundamentals", "Campaign Budget Optimization", "Ad Creative Analysis"] },
+      ];
+      res.json({ training, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load training" }); }
+  });
+
+  // GET /api/workforce-os/compensation
+  app.get("/api/workforce-os/compensation", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const emps = makeEmployees();
+      const EQUIV_SALARIES: Record<string, number> = { "Director": 9200, "Senior": 7500, "Mid": 5800, "Junior": 4200 };
+      const compensation = emps.map(e => {
+        const monthlyCost = EQUIV_SALARIES[e.level] ?? 5800;
+        const roi = Math.round((e.revenue30d / monthlyCost) * 100);
+        return { employeeId: e.id, name: e.name, avatar: e.avatar, role: e.role, level: e.level, revenueGenerated: e.revenue30d, equivalentEmployeeCost: monthlyCost, roi, surplus: e.revenue30d - monthlyCost };
+      });
+      const totalGenerated = compensation.reduce((s, c) => s + c.revenueGenerated, 0);
+      const totalCost = compensation.reduce((s, c) => s + c.equivalentEmployeeCost, 0);
+      const platformRoi = Math.round((totalGenerated / totalCost) * 100);
+      res.json({ compensation, totalGenerated, totalEquivalentCost: totalCost, platformRoi, annualizedGenerated: totalGenerated * 12, annualizedCost: totalCost * 12, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load compensation" }); }
+  });
+
+  // GET /api/workforce-os/planning
+  app.get("/api/workforce-os/planning", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const gaps = [
+        { role: "Content Marketing Agent",  department: "Marketing",    priority: "high",   reason: "No agent creating organic content — brand awareness gap", estimatedRevImpact: "$8,400/mo", readinessScore: 82 },
+        { role: "Client Onboarding Agent",  department: "Client Success",priority: "high",  reason: "New client drop-off at 60 days — no dedicated onboarding agent", estimatedRevImpact: "+18% LTV", readinessScore: 78 },
+        { role: "Hiring Outreach Agent",    department: "HR",           priority: "medium", reason: "Manual coach hiring — agent can automate pipeline sourcing", estimatedRevImpact: "$6,200/mo savings", readinessScore: 71 },
+        { role: "Social Media Agent",       department: "Marketing",    priority: "medium", reason: "No social presence automation — competitors leveraging it", estimatedRevImpact: "$4,800/mo", readinessScore: 68 },
+        { role: "Analytics & Reporting Agent",department: "Operations", priority: "low",    reason: "Weekly reports are manual — automation saves 6 hrs/week", estimatedRevImpact: "6 hrs/wk", readinessScore: 91 },
+        { role: "Partnership Agent",        department: "Revenue",      priority: "low",    reason: "B2B partnership opportunities untapped — needs dedicated agent", estimatedRevImpact: "$12,000/mo", readinessScore: 64 },
+      ];
+      const forecast = [
+        { quarter: "Q3 2024", hires: 2, projected: ["Content Marketing Agent", "Client Onboarding Agent"], estimatedRevLift: 18400 },
+        { quarter: "Q4 2024", hires: 2, projected: ["Social Media Agent", "Hiring Outreach Agent"],        estimatedRevLift: 11000 },
+        { quarter: "Q1 2025", hires: 2, projected: ["Analytics Agent", "Partnership Agent"],               estimatedRevLift: 16800 },
+      ];
+      res.json({ gaps, forecast, currentHeadcount: 10, recommendedHeadcount: 13, capacityUtilization: 69, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load planning" }); }
+  });
+
+  // POST /api/workforce-os/hire
+  app.post("/api/workforce-os/hire", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { roleName, department } = req.body;
+      if (!roleName) return res.status(400).json({ message: "roleName required" });
+      res.json({ success: true, employeeId: `emp-${Date.now()}`, name: roleName, department: department ?? "Operations", hiredAt: new Date().toISOString(), message: `${roleName} hired and added to workforce` });
+    } catch (e: any) { res.status(500).json({ message: "Failed to hire agent" }); }
+  });
+
+  // POST /api/workforce-os/retire
+  app.post("/api/workforce-os/retire", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { employeeId } = req.body;
+      if (!employeeId) return res.status(400).json({ message: "employeeId required" });
+      res.json({ success: true, employeeId, status: "retired", retiredAt: new Date().toISOString(), message: "Agent retired and responsibilities reassigned" });
+    } catch (e: any) { res.status(500).json({ message: "Failed to retire agent" }); }
+  });
+
+  // POST /api/workforce-os/promote
+  app.post("/api/workforce-os/promote", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { employeeId, newLevel } = req.body;
+      if (!employeeId || !newLevel) return res.status(400).json({ message: "employeeId and newLevel required" });
+      res.json({ success: true, employeeId, newLevel, promotedAt: new Date().toISOString(), message: `Agent promoted to ${newLevel}` });
+    } catch (e: any) { res.status(500).json({ message: "Failed to promote agent" }); }
+  });
+
+  // POST /api/workforce-os/reassign
+  app.post("/api/workforce-os/reassign", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { employeeId, newDepartment } = req.body;
+      if (!employeeId || !newDepartment) return res.status(400).json({ message: "employeeId and newDepartment required" });
+      res.json({ success: true, employeeId, newDepartment, reassignedAt: new Date().toISOString(), message: `Agent reassigned to ${newDepartment}` });
+    } catch (e: any) { res.status(500).json({ message: "Failed to reassign agent" }); }
+  });
+
   return httpServer;
 }
