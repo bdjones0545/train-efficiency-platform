@@ -943,10 +943,11 @@ export default function AdminExecutiveIntelligencePage() {
       {/* Architecture breadcrumb */}
       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground overflow-x-auto pb-1">
         {[
-          { label: "Setup Wizard",     href: "/admin/ai-workforce" },
-          { label: "Workforce Mgmt",   href: "/admin/ai-workforce/settings" },
-          { label: "Operations",       href: "/admin/ai-operations" },
-          { label: "Executive Intel",  href: null, active: true },
+          { label: "Setup Wizard",       href: "/admin/ai-workforce" },
+          { label: "Workforce Mgmt",     href: "/admin/ai-workforce/settings" },
+          { label: "Operations",         href: "/admin/ai-operations" },
+          { label: "Executive Intel",    href: null, active: true },
+          { label: "Autonomous Mgmt",    href: "/admin/autonomous-management" },
         ].map((step, i) => (
           <div key={step.label} className="flex items-center gap-1.5 shrink-0">
             {i > 0 && <ChevronRight className="h-3 w-3 opacity-40" />}
@@ -960,6 +961,22 @@ export default function AdminExecutiveIntelligencePage() {
           </div>
         ))}
       </div>
+
+      {/* Next level CTA */}
+      <Link href="/admin/autonomous-management">
+        <div className="flex items-center justify-between p-3 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer" data-testid="link-autonomous-management">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Cpu className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold">Autonomous Management</p>
+              <p className="text-[10px] text-muted-foreground">Set objectives · Launch initiatives · Simulate changes · AI Chief of Staff</p>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
+      </Link>
 
       {/* Tab Navigation */}
       <div className="flex gap-1 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0" data-testid="tab-navigation">

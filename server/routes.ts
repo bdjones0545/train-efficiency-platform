@@ -23553,5 +23553,402 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   const { registerSchedulingIntelligenceRoutes } = await import("./scheduling-intelligence-routes");
   await registerSchedulingIntelligenceRoutes(app, isAuthenticated);
 
+  // ═══════════════════════════════════════════════════════════════
+  // AUTONOMOUS MANAGEMENT SYSTEM — Phase 5
+  // ═══════════════════════════════════════════════════════════════
+
+  // Lazy table creation — idempotent
+  async function ensureAutonomousTables() {
+    try {
+      const { sql } = await import("drizzle-orm");
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS business_objectives (
+          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          org_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT,
+          target_value NUMERIC,
+          target_unit TEXT,
+          current_value NUMERIC DEFAULT 0,
+          deadline TIMESTAMPTZ,
+          priority TEXT DEFAULT 'medium',
+          status TEXT DEFAULT 'active',
+          progress INTEGER DEFAULT 0,
+          confidence INTEGER DEFAULT 50,
+          assigned_agents JSONB DEFAULT '[]'::jsonb,
+          execution_plan JSONB,
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT now(),
+          updated_at TIMESTAMPTZ DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS autonomous_initiatives (
+          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          org_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          initiative_type TEXT DEFAULT 'custom',
+          status TEXT DEFAULT 'running',
+          agents_assigned JSONB DEFAULT '[]'::jsonb,
+          progress INTEGER DEFAULT 0,
+          results_summary TEXT,
+          automation_mode TEXT DEFAULT 'manual',
+          started_at TIMESTAMPTZ DEFAULT now(),
+          created_at TIMESTAMPTZ DEFAULT now(),
+          updated_at TIMESTAMPTZ DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS business_memory (
+          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          org_id TEXT NOT NULL,
+          memory_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT,
+          outcome TEXT,
+          outcome_value NUMERIC,
+          tags JSONB DEFAULT '[]'::jsonb,
+          metadata JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ DEFAULT now()
+        )
+      `);
+    } catch {}
+  }
+
+  // GET /api/autonomous/dashboard — combined stats
+  app.get("/api/autonomous/dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { orgAiOpportunities } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [objRows, initRows, memRows, attr7d, opps] = await Promise.all([
+        db.execute(sql`SELECT id, title, status, progress, priority, confidence, deadline FROM business_objectives WHERE org_id = ${orgId} ORDER BY created_at DESC`).catch(() => ({ rows: [] })),
+        db.execute(sql`SELECT id, name, status, progress, initiative_type, automation_mode FROM autonomous_initiatives WHERE org_id = ${orgId} ORDER BY created_at DESC`).catch(() => ({ rows: [] })),
+        db.execute(sql`SELECT id, memory_type, title, created_at FROM business_memory WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 5`).catch(() => ({ rows: [] })),
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalActions: 0, totalRevenueInfluenced: 0, totalTimeSavedHours: 0, agents: [] as any[] })),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+      ]);
+
+      const objectives = Array.isArray(objRows) ? objRows : (objRows as any).rows ?? [];
+      const initiatives = Array.isArray(initRows) ? initRows : (initRows as any).rows ?? [];
+      const memory = Array.isArray(memRows) ? memRows : (memRows as any).rows ?? [];
+
+      const activeObjs = objectives.filter((o: any) => o.status === "active");
+      const completedObjs = objectives.filter((o: any) => o.status === "completed");
+      const avgProgress = activeObjs.length > 0 ? Math.round(activeObjs.reduce((s: number, o: any) => s + (Number(o.progress) || 0), 0) / activeObjs.length) : 0;
+      const runningInits = initiatives.filter((i: any) => i.status === "running").length;
+
+      res.json({
+        objectives: { total: objectives.length, active: activeObjs.length, completed: completedObjs.length, avgProgress },
+        initiatives: { total: initiatives.length, running: runningInits },
+        memory: { total: memory.length, recent: memory.slice(0, 3) },
+        workforce: { totalActions: attr7d.totalActions, revenueInfluenced: attr7d.totalRevenueInfluenced, hoursSaved: attr7d.totalTimeSavedHours, activeAgents: attr7d.agents.filter((a: any) => a.totalActions > 0).length },
+        pipeline: { opportunities: opps.length, pipelineValue: opps.reduce((s: number, o: any) => s + (o.potentialValue ?? 0), 0) },
+        recentObjectives: activeObjs.slice(0, 4),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.error("[autonomous/dashboard] error:", e);
+      res.status(500).json({ message: "Failed to load dashboard" });
+    }
+  });
+
+  // GET /api/autonomous/objectives
+  app.get("/api/autonomous/objectives", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(sql`SELECT * FROM business_objectives WHERE org_id = ${orgId} ORDER BY priority DESC, created_at DESC`).catch(() => ({ rows: [] }));
+      const data = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+      res.json(data);
+    } catch (e: any) {
+      console.error("[autonomous/objectives GET] error:", e);
+      res.status(500).json({ message: "Failed to fetch objectives" });
+    }
+  });
+
+  // POST /api/autonomous/objectives
+  app.post("/api/autonomous/objectives", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const { title, description, targetValue, targetUnit, deadline, priority, assignedAgents, notes } = req.body;
+      if (!title?.trim()) return res.status(400).json({ message: "Title required" });
+      const rows = await db.execute(sql`
+        INSERT INTO business_objectives (org_id, title, description, target_value, target_unit, deadline, priority, assigned_agents, notes)
+        VALUES (${orgId}, ${title.trim()}, ${description ?? null}, ${targetValue ?? null}, ${targetUnit ?? null},
+                ${deadline ? new Date(deadline).toISOString() : null}, ${priority ?? "medium"},
+                ${JSON.stringify(assignedAgents ?? [])}::jsonb, ${notes ?? null})
+        RETURNING *
+      `);
+      const result = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
+      res.json(result ?? {});
+    } catch (e: any) {
+      console.error("[autonomous/objectives POST] error:", e);
+      res.status(500).json({ message: "Failed to create objective" });
+    }
+  });
+
+  // PATCH /api/autonomous/objectives/:id
+  app.patch("/api/autonomous/objectives/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { id } = req.params;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const { progress, status, confidence, notes, assignedAgents } = req.body;
+      await db.execute(sql`
+        UPDATE business_objectives SET
+          progress = COALESCE(${progress ?? null}, progress),
+          status = COALESCE(${status ?? null}, status),
+          confidence = COALESCE(${confidence ?? null}, confidence),
+          notes = COALESCE(${notes ?? null}, notes),
+          assigned_agents = COALESCE(${assignedAgents ? JSON.stringify(assignedAgents) + '::jsonb' : null}, assigned_agents),
+          updated_at = now()
+        WHERE id = ${id} AND org_id = ${orgId}
+      `).catch(() => {});
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[autonomous/objectives PATCH] error:", e);
+      res.status(500).json({ message: "Failed to update objective" });
+    }
+  });
+
+  // DELETE /api/autonomous/objectives/:id
+  app.delete("/api/autonomous/objectives/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { id } = req.params;
+      const { sql } = await import("drizzle-orm");
+      await db.execute(sql`DELETE FROM business_objectives WHERE id = ${id} AND org_id = ${orgId}`).catch(() => {});
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to delete objective" });
+    }
+  });
+
+  // POST /api/autonomous/objectives/:id/generate-plan — AI generates execution plan
+  app.post("/api/autonomous/objectives/:id/generate-plan", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { id } = req.params;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(sql`SELECT * FROM business_objectives WHERE id = ${id} AND org_id = ${orgId}`).catch(() => ({ rows: [] }));
+      const objective = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
+      if (!objective) return res.status(404).json({ message: "Objective not found" });
+
+      const { AGENT_IDENTITIES } = await import("./agent-identities");
+      const agentList = Object.entries(AGENT_IDENTITIES).filter(([k]) => k !== "system_agent").map(([, v]: [string, any]) => `${v.name} (${v.department})`).join(", ");
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: `You are a Strategic Planner for a strength & conditioning coaching business. Available agents: ${agentList}. Generate a JSON execution plan to achieve a business objective.`,
+        }, {
+          role: "user",
+          content: `Create an execution plan for this objective: "${objective.title}"\nDescription: ${objective.description ?? "none"}\nTarget: ${objective.target_value ?? "—"} ${objective.target_unit ?? ""}\nDeadline: ${objective.deadline ?? "none"}\n\nReturn ONLY a JSON object: {"steps": [{"step": 1, "title": "...", "description": "...", "agentType": "...", "expectedOutcome": "...", "duration": "..."}], "totalDuration": "...", "confidenceScore": 0-100, "keyRisks": ["..."]}`,
+        }],
+        max_tokens: 800,
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      });
+
+      const plan = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+      await db.execute(sql`UPDATE business_objectives SET execution_plan = ${JSON.stringify(plan)}::jsonb, updated_at = now() WHERE id = ${id} AND org_id = ${orgId}`).catch(() => {});
+      res.json({ plan, objectiveId: id });
+    } catch (e: any) {
+      console.error("[autonomous/objectives/generate-plan] error:", e);
+      res.status(500).json({ message: "Failed to generate plan" });
+    }
+  });
+
+  // GET /api/autonomous/initiatives
+  app.get("/api/autonomous/initiatives", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(sql`SELECT * FROM autonomous_initiatives WHERE org_id = ${orgId} ORDER BY created_at DESC`).catch(() => ({ rows: [] }));
+      res.json(Array.isArray(rows) ? rows : (rows as any).rows ?? []);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch initiatives" });
+    }
+  });
+
+  // POST /api/autonomous/initiatives
+  app.post("/api/autonomous/initiatives", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const { name, description, initiativeType, automationMode, agentsAssigned } = req.body;
+      if (!name?.trim()) return res.status(400).json({ message: "Name required" });
+      const rows = await db.execute(sql`
+        INSERT INTO autonomous_initiatives (org_id, name, description, initiative_type, automation_mode, agents_assigned)
+        VALUES (${orgId}, ${name.trim()}, ${description ?? null}, ${initiativeType ?? "custom"}, ${automationMode ?? "manual"}, ${JSON.stringify(agentsAssigned ?? [])}::jsonb)
+        RETURNING *
+      `);
+      const result = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
+      res.json(result ?? {});
+    } catch (e: any) {
+      console.error("[autonomous/initiatives POST] error:", e);
+      res.status(500).json({ message: "Failed to create initiative" });
+    }
+  });
+
+  // PATCH /api/autonomous/initiatives/:id
+  app.patch("/api/autonomous/initiatives/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { id } = req.params;
+      const { sql } = await import("drizzle-orm");
+      const { progress, status, resultsSummary, automationMode } = req.body;
+      await db.execute(sql`
+        UPDATE autonomous_initiatives SET
+          progress = COALESCE(${progress ?? null}, progress),
+          status = COALESCE(${status ?? null}, status),
+          results_summary = COALESCE(${resultsSummary ?? null}, results_summary),
+          automation_mode = COALESCE(${automationMode ?? null}, automation_mode),
+          updated_at = now()
+        WHERE id = ${id} AND org_id = ${orgId}
+      `).catch(() => {});
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to update initiative" });
+    }
+  });
+
+  // GET /api/autonomous/memory
+  app.get("/api/autonomous/memory", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(sql`SELECT * FROM business_memory WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 100`).catch(() => ({ rows: [] }));
+      res.json(Array.isArray(rows) ? rows : (rows as any).rows ?? []);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch memory" });
+    }
+  });
+
+  // POST /api/autonomous/memory
+  app.post("/api/autonomous/memory", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const { memoryType, title, description, outcome, outcomeValue, tags, metadata } = req.body;
+      if (!title?.trim()) return res.status(400).json({ message: "Title required" });
+      const rows = await db.execute(sql`
+        INSERT INTO business_memory (org_id, memory_type, title, description, outcome, outcome_value, tags, metadata)
+        VALUES (${orgId}, ${memoryType ?? "outcome"}, ${title.trim()}, ${description ?? null}, ${outcome ?? null}, ${outcomeValue ?? null}, ${JSON.stringify(tags ?? [])}::jsonb, ${JSON.stringify(metadata ?? {})}::jsonb)
+        RETURNING *
+      `);
+      const result = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
+      res.json(result ?? {});
+    } catch (e: any) {
+      console.error("[autonomous/memory POST] error:", e);
+      res.status(500).json({ message: "Failed to save memory" });
+    }
+  });
+
+  // POST /api/autonomous/simulate — business simulator
+  app.post("/api/autonomous/simulate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { changeType, changeDescription, targetMetric } = req.body;
+      if (!changeDescription?.trim()) return res.status(400).json({ message: "Change description required" });
+
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const attr7d = await computeOrgAttribution(orgId, "7d").catch(() => ({ totalRevenueInfluenced: 0, totalActions: 0, totalTimeSavedHours: 0, agents: [] as any[] }));
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{
+          role: "system",
+          content: `You are a business simulation engine for a strength & conditioning coaching business. Current metrics: ${attr7d.totalActions} agent actions/week, $${Math.round(attr7d.totalRevenueInfluenced)} revenue influenced/week, ${attr7d.totalTimeSavedHours.toFixed(1)}h saved/week, ${attr7d.agents.filter((a: any) => a.totalActions > 0).length} active agents. Return ONLY JSON.`,
+        }, {
+          role: "user",
+          content: `Simulate: "${changeDescription}"\nChange type: ${changeType ?? "workflow"}\nTarget metric: ${targetMetric ?? "revenue"}\n\nReturn: {"revenueImpact": {"monthly": number, "confidence": 0-100, "direction": "positive"|"negative"|"neutral"}, "riskLevel": "low"|"moderate"|"high", "timeToSeeResults": "string", "confidence": 0-100, "recommendation": "Deploy"|"Review"|"Abort", "reasoning": "string", "expectedOutcomes": ["string"], "sideEffects": ["string"]}`,
+        }],
+        max_tokens: 600,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      });
+
+      const simulation = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+      res.json({ simulation, changeDescription, simulatedAt: new Date().toISOString() });
+    } catch (e: any) {
+      console.error("[autonomous/simulate] error:", e);
+      res.status(500).json({ message: "Failed to run simulation" });
+    }
+  });
+
+  // POST /api/autonomous/chief-of-staff — AI Chief of Staff
+  app.post("/api/autonomous/chief-of-staff", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { question } = req.body;
+      if (!question?.trim()) return res.status(400).json({ message: "Question required" });
+
+      await ensureAutonomousTables();
+      const { sql } = await import("drizzle-orm");
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { orgAiOpportunities, attentionItems: ait } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [attr7d, opps, alerts, objectives, memory] = await Promise.all([
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalActions: 0, totalRevenueInfluenced: 0, totalTimeSavedHours: 0, agents: [] as any[] })),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+        db.select().from(ait).where(and(eq(ait.orgId, orgId), eq(ait.status, "active"))).catch(() => []),
+        db.execute(sql`SELECT title, status, progress, priority FROM business_objectives WHERE org_id = ${orgId} AND status = 'active' ORDER BY priority DESC LIMIT 5`).catch(() => ({ rows: [] })),
+        db.execute(sql`SELECT memory_type, title, outcome FROM business_memory WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 5`).catch(() => ({ rows: [] })),
+      ]);
+
+      const objList = (Array.isArray(objectives) ? objectives : (objectives as any).rows ?? []).map((o: any) => `${o.title} (${o.progress}% complete, ${o.priority} priority)`).join("\n");
+      const memList = (Array.isArray(memory) ? memory : (memory as any).rows ?? []).map((m: any) => `[${m.memory_type}] ${m.title}: ${m.outcome ?? "recorded"}`).join("\n");
+
+      const context = `You are the AI Chief of Staff for a strength & conditioning coaching business. You have access to ALL business data and provide executive-level strategic coordination.
+
+CURRENT BUSINESS DATA:
+Active Objectives: ${objList || "none set"}
+Agent Actions (7d): ${attr7d.totalActions} | Revenue Influenced: $${Math.round(attr7d.totalRevenueInfluenced)} | Hours Saved: ${attr7d.totalTimeSavedHours.toFixed(1)}h
+Active Agents: ${attr7d.agents.filter((a: any) => a.totalActions > 0).length}/${attr7d.agents.length}
+Open Opportunities: ${opps.length} (pipeline: $${opps.reduce((s: number, o: any) => s + (o.potentialValue ?? 0), 0).toLocaleString()})
+Active Alerts: ${alerts.length}
+Business Memory: ${memList || "no prior outcomes recorded"}
+
+Your role: Coordinate strategy, prioritize actions, interpret data, surface opportunities, and give direct executive-level recommendations. Be concise and action-oriented.`;
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "system", content: context }, { role: "user", content: question }],
+        max_tokens: 700,
+        temperature: 0.4,
+      });
+
+      const answer = completion.choices[0]?.message?.content ?? "Unable to generate a response.";
+      res.json({ question, answer, generatedAt: new Date().toISOString() });
+    } catch (e: any) {
+      console.error("[autonomous/chief-of-staff] error:", e);
+      res.status(500).json({ message: "Failed to process question" });
+    }
+  });
+
   return httpServer;
 }
